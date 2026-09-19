@@ -3488,8 +3488,29 @@ follow-up chips already ride) and `proposal_ref` (the real approval card, render
 run-a-trusted-query actions wait on a deep-link registry — recorded open, not drifted into. **Receipt:** a click asks
 the follow-up through the same path a typed question takes.
 
-**AV-M · Measure alongside.** Parts-versus-prose per converse turn, counted from the session log; the baseline is the
-2026-09-15 screenshot's all-prose turn. **Needs:** nothing.
+**AV-M · Measure alongside — ✅ BUILT 2026-09-19** (`aughor/obs/vocabulary_uptake.py`). Parts-versus-prose per
+converse turn, counted from the session log, no model anywhere — SP-M's shape one movement over.
+**The population is the turns where the tool was OFFERED.** `present` reaches only a streaming converse turn, so a
+deep run or an automation could never have used it and must not be counted against it; `ask.converse` is the
+denominator. An unreadable log reports `measured: false` and **no rate** — 0% would be a claim about the product
+where the truth is a claim about the log (SP-7's law: a failed probe is not an absence).
+**First reading, live: 3 of 42 converse turns answered in parts — all on 2026-09-15, the day the vocabulary
+shipped.** Since then, 2 converse turns, both prose. Not yet damning at n=2, and exactly the number that was
+unanswerable before this module: the question "is it used" took hand-written sqlite.
+🔴 **The meter shipped with the defect it exists to catch, for ten minutes.** Its first cut read `kind="tool_call"`
+only — and on the live log `ask.converse` appears 41× as a `tool_call` and NEVER as a result, while `present`
+appears 4× as a `tool_call_result` and NEVER as a call. It reported **zero uptake on a feature that had been
+used**. 🔑 **A tool's evidence may live under either kind; never assume one.** Pinned by the first test in the file.
+🔴 **And chasing that difference found a SECOND defect in the meter, which is why the number moved from 2 to 3.**
+The first cut counted only turns marked by an `ask.converse` tool call, so a trace carrying `present` without one
+was discarded — from the numerator AND the denominator. The live case: of the 16 traces using a Spotlight
+`platform_*` tool, 15 carry the marker and one (`562bf533`) does not; it called `present` TWICE and then ended in an
+`execution_error`. **A turn that used the vocabulary and then crashed was invisible to the meter whose whole job is
+to notice use**, and the omission biased in exactly the direction that flatters a quiet feature.
+🔑 **A turn that failed still happened.** A `present` call is itself proof the tool was offered, so such a trace now
+joins BOTH sides and the rate stays a rate. The test that asserted the old rule was rewritten to say so, with the
+evidence — a test changed by measurement, not by convenience.
+**Needs:** nothing.
 
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
@@ -5634,7 +5655,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17; **IP-3 MERGED #519**, squash `21a4484f`, 2026-09-17; **IP-4 STARTED** 2026-09-17 on `claude/ip-4-banking`, local: gate 6 enforced, banking & lending through gates 1–4, a draft)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17; **IP-3 MERGED #519**, squash `21a4484f`, 2026-09-17; **IP-4 MERGED #520**, squash `7e13f64e`, 2026-09-17: gate 6 enforced, banking & lending through gates 1–4 — and the package ships `status: draft`, which by gate 6's own rule means no agent reads it until a person activates it)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5847,8 +5868,15 @@ or ontology file used to escape every caller, the roster route included.
   - Gate 6 (a person's review, draft → active) — enforced by IP-4.
   - Authoring the next package (gates 1–2 for IP-4) is still by hand.
 
-**IP-4 · The tiers — STARTED 2026-09-17** on `claude/ip-4-banking` (`84524f75` gate 6, `57447363` banking), local,
-nothing pushed. The user: *"lets start ip-4"*.
+**IP-4 · The tiers — ✅ MERGED #520** (squash `7e13f64e`, 2026-09-17; `84524f75` gate 6, `57447363` banking).
+The user: *"lets start ip-4"*.
+
+⚠️ **This entry read "STARTED … local, nothing pushed" for two days after it merged, in three places at once**
+(here, §3.17's header and §5's band), and a plan-of-record read on 2026-09-19 reported Arc IP as unfinished because
+of it. The ledger's own standing lesson, a fourth time: *a struck-through debt list stays honest because striking it
+is a deliberate act; a prose claim inside a section rots silently, because nothing forces anyone to look at it
+again.* 🔑 The cheap check that would have caught it is one command — `git log main --oneline | grep IP-4` — and it
+belongs in any read of this document that a decision hangs on.
 
 - **Gate 6 enforced first.** Every knowledge package said `status: draft` and was read anyway, so a package the
   generator drafts would have reached every agent on the next restart before anyone reviewed it. Measured by a code
@@ -5960,8 +5988,13 @@ draft → active.
 - **IP-2 chosen at install**, as above. ✅ BUILT 2026-09-17 (above).
 - **IP-3 the generator.** Gates 3 and 4 as code, and airline brought to the full anatomy as the reference package.
   ✅ MERGED #519 (above): 14 of 14 published BTS figures reproduced with no model.
-- **IP-4 the tiers.** ⏳ STARTED 2026-09-17 (above): gate 6 enforced; banking & lending through gates 1–4, 51 of 51
-  FDIC figures reproduced with no model, a draft awaiting review.
+- **IP-4 the tiers.** ✅ MERGED #520, squash `7e13f64e` (above): gate 6 enforced; banking & lending through gates
+  1–4, 51 of 51 FDIC figures reproduced with no model.
+  🔴 **Shipped and INERT, which is gate 6 working rather than a defect.** `packs/banking/pack.yaml` carries
+  `status: draft`, and a draft is read by nobody — not the resolver, not the installer's industry list. Measured
+  2026-09-19 on `c7085899`: four other packages sit in the same state (`core-ecommerce`, `customer-analytics`,
+  `fashion-ecommerce`, `supply-chain`). **The next act on this wave is a person's review, not a build** — and that
+  is the gate doing exactly what it was built for, one wave after being built.
   - **Tier 1:** banking & lending **first** (answer 3, the builder's pick: 26 of 27, nine of ten vendor catalogues,
     and FFIEC Call Reports that reconcile to the FDIC's published totals), then payments & fintech (it reuses
     banking's parties, accounts and transactions), then insurance; the finance and risk-and-fraud functions alongside.
@@ -6812,10 +6845,17 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         package on a named public dataset with no model · airline the reference — 3 sourced
         metrics, 8 bound plays, 14 goldens; all 14 of BTS's published January 2019 figures
         reproduced on its 638,649-flight file; 6 claims measured-true, 2 expected.
-        IP-4 ⏳ STARTED 2026-09-17 (local): gate 6 enforced — the agents read only active packages ·
+        IP-4 ✅ MERGED #520 (`7e13f64e`) 2026-09-17: gate 6 enforced — the agents read only active packages ·
         banking & lending drafted through gates 1–4 on the FDIC's per-institution data, 51 of 51
-        published figures reproduced, no model. Next: the runtime reads a package's anatomy, then
-        payments & fintech, then insurance.
+        published figures reproduced, no model. 🔴 banking ships `status: draft`, so gate 6 keeps it
+        INERT until a person activates it — the next act on this wave is a REVIEW, not a build.
+        Next, after that review: payments & fintech (it reuses banking's parties, accounts and
+        transactions), then insurance. ⚠️ This band also carried "the runtime reads a package's
+        anatomy" as the first next step; that was written BEFORE #520 and has not been
+        re-measured since. On `c7085899` the word lives in the loader and both gates
+        (`packs/loader.py`, `gate3.py`, `gate4.py`) — whether the AGENT runtime consumes it is the
+        open question, and it is one grep away for whoever schedules this. Re-measure before
+        scheduling from it; a catalogue is a measurement with a timestamp.
         The user, 2026-09-17: finish Arc IP before Arc IN
 ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE clauses decided the same day) —
         the authored step. ✅ ALL THREE BUILT 2026-09-19 in the user's order — DS-17b (ranking was NOT
@@ -6959,6 +6999,47 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
   stale tags (`pre-rebase-va11`, `pre/post-rebase-backup`) · ~40 squash-merged local branches.
 
 **Buildable** (flagged, unscheduled — pull forward at will):
+- 🔴 **The playbook's outcome loop is COMPLETE, REACHABLE and starved — and the thing starving it is a field
+  name.** Re-measured end to end 2026-09-19, and the first four answers were all "already built": `log_outcome`
+  persists a `RecOutcome`, `update_playbook_success_rates` recomputes `wins/total` onto every entry and even
+  promotes a draft at ≥2 outcomes and ≥50%, `retriever.py` already ranks by the learned rate and renders
+  *"[no outcome data yet]"* when there is none, `POST /investigations/{id}/recommendations/{i}/outcome` serves it,
+  `web/lib/api.ts` calls it, and **two components render the affordance** — `RecommendationInbox` (the top-level
+  **Inbox** tab, fully reachable) and `ReportView`. Live content exists too: 7 of 12 real reports carry
+  recommendations, 14 in all. `data/recommendation_outcomes.json` has never existed.
+  🔴 **What was actually broken:** the neighbouring EXECUTE path read `report["recommended_actions"]` and each
+  item's `text`. Every stored report carries **`recommendations`**, keyed `action` · `expected_impact` · `owner` ·
+  `timeline` — measured over the live history, ALL use the first name and NONE the second. So `rec_text` fell
+  through to the placeholder *"Recommendation #N from investigation X"*, wrapped in a bare `except Exception:
+  pass`, and that placeholder was dispatched to the trigger **and handed to the departure gate as its `text`**.
+  🔑 **HB-2 law 1 was therefore asked about a sentence containing no magnitudes, and passed. A recommendation full
+  of numbers departed past a gate that never saw it** — the guard passing for the wrong reason, on the same day
+  three other instances of that shape were found. ✅ **Fixed 2026-09-19**: the extraction is now a named function
+  (`actions.recommendation_text`) because the bug was untestable where it lived; the older field stays a fallback;
+  a negative index no longer wraps to a different recommendation; the swallow is a counted `tolerate`; and a
+  placeholder that does depart is logged. 11 tests, four mutants killed including the original bug.
+  ⏳ **Still open, and now genuinely the question:** nobody has ever recorded an outcome, on a loop that works.
+  That is a product question — when is a person asked — not a missing mechanism.
+  **The original entry, kept because its measurement stands:** live 2026-09-19:
+  **878 entries, all active, `historical_success_rate` = 0 on every one of them** — so §6 item 20's
+  *"the playbook ranks its entries by success rates learned from outcomes"* is inert, and the `provenCount`
+  the panel computes has never been anything but zero. `owner_role` is the same defect one column over:
+  **"Data Analyst" on all 878**, a field that reads as information and carries none. Found while moving the
+  playbook off the nav (below) — the move is why anybody looked.
+  🔑 This is §7's complete-and-inert shape, and the reason it survived is worth naming: the panel hides a
+  zero rate per row (`{e.historical_success_rate > 0 && …}`), so a screen full of blanks looked like a screen
+  of plays that simply had not been proven yet, rather than a loop that never ran. **An honest per-row
+  default concealed a systemic absence.** Fixing the loop is a real build — where an outcome is recorded,
+  what counts as one, and how a play is credited — and it should not be started by inferring the design from
+  a zeroed column.
+- ✅ **The playbook left the navigation, 2026-09-19 (the user's call: Settings ▸ Organization).** A nav door
+  promises a room worth entering, and the measurement said otherwise: of 878 rows, **486 (55%) are
+  data-quality rule-outs the Verifier runs inside a deep report** — never a decision a person takes — and the
+  two columns that would have made the rest browsable were the constant and the blank above. It now sits
+  beside INDUSTRIES, which is the only lever a person has over it: its entries arrive from the industry
+  packages this organisation installs. The rule-outs are filtered from the default view and COUNTED in it,
+  and a search for them still reaches them — a row somebody named must never be behind a fold (DS-17b, one
+  screen over). The tab id survives, so ⌘K and any saved link still work.
 - ✅ **`govern/disclosure.py` DELETED 2026-09-06 (the user's call, asked first).** Fully built
   and tested since Wave G6, zero production callers ever — §7's complete-and-inert shape held
   for months. The deciding argument was not the inertness but VA-10: its run-as identity half

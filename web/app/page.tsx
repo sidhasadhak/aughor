@@ -302,13 +302,19 @@ const NAV_SECTIONS = [
       { id: "intelligence", icon: "brief",    label: "Briefing" },
       { id: "recents",      icon: "search",   label: "Agent runs" },
       { id: "health",       icon: "activity", label: "Health" },
-      { id: "playbook",     icon: "playbook", label: "Playbook" },
+      // Playbook moved to Settings ▸ Organization on 2026-09-19 (the user's call). A nav
+      // door promises a room worth entering, and the measurement said otherwise: 878
+      // entries, 486 of them Verifier rule-outs nobody chooses, 0 with a success rate and
+      // `owner_role` constant across all of them. Its entries arrive from the industry
+      // packages this org installs, so it belongs beside the control that changes them.
+      // The tab id survives — ⌘K still reaches it and so does any saved link.
+      //
       // Documents sit here rather than under Data because the group means "what Aughor
-      // KNOWS about your data" and a corpus is exactly that — Playbook is the sibling,
-      // both being authored material the agent reasons WITH, not data it queries. They
-      // are also GLOBAL: `index_file` takes no connection, so a per-connection home would
-      // claim a scope the corpus does not have. Named Documents, not Knowledge, because
-      // Knowledge already means the Semantic Layer's connection store.
+      // KNOWS about your data" and a corpus is exactly that — authored material the agent
+      // reasons WITH, not data it queries. It is also GLOBAL: `index_file` takes no
+      // connection, so a per-connection home would claim a scope the corpus does not
+      // have. Named Documents, not Knowledge, because Knowledge already means the
+      // Semantic Layer's connection store.
       { id: "documents",    icon: "folder",   label: "Documents" },
     ],
   },
