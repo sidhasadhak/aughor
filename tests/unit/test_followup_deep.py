@@ -57,8 +57,11 @@ def test_route_question_preserves_prior_analyses_seed_on_direct(monkeypatch):
     import aughor.agent.nodes as nodes
     from aughor.agent.state import RouteDecision
 
+    # **_ so the double keeps matching classify_question's signature: it grew the
+    # conn_id/trace_id/inv_id provenance kwargs, and a stub that refuses them fails with a
+    # TypeError about the double rather than telling you anything about routing.
     monkeypatch.setattr(nodes, "classify_question",
-                        lambda q: ("direct", RouteDecision(mode="direct", confidence=0.9, reasoning="test")))
+                        lambda q, **_: ("direct", RouteDecision(mode="direct", confidence=0.9, reasoning="test")))
     state = {"question": "just the ultra tier", "connection_id": "c",
              "prior_analyses": ["FOLLOW-UP base: prior query + result"]}
     out = nodes.route_question(state)
