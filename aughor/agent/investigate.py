@@ -931,6 +931,36 @@ _USER_CAUSAL_ASSUMPTION_RE = re.compile(
     r"|take\s+it\s+as\s+given|suppose\s+that)\b[^.?!]*", re.I)
 
 
+def _recorded_claim_licence(intake_data: dict) -> str:
+    """The licence this analysis RECORDED, not the optional field the model may leave blank.
+
+    `claim_type_suggestion` is declared to the model as "Leave empty unless the question is
+    clearly weaker than the design allows", and `_stamp_claim_type` writes the resolved type
+    back onto it — but by synthesis the dict reaching this node can carry it empty, and both
+    consumers then no-op: the prompt gets no admissible-verbs directive, and
+    `check_claim_type` returns [] on a falsy licence and never looks at the prose.
+
+    Measured on investigation 48865fcf: the analysis recorded `CLAIM LICENCE: descriptive`,
+    the report shipped the headline "…8.9% Increase Driven by Processing Order Volume", and
+    `check_claim_type("descriptive", prose)` fires on that text — so the check was simply
+    never run with a licence. The overclaim reached the Slack door, where law 5 held it:
+    the right verdict, two stages too late, with a model call already spent.
+
+    So read the same fact the departure gate reads — the recorded `CLAIM LICENCE:` line —
+    and fall back to the field. A verdict that exists in one place and is consulted from
+    another must be looked up where it is written.
+    """
+    data = intake_data or {}
+    declared = (data.get("claim_type_suggestion") or "").strip()
+    if declared:
+        return declared
+    for line in (data.get("intake_notes") or "").split(". "):
+        if line.strip().startswith("CLAIM LICENCE:"):
+            rest = line.split(":", 1)[-1].strip()
+            return rest.split("—")[0].strip().split()[0].strip().lower() if rest else ""
+    return ""
+
+
 def _claim_licence_section(intake_data: dict, phases: list) -> str:
     """The licence directive appended to the synthesis prompt, plus the waterfall suppression.
 
@@ -941,7 +971,7 @@ def _claim_licence_section(intake_data: dict, phases: list) -> str:
     Not requesting it is the fix; the check stops firing because the artefact stops existing.
     """
     from aughor.agent.claim_type import admissible_verbs_directive, is_at_least
-    claim_type = (intake_data or {}).get("claim_type_suggestion") or ""
+    claim_type = _recorded_claim_licence(intake_data)
     if not claim_type:
         return ""
     why = ""
@@ -9817,7 +9847,7 @@ def ada_synthesize(state: AgentState) -> dict:
         try:
             from aughor.agent.report_checks import run_report_checks
             _violations = run_report_checks(synth, question, evidence_log, phases,
-                                              (intake_data or {}).get("claim_type_suggestion") or "")
+                                              _recorded_claim_licence(intake_data))
             if _violations:
                 from aughor.stats import stats as _st
                 _st.inc("deep_analysis.report_check_retry")
@@ -9832,7 +9862,7 @@ def ada_synthesize(state: AgentState) -> dict:
                     if _retry is not None:
                         synth = _retry
                         _violations = run_report_checks(synth, question, evidence_log, phases,
-                                              (intake_data or {}).get("claim_type_suggestion") or "")
+                                              _recorded_claim_licence(intake_data))
                 except Exception as _exc:
                     from aughor.kernel.errors import tolerate
                     tolerate(_exc, "report-check retry is best-effort; the first draft "
