@@ -378,6 +378,16 @@ def _save(automation: Automation) -> dict:
     editor they are already looking at. Same shape, and the same lesson, as
     `_validation_detail`: a refusal the user can act on must not arrive as a crash.
     """
+    # DS-19 — node-authored SQL becomes a governed query BEFORE anything is persisted.
+    # Here rather than in the dispatcher, because verification that runs at 09:00 is not
+    # verification: it is a failure with an audience. A refusal is a 422 the editor
+    # renders, like every other refusal on this path.
+    from aughor.automations.authored_sql import (AuthoredSqlRefused,
+                                                 materialise_authored_sql)
+    try:
+        automation = materialise_authored_sql(automation)
+    except AuthoredSqlRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         return upsert_automation(automation).model_dump()
     except ValueError as exc:

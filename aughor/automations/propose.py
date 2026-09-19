@@ -377,6 +377,27 @@ def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainP
         return ChainProposal(verdict="refused", notes=drafted.notes,
                              reason=drafted.notes or "nothing on this deployment can do that")
 
+    # DS-19 / §6 item 26 (d) — a model may NEVER author SQL. Refused, not stripped: a
+    # silently emptied step would fail the save with a confusing message about a missing
+    # `query_id`, and this deployment would never learn its proposer had tried.
+    #
+    # The user's argument, 2026-09-19, which is why the line is absolute rather than
+    # cautious: *"Never — thats the whole point. Investigate node exists separately to
+    # form its own SQL, etc"*. A node whose job is "a model writes the SQL" already ships
+    # — governed, spanned, grounded and repaired by the writer's own loop — so a second
+    # one carrying none of that machinery has no reason to exist. The two nodes are not
+    # competing shapes of one idea; they are the model's path and the person's, and each
+    # is already whole.
+    authored = [i for i, step in enumerate(drafted.effects, start=1)
+                if step.kind == "trusted_query" and (step.config or {}).get("sql")]
+    if authored:
+        return ChainProposal(
+            verdict="refused", notes=drafted.notes,
+            reason=("a proposed chain may not carry SQL: step "
+                    + ", ".join(str(i) for i in authored)
+                    + " wrote its own. A trusted query step names a query a person "
+                      "authored and verified; to have a model write SQL, use Investigate."))
+
     _repair_bindings(drafted)
     opened = _open_unnamed_choices(drafted, outcome)
     held = _hold_drafted_writes(drafted)

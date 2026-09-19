@@ -1608,7 +1608,7 @@ approved, nothing later"*).
   step is wrong and ships behind nothing.
   **Receipt:** a chain whose trusted query runs, whose `synthesize` writes it up under the author's context,
   and whose Slack message arrives through HB-2's departure gate carrying the query id it was grounded on.
-- **DS-19 · SQL a person authored — private to the chain, promotable later.** The Trusted query step gains a
+- **DS-19 · SQL a person authored — private to the chain, promotable later — ✅ BUILT 2026-09-19.** The Trusted query step gains a
   "write SQL" authoring mode: question + SQL typed on the node. On SAVE — not at 09:00 — it runs through
   `trusted_verify` exactly as the door does; verification is not optional and an edit resets the stamp, which
   is item 26 (b) as decided.
@@ -1622,10 +1622,25 @@ approved, nothing later"*).
   automation and hidden from the catalogue picker. **Promotion is a flag flip, not a data move**, and there
   is exactly one lifecycle to reason about. A verification record stored on the step itself is the shape to
   refuse.
-  **The cost, named rather than discovered:** this DOES change the wire format — `REQUIRED_CONFIG` for
-  `trusted_query` becomes *exactly one of* `query_id` or an inline `question` + `sql`, and every validator
-  that reads it needs the second shape. The published keys, `LIST_PUBLISHED` and the dataflow table are
-  untouched, because what the step publishes is unchanged. That is the price of (c) and it is worth paying.
+  **The cost was predicted and did not arrive, which is worth recording as a correction.** The plan said the
+  wire format would change — `REQUIRED_CONFIG` becoming *exactly one of* `query_id` or inline `question` +
+  `sql`, with every validator needing the second shape. What shipped is narrower: the authored pair is
+  accepted at the BOUNDARY and `materialise_authored_sql` mints the governed row on save, so a STORED step
+  still carries a `query_id` and nothing else. The validator gained one conditional branch (the `notify` +
+  `route_about` precedent, one kind over); `LIST_PUBLISHED`, the dataflow tables and every other validator
+  were untouched. **A saved node is still a reference to a governed object** — the law's literal shape,
+  kept, rather than traded for the capability.
+  **Found while building, and it is the DS-17b lesson one layer down:** the dispatcher reads `list_trusted`,
+  which now hides chain-owned rows — so without scoping, a chain could not run the query it had just
+  authored. It opens exactly one extra door: the catalogue, plus THIS automation's own. Another chain's
+  private SQL is not merely refused, it is not there.
+  **And the palette follows the module's own rule rather than an exception to it:** a kind whose required key
+  is a value a person types "has nothing to be missing and is always ready", so `trusted_query` loses its
+  prereq row. Gating it now would dim a step that works — DS-17b's defect, arrived at from the other side.
+  **Receipt:** 14 backend tests + 5 in the rail editor; six mutants killed (no-verification-gate ·
+  model-may-author-sql · chain-owned-visible-everywhere · both-keys-allowed · any-chains-query-visible ·
+  switch-keeps-query_id); tree-wide ruff, `api.gen.ts` regenerated for the promote route, seven frontend
+  gates green. ⏳ **The live end-to-end receipt is OWED** — it needs the API restarted onto this code.
   **The guard that keeps the law literally true:** `sql` is human-only. `automations/propose.py` may draft
   every field of a `trusted_query` step and is refused on that one, with a test that fails if a drafted or
   imported step ever carries it. A model may propose the QUESTION; a person writes the SQL. **The user's own

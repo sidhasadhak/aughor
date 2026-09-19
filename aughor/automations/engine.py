@@ -1472,7 +1472,14 @@ def _dispatch_trusted_query(effect: Effect, automation: Automation) -> EffectOut
     from aughor.semantic.trusted_queries import list_trusted
 
     query_id = effect.query_id
-    match = next((q for q in list_trusted(automation.conn_id) if q.id == query_id), None)
+    # DS-19 — the catalogue's approved queries, PLUS the ones this automation authored on
+    # its own nodes. Precisely those two: a chain may run what the organisation promoted
+    # and what it wrote itself, and never another chain's private SQL. Read through the
+    # same `list_trusted` as before rather than by id, so the approval filter still
+    # applies to both — an authored query that has not been approved must not run either.
+    visible = [q for q in list_trusted(automation.conn_id, include_chain_owned=True)
+               if not q.owner_automation or q.owner_automation == automation.id]
+    match = next((q for q in visible if q.id == query_id), None)
     if match is None:
         # Scoped to THIS automation's connection: a trusted query is verified against the
         # schema it was written for, and running one against another connection is how a

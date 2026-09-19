@@ -68,6 +68,18 @@ class TrustedQuery(BaseModel):
     verified_at: str = ""
     last_executed_at: str = ""          # when verification last ran the SQL for real
     verification: dict = Field(default_factory=dict)  # last verification report
+    # ── DS-19 (§3.7 second movement) — SCOPE, and it is a flag rather than a store ──
+    # A query authored on an automation's node belongs to that chain: it is hidden from
+    # the catalogue, from the step picker and from every prompt, and only the chain that
+    # owns it reads it (by id). Empty = the catalogue's, which is every pre-DS-19 record.
+    #
+    # 🔑 The alternative — keeping an authored query on the STEP — was refused on the
+    # user's own decision (§6 item 26 (c)): where a query is VISIBLE is a product
+    # question, where its CUSTODY lives is a governance one, and only the second was ever
+    # at risk. One store means one verification, one approval stamp, one audit trail and
+    # one lifecycle to reason about; PROMOTION is then this field going empty, not a row
+    # moving between two places that would eventually disagree.
+    owner_automation: str = ""
 
 
 def _tokens(text: str) -> set[str]:
@@ -85,14 +97,22 @@ def _load_raw() -> list[dict]:
 
 
 def list_trusted(connection_id: str = "", *,
-                 include_unapproved: bool = False) -> list[TrustedQuery]:
-    """Trusted queries for a connection — APPROVED ONLY by default.
+                 include_unapproved: bool = False,
+                 include_chain_owned: bool = False) -> list[TrustedQuery]:
+    """Trusted queries for a connection — APPROVED and CATALOGUE-SCOPED only by default.
 
     KI-0: the default is the authoritative view, because every consumer that treats an
     entry as trusted (prompt injection, the MCP listing, the automations component)
     calls this and must fail closed against drafts. The two callers that genuinely
     need the whole store — the inspection endpoint and the eval-promotion dedupe —
     pass ``include_unapproved=True`` explicitly.
+
+    DS-19: the same argument, for SCOPE. A query authored on an automation's node is
+    that chain's, so it is excluded here by default and every consumer inherits that
+    without being edited — including `retrieve_trusted`, which is what keeps a chain's
+    private SQL out of the prompt injected for unrelated questions on the same
+    connection. `get_trusted` reads by id and passes both flags, because the chain that
+    owns a query must still be able to run it.
     """
     out = []
     for d in _load_raw():
@@ -108,14 +128,16 @@ def list_trusted(connection_id: str = "", *,
             continue
         if not include_unapproved and tq.status != "approved":
             continue
+        if not include_chain_owned and tq.owner_automation:
+            continue
         if not connection_id or tq.connection_id == connection_id:
             out.append(tq)
     return out
 
 
 def get_trusted(tq_id: str) -> TrustedQuery | None:
-    """One record by id, whatever its status — the write endpoints' lookup."""
-    for tq in list_trusted(include_unapproved=True):
+    """One record by id, whatever its status or scope — the write endpoints' lookup."""
+    for tq in list_trusted(include_unapproved=True, include_chain_owned=True):
         if tq.id == tq_id:
             return tq
     return None

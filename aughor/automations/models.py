@@ -348,6 +348,25 @@ class Effect(BaseModel):
         # `trigger_id` is required exactly when no routing subject is named.
         if self.kind == "notify" and self.config.get("route_about"):
             required = tuple(k for k in required if k != "trigger_id")
+        # DS-19 — a trusted_query step may NAME an approved query (`query_id`) or CARRY
+        # one a person authored on the node (`question` + `sql`). EXACTLY one: a step
+        # holding both would have two answers to "what runs", and the pair would drift
+        # the first time either side was edited.
+        #
+        # The authored shape exists only on the way IN. `materialise_authored_sql` runs
+        # it through the same verification the trusted-query door uses and mints the row
+        # it names, so a STORED step still carries a `query_id` and nothing else — which
+        # is what keeps every validator, the `for_each` list declaration and the dataflow
+        # tables untouched, and keeps a saved node a reference to a governed object rather
+        # than a carrier of behaviour.
+        if self.kind == "trusted_query":
+            authored, named = self.config.get("sql"), self.config.get("query_id")
+            if authored and named:
+                raise ValueError(
+                    "effect kind 'trusted_query' takes a query_id OR authored sql, "
+                    "not both: one step cannot have two answers to what it runs")
+            if authored:
+                required = ("question", "sql")
         missing = [k for k in required if not self.config.get(k)]
         if missing:
             raise ValueError(

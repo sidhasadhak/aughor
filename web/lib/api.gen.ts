@@ -6779,6 +6779,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning/trusted/{tq_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Trusted
+         * @description DS-19 — a query authored on an automation's node joins the connection's catalogue.
+         *
+         *     §6 item 26 (c), the user's call: an authored query is PRIVATE to its chain, with the
+         *     option to promote it later. This is that option, and it is deliberately one field
+         *     going empty rather than a row moving — there is one trusted-query store, so a
+         *     promotion changes who may SEE a query and touches neither its SQL, its verification
+         *     report, its approval stamp nor its version. Nothing to re-verify, because nothing
+         *     about the content changed.
+         *
+         *     Audited like every other transition on this store, and for the same reason: the
+         *     metrics catalog paid for an unaudited write once already.
+         */
+        post: operations["promote_trusted_learning_trusted__tq_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning/trusted/{tq_id}/transition": {
         parameters: {
             query?: never;
@@ -27151,6 +27181,40 @@ export interface operations {
         };
     };
     remove_trusted_learning_trusted__tq_id__delete: {
+        parameters: {
+            query?: {
+                actor?: string;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                tq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_trusted_learning_trusted__tq_id__promote_post: {
         parameters: {
             query?: {
                 actor?: string;
