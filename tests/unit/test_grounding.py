@@ -280,3 +280,27 @@ def test_rounding_a_writer_would_do_is_accepted():
 
 def test_a_result_with_no_labels_checks_nothing():
     assert ungrounded_label_values("108 flights", [[28], [42]]) == []
+
+
+def test_a_grounded_figure_at_the_END_of_a_sentence_is_not_accused():
+    """🔴 Found 2026-09-19 by DS-18, which reuses this guard over a synthesis step's input.
+
+    `_NUM_RE` ends in `\\.?\\d*`, so a figure closing a sentence was captured WITH its full
+    stop — "903." — and "903." is not in an evidence set holding "903". The guard therefore
+    accused correctly quoted numbers of being fabricated, but only when they fell at the
+    end of a sentence. That is the expensive shape of wrong: it fires on where a number
+    sits rather than on whether it is true, and this guard's own docstring records that a
+    false violation costs a real retry.
+    """
+    from aughor.agent.report_checks import check_grounding
+
+    evidence = "Orders were 903 in APAC and 1412 in EMEA"
+    # The same figure, in both positions. Neither is a violation.
+    assert check_grounding("APAC did 903 orders.", evidence) == []
+    assert check_grounding("APAC did 903.", evidence) == []
+    assert check_grounding("We saw 1412.", evidence) == []
+    # …and a real fabrication still fires, at the end of a sentence like any other.
+    assert check_grounding("We saw 999.", evidence) != []
+    # A genuine decimal keeps its point rather than being truncated into another number.
+    assert check_grounding("The rate was 903.5.", evidence) != []
+    assert check_grounding("The rate was 903.5.", "the rate was 903.5") == []

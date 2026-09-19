@@ -495,6 +495,11 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
   integration_call: [{ field: "operation", placeholder: "pick one in the rail" }],
   metric_value:   [{ field: "metric", placeholder: "metric name" }],
   trusted_query:  [{ field: "query_id", placeholder: "trusted query id" }],
+  // DS-18 — the bound input first, then what to make of it: the node reads as the
+  // sentence the step performs. `context` is on the card rather than rail-only because it
+  // is the one field that makes two synthesis steps different from each other.
+  synthesize:     [{ field: "data", placeholder: "drag a gives port here" },
+                   { field: "context", placeholder: "what to make of it" }],
 };
 
 /** The kind's accent — one hue per kind so a chain reads as a sequence of ROLES the

@@ -12795,7 +12795,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call" | "metric_value" | "trusted_query" | "mcp_call";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call" | "metric_value" | "trusted_query" | "mcp_call" | "synthesize";
             /** When */
             when?: components["schemas"]["GuardClause"][];
             /**

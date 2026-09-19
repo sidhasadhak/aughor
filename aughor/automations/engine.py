@@ -617,6 +617,13 @@ AWAIT_KEY = "_await_result"
 #: the trigger's payload, divergent readings an analysis paused on). Set on the BOUND config
 #: of `DEPARTURE_SENDS` only; never authored, never stored.
 DEPARTURE_BASIS_KEY = "_departure_basis"
+
+#: DS-18 — engine→dispatcher plumbing on the same precedent: WHICH upstream reference this
+#: synthesis read. By dispatch time `config["data"]` holds the VALUE and the `{"$from": …}`
+#: that produced it is gone, so the answer would have no provenance to travel with. Carried
+#: on the bound config rather than in the signature, because nine dispatchers would
+#: otherwise grow a parameter eight of them ignore.
+SYNTHESIS_SOURCE_KEY = "_synthesis_source"
 #: HB-2 — a routed notify's securable, carried to each destination's gate. Not `about`:
 #: an `about` FILES the send on its object (HB-3), and routing one message to three groups
 #: must not file it three times.
@@ -1518,6 +1525,8 @@ def _dispatch_trusted_query(effect: Effect, automation: Automation) -> EffectOut
         data={"rows": rows, "columns": columns, "count": len(rows)})
 
 
+from aughor.automations.synthesize import dispatch_synthesize  # noqa: E402 — beside its table
+
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "kinetic_action": _dispatch_kinetic,
     "notify": _dispatch_notify,
@@ -1530,6 +1539,10 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "integration_call": _dispatch_integration,
     "metric_value": _dispatch_metric_value,
     "trusted_query": _dispatch_trusted_query,
+    # DS-18 — in its own module: this is the one dispatcher that calls a model over
+    # arbitrary upstream output, so its grounding and refusal rules are a body of
+    # reasoning rather than a branch, and they belong where they can be read.
+    "synthesize": dispatch_synthesize,
     # VA-9d — reuses `_CALL_STATUS` unchanged, and the two interesting rows are already
     # right: `refused` → `dispatch_error` (terminal — retrying a refusal never changes it)
     # and `blocked` → `failed` (retriable — a cap window rolls over).
@@ -2056,6 +2069,11 @@ def _walk_automation(
             # gate, the same way: on the bound config, so the dispatchers keep one signature.
             if effect.kind in DEPARTURE_SENDS and not dry_run:
                 bound = {**bound, DEPARTURE_BASIS_KEY: departure_basis(effect, step_context)}
+            if effect.kind == "synthesize":
+                # Read off the AUTHORED config, which still holds the reference.
+                ref = (effect.config or {}).get("data")
+                if isinstance(ref, dict) and ref.get("$from"):
+                    bound = {**bound, SYNTHESIS_SOURCE_KEY: str(ref["$from"])}
             step_started = now_iso_z()
             step_t0 = _time.monotonic()
             # VA-4d — one span per step, under the run's trace. `Activity → Runs` is "one

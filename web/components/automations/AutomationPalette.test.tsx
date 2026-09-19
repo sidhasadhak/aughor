@@ -288,7 +288,7 @@ describe("a gated row ranks below what this deployment can run", () => {
   it("the curated order still decides WITHIN each group", async () => {
     const { ordered } = await import("@/components/automations/AutomationPalette");
     const kinds = ordered(ACTIONS, "").map(e => e.kind);
-    expect(kinds.indexOf("investigate")).toBeLessThan(kinds.indexOf("metric_value"));
+    expect(kinds.indexOf("slack_post")).toBeLessThan(kinds.indexOf("metric_value"));
     expect(kinds.indexOf("notify")).toBeLessThan(kinds.indexOf("trusted_query"));
   });
 
@@ -329,7 +329,7 @@ describe("the gated rows collapse behind one counted line", () => {
   it("a gated row is not rendered until the fold is opened, and its count is stated",
     async () => {
       mountWith(ACTIONS);
-      await screen.findByTestId("palette-row-investigate");
+      await screen.findByTestId("palette-row-subchain");
       // The five runnable ones are there…
       expect(screen.getByTestId("palette-row-metric_value")).toBeInTheDocument();
       // …the five gated ones are not, and the panel SAYS so rather than going quiet.
@@ -353,7 +353,7 @@ describe("the gated rows collapse behind one counted line", () => {
 
   it("SEARCHING never hides a match behind the fold", async () => {
     mountWith(ACTIONS);
-    await screen.findByTestId("palette-row-investigate");
+    await screen.findByTestId("palette-row-subchain");
     fireEvent.change(screen.getByPlaceholderText("Search steps…"),
       { target: { value: "trusted" } });
     // Typed the name, got the row — no fold, no toggle, no second click.
@@ -363,7 +363,7 @@ describe("the gated rows collapse behind one counted line", () => {
 
   it("no gated rows, no fold — the panel never invents an empty one", async () => {
     mountWith(ACTIONS.filter(e => e.availability === "ready"));
-    await screen.findByTestId("palette-row-investigate");
+    await screen.findByTestId("palette-row-subchain");
     expect(screen.queryByTestId("palette-gated-toggle-action")).not.toBeInTheDocument();
   });
 });

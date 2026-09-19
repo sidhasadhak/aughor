@@ -121,6 +121,11 @@ ACTIONS: tuple[PaletteEntry, ...] = (
     PaletteEntry("mcp_call", "action", "Call an MCP tool",
                  "Run a read-only tool on a server this deployment allows — capped, "
                  "spanned and audited like any other outbound call", "plug", 95),
+    # DS-18 — high in the curated order, just under Investigate: it is the step that turns
+    # any other step's output into something a person can read, so it is reached for often.
+    PaletteEntry("synthesize", "action", "Synthesize",
+                 "Write up the data a previous step produced — under the context you give "
+                 "it, with every number grounded in that data", "brief", 15),
     PaletteEntry("trusted_query", "action", "Trusted query",
                  "Run a vetted query and publish its rows — the one output in this "
                  "plane a step can run once per item of", "table", 90),

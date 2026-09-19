@@ -56,6 +56,9 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
         + "capped and audited" },
   { value: "metric_value", label: "Governed metric",
     desc: "Read a metric by its approved definition — the number the registry defines, filters and caveats included" },
+  { value: "synthesize", label: "Synthesize",
+    desc: "Write up the data a previous step produced — under the context you give it, "
+        + "with every number grounded in that data" },
   { value: "trusted_query", label: "Trusted query",
     desc: "Run a vetted query and publish its rows — the one output in this plane a step can run once per item of" },
 ];
@@ -264,8 +267,8 @@ function refOf(value: unknown): string {
  * 🔑 Why this is not the code node this repo refuses: what gets STORED is still a query
  * id. The SQL goes through the same verification and approval door a promoted query
  * does, and the field is human-only — the chain proposer is refused on it by name, on
- * the grounds that the Investigate step is already the governed path where a model
- * writes SQL.
+ * the grounds that the step which has a model write SQL already exists and is already
+ * governed as one.
  */
 function TrustedQueryRows({ e, set }: {
   e: AutoEffect; set: (patch: Record<string, unknown>) => void;
@@ -840,6 +843,26 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
             not a code node: what gets stored is still a query id. */}
         {e.kind === "trusted_query" && (
           <TrustedQueryRows e={e} set={set} />
+        )}
+        {/* DS-18 — the data comes from the step BEFORE (a binding, dragged from its
+            gives-port or typed), and the context is authored right here. Two fields,
+            in that order, because that is the sentence: "take this, and say that". */}
+        {e.kind === "synthesize" && (
+          <>
+            <input style={inputStyle} value={fieldText(e.config.data)}
+              onChange={ev => set({ data: ev.target.value })}
+              title={BINDING_HINT}
+              placeholder={'data — drag a gives port here, or {"$from": "step1.rows"}'} />
+            <textarea style={{ ...inputStyle, minHeight: 64, marginTop: 4, lineHeight: 1.5 }}
+              value={String(e.config.context ?? "")}
+              onChange={ev => set({ context: ev.target.value })}
+              placeholder="what to make of it — e.g. call out anything unusual and say what changed" />
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
+                                                lineHeight: 1.45 }}>
+              Every number in the summary has to appear in the data it was given. Leave the
+              context empty and it simply summarises.
+            </div>
+          </>
         )}
         <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
           onChange={onChange} />

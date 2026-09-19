@@ -1590,7 +1590,7 @@ gate to invent — **it is exactly the trusted-query lifecycle** (`routers/learn
 `proposed`, or `draft` on failure, and clears the prior stamp, because *"an approval covers the content it
 approved, nothing later"*).
 
-- **DS-18 · Synthesize — write up what the step before produced.** A new effect kind, `synthesize`, whose
+- **DS-18 · Synthesize — write up what the step before produced — ✅ BUILT 2026-09-19.** A new effect kind, `synthesize`, whose
   input port is the FIRST in this plane to accept any published key rather than a named string: `rows` from
   a trusted query, `value` from a governed metric, `text` from an MCP call, `answer` or `summary` from an
   investigation, an outcome from a declared action. Beside it on the node, authored not bound, a `context`
@@ -1605,9 +1605,26 @@ approved, nothing later"*).
   what it read, so a Slack message's receipt names the approved query behind it. One governed answer path,
   capped, spanned, audited, no model id in `aughor/`.
   **Falsifier:** a `synthesize` answer that states a number absent from its input. If that can happen, the
-  step is wrong and ships behind nothing.
-  **Receipt:** a chain whose trusted query runs, whose `synthesize` writes it up under the author's context,
-  and whose Slack message arrives through HB-2's departure gate carrying the query id it was grounded on.
+  step is wrong and ships behind nothing. ✅ **Held**: an answer inventing a plausible sum (2,315 from 1,412
+  and 903) is refused twice and the step FAILS publishing nothing — the answer is discarded rather than
+  caveated, because this value is bound into someone else's prose and nothing downstream would carry a
+  warning.
+  🔴 **A defect in the guard itself, found by reusing it.** `check_grounding` has been accusing correctly
+  quoted figures of being fabricated whenever they fall at the END of a sentence: `_NUM_RE` ends in `\.?\d*`,
+  so "903." is captured with its full stop and does not match an evidence set holding "903". "APAC did 903
+  orders." passed and "APAC did 903." did not. It fires on where a number SITS rather than on whether it is
+  true, and the guard's own docstring records that a false violation costs a real retry — so this was
+  spending repairs, and failing honest reports, across the whole report pipeline. Fixed at the one place
+  three call sites now share.
+  🔑 **And a test that named the right property and could not fail on it**, caught by the mutation run: the
+  zero-is-a-finding case passed a dict `{"count": 0}`, which is truthy whatever it contains, so a
+  truthiness check survived. It asserts on the SCALAR a `metric_value.value` binding delivers now. Second
+  instance of this shape in one session — see DS-17b's falsifier.
+  **Receipt:** 18 tests + 1 regression on the grounding guard; six mutants killed (no-grounding-check ·
+  publish-anyway-after-repair · empty-reaches-the-model · zero-counts-as-empty · cap-not-published ·
+  trailing-dot-unfixed). ⏳ **The live receipt is OWED with DS-19's** — a chain whose trusted query runs,
+  whose `synthesize` writes it up, and whose Slack message arrives through HB-2's departure gate carrying
+  the query id it was grounded on. It needs the API restarted onto this code.
 - **DS-19 · SQL a person authored — private to the chain, promotable later — ✅ BUILT 2026-09-19.** The Trusted query step gains a
   "write SQL" authoring mode: question + SQL typed on the node. On SAVE — not at 09:00 — it runs through
   `trusted_verify` exactly as the door does; verification is not optional and an edit resets the stamp, which
@@ -6752,9 +6769,12 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         payments & fintech, then insurance.
         The user, 2026-09-17: finish Arc IP before Arc IN
 ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE clauses decided the same day) —
-        the authored step. ✅ DS-17b BUILT 2026-09-19 (ranking was NOT enough — trusted_query is 9th of 10
-        under both orders; the gated rows now collapse behind a counted line, receipt taken live).
-        The user's order: DS-17b, then DS-19, then DS-18.
+        the authored step. ✅ ALL THREE BUILT 2026-09-19 in the user's order — DS-17b (ranking was NOT
+        enough: trusted_query is 9th of 10 under both orders, so the gated rows collapse behind a
+        counted line; receipt taken live), DS-19 (authored SQL verified on SAVE, private to its chain,
+        the predicted validator churn did not arrive), DS-18 (`synthesize`, its falsifier held, and it
+        found a real defect in `check_grounding`). ⏳ The live receipt for DS-19 + DS-18 is OWED: it
+        needs the API restarted onto this code.
         Measured the same day: `trusted_query` ships at palette weight 90, below the fold and dimmed
         (0 trusted queries on every connection but `workspace`); it names a `query_id`, never SQL; and
         nothing carries rows to a write-up (`investigate` binds only `question`, and this plane has no
