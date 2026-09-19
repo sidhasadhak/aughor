@@ -91,13 +91,21 @@ def test_a_turn_is_counted_once_however_many_parts_it_emitted(ledger):
     assert out["turns"] == 1 and out["in_parts"] == 1 and out["rate"] == 1.0
 
 
-def test_a_present_outside_the_population_is_not_counted(ledger):
-    """`present` on a trace with no converse call would mean the tool was offered by a
-    path this module does not know about. Counting it would widen the denominator's
-    meaning silently — and inflate uptake while doing it."""
+def test_a_present_without_a_converse_marker_JOINS_the_population(ledger):
+    """⚠️ This test asserted the opposite until 2026-09-19, and the evidence changed it.
+
+    The first version discarded a `present` on a trace with no `ask.converse` marker, on
+    the theory that counting it would widen the denominator's meaning. Then the live log
+    produced the case: of 16 Spotlight traces, 15 carry the marker and one does not — and
+    that one called `present` twice before ending in an `execution_error`. The old rule
+    dropped it from the numerator AND the denominator, so **a turn that used the
+    vocabulary and then crashed was invisible to the meter that exists to notice use.**
+
+    A turn that failed still happened. It joins BOTH sides, so the rate stays a rate.
+    """
     ledger([call("t1"), present("t2")])
     out = vocabulary_uptake()
-    assert out["turns"] == 1 and out["in_parts"] == 0
+    assert out["turns"] == 2 and out["in_parts"] == 1
 
 
 def test_deep_runs_and_automations_are_not_in_the_denominator(ledger):

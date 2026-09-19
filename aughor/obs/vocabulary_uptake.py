@@ -16,8 +16,16 @@ used" meant opening sqlite by hand.
 **The population is the turns where the tool was OFFERED**, not every turn the product
 served. `present` is offered only on a streaming converse turn (a sync caller has nowhere
 to render parts), so a deep investigation or an automation run could never have used it and
-must not be counted against it. `ask.converse` is the tool call that marks such a turn, and
-it is the denominator here.
+must not be counted against it. `ask.converse` marks such a turn — **and so does a `present`
+call itself**, because a turn that used the vocabulary self-evidently had it.
+
+That second clause is not belt-and-braces either. Measured 2026-09-19: of the 16 traces
+using a Spotlight `platform_*` tool, 15 carry the `ask.converse` marker and one does not —
+and that one called `present` TWICE before ending in an `execution_error`. Keyed on the
+marker alone it fell out of the numerator AND the denominator, so a turn that used the
+vocabulary and then crashed was invisible to a meter whose whole job is to notice use.
+🔑 **A turn that failed still happened.** Dropping it silently biases in exactly the
+direction that flatters a quiet feature.
 
 **An unreadable log reports `None`, never zero.** A failed probe is not an absence — SP-7's
 law, and the reason `score_proposal` returns `None` rather than a grade it cannot justify.
@@ -40,7 +48,7 @@ def vocabulary_uptake(*, org_id: Optional[str] = None, scan: int = 20000) -> dic
     """How many converse turns answered in parts rather than prose.
 
     Returns ``{turns, in_parts, rate, by_day, measured}``. ``measured`` is False and
-    ``rate`` is None when the session log could not be read or holds no converse turn at
+    ``rate`` is None when the session log could not be read or holds no such turn at
     all — the two cases where a percentage would be an invention rather than a reading.
 
     ``by_day`` is the same pair per ISO date, newest first, because uptake is a question
@@ -72,13 +80,17 @@ def vocabulary_uptake(*, org_id: Optional[str] = None, scan: int = 20000) -> dic
     # answered in parts, not two. Counting calls would flatter a chatty turn into a trend.
     converse: dict[str, str] = {}
     in_parts: set[str] = set()
+    day_of: dict[str, str] = {}
     for e in rows:
         trace = str(e.get("trace_id") or "")
         if not trace:
             continue
         name = e.get("name") or ""
+        day = str(e.get("at") or "")[:10]
+        if name in (CONVERSE_TOOL, PRESENT_TOOL) and day:
+            if trace not in day_of or day < day_of[trace]:
+                day_of[trace] = day
         if name == CONVERSE_TOOL:
-            day = str(e.get("at") or "")[:10]
             # The EARLIEST event dates the turn; a long turn must not drift into the next
             # day and read as uptake on a day nobody asked anything.
             if trace not in converse or (day and day < converse[trace]):
@@ -89,9 +101,11 @@ def vocabulary_uptake(*, org_id: Optional[str] = None, scan: int = 20000) -> dic
     if not converse:
         return {"turns": 0, "in_parts": 0, "rate": None, "by_day": [], "measured": False}
 
-    # Only inside the population: a `present` on a trace with no converse call would mean
-    # the tool was offered somewhere this module does not know about, and counting it would
-    # quietly widen the denominator's meaning.
+    # A `present` on a trace with no converse marker JOINS the population rather than being
+    # discarded: it is proof the tool was offered there. Added to BOTH sides, so the rate
+    # stays a rate — the first version added it to neither and lost the turn outright.
+    for trace in in_parts - set(converse):
+        converse[trace] = day_of.get(trace, "")
     counted = in_parts & set(converse)
 
     per_day: dict[str, dict] = {}

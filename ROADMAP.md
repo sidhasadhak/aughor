@@ -3494,16 +3494,22 @@ converse turn, counted from the session log, no model anywhere — SP-M's shape 
 deep run or an automation could never have used it and must not be counted against it; `ask.converse` is the
 denominator. An unreadable log reports `measured: false` and **no rate** — 0% would be a claim about the product
 where the truth is a claim about the log (SP-7's law: a failed probe is not an absence).
-**First reading, live: 2 of 41 converse turns answered in parts — both on 2026-09-15, the day the vocabulary
+**First reading, live: 3 of 42 converse turns answered in parts — all on 2026-09-15, the day the vocabulary
 shipped.** Since then, 2 converse turns, both prose. Not yet damning at n=2, and exactly the number that was
 unanswerable before this module: the question "is it used" took hand-written sqlite.
 🔴 **The meter shipped with the defect it exists to catch, for ten minutes.** Its first cut read `kind="tool_call"`
 only — and on the live log `ask.converse` appears 41× as a `tool_call` and NEVER as a result, while `present`
 appears 4× as a `tool_call_result` and NEVER as a call. It reported **zero uptake on a feature that had been
 used**. 🔑 **A tool's evidence may live under either kind; never assume one.** Pinned by the first test in the file.
-🔑 And the meter is stricter than the hand query that found the bug: raw SQL counted 3 traces carrying `present`,
-the meter counts 2, because one (`562bf533`) has no `ask.converse` call and so sits outside the population. Which
-path offered `present` there is an open question, recorded rather than chased.
+🔴 **And chasing that difference found a SECOND defect in the meter, which is why the number moved from 2 to 3.**
+The first cut counted only turns marked by an `ask.converse` tool call, so a trace carrying `present` without one
+was discarded — from the numerator AND the denominator. The live case: of the 16 traces using a Spotlight
+`platform_*` tool, 15 carry the marker and one (`562bf533`) does not; it called `present` TWICE and then ended in an
+`execution_error`. **A turn that used the vocabulary and then crashed was invisible to the meter whose whole job is
+to notice use**, and the omission biased in exactly the direction that flatters a quiet feature.
+🔑 **A turn that failed still happened.** A `present` call is itself proof the tool was offered, so such a trace now
+joins BOTH sides and the rate stays a rate. The test that asserted the old rule was rewritten to say so, with the
+evidence — a test changed by measurement, not by convenience.
 **Needs:** nothing.
 
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
