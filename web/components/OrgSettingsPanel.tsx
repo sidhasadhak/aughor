@@ -24,6 +24,7 @@ import { CHART_PALETTE_NAMES, chartPaletteLabel } from "@/lib/chartPalettes";
 import { Button } from "@/components/ui/button";
 import { OrgByokSection } from "@/components/OrgByokSection";
 import { OrgIndustriesSection } from "@/components/OrgIndustriesSection";
+import { OrgPlaybookSection } from "@/components/OrgPlaybookSection";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -206,6 +207,14 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       {/* Industries (IP-2) — the installer's question, deployment-wide, so app scope only. It saves on
           its own: the choice is a server file, not a field of the settings row. */}
       {scope === "app" && <OrgIndustriesSection />}
+      {/* The playbook sits BESIDE the industries because that is the only lever a person
+          has over it: its 878 entries arrive from the industry packages this org installs,
+          not from anything typed here. It used to be a top-level nav door of its own, which
+          promised a screen people would browse — measured 2026-09-19, 55% of its rows were
+          Verifier rule-outs and 0 of 878 carried the success rate that would make browsing
+          worth it. The user's call, and the right one: this is org configuration, not a
+          plane of the product. */}
+      {scope === "app" && <OrgPlaybookSection />}
 
       {/* Localization */}
       <div>

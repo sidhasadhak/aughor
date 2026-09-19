@@ -52,6 +52,7 @@ export function PlaybookPanel() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [showRuleOuts, setShowRuleOuts] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [seeding, setSeeding] = useState(false);
 
@@ -97,6 +98,14 @@ export function PlaybookPanel() {
   };
 
   const q = filter.toLowerCase().trim();
+  // A data-quality play is a RULE-OUT the Verifier runs during a deep report — never a
+  // decision a person takes. Measured 2026-09-19: 486 of 878 live entries are one, so
+  // they outnumbered the plays somebody might read by more than two to one. Filtered out
+  // of the default view and COUNTED in it: a reader who cannot see them must still learn
+  // they exist and where they run (DS-17b's lesson, one screen over).
+  const isRuleOut = (e: PlaybookEntry) => e.tags.some(t => t.toLowerCase() === "data quality");
+  const ruleOutCount = entries.filter(isRuleOut).length;
+
   const filtered = entries.filter(e => {
     const matchStatus = statusFilter === "all" || e.status === statusFilter;
     const matchQ = !q
@@ -104,7 +113,11 @@ export function PlaybookPanel() {
       || e.recommendation.toLowerCase().includes(q)
       || e.trigger_condition.toLowerCase().includes(q)
       || e.tags.some(t => t.toLowerCase().includes(q));
-    return matchStatus && matchQ;
+    // Searching REACHES them: a person who types "data quality" has named the thing, and
+    // hiding a row somebody asked for by name is the defect this filter exists to avoid,
+    // wearing different clothes.
+    const matchScope = showRuleOuts || !!q || !isRuleOut(e);
+    return matchStatus && matchQ && matchScope;
   });
 
   const activeCount  = entries.filter(e => e.status === "active").length;
@@ -137,6 +150,19 @@ export function PlaybookPanel() {
             <span><span style={{ color: "var(--t3)" }}>{draftCount}</span> draft</span>
             {provenCount > 0 && <span><span style={{ color: "var(--blue4)" }}>{provenCount}</span> proven</span>}
           </div>
+          {ruleOutCount > 0 && (
+            <button
+              onClick={() => setShowRuleOuts(v => !v)}
+              data-testid="playbook-ruleouts-toggle"
+              className="aug-fs-xs mb-2 text-left"
+              style={{ background: "none", border: "none", padding: 0, color: "var(--t3)",
+                       cursor: "pointer", lineHeight: 1.45 }}
+            >
+              {showRuleOuts
+                ? `${ruleOutCount} data-quality rule-outs shown`
+                : `${ruleOutCount} data-quality rule-outs run in the Verifier — not listed`}
+            </button>
+          )}
           <input
             value={filter}
             onChange={e => setFilter(e.target.value)}

@@ -293,7 +293,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     { id: "nav-health",      label: "Health",               sublabel: "Business metric targets and status",type: "action", icon: "activity", accent: "var(--grn3)" },
     { id: "nav-agentic-ops", label: "Agent Ops",            sublabel: "Overview, roster, attention, activity, automations, hub map, departures", type: "action", icon: "process", accent: "var(--vio3)" },
     { id: "create-agent",    label: "Create agent",          sublabel: "Define a custom agent: its scope, its stance, and how you'll know it works", type: "action", icon: "spark",   accent: "var(--grn3)" },
-    { id: "nav-playbook",    label: "Playbook",             sublabel: "Strategic decision patterns",        type: "action", icon: "playbook", accent: "var(--t2)" },
+    { id: "nav-playbook",    label: "Playbook",             sublabel: "Settings ▸ Organization",             type: "action", icon: "playbook", accent: "var(--t2)" },
     { id: "nav-catalog",     label: "Catalog",              sublabel: "Browse tables, columns, row counts", type: "action", icon: "db",       accent: "var(--blue3)" },
     { id: "nav-builder",     label: "SQL Editor",           sublabel: "Write SQL, or compose visually, with live results",type: "action", icon: "builder", accent: "var(--t2)" },
     { id: "nav-semantic",    label: "Semantic Layer",       sublabel: "Annotations, knowledge, metrics, import", type: "action", icon: "layers", accent: "var(--amb3)" },

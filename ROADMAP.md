@@ -6978,6 +6978,26 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
   stale tags (`pre-rebase-va11`, `pre/post-rebase-backup`) · ~40 squash-merged local branches.
 
 **Buildable** (flagged, unscheduled — pull forward at will):
+- 🔴 **The playbook's outcome loop has never produced a number.** Measured live 2026-09-19:
+  **878 entries, all active, `historical_success_rate` = 0 on every one of them** — so §6 item 20's
+  *"the playbook ranks its entries by success rates learned from outcomes"* is inert, and the `provenCount`
+  the panel computes has never been anything but zero. `owner_role` is the same defect one column over:
+  **"Data Analyst" on all 878**, a field that reads as information and carries none. Found while moving the
+  playbook off the nav (below) — the move is why anybody looked.
+  🔑 This is §7's complete-and-inert shape, and the reason it survived is worth naming: the panel hides a
+  zero rate per row (`{e.historical_success_rate > 0 && …}`), so a screen full of blanks looked like a screen
+  of plays that simply had not been proven yet, rather than a loop that never ran. **An honest per-row
+  default concealed a systemic absence.** Fixing the loop is a real build — where an outcome is recorded,
+  what counts as one, and how a play is credited — and it should not be started by inferring the design from
+  a zeroed column.
+- ✅ **The playbook left the navigation, 2026-09-19 (the user's call: Settings ▸ Organization).** A nav door
+  promises a room worth entering, and the measurement said otherwise: of 878 rows, **486 (55%) are
+  data-quality rule-outs the Verifier runs inside a deep report** — never a decision a person takes — and the
+  two columns that would have made the rest browsable were the constant and the blank above. It now sits
+  beside INDUSTRIES, which is the only lever a person has over it: its entries arrive from the industry
+  packages this organisation installs. The rule-outs are filtered from the default view and COUNTED in it,
+  and a search for them still reaches them — a row somebody named must never be behind a fold (DS-17b, one
+  screen over). The tab id survives, so ⌘K and any saved link still work.
 - ✅ **`govern/disclosure.py` DELETED 2026-09-06 (the user's call, asked first).** Fully built
   and tested since Wave G6, zero production callers ever — §7's complete-and-inert shape held
   for months. The deciding argument was not the inertness but VA-10: its run-as identity half
