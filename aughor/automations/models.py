@@ -153,6 +153,12 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # defines rather than one an LLM re-derived.
     "metric_value":   ("metric",),
     "trusted_query":  ("query_id",),
+    # DS-18 — WHAT to write up. `data` only: `context` is optional because a step with no
+    # instruction still has an honest default ("summarise this"), and requiring a sentence
+    # before the node can be saved would make the common case the annoying one. Both are
+    # VALUES rather than names of objects, so this kind is always ready on every
+    # deployment — `palette.py`'s own rule, not an exception to it.
+    "synthesize":     ("data",),
     # VA-9d — WHICH allowlisted server, and WHICH of its discovered tools. Both at
     # construction like every sibling: a step naming neither would ask nobody for nothing,
     # and "looking schedulable" is the expensive kind of broken. Note what is NOT here —
@@ -301,7 +307,7 @@ class Effect(BaseModel):
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
                   "slack_post", "subchain", "integration_call",
-                  "metric_value", "trusted_query", "mcp_call"]
+                  "metric_value", "trusted_query", "mcp_call", "synthesize"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.
@@ -348,6 +354,25 @@ class Effect(BaseModel):
         # `trigger_id` is required exactly when no routing subject is named.
         if self.kind == "notify" and self.config.get("route_about"):
             required = tuple(k for k in required if k != "trigger_id")
+        # DS-19 — a trusted_query step may NAME an approved query (`query_id`) or CARRY
+        # one a person authored on the node (`question` + `sql`). EXACTLY one: a step
+        # holding both would have two answers to "what runs", and the pair would drift
+        # the first time either side was edited.
+        #
+        # The authored shape exists only on the way IN. `materialise_authored_sql` runs
+        # it through the same verification the trusted-query door uses and mints the row
+        # it names, so a STORED step still carries a `query_id` and nothing else — which
+        # is what keeps every validator, the `for_each` list declaration and the dataflow
+        # tables untouched, and keeps a saved node a reference to a governed object rather
+        # than a carrier of behaviour.
+        if self.kind == "trusted_query":
+            authored, named = self.config.get("sql"), self.config.get("query_id")
+            if authored and named:
+                raise ValueError(
+                    "effect kind 'trusted_query' takes a query_id OR authored sql, "
+                    "not both: one step cannot have two answers to what it runs")
+            if authored:
+                required = ("question", "sql")
         missing = [k for k in required if not self.config.get(k)]
         if missing:
             raise ValueError(

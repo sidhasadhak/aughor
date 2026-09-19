@@ -56,6 +56,9 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
         + "capped and audited" },
   { value: "metric_value", label: "Governed metric",
     desc: "Read a metric by its approved definition — the number the registry defines, filters and caveats included" },
+  { value: "synthesize", label: "Synthesize",
+    desc: "Write up the data a previous step produced — under the context you give it, "
+        + "with every number grounded in that data" },
   { value: "trusted_query", label: "Trusted query",
     desc: "Run a vetted query and publish its rows — the one output in this plane a step can run once per item of" },
 ];
@@ -248,6 +251,77 @@ function refOf(value: unknown): string {
  * upstream output, so a first step has nothing it could ask about, and an empty picker
  * is a control that cannot be used.
  */
+/**
+ * DS-19 — the Trusted query step's two authoring modes.
+ *
+ * **Pick** names a query the organisation already approved. **Write SQL** takes a
+ * question and a statement typed here, which SAVE verifies for real (execution plus the
+ * shared battery) and turns into a trusted query owned by this chain — hidden from the
+ * catalogue, promotable later by one click.
+ *
+ * The modes are exclusive on the wire, so switching CLEARS the other side's keys rather
+ * than leaving them to be sent together and refused at save. A step carrying both would
+ * have two answers to "what runs", and the pair would drift the first time either was
+ * edited.
+ *
+ * 🔑 Why this is not the code node this repo refuses: what gets STORED is still a query
+ * id. The SQL goes through the same verification and approval door a promoted query
+ * does, and the field is human-only — the chain proposer is refused on it by name, on
+ * the grounds that the step which has a model write SQL already exists and is already
+ * governed as one.
+ */
+function TrustedQueryRows({ e, set }: {
+  e: AutoEffect; set: (patch: Record<string, unknown>) => void;
+}) {
+  // Authored when there is SQL to show, or when this step's query was authored here
+  // before (the id the save path hands back), so re-opening the rail lands on the mode
+  // the author last used rather than on a box holding an id they never typed.
+  const authored = e.config.sql !== undefined || Boolean(e.config.authored_query_id);
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+        <Button variant={authored ? "ghost" : "secondary"} size="sm"
+          className="h-auto font-normal" style={{ ...ghostBtn, padding: "3px 8px" }}
+          onClick={() => set({ sql: undefined, question: undefined })}>
+          Pick a query
+        </Button>
+        <Button variant={authored ? "secondary" : "ghost"} size="sm"
+          className="h-auto font-normal" style={{ ...ghostBtn, padding: "3px 8px" }}
+          onClick={() => set({ query_id: undefined, sql: String(e.config.sql ?? ""),
+                               question: String(e.config.question ?? "") })}>
+          Write SQL
+        </Button>
+      </div>
+      {authored ? (
+        <>
+          <input style={inputStyle} value={String(e.config.question ?? "")}
+            onChange={ev => set({ question: ev.target.value })}
+            placeholder="what this query answers, in a sentence" />
+          <textarea style={{ ...inputStyle, minHeight: 88, marginTop: 4,
+                             fontFamily: "var(--font-mono)", lineHeight: 1.5 }}
+            value={String(e.config.sql ?? "")}
+            onChange={ev => set({ sql: ev.target.value })}
+            placeholder="SELECT …" />
+          {/* Said BEFORE the save, because the two facts a person needs are what will
+              happen to their SQL and who will be able to see it — and finding out
+              afterwards is how a governance step reads as an obstacle. */}
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
+                                              lineHeight: 1.45 }}>
+            Saving runs this once to verify it. It stays private to this automation until
+            you promote it.
+          </div>
+        </>
+      ) : (
+        <input style={inputStyle} value={String(e.config.query_id ?? "")}
+          onChange={ev => set({ query_id: ev.target.value })}
+          placeholder="trusted query id" />
+      )}
+    </>
+  );
+}
+
+
 export function GuardRows({ e, siblings, index, onChange }: {
   e: AutoEffect;
   /** The whole step list and this step's place in it — a guard may only read what runs
@@ -759,10 +833,36 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
             onChange={ev => set({ metric: ev.target.value })}
             placeholder="metric name, e.g. revenue" />
         )}
+        {/* DS-19 — the step still NAMES a governed query; what changed is that a person
+            may author one here instead of promoting it first. Two modes, exclusive,
+            because a step holding both would have two answers to what it runs.
+
+            The SQL is verified on SAVE (really executed, plus the shared battery) and
+            becomes a trusted query private to this chain, promotable later. So this box
+            is an authoring affordance over the governance door — not a bypass of it, and
+            not a code node: what gets stored is still a query id. */}
         {e.kind === "trusted_query" && (
-          <input style={inputStyle} value={String(e.config.query_id ?? "")}
-            onChange={ev => set({ query_id: ev.target.value })}
-            placeholder="trusted query id" />
+          <TrustedQueryRows e={e} set={set} />
+        )}
+        {/* DS-18 — the data comes from the step BEFORE (a binding, dragged from its
+            gives-port or typed), and the context is authored right here. Two fields,
+            in that order, because that is the sentence: "take this, and say that". */}
+        {e.kind === "synthesize" && (
+          <>
+            <input style={inputStyle} value={fieldText(e.config.data)}
+              onChange={ev => set({ data: ev.target.value })}
+              title={BINDING_HINT}
+              placeholder={'data — drag a gives port here, or {"$from": "step1.rows"}'} />
+            <textarea style={{ ...inputStyle, minHeight: 64, marginTop: 4, lineHeight: 1.5 }}
+              value={String(e.config.context ?? "")}
+              onChange={ev => set({ context: ev.target.value })}
+              placeholder="what to make of it — e.g. call out anything unusual and say what changed" />
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
+                                                lineHeight: 1.45 }}>
+              Every number in the summary has to appear in the data it was given. Leave the
+              context empty and it simply summarises.
+            </div>
+          </>
         )}
         <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
           onChange={onChange} />

@@ -617,6 +617,20 @@ AWAIT_KEY = "_await_result"
 #: the trigger's payload, divergent readings an analysis paused on). Set on the BOUND config
 #: of `DEPARTURE_SENDS` only; never authored, never stored.
 DEPARTURE_BASIS_KEY = "_departure_basis"
+
+#: DS-18 — engine→dispatcher plumbing on the same precedent: WHICH upstream reference this
+#: synthesis read. By dispatch time `config["data"]` holds the VALUE and the `{"$from": …}`
+#: that produced it is gone, so the answer would have no provenance to travel with. Carried
+#: on the bound config rather than in the signature, because nine dispatchers would
+#: otherwise grow a parameter eight of them ignore.
+SYNTHESIS_SOURCE_KEY = "_synthesis_source"
+
+#: DS-18a (§6 item 27) — the rows a `synthesize` step wrote its answer from, so an outward
+#: send carrying that answer has a measurement to be grounded in. On the published entry
+#: rather than in `PUBLISHED_KEYS`, exactly like `DISAGREEMENT_KEY`: it is engine→gate
+#: plumbing, not a port anybody binds, and a bindable key here would put a bag of raw
+#: numbers on the canvas as though it were something to send.
+SYNTHESIS_BASIS_KEY = "_synthesis_basis"
 #: HB-2 — a routed notify's securable, carried to each destination's gate. Not `about`:
 #: an `about` FILES the send on its object (HB-3), and routing one message to three groups
 #: must not file it three times.
@@ -638,6 +652,7 @@ def departure_basis(effect: Effect, context: dict) -> dict:
     analyses: list[str] = []
     trigger: dict = {}
     disagreement = None
+    synthesis = None
     seen: set[str] = set()
     for ref in effect_refs(effect):
         alias = parse_ref(ref)[0]
@@ -654,7 +669,14 @@ def departure_basis(effect: Effect, context: dict) -> dict:
             analyses.append(str(entry["investigation_id"]))
         if disagreement is None and isinstance(entry.get(DISAGREEMENT_KEY), dict):
             disagreement = entry[DISAGREEMENT_KEY]
-    return {"analyses": analyses, "trigger": trigger, "disagreement": disagreement}
+        # DS-18a — a synthesis the send reads is itself a basis: the rows it was written
+        # from, measured in this tick. FIRST one wins, like `disagreement` above, because
+        # a message binding two syntheses has two bases and no single answer to "what is
+        # this grounded in"; the gate would then pick one silently.
+        if synthesis is None and isinstance(entry.get(SYNTHESIS_BASIS_KEY), dict):
+            synthesis = entry[SYNTHESIS_BASIS_KEY]
+    return {"analyses": analyses, "trigger": trigger, "disagreement": disagreement,
+            "synthesis": synthesis}
 
 
 def _downstream_binds(alias: str, later: list[Effect]) -> bool:
@@ -724,6 +746,12 @@ def _gate_departure(effect: Effect, automation: Automation, *, kind: str,
             measurement = basis_of.measurement_for_promise(about, automation.conn_id)
         elif trigger.get("finding_id"):
             measurement = basis_of.measurement_for_finding(trigger["finding_id"], automation.conn_id)
+        elif isinstance(basis.get("synthesis"), dict):
+            # DS-18a (§6 item 27) — LAST of the four, so it never displaces a basis with a
+            # stronger provenance. An analysis, a promise and a finding each carry their own
+            # lineage; a synthesis carries the rows it read, which is the right answer only
+            # when nothing better is in the chain.
+            measurement = basis_of.measurement_for_synthesis(basis["synthesis"])
         else:
             measurement = None
         return gate_departure(
@@ -1472,7 +1500,14 @@ def _dispatch_trusted_query(effect: Effect, automation: Automation) -> EffectOut
     from aughor.semantic.trusted_queries import list_trusted
 
     query_id = effect.query_id
-    match = next((q for q in list_trusted(automation.conn_id) if q.id == query_id), None)
+    # DS-19 — the catalogue's approved queries, PLUS the ones this automation authored on
+    # its own nodes. Precisely those two: a chain may run what the organisation promoted
+    # and what it wrote itself, and never another chain's private SQL. Read through the
+    # same `list_trusted` as before rather than by id, so the approval filter still
+    # applies to both — an authored query that has not been approved must not run either.
+    visible = [q for q in list_trusted(automation.conn_id, include_chain_owned=True)
+               if not q.owner_automation or q.owner_automation == automation.id]
+    match = next((q for q in visible if q.id == query_id), None)
     if match is None:
         # Scoped to THIS automation's connection: a trusted query is verified against the
         # schema it was written for, and running one against another connection is how a
@@ -1511,6 +1546,8 @@ def _dispatch_trusted_query(effect: Effect, automation: Automation) -> EffectOut
         data={"rows": rows, "columns": columns, "count": len(rows)})
 
 
+from aughor.automations.synthesize import dispatch_synthesize  # noqa: E402 — beside its table
+
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "kinetic_action": _dispatch_kinetic,
     "notify": _dispatch_notify,
@@ -1523,6 +1560,10 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "integration_call": _dispatch_integration,
     "metric_value": _dispatch_metric_value,
     "trusted_query": _dispatch_trusted_query,
+    # DS-18 — in its own module: this is the one dispatcher that calls a model over
+    # arbitrary upstream output, so its grounding and refusal rules are a body of
+    # reasoning rather than a branch, and they belong where they can be read.
+    "synthesize": dispatch_synthesize,
     # VA-9d — reuses `_CALL_STATUS` unchanged, and the two interesting rows are already
     # right: `refused` → `dispatch_error` (terminal — retrying a refusal never changes it)
     # and `blocked` → `failed` (retriable — a cap window rolls over).
@@ -2049,6 +2090,11 @@ def _walk_automation(
             # gate, the same way: on the bound config, so the dispatchers keep one signature.
             if effect.kind in DEPARTURE_SENDS and not dry_run:
                 bound = {**bound, DEPARTURE_BASIS_KEY: departure_basis(effect, step_context)}
+            if effect.kind == "synthesize":
+                # Read off the AUTHORED config, which still holds the reference.
+                ref = (effect.config or {}).get("data")
+                if isinstance(ref, dict) and ref.get("$from"):
+                    bound = {**bound, SYNTHESIS_SOURCE_KEY: str(ref["$from"])}
             step_started = now_iso_z()
             step_t0 = _time.monotonic()
             # VA-4d — one span per step, under the run's trace. `Activity → Runs` is "one

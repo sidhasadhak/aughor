@@ -67,12 +67,44 @@ export function searchScore(entry: AutomationPaletteEntry, query: string): numbe
   return 2;
 }
 
-/** The reference palette's three-key sort, honestly: priority → search score → name. */
-function ordered(entries: AutomationPaletteEntry[], query: string): AutomationPaletteEntry[] {
+/** DS-17b — a gated row ranks below every row this deployment can actually run.
+ *
+ *  Measured 2026-09-19: `trusted_query` ships at priority 90 and sorted after eight
+ *  runnable kinds, so on a connection with no trusted queries its prereq sentence fell
+ *  BELOW THE FOLD and the step read as a capability that does not exist — it was reported
+ *  missing while it was shipping. The server already says which rows work here; the sort
+ *  was the one reader that did not ask.
+ *
+ *  Availability, not priority, because `priority` is a CURATED order — the server's
+ *  statement of which steps matter most — and it is right about that whether or not this
+ *  connection can run them. The two facts compose; neither replaces the other. */
+export function availabilityRank(entry: AutomationPaletteEntry): number {
+  return entry.availability === "ready" ? 0 : 1;
+}
+
+/** The palette's sort: availability → search score → priority → name.
+ *
+ *  **Availability leads only while nothing is typed.** A query is the person naming the
+ *  thing they want, and ranking a gated exact match under a ready description hit would be
+ *  this same defect in new clothes — a row you asked for, pushed down for a reason you did
+ *  not ask about. With a query, relevance leads and availability moves nothing.
+ *
+ *  🔑 **Relevance now sits ABOVE priority, and that is a second defect this wave found.**
+ *  The previous order was priority → search score → name, so a curated weight decided
+ *  before the query did: typing "trusted" ranked the priority-10 "Notify" (which merely
+ *  says *trusted* in its description) above the priority-90 "Trusted query" the person had
+ *  just named. Search barely reordered anything. It is inert while nothing is typed —
+ *  `searchScore` is 0 for every row on an empty query — so this changes exactly the case it
+ *  is about, which is why it is safe to take here rather than as its own wave. */
+export function ordered(
+  entries: AutomationPaletteEntry[], query: string,
+): AutomationPaletteEntry[] {
   return [...entries].sort((a, b) =>
-    a.priority !== b.priority ? a.priority - b.priority
+    !query && availabilityRank(a) !== availabilityRank(b)
+      ? availabilityRank(a) - availabilityRank(b)
     : searchScore(a, query) !== searchScore(b, query)
       ? searchScore(a, query) - searchScore(b, query)
+    : a.priority !== b.priority ? a.priority - b.priority
       : a.label.localeCompare(b.label));
 }
 
@@ -100,6 +132,30 @@ export function readPaletteDrag(data: string | null | undefined): PalettePlaceme
 interface RowProps {
   entry: AutomationPaletteEntry;
   onAdd: (placement: PalettePlacement) => void;
+}
+
+/** A row plus, when it is gated, the sentence that says why.
+ *
+ *  Extracted so the ready rows and the ones behind DS-17b's fold render through ONE path:
+ *  two copies of this would be two chances for a gated row to lose the sentence that is
+ *  its only door. */
+function PaletteRowWithReason({ entry, onAdd }: RowProps) {
+  return (
+    <>
+      <PaletteRow entry={entry} onAdd={onAdd} />
+      {entry.availability !== "ready" && (
+        // The reason sits UNDER its row rather than in a tooltip: it is the one thing a
+        // reader needs in order to act, and a hover is not a place to put an instruction.
+        <div
+          className="aug-fs-xs"
+          style={{ color: "var(--t3)", padding: "0 6px 6px", lineHeight: 1.45 }}
+          data-testid={`palette-reason-${entry.kind}`}
+        >
+          {entry.reason}
+        </div>
+      )}
+    </>
+  );
 }
 
 function PaletteRow({ entry, onAdd }: RowProps) {
@@ -184,6 +240,11 @@ export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
   const [entries, setEntries] = React.useState<AutomationPaletteEntry[] | null>(null);
   const [failed, setFailed] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  /** DS-17b — which groups have their "needs setup" fold open. Per group, because
+   *  triggers and actions are two lists and one shared flag would open a fold the
+   *  reader did not touch. Collapsed by default: the fold exists to buy back the
+   *  vertical space the prereq sentences were spending. */
+  const [gatedOpen, setGatedOpen] = React.useState<Record<string, boolean>>({});
   const searchRef = React.useRef<HTMLInputElement>(null);
 
   // Not cached module-side, unlike the vocabulary: this document counts objects that a
@@ -277,8 +338,22 @@ export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
           </div>
         ) : (
           groups.map((group) => {
-            const rows = ordered(shown.filter(e => e.group === group), query);
-            if (!rows.length) return null;
+            const all = ordered(shown.filter(e => e.group === group), query);
+            if (!all.length) return null;
+            // DS-17b — the ranking alone did not fix what it was written for, and the
+            // arithmetic says why: `trusted_query` is the 9th of 10 action rows under
+            // BOTH orders, so the same eight rows precede it and it occupies the same
+            // pixels. What pushed it past the fold was never its rank — it was the three
+            // multi-line prereq sentences above it, which the ranking moves around but
+            // does not remove. So the gated rows collapse behind one line that says how
+            // many there are. The ranking is what makes them contiguous enough to.
+            //
+            // Not while SEARCHING: a row hidden inside a fold when the person typed its
+            // name is the original defect with a lid on it.
+            const collapsible = !query;
+            const rows = collapsible ? all.filter(e => e.availability === "ready") : all;
+            const gated = collapsible ? all.filter(e => e.availability !== "ready") : [];
+            const open = gatedOpen[group] ?? false;
             return (
               <div key={group} style={{ marginTop: 4 }}>
                 <div
@@ -291,22 +366,37 @@ export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
                   {GROUP_TITLE[group]}
                 </div>
                 {rows.map(entry => (
-                  <React.Fragment key={entry.kind}>
-                    <PaletteRow entry={entry} onAdd={onAdd} />
-                    {entry.availability !== "ready" && (
-                      // The reason sits UNDER its row rather than in a tooltip: it is the
-                      // one thing a reader needs in order to act, and a hover is not a
-                      // place to put an instruction.
-                      <div
-                        className="aug-fs-xs"
-                        style={{ color: "var(--t3)", padding: "0 6px 6px", lineHeight: 1.45 }}
-                        data-testid={`palette-reason-${entry.kind}`}
-                      >
-                        {entry.reason}
-                      </div>
-                    )}
-                  </React.Fragment>
+                  <PaletteRowWithReason key={entry.kind} entry={entry} onAdd={onAdd} />
                 ))}
+                {gated.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setGatedOpen(s => ({ ...s, [group]: !open }))}
+                      aria-expanded={open}
+                      className="aug-fs-xs"
+                      data-testid={`palette-gated-toggle-${group}`}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6, width: "100%",
+                        padding: "5px 6px", marginTop: 2, marginBottom: 3,
+                        borderRadius: "var(--r2)", border: "1px dashed var(--b1)",
+                        background: "transparent", color: "var(--t3)", cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <Icon name={open ? "chevd" : "chevr"} size={11} />
+                      {/* Counted and NAMED, because the number is the whole signal: a
+                          reader who cannot see these still learns they exist, which is
+                          exactly what the flat list failed to tell anyone. */}
+                      <span>
+                        {gated.length} {gated.length === 1 ? "step needs" : "steps need"} setup
+                      </span>
+                    </button>
+                    {open && gated.map(entry => (
+                      <PaletteRowWithReason key={entry.kind} entry={entry} onAdd={onAdd} />
+                    ))}
+                  </>
+                )}
               </div>
             );
           })

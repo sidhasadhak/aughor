@@ -378,3 +378,60 @@ describe("BindingCast", () => {
     expect(cast()).not.toBeNull();
   });
 });
+
+/**
+ * DS-19 — the Trusted query step's two authoring modes.
+ *
+ * The property that matters is EXCLUSIVITY on the wire. A step carrying both a picked id
+ * and typed SQL has two answers to "what runs", and the server refuses it — so a switch
+ * that leaves the other side's keys behind produces a 422 the author cannot see the cause
+ * of, from a control that looked like it worked.
+ */
+describe("the Trusted query editor", () => {
+  const tq = (config: Record<string, unknown> = {}): AutoEffect =>
+    ({ kind: "trusted_query", config });
+
+  it("opens on PICK for a step that names a query", () => {
+    render(<EffectRow e={tq({ query_id: "tq_vetted" })} agents={[]} bots={[]}
+      onChange={vi.fn()} />);
+    expect(screen.getByPlaceholderText("trusted query id")).toHaveValue("tq_vetted");
+    expect(screen.queryByPlaceholderText("SELECT …")).not.toBeInTheDocument();
+  });
+
+  it("opens on WRITE for a step whose query was authored here", () => {
+    // `authored_query_id` is what the save path hands back, so re-opening the rail lands
+    // on the mode the author last used rather than on an id they never typed.
+    render(<EffectRow e={tq({ query_id: "tq_x", authored_query_id: "tq_x" })}
+      agents={[]} bots={[]} onChange={vi.fn()} />);
+    expect(screen.getByPlaceholderText("SELECT …")).toBeInTheDocument();
+  });
+
+  it("switching to Write SQL CLEARS the picked id, and back again clears the SQL", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <EffectRow e={tq({ query_id: "tq_vetted" })} agents={[]} bots={[]}
+        onChange={onChange} />);
+
+    fireEvent.click(screen.getByText("Write SQL"));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({ query_id: undefined }),
+    }));
+
+    rerender(<EffectRow e={tq({ sql: "SELECT 1", question: "q" })} agents={[]} bots={[]}
+      onChange={onChange} />);
+    fireEvent.click(screen.getByText("Pick a query"));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      config: expect.objectContaining({ sql: undefined, question: undefined }),
+    }));
+  });
+
+  it("says what saving will DO, and who will see it, before the save", () => {
+    // Both facts belong in front of the person while they type: finding out afterwards
+    // is how a governance step reads as an obstacle rather than a guarantee.
+    render(<EffectRow e={tq({ sql: "SELECT 1", question: "q" })} agents={[]} bots={[]}
+      onChange={vi.fn()} />);
+    expect(screen.getByText(/runs this once to verify it/i)).toBeInTheDocument();
+    expect(screen.getByText(/private to this automation until you promote it/i))
+      .toBeInTheDocument();
+  });
+});

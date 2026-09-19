@@ -341,6 +341,45 @@ def transition_trusted(tq_id: str, body: TrustedTransitionIn, request: Request):
     return {"trusted_query": row.model_dump(), "audit": audit}
 
 
+@router.post("/learning/trusted/{tq_id}/promote",
+             dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def promote_trusted(tq_id: str, request: Request, actor: str = ""):
+    """DS-19 — a query authored on an automation's node joins the connection's catalogue.
+
+    §6 item 26 (c), the user's call: an authored query is PRIVATE to its chain, with the
+    option to promote it later. This is that option, and it is deliberately one field
+    going empty rather than a row moving — there is one trusted-query store, so a
+    promotion changes who may SEE a query and touches neither its SQL, its verification
+    report, its approval stamp nor its version. Nothing to re-verify, because nothing
+    about the content changed.
+
+    Audited like every other transition on this store, and for the same reason: the
+    metrics catalog paid for an unaudited write once already.
+    """
+    from aughor.semantic.trusted_queries import get_trusted, save_trusted
+
+    tq = get_trusted(tq_id)
+    if tq is None:
+        raise HTTPException(status_code=404, detail="No such trusted query")
+    _check_trusted_conn_org(request, tq.connection_id)
+    if not tq.owner_automation:
+        # Not an error worth a 4xx — the caller wanted it in the catalogue and it is.
+        return {"trusted_query": tq.model_dump(), "promoted": False,
+                "reason": "already in this connection's catalogue"}
+
+    was = tq.owner_automation
+    tq.owner_automation = ""
+    save_trusted(tq)
+    _emit_trusted_governance({
+        "trusted_query": tq_id, "connection_id": tq.connection_id,
+        "action": "promote", "actor": actor,
+        "from": f"automation:{was}", "to": "catalogue",
+        "status": tq.status, "version": tq.version, "at": _now(),
+        "question": (tq.question or "")[:120],
+    })
+    return {"trusted_query": tq.model_dump(), "promoted": True}
+
+
 @router.delete("/learning/trusted/{tq_id}",
                dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def remove_trusted(tq_id: str, request: Request, actor: str = ""):

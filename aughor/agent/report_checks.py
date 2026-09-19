@@ -18,6 +18,23 @@ from typing import Any, Optional
 
 # Numbers as models write them: 1,234.56 · -18 · 406.08 · 67.6
 _NUM_RE = re.compile(r"[-+]?\d[\d,]*\.?\d*")
+
+
+def _clean_number(token: str) -> str:
+    """A matched token as the digits it means.
+
+    🔴 The trailing dot is why this exists (found 2026-09-19 by DS-18, which reuses
+    `check_grounding` over a synthesis step's input). `_NUM_RE` ends in `\\.?\\d*`, so a
+    figure that ends a SENTENCE is captured with the full stop attached — "903." — and
+    "903." is not in an evidence set holding "903". The guard therefore accused correctly
+    quoted figures of being fabricated, but ONLY when they fell at the end of a sentence:
+    "APAC did 903 orders." passed and "APAC did 903." did not.
+
+    That is the expensive shape of wrong — it fires on where a number sits rather than on
+    whether it is true, and this guard's own docstring notes that a false violation costs
+    a real retry. `rstrip(".")` is safe for a real decimal: "903.5" does not end in a dot.
+    """
+    return token.replace(",", "").strip("+-").rstrip(".")
 #: Sentence boundaries — the unit a violation is reported in, so the message shows the
 #: claim rather than a bare number with no context.
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
@@ -202,7 +219,7 @@ def _evidence_number_set(evidence: str) -> set[str]:
             out.add(f"{abs(value):.{dp}f}".rstrip("0").rstrip(".") or "0")
 
     for n in _NUM_RE.findall(evidence or ""):
-        clean = n.replace(",", "").strip("+-")
+        clean = _clean_number(n)
         if not clean or clean == ".":
             continue
         out.add(clean)
@@ -230,7 +247,7 @@ def _evidence_values(evidence: str, cap: int = _DERIVE_CAP) -> list[float]:
     out: list[float] = []
     seen: set[float] = set()
     for n in _NUM_RE.findall(evidence or ""):
-        clean = n.replace(",", "").strip("+-")
+        clean = _clean_number(n)
         f = _float_or_none(clean) if clean and clean != "." else None
         if f is None:
             continue
@@ -299,7 +316,7 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
         if _COMPACT_SUFFIX.search(segment):
             continue
         for n in _NUM_RE.findall(segment):
-            clean = n.replace(",", "").strip("+-")
+            clean = _clean_number(n)
             f = _float_or_none(clean) if clean else None
             if f is None or abs(f) < 10:
                 continue

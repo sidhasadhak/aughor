@@ -709,6 +709,11 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # is a megabyte no downstream step can read), and `truncated` is published rather than
     # implied so a step reading `text` can tell a whole answer from half of one.
     "mcp_call":       ("text", "truncated"),
+    # DS-18 — the write-up, plus the two facts a reader of it needs in order to trust it:
+    # whether it saw everything (`mcp_call`'s precedent — a step reading `answer` must be
+    # able to tell a whole one from half of one) and WHAT it read, so a message's receipt
+    # reaches back to the query a person approved.
+    "synthesize":     ("answer", "truncated", "source"),
 }
 
 #: DS-12 — the published keys that are LISTS, and may therefore be fanned over.
@@ -744,6 +749,11 @@ def publishes_list(kind: str, key: str) -> bool:
 #: dataflow the engine does not have.
 BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     "investigate":    ("question",),
+    # DS-18 — `data` is the FIRST input port in this plane that takes any published key
+    # rather than a named string: rows from a trusted query, a governed metric's value, an
+    # MCP tool's text, an earlier investigation's answer. `context` binds too, so a
+    # trigger's payload can say what to make of the data.
+    "synthesize":     ("data", "context"),
     "slack_post":     ("message", "thread_ts", "channel", "about"),
     # HB-3 — `about` (what the send is filed on) and `route_about` (what it routes by)
     # bind from the trigger's payload: `{"$from": "trigger.about"}` is the whole point.

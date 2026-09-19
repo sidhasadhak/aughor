@@ -121,6 +121,11 @@ ACTIONS: tuple[PaletteEntry, ...] = (
     PaletteEntry("mcp_call", "action", "Call an MCP tool",
                  "Run a read-only tool on a server this deployment allows — capped, "
                  "spanned and audited like any other outbound call", "plug", 95),
+    # DS-18 — high in the curated order, just under Investigate: it is the step that turns
+    # any other step's output into something a person can read, so it is reached for often.
+    PaletteEntry("synthesize", "action", "Synthesize",
+                 "Write up the data a previous step produced — under the context you give "
+                 "it, with every number grounded in that data", "brief", 15),
     PaletteEntry("trusted_query", "action", "Trusted query",
                  "Run a vetted query and publish its rows — the one output in this "
                  "plane a step can run once per item of", "table", 90),
@@ -241,9 +246,17 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         "mcp_call": _Prereq(mcp_servers, "No MCP servers on this deployment — add one "
                                          "under MCP servers, then this step can call its "
                                          "read-only tools."),
-        "trusted_query": _Prereq(trusted, "No trusted queries on this connection — "
-                                          "promote a verified answer first, then this "
-                                          "step can run it."),
+        # DS-19 — trusted_query has NO prereq row any more, and that follows this
+        # module's own rule rather than bending it. The rule is that a kind whose
+        # required key NAMES another object is gated on one existing, while "a kind
+        # whose required key is a VALUE a person types has nothing to be missing and is
+        # always ready". Since DS-19 this kind is both: it may name an approved query
+        # OR carry SQL authored on the node, and the second branch needs nothing to
+        # exist. Gating it would now dim a step that works — which is the failure this
+        # module was written to prevent, arrived at from the other side.
+        #
+        # `trusted()` stays defined above: the step picker still counts the catalogue to
+        # decide whether to offer a pick-a-query control beside the write-SQL one.
         # HB-3 — the promise trigger names a declared process, so it follows the module's
         # one rule: available exactly when such an object exists here. `finding_created`
         # deliberately has NO prereq row: an empty findings ledger is a young connection,

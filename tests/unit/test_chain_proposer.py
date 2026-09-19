@@ -257,10 +257,29 @@ def test_a_list_publishing_key_is_marked_as_one():
 
 
 def test_an_unavailable_kind_is_named_as_unavailable_and_not_offered_ports():
-    """The other half: with no trusted query on the connection the kind is listed with the
-    palette's reason and WITHOUT its ports, so the model is told why rather than tempted."""
+    """The other half: a kind whose object does not exist here is listed with the
+    palette's reason and WITHOUT its ports, so the model is told why rather than tempted.
+
+    ⚠️ Subject changed 2026-09-19 (DS-19). This test used to read `trusted_query`, which
+    was the clearest example of a gated kind — until that step became authorable, and a
+    kind that can carry SQL a person types needs nothing to exist before it works. It is
+    now always ready, deliberately (`palette.py`), so it is no longer an example of
+    anything this test is about. The PROPERTY is unchanged and still worth pinning, so it
+    moved to `mcp_call`, whose allowlist genuinely is its off state.
+    """
+    p = _Provider(_chain())
+    propose_chain("x", conn_id=CONN, provider=p)
+    line = next(ln for ln in p.system.splitlines() if ln.startswith("- mcp_call"))
+    assert "UNAVAILABLE" in line
+    assert "Publishes:" not in line
+
+
+def test_an_authorable_kind_is_offered_even_with_an_empty_catalogue():
+    """DS-19's other side, pinned here so the change above cannot be read as a loosening:
+    `trusted_query` is offered WITH its ports on a connection holding no trusted query at
+    all, because a person can write one on the node."""
     p = _Provider(_chain())
     propose_chain("x", conn_id=CONN, provider=p)
     line = next(ln for ln in p.system.splitlines() if ln.startswith("- trusted_query"))
-    assert "UNAVAILABLE" in line
-    assert "(a list: rows)" not in line
+    assert "UNAVAILABLE" not in line
+    assert "(a list: rows)" in line

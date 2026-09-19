@@ -3741,7 +3741,9 @@ export type EffectKind =
   | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post" | "subchain"
   | "integration_call" | "metric_value" | "trusted_query"
   // VA-9d — a read-only tool on an allowlisted foreign MCP server.
-  | "mcp_call";
+  | "mcp_call"
+  // DS-18 — write up what the step before produced, under the context authored on it.
+  | "synthesize";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -3772,6 +3774,10 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   // bindable: a `$from` on either would turn a named destination back into an
   // arbitrary one, and the save refuses it.
   mcp_call: ["server_id", "tool"],
+  // DS-18 — `data` only. `context` is optional: a step with no instruction still has an
+  // honest default ("summarise this"), and demanding a sentence before the node can be
+  // saved would make the common case the annoying one.
+  synthesize: ["data"],
 };
 
 /** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a

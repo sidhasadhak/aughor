@@ -124,6 +124,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         r"(?i)kinetic", CODE_ROOTS,
         ("web/components/FleetOverviewPanel.tsx",
          "tests/unit/test_kinetic_inbox_expiry.py",
+         # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
+         # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
+         # the server ships (`kinetic_action`) at the priority the server gives it. The
+         # fixture exists because the wave's first falsifier passed against the pre-fix
+         # sort: it had invented a shape in which both orders agreed. Renaming a kind to
+         # dodge this pattern would put it back to testing a palette nobody runs.
+         "web/components/automations/AutomationPalette.test.tsx",
          # VA-9c, same ground: every hit in these two is an identifier the API actually
          # uses — `graph.kinetic_actions` and the `KineticAction` class — never
          # reader-facing prose. Renaming the attribute is a separate migration; aliasing
@@ -350,7 +357,15 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # prove a finding's completeness warning reaches the body (2026-09-18 — it reached
          # no surface at all). A test cannot rename the component it renders, and the two
          # occurrences are the import line: the symbol and its path.
-         "web/components/InvestigationReport.statnote.test.tsx"),
+         "web/components/InvestigationReport.statnote.test.tsx",
+         # DS-17b (2026-09-19): the palette suite's fixture is the SERVED palette contract,
+         # captured verbatim — `investigate` is the effect KIND the server ships, at the
+         # priority it ships it with, beside its roster label. The fixture is the wave's
+         # falsifier and it earned its literalness the hard way: the FIRST version invented
+         # a shape in which the pre-fix and post-fix sorts happened to agree, so it passed
+         # against the defect it was written to catch. Renaming a kind here would return it
+         # to testing a palette this deployment does not serve.
+         "web/components/automations/AutomationPalette.test.tsx"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
         "must mirror the backend contract field-for-field, and the SSE→UIMessage seam is "
