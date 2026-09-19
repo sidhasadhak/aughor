@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -117,11 +117,58 @@ def test_action_trigger(trigger_id: str):
     return {"status": log.status, "http_status": log.http_status, "error": log.error}
 
 
+def recommendation_text(report: Any, rec_index: int, fallback: str) -> str:
+    """The words a person pressed Execute on, out of a stored report.
+
+    🔴 This was four lines inside the route and it read the wrong field. `actions.py` asked
+    for `report["recommended_actions"]` and each item's `text`; every stored report carries
+    `recommendations`, with items keyed `action`, `expected_impact`, `owner`, `timeline`.
+    Measured 2026-09-19 over the live history: of the reports holding recommendations, ALL
+    use `recommendations` and NONE uses `recommended_actions`.
+
+    The cost was not a blank message, which is why it survived. The caller's placeholder
+    ("Recommendation #N from investigation X") stayed, and that placeholder was dispatched
+    to the trigger **and handed to the departure gate as its text**. So HB-2 law 1 — every
+    stated magnitude must sit in the measurement this message departs on — was asked about
+    a sentence with no magnitudes in it, and passed. **A recommendation full of numbers
+    departed past a gate that never saw it.** The guard passed for the wrong reason.
+
+    A function rather than four lines in a route body, because the bug was invisible where
+    it lived: nothing could assert on it without standing up the gate, the trigger store
+    and the dispatcher. Now a test names it directly.
+
+    `recommended_actions` stays as a FALLBACK: the prompt that writes reports still names
+    it (`prompts_explore.py`), so an older or hand-built report may use it. A fallback
+    costs nothing; an assumption about history costs a silent placeholder.
+    """
+    try:
+        if isinstance(report, str):
+            import json as _json
+            report = _json.loads(report)
+        if not isinstance(report, dict):
+            return fallback
+        recs = report.get("recommendations") or report.get("recommended_actions") or []
+        if not isinstance(recs, list) or not (0 <= rec_index < len(recs)):
+            return fallback
+        item = recs[rec_index]
+        if isinstance(item, str):
+            return item.strip() or fallback
+        if isinstance(item, dict):
+            # `action` is what the model writes; `text` kept for any older shape.
+            return str(item.get("action") or item.get("text") or "").strip() or fallback
+    except Exception as exc:  # noqa: BLE001
+        # NOT a bare pass. A swallowed failure is what let the wrong field name live: the
+        # route kept answering 200 with a placeholder and nothing anywhere said so.
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "could not read the recommendation text; a placeholder departs instead",
+                 counter="actions.rec_text_unreadable")
+    return fallback
+
+
 @router.post("/investigations/{inv_id}/recommendations/{rec_index}/execute")
 def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
     """Fire a configured trigger for a specific recommendation."""
     import datetime
-    import json as _json
     from aughor.notifications.store    import get_trigger
     from aughor.notifications.models   import ActionPayload
     from aughor.notifications.executor import fire_action
@@ -137,17 +184,14 @@ def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
 
-    rec_text = f"Recommendation #{rec_index} from investigation {inv_id}"
-    try:
-        report = inv.get("report_json") or {}
-        if isinstance(report, str):
-            report = _json.loads(report)
-        recs = report.get("recommended_actions", [])
-        if isinstance(recs, list) and rec_index < len(recs):
-            item = recs[rec_index]
-            rec_text = item if isinstance(item, str) else item.get("text", rec_text)
-    except Exception:
-        pass
+    fallback_text = f"Recommendation #{rec_index} from investigation {inv_id}"
+    rec_text = recommendation_text(inv.get("report_json") or {}, rec_index, fallback_text)
+    if rec_text == fallback_text:
+        # The gate is about to inspect this string. Saying so is the difference between a
+        # receipt that records what a person sent and one that records a placeholder.
+        logger.warning("recommendation %s#%s not found in the report — dispatching a "
+                       "placeholder, and the departure gate will inspect that",
+                       inv_id, rec_index)
 
     # HB-2 — the departure gate. A person pressed Execute, so probation and the repeat law
     # do not apply; the accuracy laws do — the recommendation's numbers must be in the

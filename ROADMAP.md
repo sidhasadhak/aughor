@@ -6999,7 +6999,28 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
   stale tags (`pre-rebase-va11`, `pre/post-rebase-backup`) · ~40 squash-merged local branches.
 
 **Buildable** (flagged, unscheduled — pull forward at will):
-- 🔴 **The playbook's outcome loop has never produced a number.** Measured live 2026-09-19:
+- 🔴 **The playbook's outcome loop is COMPLETE, REACHABLE and starved — and the thing starving it is a field
+  name.** Re-measured end to end 2026-09-19, and the first four answers were all "already built": `log_outcome`
+  persists a `RecOutcome`, `update_playbook_success_rates` recomputes `wins/total` onto every entry and even
+  promotes a draft at ≥2 outcomes and ≥50%, `retriever.py` already ranks by the learned rate and renders
+  *"[no outcome data yet]"* when there is none, `POST /investigations/{id}/recommendations/{i}/outcome` serves it,
+  `web/lib/api.ts` calls it, and **two components render the affordance** — `RecommendationInbox` (the top-level
+  **Inbox** tab, fully reachable) and `ReportView`. Live content exists too: 7 of 12 real reports carry
+  recommendations, 14 in all. `data/recommendation_outcomes.json` has never existed.
+  🔴 **What was actually broken:** the neighbouring EXECUTE path read `report["recommended_actions"]` and each
+  item's `text`. Every stored report carries **`recommendations`**, keyed `action` · `expected_impact` · `owner` ·
+  `timeline` — measured over the live history, ALL use the first name and NONE the second. So `rec_text` fell
+  through to the placeholder *"Recommendation #N from investigation X"*, wrapped in a bare `except Exception:
+  pass`, and that placeholder was dispatched to the trigger **and handed to the departure gate as its `text`**.
+  🔑 **HB-2 law 1 was therefore asked about a sentence containing no magnitudes, and passed. A recommendation full
+  of numbers departed past a gate that never saw it** — the guard passing for the wrong reason, on the same day
+  three other instances of that shape were found. ✅ **Fixed 2026-09-19**: the extraction is now a named function
+  (`actions.recommendation_text`) because the bug was untestable where it lived; the older field stays a fallback;
+  a negative index no longer wraps to a different recommendation; the swallow is a counted `tolerate`; and a
+  placeholder that does depart is logged. 11 tests, four mutants killed including the original bug.
+  ⏳ **Still open, and now genuinely the question:** nobody has ever recorded an outcome, on a loop that works.
+  That is a product question — when is a person asked — not a missing mechanism.
+  **The original entry, kept because its measurement stands:** live 2026-09-19:
   **878 entries, all active, `historical_success_rate` = 0 on every one of them** — so §6 item 20's
   *"the playbook ranks its entries by success rates learned from outcomes"* is inert, and the `provenCount`
   the panel computes has never been anything but zero. `owner_role` is the same defect one column over:
