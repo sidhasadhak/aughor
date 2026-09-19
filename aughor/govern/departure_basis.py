@@ -318,6 +318,46 @@ def measurement_for_agent_alert(event, rule) -> Measurement:
         stale_note="an alert is sent in the tick that measured it")
 
 
+def measurement_for_synthesis(basis: dict) -> Measurement:
+    """DS-18a / §6 item 27 — the rows a `synthesize` step wrote its answer from.
+
+    The gap this closes, found by building the first real chain on DS-18/DS-19 (theLook,
+    2026-09-19): law 1 admits a measurement built from an analysis or an alert, and a
+    synthesis is neither, so **a step whose stated purpose is delivering a write-up
+    anywhere could never deliver one.** No authoring fixed it; only a basis could.
+
+    **Why a synthesis is entitled to one, stated rather than assumed.** Its numbers come
+    from rows the platform executed in this tick — a trusted query verified by real
+    execution when it was saved (DS-19) — and `check_grounding` has already refused any
+    answer stating a figure absent from exactly those rows. That is a stronger warrant
+    than the prose case this builder sits beside, not a weaker one.
+
+    **`rendered` stays False, deliberately.** The prose is model-written, not printed by
+    code from these cells, so law 1 re-checks every stated magnitude against `values` at
+    departure — a second, independent pass over the one `check_grounding` already made.
+    The cheaper `rendered=True` would assert grounding by construction, and construction
+    here includes a model.
+
+    **`remeasure` is None, and that is not a shortcoming.** Re-executing the query at
+    departure would produce fresh rows for prose written from the old ones; the numbers
+    would then be checked against data the sentences never described. If the data has
+    moved, the answer is wrong rather than stale, and the honest outcome is to say the
+    basis cannot be re-established — which `stale_note` does.
+    """
+    values = [float(v) for v in (basis.get("values") or [])
+              if isinstance(v, (int, float))]
+    source = str(basis.get("source") or "a query this chain ran")
+    return Measurement(
+        source=source,
+        values=values,
+        measured_at=str(basis.get("measured_at") or ""),
+        definition=str(basis.get("definition") or source),
+        rendered=False,
+        stale_note="a synthesis is written from rows read in the same tick; re-executing "
+                   "the query at departure would check new data against sentences written "
+                   "about the old, so a stale synthesis is re-run rather than re-measured")
+
+
 # ── law 6 — who is asked ────────────────────────────────────────────────────────────
 
 def owner_for_disagreement(disagreement: dict, conn_id: str) -> str:

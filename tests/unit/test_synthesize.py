@@ -234,3 +234,85 @@ def test_the_kind_is_registered_everywhere_a_step_has_to_be():
 def test_a_step_with_no_data_is_refused_at_construction():
     with pytest.raises(ValueError, match="data"):
         Effect(kind="synthesize", config={"context": "summarise"})
+
+
+# ── DS-18a (§6 item 27) · a synthesis may leave the platform ─────────────────────
+
+def test_the_answer_publishes_the_values_it_was_grounded_in(provider):
+    """Without this a synthesis-backed send is HELD by law 1 forever, whatever anyone
+    approves: `departure_basis` builds a measurement from an analysis or an alert, and a
+    synthesis is neither. Found by building the first real chain on these steps."""
+    from aughor.automations.engine import SYNTHESIS_BASIS_KEY
+
+    provider("EMEA did 1,412 orders and APAC did 903.")
+    out = dispatch_synthesize(
+        _step({"data": ROWS, "_synthesis_source": "rollup.rows"}), _auto())
+
+    basis = out.data[SYNTHESIS_BASIS_KEY]
+    assert 1412.0 in basis["values"] and 903.0 in basis["values"]
+    assert basis["measured_at"]
+    assert "rollup.rows" in basis["source"]
+
+
+def test_numeric_strings_count_because_bigquery_returns_counts_as_strings(provider):
+    """theLook hands `count(*)` back as '75'. A basis that skipped strings would hold
+    exactly the figures a person most wants to send — measured live, not supposed."""
+    provider("Outerwear sold 75 items.")
+    out = dispatch_synthesize(
+        _step({"data": [{"category": "Outerwear", "items_sold": "75",
+                         "sales": "11498.69"}]}), _auto())
+
+    from aughor.automations.engine import SYNTHESIS_BASIS_KEY
+    values = out.data[SYNTHESIS_BASIS_KEY]["values"]
+    assert 75.0 in values and 11498.69 in values
+
+
+def test_the_basis_covers_only_the_rows_the_MODEL_saw(provider):
+    """Capped input: an answer cannot cite a row it was never given, and a basis wider
+    than the evidence would ground a figure the writer could not have known."""
+    from aughor.automations.engine import SYNTHESIS_BASIS_KEY
+
+    provider("Most rows are small.")
+    rows = [{"n": i} for i in range(MAX_ROWS + 50)]
+    out = dispatch_synthesize(_step({"data": rows}), _auto())
+
+    values = out.data[SYNTHESIS_BASIS_KEY]["values"]
+    assert float(MAX_ROWS - 1) in values
+    assert float(MAX_ROWS) not in values
+
+
+def test_a_send_reading_the_synthesis_gets_that_basis_and_a_stronger_one_still_wins():
+    """Ordering matters: an analysis, a promise and a finding each carry their own
+    lineage, so a synthesis is the right basis only when nothing better is in the chain."""
+    from aughor.automations.engine import (SYNTHESIS_BASIS_KEY, departure_basis)
+    from aughor.automations.models import Effect
+
+    send = Effect(kind="slack_post", alias="send",
+                  config={"bot_id": "b", "channel": "#ops",
+                          "message": {"$from": "writeup.answer"}})
+    context = {"writeup": {"answer": "…",
+                           SYNTHESIS_BASIS_KEY: {"values": [1412.0], "source": "rows"}}}
+    assert departure_basis(send, context)["synthesis"]["values"] == [1412.0]
+
+    # A step publishing BOTH an analysis and a synthesis: the analysis is what the gate
+    # reaches for, because the dispatch site tries it first.
+    context2 = {"writeup": {"answer": "…", "investigation_id": "inv_1",
+                            SYNTHESIS_BASIS_KEY: {"values": [1412.0]}}}
+    basis = departure_basis(send, context2)
+    assert basis["analyses"] == ["inv_1"] and basis["synthesis"] is not None
+
+
+def test_the_builder_re_checks_the_prose_rather_than_trusting_the_grounding_pass():
+    """`rendered` must stay False. True would assert grounding by construction — and the
+    construction here includes a model, so law 1 would stop looking at the one class of
+    output that most needs a second pass."""
+    from aughor.govern.departure_basis import measurement_for_synthesis
+
+    m = measurement_for_synthesis({"values": [1412.0, 903.0], "source": "the rows of q",
+                                   "measured_at": "2026-09-19T12:00:00Z"})
+    assert m.rendered is False
+    assert m.values == [1412.0, 903.0]
+    # And it must say why it cannot be re-executed, or law 1 reports a stale basis with
+    # no explanation a reader can act on.
+    assert m.remeasure is None
+    assert "re-run rather than re-measured" in m.stale_note

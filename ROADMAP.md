@@ -1712,7 +1712,8 @@ approved, nothing later"*).
   **Receipt:** the LuxExperience Automations palette, where the gated kinds sit below the runnable ones and "Trusted
   query" no longer reads as absent.
 
-- ⏳ **DS-18a · a synthesis cannot leave the platform, and that is a real gap — OPEN, §6 item 27.** Found by
+- ✅ **DS-18a · a synthesis may leave the platform, grounded in the rows it read — BUILT 2026-09-19, §6 item 27
+  decided the same day.** Found by
   building the first real chain on the new steps (theLook, 2026-09-19): `trusted_query` → `synthesize` →
   `slack_post` runs green and the send is **HELD at departure**, permanently, for a reason no amount of
   authoring can fix. HB-2 law 1 requires every stated magnitude to sit in *the measurement the message
@@ -1729,6 +1730,22 @@ approved, nothing later"*).
   **Two holds were measured on the live chain, and only one of them is this gap:** law 2 wanted an approved
   definition (`units_sold` on theLook is `draft`; `revenue` is approved) — that is the user's ordinary
   metric call, not a gap. Law 1 is the gap.
+  ✅ **SHIPPED AND DEPARTED 2026-09-19.** `measurement_for_synthesis` sits beside its siblings; `synthesize`
+  publishes the values its answer was written from on an internal key (`DISAGREEMENT_KEY`'s precedent — engine
+  →gate plumbing, never a port on the canvas); the dispatch site reaches for it LAST, so an analysis, a promise
+  or a finding always wins. Three calls inside it, each the harder way on purpose: `rendered` stays **False**,
+  because True asserts grounding by construction and the construction here includes a model — law 1 therefore
+  re-checks every magnitude at departure, a second independent pass over `check_grounding`'s · `remeasure` is
+  **None**, because re-running the query would check fresh rows against sentences written about the old ones
+  (moved data makes the answer WRONG, not stale, and `stale_note` says so) · the basis covers only the rows
+  the MODEL saw, since an answer cannot cite a row it was never given.
+  🔴 **The live run taught the tests one thing:** numeric STRINGS count. BigQuery hands `count(*)` back as
+  `'75'`, so a basis walking only ints and floats would have held exactly the figures a person most wants to
+  send.
+  **Receipt, live on theLook:** `state: departed`, nine laws each with its verdict — `definition: cites metric
+  units_sold v1` · `remeasure: 6 numbers grounded in the rows of top_sellers.rows, measured moments ago` ·
+  `claims: descriptive — no associational, causal or forecast claim`. The message reached `#aughor_canvas` as
+  TheLook Analyst (ts 1789820966.806669). 24 tests, five mutants killed.
   🔑 **And one hold was the author's own wording, which is the gate working.** The `context` instruction
   written to PREVENT a misleading claim — "the product ranking is driven by unit price rather than demand" —
   was itself read as a causal claim by `check_claim_type` and held the send. Reworded to state the fact
@@ -7634,22 +7651,24 @@ the browser** · **measure the premise before building.**
     "python or SQL" was answered by separating the three threats rather than by softening the law); an expression
     language on bindings (`dataflow.py:58` refuses it for the same reason).
 
-27. ⏳ **OPEN (2026-09-19, found by building the first real chain on DS-18/DS-19) — may a synthesis leave the
-    platform on the rows it was grounded in?** `trusted_query` → `synthesize` → `slack_post` runs green and is
+27. ✅ **DECIDED 2026-09-19 (the user: *"go ahead with item 27"*) — a synthesis leaves the platform on the rows
+    it was grounded in, both clauses as recommended; BUILT and DEPARTED the same day.** Found by building the
+    first real chain on DS-18/DS-19. `trusted_query` → `synthesize` → `slack_post` runs green and is
     HELD at departure, permanently: HB-2 law 1 admits only a measurement built from an analysis or an alert, and
     a `synthesize` step publishes prose plus no measurement. So the step built to deliver a write-up "to Slack or
     practically anywhere" cannot deliver one, and no authoring fixes it.
-    **(a)** Add a `measurement_for_synthesis` builder beside its siblings in `govern/departure_basis.py` — values
+    ✅ **(a) Add a `measurement_for_synthesis` builder beside its siblings in `govern/departure_basis.py` — values
     = the numbers in the rows the answer was grounded in, source = the trusted query, `remeasure` = re-run it?
     *Recommended: yes. It is the existing one-builder-per-source-kind pattern rather than an exception, and the
     warrant is stronger than the prose case it would sit beside: `check_grounding` has already proved every
     number in the answer appears in those exact rows, and DS-19 verified the query by executing it at save.*
-    **(b)** Should that basis require the query to be PROMOTED (in the connection's catalogue) rather than
+    ✅ **(b) Should that basis require the query to be PROMOTED (in the connection's catalogue) rather than
     chain-private? *Recommended: no — scope is about who may SEE a query (§6 item 26 (c)), and a chain-private
     query is verified and approved exactly like a promoted one. Tying departure to visibility would conflate the
     two again, the distinction item 26 (c) was decided to keep apart.*
     Not part of this: law 2's approved-definition requirement, which held the same send because theLook's
-    `units_sold` is a draft. That is an ordinary metric call, not a gap.
+    `units_sold` was a draft. An ordinary metric call, and the user made it the same turn — `units_sold`
+    proposed and approved (v1), after which the gate's `definition` check reads *"cites metric units_sold v1"*.
 
 ---
 

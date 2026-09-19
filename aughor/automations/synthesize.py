@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -82,6 +83,10 @@ _SYS = (
 )
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _evidence(data: Any) -> str:
     """The data, as the text the model reads AND the text grounding checks against.
 
@@ -105,6 +110,40 @@ def _is_empty(data: Any) -> bool:
     if isinstance(data, (str, list, tuple, dict, set)):
         return len(data) == 0
     return False
+
+
+def _measured_values(data: Any) -> list[float]:
+    """Every number in the rows the answer was written from.
+
+    DS-18a (§6 item 27) — the departure gate grounds a leaving message in a measurement,
+    and for a synthesis the measurement IS its input. Walked structurally rather than
+    scraped from the serialised text, because the text carries row indices, keys and
+    formatting that are not measured quantities and would ground a claim by coincidence.
+
+    Numeric STRINGS count: BigQuery hands counts back as `'75'`, and a basis that ignored
+    them would hold exactly the figures a person most wants to send.
+    """
+    out: list[float] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, bool):
+            return
+        if isinstance(node, (int, float)):
+            out.append(float(node))
+        elif isinstance(node, str):
+            try:
+                out.append(float(node.replace(",", "").strip()))
+            except ValueError:
+                pass
+        elif isinstance(node, dict):
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, (list, tuple)):
+            for v in node:
+                walk(v)
+
+    walk(data)
+    return out
 
 
 def _capped(data: Any) -> tuple[Any, bool]:
@@ -184,11 +223,22 @@ def dispatch_synthesize(effect: "Effect", automation: "Automation") -> "EffectOu
         return EffectOutcome(kind=effect.kind, target=label, status="failed",
                              message="the model returned an empty summary")
 
+    from aughor.automations.engine import SYNTHESIS_BASIS_KEY
     return EffectOutcome(
         kind=effect.kind, target=label, status="executed",
         message=f"summarised {source or 'the bound data'}"
                 + (f" (first {MAX_ROWS} rows)" if truncated else ""),
-        data={"answer": answer, "truncated": truncated, "source": source})
+        data={"answer": answer, "truncated": truncated, "source": source,
+              # DS-18a — what an outward send carrying this answer is grounded in. The
+              # values are from `shown`, the rows the MODEL saw, not the uncapped input:
+              # an answer cannot cite a row it was never given, and a basis wider than
+              # the evidence would ground a figure the writer could not have known.
+              SYNTHESIS_BASIS_KEY: {
+                  "values": _measured_values(shown),
+                  "source": f"the rows of {source}" if source else "the rows this step read",
+                  "measured_at": _now(),
+                  "definition": f"synthesised from {source}" if source else "",
+              }})
 
 
 def _source_ref(effect: "Effect") -> str:

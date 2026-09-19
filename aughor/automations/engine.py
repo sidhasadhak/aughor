@@ -624,6 +624,13 @@ DEPARTURE_BASIS_KEY = "_departure_basis"
 #: on the bound config rather than in the signature, because nine dispatchers would
 #: otherwise grow a parameter eight of them ignore.
 SYNTHESIS_SOURCE_KEY = "_synthesis_source"
+
+#: DS-18a (§6 item 27) — the rows a `synthesize` step wrote its answer from, so an outward
+#: send carrying that answer has a measurement to be grounded in. On the published entry
+#: rather than in `PUBLISHED_KEYS`, exactly like `DISAGREEMENT_KEY`: it is engine→gate
+#: plumbing, not a port anybody binds, and a bindable key here would put a bag of raw
+#: numbers on the canvas as though it were something to send.
+SYNTHESIS_BASIS_KEY = "_synthesis_basis"
 #: HB-2 — a routed notify's securable, carried to each destination's gate. Not `about`:
 #: an `about` FILES the send on its object (HB-3), and routing one message to three groups
 #: must not file it three times.
@@ -645,6 +652,7 @@ def departure_basis(effect: Effect, context: dict) -> dict:
     analyses: list[str] = []
     trigger: dict = {}
     disagreement = None
+    synthesis = None
     seen: set[str] = set()
     for ref in effect_refs(effect):
         alias = parse_ref(ref)[0]
@@ -661,7 +669,14 @@ def departure_basis(effect: Effect, context: dict) -> dict:
             analyses.append(str(entry["investigation_id"]))
         if disagreement is None and isinstance(entry.get(DISAGREEMENT_KEY), dict):
             disagreement = entry[DISAGREEMENT_KEY]
-    return {"analyses": analyses, "trigger": trigger, "disagreement": disagreement}
+        # DS-18a — a synthesis the send reads is itself a basis: the rows it was written
+        # from, measured in this tick. FIRST one wins, like `disagreement` above, because
+        # a message binding two syntheses has two bases and no single answer to "what is
+        # this grounded in"; the gate would then pick one silently.
+        if synthesis is None and isinstance(entry.get(SYNTHESIS_BASIS_KEY), dict):
+            synthesis = entry[SYNTHESIS_BASIS_KEY]
+    return {"analyses": analyses, "trigger": trigger, "disagreement": disagreement,
+            "synthesis": synthesis}
 
 
 def _downstream_binds(alias: str, later: list[Effect]) -> bool:
@@ -731,6 +746,12 @@ def _gate_departure(effect: Effect, automation: Automation, *, kind: str,
             measurement = basis_of.measurement_for_promise(about, automation.conn_id)
         elif trigger.get("finding_id"):
             measurement = basis_of.measurement_for_finding(trigger["finding_id"], automation.conn_id)
+        elif isinstance(basis.get("synthesis"), dict):
+            # DS-18a (§6 item 27) — LAST of the four, so it never displaces a basis with a
+            # stronger provenance. An analysis, a promise and a finding each carry their own
+            # lineage; a synthesis carries the rows it read, which is the right answer only
+            # when nothing better is in the chain.
+            measurement = basis_of.measurement_for_synthesis(basis["synthesis"])
         else:
             measurement = None
         return gate_departure(
