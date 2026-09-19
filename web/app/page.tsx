@@ -366,14 +366,17 @@ function Sidebar({
     if (id === "recents" && counts?.runningRuns) return { value: counts.runningRuns, waiting: false, noun: "running" };
     return null;
   };
-  // Collapsed (the toggle at the foot, or ⌘\), the rail is a column of icons: every row keeps its
+  // Collapsed (the toggle at the head, or ⌘\), the rail is a column of icons: every row keeps its
   // aria-label, and a hover names it — Base UI waits 600ms for the first label, then opens neighbours at once.
   const [collapsed, toggleCollapsed] = useNavCollapsed();
   const navRow = (key: string, row: {
     icon: string; label: string; name: string; tip: string;
     active?: boolean; expanded?: boolean; onClick: () => void; trailing?: React.ReactNode;
+    // An icon with no label has nothing to read, so its tooltip is not optional the way a
+    // labelled row's is — that one only needs one once the rail is collapsed.
+    alwaysTip?: boolean;
   }) => (
-    <Tooltip key={key} disabled={!collapsed}>
+    <Tooltip key={key} disabled={!collapsed && !row.alwaysTip}>
       <TooltipTrigger
         render={
           <button
@@ -415,6 +418,20 @@ function Sidebar({
   return (
     <TooltipProvider>
     <nav className="aug-sidebar">
+      {/* The rail's own control sits at its top, as an icon. It is the one row whose
+          meaning is the rail itself, so a word for it is a word about the furniture —
+          and the tooltip still names the action and its shortcut. */}
+      <div className="aug-nav-head">
+        {navRow("nav-toggle", {
+          icon: "panel",
+          label: "",
+          name: collapsed ? "Expand navigation" : "Collapse navigation",
+          tip: `${collapsed ? "Expand" : "Collapse"} navigation · ⌘\\`,
+          expanded: !collapsed,
+          alwaysTip: true,
+          onClick: toggleCollapsed,
+        })}
+      </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         <div className="aug-nav-section">
           {NAV_PRIMARY.map(renderItem)}
@@ -435,15 +452,6 @@ function Sidebar({
       </div>
       <div className="aug-nav-foot">
         {renderItem({ id: "settings", icon: "settings", label: "Settings" })}
-        {navRow("nav-toggle", {
-          icon: "panel",
-          label: "Collapse",
-          name: collapsed ? "Expand navigation" : "Collapse navigation",
-          tip: "Expand navigation · ⌘\\",
-          expanded: !collapsed,
-          onClick: toggleCollapsed,
-          trailing: <span className="aug-nav-kbd" aria-hidden>⌘\</span>,
-        })}
         {/* Demo posture is stated, not implied. The hosted demo names a real company, so
             a visitor must be able to see at a glance that the operational figures are
             synthetic — and "Local" was simply wrong there: the backend is a recording. */}

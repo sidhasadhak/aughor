@@ -297,6 +297,14 @@ a:hover { color: var(--blue4); }
   color: var(--t3);
 }
 .aug-nav-badge-waiting { background: var(--amb1); color: var(--amb4); }
+/* The rail's own toggle, at its head. Left-aligned with every other icon rather than
+   pushed to the edge: the rail is a column of icons and the control that governs it
+   belongs in that column. (An earlier `justify-content: flex-end` here did nothing —
+   `.aug-nav-item` is full-width, so there was no free space to push into.) */
+.aug-nav-head { display: flex; padding: 8px 0 8px; border-bottom: 1px solid var(--b0); }
+/* Icon only: this is the one row whose meaning IS the rail, so a word for it is a
+   word about the furniture. The button keeps its aria-label and its tooltip. */
+.aug-nav-head .aug-nav-label { display: none; }
 .aug-nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-top: 1px solid var(--b1); }
 .aug-nav-kbd { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
 
