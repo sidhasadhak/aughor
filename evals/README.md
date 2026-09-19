@@ -40,6 +40,32 @@ uv run python evals/run.py
 uv run python evals/run.py --fail-on-regression 0.05
 ```
 
+## Decision-corpus yield (`decision_yield_eval.py`)
+
+The only eval here that scores the RECORD rather than an answer: of the closed-set choices
+the platform made while answering, how many could a selection model ever train on? Arm A is
+the corpus as the pre-A1 code wrote it, arm B is what the instrumented code writes.
+
+**It makes no model call and opens no warehouse** — it reads a decisions store and counts, so
+it is free to run and safe to run often. Arm A's three columns are structural zeros (the old
+code had no parameter to carry `conn_id`, the definition chooser's response model had one
+field, and the only writer of `outcome` was `tool_loop`'s inline "did it raise"), so arm A is
+derived rather than re-run; paying a model to rediscover a zero is what the protocol below
+exists to prevent.
+
+```bash
+uv run python evals/decision_yield_eval.py --db data/decisions.db \
+    --output evals/decision_yield_results.json
+```
+
+Read a live store through a snapshot, not in place — `sqlite3 "file:data/decisions.db?mode=ro"
+".backup /tmp/snap.db"`. A plain `cp` loses rows still in the WAL, and opening the live file
+migrates its schema underneath a running API.
+
+Status 2026-09-19 (pre-A1 baseline, 40 rows): `converse.tool` 40 rows, 0 attributable, 0 with
+a probability, outcomes `{ok: 40}`; `ask.route` and `framing.definition` silent. Falsifier
+FIRES, as it must on rows the old code wrote — that is the number A1 has to beat.
+
 ## P7 model bake-off (`model_bakeoff.py`)
 
 Compare candidate `coder` models head-to-head, scored deterministically (no LLM

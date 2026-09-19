@@ -117,7 +117,12 @@ def test_a_single_tool_roster_is_not_a_choice_and_records_nothing():
 def test_the_route_classifier_records_the_final_route_not_the_raw_pick(monkeypatch):
     """The confidence floor re-routes a low-confidence 'direct' to 'investigate'; the
     record must carry the route the platform actually took — that is what a reflex
-    would have to reproduce."""
+    would have to reproduce.
+
+    And the probability must describe THAT label. The model said 0.4 about `direct`; once
+    the floor moved the route, carrying 0.4 across would file a number about one answer
+    against a different one. An overridden route is therefore `rule` with no probability —
+    the pick was the platform's, not the model's."""
     _wipe()
     import aughor.agent.nodes as nodes
     from aughor.agent.state import RouteDecision
@@ -131,9 +136,13 @@ def test_the_route_classifier_records_the_final_route_not_the_raw_pick(monkeypat
     assert effective == "investigate"
 
     [row] = decisions.list_decisions(site="ask.route")
-    assert row["chosen"] == "investigate" and row["confidence"] == 0.4
+    assert row["chosen"] == "investigate"
     assert row["options"] == ["direct", "investigate", "explore", "final_text"]
     assert row["label"] == row["options"].index("investigate")
+    # The model's 0.4 was about "direct". The floor chose this label, so the row says so
+    # and carries no probability — rather than filing 0.4 against an answer nobody gave it.
+    assert row["source"] == "rule"
+    assert row["confidence"] == 0.0
 
 
 def test_the_definition_chooser_records_the_listing_it_showed(monkeypatch):

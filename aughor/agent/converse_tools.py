@@ -813,6 +813,7 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
                        canvas_id=canvas_id, user_question=question, agent=agent),
         max_steps=max_steps,
         on_step=on_step,
+        conn_id=connection_id or "",
     )
 
 
