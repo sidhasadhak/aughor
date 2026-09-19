@@ -937,7 +937,10 @@ export interface Metric {
   // Governance lifecycle (B-8) — backend-owned; optional so editor forms needn't set them.
   status?: string;
   version?: number;
-  /** "*" for a metric that applies to every connection, else the connection's id. */
+  /** "*" for a metric that applies to every connection, else the connection's id.
+   *  SEND IT ON SAVE. The field existed here and the server's request model had none,
+   *  so every write fell back to "*" — and editing theLook's metric republished its
+   *  SQL, over `inventory_items`, to connections with no such table. */
   connection?: string;
   proposed_by?: string | null;
   proposed_at?: string | null;
@@ -1007,7 +1010,7 @@ export interface CatalogueMetric {
   label: string;
   /** "defined" | "industry" | "explorer" — where this metric came from. */
   source: string;
-  /** "defined" | "proposed" | "needs_binding" | "needs_formula". */
+  /** "defined" | "proposed" | "needs_binding" | "needs_formula" | "formula_rejected". */
   state: string;
   sql: string;
   unit: string;
@@ -1021,6 +1024,8 @@ export interface CatalogueMetric {
   missing_roles: string[];
   sane_range: { min?: number; max?: number; basis?: string; sources?: string[] } | null;
   why_it_matters: string;
+  /** `formula_rejected` only — the audit's own words for why the formula was dropped. */
+  reason: string;
   status: string;
   version: number;
   owner: string;

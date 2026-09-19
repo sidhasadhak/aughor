@@ -33,8 +33,13 @@ class SlackBotBody(BaseModel):
 
 @router.get("/slack-bots")
 def list_slack_bots():
-    """Every bot, tokens masked."""
-    return {"bots": [b.to_safe_dict() for b in store.list_bots()]}
+    """The active workspace's bots, tokens masked.
+
+    A bot bound to no connection is org-level and stays listed everywhere — it answers
+    about whatever the caller asks, so no workspace owns it yet."""
+    from aughor.metastore import scoped_to_workspace
+    return {"bots": [b.to_safe_dict()
+                     for b in scoped_to_workspace(store.list_bots(), key="connection_id")]}
 
 
 @router.get("/slack-bots/manifest")

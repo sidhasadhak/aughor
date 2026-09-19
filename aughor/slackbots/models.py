@@ -51,6 +51,9 @@ class SlackBot(BaseModel):
     # ── the binding ──
     agent_id: str = ""          # the UserAgent whose instructions/docs/packs answer
     connection_id: str = ""     # the warehouse it answers over ("" = the ask's own)
+    #: The workspace that owns this bot. "" = UNOWNED — an org-level bot, listed in
+    #: every workspace because no workspace claimed it.
+    workspace_id: str = ""
     #: VA-9b — whose connection this is. "" = the org's, which is every bot created
     #: before this field and is the single-tenant behaviour byte-for-byte.
     #:

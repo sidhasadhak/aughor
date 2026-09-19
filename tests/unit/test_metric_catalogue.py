@@ -62,7 +62,11 @@ def wired(monkeypatch):
             _PackMetric("net_interest_margin", "Net interest margin",
                         "SUM({{role.financial_period.x}})", required=["financial_period"]),
         ]),
-        "bound": {"order": {"table": "order_items", "column": "margin"}},
+        # The shape the store actually writes: `columns` maps ATTRIBUTE -> column. The
+        # singular `column` this used to carry was enough for `_bound_roles`, which reads
+        # only the role keys — but materialise now resolves the formula through this map,
+        # and a stub that does not look like the real record cannot catch a resolver bug.
+        "bound": {"order": {"table": "order_items", "columns": {"margin": "margin"}}},
         "profile": _Profile([_NSM("Return Rate", "order_items.returned_at, order_items.id",
                                   "COUNT(returned_at)/COUNT(id)", "returns erode margin")]),
     }
@@ -169,7 +173,12 @@ class TestMaterialise:
         assert saved["connection"] == "c1", "a copy must not overwrite the global definition"
         assert saved["status"] == "draft", "never approved — law 2 holds KPI sends on that"
         assert saved["version"] == 0 and not saved.get("approved_by")
-        assert saved["sql"] == "SUM({{role.order.margin}})"
+        # RESOLVED, not copied. This asserted `SUM({{role.order.margin}})` — the pack's
+        # formula stored verbatim — which is a governed definition nobody can run. The
+        # copy exists to be edited and executed, so it carries the column this connection
+        # bound. (Bare, not quoted: a double-quoted identifier is a STRING on BigQuery.)
+        assert saved["sql"] == "SUM(margin)"
+        assert "{{role" not in saved["sql"]
         assert m.name == "gross_margin_rate"
 
     def test_it_refuses_an_unbindable_recipe(self, wired, monkeypatch):

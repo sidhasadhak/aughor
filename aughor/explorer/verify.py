@@ -134,7 +134,20 @@ def is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ran
 # join is NOT inflated (the F2 case). Such a SUM is exempt from the chasm DROP.
 _WEIGHT_FACTOR_RE = re.compile(r"sum\s*\([^)]*\b(weight|share|alloc\w*|attribution)\b", re.IGNORECASE)
 # Salient numbers a narration asserts — currency, comma-grouped counts, percentages.
-_CLAIM_NUM_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s?%")
+# A percentage is salient however it is SPELLED. The narrator writes "33.1 percent" as
+# often as "33.1%", and a regex that only knew the symbol scored those claims 0.0 —
+# which silently disabled the numeric-grounding pass in `_align_narrator_findings`,
+# so a finding fell through to positional binding and a card shipped a claim about
+# its neighbour's rows. Bare integers stay OUT: "the last 90 days" is not a claim.
+_CLAIM_NUM_RE = re.compile(
+    r"\$\s?\d[\d,]*(?:\.\d+)?"
+    r"|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b"
+    # `\b` belongs to the SPELLED form only: after "%" the next char is usually a space,
+    # and there is no word boundary between two non-word characters — a trailing `\b`
+    # outside the group silently stops "33.1%" from matching at all.
+    r"|\b\d+(?:\.\d+)?\s?(?:%|percent(?:age)?(?:\s*points?)?\b)",
+    re.IGNORECASE,
+)
 
 
 def _safe_float(x):
@@ -449,7 +462,7 @@ def _salient_number_pairs(text: str) -> list:
     counts, percentages. The token is kept for human-readable messages."""
     out = []
     for tok in _CLAIM_NUM_RE.findall(text or ""):
-        v = _safe_float(re.sub(r"[\$,%\s]", "", tok))
+        v = _safe_float(re.sub(r"[\$,%\s]|percent(?:age)?(?:\s*points?)?", "", tok, flags=re.IGNORECASE))
         if v is not None:
             out.append((tok, v))
     return out

@@ -50,10 +50,12 @@ def list_briefing_subscriptions(conn_id: Optional[str] = None):
     from aughor.briefing.store import list_subscriptions
     from aughor.security.authz import org_visible_conn_ids
     org_conns = org_visible_conn_ids()  # DATA-06: only this org's subscriptions
+    from aughor.metastore import scoped_to_workspace
     subs = [
         s for s in list_subscriptions(conn_id)
         if org_conns is None or s.conn_id in org_conns
     ]
+    subs = scoped_to_workspace(subs, key="conn_id")  # …then to the active workspace
     return {"subscriptions": [s.to_dict() for s in subs]}
 
 

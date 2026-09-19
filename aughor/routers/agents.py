@@ -208,9 +208,11 @@ class UserAgentFromTemplate(BaseModel):
 
 @router.get("/agents/custom")
 def list_user_agents():
-    """All user-defined agents (the persona roster, newest first)."""
+    """The active workspace's user-defined agents (the persona roster, newest first)."""
     from aughor.custom_agents import list_agents
-    return [a.model_dump() for a in list_agents()]
+    from aughor.metastore import scoped_to_workspace
+    return [a.model_dump()
+            for a in scoped_to_workspace(list_agents(), key="connection_id")]
 
 
 @router.get("/agents/templates")

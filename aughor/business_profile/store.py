@@ -46,7 +46,8 @@ def _key(connection_id: str, schema_name: Optional[str] = None) -> str:
 def save(connection_id: str, profile: BusinessProfile, *,
          schema_name: Optional[str] = None, model: Optional[str] = None,
          generated_at: Optional[str] = None,
-         recipes: Optional[list] = None) -> None:
+         recipes: Optional[list] = None,
+         rejections: Optional[dict] = None) -> None:
     payload = {
         "connection_id": connection_id,
         "schema_name": schema_name,   # WHICH schema this profile describes (matched on read)
@@ -56,6 +57,13 @@ def save(connection_id: str, profile: BusinessProfile, *,
         # Per-metric computation recipes (curated industry KB + LLM fallback) — the
         # SQL-accuracy knowledge the explorer injects into Phase-8 generation.
         "recipes": recipes or [],
+        # {metric name: why its value_sql was rejected}. Beside the profile rather than
+        # inside it, for the same reason `recipes` is: this is OUR verdict about the
+        # model's answer, not part of the answer. `BusinessProfile` IS the generation
+        # schema (`response_model=BusinessProfile`), so a field added there would be
+        # described to the model on every inference — paying prompt tokens to ask it for
+        # something only the audit can know.
+        "rejections": rejections or {},
     }
     _family().put(_key(connection_id, schema_name), json.loads(json.dumps(payload, default=str)))
 

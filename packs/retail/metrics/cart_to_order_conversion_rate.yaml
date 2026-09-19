@@ -1,0 +1,30 @@
+name: cart_to_order_conversion_rate
+title: Cart-to-order conversion rate
+aliases: [cart conversion rate, checkout conversion rate, cart to order rate]
+unit: ratio
+definition: The share of carts that became an order.
+formula: >
+  SUM(CASE WHEN {{role.cart.converted_order_id}} IS NOT NULL THEN 1.0 ELSE 0.0 END)
+  / NULLIF(COUNT(*), 0)
+grain: >
+  Carts created in a period; by channel, device or week by filtering the same carts. The denominator
+  is carts CREATED in the window, not carts converted in it — bucketing by the order's date instead
+  drops every abandoned cart from the denominator and reports a rate near 1.
+binds:
+  required: [cart]
+anti_patterns:
+  - "Bucketing by the ORDER's timestamp: an abandoned cart has no order, so it disappears from the denominator entirely and the rate approaches 100%."
+  - "Counting sessions or visits as carts: a visitor who never added an item never had a cart, and folding them in measures site conversion, which is a different and much lower number."
+  - "Reading a recent window as final: a cart created near the end of the window may still convert, so the newest bucket always reads low."
+sane_range:
+  min: 0.157
+  max: 0.45
+  basis: >
+    The complement of documented cart ABANDONMENT. Baymard Institute's running meta-study of 50
+    published studies reports an average abandonment rate of 70.22% — a conversion rate of 29.78% —
+    with the individual studies spanning 55.00% (Forrester Research, 2010) to 84.27% (SaleCycle,
+    2020). The band is that published spread inverted: 1 − 0.8427 = 0.157 and 1 − 0.55 = 0.45.
+    Population and period: online shopping carts across the e-commerce studies Baymard lists, 2006
+    to 2026. A rate outside it is far more likely a denominator that is not carts — sessions folded
+    in below, orders bucketed by their own date above — than a real funnel.
+  sources: [baymard-cart-abandonment-2026]

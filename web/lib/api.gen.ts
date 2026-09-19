@@ -298,7 +298,7 @@ export interface paths {
         };
         /**
          * List User Agents
-         * @description All user-defined agents (the persona roster, newest first).
+         * @description The active workspace's user-defined agents (the persona roster, newest first).
          */
         get: operations["list_user_agents_agents_custom_get"];
         put?: never;
@@ -7534,6 +7534,11 @@ export interface paths {
          *     `metric.delete` is declared HIGH, so this now asks for approval like every other
          *     destructive verb, and the deletion lands in the same `metric.governance` trail as the
          *     transitions that preceded it.
+         *
+         *     `connection` narrows it to ONE connection's definition. Omitted, the old behaviour
+         *     stands and every connection's metric of that name goes — which is what you want when
+         *     retiring a name outright, and emphatically not what you want when one warehouse
+         *     redefines its own `revenue`.
          */
         delete: operations["remove_metric_metrics__name__delete"];
         options?: never;
@@ -10925,7 +10930,10 @@ export interface paths {
         };
         /**
          * List Slack Bots
-         * @description Every bot, tokens masked.
+         * @description The active workspace's bots, tokens masked.
+         *
+         *     A bot bound to no connection is org-level and stays listed everywhere — it answers
+         *     about whatever the caller asks, so no workspace owns it yet.
          */
         get: operations["list_slack_bots_slack_bots_get"];
         put?: never;
@@ -13343,6 +13351,11 @@ export interface components {
             benchmark_source?: string | null;
             /** Caveats */
             caveats?: string | null;
+            /**
+             * Connection
+             * @default *
+             */
+            connection: string;
             /** Critical Threshold */
             critical_threshold?: number | null;
             /**
@@ -14406,6 +14419,11 @@ export interface components {
             action: string;
             /** Actor */
             actor: string;
+            /**
+             * Connection
+             * @default *
+             */
+            connection: string;
         };
         /** TrustedQueryEdit */
         TrustedQueryEdit: {
@@ -28701,6 +28719,7 @@ export interface operations {
         parameters: {
             query?: {
                 sql?: string | null;
+                connection?: string | null;
                 connection_id?: string | null;
             };
             header?: never;

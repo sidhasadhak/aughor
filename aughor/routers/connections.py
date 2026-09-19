@@ -70,6 +70,16 @@ def get_connections(request: Request):
     from aughor.security.authz import get_principal
     _p = get_principal(request)
     conns = list_connections(org_id=_p.org_id if _p else None)
+    # Sub-tenant gate. This list was the widest hole in the workspace boundary: every
+    # other surface that shows connections (catalog tree, canvases, monitors) filtered
+    # by workspace, while the registry list itself returned the whole org — so a
+    # workspace bound to one connection could still enumerate all nine. The workspace
+    # is ambient (X-Aughor-Workspace), so no caller has to remember to ask; `None`
+    # keeps the unscoped behaviour for background work and unaware clients.
+    from aughor.metastore import accessible_catalog_ids
+    _allowed = accessible_catalog_ids(None)
+    if _allowed is not None:
+        conns = [c for c in conns if c.get("id") in _allowed]
     from aughor.db.connection import connection_traits
     for c in conns:
         s = get_connection_settings(c.get("id", ""))

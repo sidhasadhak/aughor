@@ -59,6 +59,9 @@ class UserAgent(BaseModel):
     #: named tools, not the server. A wildcard here would re-create the blanket grant
     #: that target-bound standing grants were built to avoid.
     tool_grants: list[str] = Field(default_factory=list)
+    #: The workspace that owns this agent. "" = UNOWNED — every agent written before
+    #: workspaces owned anything, and still visible wherever its connection is.
+    workspace_id: str = ""
     owner: str = ""                  # org/user identity when identity is enforced
     enabled: bool = True
     # Latest golden-suite evaluation ({passed, total, at, per_question, config_rev}); None =

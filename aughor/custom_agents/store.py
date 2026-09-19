@@ -75,6 +75,18 @@ _MIGRATIONS = [
     Migration(6, "tool_grants (actions this agent may PROPOSE, by id)",
               lambda c: add_column_if_missing(c, "user_agents", "tool_grants",
                                               "TEXT NOT NULL DEFAULT '[]'")),
+    # The workspace that OWNS this agent. Numbered off the LIVE store, not off the list
+    # above: `PRAGMA user_version` on the deployed `data/agents.db` returns 6, so 7 is
+    # the next migration that will actually run. A number at or below the deployed
+    # version is skipped forever and no hermetic test can catch it.
+    #
+    # Default '' means UNOWNED, and unowned is not a placeholder to be filled in later —
+    # it is the honest state of every agent written before workspaces owned anything.
+    # Such an agent stays visible wherever its connection is, which is exactly where it
+    # was visible yesterday.
+    Migration(7, "workspace_id (the sub-tenant that owns this agent)",
+              lambda c: add_column_if_missing(c, "user_agents", "workspace_id",
+                                              "TEXT NOT NULL DEFAULT ''")),
 ]
 
 _legacy_checked = False
@@ -134,6 +146,7 @@ def _row_to_agent(row: sqlite3.Row) -> UserAgent:
         pack_ids=json.loads(row["pack_ids"] or "[]"),
         tool_grants=(json.loads(row["tool_grants"] or "[]")
                      if "tool_grants" in row.keys() else []),
+        workspace_id=(row["workspace_id"] if "workspace_id" in row.keys() else ""),
         owner=row["owner"], enabled=bool(row["enabled"]),
         last_eval=json.loads(row["last_eval"]) if row["last_eval"] else None,
         created_at=row["created_at"], updated_at=row["updated_at"],
@@ -253,25 +266,33 @@ def create_agent(name: str, *, instructions: str = "", purpose: str = "",
                  connection_id: str = "",
                  schema_scope: str = "", doc_ids: Optional[list[str]] = None,
                  pack_ids: Optional[list[str]] = None,
-                 tool_grants: Optional[list[str]] = None, owner: str = "") -> UserAgent:
+                 tool_grants: Optional[list[str]] = None, owner: str = "",
+                 workspace_id: Optional[str] = None) -> UserAgent:
+    if workspace_id is None:
+        # Born into the workspace the caller is looking at. Ambient rather than a
+        # required argument: every existing caller keeps working, and an agent created
+        # outside any workspace (a pack install, a script) is honestly unowned.
+        from aughor.workspace.context import current_workspace_id
+        workspace_id = current_workspace_id() or ""
     agent = UserAgent(
         id=f"ua_{uuid.uuid4().hex[:12]}", name=name.strip(),
         instructions=instructions, purpose=purpose, connection_id=connection_id,
         schema_scope=schema_scope, doc_ids=list(doc_ids or []),
         pack_ids=list(pack_ids or []), tool_grants=list(tool_grants or []),
-        owner=owner,
+        owner=owner, workspace_id=workspace_id,
         enabled=True, created_at=_now(), updated_at=_now(),
     )
     with _connect() as conn:
         conn.execute(
             "INSERT INTO user_agents (id, name, instructions, purpose, connection_id,"
-            " schema_scope, doc_ids, pack_ids, tool_grants, owner, enabled,"
+            " schema_scope, doc_ids, pack_ids, tool_grants, owner, workspace_id, enabled,"
             " created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (agent.id, agent.name, agent.instructions, agent.purpose,
              agent.connection_id, agent.schema_scope, json.dumps(agent.doc_ids),
              json.dumps(agent.pack_ids), json.dumps(agent.tool_grants),
-             agent.owner, int(agent.enabled), agent.created_at, agent.updated_at),
+             agent.owner, agent.workspace_id, int(agent.enabled),
+             agent.created_at, agent.updated_at),
         )
     from aughor.custom_agents.revisions import record_revision
     record_revision(agent, author=owner)   # revision 1 — the configuration it was born with
