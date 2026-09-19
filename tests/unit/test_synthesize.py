@@ -40,14 +40,40 @@ def _step(config: dict, alias: str = "write") -> Effect:
 
 
 class _Provider:
-    """Scripted answers, one per call, so a repair attempt can be given a second one."""
+    """Scripted answers, one per call, so a repair attempt can be given a second one.
+
+    🔴 This double MIRRORS `LLMProvider.complete`'s real signature, including the required
+    `response_model`, and it does so because the first version did not: it accepted `**kw`,
+    so the module could call `complete()` with no response model, pass every test, and fail
+    on the first real tick with *"missing 1 required positional argument"*. A stub more
+    permissive than the thing it stands for tests the stub.
+
+    The signature is asserted against the real one below, so a change upstream fails here
+    rather than in production.
+    """
 
     def __init__(self, *answers: str):
         self.answers, self.calls = list(answers), []
 
-    def complete(self, *, system, user, temperature=0.0, **kw):
+    def complete(self, *, system, user, response_model, temperature=0.1):
         self.calls.append(user)
-        return self.answers[min(len(self.calls) - 1, len(self.answers) - 1)]
+        return response_model(
+            answer=self.answers[min(len(self.calls) - 1, len(self.answers) - 1)])
+
+
+def test_the_double_matches_the_real_provider_signature():
+    """The guard for the defect above: a fake that drifts from `LLMProvider.complete` stops
+    testing the call this module actually makes."""
+    import inspect
+
+    from aughor.llm.provider import LLMProvider
+
+    real = inspect.signature(LLMProvider.complete)
+    fake = inspect.signature(_Provider.complete)
+    assert set(real.parameters) - {"self"} == set(fake.parameters) - {"self"}
+    # And the one that bit: it is REQUIRED on the real thing, so it must be required here.
+    assert real.parameters["response_model"].default is inspect.Parameter.empty
+    assert fake.parameters["response_model"].default is inspect.Parameter.empty
 
 
 @pytest.fixture

@@ -38,6 +38,8 @@ import json
 import logging
 from typing import Any, TYPE_CHECKING
 
+from pydantic import BaseModel, Field
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from aughor.automations.models import Automation, Effect, EffectOutcome
 
@@ -51,6 +53,19 @@ MAX_ROWS = 200
 #: What the step does when its author said nothing. Not a silent default of the useful
 #: kind — it is written down, and it is what the node's placeholder promises.
 DEFAULT_CONTEXT = "Summarise what this data shows, in a few sentences."
+
+class Summary(BaseModel):
+    """The one field this step publishes.
+
+    Typed rather than free text because `LLMProvider.complete` takes a `response_model` —
+    every call on this seam is structured, and discovering that from a live run is how this
+    module learned it (the first cut called `complete()` without one and failed at the
+    first real tick, while a test double that accepted `**kw` stayed green). The double
+    now mirrors the real signature.
+    """
+
+    answer: str = Field(description="The summary itself, in plain sentences.")
+
 
 _SYS = (
     "You write a short, factual summary of data a colleague has already computed.\n"
@@ -129,7 +144,8 @@ def dispatch_synthesize(effect: "Effect", automation: "Automation") -> "EffectOu
 
     try:
         provider = get_provider("narrator")
-        answer = str(provider.complete(system=_SYS, user=user, temperature=0.0) or "").strip()
+        answer = str(provider.complete(system=_SYS, user=user, response_model=Summary,
+                                       temperature=0.0).answer or "").strip()
     except Exception as exc:  # noqa: BLE001 — a model outage is a step failure, not a crash
         logger.warning("synthesize: provider failed: %s", exc)
         return EffectOutcome(kind=effect.kind, target=label, status="failed",
@@ -147,7 +163,7 @@ def dispatch_synthesize(effect: "Effect", automation: "Automation") -> "EffectOu
                 system=_SYS,
                 user=f"{user}\n\nYOUR PREVIOUS ANSWER WAS REJECTED:\n{told}\n\n"
                      f"Rewrite it using only numbers that appear in the data above.",
-                temperature=0.0) or "").strip()
+                response_model=Summary, temperature=0.0).answer or "").strip()
         except Exception as exc:  # noqa: BLE001
             logger.warning("synthesize: repair failed: %s", exc)
             return EffectOutcome(kind=effect.kind, target=label, status="failed",

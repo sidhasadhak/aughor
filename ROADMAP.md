@@ -1622,9 +1622,18 @@ approved, nothing later"*).
   instance of this shape in one session — see DS-17b's falsifier.
   **Receipt:** 18 tests + 1 regression on the grounding guard; six mutants killed (no-grounding-check ·
   publish-anyway-after-repair · empty-reaches-the-model · zero-counts-as-empty · cap-not-published ·
-  trailing-dot-unfixed). ⏳ **The live receipt is OWED with DS-19's** — a chain whose trusted query runs,
-  whose `synthesize` writes it up, and whose Slack message arrives through HB-2's departure gate carrying
-  the query id it was grounded on. It needs the API restarted onto this code.
+  trailing-dot-unfixed).
+  ✅ **LIVE RECEIPT TAKEN 2026-09-19**, on Olist's DuckDB (`baef6c3e`, `main.superstore`, 9,994 rows), one
+  chain, real model: `trusted_query` executed 4 rows and `synthesize` wrote *"Standard Class carries the most
+  orders with 5968. This is more than the 1945 orders for Second Class, 1538 orders for First Class, and 543
+  orders for Same Day."* — every one of the four figures is a value in the rows, `source: rollup.rows`,
+  `truncated: false`.
+  🔴 **And the live run is what found the last defect, which no test could have.** The first attempt failed with
+  *"LLMProvider.complete() missing 1 required positional argument: 'response_model'"* — every call on that seam
+  is STRUCTURED, and this module was passing plain text. It passed 18 tests because the test double accepted
+  `**kw`: **a stub more permissive than the thing it stands for tests the stub.** Fixed with a typed `Summary`
+  model, and the double now mirrors the real signature with a test asserting the two match and that
+  `response_model` is required on both — mutating it back to `**kw` fails.
 - **DS-19 · SQL a person authored — private to the chain, promotable later — ✅ BUILT 2026-09-19.** The Trusted query step gains a
   "write SQL" authoring mode: question + SQL typed on the node. On SAVE — not at 09:00 — it runs through
   `trusted_verify` exactly as the door does; verification is not optional and an edit resets the stamp, which
@@ -6773,8 +6782,11 @@ ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE c
         enough: trusted_query is 9th of 10 under both orders, so the gated rows collapse behind a
         counted line; receipt taken live), DS-19 (authored SQL verified on SAVE, private to its chain,
         the predicted validator churn did not arrive), DS-18 (`synthesize`, its falsifier held, and it
-        found a real defect in `check_grounding`). ⏳ The live receipt for DS-19 + DS-18 is OWED: it
-        needs the API restarted onto this code.
+        found a real defect in `check_grounding`). ✅ LIVE RECEIPT TAKEN on `baef6c3e`: broken SQL
+        REFUSED at save (422), valid SQL stored as a `query_id` with no sql at rest, the minted row
+        invisible to the catalogue and self-approved under the identity-off posture, and the chain's
+        synthesis grounded in all four of its query's figures. The live run found the last defect —
+        a test double looser than `LLMProvider.complete`.
         Measured the same day: `trusted_query` ships at palette weight 90, below the fold and dimmed
         (0 trusted queries on every connection but `workspace`); it names a `query_id`, never SQL; and
         nothing carries rows to a write-up (`investigate` binds only `question`, and this plane has no
