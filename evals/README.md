@@ -122,6 +122,47 @@ worth stating rather than discovering later: `accept` does not propagate, so a c
 answer leaves no per-pick signal; and the negative class therefore only ever arrives from
 failures, which on a mostly-correct system makes this corpus heavily imbalanced.
 
+## Judgment battery (`judgment_battery_eval.py`)
+
+JD-4, Arc JD's instrument: **top-1**, **expected calibration error over ten bins**, and the
+**shuffled-context control** — every question paired with the WRONG state, on the rule that a
+judgment must beat that control to count. Makes no model call by default and opens no warehouse.
+
+The control arm takes a judge as a PARAMETER (`ask(context, options) -> chosen`) rather than
+importing one, so the default run stays free and a test can exercise the scoring with a stub. A
+judge is supplied only by a caller that has decided to spend.
+
+```
+uv run python evals/judgment_battery_eval.py \
+    --db data/decisions.db --output evals/judgment_battery_results.json
+```
+
+🔴 It redirects `AUGHOR_STATE_DIR` to a temp dir before importing `aughor`. Pointing
+`AUGHOR_DECISIONS_DB` alone is not enough — every other store resolves relative to the state
+dir, and the platform's own guard fired on this file's first run with a server live: *"two
+processes mapped into one SQLite WAL index is the precondition for the SIGBUS in walFindFrame
+that has killed this app repeatedly — a read-only connection counts."* Its siblings in this
+directory have the same shape and the same exposure.
+
+Status 2026-09-20 (live store, 58 rows, copied out read-only): `converse.tool` 58 rows;
+`ask.route` and `framing.definition` silent. **Three of the five readings are UNAVAILABLE, and
+that is the finding.** top-1 — `outcome` is `ok` on all 58, the constant A1 was built to break,
+still constant because no decision has been recorded since A1's code reached this machine. ECE —
+no row carries a probability, and the cause differs per site: `converse.tool` never produces one
+(the tool-calling path returns a function call, `logprobs` appears nowhere in the tree),
+`ask.route` records one but has no traffic, `framing.definition` has one behind a flag whose ON
+arm has never run. The shuffled control — blocked on FIDELITY, not cost: one replay is a single
+call at `llm/provider.complete_with_tools` and both arms over 58 rows is ~116 calls / ~0.47M
+tokens, but 44 of 58 rows are mid-loop with a tool-result history persisted nowhere, and even
+the 14 first-turn rows never recorded their system prompt. A replay would ask a different
+question than the one logged.
+
+What IS measured: **`choice_prior` = 44.8%** (always guessing `run_sql`), against a 2.6% uniform
+baseline on the 38-entry menu. That is the floor a control must beat — an arm agreeing with the
+real choice at ~45% has reproduced the prior, not read the state. Reporting it before any
+control runs is what stops the control's number being read as a pass. Run **INCONCLUSIVE**; the
+falsifier is not evaluable until the corpus records the prompt its decisions were made on.
+
 ## P7 model bake-off (`model_bakeoff.py`)
 
 Compare candidate `coder` models head-to-head, scored deterministically (no LLM
