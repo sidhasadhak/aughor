@@ -122,10 +122,35 @@ def industry_kbs() -> tuple[dict, ...]:
     return knowledge_index().industries
 
 
+#: A playbook row seeded from a package's own `playbooks/*.yaml` (the IP-3 anatomy) rather than
+#: from a KB entry: ``pack:<pack_id>/<play_id>``. The prefix keeps the two namespaces apart,
+#: because a play id is only unique inside the package that declares it.
+PACK_PLAY_PREFIX = "pack:"
+
+
+def pack_play_source(pack_id: str, play_id: str) -> str:
+    """The `source_kb_id` a seeded anatomy play carries. One writer for the format, so the
+    reader below and the seeder cannot drift apart."""
+    return f"{PACK_PLAY_PREFIX}{pack_id}/{play_id}"
+
+
 def entry_industry(entry_id: str | None) -> str:
     """The industry that owns a KB entry — the industry of the package carrying it — or ""
-    for an entry every industry reads (a function's, a base's, or an unknown id)."""
+    for an entry every industry reads (a function's, a base's, or an unknown id).
+
+    An anatomy play (``pack:<pack_id>/<play_id>``) is owned by its package the same way. This
+    branch is load-bearing, not cosmetic: "" means EVERY industry may read the row
+    (`industry_choice.readable_industries`), so without it an airline play would be offered on
+    a retail connection. A package that is not in the index resolves to "" by the contract
+    above — which is why `playbook.builder` seeds plays only from packages the index carries,
+    making that case unreachable rather than merely unlikely."""
     if not entry_id:
+        return ""
+    if entry_id.startswith(PACK_PLAY_PREFIX):
+        pack_id = entry_id[len(PACK_PLAY_PREFIX):].split("/", 1)[0]
+        for package in knowledge_index().packages:
+            if package.pack_id == pack_id:
+                return package.industry
         return ""
     return knowledge_index().entry_industry.get(entry_id, "")
 
