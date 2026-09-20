@@ -14,6 +14,7 @@ import sys
 import pytest
 
 from aughor.db import home, paths
+from aughor.db.sqlite_util import resolve_db_path
 
 
 @pytest.fixture
@@ -102,3 +103,74 @@ class TestPlatformDefaults:
         monkeypatch.delenv(home.HOME_ENV, raising=False)
         monkeypatch.setattr(sys, "platform", "linux")
         assert home.default_home() != paths.Path.home() / "aughor"
+
+
+class TestTheFourConventionsAreReconciled:
+    """Store paths were computed four ways — `state_dir()`, CWD-relative `Path("data")`,
+    checkout-anchored `Path(__file__).parents[2]/"data"`, and some with no override — and the
+    CWD-relative and checkout-anchored halves DISAGREE about which `data/` a process reads.
+    `rehome` reconciles them at one seam, and only once a migration has happened."""
+
+    CHECKOUT = paths.Path("/somewhere/aughor")
+
+    def test_nothing_moves_before_the_marker(self, clean_env):
+        """The whole fleet's behaviour today: each convention keeps its own answer."""
+        assert resolve_db_path("X_STATE", paths.Path("data")) == paths.Path("data")
+        assert resolve_db_path("X_CWD", paths.Path("data/monitors.db")) == paths.Path("data/monitors.db")
+        anchored = self.CHECKOUT / "data" / "system.db"
+        assert resolve_db_path("X_ANCHORED", anchored) == anchored
+
+    def test_all_three_conventions_land_in_one_place_after(self, clean_env):
+        (clean_env / home.MARKER).write_text("migrated")
+        state = clean_env / home.STATE_SUBDIR
+        assert resolve_db_path("X_STATE", paths.Path("data")) == state
+        assert resolve_db_path("X_CWD", paths.Path("data/monitors.db")) == state / "monitors.db"
+        assert resolve_db_path("X_ANCHORED", self.CHECKOUT / "data" / "system.db") == state / "system.db"
+
+    def test_a_nested_generated_path_keeps_its_shape(self, clean_env):
+        (clean_env / home.MARKER).write_text("migrated")
+        got = resolve_db_path("X_NESTED", self.CHECKOUT / "data" / "uploads" / "default" / "f.csv")
+        assert got == clean_env / home.STATE_SUBDIR / "uploads" / "default" / "f.csv"
+
+    def test_an_env_override_still_beats_a_migrated_home(self, clean_env, monkeypatch):
+        (clean_env / home.MARKER).write_text("migrated")
+        monkeypatch.setenv("X_EXPLICIT", "/mnt/durable/system.db")
+        assert resolve_db_path("X_EXPLICIT", paths.Path("data/system.db")) == paths.Path("/mnt/durable/system.db")
+
+    def test_a_path_outside_data_is_never_rehomed(self, clean_env):
+        (clean_env / home.MARKER).write_text("migrated")
+        assert resolve_db_path("X_OUT", paths.Path("/var/lib/thing.db")) == paths.Path("/var/lib/thing.db")
+
+
+class TestAuthoredContentStaysInTheCheckout:
+    """`data/` is MIXED — 102 of its files are git-tracked, and `.gitignore` is a per-file
+    denylist whose own comments keep `ontology_overrides/` and `context_graph/` tracked because
+    they are the reviewable governed artifacts. Versioned content does not follow the state."""
+
+    CHECKOUT = paths.Path("/somewhere/aughor")
+
+    @pytest.mark.parametrize("entry", ["glossary.yaml", "global_rules.md", "events.yaml", "seed.py"])
+    def test_an_authored_file_does_not_move(self, clean_env, entry):
+        (clean_env / home.MARKER).write_text("migrated")
+        default = self.CHECKOUT / "data" / entry
+        assert resolve_db_path(f"X_{entry}", default) == default
+
+    @pytest.mark.parametrize("entry", ["context_graph", "ontology_column_config",
+                                       "ontology_overrides", "demo_packs"])
+    def test_an_authored_directory_does_not_move(self, clean_env, entry):
+        (clean_env / home.MARKER).write_text("migrated")
+        default = self.CHECKOUT / "data" / entry / "inner.json"
+        assert resolve_db_path(f"X_{entry}", default) == default
+
+    def test_the_authored_list_matches_what_git_actually_tracks(self):
+        """The population is measured, not hand-listed beside its expectation. If somebody adds
+        a tracked file under `data/`, this fails rather than silently rehoming it."""
+        import subprocess
+        repo = paths.Path(__file__).resolve().parents[2]
+        out = subprocess.run(["git", "ls-files", "data/"], cwd=repo,
+                             capture_output=True, text=True, check=True).stdout.split()
+        tracked = {paths.Path(line).parts[1] for line in out if len(paths.Path(line).parts) > 1}
+        assert tracked, "probe failed: git ls-files data/ returned nothing"
+        assert tracked == set(home.AUTHORED_ENTRIES), {
+            "tracked but would be rehomed": sorted(tracked - set(home.AUTHORED_ENTRIES)),
+            "listed but no longer tracked": sorted(set(home.AUTHORED_ENTRIES) - tracked)}

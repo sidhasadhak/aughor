@@ -22,7 +22,6 @@ Deliberately NOT a global `data/` switch: authored files keep their own resolver
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from aughor.db.sqlite_util import resolve_db_path
@@ -51,8 +50,6 @@ def state_dir() -> Path:
     holds 1.4 GB under `data/`; a default that relocated on a directory's mere existence would
     make its connections, history and receipts invisible rather than missing.
     """
-    explicit = resolve_db_path(STATE_DIR_ENV, Path("data"))
-    if os.environ.get(STATE_DIR_ENV):
-        return explicit
-    from aughor.db import home as _home
-    return _home.state_home() if _home.in_use() else explicit
+    # The precedence itself lives in `resolve_db_path`, which every other store also goes
+    # through — one decision, not two that could drift.
+    return resolve_db_path(STATE_DIR_ENV, Path("data"))

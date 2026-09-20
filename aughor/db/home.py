@@ -46,6 +46,55 @@ MARKER = ".aughor-home"
 STATE_SUBDIR = "state"
 
 
+#: Top-level entries under `data/` that are AUTHORED, not generated — versioned content that
+#: stays in the checkout when state leaves. Measured, not guessed: `git ls-files data/` lists
+#: exactly these 13, and `.gitignore` is a per-file denylist whose own comments say
+#: `ontology_overrides/` and `context_graph/` stay tracked because they are the reviewable
+#: governed artifacts.
+#:
+#: ⚠️ `metrics.json` and `ontology_overrides/` are BOTH tracked and written at runtime — shipped
+#: seed content and live instance data in one path. The roadmap's split does not anticipate
+#: that, and the honest answer is an overlay (seed in the checkout, instance data in the home,
+#: read home-over-checkout) rather than picking a side. Until that exists they stay put, which
+#: is unchanged behaviour, and this list is where that decision is recorded.
+AUTHORED_ENTRIES = frozenset({
+    "answer_sweep.jsonl",
+    "context_graph",
+    "demo_packs",
+    "events.yaml",
+    "global_rules.md",
+    "glossary.yaml",
+    "metrics.json",
+    "ontology_column_config",
+    "ontology_overrides",
+    "quality_sweep.jsonl",
+    "quality_sweep_findings.md",
+    "quality_sweep_report.md",
+    "seed.py",
+})
+
+
+def rehome(default: Path) -> Path:
+    """Where ``default`` lives once the home is in use — or ``default`` itself.
+
+    The one place the four path conventions are reconciled. A store's default is either
+    ``data`` itself, CWD-relative (``data/monitors.db``) or checkout-anchored
+    (``/…/aughor/data/system.db``); all three name the same logical location, so the part
+    AFTER the last ``data`` component is what moves. Authored entries never move.
+
+    Returns ``default`` unchanged when the home is not in use, which is every install until
+    somebody migrates — so this function is a no-op on the whole fleet today."""
+    if not in_use():
+        return default
+    parts = default.parts
+    if "data" not in parts:
+        return default
+    tail = parts[len(parts) - 1 - parts[::-1].index("data") + 1:]
+    if tail and tail[0] in AUTHORED_ENTRIES:
+        return default
+    return state_home().joinpath(*tail)
+
+
 def default_home() -> Path:
     """The per-user home for this platform, ignoring any override.
 
