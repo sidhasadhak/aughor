@@ -15,6 +15,7 @@ Two shapes:
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
@@ -48,8 +49,14 @@ def _fell_back(path, exc: BaseException, op: str) -> None:
                  f"ledger unavailable — {op} served the legacy FILE {path}, which is a "
                  f"stale one-time import; a write here is orphaned (marker already set)",
                  counter=f"json_store.ledger_fallback.{op}")
-    except Exception:
-        pass          # a diagnostic must never be the thing that raises
+    except Exception:                                              # noqa: BLE001
+        # A diagnostic must never be the thing that raises — but it must not be SILENT
+        # either, which is the whole point of the function it is guarding. `tolerate` is
+        # what every other swallow here routes through, so it cannot guard itself; the
+        # stdlib logger is the one thing below it that has no such dependency.
+        logging.getLogger(__name__).warning(
+            "json_store: the ledger-fallback diagnostic itself failed for %s on %s",
+            op, path, exc_info=True)
 
 
 class KeyedJsonStore:
