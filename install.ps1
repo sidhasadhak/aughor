@@ -62,11 +62,66 @@ function Find-Uv {
 # A clone when this computer has Git, so the checkout can `git pull` later; otherwise the same
 # code as a snapshot, so a fresh Windows (which has no Git) needs nothing installed first.
 # Throws when neither way works.
+# IN-3 — a preflight, so an unreachable network is named in a second rather than discovered
+# three retries into the first slow step. Reachability only, short timeout, and it NEVER
+# blocks: a probe that cannot run must not stop an install that would have worked.
+function Test-Reachable([string]$HostName) {
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
+        $null = Invoke-WebRequest -UseBasicParsing -Uri "https://$HostName" -Method Head -TimeoutSec 8 -ErrorAction Stop
+    } catch {
+        Write-Status ''
+        Write-Status "Warning: $HostName did not answer. The next step downloads from it."
+        Write-Status 'If this is a corporate network, a proxy or its certificate is the usual reason.'
+        if (Test-CertificateFailure $_) { Show-ProxyHint }
+    }
+}
+
+# IN-3 — one attempt is not an answer on a hostile network. Three tries, doubling from a
+# second, matching install.sh's `fetch`. Its twin must not be the platform where a dropped
+# connection still ends the install.
+function Invoke-WithRetries([scriptblock]$Operation, [string]$What, [string]$Log) {
+    $wait = 1
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            & $Operation
+            return
+        } catch {
+            if (Test-CertificateFailure $_) { throw }     # not transient: fail now, with the hint
+            if ($attempt -eq 3) { throw }
+            "attempt $attempt for $What failed; retrying in ${wait}s" | Out-File -FilePath $Log -Append
+            Start-Sleep -Seconds $wait
+            $wait = $wait * 2
+        }
+    }
+}
+
+# IN-3 — a TLS-inspecting proxy re-signs the connection, and .NET's message names the
+# certificate rather than the cause. Retrying it three times buys a slower identical failure.
+function Test-CertificateFailure($ErrorRecord) {
+    $text = "$ErrorRecord"
+    return $text -match 'certificate|SSL|secure channel|trust relationship'
+}
+
+function Show-ProxyHint {
+    Write-Status 'This looks like a TLS-inspecting proxy re-signing the connection.'
+    Write-Status "Point PowerShell, Python and Node at your organisation's CA bundle, then run this again:"
+    Write-Status '  $env:SSL_CERT_FILE = "C:\path\to\ca-bundle.pem"'
+    Write-Status '  $env:NODE_EXTRA_CA_CERTS = "C:\path\to\ca-bundle.pem"'
+}
+
 function Get-Aughor([string]$Target, [string]$Log) {
     if (Get-Command git -ErrorAction SilentlyContinue) {
         & git clone --quiet $RepoUrl $Target *> $Log
         if ($LASTEXITCODE -eq 0) { return }
         # A failed clone's leftovers: the caller refused a folder with anything else in it.
+        Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
+        # IN-3 — a throttled GitHub fails a full clone long before a blobless one, which
+        # fetches far less to reach the same working tree. Then the snapshot path below, so a
+        # hostile network degrades rather than stops.
+        "full clone failed; trying a blobless clone" | Out-File -FilePath $Log -Append
+        & git clone --quiet --filter=blob:none $RepoUrl $Target *>> $Log
+        if ($LASTEXITCODE -eq 0) { return }
         Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
     }
     $parent = Split-Path -Parent $Target
@@ -80,7 +135,12 @@ function Get-Aughor([string]$Target, [string]$Log) {
         # the download time; nothing here needs it.
         $ProgressPreference = 'SilentlyContinue'
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
-        Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl -OutFile $zip -ErrorAction Stop
+        # A partial file from a cut-off attempt must never reach Expand-Archive: it would
+        # surface as a corrupt archive rather than as a network problem.
+        Invoke-WithRetries -What $ArchiveUrl -Log $Log -Operation {
+            Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+            Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl -OutFile $zip -ErrorAction Stop
+        }
         Expand-Archive -LiteralPath $zip -DestinationPath $staging -Force -ErrorAction Stop
         $unpacked = Get-ChildItem -LiteralPath $staging -Directory |
             Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'pyproject.toml') } |
@@ -120,12 +180,14 @@ function Install-Aughor([string[]]$Arguments) {
                 Write-Failure "$root already exists, and it isn't Aughor." 'Move it out of the way, or pick another folder by setting AUGHOR_DIR, then run this again.'
                 $script:ExitCode = 1; return
             }
+            Test-Reachable 'github.com'
             Write-Status "Downloading Aughor into $root..."
             $downloadLog = Join-Path $env:TEMP 'aughor-download.log'
             try {
                 Get-Aughor $root $downloadLog
             } catch {
                 Add-Content -LiteralPath $downloadLog -Value $_.Exception.Message -ErrorAction SilentlyContinue
+                if (Test-CertificateFailure $_) { Show-ProxyHint }
                 Write-Failure 'Could not download Aughor.' "Check your internet connection, then run this again. Log: $downloadLog"
                 $script:ExitCode = 1; return
             }

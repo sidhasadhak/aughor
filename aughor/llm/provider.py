@@ -129,6 +129,15 @@ _CONFIG_PATH = Path(os.getenv("AUGHOR_LLM_CONFIG_PATH", "").strip()
                     or Path(__file__).parent.parent.parent / "data" / "llm_config.json")
 
 
+def config_path() -> Path:
+    """Where the runtime LLM config is read from — the public answer to a question callers
+    outside this module legitimately have. `aughor doctor` needs it to report whether a backend
+    is chosen WITHOUT going through `resolve_binding`, which would open `org_llm.db` and make a
+    diagnostic a second writer on `data/`. Resolved from the module global on CALL, so a test
+    that repoints `_CONFIG_PATH` is honoured."""
+    return _CONFIG_PATH
+
+
 def _flag(name: str, default: str = "") -> bool:
     return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
 

@@ -44,6 +44,7 @@ import sys
 import tarfile
 import tempfile
 import threading
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -52,7 +53,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import IO, Callable, Iterator, Optional, Sequence, Union
+from typing import Any, Callable, IO, Iterator, Optional, Sequence, Union
 
 #: The Python a NEW `.venv` is created with — the version CI gates every pull request on.
 #: An existing `.venv` keeps whatever version it has. Mirrored in install.sh and install.ps1.
@@ -876,13 +877,81 @@ def extract_archive(archive: Path, dest: Path) -> None:
             tf.extractall(dest, members=members)
 
 
+#: IN-3 — a download that fails once on a hostile network is not a download that cannot work.
+#: Three attempts, doubling from one second. Bounded deliberately: an install that hangs for
+#: minutes reads as broken, and the SHA-256 check downstream means a truncated retry cannot
+#: pass as a success.
+_NET_ATTEMPTS = 3
+_NET_BACKOFF_SECONDS = 1.0
+
+#: What a corporate TLS-inspecting proxy looks like from here. Python's own message names the
+#: certificate, never the cause, so a person sees a verification failure with no next action.
+_PROXY_HINT = (
+    "This looks like a TLS-inspecting proxy re-signing the connection. Point Python and Node "
+    "at your organisation's CA bundle and run this again:\n"
+    "  export SSL_CERT_FILE=/path/to/ca-bundle.pem\n"
+    "  export NODE_EXTRA_CA_CERTS=/path/to/ca-bundle.pem"
+)
+
+
+def _is_certificate_error(exc: BaseException) -> bool:
+    """Whether this failure is a certificate one, however it is wrapped.
+
+    `urlopen` raises `URLError` with the `SSLCertVerificationError` as its `reason`, so the
+    obvious `isinstance` on the outer exception answers False on exactly the case that needs
+    the hint."""
+    seen: BaseException = exc
+    for _ in range(4):                      # bounded: a wrapped chain, not a graph walk
+        if isinstance(seen, ssl.SSLCertVerificationError):
+            return True
+        if "CERTIFICATE_VERIFY_FAILED" in str(seen):
+            return True
+        # `URLError.reason` is an exception when something wrapped one and a plain STRING
+        # otherwise ("connection reset"). Following it blindly called `.__cause__` on a str
+        # and raised AttributeError — an error handler that fails on the ordinary error.
+        nxt = getattr(seen, "reason", None)
+        if not isinstance(nxt, BaseException):
+            nxt = seen.__cause__
+        if not isinstance(nxt, BaseException) or nxt is seen:
+            return False
+        seen = nxt
+    return False
+
+
+def _with_retries(what: str, op: Callable[[], Any]) -> Any:
+    """Run `op`, retrying a transient network failure. A certificate error is NOT transient —
+    it fails immediately, with the proxy hint, rather than making a person wait for three
+    identical failures."""
+    delay = _NET_BACKOFF_SECONDS
+    for attempt in range(1, _NET_ATTEMPTS + 1):
+        try:
+            return op()
+        except (urllib.error.URLError, OSError) as exc:
+            if _is_certificate_error(exc):
+                raise InstallError(f"{what} failed: the server's certificate could not be "
+                                   f"verified.", hint=_PROXY_HINT) from exc
+            if attempt == _NET_ATTEMPTS:
+                raise InstallError(
+                    f"{what} failed after {_NET_ATTEMPTS} attempts: {exc}",
+                    hint="Check the network, then run this again. Nothing was installed.",
+                ) from exc
+            time.sleep(delay)
+            delay *= 2
+
+
 def _fetch(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "aughor-installer"})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return response.read()
+    def once() -> bytes:
+        request = urllib.request.Request(url, headers={"User-Agent": "aughor-installer"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read()
+    return _with_retries(f"downloading {url}", once)
 
 
 def _download(url: str, dest: Path, progress: Callable[[int, int], None]) -> None:
+    return _with_retries(f"downloading {url}", lambda: _download_once(url, dest, progress))
+
+
+def _download_once(url: str, dest: Path, progress: Callable[[int, int], None]) -> None:
     request = urllib.request.Request(url, headers={"User-Agent": "aughor-installer"})
     with urllib.request.urlopen(request, timeout=60) as response, open(dest, "wb") as out:
         total = int(response.headers.get("Content-Length") or 0)

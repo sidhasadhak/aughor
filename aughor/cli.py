@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from aughor import netprobe as _netprobe
+
 import click
 import duckdb
 from rich import box
@@ -126,53 +128,11 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _port_in_use(port: int) -> bool:
-    """True when something already LISTENS on the port.
-
-    Best-effort by binding 127.0.0.1 — the interface uvicorn/next bind by default in dev
-    — and the bind must be attempted the way the SERVER attempts it, with
-    ``SO_REUSEADDR`` (``uvicorn/config.py`` sets it; so does anything that expects to be
-    restartable). Without that flag this probe was strictly stricter than the process it
-    was protecting, and it refused a port the server could have taken.
-
-    That mattered on exactly the path people use most. When a TCP connection is closed by
-    the side that owns the listening address, that address sits in TIME_WAIT for around a
-    minute. A plain bind fails there with EADDRINUSE while nothing is listening at all —
-    so ``./start.sh --stop && ./start.sh`` reported "Port 8000 is already in use" and
-    quit, and the fix was to wait and try again, which reads as flakiness rather than as
-    a rule.
-
-    The old behaviour told on itself: the refusal printed no "owned by …" clause, because
-    :func:`_port_owner` correctly filters to ``-sTCP:LISTEN`` and found nobody. Two checks
-    disagreed and the pessimistic one won silently. With ``SO_REUSEADDR`` they agree —
-    "busy" now means a live listener, which is the only thing that should stop a start.
-
-    ``SO_REUSEADDR`` does NOT let this bind over an active listener on BSD/macOS (that
-    would need ``SO_REUSEPORT``), so the refusal still fires when it should.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            s.bind(("127.0.0.1", port))
-        except OSError:
-            return True
-    return False
-
-
-def _port_owner(port: int) -> str:
-    """Best-effort 'command (pid N)' description of the port's listener via lsof.
-    Empty string when lsof is unavailable or the owner can't be determined."""
-    try:
-        out = subprocess.run(
-            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
-            capture_output=True, text=True, timeout=5,
-        ).stdout.strip().splitlines()
-    except Exception:
-        return ""  # lsof missing / not permitted — the port-busy verdict still stands
-    if len(out) < 2:
-        return ""
-    parts = out[1].split()  # header then: COMMAND PID USER ...
-    return f"{parts[0]} (pid {parts[1]})" if len(parts) >= 2 else ""
+#: IN-1 — both live in `aughor.netprobe` now, because `doctor` needs the same two answers and
+#: a private name imported across modules is what the kernel-contract ratchet forbids. The
+#: aliases keep this module's own call sites reading as they did.
+_port_in_use = _netprobe.port_in_use
+_port_owner = _netprobe.port_owner
 
 
 def _aughor_answers(port: int) -> bool:
@@ -412,6 +372,131 @@ def _supervise(procs: list[subprocess.Popen]) -> subprocess.Popen:
 
 def _raise_sigterm(signum, frame):  # pragma: no cover — signal plumbing
     raise KeyboardInterrupt
+
+
+_DOCTOR_MARK = {"ok": "[green]ok[/green]", "warn": "[yellow]warn[/yellow]",
+                "fail": "[red]FAIL[/red]", "unknown": "[yellow]?[/yellow]"}
+
+
+@cli.command()
+@click.option("--api-port", default=8000, show_default=True, type=int, help="Port the API uses")
+@click.option("--web-port", default=3000, show_default=True, type=int, help="Port the web app uses")
+def doctor(api_port: int, web_port: int) -> None:
+    """Check this install: uv, Python, Node, both ports, the state dir, PATH and the model.
+
+    Answers WITHOUT a model call and WITHOUT a warehouse query, and writes nothing — including
+    no store. Exit code 0 when everything is ok, 1 when any check failed, 2 when something
+    could not be determined.
+    """
+    from aughor import doctor as _doctor
+    checks = _doctor.run(_repo_root(), api_port=api_port, web_port=web_port)
+    width = max(len(c.name) for c in checks)
+    for c in checks:
+        console.print(f"  {_DOCTOR_MARK[c.status]:<18} [bold]{c.name:<{width}}[/bold]  {c.found}")
+        if not c.ok:
+            if c.reason:
+                console.print(f"     {' ' * width}   [dim]{c.reason}[/dim]", soft_wrap=True)
+            if c.fix:
+                console.print(f"     {' ' * width}   [cyan]{c.fix}[/cyan]", soft_wrap=True)
+    verdict = _doctor.worst(checks)
+    if verdict == _doctor.OK:
+        console.print("\n[green]Everything checks out.[/green]")
+    else:
+        console.print(f"\n{sum(1 for c in checks if not c.ok)} of {len(checks)} need attention.")
+    raise SystemExit({"ok": 0, "warn": 0, "fail": 1, "unknown": 2}[verdict])
+
+
+@cli.command()
+@click.option("--ref", default=None, help="Update to this ref instead of the tracked upstream.")
+@click.option("--skip-build", is_flag=True, help="Fetch and fast-forward only; skip re-running the install steps.")
+def update(ref: Optional[str], skip_build: bool) -> None:
+    """Fetch and fast-forward this checkout, then re-run the install steps.
+
+    A diverged checkout is REFUSED and named, never reset. Local changes outside `data/` are
+    refused too; `data/` itself is state the app writes, so changes there never block.
+    """
+    from aughor import update as _update
+
+    root = _repo_root()
+    result = _update.update(root, ref=ref)
+
+    if result.status == "refused":
+        console.print(f"[yellow]Refused.[/yellow] {result.reason}")
+        for line in result.blocking[:10]:
+            console.print(f"    [dim]{line}[/dim]")
+        raise SystemExit(1)
+    if result.status == "failed":
+        console.print(f"[red]Failed.[/red] {result.reason}")
+        raise SystemExit(1)
+    if result.status == "noop":
+        console.print(f"[green]Nothing to do.[/green] {result.reason} ({result.before[:8]})")
+        return
+
+    console.print(f"[green]Updated.[/green] {result.before[:8]} → {result.after[:8]} "
+                  f"({result.reason})")
+    if skip_build:
+        console.print("[dim]Install steps skipped (--skip-build). Run ./install.sh to finish.[/dim]")
+        return
+
+    # The code moved, so its dependencies and its built frontend are now the OLD ones. This is
+    # the half that makes `update` mean "this install is new", rather than "git moved".
+    from aughor.installer import Steps, prepare_web, sync_python
+    steps = Steps()
+    try:
+        sync_python(root, steps)
+        prepare_web(root, steps)
+    except Exception as exc:                       # noqa: BLE001 — reported with its next action
+        console.print(f"[red]The code updated, but the install steps failed:[/red] {exc}")
+        console.print("[cyan]Run ./install.sh to finish.[/cyan]")
+        raise SystemExit(1) from None
+    console.print("[green]Dependencies and web build are up to date.[/green]")
+
+
+@cli.command("migrate-state")
+@click.option("--from", "source", default=None, type=click.Path(path_type=Path),
+              help="The data/ directory to migrate (default: this checkout's).")
+@click.option("--yes", is_flag=True, help="Do it, rather than showing what would move.")
+def migrate_state(source: Optional[Path], yes: bool) -> None:
+    """Move generated state out of the checkout into the per-user data home.
+
+    Copies, verifies, and only then records the move. NOTHING is deleted — the originals stay
+    exactly where they are until you remove them yourself. Stop the API first: this refuses to
+    run beside a live writer.
+    """
+    from aughor.db import home as _home
+    from aughor.db import migrate as _migrate
+
+    src = Path(source) if source else _repo_root() / "data"
+    if _home.in_use():
+        console.print(f"[green]Already migrated.[/green] State lives in {_home.state_home()}.")
+        return
+    if not src.is_dir():
+        console.print(f"[red]Nothing at {src} to migrate.[/red]")
+        raise SystemExit(1)
+
+    moving, staying = _migrate.sources(src)
+    console.print(f"[bold]From[/bold] {src}\n[bold]To[/bold]   {_home.state_home()}\n")
+    console.print(f"  {len(moving)} entries would move, {len(staying)} authored entries stay:")
+    for entry in moving[:12]:
+        console.print(f"    [cyan]move[/cyan]  {entry.name}")
+    if len(moving) > 12:
+        console.print(f"    [dim]… and {len(moving) - 12} more[/dim]")
+    for name in staying:
+        console.print(f"    [dim]stay  {name}  (tracked in the repo)[/dim]")
+    if not yes:
+        console.print("\n[yellow]Nothing done.[/yellow] Re-run with --yes once the API is stopped.")
+        return
+
+    out = _migrate.migrate(src)
+    if out.status == "refused":
+        console.print(f"\n[red]Refused.[/red] {out.reason}")
+        raise SystemExit(1)
+    if out.status == "failed":
+        console.print(f"\n[red]Failed.[/red] {out.reason}")
+        for problem in out.problems[:10]:
+            console.print(f"  [red]•[/red] {problem}")
+        raise SystemExit(1)
+    console.print(f"\n[green]Done.[/green] {out.reason}")
 
 
 @cli.command()

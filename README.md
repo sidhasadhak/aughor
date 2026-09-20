@@ -57,6 +57,75 @@ later in **Settings → Organization** or with `aughor industries`.
 
 Next time, run `aughor`.
 
+### What it installs, and where
+
+Nothing needs to be installed first — not even Git — and nothing asks for admin.
+
+| | |
+|---|---|
+| **The checkout** | `~/aughor` (`AUGHOR_DIR` to change it). A `git clone` when this computer has a working Git, otherwise the same code as a downloaded snapshot. |
+| **uv** | Only if missing, from `astral.sh`. |
+| **Python 3.11** | Through `uv python install`, into uv's own store. |
+| **Node.js** | This computer's, if it is 20.9 or newer. Otherwise a private Node 24 into `.aughor/node/`, verified against nodejs.org's published SHA-256 before anything is unpacked. |
+| **The `aughor` command** | Into uv's command folder, which is already on `PATH`. No shell startup file is edited. |
+| **Logs** | `.aughor/logs/` inside the checkout. A failed step prints the end of its log and what to do next. |
+
+**Disk.** About 2 GB after a full install — measured on macOS: ~1 GB for the Python
+environment and ~1 GB for the web app's packages, plus the checkout and a web build. Re-running
+the installer only redoes what changed.
+
+**Platforms.** macOS and Linux through `install.sh`; Windows through `install.ps1`, which also
+runs from Command Prompt. CI performs a real install on all three whenever the installer or
+what it installs changes. WSL2 is expected to behave as Linux does, but nobody has measured
+it, so this page does not claim it.
+
+### Running it again, updating, uninstalling
+
+```bash
+aughor doctor           # uv, Python, Node, both ports, the state dir, PATH, the model
+aughor update           # fetch and fast-forward, then re-run the install steps
+```
+
+`aughor update` refuses rather than guesses: a checkout with local commits the remote does not
+have is **never** rewound, and local edits outside `data/` stop it with the files named.
+Changes inside `data/` never block it — that is state the app writes. A snapshot install has
+no remote to update from, so it tells you to re-run the installer, which leaves your data alone.
+
+To **uninstall**, delete the checkout (`~/aughor`) and the `aughor` launcher in uv's command
+folder — `aughor doctor` prints its path. Your connections, history and receipts live under
+`data/` inside the checkout, so copy that out first if you want to keep them.
+
+### Installing without being asked anything
+
+```bash
+curl -LsSf …/install.sh | sh -s -- --industries all --no-start
+```
+
+| | |
+|---|---|
+| `--industries retail,saas` \| `all` \| `none` | Answer the one question up front (or set `AUGHOR_INDUSTRIES`). |
+| `--no-start` | Install only; do not start or open a browser. |
+| `AUGHOR_DIR=/some/folder` | Install somewhere other than `~/aughor`. |
+
+### When it will not install
+
+**Windows Defender flags `uv.exe`.** A known false positive. Exclude uv's folder, or install uv
+yourself first from `astral.sh`, then run the installer again.
+
+**A corporate proxy.** If a download fails with a certificate error, the installer now says so
+and prints the three variables to set. TLS-inspecting proxies re-sign connections, and Python,
+Node and curl each need their own pointer at your organisation's CA bundle:
+
+```bash
+export CURL_CA_BUNDLE=/path/to/ca-bundle.pem
+export SSL_CERT_FILE=/path/to/ca-bundle.pem
+export NODE_EXTRA_CA_CERTS=/path/to/ca-bundle.pem
+```
+
+**A flaky network.** Downloads retry three times, and a throttled GitHub falls back to a
+blobless clone and then to a snapshot. If it still fails, the log named in the error has the
+underlying reason.
+
 ## Pick your models
 
 Aughor **ships no default model** — nothing is assumed about another vendor's catalogue, so you name one before your first question. The one route to a model is **Settings → Models** in the web UI: pick a backend, and the picker lists what that backend actually serves (plus your custom entries). Backends: **Ollama · LM Studio · Groq · Together · Anthropic · Gemini · OpenRouter** (OpenRouter and Gemini both have free tiers).

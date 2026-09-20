@@ -156,6 +156,11 @@ _SEAM_EXEMPT = {
     # The seam itself, and the tuning helper's docstring example.
     "aughor/db/backend.py",
     "aughor/db/sqlite_util.py",
+    # IN-4's one-time state migration. Same shape as `custom_agents/store.py` above: it runs
+    # with the API STOPPED (it refuses otherwise, naming the serving pid), reads the source
+    # read-only and writes each destination exactly once. A WAL keepalive here would be the
+    # opposite of what is wanted — it would hold handles open on the very files being copied.
+    "aughor/db/migrate.py",
 }
 
 
