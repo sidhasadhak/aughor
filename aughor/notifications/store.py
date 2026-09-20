@@ -1,5 +1,6 @@
-"""Action Hub persistence — triggers stored in data/action_triggers.json,
-logs in data/action_logs.json (append-only)."""
+"""Action Hub persistence — triggers and the outbound send log, both in the kernel
+Ledger. The ``data/action_*.json`` paths survive as the store IDENTITY and as the
+one-time legacy import; neither is the truth any more."""
 from __future__ import annotations
 
 import uuid
@@ -10,7 +11,7 @@ from typing import Optional
 from aughor.notifications.models import ActionTrigger, ActionLog, is_secret_header
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.secretvault import encrypt_secret, decrypt_secret
-from aughor.util.json_store import JsonListStore, LedgerListStore
+from aughor.util.json_store import LedgerListStore
 
 # WP-4 — env override (AUGHOR_ACTIONS_DIR) for test isolation; both JSON stores were
 # hardcoded to the live data/ dir with no override (a non-hermetic hole).
@@ -20,10 +21,21 @@ _LOGS_PATH     = _ACTIONS_DIR / "action_logs.json"
 # Triggers are DELIVERY CONFIGURATION — a serverless instance must see the trigger
 # another instance created, and the file store's silent-swallow write made a
 # trigger look created while every delivery then failed "trigger not found". The
-# Ledger-backed store closes both; logs stay file-first (per-instance episode
-# detail, not configuration).
+# Ledger-backed store closes both.
+#
+# The log followed, 2026-09-20, and the earlier reading of it as "per-instance episode
+# detail, not configuration" was the thing that hid the problem. It is the record of
+# every outbound send the platform has ever made — a security surface, not episode
+# detail — and being a file is what made it unreadable: nobody queries a file. Opened
+# on the live install that day, `data/action_logs.json` held 336 rows of which 336 had
+# `status: failed`. Every outbound delivery on that install had failed, and it had gone
+# unnoticed for as long as the file had existed, next to a properly indexed 61,696-row
+# `audit_log` that anyone would have seen.
+#
+# It is also the shape the file store serves worst: append-only and growing, read by
+# `list_logs` in full and sliced in Python, with no index and no time range.
 _triggers = LedgerListStore(_TRIGGERS_PATH)
-_logs     = JsonListStore(_LOGS_PATH)
+_logs     = LedgerListStore(_LOGS_PATH)
 
 
 # The trigger `url` (a Slack/webhook URL grants posting access) and any auth-bearing

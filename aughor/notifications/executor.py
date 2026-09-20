@@ -251,7 +251,13 @@ def _build_jira_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict:
 
 def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
     """Dispatch a trigger and return an ActionLog record."""
-    log_id    = str(uuid.uuid4())[:8]
+    # Full uuid4, not the first 8 hex digits it used to be. The log became a
+    # LedgerListStore on 2026-09-20, and that store keys rows by this id into the kv
+    # table's `(store, key)` primary key — so where the append-only file kept two rows
+    # that happened to collide, the ledger keeps one and the other send has no record.
+    # 32 bits is ~1% collision odds across 10,000 sends and better than even by 80,000;
+    # an audit row silently overwriting another audit row is not a risk worth 24 bytes.
+    log_id    = str(uuid.uuid4())
     fired_at  = datetime.now(timezone.utc).isoformat()
 
     if not trigger.enabled:

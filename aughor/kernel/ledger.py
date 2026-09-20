@@ -32,7 +32,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.org.context import current_org_id
@@ -52,6 +52,52 @@ _SESSION_EVENT_PRUNE_EVERY = 500
 _SESSION_EVENT_PRUNE_MAX_AGE_S = 6 * 3600
 _PRUNE_KV_STORE = "session_log"
 _PRUNE_KV_KEY = "last_pruned_at"
+
+# ── events retention ─────────────────────────────────────────────────────────
+#
+# The journal had NO retention at all. Measured on the live install 2026-09-19:
+# 430,768 rows back to 2026-06-16 (95 days), growing 8,475/day on Sep 11 → 23,287
+# on Sep 18, in a `system.db` of 247 MB with a freelist of zero.
+#
+# Unbounded growth was not the worst of it. `AughorOpsConnection` — the platform's
+# own "ask SQL about your own runs" surface — snapshots the NEWEST 100,000 rows per
+# curated table (aughor/db/connection.py:_SNAPSHOT_ROW_CAP), so what the journal
+# cannot fit under that cap is not merely old, it is INVISIBLE to self-investigation.
+# Measured the same day: the oldest visible event was 5 days back, i.e. 330,768 of
+# 430,768 rows — 76.8% of the history — could not be queried at all.
+#
+# What fills it is chatter, not evidence: over one week `job.state` (94,926) and
+# `automation.run` (31,494) were 99.1% of all events, from five automations that
+# ticked 30,470 times and fired 198. So retention here is SCOPED, not blanket —
+# operational chatter ages out, everything else (investigation.created,
+# investigation.completed, ontology.build, agent.handoff, …) is semantic history and is
+# never swept by default. Deleting evidence to save space would be the wrong trade;
+# deleting a heartbeat nobody reads is free.
+#
+# The window is short ON PURPOSE, and 2 days is not a round number — it is the
+# largest window that keeps the WHOLE signal history inside the 100k snapshot.
+# Projected against the live table (2026-09-19): 1 day → 62,223 rows kept, 2 days →
+# 85,134, 3 days → 108,048 (already over the cap), 7 days → 165,855. Signal alone is
+# 30,419 rows and spans all 95 days, so under a 2-day ops window every semantic event
+# ever emitted becomes visible to `aughor_ops` again.
+#
+# The row cap is what makes that durable: an age window alone re-breaks the moment the
+# tick rate rises, and it has been rising. Capping the chatter at a fixed budget keeps
+# the snapshot's headroom a property of the design rather than of today's traffic.
+_EVENT_PRUNE_KV_KEY = "events_last_pruned_at"
+#: Kinds treated as operational chatter. Anything not named here is never auto-deleted.
+_EVENT_OPS_KINDS = ("job.state", "automation.run")
+#: Rows removed per sweep. The sweep runs inside `Ledger.__init__` (restart insurance),
+#: and a first sweep on a hoarding install has ~350,000 rows to clear — a single
+#: unbounded DELETE there would be a boot-time stall, and a migration back-fill that
+#: raised in `__init__` has already cost this project a no-boot (see Migration 10).
+#: Bounded per sweep, the backlog drains over successive opens and writes instead.
+_EVENT_PRUNE_BATCH = 20_000
+#: Emits between amortised sweeps. The same 500 as the session log, which lands very
+#: differently: this table takes ~50× the writes, so the identical counter fires about
+#: every twenty minutes here against roughly once a day there. That gap is the whole
+#: reason the sweep hangs off `emit` — see :meth:`Ledger._events_maybe_prune`.
+_EVENT_PRUNE_EVERY = 500
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS kv (
@@ -452,6 +498,35 @@ def _add_session_event_pin(c: sqlite3.Connection) -> None:
               "ON session_events(pinned_at)")
 
 
+def _add_events_indexes(c: sqlite3.Connection) -> None:
+    """The journal carried ONE index — ``events_kind`` on (kind, seq) — against the
+    430,768 rows measured live on 2026-09-19, and the two columns most asked about were
+    not in it.
+
+    ``trace_id`` is the correlation key: Migration 6 added the column with a
+    ``DEFAULT ''`` and no index, and ``emit`` has since stamped it from the ambient run
+    on every call, so "everything that happened in this run" — the question the column
+    was added to answer — has been a full scan of the whole table for its entire life.
+
+    ``at`` is what the new retention sweep filters on, every pass. Adding retention
+    without this index would trade unbounded growth for a scan on each prune, and the
+    sweep runs at open; the index is what keeps that bounded.
+
+    ``(kind, at)`` rather than ``at`` alone because the sweep's predicate names BOTH —
+    it deletes one kind's rows below a cutoff — so the composite serves the delete and
+    still answers a bare time range on its prefix... which is the one thing it does not
+    do, kind being leftmost. So both are created: the composite for the sweep, the plain
+    one for "what happened on Tuesday".
+
+    Portable SQL only (this store also runs on Postgres), `c.execute` per statement, and
+    every statement IF NOT EXISTS so a re-run is a no-op — the same rules Migration 11
+    records above.
+    """
+    c.execute("CREATE INDEX IF NOT EXISTS events_trace ON events(trace_id, seq)")
+    c.execute("CREATE INDEX IF NOT EXISTS events_kind_at ON events(kind, at)")
+    c.execute("CREATE INDEX IF NOT EXISTS events_at ON events(at)")
+
+
 # Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
 _MIGRATIONS = [
     Migration(2, "per-run compute metering (jobs.metrics)",
@@ -509,6 +584,10 @@ _MIGRATIONS = [
     #: back-fill nobody should re-run, and does not apply to an additive column.
     Migration(11, "session_events: pinned_at (MI-2 — a verdict pins its evidence)",
               _add_session_event_pin),
+    #: Version 12, numbered off the LIVE store as the note above requires: `PRAGMA
+    #: user_version` on the deployed `data/system.db` returns 11 on 2026-09-19, and this
+    #: file's highest was 11, so 12 is both next-in-file and next-to-execute.
+    Migration(12, "events: trace correlation + retention indexes", _add_events_indexes),
 ]
 
 
@@ -523,6 +602,7 @@ class Ledger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._session_event_writes = 0  # drives amortised session-log retention
+        self._event_writes = 0          # drives amortised journal retention
         # Through the backend seam: sqlite gets exactly the old inline PRAGMAs (they
         # are what sqlite_util.tune applies); AUGHOR_DB_URL moves this store — and
         # everything riding it, KeyedJsonStore included — onto shared Postgres.
@@ -582,11 +662,19 @@ class Ledger:
         Postgres, and the store sat at user_version=8 until it was repaired."""
         try:
             last = self.kv_get(_PRUNE_KV_STORE, _PRUNE_KV_KEY)
-            if last and not _older_than(last, _SESSION_EVENT_PRUNE_MAX_AGE_S):
-                return
-            self._prune_and_stamp()
+            if not (last and not _older_than(last, _SESSION_EVENT_PRUNE_MAX_AGE_S)):
+                self._prune_and_stamp()
         except Exception as exc:
             logger.debug("open-time session_events prune skipped: %s", exc)
+        # Independently guarded: the journal sweep must not be skipped because the
+        # session-log sweep was recent, and must not be the reason the session-log
+        # stamp goes unwritten. Two clocks, two try blocks, one open.
+        try:
+            last = self.kv_get(_PRUNE_KV_STORE, _EVENT_PRUNE_KV_KEY)
+            if not (last and not _older_than(last, _SESSION_EVENT_PRUNE_MAX_AGE_S)):
+                self._prune_events_and_stamp()
+        except Exception as exc:
+            logger.debug("open-time events prune skipped: %s", exc)
 
     def _prune_and_stamp(self) -> None:
         """Prune, then record WHEN — the stamp is what survives the restart that resets
@@ -598,6 +686,43 @@ class Ledger:
                         datetime.now(timezone.utc).isoformat())
         except Exception as exc:
             logger.debug("session_events prune failed: %s", exc)
+
+    def _prune_events_and_stamp(self) -> None:
+        """The journal's half of :meth:`_prune_and_stamp`, with its own durable clock.
+
+        Stamped only when the sweep came back UNDER its batch bound. A bounded sweep on a
+        backlog deletes exactly ``_EVENT_PRUNE_BATCH`` rows and leaves more behind, and
+        stamping that would put the next attempt six hours away — the backlog would drain
+        at 20,000 rows per six hours instead of per write burst. A full batch therefore
+        means "come back immediately", which is what the amortised path then does."""
+        try:
+            deleted = self.events_prune()
+            if deleted < _EVENT_PRUNE_BATCH:
+                self.kv_put(_PRUNE_KV_STORE, _EVENT_PRUNE_KV_KEY,
+                            datetime.now(timezone.utc).isoformat())
+        except Exception as exc:
+            logger.debug("events prune failed: %s", exc)
+
+    def _events_maybe_prune(self) -> None:
+        """Amortised journal retention, every ``_EVENT_PRUNE_EVERY`` emits.
+
+        Hung off ``emit`` rather than off the session-log counter on purpose. The two
+        tables are written at utterly different rates — measured live 2026-09-19, the
+        journal took ~23,000 rows/day against the session log's ~450 — so a sweep driven
+        by session writes would fire about once a day and, bounded at 20,000 rows, would
+        need over two weeks to clear the backlog it was added to clear. Driven by emits it
+        fires roughly every twenty minutes at that rate, and the backlog is gone the same
+        day.
+
+        Best-effort and after the insert, never before: a prune must not be able to fail
+        the write that triggered it, and a first write that is itself backdated must not
+        be deleted by its own sweep."""
+        with self._lock:
+            self._event_writes += 1
+            due = self._event_writes % _EVENT_PRUNE_EVERY == 0
+        if not due:
+            return
+        self._prune_events_and_stamp()
 
     @classmethod
     def default(cls) -> "Ledger":
@@ -1081,6 +1206,7 @@ class Ledger:
                  trace_id or "", org_id),
                 pk="seq",
             )
+        self._events_maybe_prune()
         return seq
 
     def events(
@@ -1423,6 +1549,74 @@ class Ledger:
                     "  ORDER BY seq DESC LIMIT ?)",
                     (max_rows,),
                 ).rowcount
+        return max(deleted, 0)
+
+    def events_prune(self, *, keep_days: Optional[int] = None,
+                     max_rows: Optional[int] = None,
+                     kinds: Optional[Sequence[str]] = None,
+                     batch: Optional[int] = None) -> int:
+        """Age out operational chatter from the journal. Returns rows deleted.
+
+        Same two-policy shape as :meth:`session_events_prune` — an age window and a row
+        cap — because that pair is already proven here and a second retention idiom would
+        be a second thing to reason about. The difference is the scope: this sweep names
+        the kinds it may delete (``AUGHOR_EVENTS_PRUNE_KINDS``, default ``job.state`` and
+        ``automation.run``) and touches nothing else. `session_events` can sweep broadly
+        because a pin exempts what matters; `events` has no pin, so the exemption has to
+        be the default, and a kind not named here is kept forever.
+
+        Both halves are bounded by ``batch``. An unbounded first DELETE would run inside
+        ``Ledger.__init__`` against a ~350,000-row backlog, and this store has already
+        been made unbootable once by work that raised in ``__init__`` (Migration 10). A
+        bounded sweep drains over successive opens and writes; the only cost of the bound
+        is that the backlog clears over minutes rather than in one stall.
+
+        Env-tunable: ``AUGHOR_EVENTS_OPS_KEEP_DAYS`` / ``AUGHOR_EVENTS_OPS_MAX_ROWS``;
+        set either to 0 to disable that half, and ``AUGHOR_EVENTS_PRUNE_KINDS`` to an
+        empty string to disable the sweep entirely.
+
+        Portable SQL: `DELETE ... LIMIT` needs a compile-time option SQLite does not ship
+        by default and Postgres does not have at all, so both halves select the victim
+        seqs in a subquery and delete by primary key.
+        """
+        if kinds is None:
+            raw = os.environ.get("AUGHOR_EVENTS_PRUNE_KINDS")
+            kinds = (tuple(k.strip() for k in raw.split(",") if k.strip())
+                     if raw is not None else _EVENT_OPS_KINDS)
+        kinds = tuple(kinds)
+        if not kinds:
+            return 0
+        if keep_days is None:
+            keep_days = int(os.environ.get("AUGHOR_EVENTS_OPS_KEEP_DAYS", "2") or 0)
+        if max_rows is None:
+            max_rows = int(os.environ.get("AUGHOR_EVENTS_OPS_MAX_ROWS", "50000") or 0)
+        if batch is None:
+            batch = _EVENT_PRUNE_BATCH
+        marks = ",".join("?" for _ in kinds)
+        deleted = 0
+        with self._lock, self._conn:
+            if keep_days > 0:
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
+                # Oldest first: a bounded sweep should drain the backlog from the old end,
+                # so repeated passes converge instead of nibbling at an arbitrary slice.
+                deleted += self._conn.execute(
+                    f"DELETE FROM events WHERE seq IN ("
+                    f"  SELECT seq FROM events WHERE kind IN ({marks}) AND at < ? "
+                    f"  ORDER BY seq ASC LIMIT ?)",
+                    (*kinds, cutoff, batch)).rowcount
+            if max_rows > 0:
+                # The cap is expressed as a seq threshold rather than a NOT IN over the
+                # kept window: `events_kind` is (kind, seq), so both the OFFSET probe and
+                # the delete ride it, and neither degrades into a scan as the table grows.
+                row = self._conn.execute(
+                    f"SELECT seq FROM events WHERE kind IN ({marks}) "
+                    f"ORDER BY seq DESC LIMIT 1 OFFSET ?", (*kinds, max_rows)).fetchone()
+                if row:
+                    deleted += self._conn.execute(
+                        f"DELETE FROM events WHERE seq IN ("
+                        f"  SELECT seq FROM events WHERE kind IN ({marks}) AND seq <= ? "
+                        f"  ORDER BY seq ASC LIMIT ?)",
+                        (*kinds, row[0], batch)).rowcount
         return max(deleted, 0)
 
     def pin_session_events(self, *, trace_id: str = "",
