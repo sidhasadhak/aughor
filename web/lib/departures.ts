@@ -7,12 +7,12 @@ import type {
 
 /** Every guard in the order the gate runs them — the order a receipt lists them in. */
 export const GUARD_ORDER = [
-  "trust", "tie_out", "definition", "remeasure", "freshness", "claims",
+  "trust", "caveat", "tie_out", "definition", "remeasure", "freshness", "claims",
   "disagreement", "repeat", "probation",
 ] as const;
 
 export const GUARD_LABEL: Record<string, string> = {
-  trust: "Trust", tie_out: "Tie-out", definition: "Definition", remeasure: "Re-measure",
+  trust: "Trust", caveat: "Caveat", tie_out: "Tie-out", definition: "Definition", remeasure: "Re-measure",
   freshness: "Freshness", claims: "Claim type", disagreement: "Disagreement",
   repeat: "Repeat", probation: "Probation", held_lines: "Lines held",
 };

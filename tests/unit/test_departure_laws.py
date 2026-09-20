@@ -298,54 +298,65 @@ def test_a_code_rendered_alert_is_grounded_by_construction():
     assert "grounded by construction" in v.checks["remeasure"]
 
 
-# ── A4: a measurement's caveat travels with the number it measured ───────────────────────────
+# ── A4: a caveat travels with the number, and one class of caveat holds it ───────────────────
 
 _IMPOSSIBLE = ("counted as kept although impossible: 4,199 of the 50,048 Return objects reached refunded "
                "BEFORE received_at, so their lag is negative and none of them can break the promise — "
                "without them the rate is 25.41%, not 23.27%")
+_QUALIFYING = "never broken: none of the 107,903 Order objects that reached shipped went past 2 calendar days"
 
 
-def test_a_promises_caveat_rides_the_receipt_rather_than_stopping_at_the_record(monkeypatch):
-    """The LuxExperience shape. Every other surface already showed a promise's flags — the panel
-    in red, the object door as query caveats, the frame as notes — and the one that dropped them
-    was the one that leaves the building. A number departing at 23.27% when 4,199 of its 50,048
-    objects were refunded BEFORE they arrived is the defect this carries."""
-    stamp = Measurement(source="promise refund of Return to refund",
-                        values=[50048.0, 11648.0], rates=[0.232737],
-                        measured_at=datetime.now(timezone.utc).isoformat(),
-                        as_of="2025-08-14", caveats=[_IMPOSSIBLE])
+def _promise_gate(monkeypatch, stamp, text="The refund promise broke on 11,648 of 50,048 returns (23.27%)."):
     monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
                         lambda s, c: {"kind": "promise", "measured": True,
                                       "label": "promise refund of Return to refund"})
-    v = _gate("The refund promise broke on 11,648 of 50,048 returns (23.27%).", conn_id="c1",
-              about="promise:return_to_refund.refund", measurement=stamp)
+    return _gate(text, conn_id="c1", about="promise:return_to_refund.refund", measurement=stamp)
+
+
+def _stamp(**kw):
+    return Measurement(source="promise refund of Return to refund",
+                       values=[50048.0, 11648.0], rates=[0.232737],
+                       measured_at=datetime.now(timezone.utc).isoformat(),
+                       as_of="2025-08-14", **kw)
+
+
+def test_a_measurement_that_refutes_its_own_number_holds_the_send(monkeypatch):
+    """The LuxExperience shape. On the screen the flag sits beside the number and that is
+    honesty; in a channel it would be a wrong number with a footnote. 23.27% was measured over
+    a population including 4,199 Returns refunded BEFORE they arrived, all counted as kept."""
+    v = _promise_gate(monkeypatch, _stamp(caveats=[_IMPOSSIBLE], blocking_caveats=[_IMPOSSIBLE]))
+    assert v.state == "held"
+    assert v.guards["caveat"] == "held"
+    assert "the measurement refutes its own number" in v.reason_sentence()
+    assert "25.41%, not 23.27%" in v.reason_sentence(), "the hold names the true figure"
+    assert json.loads(ds.get_departure(v.record_id)["checks"])["caveat"] == _IMPOSSIBLE
+
+
+def test_a_qualifying_caveat_rides_the_receipt_and_never_holds(monkeypatch):
+    """The other half, and the reason the two lists are kept apart: a gate that blocked on
+    every caveat would teach senders to stop writing them. "Never broken" is a surprising
+    shape, not a wrong number."""
+    v = _promise_gate(monkeypatch, _stamp(caveats=[_QUALIFYING]))
     assert v.state == "departed", v.reason_sentence()
-
+    assert v.guards["caveat"] == "passed"
     line = v.receipt_line()
-    assert "caveat: counted as kept although impossible" in line
-    assert "25.41%, not 23.27%" in line, "the alternative rate is the actionable half"
-    assert line.index("caveat:") < line.index("checked:"), \
-        "a caveat after a list of green ticks reads as a footnote to reassurance"
-
-    row = ds.get_departure(v.record_id)
-    assert json.loads(row["receipt"])["caveats"] == [_IMPOSSIBLE]
+    assert f"caveat: {_QUALIFYING}" in line
+    assert line.index("caveat: ") < line.index("checked: "), \
+        "a caveat after a row of green ticks reads as a footnote to reassurance"
+    assert json.loads(ds.get_departure(v.record_id)["receipt"])["caveats"] == [_QUALIFYING]
 
 
-def test_a_caveat_qualifies_a_number_and_never_holds_it(monkeypatch):
-    """Deliberate, and the user's call to change: a gate that blocked on every caveat would
-    teach senders to stop writing them. The flag is information, not a refutation."""
-    stamp = Measurement(source="promise refund of Return to refund",
-                        values=[50048.0, 11648.0], rates=[0.232737],
-                        measured_at=datetime.now(timezone.utc).isoformat(),
-                        as_of="2025-08-14", caveats=[_IMPOSSIBLE, "never broken: none of them"])
-    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
-                        lambda s, c: {"kind": "promise", "measured": True,
-                                      "label": "promise refund of Return to refund"})
-    v = _gate("The refund promise broke on 11,648 of 50,048 returns (23.27%).", conn_id="c1",
-              about="promise:return_to_refund.refund", measurement=stamp)
-    assert v.state == "departed"
-    assert v.guards["definition"] == "passed" and v.guards["remeasure"] == "passed"
-    assert v.receipt_line().count("caveat: ") == 2, "every caveat travels, not just the first"
+def test_the_gate_matches_the_constant_the_flag_is_written_from(monkeypatch):
+    """Round-trip lock, the TRUST_BANNER idiom: the prefix is load-bearing text shared by the
+    writer and the reader. Rewording it in `processes.py` alone would unhook the hold silently,
+    so this asserts the classifier keys off THAT constant and not a copy."""
+    from aughor.govern.departure_basis import _blocking
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
+
+    assert _IMPOSSIBLE.startswith(IMPOSSIBLE_LAG_FLAG)
+    assert _blocking([_IMPOSSIBLE, _QUALIFYING]) == [_IMPOSSIBLE]
+    assert _blocking(["always broken: every one of them", _QUALIFYING]) == []
+    assert _blocking(None) == [] and _blocking([]) == []
 
 
 def test_a_measurement_with_no_caveat_leaves_the_receipt_exactly_as_it_was(monkeypatch):
@@ -360,5 +371,41 @@ def test_a_measurement_with_no_caveat_leaves_the_receipt_exactly_as_it_was(monke
     v = _gate("Dispatch broke on 10,423 of 111,456 order lines (9.35%).", conn_id="c1",
               about="promise:order_to_delivery.dispatch", measurement=stamp)
     assert v.state == "departed"
-    assert "caveat" not in v.receipt_line()
+    # The FRAGMENT must be absent, not the word: the guard is itself named `caveat` and now
+    # appears in the receipt's "checked:" list, which is the point of it passing.
+    line = v.receipt_line()
+    assert "caveat: " not in line
+    assert "caveat" in line.split("checked: ", 1)[1], "a passing guard is named on the receipt"
+    assert v.guards["caveat"] == "passed"
     assert json.loads(ds.get_departure(v.record_id)["receipt"])["caveats"] == []
+
+
+def test_a_send_with_no_measurement_records_the_caveat_guard_as_not_applicable(monkeypatch):
+    """A guard with nothing to judge records not_applicable, never a silent pass."""
+    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing", lambda s, c: None)
+    v = _gate("Nothing numeric here at all.", conn_id="c1")
+    assert v.guards["caveat"] == "not_applicable"
+
+
+def test_the_materiality_bar_is_the_platforms_own_and_cannot_drift(monkeypatch):
+    """The ontology restates the bar rather than importing it (it does not depend on govern),
+    so this is the only thing stopping two numbers that must agree from drifting apart."""
+    from aughor.govern.departure import NOISE_REL
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_MATERIAL_REL
+
+    assert IMPOSSIBLE_LAG_MATERIAL_REL == NOISE_REL
+
+
+def test_a_noise_band_caveat_rides_the_receipt_and_never_holds(monkeypatch):
+    """theLook's delivery promise, 8.11% either way. It is said, and it departs."""
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_NOISE_FLAG
+    from aughor.govern.departure_basis import _blocking
+
+    noise = (f"{IMPOSSIBLE_LAG_NOISE_FLAG}: 23 of the 96,476 Order objects reached delivered "
+             "BEFORE dispatched_at — without them the rate is 8.11%, not 8.11%")
+    assert _blocking([noise]) == [], "a distinct prefix, not a suffix on the blocking stem"
+
+    v = _promise_gate(monkeypatch, _stamp(caveats=[noise], blocking_caveats=_blocking([noise])))
+    assert v.state == "departed", v.reason_sentence()
+    assert v.guards["caveat"] == "passed"
+    assert f"caveat: {IMPOSSIBLE_LAG_NOISE_FLAG}" in v.receipt_line()

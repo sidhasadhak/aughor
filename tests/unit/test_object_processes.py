@@ -796,7 +796,8 @@ def test_objects_counted_as_kept_although_their_lag_is_impossible_reach_the_prom
                                            "WHERE refunded_at < received_at AND date_diff('day', received_at, refunded_at) > 10")
     assert early_breaches == 0
 
-    [flag] = [f for f in promise.flags if f.startswith("counted as kept although impossible")]
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
+    [flag] = [f for f in promise.flags if f.startswith(IMPOSSIBLE_LAG_FLAG)]
     assert f"{early:,} of the {reached:,}" in flag
     without = breached / (reached - early)
     assert f"{without:.2%}" in flag and f"not {promise.breach_rate:.2%}" in flag
@@ -807,8 +808,9 @@ def test_the_flag_travels_to_the_surface_that_quotes_the_number(backdated_db):
     """A4's actual claim. A caveat computed and left in the record is the defect, not the fix."""
     graph = backdated_graph()
     _, p = declare(graph, backdated_db, REFUNDING)
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
     described = describe_process(graph, p)["stages"][1]["promise"]
-    assert any(f.startswith("counted as kept although impossible") for f in described["flags"])
+    assert any(f.startswith(IMPOSSIBLE_LAG_FLAG) for f in described["flags"])
 
 
 def test_a_deadline_promise_is_not_flagged_for_an_ordering_it_says_nothing_about(db, graph):
@@ -836,7 +838,7 @@ def test_a_deadline_promise_is_not_flagged_for_an_ordering_it_says_nothing_about
 def test_the_rate_is_only_stated_when_the_denominator_is_sound(spec, reached, expect_rate):
     """Saying less beats deriving a rate from the wrong population. The ordering is still
     flagged in every case — only the arithmetic is withheld."""
-    from aughor.ontology.processes import _flag_out_of_order
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG, _flag_out_of_order
 
     class _P:
         breached, breach_rate = 10, 0.1
@@ -848,7 +850,7 @@ def test_the_rate_is_only_stated_when_the_denominator_is_sound(spec, reached, ex
     promise.reached, promise.flags = reached, []
     _flag_out_of_order(promise, _S(), spec, _proc("Order"), _grain("Order"))
     [flag] = promise.flags
-    assert flag.startswith("counted as kept although impossible")
+    assert flag.startswith(IMPOSSIBLE_LAG_FLAG)
     assert ("without them the rate is" in flag) is expect_rate
 
 
@@ -872,3 +874,41 @@ def _proc(entity: str):
 
 def _grain(entity: str):
     return type("G", (), {"id": entity})()
+
+
+def test_impossible_rows_that_do_not_move_the_number_are_said_but_never_held():
+    """theLook's delivery promise: 23 of 96,476 out of order, 8.11% either way. Holding a
+    working send over a difference that rounds to nothing would be the kind of guard people
+    route around. It is still stated — just not with the prefix the gate blocks on."""
+    from aughor.ontology.processes import (
+        IMPOSSIBLE_LAG_FLAG, IMPOSSIBLE_LAG_NOISE_FLAG, _flag_out_of_order)
+
+    class _P:
+        reached, breached, breach_rate, flags = 96476, 7827, 0.081129, []
+
+    class _S:
+        out_of_order, name = 23, "delivered"
+
+    promise = _P()
+    _flag_out_of_order(promise, _S(), {"grain": "Order", "start": "dispatched_at"},
+                       _proc("Order"), _grain("Order"))
+    [flag] = promise.flags
+    assert flag.startswith(IMPOSSIBLE_LAG_NOISE_FLAG)
+    assert not flag.startswith(IMPOSSIBLE_LAG_FLAG), "the two prefixes must not share a stem"
+    assert "8.11%" in flag, "the finding is still stated in full"
+
+
+def test_a_rate_that_cannot_be_computed_blocks_rather_than_assuming_it_is_small():
+    """Unquantified is not the same as immaterial, so the conservative direction wins."""
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG, _flag_out_of_order
+
+    class _P:
+        reached, breached, breach_rate, flags = 100, 10, 0.1, []
+
+    class _S:
+        out_of_order, name = 7, "refunded"
+
+    promise = _P()
+    _flag_out_of_order(promise, _S(), {"grain": "OrderItem", "start": "received_at"},
+                       _proc("Order"), _grain("Order"))
+    assert promise.flags[0].startswith(IMPOSSIBLE_LAG_FLAG)

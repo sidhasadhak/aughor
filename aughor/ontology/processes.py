@@ -463,6 +463,33 @@ def _cutoff_hours(as_of: str, hours: int) -> str:
     return (moment - timedelta(hours=hours)).isoformat(sep=" ", timespec="seconds")
 
 
+#: The prefix of the flag raised when impossible rows MOVE the number. LOAD-BEARING TEXT, not
+#: a label — the departure gate matches on it to decide that a caveat refutes the figure
+#: rather than qualifying it, exactly as `TRUST_BANNER` is matched in departing text. A reword
+#: here without the same reword at the gate would unhook the hold silently, which is why
+#: `tests/unit/test_departure_laws.py` locks the round trip.
+IMPOSSIBLE_LAG_FLAG = "counted as kept although impossible"
+
+#: The same finding when the two readings agree within the noise band: still said, never a
+#: hold. A DISTINCT prefix, not a suffix on the one above — a `startswith` match against a
+#: shared stem would block both and the distinction would exist only in the prose.
+IMPOSSIBLE_LAG_NOISE_FLAG = "impossible lag, within the noise band"
+
+#: How far the two readings must differ before the impossible rows refute the number rather
+#: than qualify it — relative, |a-b| / max(|a|,|b|). This is the platform's OWN bar for two
+#: readings of one number disagreeing materially (`govern.departure.NOISE_REL`, itself the
+#: deep run's `_METRIC_DIVERGENCE_REL`); it is restated here rather than imported because the
+#: ontology does not depend on govern, and `tests/unit/test_departure_laws.py` asserts the two
+#: stay equal so the restatement cannot drift.
+#:
+#: Measured 2026-09-20, the three live promises carrying impossible rows: LuxExperience's
+#: refund 23.27% → 25.41% (8.4% relative, HOLDS), theLook's dispatch 9.35% → 9.47% (1.2%) and
+#: its delivery 8.11% → 8.11% (0.0%). Holding every one of them would stop two working sends
+#: over a tenth of a point and nothing at all; saying nothing about the first would let a
+#: number the measurement itself refutes leave the building.
+IMPOSSIBLE_LAG_MATERIAL_REL = 0.05
+
+
 def _flag_out_of_order(promise: Any, stage: ProcessStage, spec: dict, process: Process, grain: Any) -> None:
     """Carry the stage's impossible orderings onto the PROMISE, with what they do to its rate.
 
@@ -501,13 +528,17 @@ def _flag_out_of_order(promise: Any, stage: ProcessStage, spec: dict, process: P
     remaining = promise.reached - early
     if spec.get("grain") == process.entity and remaining > 0:
         without = promise.breached / remaining
+        moved = abs(without - promise.breach_rate) / max(abs(without), abs(promise.breach_rate) or 1.0)
+        prefix = IMPOSSIBLE_LAG_FLAG if moved >= IMPOSSIBLE_LAG_MATERIAL_REL else IMPOSSIBLE_LAG_NOISE_FLAG
         promise.flags.append(
-            f"counted as kept although impossible: {early:,} of the {promise.reached:,} {grain.id} objects reached "
+            f"{prefix}: {early:,} of the {promise.reached:,} {grain.id} objects reached "
             f"{stage.name} BEFORE {previous_name}, so their lag is negative and none of them can break the promise — "
             f"without them the rate is {without:.2%}, not {promise.breach_rate:.2%}")
         return
+    # The rate could not be computed, so the impossible rows are not KNOWN to be immaterial.
+    # Unquantified is not the same as small, and the conservative direction is the blocking one.
     promise.flags.append(
-        f"counted as kept although impossible: {early:,} of the {promise.reached:,} {grain.id} objects reached "
+        f"{IMPOSSIBLE_LAG_FLAG}: {early:,} of the {promise.reached:,} {grain.id} objects reached "
         f"{stage.name} BEFORE {previous_name}, so their lag is negative and none of them can break the promise")
 
 
