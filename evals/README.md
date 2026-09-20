@@ -40,6 +40,46 @@ uv run python evals/run.py
 uv run python evals/run.py --fail-on-regression 0.05
 ```
 
+## Intake pick validity (`intake_validity_eval.py`)
+
+JD-2's premise, measured on historical traffic: three intake fields are picks from a set the
+schema already holds — `metric_table`, `date_column`, `dimensions` — but are asked as free
+text. This decodes the intake spec every deep run persisted in `data/checkpoints.db` and
+checks each name against `information_schema` read out of the DuckDB warehouses themselves.
+
+**No model call, no warehouse write**, so it is free and repeatable — and the same decode is
+the AFTER measurement once a closed option list lands, so the experiment needs no new
+instrument.
+
+```bash
+uv run python evals/intake_validity_eval.py --output evals/intake_validity_results.json
+```
+
+Three rules keep the number honest, each moving it DOWN: a pick naming a schema the harness
+cannot read (BigQuery, or a `missimi` schema in no local warehouse) is **unverifiable**, not
+invalid, and is excluded from both numerator and denominator; specs are collapsed per
+`thread_id`, because a run stamps its spec into every checkpoint it takes; and comparison is
+case-insensitive. `tests/unit/test_intake_validity.py` pins all three.
+
+Status 2026-09-20 (202 investigations with a spec, 29 Jun – 19 Sep; ground truth 5 schemas,
+45 tables, 350 columns):
+
+| field | valid | invalid | unverifiable | invalid rate |
+| --- | --- | --- | --- | --- |
+| `metric_table` | 73 | 18 | 110 | **19.8%** |
+| `date_column` | 73 | 16 | 96 | **18.0%** |
+| `dimensions` | 542 | 149 | 758 | **21.6%** |
+
+**40 of 202 runs (19.8%) proceeded on at least one name that does not exist**, and **0 of 202
+threads had their spec rewritten mid-run** — so the spec-repair retry did not fix these; they
+are what the investigation used. 173 of the 183 bad names are tables in no warehouse at all;
+8 are a real table and column attached to the wrong schema, which cannot be schema drift.
+Falsifier HOLDS.
+
+What this does NOT measure: whether the answers were worse. Nothing grades them. The claim is
+that a closed option list empties the invalid column by construction, not that accuracy moves
+by a measured amount.
+
 ## Decision-corpus yield (`decision_yield_eval.py`)
 
 The only eval here that scores the RECORD rather than an answer: of the closed-set choices
