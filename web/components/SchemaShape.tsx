@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatCount } from "@/lib/format";
+import { ColumnTypeIcon } from "@/components/icons/columnType";
 import {
   conceptIfConfident,
   getSchemaProfile,
@@ -191,7 +192,9 @@ function NullBar({ rate }: { rate: number }) {
 // The COLUMN cell now carries a concept badge beside the name, so it takes a larger share
 // of the free space than the values column — 1.3fr against 1fr. Without it a 19-character
 // name like `scheduled_departure` left the badge 26px to render 46px of text.
-const GRID = "minmax(120px,1.3fr) 64px 78px 70px 116px minmax(96px,1fr)";
+// The TYPE cell grew from 64px to 86px when it gained the type mark: a 13px glyph plus
+// its 5px gap is 18px, and at 64px `TIMESTAMP` was being clipped to `TIMESTA…`.
+const GRID = "minmax(120px,1.3fr) 86px 78px 70px 116px minmax(96px,1fr)";
 
 function TableCard({
   table,
@@ -294,8 +297,14 @@ function TableCard({
                 )}
                 <ConceptBadge col={col} />
               </div>
-              <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
-                {col.dtype?.split("(")[0].toUpperCase().slice(0, 10)}
+              {/* The mark goes in the TYPE cell here rather than in front of the name:
+                  this table already puts the type in a column of its own, and the profile
+                  reads left-to-right as name → type → nulls → distinct. */}
+              <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                <ColumnTypeIcon type={col.dtype} size={13} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {col.dtype?.split("(")[0].toUpperCase().slice(0, 10)}
+                </span>
               </span>
               <NullBar rate={col.null_rate ?? 0} />
               <span style={{ fontSize: 11, color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>

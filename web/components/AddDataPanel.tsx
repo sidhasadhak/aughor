@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 import { BrandLogo, brandColor } from "@/components/BrandLogos";
 import { Button } from "@/components/ui/button";
+import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Icon } from "@/components/ui/icon";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
@@ -371,6 +372,10 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
               const changed = chosen[c.name] && chosen[c.name] !== detected;
               return (
                 <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: i % 2 ? "var(--bg-1)" : "var(--bg-0)", borderTop: i ? "1px solid var(--b0)" : "none" }}>
+                  {/* The mark reads the CHOSEN type, not the detected one, so it moves
+                      the moment you override the select beside it — which is the only
+                      confirmation this screen gives that a cast took. */}
+                  <ColumnTypeIcon type={chosen[c.name] ?? detected} size={13} />
                   <span style={{ flex: "1 1 0", minWidth: 0, fontSize: 12, fontWeight: 500, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
                   <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
                   <select value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}

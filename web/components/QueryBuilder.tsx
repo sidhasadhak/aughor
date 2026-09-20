@@ -3,7 +3,7 @@ import { ErrorState } from "@/components/ui/states";
 import { Pending } from "@/components/ui/motion";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { formatCount } from "@/lib/format";
+import { formatCount, isNumericType } from "@/lib/format";
 import {
   getMetrics, runDirectQuery,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
@@ -225,9 +225,10 @@ const HAVING_OPS = [">", ">=", "<", "<=", "=", "!="];
 let _s = 0;
 const uid = () => `qb${++_s}`;
 
-const NUM_T  = ["int","float","double","decimal","numeric","real","number","bigint","smallint","money","hugeint"];
-const isNum  = (t: string) => NUM_T.some(k  => t.toLowerCase().includes(k));
-// The type dot moved to CatalogTree with the rail — one legend, one definition.
+// "Is this column a number" is `isNumericType` in lib/format.ts, which is also what
+// draws its type mark and what decides it gets a distribution. The list that used to
+// live here matched on SUBSTRINGS, so `INTERVAL` contains `int` and a duration column
+// defaulted to SUM. One definition, and it reads whole words.
 const fmtMs  = (ms: number) => ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms/1000).toFixed(2)}s`;
 const fmtN   = (n: number) => formatCount(n);
 
@@ -622,7 +623,7 @@ function SqlEditor({ value, rows, taRef, onChange, onKeyDown, onClick, placehold
 function AggPicker({ col, table, onAdd, onCancel }: {
   col: SchemaColumn; table: string; onAdd: (m: MeasureItem) => void; onCancel: () => void;
 }) {
-  const defAgg: AggFn = isNum(col.type) ? "SUM" : "COUNT";
+  const defAgg: AggFn = isNumericType(col.type) ? "SUM" : "COUNT";
   const [agg, setAgg] = useState<AggFn>(defAgg);
   const [expr, setExpr] = useState(col.name);
   const [alias, setAlias] = useState(autoAlias(defAgg, col.name, col.name));
@@ -1563,7 +1564,7 @@ export function QueryBuilder({
     if (!connId || !table || !col) return;
     try {
       const { values } = await getColumnDistinct(connId, table, col, tableSchemas[table], 200);
-      const numeric = isNum((tableCols[table] ?? []).find(c => c.name === col)?.type ?? "");
+      const numeric = isNumericType((tableCols[table] ?? []).find(c => c.name === col)?.type);
       setNfDistinct(values.filter((v): v is string => v != null)
         .map(v => numeric ? v : `'${v.replace(/'/g, "''")}'`));
     } catch { setNfDistinct([]); }

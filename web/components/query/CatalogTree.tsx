@@ -13,7 +13,7 @@ import { SkeletonRows } from "@/components/ui/motion";
  *
  * The conventions here are QueryBuilder's, deliberately: it is the richest of the
  * three, it already sits in this tab, and its vocabulary (a `⋈n` join degree, an
- * `isolated` badge, compact row counts, the emerald/blue/zinc type dot) is information
+ * `isolated` badge, compact row counts, a per-column type mark) is information
  * the others were simply missing.
  *
  * **Presentational only.** It takes data and renders it; it holds no fetch, no
@@ -39,6 +39,7 @@ import { useMemo, useState } from "react";
 import Fuse from "fuse.js";
 import { compactNumber } from "@/lib/format";
 import { Chevron, IcoCatalog, IcoSchema, IcoTable } from "@/components/icons/catalog";
+import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 
@@ -71,12 +72,6 @@ export interface CatalogTable {
   joinDegree?: number;
   isolated?: boolean;
 }
-
-const isNum = (t: string) => /\b(INT|BIGINT|SMALLINT|TINYINT|HUGEINT|DOUBLE|FLOAT|DECIMAL|NUMERIC|REAL|NUMBER)\b/i.test(t);
-const isDate = (t: string) => /\b(DATE|TIME|TIMESTAMP|DATETIME)\b/i.test(t);
-
-/** The type dot, matching QueryBuilder's legend exactly (num · date · text). */
-const dot = (t: string) => (isNum(t) ? "bg-emerald-500" : isDate(t) ? "bg-blue-400" : "bg-zinc-500");
 
 function fmtRows(rc: string | number | null | undefined): string | null {
   if (rc == null || rc === "") return null;
@@ -261,14 +256,10 @@ export function CatalogTree({
             </Button>
           )}
         </div>
-        {/* The same legend the builder shows, so a dot means one thing product-wide. */}
-        <div className="mt-2.5 flex items-center gap-3">
-          {([["bg-emerald-500", "num"], ["bg-blue-400", "date"], ["bg-zinc-500", "text"]] as const).map(([d, l]) => (
-            <span key={l} className="aug-fs-ui flex items-center gap-1.5" style={{ color: "var(--t3)" }}>
-              <span className={`h-2 w-2 rounded-[var(--r-pill)] ${d}`} />{l}
-            </span>
-          ))}
-        </div>
+        {/* No legend. There was one here — three coloured dots captioned num · date ·
+            text — and it existed only to decode the dots. The mark says `123`, `ABC`, a
+            calendar or a clock now, so the key has nothing left to explain and the rail
+            gets its two lines back. */}
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
@@ -443,7 +434,7 @@ export function CatalogTree({
                           className="h-auto min-w-0 flex-1 justify-start gap-2 py-1 pl-3 pr-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
                         >
                           {onColumnDragStart && <GrabDots />}
-                          <span className={`h-2 w-2 shrink-0 rounded-[var(--r-pill)] ${dot(c.type ?? "")}`} />
+                          <ColumnTypeIcon type={c.type} size={14} />
                           <span className="aug-fs-ui flex-1 truncate text-left font-mono" style={{ color: "var(--t2)" }}>{c.name}</span>
                           {c.type && (
                             <span className="aug-fs-ui hidden shrink-0 font-mono uppercase group-hover/col:inline" style={{ color: "var(--t3)" }}>

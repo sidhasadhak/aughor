@@ -18,6 +18,7 @@ import {
 
 import { getApiBase } from "@/lib/config";
 import { Icon } from "@/components/ui/icon";
+import { ColumnTypeIcon } from "@/components/icons/columnType";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SchemaColumn {
@@ -186,16 +187,10 @@ function TableDetail({
       .finally(() => setLoading(false));
   }, [subtab, connId, table.name, loaded]);
 
-  const TYPE_COLOR: Record<string, string> = {
-    VARCHAR: "text-sky-400", BIGINT: "text-amber-400", INTEGER: "text-amber-400",
-    DOUBLE: "text-violet-400", FLOAT: "text-violet-400", DATE: "text-emerald-400",
-    TIMESTAMP: "text-emerald-400", BOOLEAN: "text-rose-400",
-  };
-
-  function typeColor(t: string) {
-    const key = Object.keys(TYPE_COLOR).find((k) => t.toUpperCase().startsWith(k));
-    return key ? TYPE_COLOR[key] : "text-zinc-400";
-  }
+  /* A per-type colour table lived here — sky VARCHAR, amber INT, violet DOUBLE — and it
+     agreed with none of the other three this app was keeping. The type mark in front of
+     each name says the same thing in a form that survives greyscale, so the type text is
+     plain. */
 
   return (
     <div className="flex flex-col h-full">
@@ -231,8 +226,13 @@ function TableDetail({
             <tbody>
               {table.columns.map((col, i) => (
                 <tr key={col.name} className={`border-t border-[var(--b0)] ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}>
-                  <td className="px-3 py-2 font-mono text-[var(--t1)]">{col.name}</td>
-                  <td className={`px-3 py-2 font-mono ${typeColor(col.type)}`}>{col.type}</td>
+                  <td className="px-3 py-2 font-mono text-[var(--t1)]">
+                    <span className="flex items-center gap-2">
+                      <ColumnTypeIcon type={col.type} size={13} />
+                      {col.name}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-[var(--t3)]">{col.type}</td>
                   <td className="px-3 py-2 text-[var(--t3)]">{col.is_fk ? "✓" : ""}</td>
                 </tr>
               ))}
