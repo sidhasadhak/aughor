@@ -388,8 +388,13 @@ def remove_metric(name: str, sql: Optional[str] = None,
 
     govern.guard("metric.delete", name)
     # Read BEFORE deleting: the trail should say what was removed, and afterwards there is
-    # nothing left to describe.
-    doomed = get_metric(name)
+    # nothing left to describe. SCOPED to the same connection `delete_metric` is about to use —
+    # the deletion was always scoped, but the row read to DESCRIBE it was not, so the audit
+    # entry could credit another connection's owner for a definition that never moved. A trail
+    # that misdescribes what it recorded is worse than no trail, because it is believed.
+    # With `connection` omitted the resolver behaves exactly as before, which is right: every
+    # definition of that name is going, and the entry describes one of them.
+    doomed = get_metric(name, connection_id=connection)
     if not delete_metric(name, sql=sql, connection_id=connection):
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
     Ledger.default().emit("metric.governance", {
@@ -406,10 +411,14 @@ def remove_metric(name: str, sql: Optional[str] = None,
 
 @router.post("/metrics/{name}/validate")
 async def run_metric_validation(name: str, conn_id: str):
-    """Run all quality_tests for a metric against the given connection."""
+    """Run all quality_tests for a metric against the given connection.
+
+    Resolved SCOPED — see `get_metric_value` for the measurement behind this. Running one
+    connection's quality tests against another's warehouse reports on a contract nobody wrote.
+    """
     from aughor.db.connection import open_connection_for
 
-    metric = get_metric(name)
+    metric = get_metric(name, connection_id=conn_id)
     if not metric:
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
     try:
@@ -436,10 +445,15 @@ async def run_metric_validation(name: str, conn_id: str):
 
 @router.get("/metrics/{name}/freshness")
 async def get_metric_freshness(name: str, conn_id: str):
-    """Check the freshness of a metric's underlying data against its SLA."""
+    """Check the freshness of a metric's underlying data against its SLA.
+
+    Resolved SCOPED — see `get_metric_value`. An SLA is a promise a particular team made about
+    a particular warehouse; answering with another connection's is not a near-miss, it is a
+    different promise.
+    """
     from aughor.db.connection import open_connection_for
 
-    metric = get_metric(name)
+    metric = get_metric(name, connection_id=conn_id)
     if not metric:
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
     try:
@@ -469,10 +483,24 @@ async def get_metric_value(name: str, conn_id: str):
     """Compute a governed metric's CURRENT value by running its registered SQL
     against a connection — the exact governed number, not an LLM re-derivation.
     This is what the MCP `get_metric` tool returns so an external agent binds to
-    the same definition the rest of Aughor enforces (vs improvising a formula)."""
+    the same definition the rest of Aughor enforces (vs improvising a formula).
+
+    🔴 Resolved SCOPED. Until 2026-09-20 this read `get_metric(name)` with no connection, and
+    the resolver's no-connection branch returns the FIRST row matching the name, whatever
+    connection owns it. Measured live: `GET /metrics/revenue/value?conn_id=8233e4fd` answered
+    `SUM(total_amount) FROM orders` — the `samples` definition, on a connection id that is no
+    longer in `GET /connections` at all — with the `samples` caveat prose attached, at HTTP 200,
+    and no field naming whose definition had run. It failed on theLook only because
+    `total_amount` is not a column there; where the names overlap it returns a confident number
+    for a formula the caller never asked about. The promise in the docstring above — "the exact
+    governed number, not an LLM re-derivation" — was the thing being broken.
+
+    Passing the connection is the whole fix. A strict `metric.connection == conn_id` check would
+    also close it and would break `"*"`, which is how a house-wide definition reaches every
+    connection; the resolver already shadows a global row with a scoped one."""
     from aughor.db.connection import open_connection_for
 
-    metric = get_metric(name)
+    metric = get_metric(name, connection_id=conn_id)
     if not metric:
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
     try:
