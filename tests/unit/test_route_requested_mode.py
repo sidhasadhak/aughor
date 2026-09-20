@@ -4,7 +4,9 @@ from aughor.agent.nodes import route_question
 
 def test_requested_mode_binds_no_classifier(monkeypatch):
     import aughor.agent.nodes as n
-    def _boom(q):
+    def _boom(q, **_):
+        # **_ so a classifier that DID run fails with this assertion — the thing the test
+        # is about — rather than a TypeError about the double's own signature.
         raise AssertionError("classifier must not run for an explicit mode")
     monkeypatch.setattr(n, "classify_question", _boom)
     out = route_question({"question": "Where are we losing money?",

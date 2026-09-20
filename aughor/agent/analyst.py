@@ -964,6 +964,9 @@ def run_analyst(
         tools,
         max_steps=budget,
         on_step=on_step,
+        conn_id=eff_conn_id or "",
+        trace_id=state.get("trace_id", "") or "",
+        inv_id=state.get("investigation_id", "") or "",
     )
 
     answer = (result.answer or "").strip()

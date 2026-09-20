@@ -40,6 +40,88 @@ uv run python evals/run.py
 uv run python evals/run.py --fail-on-regression 0.05
 ```
 
+## Intake pick validity (`intake_validity_eval.py`)
+
+JD-2 proposed replacing three free-text intake fields — `metric_table`, `date_column`,
+`dimensions` — with a closed option list, arguing that a closed list cannot name something
+that does not exist. This tests the premise that argument rests on, and **refutes it**.
+
+Ground truth is the schema block **persisted with each run** (`filtered_schema` on the spec),
+not the warehouse as it stands today. That choice is the lesson. The first version of this
+harness compared three months of specs against `data/*.duckdb` and reported ~20% of picks
+invalid; every headline example was a real table it had not looked at — `workspace` is a
+`local_upload` store under `data/uploads/`, `baef6c3e` points at a DuckDB outside `data/`,
+schemas have been removed (`_removed_seeds.json`) and some connections the corpus used are
+gone. The warehouse moved under the corpus, so "does this exist NOW" cannot answer "did the
+model make it up THEN". The schema the run was handed can, and cannot drift.
+
+```bash
+uv run python evals/intake_validity_eval.py --output evals/intake_validity_results.json
+```
+
+Status 2026-09-20 (202 threads / 201 investigations with a spec, 29 Jun – 19 Sep):
+
+| field | shown | column not shown | not shown | picked from what it was shown |
+| --- | --- | --- | --- | --- |
+| `metric_table` | 201 | 0 | 0 | **100.0%** |
+| `date_column` | 183 | 0 | 2 | **98.9%** |
+| `dimensions` | 1449 | 0 | 0 | **100.0%** |
+| **all picks** | **1833** | 0 | 2 | **99.9%** |
+
+**Falsifier FIRES.** The free-text field is already choosing from the list it is shown, so a
+closed option list would remove a failure that is not happening. 0 of 202 threads had their
+spec rewritten mid-run, so this is what the runs used, not a proposal a repair caught.
+
+This does not refute the other half of the Jev proposition (a calibrated probability), and it
+says nothing about whether the picks were the RIGHT ones — only that they were real.
+
+## Decision-corpus yield (`decision_yield_eval.py`)
+
+The only eval here that scores the RECORD rather than an answer: of the closed-set choices
+the platform made while answering, how many could a selection model ever train on? Arm A is
+the corpus as the pre-A1 code wrote it, arm B is what the instrumented code writes.
+
+**It makes no model call and opens no warehouse** — it reads a decisions store and counts, so
+it is free to run and safe to run often. Arm A's three columns are structural zeros (the old
+code had no parameter to carry `conn_id`, the definition chooser's response model had one
+field, and the only writer of `outcome` was `tool_loop`'s inline "did it raise"), so arm A is
+derived rather than re-run; paying a model to rediscover a zero is what the protocol below
+exists to prevent.
+
+```bash
+uv run python evals/decision_yield_eval.py --db data/decisions.db \
+    --output evals/decision_yield_results.json
+```
+
+Read a live store through a snapshot, not in place — `sqlite3 "file:data/decisions.db?mode=ro"
+".backup /tmp/snap.db"`. A plain `cp` loses rows still in the WAL, and opening the live file
+migrates its schema underneath a running API.
+
+Arm A is derived PER SITE (`_ARM_A_CAPABILITY`), not as a blanket zero: `ask.route` always
+passed the model's confidence, so the probability column is not what A1 bought there. An
+unknown site is assumed arm-A-capable, which makes A1 look like it bought less rather than
+more.
+
+Status 2026-09-19, pre-A1 baseline (live store, 40 rows): `converse.tool` 40 rows, 0
+attributable, 0 with a probability, outcomes `{ok: 40}`; `ask.route` and `framing.definition`
+silent. Falsifier FIRES, as it must on rows the old code wrote.
+
+Status 2026-09-19, arm B (8 LuxExperience questions through the instrumented router,
+gemini-3.1-flash-lite, hermetic scratch store): `ask.route` 8 rows, attributable 0 -> 8,
+with a probability 8 -> 8, discriminating False -> True on `{rejected: 1, corrected: 1}`
+after two stand-in verdicts. Falsifier HOLDS. Caveat worth more than the pass: the model
+returned confidence **1.00 on all 8**, including the question both models in the ON-10
+receipts got wrong — so the probability column is populated but flat, and A2 has an input
+that cannot yet rank anything.
+
+Status 2026-09-20, arm B on the conversational path (2 real LuxExperience turns through
+`converse`, same model, hermetic scratch store): `converse.tool` 5 rows, attributable
+0 -> 5, with a probability 0 -> 0 (the loop passes none, by design), outcomes `{ok: 5}`
+after two truthful `accept` verdicts. Falsifier HOLDS on attribution alone. Two properties
+worth stating rather than discovering later: `accept` does not propagate, so a correct
+answer leaves no per-pick signal; and the negative class therefore only ever arrives from
+failures, which on a mostly-correct system makes this corpus heavily imbalanced.
+
 ## P7 model bake-off (`model_bakeoff.py`)
 
 Compare candidate `coder` models head-to-head, scored deterministically (no LLM

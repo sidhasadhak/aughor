@@ -105,11 +105,15 @@ _DRIVER_RELATIONSHIP_RE = re.compile(
 
 # ── Node: route_question ─────────────────────────────────────────────────────
 
-def classify_question(question: str) -> tuple[str, RouteDecision]:
+def classify_question(question: str, *, conn_id: str = "", trace_id: str = "",
+                      inv_id: str = "") -> tuple[str, RouteDecision]:
     """Pure classifier — calls LLM and returns (effective_mode, decision).
 
     Separated from route_question so it can be called and tested independently
-    without constructing a full AgentState.
+    without constructing a full AgentState. The three provenance ids are optional for
+    exactly that reason and default to empty; a caller that has a run around it passes
+    them so the decision it records can be attributed to a connection and closed by a
+    later human verdict.
     Low-confidence direct falls back to investigate: false-direct (shallow
     answer) is worse than false-investigate (extra thoroughness).
 
@@ -167,12 +171,23 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
     # manifest overrides included), because that is what a reflex would have to
     # reproduce — the LLM's raw pick alone is only one input to it. The menu is derived
     # from RouteDecision's own Literal, never hand-listed beside it.
+    #
+    # The probability must describe the LABEL, not a different one. The model's own
+    # confidence belongs to `decision.mode`; once the 0.65 floor, the driver regex, the KB
+    # path or a manifest override has moved the route, the recorded pick is no longer the
+    # model's and carrying its number across would be a corpus that trains on a number
+    # about some other answer. So an overridden route records as `rule` with no
+    # probability — which is the honest reading, and also the one that keeps
+    # `corpus_yield`'s with_probability count meaningful.
     from typing import get_args as _get_args
     from aughor.learning.decisions import record_decision
+    _model_chose = effective_mode == decision.mode
     record_decision("ask.route", question,
                     list(_get_args(RouteDecision.model_fields["mode"].annotation)),
-                    chosen=effective_mode, source="llm",
-                    confidence=float(decision.confidence))
+                    chosen=effective_mode,
+                    source="llm" if _model_chose else "rule",
+                    confidence=float(decision.confidence) if _model_chose else 0.0,
+                    conn_id=conn_id, trace_id=trace_id, inv_id=inv_id)
     return effective_mode, decision
 
 
@@ -188,7 +203,11 @@ def route_question(state: AgentState) -> dict[str, Any]:
         decision = _RD(mode=_requested, confidence=1.0,
                        reasoning="explicit user selection (Deep Analysis) — classifier bypassed")
     else:
-        effective_mode, decision = classify_question(state["question"])
+        effective_mode, decision = classify_question(
+            state["question"],
+            conn_id=state.get("connection_id", "") or "",
+            trace_id=state.get("trace_id", "") or "",
+            inv_id=state.get("investigation_id", "") or "")
     # Carry the deterministic complexity verdict into the run state (and a stats
     # counter) so the cost tier we routed to is observable on the receipt / fleet view.
     from aughor.agent.complexity import assess_complexity

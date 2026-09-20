@@ -728,3 +728,187 @@ def test_the_process_and_rule_doors_keep_the_provenance_they_are_given(door, cli
     assert rule.json()["rule"]["provenance"] == said
     too_long = client.post("/ontology/rules", params=PARAMS, json={**EU_CORE, "id": "eu_core_two", "provenance": "m" * 201})
     assert too_long.status_code == 422
+
+
+# ── A4: an impossible ordering must reach the promise, not stop at the stage ─────────────────
+
+#: Some objects reach `refunded` BEFORE they are `received`. That is the LuxExperience shape
+#: measured live 2026-09-20 (4,199 of 50,048 Returns), and the reason it matters is that a
+#: negative lag can never exceed the window, so every one of them is counted as KEPT and the
+#: breach rate comes out lower than the truth. The rows are generated, never hand-listed, and
+#: every expectation below is counted from the table rather than written beside it.
+_BACKDATED = """
+CREATE TABLE ecommerce.orders_backdated AS
+SELECT o.*,
+       o.order_date + CAST(3 AS INTEGER) AS received_at,
+       CASE WHEN n % 17 = 0 THEN o.order_date + CAST(3 - 1 - (n % 4) AS INTEGER)
+            WHEN n % 5 = 0 THEN o.order_date + CAST(3 + 11 + (n % 7) AS INTEGER)
+            WHEN n % 11 = 0 THEN NULL
+            ELSE o.order_date + CAST(3 + (n % 9) AS INTEGER) END AS refunded_at
+FROM (SELECT *, CAST(substr(order_id, 2) AS INTEGER) AS n FROM ecommerce.orders) o;
+ALTER TABLE ecommerce.orders_backdated DROP COLUMN n;
+DROP TABLE ecommerce.orders;
+ALTER TABLE ecommerce.orders_backdated RENAME TO orders;
+"""
+
+REFUNDING = {"id": "order_refunding", "entity": "Order", "stages": [
+    {"name": "received", "timestamp": "received_at"},
+    {"name": "refunded", "timestamp": "refunded_at", "promise": {"name": "refund", "within_days": 10}},
+]}
+
+
+@pytest.fixture(scope="module")
+def backdated_db(tmp_path_factory):
+    path = tmp_path_factory.mktemp("backdated") / "samples.duckdb"
+    seed(path)
+    con = duckdb.connect(str(path))
+    con.execute(_BACKDATED)
+    con.close()
+    conn = open_connection("duckdb", str(path), schema_name="ecommerce", connection_id="processes-backdated-t")
+    yield conn
+    conn.close()
+
+
+def backdated_graph() -> OntologyGraph:
+    g = fresh_graph()
+    for name in ("received_at", "refunded_at"):
+        g.entities["Order"].properties[name] = EntityProperty(name=name, data_type="DATE",
+                                                              semantic_type="timestamp", null_rate=0.1)
+    return g
+
+
+def test_objects_counted_as_kept_although_their_lag_is_impossible_reach_the_promise(backdated_db):
+    """The stage already counted them and already said so in its own note. The promise is what
+    a reader is shown and what departs, and its rate silently includes them on the kept side."""
+    graph = backdated_graph()
+    _, p = declare(graph, backdated_db, REFUNDING)
+    stage, promise = p.stages[1], p.stages[1].promise
+
+    reached, breached, early = ints(backdated_db, (
+        "SELECT COUNT(*) FILTER (WHERE received_at IS NOT NULL AND refunded_at IS NOT NULL), "
+        "COUNT(*) FILTER (WHERE date_diff('day', received_at, refunded_at) > 10), "
+        "COUNT(*) FILTER (WHERE refunded_at < received_at) FROM ecommerce.orders"))
+    assert early > 0 and 0 < breached < reached, "the fixture must actually contain the shape"
+    assert (stage.out_of_order, promise.reached, promise.breached) == (early, reached, breached)
+
+    # Not one of them can be a breach — that is exactly why they flatter the rate.
+    (early_breaches,) = ints(backdated_db, "SELECT COUNT(*) FROM ecommerce.orders "
+                                           "WHERE refunded_at < received_at AND date_diff('day', received_at, refunded_at) > 10")
+    assert early_breaches == 0
+
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
+    [flag] = [f for f in promise.flags if f.startswith(IMPOSSIBLE_LAG_FLAG)]
+    assert f"{early:,} of the {reached:,}" in flag
+    without = breached / (reached - early)
+    assert f"{without:.2%}" in flag and f"not {promise.breach_rate:.2%}" in flag
+    assert without > promise.breach_rate, "the headline understates the failure, which is the point"
+
+
+def test_the_flag_travels_to_the_surface_that_quotes_the_number(backdated_db):
+    """A4's actual claim. A caveat computed and left in the record is the defect, not the fix."""
+    graph = backdated_graph()
+    _, p = declare(graph, backdated_db, REFUNDING)
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
+    described = describe_process(graph, p)["stages"][1]["promise"]
+    assert any(f.startswith(IMPOSSIBLE_LAG_FLAG) for f in described["flags"])
+
+
+def test_a_deadline_promise_is_not_flagged_for_an_ordering_it_says_nothing_about(db, graph):
+    """Mutation guard. `out_of_order` compares this stage's moment with the PREVIOUS stage's;
+    a deadline promise is about neither, so an object that arrived out of order CAN still miss
+    its deadline. Dropping the early return in `_flag_out_of_order` makes this test red."""
+    from aughor.ontology.processes import _flag_out_of_order
+
+    class _P:
+        reached, breached, breach_rate, flags = 100, 10, 0.1, []
+
+    class _S:
+        out_of_order, name = 7, "shipped"
+
+    promise = _P()
+    _flag_out_of_order(promise, _S(), {"grain": "Order", "deadline": "ship_by"}, _proc("Order"), _grain("Order"))
+    assert promise.flags == []
+
+
+@pytest.mark.parametrize("spec, reached, expect_rate", [
+    ({"grain": "OrderItem", "start": "received_at"}, 100, False),   # counted per another type — populations differ
+    ({"grain": "Order", "start": "received_at"}, 7, False),         # nothing left once they are removed
+    ({"grain": "Order", "start": "received_at"}, 100, True),
+])
+def test_the_rate_is_only_stated_when_the_denominator_is_sound(spec, reached, expect_rate):
+    """Saying less beats deriving a rate from the wrong population. The ordering is still
+    flagged in every case — only the arithmetic is withheld."""
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG, _flag_out_of_order
+
+    class _P:
+        breached, breach_rate = 10, 0.1
+
+    class _S:
+        out_of_order, name = 7, "refunded"
+
+    promise = _P()
+    promise.reached, promise.flags = reached, []
+    _flag_out_of_order(promise, _S(), spec, _proc("Order"), _grain("Order"))
+    [flag] = promise.flags
+    assert flag.startswith(IMPOSSIBLE_LAG_FLAG)
+    assert ("without them the rate is" in flag) is expect_rate
+
+
+def test_nothing_is_flagged_when_every_object_arrived_in_order():
+    from aughor.ontology.processes import _flag_out_of_order
+
+    class _P:
+        reached, breached, breach_rate, flags = 100, 10, 0.1, []
+
+    class _S:
+        out_of_order, name = 0, "refunded"
+
+    promise = _P()
+    _flag_out_of_order(promise, _S(), {"grain": "Order", "start": "received_at"}, _proc("Order"), _grain("Order"))
+    assert promise.flags == []
+
+
+def _proc(entity: str):
+    return type("P", (), {"entity": entity})()
+
+
+def _grain(entity: str):
+    return type("G", (), {"id": entity})()
+
+
+def test_impossible_rows_that_do_not_move_the_number_are_said_but_never_held():
+    """theLook's delivery promise: 23 of 96,476 out of order, 8.11% either way. Holding a
+    working send over a difference that rounds to nothing would be the kind of guard people
+    route around. It is still stated — just not with the prefix the gate blocks on."""
+    from aughor.ontology.processes import (
+        IMPOSSIBLE_LAG_FLAG, IMPOSSIBLE_LAG_NOISE_FLAG, _flag_out_of_order)
+
+    class _P:
+        reached, breached, breach_rate, flags = 96476, 7827, 0.081129, []
+
+    class _S:
+        out_of_order, name = 23, "delivered"
+
+    promise = _P()
+    _flag_out_of_order(promise, _S(), {"grain": "Order", "start": "dispatched_at"},
+                       _proc("Order"), _grain("Order"))
+    [flag] = promise.flags
+    assert flag.startswith(IMPOSSIBLE_LAG_NOISE_FLAG)
+    assert not flag.startswith(IMPOSSIBLE_LAG_FLAG), "the two prefixes must not share a stem"
+    assert "8.11%" in flag, "the finding is still stated in full"
+
+
+def test_a_rate_that_cannot_be_computed_blocks_rather_than_assuming_it_is_small():
+    """Unquantified is not the same as immaterial, so the conservative direction wins."""
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG, _flag_out_of_order
+
+    class _P:
+        reached, breached, breach_rate, flags = 100, 10, 0.1, []
+
+    class _S:
+        out_of_order, name = 7, "refunded"
+
+    promise = _P()
+    _flag_out_of_order(promise, _S(), {"grain": "OrderItem", "start": "received_at"},
+                       _proc("Order"), _grain("Order"))
+    assert promise.flags[0].startswith(IMPOSSIBLE_LAG_FLAG)

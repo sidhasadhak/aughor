@@ -87,6 +87,7 @@ FLAG_ENV = {
     "ask.converse": "AUGHOR_ASK_CONVERSE",
     "ask.query_objects": "AUGHOR_ASK_QUERY_OBJECTS",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
+    "framing.choice_confidence": "AUGHOR_FRAMING_CHOICE_CONFIDENCE",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
@@ -361,6 +362,26 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # A1 (docs/JEV_ALIGN_STUDY_2026-09-19.md, finding A1). ON adds `confidence` to the
+    # definition chooser's response model, which CHANGES THE PROMPT — hence group D, not a
+    # free instrumentation switch. The off-arm ships the identical schema it ships today.
+    "framing.choice_confidence": "does asking the definition chooser for its own confidence "
+                          "(a) change which definition it picks, and (b) produce a number that "
+                          "separates the picks a person would overturn from the ones they would "
+                          "not? ⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-09-19): "
+                          "`choose_definition` runs only on an AMBIGUOUS frame — `chosen is None "
+                          "and len(candidates()) > 1`, where candidates() keeps only `usable` "
+                          "outcomes — and all 32 authored LuxExperience questions frame to 0 "
+                          "ambiguous (27 reach no usable candidate, 5 reach exactly one; measured "
+                          "through the read-only POST /ontology/frame, no model, no warehouse). A "
+                          "grid on those sets would buy a no-op on every case, which is the exact "
+                          "mistake `explore.route_wide` is parked for. UNBLOCK: author a set whose "
+                          "questions fit TWO executable declared measures on one connection, then "
+                          "grid the fired subset. EXIT once fired: graduate if agreement is "
+                          "unchanged within noise AND the recorded confidence is lower on "
+                          "overturned picks than on upheld ones; DELETE the flag and the second "
+                          "response model if the number is flat, because a probability that does "
+                          "not separate cannot rank a queue and A2 has no input",
     # Moved here from the graduation queue by batch B's premise check: queued as
     # "invocation-gated route", but `_federation_eligible` ALSO auto-federates fresh
     # /ask auto-depth turns — an LLM-bearing routing change nothing has measured.

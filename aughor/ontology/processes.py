@@ -463,6 +463,85 @@ def _cutoff_hours(as_of: str, hours: int) -> str:
     return (moment - timedelta(hours=hours)).isoformat(sep=" ", timespec="seconds")
 
 
+#: The prefix of the flag raised when impossible rows MOVE the number. LOAD-BEARING TEXT, not
+#: a label — the departure gate matches on it to decide that a caveat refutes the figure
+#: rather than qualifying it, exactly as `TRUST_BANNER` is matched in departing text. A reword
+#: here without the same reword at the gate would unhook the hold silently, which is why
+#: `tests/unit/test_departure_laws.py` locks the round trip.
+IMPOSSIBLE_LAG_FLAG = "counted as kept although impossible"
+
+#: The same finding when the two readings agree within the noise band: still said, never a
+#: hold. A DISTINCT prefix, not a suffix on the one above — a `startswith` match against a
+#: shared stem would block both and the distinction would exist only in the prose.
+IMPOSSIBLE_LAG_NOISE_FLAG = "impossible lag, within the noise band"
+
+#: How far the two readings must differ before the impossible rows refute the number rather
+#: than qualify it — relative, |a-b| / max(|a|,|b|). This is the platform's OWN bar for two
+#: readings of one number disagreeing materially (`govern.departure.NOISE_REL`, itself the
+#: deep run's `_METRIC_DIVERGENCE_REL`); it is restated here rather than imported because the
+#: ontology does not depend on govern, and `tests/unit/test_departure_laws.py` asserts the two
+#: stay equal so the restatement cannot drift.
+#:
+#: Measured 2026-09-20, the three live promises carrying impossible rows: LuxExperience's
+#: refund 23.27% → 25.41% (8.4% relative, HOLDS), theLook's dispatch 9.35% → 9.47% (1.2%) and
+#: its delivery 8.11% → 8.11% (0.0%). Holding every one of them would stop two working sends
+#: over a tenth of a point and nothing at all; saying nothing about the first would let a
+#: number the measurement itself refutes leave the building.
+IMPOSSIBLE_LAG_MATERIAL_REL = 0.05
+
+
+def _flag_out_of_order(promise: Any, stage: ProcessStage, spec: dict, process: Process, grain: Any) -> None:
+    """Carry the stage's impossible orderings onto the PROMISE, with what they do to its rate.
+
+    The measurement already counts objects whose moment here precedes the previous stage's
+    (`stage.out_of_order`) and already says so — in `stage.note`, one level up from the
+    promise block. But the promise is what a reader is shown and what departs, and its rate
+    is computed over a population that silently includes those objects on the KEPT side: a
+    negative lag is never greater than the window. Live on LuxExperience 2026-09-20: 4,199
+    of 50,048 Returns were refunded BEFORE they were received, the promise read 23.27%
+    breached with `flags: []`, and without them it is 25.41% — the failure understated by
+    2.14 points, in the business's favour, on a number that leaves the platform.
+
+    The alternative rate is arithmetic, not a second query, and it is only stated when it is
+    SOUND to state:
+
+    * a window promise, never a `deadline` one — `out_of_order` compares this stage's moment
+      with the PREVIOUS stage's, which is the window's start (`derived.promise_filters`) but
+      has nothing to do with a deadline column;
+    * the promise counted per the process's own type, so the two counts share a population
+      (`promise.grain` may name another);
+    * and at least one object left once they are removed.
+
+    When any of those fails the ordering is still flagged, just without a rate — saying less
+    beats saying something that was derived from the wrong denominator.
+    """
+    early = stage.out_of_order or 0
+    if not early or not promise.reached:
+        return
+    previous_name = spec.get("start")
+    if not previous_name:
+        # A deadline promise. `out_of_order` compares this stage's moment with the PREVIOUS
+        # STAGE's, and the deadline has nothing to do with either — an object that arrived
+        # out of order can still miss its deadline, so "cannot break the promise" would be
+        # a false sentence here, not merely an unhelpful one.
+        return
+    remaining = promise.reached - early
+    if spec.get("grain") == process.entity and remaining > 0:
+        without = promise.breached / remaining
+        moved = abs(without - promise.breach_rate) / max(abs(without), abs(promise.breach_rate) or 1.0)
+        prefix = IMPOSSIBLE_LAG_FLAG if moved >= IMPOSSIBLE_LAG_MATERIAL_REL else IMPOSSIBLE_LAG_NOISE_FLAG
+        promise.flags.append(
+            f"{prefix}: {early:,} of the {promise.reached:,} {grain.id} objects reached "
+            f"{stage.name} BEFORE {previous_name}, so their lag is negative and none of them can break the promise — "
+            f"without them the rate is {without:.2%}, not {promise.breach_rate:.2%}")
+        return
+    # The rate could not be computed, so the impossible rows are not KNOWN to be immaterial.
+    # Unquantified is not the same as small, and the conservative direction is the blocking one.
+    promise.flags.append(
+        f"{IMPOSSIBLE_LAG_FLAG}: {early:,} of the {promise.reached:,} {grain.id} objects reached "
+        f"{stage.name} BEFORE {previous_name}, so their lag is negative and none of them can break the promise")
+
+
 def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Process, index: int, measured: Process) -> None:
     spec = promise_filters(work.processes[process.id], index)
     stage = measured.stages[index]
@@ -507,6 +586,7 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
     elif promise.breached == promise.reached:
         promise.flags.append(f"always broken: every one of the {promise.reached:,} {grain.id} objects that reached "
                              f"{stage.name} went past {what} — {check}")
+    _flag_out_of_order(promise, stage, spec, process, grain)
     promise.note = (f"{promise.breached:,} of the {promise.reached:,} {grain.id} objects that reached {stage.name} broke "
                     f"the {noun} promise ({promise.breach_rate:.2%}); {promise.open:,} have not reached it"
                     + (f", {promise.open_overdue:,} of them already past it as of {promise.as_of}"

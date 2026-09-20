@@ -788,7 +788,8 @@ def converse_available() -> bool:
 def converse(connection_id: str, question: str, *, extra_context: Optional[str] = None,
              provider=None, max_steps: Optional[int] = None,
              on_step=None, tool_emit: Optional[Emit] = None,
-             session_id: str = "", canvas_id: Optional[str] = None, agent: Any = None):
+             session_id: str = "", canvas_id: Optional[str] = None, agent: Any = None,
+             trace_id: str = ""):
     """Answer one question as a conversation rather than a compiled query spec.
 
     The whole body in one place: state-not-instructions prompt, the connection's tools,
@@ -813,6 +814,11 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
                        canvas_id=canvas_id, user_question=question, agent=agent),
         max_steps=max_steps,
         on_step=on_step,
+        conn_id=connection_id or "",
+        # A conversational turn has no investigation id yet — `save_chat_turn` mints one
+        # FROM the answer. So the loop records the trace the caller chose, and the caller
+        # stitches the investigation on afterwards with `decisions.attach_run`.
+        trace_id=trace_id or "",
     )
 
 
