@@ -695,7 +695,7 @@ with no second process running and no environment variable set.
 
 ---
 
-### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.5; **the four phases COMPLETE 2026-09-02**; **SECOND MOVEMENT — the authored step — drafted AND ADOPTED 2026-09-19 at the user's direction, §6 item 26, all five clauses decided the same day; nothing built**)
+### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.5; **the four phases COMPLETE 2026-09-02**; **SECOND MOVEMENT — the authored step — drafted AND ADOPTED 2026-09-19 at the user's direction, §6 item 26, all five clauses decided the same day; **ALL THREE BUILT the same day** — DS-17b, DS-19 and DS-18, with the live receipt on `baef6c3e`; the header read "nothing built" for a further day, which is §5's own prose-rot lesson a third time, and is corrected here rather than left to be re-discovered**)
 
 > **Origin.** The user's 2026-08-31 directive — *"any & every agent that we spawn should be
 > created via langflow style visual editor… fork it, clone it or whatever… go all in… think
@@ -6728,7 +6728,7 @@ nomenclature for the analogy's sake; a persona named "Analyst".
 ---
 
 
-### 3.19 · Arc IN — the install: what Hermes Agent's installer teaches (drafted 2026-09-17 at the user's direction — §6 item 25; **sequenced after Arc IP**, the user's order; nothing built)
+### 3.19 · Arc IN — the install: what Hermes Agent's installer teaches (drafted 2026-09-17 at the user's direction — §6 item 25; **ALL FOUR WAVES MERGED #531**, squash `2ae9ae9d`, 2026-09-20, at the user's instruction *"we are stuck with IN arc since a long time.. just take it all in one go and finish the Arc"* — which OVERRODE the "finish Arc IP first" order recorded below, and which is why item 25 (a) is still UNSTAMPED: the arc shipped on a direct instruction, never on a recorded adoption)
 
 > **Origin.** The user, 2026-09-17, with a screenshot of Hermes Agent's Quick Install
 > (https://github.com/nousresearch/hermes-agent): *"I like how hermes does it here… Im not suggesting to the exact same
@@ -7368,12 +7368,38 @@ ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE c
         DS-17b ranks the palette by what this deployment can actually run — item 26 (e), taken SEPARATELY and
         first at the user's direction, because it is a defect and the other two are features: a gated kind
         currently sorts as if it were available, which is how `trusted_query` shipped and read as absent.
-ARC IN  ⏳ DRAFTED 2026-09-17 (§3.19; §6 item 25) — the install, from what Hermes Agent's installer
-        teaches; sequenced AFTER Arc IP (the user's order); nothing built. Measured on `1c150b05`:
-        state lives in the checkout's data/, a re-run never updates the code, no update or doctor
-        command, a two-command README. Waves: IN-1 `aughor update` + `aughor doctor` → IN-2 the
-        README's install section → IN-3 hostile networks → IN-4 a data home outside the checkout
-        (its own plan first)
+ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. Built in the order
+        IN-4 → IN-1 → IN-3 → IN-2, NOT the order drafted: IN-4 has to come first, and the
+        decisive reason is sharper than atomic-swap. 102 files under `data/` are git-TRACKED and
+        the running app writes several of them (`data/metrics.json` is dirty ON PURPOSE on the
+        builder's own install), so a naive `aughor update` dirty-check refuses FOREVER on every
+        install that has been used.
+        IN-4 ✅ the data home: nothing moves until `aughor migrate-state` verifies a copy and
+             writes its marker — a default that relocated on a directory's mere presence would
+             make 1.4 GB of connections, history and receipts INVISIBLE rather than missing. A
+             SPLIT, not a move (`AUTHORED_ENTRIES`, measured against `git ls-files data/`). Four
+             path conventions reconciled at `resolve_db_path`, ~20 lines rather than 55 edits.
+             🔴 The Fernet key had NO path override, computed twice from anchors a different
+             number of `.parent` hops apart: state moving without it would have made every stored
+             DSN undecryptable, silently, because resolving to an empty path GENERATES a key.
+        IN-1 ✅ `aughor doctor` (typed verdict per check; no model call, no warehouse query, and
+             it writes nothing — the obvious route opens `org_llm.db` and becomes a second writer
+             on `data/`) · `aughor update` (fast-forward, refuse, NEVER reset) · `migrate-state`.
+             🔴 Found by doctor's first live run: `aughor up`'s port guard had NEVER fired here.
+             `_port_in_use` bound `127.0.0.1` with SO_REUSEADDR, which does not stop a WILDCARD
+             listener — and `0.0.0.0` is how the runbook starts this API.
+        IN-3 ✅ retries, a blobless-clone fallback, a preflight that warns and never blocks, and a
+             TLS-proxy hint naming what Python AND Node each need — on BOTH installers, with
+             `test_installer_parity` making the Windows twin falling behind a build failure.
+        IN-2 ✅ the README's install section, written from measurement, with a guard asserting
+             every command it shows resolves. WSL2 is NAMED and NOT CLAIMED (§6 item 25 (e) asks
+             for a measurement nobody has taken); item 25 (d)'s short address is not invented.
+        ⏳ Still owed: `migrate-state` has NEVER run for real — it needs the API stopped, which is
+             the operator's, and until then every path resolves exactly as before, which is the
+             design and not an omission. `connectors/api/base_sync.py` still has no env override
+             and is invisible to BOTH hermeticity guards. `metrics.json` and `ontology_overrides/`
+             are tracked AND runtime-written; the overlay that resolves that is its own slice.
+             Re-running `install.sh` on an existing clone still does not update it.
 ARC JD  ⏳ DRAFTED 2026-09-17, RECORDED 2026-09-20 (§3.20; §6 item 28) — the judgment seam: one state,
         N independent typed questions, a closed answer space, and a probability our code bands on.
         Nothing from the JD series built. ⚠️ The numbers are NOT the ones the draft asked for: it was
@@ -8198,7 +8224,14 @@ the browser** · **measure the premise before building.**
     on).
 
 25. ⏳ **DRAFTED 2026-09-17 (the user: "Lets add this to the roadmap first.. I want to finish IP arc first though..")
-    — Arc IN, the install (§3.19): sequenced after Arc IP, nothing built.** Open, each with the builder's
+    — Arc IN, the install (§3.19): ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — and (a) was
+    NEVER STAMPED.** The arc shipped on the user's direct instruction ("just take it all in one go and
+    finish the Arc"), which also overrode their own "finish Arc IP first" order. Recorded plainly rather
+    than back-filled as an adoption: what follows are the recommendations as drafted, and (a) is now moot
+    for sequencing but still unanswered as a decision. (b) the data home LANDED as recommended, planned on
+    its own. (c) `--non-interactive` was NOT added — the industries question already stays off the
+    unattended path, and nobody has measured a real Windows console. (e) WSL2 is named and not claimed,
+    exactly as recommended. Open, each with the builder's
     recommendation:
     **(a) Adoption and order** — IN-1 and IN-2 first (cheap, low risk, real gaps), IN-3 beside them, IN-4 last with its
     own plan. *Recommended: yes, after Arc IP.*
