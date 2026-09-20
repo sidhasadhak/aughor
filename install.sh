@@ -31,6 +31,8 @@ main() {
   printf '\n  %sAughor installer%s\n\n' "$bold" "$reset"
   blank=1 # the header ends with a blank line
 
+  # Before the first slow step, not after three retries into it.
+  preflight github.com
   find_checkout
   # The hint for next time has to name the checkout when this terminal is not in it.
   if [ "$ROOT" != "$(pwd -P)" ]; then
@@ -39,6 +41,7 @@ main() {
   LOGS="$ROOT/.aughor/logs"
   mkdir -p "$LOGS"
 
+  preflight astral.sh
   ensure_uv
   check_uv_version
   cd "$ROOT"
@@ -156,6 +159,24 @@ have_git() {
     return 1
   fi
   git --version >/dev/null 2>&1
+}
+
+# IN-3 — a preflight, so an unreachable network is named in a second rather than discovered
+# three retries into the first slow step. It probes ONLY reachability of the host the very
+# next step needs, with a short timeout, and it never blocks: a probe that cannot run (no
+# curl, a host that refuses HEAD) must not stop an install that would have worked. A warning
+# is the whole contribution — it turns "it hung for two minutes then failed" into "this host
+# is unreachable" before the waiting starts.
+preflight() {
+  command -v curl >/dev/null 2>&1 || return 0
+  for host in "$@"; do
+    if ! curl -sSf --connect-timeout 5 --max-time 8 -o /dev/null "https://$host" 2>/dev/null; then
+      say ""
+      say "Warning: $host did not answer. The next step downloads from it."
+      say "If this is a corporate network, a proxy or its certificate is the usual reason."
+      return 0
+    fi
+  done
 }
 
 # IN-3 — one attempt is not an answer on a hostile network. Three tries, doubling from a
