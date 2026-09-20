@@ -18,6 +18,13 @@ receipt the message carries:
   with a disclaimer, so the departure HOLDS. Live receipt: 2026-09-16, theLook's brief
   departed to #aughor_canvas flagged "NOT reliable" — the incident this gate exists to make
   impossible.
+- **caveat** — a measurement that REFUTES its own number does not leave. A promise's flags
+  mostly qualify a figure and ride the receipt, but one class says the figure is
+  arithmetically wrong: objects whose lag is impossible, counted as kept, so the rate is
+  lower than the truth. Live anchor: 2026-09-20, LuxExperience's refund promise measured
+  23.27% breached over a population including 4,199 Returns refunded BEFORE they arrived —
+  25.41% without them. Which caveats block is `departure_basis._blocking`'s call, not this
+  module's.
 - **tie-out** — a governed metric the text asserts runs its `quality_tests` AT THE GATE. A
   tie-out that runs and fails holds; one that cannot run is recorded and does not hold — an
   infrastructure hiccup is not a failing number.
@@ -124,7 +131,7 @@ UNATTENDED = "unattended"
 PERSON = "person"
 
 #: Every guard, in the order it runs; a receipt lists outcomes in this order.
-GUARDS: tuple[str, ...] = ("trust", "tie_out", "definition", "remeasure", "freshness",
+GUARDS: tuple[str, ...] = ("trust", "caveat", "tie_out", "definition", "remeasure", "freshness",
                            "claims", "disagreement", "repeat", "probation")
 
 #: What a guard concluded.
@@ -136,7 +143,7 @@ UNAVAILABLE = "unavailable"
 EXEMPT = "exempt"
 
 GUARD_LABELS: dict[str, str] = {
-    "trust": "trust", "tie_out": "tie-out", "definition": "definition",
+    "trust": "trust", "caveat": "caveat", "tie_out": "tie-out", "definition": "definition",
     "remeasure": "re-measure", "freshness": "freshness", "claims": "claim type",
     "disagreement": "disagreement", "repeat": "repeat", "probation": "probation",
 }
@@ -186,6 +193,21 @@ class Measurement:
     remeasure: Optional[Callable[[list], Optional[tuple]]] = None
     stale_note: str = ""
     rendered: bool = False
+    #: What the measurement itself found worth a reader's eye — a promise's `flags`. These do
+    #: NOT hold a departure: they qualify a number rather than refute it, and a gate that
+    #: blocked on every caveat would teach senders to stop writing them. They ride the receipt
+    #: instead, because the alternative is what shipped on LuxExperience: a refund promise
+    #: departing as "23.27% breached" when 4,199 of the 50,048 objects were refunded BEFORE
+    #: they arrived and were counted as kept — 25.41% without them, with nothing on the
+    #: message to say so.
+    caveats: list = field(default_factory=list)
+    #: The subset of ``caveats`` that REFUTE the number rather than qualify it — classified by
+    #: the builder that knows the vocabulary (`departure_basis._blocking`), never by the gate.
+    #: These HOLD. Today it is one case: a promise whose population contains objects with an
+    #: impossible lag, counted as kept, so the departing rate is arithmetically lower than the
+    #: truth. Keeping the two lists apart is what stops "a caveat holds" from becoming "every
+    #: caveat holds", which would teach senders to stop writing them.
+    blocking_caveats: list = field(default_factory=list)
 
 
 @dataclass
@@ -246,6 +268,7 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
     conn = _LazyConnection(conn_id)
     try:
         found["trust"] = _guarded("trust", lambda: _trust(text))
+        found["caveat"] = _guarded("caveat", lambda: _caveat(measurement))
         found["tie_out"] = _guarded("tie_out", lambda: _tie_out(text, conn_id, conn))
         found["definition"] = _guarded(
             "definition", lambda: _definition(text, conn_id, about, declared_definition))
@@ -298,6 +321,7 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
         "as_of": as_of,
         "guards": guards,
         "held_lines": len(held_lines or []),
+        "caveats": list(measurement.caveats) if measurement else [],
         "link": departure_link(record_id),
     }
     # The exact sentence that travels, stored with the row — readable where it was recorded.
@@ -334,6 +358,10 @@ def receipt_line(receipt: dict) -> str:
              else "definition: none named",
              f"as of {str(receipt['as_of'])[:10]}" if receipt.get("as_of")
              else "as of: not stated by the source"]
+    # Before the guard list, not after: a caveat qualifies the number a reader just read, and
+    # a sentence that ends in a list of green ticks reads as reassurance whatever follows it.
+    for caveat in (receipt.get("caveats") or []):
+        parts.append(f"caveat: {caveat}")
     if ran:
         parts.append("checked: " + ", ".join(ran))
     if could_not:
@@ -434,6 +462,28 @@ def _trust(text: str) -> _Check:
                   "a computation-error trust check flagged a headlined figure — the screen "
                   "shows the flagged report; a channel gets nothing until it is recomputed"
                   + (f" ({caveat})" if caveat else ""))
+
+
+def _caveat(measurement: Optional[Measurement]) -> _Check:
+    """A measurement that refutes its own number does not leave.
+
+    The flags a measurement carries mostly QUALIFY it — "never broken" is a surprising shape,
+    not a wrong figure — and those ride the receipt. A blocking caveat is different in kind:
+    the number is arithmetically wrong, and the measurement itself says so. Live anchor,
+    2026-09-20: LuxExperience's refund promise measured 23.27% breached over a population
+    that included 4,199 Returns refunded BEFORE they were received, every one counted as
+    kept; the true rate is 25.41%. On the screen the flag is shown beside the number, which
+    is honesty. In a channel it would be a wrong number with a footnote, so it holds — the
+    same reasoning as the trust banner above, reached from the measurement instead of the
+    text. Which caveats block is decided by `departure_basis._blocking`, not here.
+    """
+    if measurement is None:
+        return _Check(NOT_APPLICABLE, "no measurement to judge")
+    blocking = [str(c) for c in (measurement.blocking_caveats or [])]
+    if not blocking:
+        return _Check(PASSED, "clean")
+    return _Check(HOLDS, " · ".join(blocking),
+                  "the measurement refutes its own number: " + " · ".join(blocking))
 
 
 def _banner_caveat(text: str) -> str:

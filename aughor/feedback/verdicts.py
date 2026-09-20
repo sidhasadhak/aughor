@@ -100,6 +100,17 @@ def record_verdict(
         # AFTER the commit: the verdict is the durable thing, pinning is bookkeeping.
         from aughor.obs.session_log import pin_run
         pin_run(investigation_id=investigation_id or "")
+        # A1 — the decision corpus's return path, and the ONLY caller `mark_outcome` has
+        # ever had. This run's route, definition and tool picks led to the finding a person
+        # just judged, so the judgement is theirs too. `accept` is deliberately not
+        # propagated: it means the finding was right, which does not establish that any
+        # individual pick was — but `reject` does rule the chain out, and a label that can
+        # come out negative is the whole point (before this, every row read 'ok').
+        # Best-effort and after the commit, like the pin above.
+        if v in ("reject", "correct"):
+            from aughor.learning.decisions import mark_outcomes_for_run
+            mark_outcomes_for_run(inv_id=investigation_id or "",
+                                  outcome="rejected" if v == "reject" else "corrected")
         result = {
             "id": new_id, "org_id": org, "connection_id": connection_id or "",
             "investigation_id": investigation_id or "", "verdict": v,

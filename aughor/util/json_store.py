@@ -15,8 +15,48 @@ Two shapes:
 from __future__ import annotations
 
 import json
+import logging
+import uuid
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
+
+
+def _fell_back(path, exc: BaseException, op: str) -> None:
+    """Record that the ledger was unreachable and this call served the FILE instead.
+
+    Module-level, not a method, because the two facade families do not share a base:
+    `LedgerListStore` descends from `JsonListStore`, `FileFamilyStore` from
+    `KeyedJsonStore`. As a method on one of them the other's handlers raise
+    AttributeError from inside an `except` block — turning the tolerated fallback this
+    exists to record into the crash it exists to prevent.
+
+    The file is a one-time import that is never rewritten on the healthy path, so it
+    goes stale the moment the store is used: measured live 2026-09-19,
+    `schema_profiles.json` was 211,920 bytes last written five weeks before the 6.2 MB
+    of ledger rows it stands in front of, and `agent_runs.json` held 1 run against the
+    ledger's 220. A read that quietly falls back does not degrade — it time-travels.
+
+    A write is worse. The `migrated:` marker is already set, so the import never re-runs
+    and whatever the fallback wrote to the file is orphaned there permanently; nothing
+    in the codebase reconciles the two.
+
+    Loud, not fatal: the best-effort contract is unchanged. The fallback simply leaves a
+    trace — a counter to alert on, a log line to find — instead of none at all.
+    """
+    try:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc,
+                 f"ledger unavailable — {op} served the legacy FILE {path}, which is a "
+                 f"stale one-time import; a write here is orphaned (marker already set)",
+                 counter=f"json_store.ledger_fallback.{op}")
+    except Exception:                                              # noqa: BLE001
+        # A diagnostic must never be the thing that raises — but it must not be SILENT
+        # either, which is the whole point of the function it is guarding. `tolerate` is
+        # what every other swallow here routes through, so it cannot guard itself; the
+        # stdlib logger is the one thing below it that has no such dependency.
+        logging.getLogger(__name__).warning(
+            "json_store: the ledger-fallback diagnostic itself failed for %s on %s",
+            op, path, exc_info=True)
 
 
 class KeyedJsonStore:
@@ -75,26 +115,30 @@ class KeyedJsonStore:
     def load(self) -> dict:
         try:
             return self._ledger().kv_load_all(self._store_id)
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "load")
             return self._file_load()
 
     def save(self, data: dict) -> None:
         try:
             self._ledger().kv_replace_all(self._store_id, data, max_entries=self.max_entries)
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "save")
             self._file_save(data)
 
     def get(self, key: str, default: Any = None) -> Any:
         try:
             return self._ledger().kv_get(self._store_id, key, default)
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "get")
             return self._file_load().get(key, default)
 
     def put(self, key: str, value: Any) -> None:
         """Insert/update `key` as most-recently-used; evict oldest past `max_entries`."""
         try:
             self._ledger().kv_put(self._store_id, key, value, max_entries=self.max_entries)
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "put")
             cache = self._file_load()
             cache.pop(key, None)          # move-to-end (MRU on insertion order)
             cache[key] = value
@@ -108,7 +152,8 @@ class KeyedJsonStore:
         an invalidation that actually removed something vs one that found nothing."""
         try:
             return self._ledger().kv_delete(self._store_id, key)
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "delete")
             cache = self._file_load()
             if key not in cache:
                 return False
@@ -120,7 +165,8 @@ class KeyedJsonStore:
         """Drop every key starting with `prefix`. Returns how many were removed."""
         try:
             return self._ledger().kv_invalidate_prefix(self._store_id, prefix)
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "invalidate_prefix")
             cache = self._file_load()
             evict = [k for k in cache if k.startswith(prefix)]
             for k in evict:
@@ -299,29 +345,65 @@ class LedgerListStore(JsonListStore):
     def all(self) -> list[dict]:
         try:
             return list(self._ledger().kv_load_all(self._store_id).values())
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "list_all")
             return super().all()
 
     def save_all(self, items: list[dict]) -> None:
         try:
             self._ledger().kv_replace_all(self._store_id, self._as_dict(items))
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "list_save_all")
             super().save_all(items)
 
     def get(self, id_: str) -> Optional[dict]:
         try:
             return self._ledger().kv_get(self._store_id, self._key(id_), None)
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "list_get")
             return super().get(id_)
 
     def upsert(self, item: dict) -> None:
         try:
             self._ledger().kv_put(self._store_id, self._key(item), item)
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "list_upsert")
             super().upsert(item)
 
     def delete(self, id_: str) -> bool:
         try:
             return bool(self._ledger().kv_delete(self._store_id, self._key(id_)))
-        except Exception:
+        except Exception as exc:
+            _fell_back(self.path, exc, "list_delete")
             return super().delete(id_)
+
+    def append(self, item: dict) -> None:
+        """One INSERT, not a whole-table rewrite.
+
+        The inherited :meth:`JsonListStore.append` is ``all()`` then ``save_all()``, which
+        is honest for a file — you rewrite it anyway — and quadratic here: ``save_all``
+        is ``kv_replace_all``, a DELETE of every row followed by a re-insert of every row,
+        on each append. A file store that grows is the one shape where inheriting that
+        method is actively worse than the file it replaced, and an append-only log is
+        exactly that shape. ``kv_put`` is the same single transaction ``upsert`` uses.
+
+        An item with no id gets a synthetic one-off key rather than its rendered id.
+        ``_key`` renders a missing id as the string ``"None"``, and kv's ``(store, key)``
+        primary key would then make every id-less append overwrite the last — the
+        opposite of append-only. Deferring to ``super().append`` does NOT avoid this:
+        the parent body calls ``self.all()`` and ``self.save_all()``, both overridden
+        here, so it lands back on the same collapsing key. The row is stored, readable
+        and ordered; only ``get(id_)`` cannot reach it, which was already true of a row
+        that has no id."""
+        try:
+            led = self._ledger()
+        except Exception as exc:
+            _fell_back(self.path, exc, "list_append")
+            super().append(item)
+            return
+        key = self._key(item) if item.get(self.id_field) else f"__anon__:{uuid.uuid4()}"
+        try:
+            led.kv_put(self._store_id, key, item)
+        except Exception as exc:
+            _fell_back(self.path, exc, "list_append")
+            super().append(item)

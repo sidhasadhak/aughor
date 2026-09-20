@@ -112,6 +112,9 @@ def run_tool_loop(
     *,
     max_steps: Optional[int] = None,
     on_step: Optional[Callable[[LoopStep], None]] = None,
+    conn_id: str = "",
+    trace_id: str = "",
+    inv_id: str = "",
 ) -> LoopResult:
     """Run one converse turn to an answer, or until the budget runs out.
 
@@ -126,6 +129,12 @@ def run_tool_loop(
     what stops a departed client from paying for the remaining provider round-trips.
     Default ``None`` so every existing caller — the ten-turn receipt included — runs
     the identical code path it ran before.
+
+    ``conn_id`` / ``trace_id`` / ``inv_id`` are provenance for the decision records this
+    loop writes, and nothing else reads them. They default to empty so a caller that does
+    not have a run around it is unchanged; a caller that does should pass them, because a
+    tool pick recorded without its connection cannot be attributed to the roster and
+    schema the model was actually choosing against.
     """
     by_name = {t.name: t for t in tools}
     wire = [t.as_wire() for t in tools]
@@ -223,7 +232,8 @@ def run_tool_loop(
                 f"step {len(steps)} | last {prev.tool + (' ok' if prev.ok else ' error') if prev else '(start)'}"
                 f" | {question}",
                 menu, chosen=call.name, source="llm",
-                outcome="ok" if ok else "error")
+                outcome="ok" if ok else "error",
+                conn_id=conn_id, trace_id=trace_id, inv_id=inv_id)
         history.extend(_exchange(call, payload))
 
     # Budget spent. The turn is not an error — it is an answer we did not reach, and

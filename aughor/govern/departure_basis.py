@@ -158,6 +158,18 @@ def _cells_or_none(cells: Optional[list]) -> Optional[tuple]:
 
 # ── a promise, a process, a rule ────────────────────────────────────────────────────
 
+def _blocking(flags) -> list:
+    """The flags that REFUTE a promise's number rather than qualify it.
+
+    Classified here, in the ontology-aware layer, so the gate never has to know a promise's
+    vocabulary — it only asks the measurement which of its caveats block. Today exactly one
+    does: objects whose lag is impossible were counted as kept, so the rate that departs is
+    arithmetically lower than the truth. "Never broken" and "always broken" stay
+    non-blocking; they are surprising shapes, not wrong numbers.
+    """
+    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
+    return [str(f) for f in (flags or []) if str(f).startswith(IMPOSSIBLE_LAG_FLAG)]
+
 def measurement_for_promise(securable: str, conn_id: str) -> Optional[Measurement]:
     """A promise's stamp — objects, reached, breached, kept, open, overdue, its breach rate
     and the data's own as-of. Scoped to exactly that promise: a sibling promise's count is
@@ -179,6 +191,8 @@ def measurement_for_promise(securable: str, conn_id: str) -> Optional[Measuremen
             rates=[float(rate)] if isinstance(rate, (int, float)) else [],
             as_of=str(stamp.get("as_of") or ""),
             definition=f"promise {ident} (declared)",
+            caveats=[str(f) for f in (stamp.get("flags") or [])],
+            blocking_caveats=_blocking(stamp.get("flags")),
             stale_note="a promise is re-measured by the ontology's measure pass, not at a send")
     process, promise = found
     values = [float(promise[k]) for k in ("objects", "reached", "breached", "kept", "open",
@@ -192,6 +206,12 @@ def measurement_for_promise(securable: str, conn_id: str) -> Optional[Measuremen
         measured_at=str(process.get("measured_at") or ""),
         as_of=str(promise.get("as_of") or ""),
         definition=f"promise {promise.get('name', '')} (declared)",
+        # The measurement's own caveats travel with the number it measured. Everywhere else a
+        # promise's flags already ride — the panel renders them red, the object door turns
+        # them into query caveats, the frame carries them as notes — and the ONE surface that
+        # dropped them was the one that leaves the building.
+        caveats=[str(f) for f in (promise.get("flags") or [])],
+        blocking_caveats=_blocking(promise.get("flags")),
         stale_note="a promise is re-measured by the ontology's measure pass, not at a send")
 
 
