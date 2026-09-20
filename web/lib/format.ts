@@ -41,15 +41,71 @@ import { effectiveDateFormat, effectiveTimezone } from "./orgSettings";
 
 // ── Column types ─────────────────────────────────────────────────────────────
 
-/** SQL numeric column types — mirrors the backend `_NUMERIC_TYPES` (profiler.py),
- *  including DuckDB's unsigned `U*INT` variants. Distributions/percentiles only
- *  make sense for these, so the UI gates the per-column distribution on it. */
-const NUMERIC_TYPE_RE =
-  /\b(U?(?:TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|INT)|FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL|NUMBER)\b/i;
+/**
+ * What a column's declared SQL type MEANS — nine kinds, one per thing you can do with
+ * the column rather than one per keyword a dialect happens to spell.
+ *
+ * This is the definition behind the type mark every catalog surface now draws
+ * (`components/icons/columnType.tsx`), and behind `isNumericType`, which used to be a
+ * separate regex here. Two definitions of "is this a number" is how the rail came to
+ * call a column INTEGER while the Catalog screen called the same column INT64 and drew
+ * nothing at all for it.
+ *
+ * ── THE SPELLINGS ARE MEASURED, NOT IMAGINED ────────────────────────────────
+ * The frontend's old `isNum` read `\bINT\b`, which does not match `INT64`: there is no
+ * word boundary between `T` and `6`. Every BigQuery-shaped column in this product —
+ * which is how the Catalog screen serves theLook — fell through to "not a number". The
+ * backend hit this exact bug and fixed it in `aughor/tools/profiler.py::_NUMERIC_TYPES`
+ * ("no measure could ever exist there"); this is the same vocabulary, on this side of
+ * the wire, and `lib/columnType.test.ts` holds the two in step.
+ */
+export type ColumnTypeKind =
+  | "num" | "date" | "time" | "text" | "bool" | "json" | "binary" | "geo" | "unknown";
 
-/** True when a column's declared SQL type is numeric (int/float/decimal/…). */
+/** Pattern → kind, in resolution order. ORDER IS LOAD-BEARING — see the containers. */
+const TYPE_RULES: ReadonlyArray<readonly [RegExp, ColumnTypeKind]> = [
+  // CONTAINERS FIRST, and this is the whole reason the list is ordered. A container
+  // spells its element types inside itself: `STRUCT<a INT>` and `ARRAY<DATE>` match the
+  // number and date rules on text that describes a FIELD, not the column. The column is
+  // a struct. `INTEGER[]` is the same claim written the other way round.
+  [/(\[\s*\])|\b(JSONB?|STRUCT|MAP|ARRAY|VARIANT|OBJECT|RECORD|ROW|LIST|SUPER)\b/i, "json"],
+  [/\b(GEOGRAPHY|GEOMETRY|GEOPOINT)\b/i,                                       "geo"],
+  [/\b(BLOB|BYTEA|VARBINARY|BINARY|BYTES|IMAGE)\b/i,                           "binary"],
+  [/\b(BOOLEAN|BOOL|BIT)\b/i,                                                  "bool"],
+  // `TIMESTAMP` before `DATE`: a DATETIME is an instant, not a day.
+  [/\b(TIMESTAMP\w*|DATETIME\w*|TIME\w*|INTERVAL)\b/i,                          "time"],
+  [/\bDATE\b/i,                                                                "date"],
+  // `U?` DuckDB's unsigned ints · `\d*` BigQuery's INT64/FLOAT64 and Postgres'
+  // int2/int4/int8/float8 · the rest as `profiler.py` spells them.
+  [/\b(U?(?:TINYINT|SMALLINT|MEDIUMINT|INTEGER|BIGINT|HUGEINT|INT)\d*|FLOAT\d*|DOUBLE|REAL|DECIMAL|BIGDECIMAL|NUMERIC|BIGNUMERIC|NUMBER|MONEY|BIGSERIAL|SERIAL\d*|YEAR)\b/i, "num"],
+  [/\b(VARCHAR\w*|NVARCHAR|CHARACTER|CHAR\w*|BPCHAR|VARYING|TEXT|STRING|CLOB|ENUM|UUID|CATEGORICAL)\b/i, "text"],
+];
+
+/**
+ * Which kind a declared SQL type belongs to.
+ *
+ * Unrecognised — or absent — is `unknown`, never silently "text": a catalog that never
+ * learned a column's type and a genuine VARCHAR are different facts, and a confident
+ * wrong glyph is worse than an honest blank one.
+ */
+export function columnTypeKind(type: string | null | undefined): ColumnTypeKind {
+  if (!type) return "unknown";
+  for (const [re, kind] of TYPE_RULES) if (re.test(type)) return kind;
+  return "unknown";
+}
+
+/** What the mark would say out loud — for a tooltip, and for the reader who cannot see
+ *  that the glyph is a tiny calendar. */
+export const COLUMN_KIND_LABEL: Record<ColumnTypeKind, string> = {
+  num: "number", date: "date", time: "time", text: "text", bool: "true/false",
+  json: "structured", geo: "geography", binary: "binary", unknown: "type unknown",
+};
+
+/** True when a column's declared SQL type is numeric (int/float/decimal/…).
+ *  Distributions and percentiles only make sense for these, so the UI gates the
+ *  per-column distribution on it. */
 export function isNumericType(type: string | null | undefined): boolean {
-  return !!type && NUMERIC_TYPE_RE.test(type);
+  return columnTypeKind(type) === "num";
 }
 
 // ── Numbers ──────────────────────────────────────────────────────────────────

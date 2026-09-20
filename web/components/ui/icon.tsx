@@ -53,13 +53,13 @@ import {
   IconAbc, IconAdjustmentsHorizontal, IconAlertCircle, IconArrowLeft, IconBell,
   IconBookmark, IconCalendar, IconChartBar, IconChevronLeft, IconChevronUp, IconColumns,
   IconCompass, IconCopy, IconDotsVertical, IconDownload, IconExternalLink, IconEye,
-  IconFolder, IconGripVertical, IconHash, IconKey, IconLink, IconLock,
-  IconMaximize, IconMessageCircle, IconMinus, IconPencil, IconPin, IconPoint,
+  IconFolder, IconGripVertical, IconKey, IconLink, IconLock,
+  IconMaximize, IconMapPin, IconMessageCircle, IconMinus, IconPencil, IconPin, IconPoint,
   IconPlayerStop, IconRobot, IconSchema, IconServer, IconTarget, IconTerminal2,
   IconToggleLeft, IconTrendingDown, IconTrendingUp, IconUser, IconUsers, IconWand,
   IconBulb, IconFlask, IconScale, IconZoomIn,
   IconArrowsSplit2, IconBinaryTree, IconChartDots3, IconGauge, IconHandStop, IconStack2,
-  IconList, IconPaperclip,
+  IconList, IconPaperclip, IconNumber123, IconBraces, IconBinary,
 } from "@tabler/icons-react";
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 
@@ -116,11 +116,20 @@ const ICONS = {
   memory: IconStack2,
   graph: IconChartDots3,
 
-  // column TYPES — the catalog's four data-type marks
-  num: IconHash,
+  // column TYPES — the mark a column carries wherever it is listed. `components/icons/
+  // columnType.tsx` decides which of these a declared SQL type asks for; a `#` used to
+  // stand for a number and was replaced by `123`, the glyph a warehouse console draws
+  // and the only one that reads as a NUMBER rather than as a count of things. `time`
+  // draws the same clock as `clock` under a different role on purpose: a column of
+  // instants is not a deadline, and the two are free to diverge.
+  num: IconNumber123,
   date: IconCalendar,
+  time: IconClock,
   text: IconAbc,
   bool: IconToggleLeft,
+  json: IconBraces,
+  geo: IconMapPin,
+  binary: IconBinary,
 
   // actions
   run: IconPlayerPlay,

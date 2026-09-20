@@ -42,6 +42,7 @@ import { AddDataPanel } from "@/components/AddDataPanel";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
 import { Chevron, IcoCatalog, IcoSchema, IcoTable } from "@/components/icons/catalog";
+import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { useRichSchema, richSchemaKey } from "@/lib/schema-context";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -65,15 +66,10 @@ const TYPE_OPTIONS = [
   "BLOB", "JSON", "UUID",
 ];
 
-function typeColor(t: string): string {
-  const u = t.toUpperCase();
-  if (u.includes("VARCHAR") || u.includes("TEXT"))                  return "var(--blue4)";
-  if (u.includes("BIGINT") || u.includes("INT"))                    return "var(--vio4)";
-  if (u.includes("DOUBLE") || u.includes("FLOAT") || u.includes("NUMERIC")) return "var(--grn4)";
-  if (u.includes("DATE") || u.includes("TIME"))                     return "var(--amb4)";
-  if (u.includes("BOOL"))                                           return "var(--grn4)";
-  return "var(--t2)";
-}
+/* `typeColor` lived here: a fourth palette for a column's type, disagreeing with the
+   three others in this app about what colour an INT is. The glyph in front of the name
+   states the type now, so the label beside it is plain `--t3` text — the type is read,
+   not decoded. */
 
 // ── Distribution mini-viz (shared with exploration) ──────────────────────────
 
@@ -767,9 +763,15 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                     onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }} title={col.description || ""}>
-                      {dist
-                        ? <span style={{ flexShrink: 0, display: "flex" }}><Chevron open={open} /></span>
-                        : <span style={{ width: 6, height: 6, borderRadius: 2, flexShrink: 0, background: typeColor(col.type), opacity: 0.7 }} />}
+                      {/* Two slots, not one. The type mark used to share this space with
+                          the distribution chevron, so the columns that HAVE a distribution
+                          — the numeric ones — were the only columns that never showed
+                          their type. The chevron keeps a fixed 12px whether or not it is
+                          drawn, which is also what keeps the names in a straight line. */}
+                      <span style={{ width: 12, flexShrink: 0, display: "flex" }}>
+                        {dist && <Chevron open={open} />}
+                      </span>
+                      <ColumnTypeIcon type={col.type} size={13} />
                       <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
                       {col.description && (
                         <span style={{ fontSize: 11, color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{col.description}</span>
@@ -782,7 +784,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                           onChange={e => setEditType(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(col.name); } if (e.key === "Escape") { setEditingCol(null); } }}
                           autoFocus
-                          style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(editType), background: "var(--bg-0)", border: "0.5px solid var(--blue2)", borderRadius: 3, padding: "2px 5px", width: 110, outline: "none", cursor: "pointer" }}
+                          style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t2)", background: "var(--bg-0)", border: "0.5px solid var(--blue2)", borderRadius: 3, padding: "2px 5px", width: 110, outline: "none", cursor: "pointer" }}
                         >
                           {TYPE_OPTIONS.map(t => (
                             <option key={t} value={t} style={{ background: "var(--bg-0)", color: "var(--t1)" }}>{t}</option>
@@ -800,7 +802,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                       <span
                         onClick={() => { setEditingCol(col.name); setEditType(col.type); }}
                         title="Click to edit type"
-                        style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type || "--"), cursor: "pointer", borderBottom: "1px dashed var(--b2)" }}
+                        style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", cursor: "pointer", borderBottom: "1px dashed var(--b2)" }}
                       >{col.type || "—"}</span>
                     )}
                     {col.is_fk

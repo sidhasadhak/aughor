@@ -36,6 +36,7 @@ import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
 
 import { Icon } from "@/components/ui/icon";
+import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { formatCount } from "@/lib/format";
 import type { RichSchema, SchemaColumn, SchemaJoin, SchemaTable } from "@/lib/api";
 
@@ -329,7 +330,11 @@ const TableNode = memo(function TableNode({ data }: { data: TableNodeData }) {
                 <span className="flex-1 aug-fs-xs font-mono text-zinc-300 truncate min-w-0">
                   {col.name}
                 </span>
-                <span className="aug-fs-xs font-mono text-zinc-500 shrink-0 pl-2">
+                {/* The mark sits with the TYPE, not with the name: the left slot on an
+                    ER row already belongs to PK/FK, and a key is the fact you scan an
+                    entity card for first. */}
+                <span className="aug-fs-xs font-mono text-zinc-500 shrink-0 pl-2 flex items-center gap-1.5">
+                  <ColumnTypeIcon type={col.type} size={12} color="currentColor" />
                   {type}
                 </span>
               </div>
