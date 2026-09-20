@@ -2449,14 +2449,22 @@ class SchemaExplorer:
                 # none of it.
                 _kb_block = ""
                 try:
-                    from aughor.business_profile.metric_kb import match_industry
+                    from aughor.business_profile.metric_kb import curated_metrics, match_industry
                     _sel_kb = match_industry(_eff_industry)
-                    if _sel_kb and (_sel_kb.get("metrics") or []):
+                    # IP — the ACTIVE package's typed recipes first, then industry.json's prose ones
+                    # for what the package does not cover. A band marked "published" was measured
+                    # against a named source and reproduced by gate 4; a prose one is an assertion.
+                    # The model should be able to tell them apart, because it is being asked to
+                    # refuse impossible figures on the strength of them.
+                    _sel_metrics = curated_metrics(_eff_industry)
+                    if _sel_kb and _sel_metrics:
                         _kb_lines = "\n".join(
                             f"  • {m.get('name')}: {str(m.get('formula') or '')[:120]} "
-                            f"(grain: {str(m.get('grain') or '')[:90]}; sane: {m.get('sane_range', '—')}; "
+                            f"(grain: {str(m.get('grain') or '')[:90]}; "
+                            f"sane{' [published]' if m.get('sourced') else ''}: "
+                            f"{m.get('sane_range') or '—'}; "
                             f"AVOID: {'; '.join((m.get('anti_patterns') or [])[:1])})"
-                            for m in (_sel_kb.get('metrics') or [])[:10]
+                            for m in _sel_metrics[:10]
                         )
                         _kb_block = (
                             f"CURATED {_sel_kb.get('industry')} METRICS — treat these as the "

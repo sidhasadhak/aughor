@@ -112,6 +112,13 @@ def test_every_entry_belongs_to_the_same_industry():
 def test_each_industrys_metric_vocabulary_is_the_same():
     from aughor.business_profile.metric_kb import metric_vocabulary
 
+    # `include_packages=False` — the vocabulary `industry.json` ALONE defines, which is what the
+    # pre-move loaders read and what this fixture measured. The platform's own callers take the
+    # merged default, which is deliberately WIDER: a package's `metrics/*.yaml` contributes its
+    # names too (airline's `completion_factor` is the case). That widening is a later feature, not
+    # a property of the move, and it is held by `test_pack_anatomy_reaches_the_resolver`, which
+    # proves the merged vocabulary is a strict superset — nothing this fixture measured is lost.
     for industry, digest in BASELINE["vocabulary_sha"].items():
         text = "" if industry == "_all" else industry
-        assert _sha([json.dumps(t) for t in metric_vocabulary(text)]) == digest, industry
+        got = metric_vocabulary(text, include_packages=False)
+        assert _sha([json.dumps(t) for t in got]) == digest, industry

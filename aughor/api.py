@@ -844,7 +844,8 @@ async def _start_continuous_exploration_loop() -> None:
 
 async def _seed_playbook() -> None:
     try:
-        from aughor.playbook.builder import seed_from_kb, activate_seeded, top_up_data_quality
+        from aughor.playbook.builder import (activate_seeded, seed_from_kb, seed_from_packs,
+                                              top_up_data_quality)
         n = seed_from_kb()
         if n:
             logger.info("Playbook seeded with %d entries from KB.", n)
@@ -855,6 +856,15 @@ async def _seed_playbook() -> None:
             logger.info("Playbook topped up: %d data-quality plays added, %d given their cause and fix "
                         "(%d deleted by a person, kept deleted).",
                         topped["added"], topped["filled"], topped["kept_deleted"])
+        # IP — the plays an active industry package DECLARES reach the store here. Before this
+        # they reached nothing: `playbooks/*.yaml` had only gates and surfaces for readers, and the
+        # steering pool excludes a knowledge package by construction (`PackManifest.steers`).
+        # Same manners as the top-up: additive, and a play a person deleted stays deleted.
+        seeded_packs = seed_from_packs()
+        if seeded_packs["added"]:
+            logger.info("Playbook seeded with %d plays from active industry packages "
+                        "(%d deleted by a person, kept deleted; %d incomplete, skipped).",
+                        seeded_packs["added"], seeded_packs["kept_deleted"], seeded_packs["skipped"])
         # Activate the seed by default — promote KB-seeded drafts to 'active' so
         # they're live playbook items the user can keep / modify / remove, not
         # dormant drafts. Idempotent; never touches user-deprecated entries.

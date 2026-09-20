@@ -7,6 +7,7 @@ reader that replaced this module's own recursive walk of `data/kb`.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from pathlib import Path
@@ -168,6 +169,119 @@ def activate_seeded() -> int:
     if promoted:
         _save_raw(raw)
     return promoted
+
+
+#: The trigger operators `PlaybookEntry` accepts. A pack may leave `trigger_operator` empty, and
+#: gate 3 does not constrain its spelling, so anything else becomes "any" rather than raising at
+#: seed time — a malformed play must not stop the other plays reaching the store.
+_TRIGGER_OPERATORS = ("gt", "lt", "eq", "any")
+
+
+def _load_all_pack_plays() -> list[tuple[str, object]]:
+    """Every play an ACTIVE knowledge package declares in `playbooks/*.yaml` — IP-3's anatomy —
+    paired with its package id.
+
+    Until this function existed the anatomy reached no prompt at all. `playbooks/*.yaml` had five
+    readers (`gate3`, `gate4`, `validate`, the packs API and the `list_packs` tool) and every one
+    of them was a gate or a surface; the steering path could not see them, because
+    `PackManifest.steers` is False for every knowledge layer, so `intake.active_packs` — the pool
+    `inject.render_injection` draws from — excludes an industry package by construction.
+
+    Two properties come from sourcing the packages through `knowledge_index()` rather than by
+    walking the roots: gate 6 is honoured (the index holds only `status: active` packages, so a
+    draft's plays are never seeded), and every package here has a resolved industry, which is what
+    lets `entry_industry` attribute the row instead of defaulting it to "every industry".
+    """
+    from aughor.packs.knowledge import knowledge_index
+    from aughor.packs.loader import load_pack
+
+    out: list[tuple[str, object]] = []
+    for package in knowledge_index().packages:
+        try:
+            pack = load_pack(package.directory)
+        except Exception as e:  # a malformed pack must not cost the others their plays
+            from aughor.kernel.errors import tolerate
+            tolerate(e, f"skip pack {package.pack_id} while seeding anatomy plays",
+                     counter="playbook.pack_play_scan")
+            continue
+        for play in pack.playbooks:
+            out.append((package.pack_id, play))
+    return out
+
+
+def _pack_play_entry(pack_id: str, play) -> PlaybookEntry | None:
+    """One `playbooks/*.yaml` play as a `PlaybookEntry`, or None when it carries nothing to act on.
+
+    The id ends in a short DETERMINISTIC digest because `stable_key` strips the last `_`-separated
+    segment: the part before it has to be the identity, and re-seeding must not mint a new row for
+    a play that has not changed (`_build_entries_for_kb` uses `uuid4` and can only ever run into an
+    empty playbook for that reason).
+    """
+    play_id = (getattr(play, "id", "") or "").strip()
+    recommendation = (getattr(play, "recommendation", "") or "").strip()
+    if not play_id or not recommendation:
+        return None
+    from aughor.packs.knowledge import pack_play_source
+
+    operator = (getattr(play, "trigger_operator", "") or "").strip().lower()
+    tags = [t for t in (getattr(play, "tags", None) or []) if isinstance(t, str)]
+    # A data-quality play is a rule-out the Verifier runs inside a deep report, never a move a
+    # person takes — `retriever.is_data_quality` keys on this tag beside a source id, and the
+    # default retrieval drops it. Carrying the pack's own `kind` across is what keeps the 486
+    # KB rule-outs and a pack's rule-outs the same kind of thing.
+    if getattr(play, "kind", "") == "data_quality" and DATA_QUALITY_TAG not in tags:
+        tags = [*tags, DATA_QUALITY_TAG]
+    digest = hashlib.sha256(f"{pack_id}/{play_id}".encode()).hexdigest()[:6]
+    return PlaybookEntry(
+        id=f"pack_{_slug(pack_id)}_{_slug(play_id)}_{digest}",
+        source_kb_id=pack_play_source(pack_id, play_id),
+        trigger_metric=_slug(getattr(play, "trigger_metric", "") or play_id),
+        trigger_condition=(getattr(play, "trigger_condition", "") or "").strip(),
+        trigger_operator=operator if operator in _TRIGGER_OPERATORS else "any",
+        recommendation=recommendation,
+        expected_impact=(getattr(play, "expected_impact", "") or "").strip(),
+        # The pack names a real owner ("Operations Control", "Credit Risk"); the KB seeder hardcodes
+        # "Data Analyst" on every row it writes, which is the column that reads as information and
+        # carries none. Do not default this one.
+        owner_role=(getattr(play, "owner_role", "") or "").strip(),
+        tags=tags,
+        status="draft",
+    )
+
+
+def seed_from_packs(path: Path | None = None) -> dict:
+    """Seed the playbook with the plays the active knowledge packages declare.
+
+    Idempotent, and shaped like `top_up_data_quality` rather than `seed_from_kb`: it adds into a
+    populated playbook, it never rewrites a row a person has edited, and a play somebody DELETED
+    stays deleted (`ever_saved_ids`). Returns ``{"added", "kept_deleted", "skipped"}``.
+    """
+    from aughor.playbook.store import ever_saved_ids, list_entries
+
+    counts = {"added": 0, "kept_deleted": 0, "skipped": 0}
+    built: list[PlaybookEntry] = []
+    for pack_id, play in _load_all_pack_plays():
+        entry = _pack_play_entry(pack_id, play)
+        if entry is None:
+            counts["skipped"] += 1
+            continue
+        built.append(entry)
+
+    present = {stable_key(e.id) for e in list_entries(path)}
+    ever = {stable_key(entry_id) for entry_id in ever_saved_ids(path)}
+    to_save: list[PlaybookEntry] = []
+    for entry in built:
+        key = stable_key(entry.id)
+        if key in present:
+            continue
+        if key in ever:
+            counts["kept_deleted"] += 1
+            continue
+        to_save.append(entry)
+        counts["added"] += 1
+    if to_save:
+        save_entries(to_save, path)
+    return counts
 
 
 def seed_from_kb(force: bool = False) -> int:
