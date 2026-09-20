@@ -406,6 +406,52 @@ def doctor(api_port: int, web_port: int) -> None:
     raise SystemExit({"ok": 0, "warn": 0, "fail": 1, "unknown": 2}[verdict])
 
 
+@cli.command()
+@click.option("--ref", default=None, help="Update to this ref instead of the tracked upstream.")
+@click.option("--skip-build", is_flag=True, help="Fetch and fast-forward only; skip re-running the install steps.")
+def update(ref: Optional[str], skip_build: bool) -> None:
+    """Fetch and fast-forward this checkout, then re-run the install steps.
+
+    A diverged checkout is REFUSED and named, never reset. Local changes outside `data/` are
+    refused too; `data/` itself is state the app writes, so changes there never block.
+    """
+    from aughor import update as _update
+
+    root = _repo_root()
+    result = _update.update(root, ref=ref)
+
+    if result.status == "refused":
+        console.print(f"[yellow]Refused.[/yellow] {result.reason}")
+        for line in result.blocking[:10]:
+            console.print(f"    [dim]{line}[/dim]")
+        raise SystemExit(1)
+    if result.status == "failed":
+        console.print(f"[red]Failed.[/red] {result.reason}")
+        raise SystemExit(1)
+    if result.status == "noop":
+        console.print(f"[green]Nothing to do.[/green] {result.reason} ({result.before[:8]})")
+        return
+
+    console.print(f"[green]Updated.[/green] {result.before[:8]} → {result.after[:8]} "
+                  f"({result.reason})")
+    if skip_build:
+        console.print("[dim]Install steps skipped (--skip-build). Run ./install.sh to finish.[/dim]")
+        return
+
+    # The code moved, so its dependencies and its built frontend are now the OLD ones. This is
+    # the half that makes `update` mean "this install is new", rather than "git moved".
+    from aughor.installer import Steps, prepare_web, sync_python
+    steps = Steps()
+    try:
+        sync_python(root, steps)
+        prepare_web(root, steps)
+    except Exception as exc:                       # noqa: BLE001 — reported with its next action
+        console.print(f"[red]The code updated, but the install steps failed:[/red] {exc}")
+        console.print("[cyan]Run ./install.sh to finish.[/cyan]")
+        raise SystemExit(1) from None
+    console.print("[green]Dependencies and web build are up to date.[/green]")
+
+
 @cli.command("migrate-state")
 @click.option("--from", "source", default=None, type=click.Path(path_type=Path),
               help="The data/ directory to migrate (default: this checkout's).")
