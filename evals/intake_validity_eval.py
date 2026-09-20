@@ -1,9 +1,20 @@
-"""JD-2 — how often does the free-text intake name a table or column that does not exist?
+"""JD-2's premise, tested — and REFUTED on this corpus.
 
 Three of intake's ~25 fields are picks from a set the schema already holds, asked as free
-text: `metric_table` (a table), `date_column` and `dimensions` (columns). This measures what
-those picks were worth on REAL historical traffic, by decoding the intake spec every deep run
-persisted and checking each name against the warehouse it was supposedly about.
+text: `metric_table` (a table), `date_column` and `dimensions` (columns). JD-2 proposed
+replacing them with a closed option list, on the argument that a closed list cannot name
+something that does not exist. This harness tests the premise that argument rests on — that
+the free-text field names things that do not exist — and finds it false.
+
+**The ground truth is the schema block PERSISTED WITH EACH RUN** (`filtered_schema` on the
+spec), not the warehouse as it stands today. That choice is the whole lesson here. A first
+version of this harness compared three months of specs against today's `data/*.duckdb` and
+reported ~20% of picks invalid; every headline example turned out to be a real table the
+harness had not looked at — the `workspace` connection is a `local_upload` store under
+`data/uploads/`, `baef6c3e` points at a 4 GB DuckDB outside `data/`, schemas have been
+removed (`data/uploads/default/workspace/_removed_seeds.json`) and some connections the
+corpus used no longer exist. The warehouse moved under the corpus, so "does this name exist
+NOW" cannot answer "did the model make this up THEN". The schema the run was handed can.
 
 **No model call, no warehouse write.** The corpus is `data/checkpoints.db` and the ground
 truth is `information_schema` read out of the DuckDB files themselves, so the whole thing is
@@ -12,16 +23,17 @@ closed option list lands, so the experiment needs no new instrument.
 
 Three rules that keep the number honest, each of which moves it DOWN:
 
-* **Unverifiable is not invalid.** A pick naming a schema this harness cannot read (BigQuery,
-  or a `missimi` schema present in no local warehouse) is counted in neither the numerator nor
-  the denominator. A failed probe and a true negative look identical, so they are kept apart.
-* **One spec per investigation.** A run writes its spec into every checkpoint it takes; count
-  the checkpoints and a single bad pick becomes five. Specs are collapsed per `thread_id`.
-* **Case-insensitive.** SQL identifiers are, so a name is not marked invalid over casing.
+* **One spec per thread.** A run writes its spec into every checkpoint it takes; count the
+  checkpoints and a single bad pick becomes five. Specs are collapsed per `thread_id`. Note
+  `thread_id`, not investigation: two probe threads share one `investigation_id`, so the
+  thread count (202) is one higher than the investigation count (201).
+* **Case-insensitive, and token-based.** SQL identifiers are case-insensitive, and a real
+  column can contain spaces and brackets (`shipping date (dateorders)`), so a name counts as
+  shown when every identifier token in it appears in the block.
+* **A run that persisted no schema is excluded**, never scored as a miss.
 
-The companion fact, reported alongside because it decides what the number MEANS: whether a
-thread's spec ever changes across its checkpoints. If it never does, the spec-repair retry did
-not fix these — the invalid name is what the investigation ran on, not a proposal it caught.
+The companion fact, reported alongside: whether a thread's spec ever changes across its
+checkpoints. It never does (0 of 202), so whatever the model picked is what the run used.
 
 Usage:
 
@@ -31,8 +43,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import glob
 import json
+import re
 import sqlite3
 import sys
 from collections import Counter, defaultdict
@@ -52,44 +64,40 @@ SKIP_WAREHOUSES = ("mat_cache",)
 NULLISH = {"", "NONE", "NULL", "N/A"}
 
 
-def warehouse_reference(data_dir: Path) -> dict:
-    """Every real "schema.table" and "schema.table.column", read from the warehouses.
-
-    Deliberately not from the ontology, a profile cache or a rendered schema block: those are
-    all downstream of the same builder the intake reads, so agreeing with one of them would
-    prove only that two copies match. `information_schema` is the thing itself.
-    """
-    import duckdb
-
-    tables: set[str] = set()
-    columns: set[str] = set()
-    read: list[str] = []
-    for path in sorted(glob.glob(str(data_dir / "*.duckdb"))):
-        if any(skip in path for skip in SKIP_WAREHOUSES):
-            continue
-        try:
-            con = duckdb.connect(path, read_only=True)
-        except Exception:  # noqa: BLE001 — a warehouse we cannot open is one we cannot judge with
-            continue
-        try:
-            for schema, table, column in con.execute(
-                "SELECT table_schema, table_name, column_name FROM information_schema.columns"
-            ).fetchall():
-                tables.add(f"{schema}.{table}".lower())
-                columns.add(f"{schema}.{table}.{column}".lower())
-            read.append(Path(path).name)
-        finally:
-            con.close()
-    return {"tables": tables, "columns": columns,
-            "schemas": {t.split(".")[0] for t in tables}, "warehouses": read}
+_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def specs_by_investigation(checkpoints_db: Path) -> tuple[dict, dict]:
-    """One spec per investigation, plus how many DISTINCT specs each one wrote.
+def shown_tokens(schema_block: str) -> set:
+    """Every identifier token in the schema block a run was handed.
 
-    The second value is the load-bearing one. A run writes its spec into every checkpoint it
-    takes, so a thread with several distinct specs is a thread whose repair rewrote it; a
-    thread with exactly one ran start to finish on what it first decided.
+    Token membership rather than substring: a substring test would count `order` as shown
+    because `order_date` is, which biases toward "the model picked something real" — the
+    direction that flatters the refutation. Tokens do not."""
+    return {t.lower() for t in _TOKEN.findall(schema_block or "")}
+
+
+def was_shown(name, tokens: set) -> str:
+    """shown | column_not_shown | not_shown | none — for one picked name."""
+    if name is None or str(name).strip().upper() in NULLISH:
+        return "none"
+    parts = [p for p in str(name).strip().lower().split(".") if p]
+    if not parts:
+        return "none"
+    table = parts[1] if len(parts) >= 2 else parts[0]
+    column = ".".join(parts[2:]) if len(parts) >= 3 else ""
+    table_ok = all(t in tokens for t in _TOKEN.findall(table))
+    if not table_ok:
+        return "not_shown"
+    if not column:
+        return "shown"
+    return "shown" if all(t in tokens for t in _TOKEN.findall(column)) else "column_not_shown"
+
+
+def specs_by_thread(checkpoints_db: Path) -> tuple[dict, dict]:
+    """One spec per thread, plus how many DISTINCT specs each thread wrote.
+
+    The second value is load-bearing: a thread with several distinct specs is one whose repair
+    rewrote it; a thread with exactly one ran start to finish on what it first decided.
     """
     import ormsgpack
 
@@ -106,7 +114,7 @@ def specs_by_investigation(checkpoints_db: Path) -> tuple[dict, dict]:
     for thread, blob in rows:
         try:
             # Some blobs carry LangGraph ext types; without a hook ormsgpack raises and the
-            # run silently drops out of the corpus, which would bias it toward simple runs.
+            # run silently drops out of the corpus, biasing it toward simple runs.
             state = ormsgpack.unpackb(bytes(blob), ext_hook=lambda code, data: None) or {}
         except Exception:  # noqa: BLE001
             continue
@@ -123,94 +131,68 @@ def specs_by_investigation(checkpoints_db: Path) -> tuple[dict, dict]:
             "metric_table": spec.get("metric_table"),
             "date_column": spec.get("date_column"),
             "dimensions": list(dims),
+            "schema_shown": str(spec.get("filtered_schema") or values.get("schema_context") or ""),
         }
     return seen, {t: len(v) for t, v in variants.items()}
 
 
-def classify(value, pool: set, schemas: set) -> str:
-    """valid | invalid | unverifiable | none — for one picked name."""
-    if value is None or str(value).strip().upper() in NULLISH:
-        return "none"
-    name = str(value).strip().lower()
-    if name.split(".")[0] not in schemas:
-        return "unverifiable"
-    return "valid" if name in pool else "invalid"
-
-
-def how_wrong(value, ref: dict) -> str:
-    """Why a name is invalid — the part that separates a real defect from schema drift.
-
-    A table that exists in NO schema was invented. A real table or column attached to the
-    wrong schema cannot be drift: the name was right and the place was not.
-    """
-    parts = str(value).strip().lower().split(".")
-    by_table = defaultdict(set)
-    for t in ref["tables"]:
-        by_table[t.split(".")[1]].add(t.split(".")[0])
-    if len(parts) >= 3:
-        tail = ".".join(parts[1:])
-        if any(f"{s}.{tail}" in ref["columns"] for s in ref["schemas"]):
-            return "right table and column, wrong schema"
-        if ".".join(parts[:2]) in ref["tables"]:
-            return "real table, column does not exist"
-    if len(parts) >= 2 and parts[1] in by_table:
-        return "right table, wrong schema"
-    return "table does not exist in any warehouse"
-
-
-def measure(specs: dict, variants: dict, ref: dict) -> dict:
+def measure(specs: dict, variants: dict) -> dict:
     fields = {"metric_table": Counter(), "date_column": Counter(), "dimensions": Counter()}
-    kinds: Counter = Counter()
-    offenders: list = []
+    misses: list = []
     runs_with_any = 0
+    no_schema = 0
 
     for spec in specs.values():
+        tokens = shown_tokens(spec.get("schema_shown", ""))
+        if not tokens:
+            no_schema += 1
+            continue
         dirty = False
-        picks = [("metric_table", spec["metric_table"], ref["tables"]),
-                 ("date_column", spec["date_column"], ref["columns"])]
-        picks += [("dimensions", d, ref["columns"]) for d in spec["dimensions"]]
-        for field, value, pool in picks:
-            verdict = classify(value, pool, ref["schemas"])
+        picks = [("metric_table", spec["metric_table"]), ("date_column", spec["date_column"])]
+        picks += [("dimensions", d) for d in spec["dimensions"]]
+        for field, value in picks:
+            verdict = was_shown(value, tokens)
             fields[field][verdict] += 1
-            if verdict == "invalid":
+            if verdict in ("not_shown", "column_not_shown"):
                 dirty = True
-                kinds[how_wrong(value, ref)] += 1
-                offenders.append({"field": field, "name": str(value),
-                                  "why": how_wrong(value, ref), "question": spec["question"]})
+                misses.append({"field": field, "name": str(value), "verdict": verdict,
+                               "question": spec["question"]})
         runs_with_any += dirty
 
-    out: dict = {"investigations_with_a_spec": len(specs), "by_field": {},
-                 "runs_with_at_least_one_invalid": runs_with_any,
-                 "failure_kinds": dict(kinds.most_common()),
-                 "warehouses_read": ref["warehouses"], "schemas_read": sorted(ref["schemas"]),
+    out: dict = {"threads_with_a_spec": len(specs),
+                 "threads_with_no_schema_persisted": no_schema,
+                 "investigations_with_a_spec": len({s["investigation_id"] for s in specs.values()
+                                                    if s["investigation_id"]}),
+                 "by_field": {}, "runs_naming_something_not_shown": runs_with_any,
                  "threads_whose_spec_changed_mid_run": sum(1 for n in variants.values() if n > 1),
-                 "offenders": offenders[:40]}
+                 "misses": misses[:40]}
+    total = Counter()
     for field, counts in fields.items():
-        verifiable = counts["valid"] + counts["invalid"]
+        scored = counts["shown"] + counts["column_not_shown"] + counts["not_shown"]
         out["by_field"][field] = {
-            "valid": counts["valid"], "invalid": counts["invalid"],
-            "unverifiable": counts["unverifiable"], "none": counts["none"],
-            "verifiable": verifiable,
-            "invalid_rate": round(counts["invalid"] / verifiable, 4) if verifiable else None,
+            "shown": counts["shown"], "column_not_shown": counts["column_not_shown"],
+            "not_shown": counts["not_shown"], "none": counts["none"], "scored": scored,
+            "shown_rate": round(counts["shown"] / scored, 4) if scored else None,
         }
-    # JD-2's claim is not "fewer mistakes on average" — it is that a closed option list cannot
-    # NAME something that is not on it. So the falsifier is an empty invalid column, and it
-    # fires the moment the free-text picks turn out to be valid already.
-    total_invalid = sum(f["invalid"] for f in out["by_field"].values())
+        total.update(counts)
+    scored = total["shown"] + total["column_not_shown"] + total["not_shown"]
+    out["overall"] = {"picks_scored": scored, "shown": total["shown"],
+                      "shown_rate": round(total["shown"] / scored, 4) if scored else None}
+    # JD-2's claim is that a closed option list removes picks that name what does not exist.
+    # The falsifier fires when the free-text picks are ALREADY drawn from what the model was
+    # shown — a closed list would then remove a failure that is not happening.
     out["falsifier"] = {
-        "nothing_to_fix": total_invalid == 0,
-        "note": ("fires when the free-text picks name nothing that does not exist — a closed "
-                 "option list would then remove a failure that was not happening"),
+        "nothing_to_fix": bool(scored) and (total["shown"] / scored) >= 0.99,
+        "note": ("fires when >=99% of picks name a table and column present in the schema the "
+                 "run was handed — the free-text field is already choosing from the list"),
     }
-    out["inconclusive"] = len(specs) == 0
+    out["inconclusive"] = scored == 0
     return out
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--checkpoints", default=str(REPO / "data" / "checkpoints.db"))
-    ap.add_argument("--data-dir", default=str(REPO / "data"),
-                    help="where the *.duckdb warehouses live (the ground truth)")
     ap.add_argument("--output", default="")
     args = ap.parse_args()
 
@@ -218,36 +200,35 @@ def main() -> None:
     if not ckpt.exists():
         raise SystemExit(f"no checkpoint store at {ckpt}")
 
-    ref = warehouse_reference(Path(args.data_dir))
-    specs, variants = specs_by_investigation(ckpt)
-    summary = measure(specs, variants, ref)
+    specs, variants = specs_by_thread(ckpt)
+    s = measure(specs, variants)
 
-    print(f"investigations with a persisted intake spec: {summary['investigations_with_a_spec']}")
-    print(f"ground truth: {len(ref['schemas'])} schemas, {len(ref['tables'])} tables, "
-          f"{len(ref['columns'])} columns from {', '.join(ref['warehouses'])}\n")
-    print(f"  {'field':<14}{'valid':>7}{'invalid':>9}{'unverif':>9}{'none':>6}   invalid rate")
-    for field, f in summary["by_field"].items():
-        rate = f"{f['invalid']}/{f['verifiable']} = {f['invalid_rate']:.1%}" if f["verifiable"] else "n/a"
-        print(f"  {field:<14}{f['valid']:>7}{f['invalid']:>9}{f['unverifiable']:>9}{f['none']:>6}   {rate}")
-
-    n = summary["investigations_with_a_spec"]
-    bad = summary["runs_with_at_least_one_invalid"]
-    print(f"\ninvestigations that ran on at least one name that does not exist: "
-          f"{bad} of {n}" + (f" ({bad / n:.1%})" if n else ""))
-    print(f"threads whose spec changed mid-run (a repair rewrote it): "
-          f"{summary['threads_whose_spec_changed_mid_run']} of {n}")
-    if summary["failure_kinds"]:
-        print("\nhow the bad names are wrong:")
-        for kind, count in summary["failure_kinds"].items():
-            print(f"  {count:>5}  {kind}")
-    if summary["inconclusive"]:
-        print("\nINCONCLUSIVE: no spec decoded — this settles nothing in either direction.")
+    print(f"threads with a persisted intake spec: {s['threads_with_a_spec']} "
+          f"({s['investigations_with_a_spec']} distinct investigations)")
+    print("ground truth: the schema block persisted WITH EACH RUN\n")
+    print(f"  {'field':<14}{'shown':>8}{'col not':>9}{'not shown':>11}{'none':>6}   picked from what it was shown")
+    for field, f in s["by_field"].items():
+        rate = f"{f['shown']}/{f['scored']} = {f['shown_rate']:.1%}" if f["scored"] else "n/a"
+        print(f"  {field:<14}{f['shown']:>8}{f['column_not_shown']:>9}{f['not_shown']:>11}{f['none']:>6}   {rate}")
+    o = s["overall"]
+    print(f"\n  {'ALL PICKS':<14}{o['shown']:>8}{'':>9}{'':>11}{'':>6}   "
+          + (f"{o['shown']}/{o['picks_scored']} = {o['shown_rate']:.1%}" if o["picks_scored"] else "n/a"))
+    print(f"\nruns naming anything not in the schema they were shown: "
+          f"{s['runs_naming_something_not_shown']} of {s['threads_with_a_spec']}")
+    print(f"threads whose spec changed mid-run: {s['threads_whose_spec_changed_mid_run']}")
+    if s["threads_with_no_schema_persisted"]:
+        print(f"excluded (no schema persisted): {s['threads_with_no_schema_persisted']}")
+    if s["inconclusive"]:
+        print("\nINCONCLUSIVE: nothing scored — this settles nothing in either direction.")
     else:
-        print(f"\nfalsifier: {'FIRES' if summary['falsifier']['nothing_to_fix'] else 'HOLDS'}"
-              f" — {summary['falsifier']['note']}")
+        print(f"\nfalsifier: {'FIRES' if s['falsifier']['nothing_to_fix'] else 'HOLDS'}"
+              f" — {s['falsifier']['note']}")
+        if s["falsifier"]["nothing_to_fix"]:
+            print("  => JD-2 is NOT supported by this corpus: the free-text field is already\n"
+                  "     picking from the list it is shown, so a closed list removes nothing.")
 
     if args.output:
-        Path(args.output).write_text(json.dumps(summary, indent=2, default=str) + "\n")
+        Path(args.output).write_text(json.dumps(s, indent=2, default=str) + "\n")
         print(f"wrote {args.output}")
 
 

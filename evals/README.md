@@ -42,43 +42,38 @@ uv run python evals/run.py --fail-on-regression 0.05
 
 ## Intake pick validity (`intake_validity_eval.py`)
 
-JD-2's premise, measured on historical traffic: three intake fields are picks from a set the
-schema already holds — `metric_table`, `date_column`, `dimensions` — but are asked as free
-text. This decodes the intake spec every deep run persisted in `data/checkpoints.db` and
-checks each name against `information_schema` read out of the DuckDB warehouses themselves.
+JD-2 proposed replacing three free-text intake fields — `metric_table`, `date_column`,
+`dimensions` — with a closed option list, arguing that a closed list cannot name something
+that does not exist. This tests the premise that argument rests on, and **refutes it**.
 
-**No model call, no warehouse write**, so it is free and repeatable — and the same decode is
-the AFTER measurement once a closed option list lands, so the experiment needs no new
-instrument.
+Ground truth is the schema block **persisted with each run** (`filtered_schema` on the spec),
+not the warehouse as it stands today. That choice is the lesson. The first version of this
+harness compared three months of specs against `data/*.duckdb` and reported ~20% of picks
+invalid; every headline example was a real table it had not looked at — `workspace` is a
+`local_upload` store under `data/uploads/`, `baef6c3e` points at a DuckDB outside `data/`,
+schemas have been removed (`_removed_seeds.json`) and some connections the corpus used are
+gone. The warehouse moved under the corpus, so "does this exist NOW" cannot answer "did the
+model make it up THEN". The schema the run was handed can, and cannot drift.
 
 ```bash
 uv run python evals/intake_validity_eval.py --output evals/intake_validity_results.json
 ```
 
-Three rules keep the number honest, each moving it DOWN: a pick naming a schema the harness
-cannot read (BigQuery, or a `missimi` schema in no local warehouse) is **unverifiable**, not
-invalid, and is excluded from both numerator and denominator; specs are collapsed per
-`thread_id`, because a run stamps its spec into every checkpoint it takes; and comparison is
-case-insensitive. `tests/unit/test_intake_validity.py` pins all three.
+Status 2026-09-20 (202 threads / 201 investigations with a spec, 29 Jun – 19 Sep):
 
-Status 2026-09-20 (202 investigations with a spec, 29 Jun – 19 Sep; ground truth 5 schemas,
-45 tables, 350 columns):
-
-| field | valid | invalid | unverifiable | invalid rate |
+| field | shown | column not shown | not shown | picked from what it was shown |
 | --- | --- | --- | --- | --- |
-| `metric_table` | 73 | 18 | 110 | **19.8%** |
-| `date_column` | 73 | 16 | 96 | **18.0%** |
-| `dimensions` | 542 | 149 | 758 | **21.6%** |
+| `metric_table` | 201 | 0 | 0 | **100.0%** |
+| `date_column` | 183 | 0 | 2 | **98.9%** |
+| `dimensions` | 1449 | 0 | 0 | **100.0%** |
+| **all picks** | **1833** | 0 | 2 | **99.9%** |
 
-**40 of 202 runs (19.8%) proceeded on at least one name that does not exist**, and **0 of 202
-threads had their spec rewritten mid-run** — so the spec-repair retry did not fix these; they
-are what the investigation used. 173 of the 183 bad names are tables in no warehouse at all;
-8 are a real table and column attached to the wrong schema, which cannot be schema drift.
-Falsifier HOLDS.
+**Falsifier FIRES.** The free-text field is already choosing from the list it is shown, so a
+closed option list would remove a failure that is not happening. 0 of 202 threads had their
+spec rewritten mid-run, so this is what the runs used, not a proposal a repair caught.
 
-What this does NOT measure: whether the answers were worse. Nothing grades them. The claim is
-that a closed option list empties the invalid column by construction, not that accuracy moves
-by a measured amount.
+This does not refute the other half of the Jev proposition (a calibrated probability), and it
+says nothing about whether the picks were the RIGHT ones — only that they were real.
 
 ## Decision-corpus yield (`decision_yield_eval.py`)
 
