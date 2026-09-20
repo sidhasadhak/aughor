@@ -256,6 +256,110 @@ def metric_audit(name: str, limit: int = 50):
     return {"metric": name, "audit": trail[:limit]}
 
 
+@router.get("/metrics/{name}/definition-report")
+async def metric_definition_report(name: str, conn_id: str):
+    """A3 — the instrument beside the approval ask.
+
+    `POST /metrics/{name}/transition` validates the lifecycle, persists and journals, and tells
+    the approver nothing about what they are approving. This answers the four questions the bare
+    ask leaves open: what this is changing from, whether it executes and what it reads, what the
+    definition leaves undeclared, and how reproducible that read is.
+
+    **Advisory.** It never holds or refuses anything — the definition is the user's call, and
+    `semantic/definition_report.py` cannot even import the module that holds a send.
+
+    Spelled `conn_id`, like its three siblings (`/value`, `/validate`, `/freshness`) and for the
+    same reason `/metrics/catalogue/{conn_id}` is: `require_capability` declares `connection_id`
+    as a QUERY parameter and FastAPI refuses one name declared both ways on a route. This door is
+    ungated because it is a read, as every other read on this router is.
+
+    🔴 It resolves the metric SCOPED, then checks the connection came back matching — the same
+    two steps `transition_metric` takes. `get_metric` falls back to the GLOBAL definition when a
+    connection has none of its own, which is why `/value`, `/validate` and `/freshness` (all of
+    which call `get_metric(name)` with no connection) can answer for a formula belonging to
+    somebody else entirely. Reporting on the wrong definition is worse here than anywhere: this
+    screen exists to be trusted at the moment a person commits to one.
+    """
+    from aughor.db.connection import open_connection_for
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.ledger import Ledger
+    from aughor.semantic.definition_report import build_report
+
+    metric = get_metric(name, connection_id=conn_id)
+    if metric is not None and (metric.connection or GLOBAL_CONNECTION) != conn_id:
+        # A resolving read reached the house default, not this connection's definition.
+        metric = None
+    if not metric:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Metric '{name}' not found for connection '{conn_id}'.")
+
+    events = Ledger.default().events(kind="metric.governance", limit=1000)
+    trail = [e["payload"] for e in events
+             if e.get("payload") and e["payload"].get("metric") == name]
+
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        try:
+            # `table_cols` is deliberately NOT supplied: the only accessor here
+            # (`routers/_shared.get_schema_cached`) BUILDS on a cache miss, and a read that
+            # builds is the defect that once hung `GET /ontology`. The report records the
+            # grain check as skipped, with the reason, rather than silently omitting it.
+            return build_report(metric, db, connection_id=conn_id, audit_events=trail)
+        finally:
+            try:
+                db.close()
+            except Exception as exc:
+                tolerate(exc, "definition-report connection close is best-effort",
+                         counter="metrics.definition_report.close")
+
+    loop = asyncio.get_running_loop()
+    report = await loop.run_in_executor(None, _work)
+    return _report_payload(report)
+
+
+def _report_payload(report) -> dict:
+    """Serialise the report for the wire, keeping every typed verdict's WORD.
+
+    The outcome and mode strings travel verbatim — flattening `unavailable` to a null value or
+    `unpinnable` to an absent field is exactly the collapse the dataclasses refuse to make.
+    """
+    def claim(c) -> dict:
+        return {
+            "outcome": c.outcome,
+            "summary": c.summary,
+            "findings": [{"code": f.code, "severity": f.severity,
+                          "what": f.what, "evidence": f.evidence} for f in c.findings],
+            "detail": dict(c.detail),
+        }
+
+    return {
+        "metric": report.metric,
+        "connection_id": report.connection_id,
+        "status": report.status,
+        "version": report.version,
+        "advisory": report.advisory,
+        "taken_at": report.taken_at,
+        "predecessor": claim(report.predecessor),
+        "execution": claim(report.execution),
+        "declaration": claim(report.declaration),
+        "segments": claim(report.segments),
+        "population": {
+            "mode": report.population.mode,
+            "reason": report.population.reason,
+            "token": report.population.token,
+            "tables": list(report.population.tables),
+            "taken_at": report.population.taken_at,
+            "reproducible": report.population.reproducible,
+        },
+        "defects": [f.code for f in report.defects],
+    }
+
+
 @router.delete("/metrics/{name}", dependencies=[gate(Capability.METRICS_DEFINE)])
 def remove_metric(name: str, sql: Optional[str] = None,
                   connection: Optional[str] = None):

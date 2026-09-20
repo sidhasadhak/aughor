@@ -14,11 +14,14 @@ import {
   validateMetric,
   transitionMetric,
   getMetricAudit,
+  getDefinitionReport,
   type CatalogueMetric,
   type Metric,
   type MetricValidationResult,
   type MetricFreshnessResult,
   type MetricAuditEntry,
+  type DefinitionReport,
+  type DefinitionClaim,
 } from "@/lib/api";
 
 // ── Governance lifecycle (B-8) ──────────────────────────────────────────────────
@@ -36,12 +39,89 @@ const NEXT_ACTIONS: Record<string, string[]> = {
   deprecated: ["propose"],
 };
 
+/** A3 — one claim, rendered so that "could not check" never reads like "nothing to report".
+ *
+ *  An UNAVAILABLE section is drawn in the SAME weight as one with findings, because the thing
+ *  it is telling the approver — we could not answer this — is exactly as load-bearing as an
+ *  answer. Greying it out would reproduce, in CSS, the collapse the server refuses to make. */
+function ClaimBlock({ title, claim }: { title: string; claim: DefinitionClaim }) {
+  const tone =
+    claim.outcome === "unavailable" ? "border-amber-500/40 text-amber-300"
+    : claim.findings.some(f => f.severity === "defect") ? "border-red-500/40 text-red-300"
+    : claim.outcome === "findings" ? "border-amber-500/40 text-amber-300"
+    : "border-zinc-700 text-zinc-400";
+  return (
+    <div className={`rounded border ${tone.split(" ")[0]} bg-zinc-900/40 p-2`}>
+      <div className="flex items-baseline gap-2">
+        <span className="aug-fs-xs font-medium text-zinc-300">{title}</span>
+        <span className={`aug-fs-xs ${tone.split(" ")[1]}`}>{claim.outcome.replace("_", " ")}</span>
+      </div>
+      <div className="aug-fs-xs text-zinc-400 mt-1">{claim.summary}</div>
+      {claim.findings.length > 0 && (
+        <ul className="mt-1.5 flex flex-col gap-1">
+          {claim.findings.map(f => (
+            <li key={f.code} className="aug-fs-xs">
+              <span className={f.severity === "defect" ? "text-red-400" : "text-amber-400"}>
+                {f.severity === "defect" ? "✕" : "!"}
+              </span>{" "}
+              <span className="text-zinc-300">{f.what}</span>
+              {/* The evidence is not decoration: a finding a reader cannot check is one they
+                  must take on faith, which is what this screen exists to stop. */}
+              <div className="text-zinc-500 pl-4 font-mono">{f.evidence}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** A3 — the report beside the ask.
+ *
+ *  Deliberately renders NO recommendation and pre-selects nothing. The drafting study found
+ *  jev-align placing the menu cursor on the model's own answer at exactly the screen the design
+ *  insists must be human, and refused it: on an ambiguous row the pre-selection is a coin flip
+ *  that one keypress records as a human judgement. The definition is the user's call, so this
+ *  shows what was measured and stops. */
+function DefinitionReportBlock({ report }: { report: DefinitionReport }) {
+  const pop = report.population;
+  return (
+    <div className="mt-2 rounded-md border border-zinc-700 bg-zinc-900/60 p-2.5 flex flex-col gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="aug-fs-xs font-medium text-zinc-300">Before you decide</span>
+        <span className="aug-fs-xs px-1.5 rounded border border-zinc-600 text-zinc-500">advisory</span>
+        {report.defects.length > 0 && (
+          <span className="aug-fs-xs px-1.5 rounded border border-red-500/40 text-red-400">
+            {report.defects.length} defect{report.defects.length > 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+      <ClaimBlock title="What it changes" claim={report.predecessor} />
+      <ClaimBlock title="Whether it runs" claim={report.execution} />
+      <ClaimBlock title="What it declares" claim={report.declaration} />
+      <ClaimBlock title="What could be compared" claim={report.segments} />
+      {/* The population line is stated LAST but never omitted. A4's lesson, applied: a caveat
+          printed after a row of green ticks reads as a footnote to reassurance — so when the
+          numbers cannot be pinned, this says so in the amber it deserves rather than in grey. */}
+      <div className={`aug-fs-xs rounded border p-2 ${
+        pop.reproducible ? "border-zinc-700 text-zinc-500"
+                         : "border-amber-500/40 text-amber-300"}`}>
+        <span className="font-medium">Population: {pop.mode}</span>
+        {pop.reason && <span className="text-zinc-400"> — {pop.reason}</span>}
+        {pop.token && <span className="text-zinc-500 font-mono"> {pop.token}</span>}
+      </div>
+    </div>
+  );
+}
+
 function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
   const [actor, setActor] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [audit, setAudit] = useState<MetricAuditEntry[]>([]);
   const [showAudit, setShowAudit] = useState(false);
+  const [report, setReport] = useState<DefinitionReport | null>(null);
+  const [reportErr, setReportErr] = useState("");
 
   const status = metric.status ?? "draft";
   const actions = NEXT_ACTIONS[status] ?? [];
@@ -52,12 +132,33 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
     return () => { alive = false; };
   }, [metric.name]);
 
+  // A3 — fetched whenever there is a decision to take. A metric with no next action has nobody
+  // to inform, so the call is not made at all rather than made and hidden. `wantReport` is
+  // DERIVED rather than pushed into state: setting state synchronously in an effect body
+  // triggers cascading renders (react-hooks/set-state-in-effect), and the render below gates on
+  // the same value, so there is nothing to reset.
+  const reportConn = metric.connection;
+  const wantReport = !!reportConn && reportConn !== "*" && actions.length > 0;
+
+  useEffect(() => {
+    if (!wantReport || !reportConn) return;
+    let alive = true;
+    getDefinitionReport(metric.name, reportConn)
+      .then(r => { if (alive) { setReport(r); setReportErr(""); } })
+      .catch(e => {
+        if (alive) { setReport(null); setReportErr(e instanceof Error ? e.message : "unavailable"); }
+      });
+    return () => { alive = false; };
+  }, [metric.name, reportConn, metric.sql, status, wantReport]);
+
   const run = async (action: string) => {
     setErr("");
     if (!actor.trim()) { setErr("Enter who's performing this (actor)."); return; }
     setBusy(action);
     try {
-      await transitionMetric(metric.name, action, actor.trim());
+      // The connection is SENT — without it the server looks for a global metric of this name
+      // and 404s every scoped one. See `transitionMetric`'s note.
+      await transitionMetric(metric.name, action, actor.trim(), metric.connection);
       setAudit(await getMetricAudit(metric.name));
       onChanged();
     } catch (e) {
@@ -79,6 +180,14 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
           <span className="aug-fs-xs text-zinc-500">proposed by {metric.proposed_by}</span>
         )}
       </div>
+      {/* A3 — above the buttons on purpose. A report placed after the control that acts on it
+          is read after the decision, which is the same as not being read. */}
+      {wantReport && report && <div className="mb-2"><DefinitionReportBlock report={report} /></div>}
+      {wantReport && reportErr && (
+        <div className="aug-fs-xs text-amber-400 mb-2">
+          The definition report is unavailable: {reportErr}
+        </div>
+      )}
       {actions.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
           <input

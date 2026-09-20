@@ -7596,6 +7596,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/{name}/definition-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Metric Definition Report
+         * @description A3 — the instrument beside the approval ask.
+         *
+         *     `POST /metrics/{name}/transition` validates the lifecycle, persists and journals, and tells
+         *     the approver nothing about what they are approving. This answers the four questions the bare
+         *     ask leaves open: what this is changing from, whether it executes and what it reads, what the
+         *     definition leaves undeclared, and how reproducible that read is.
+         *
+         *     **Advisory.** It never holds or refuses anything — the definition is the user's call, and
+         *     `semantic/definition_report.py` cannot even import the module that holds a send.
+         *
+         *     Spelled `conn_id`, like its three siblings (`/value`, `/validate`, `/freshness`) and for the
+         *     same reason `/metrics/catalogue/{conn_id}` is: `require_capability` declares `connection_id`
+         *     as a QUERY parameter and FastAPI refuses one name declared both ways on a route. This door is
+         *     ungated because it is a read, as every other read on this router is.
+         *
+         *     🔴 It resolves the metric SCOPED, then checks the connection came back matching — the same
+         *     two steps `transition_metric` takes. `get_metric` falls back to the GLOBAL definition when a
+         *     connection has none of its own, which is why `/value`, `/validate` and `/freshness` (all of
+         *     which call `get_metric(name)` with no connection) can answer for a formula belonging to
+         *     somebody else entirely. Reporting on the wrong definition is worse here than anywhere: this
+         *     screen exists to be trusted at the moment a person commits to one.
+         */
+        get: operations["metric_definition_report_metrics__name__definition_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/{name}/freshness": {
         parameters: {
             query?: never;
@@ -28818,6 +28858,39 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    metric_definition_report_metrics__name__definition_report_get: {
+        parameters: {
+            query: {
+                conn_id: string;
             };
             header?: never;
             path: {
