@@ -1937,6 +1937,13 @@ worked.
   already durable work artifacts — which is why it goes first.
 - **A verdict pins its evidence.** Graded runs become permanent; ungraded exhaust keeps
   expiring on the 14-day sweep. Retention follows grading, not the other way round.
+- **A verdict pins its evidence.** Graded runs become permanent; ungraded exhaust keeps
+  expiring on the 14-day sweep. Retention follows grading, not the other way round.
+  ⚠️ **Amended 2026-09-20 (MI-2b).** That sentence was true of `session_events` and false of the
+  trace plane it has been read as describing: `events` had no sweep at all — 430,768 rows, 95 days,
+  76.8% of them past the point `aughor_ops` can see. The journal's rule is therefore the INVERSE,
+  and for a stated reason: there is no pin on `events`, so every kind is exempt unless it is named,
+  and only `job.state` and `automation.run` age out.
 - **Reward integrity precedes optimization.** Before any training consumes a signal,
   hand-audit the verifier against 50–100 real outputs. A guard hole is a policy exploit
   waiting to be learned (`E1-quoted-identifier`, found 2026-09-02, is the live class:
@@ -2172,6 +2179,139 @@ survives the sweep and its ungraded neighbour does not, in ONE test, because sur
 proves nothing if nothing is being swept. Plus the restart case the counter could never
 cover, both directions of the durable clock, and the row-cap exemption.
 
+#### MI-2a · The journal had no sweep at all (substrate-sized) — ✅ BUILT 2026-09-20; ⚠️ **BRANCH ONLY** — `3b642c2a`, merged into `claude/jev-align-and-traces-storage` at `9298316e`; no PR, not on main
+
+> **MI-2 fixed the sweep that was not running. This band found the table that had no sweep to run.**
+> MI-2's law above — *"ungraded exhaust keeps expiring on the 14-day sweep"* — was written about
+> `session_events` and has been read ever since as a property of the trace plane. It was not.
+> `events`, the journal, is ~40× that table and had **no retention at all**: measured live
+> 2026-09-19, **430,768 rows back to 2026-06-16** (95 days) in a 247 MB `system.db` with a freelist
+> of zero, growing **8,475/day on 09-11 and 23,287/day on 09-18**. 🔑 **Third instance in a fortnight
+> of §5's own lesson** — a prose claim inside §3 rots silently — and it rotted in the direction that
+> matters, because retention is a stated privacy property that §6.4's and §6.7's custody decisions
+> lean on. §3.9's catalogue-timestamp discipline is what caught it: the figures in this arc are
+> dated 2026-09-02, and re-measuring them is what opened the table.
+>
+> **Unbounded growth was not the finding. Unreachability was.** `AughorOpsConnection` — the
+> platform's own *"ask SQL about your own runs"* surface — snapshots the NEWEST 100,000 rows per
+> curated table (`db/connection.py:1360`, `_SNAPSHOT_ROW_CAP`; `events` is one of its four, `:1355`),
+> so what the journal cannot fit under that cap is not merely old, it is **invisible to
+> self-investigation**. The oldest visible event was **5 days back**: **330,768 of 430,768 rows —
+> 76.8% of the history — could not be queried by the platform at all.** What filled the window was
+> chatter, not evidence: over one week `job.state` (94,926) and `automation.run` (31,494) were
+> **99.1% of all events**, from five automations that ticked 30,470 times and fired 198. The table
+> MI-1 grades from was 40× the size of the log MI-2 protects and carried almost none of the signal.
+
+**Retention is SCOPED, and its default is the INVERSE of MI-2's — deliberately.** `session_events`
+may sweep broadly because `pinned_at` exempts what matters; `events` has no pin, so **the exemption
+has to be the default**. `events_prune` names the kinds it may delete (`AUGHOR_EVENTS_PRUNE_KINDS`,
+default `job.state` and `automation.run`) and touches nothing else — a kind not named there
+(`investigation.created`, `investigation.completed`, `ontology.build`, `agent.handoff`, …) is kept
+forever. Deleting evidence to save space would be the wrong trade; deleting a heartbeat nobody reads
+is free. The two-policy shape — an age window plus a row cap — is `session_events_prune`'s unchanged,
+because a second retention idiom would be a second thing to reason about.
+
+**The 2-day default is not a round number.** It is the largest window that keeps the WHOLE signal
+history inside the 100k snapshot. Projected against the live table 2026-09-19: **1 day → 62,223 rows
+kept · 2 days → 85,134 · 3 days → 108,048 (already over the cap) · 7 days → 165,855.** Signal alone
+is 30,419 rows and spans all 95 days, so under a 2-day ops window **every semantic event ever emitted
+becomes visible to `aughor_ops` again.** The row cap (`AUGHOR_EVENTS_OPS_MAX_ROWS`, 50,000) is what
+makes that durable: an age window alone re-breaks the moment the tick rate rises, and it has been
+rising — 8,475/day to 23,287/day in seven days. Capping the chatter at a fixed budget makes the
+snapshot's headroom a property of the design rather than of today's traffic.
+
+**Bounded per sweep, and driven by `emit` rather than by MI-2's counter.** 20,000 rows per sweep, one
+sweep per 500 emits, plus the open-time insurance MI-2 built — with its own `kv` stamp
+(`events_last_pruned_at`) in its own `try` block, so neither sweep can be the reason the other is
+skipped. Two things MI-2 could not have known. First, the journal takes **~50× the writes**
+(~23,000/day against the session log's ~450), so the identical counter of 500 fires about every
+twenty minutes here and about once a day there — hung off the session-log counter, a 20,000-row
+bounded sweep would have needed over two weeks to drain the backlog it exists to drain. Second, a
+full batch is **not** stamped: stamping a bounded sweep that hit its bound would put the next attempt
+six hours away, so a full batch means *come back immediately*. An unbounded first DELETE was never an
+option — it runs inside `Ledger.__init__` against a ~350,000-row backlog, and work that raised there
+has already cost this store a no-boot once (Migration 10, the same incident MI-2 cites).
+
+**Migration 12 — the journal gets indexes on the two columns it is actually asked about.** It carried
+ONE, `events_kind` on `(kind, seq)`. `trace_id` was added by **Migration 6** with a `DEFAULT ''` and
+no index, and `emit` has stamped it from the ambient run on every call since — so *"everything that
+happened in this run"*, the question the column was added to answer, **has been a full scan of the
+whole table for its entire life.** `at` is what the new sweep filters on, every pass; adding retention
+without it would trade unbounded growth for a scan at every open. Three indexes:
+`events_trace (trace_id, seq)`; `events_kind_at (kind, at)` because the sweep's predicate names both
+columns; and `events_at (at)`, because the composite cannot answer a bare time range on a
+non-leftmost prefix. Portable SQL only, one statement per `execute`, every one `IF NOT EXISTS` —
+Migration 11's rules, unchanged. ✅ **Numbering verified against the standing rule, and clean:**
+`PRAGMA user_version` on the deployed `data/system.db` read **11** on 2026-09-19 and `_MIGRATIONS` in
+`kernel/ledger.py` tops out at 11 on main, so 12 is both next-in-file **and** next-to-execute — the
+two are not always the same number, which is the whole reason the rule says to number off the LIVE
+store. No collision with the repo's eight other migration lists: each store is its own DB file and
+therefore its own `user_version` namespace (`automations.db` at 9 · `agents.db` at 7 · `history.db`
+at 6 · the proposal inbox at 5 · `audit.db` at 3).
+
+**Two more, both found while measuring, and both the same shape — a fallback nobody could see.**
+
+- 🔑 **The store facade's fallback was silent.** Every handler in `util/json_store.py` was a bare
+  `except Exception: pass`, which made **the most dangerous state the only unobservable one.** The
+  legacy file is a one-time import the healthy path never rewrites, so it goes stale the moment the
+  store is used: measured live 2026-09-19, `schema_profiles.json` was 211,920 bytes last written
+  **five weeks** before the 6.2 MB of ledger rows it stands in front of, and `agent_runs.json` held
+  **1 run against the ledger's 220**. A read that quietly falls back does not degrade — **it
+  time-travels.** A write is worse: the `migrated:` marker is already set, so the import never re-runs
+  and the fallback's write is orphaned there permanently, with nothing in the codebase reconciling the
+  two. Now counted and logged through the existing `tolerate` seam — one counter per operation,
+  `json_store.ledger_fallback.<op>` — and **still never raising**: the best-effort contract is
+  unchanged, the fallback simply leaves a trace instead of none. This is §0's *honest-signalled*
+  substrate clause applied to the one path that had no signal at all.
+  🔑 **The helper is module-level, and that is load-bearing.** The two facade families share no base —
+  `LedgerListStore` descends from `JsonListStore`, `FileFamilyStore` from `KeyedJsonStore` — so as a
+  method on one of them the other's handlers raised `AttributeError` **from inside an `except`
+  block**, turning the tolerated fallback into the crash it exists to prevent.
+- 🔴 **The outbound delivery log moves to the Ledger — and being a file is what hid a live failure.**
+  `data/action_logs.json` was left file-first when the triggers moved, on the reading *"per-instance
+  episode detail, not configuration"*. That reading is what hid the problem: it is the record of
+  **every outbound send the platform has ever made**, a security surface rather than episode detail,
+  and nobody queries a file. Opened on the live install 2026-09-20: **336 rows, 336 of them
+  `status: failed`.** Every outbound delivery on that install had failed, unnoticed for as long as the
+  file had existed, next to a properly indexed **61,696-row `audit_log`** that anyone would have seen.
+  It is also the shape a file store serves worst — append-only and growing, read in full by
+  `list_logs` and sliced in Python, no index, no time range. `LedgerListStore` gains an `append` that
+  is **one INSERT**: the inherited one is `all()` + `save_all()`, i.e. `kv_replace_all`, a DELETE of
+  every row followed by a re-insert of every row **per append**, on the one shape that grows.
+  `log_id` widens from `uuid4()[:8]` to a full uuid because it is now a kv primary key — 32 bits is
+  ~1% collision odds across 10,000 sends and better than even by 80,000, and an audit row silently
+  overwriting another audit row is not worth 24 bytes. An item with no id gets a synthetic
+  `__anon__:<uuid>` key, because `_key` renders a missing id as the string `"None"` and every id-less
+  append would otherwise overwrite the last — the opposite of append-only, and deferring to
+  `super().append` does not avoid it, because the parent body calls the two methods this class
+  overrides.
+
+**Receipt: proved against a COPY of the live database, not a fixture.** 451,617 rows → **75,685**; all
+**375,932** deletions chatter; signal **30,419 → 30,419, unchanged**; the oldest visible event moved
+from 2026-09-15 back to **2026-06-16**; and signal visible inside the 100k snapshot went from
+**1,031 of 30,419 (3.4%) to all of it.** Every other table byte-identical, `PRAGMA integrity_check`
+ok. 🔑 The two row counts corroborate the growth rate rather than contradicting it — 451,617 − 430,768
+= 20,849, one day apart against a measured 23,287/day. Held by **29 tests**:
+`tests/unit/test_events_retention.py` (20 — a semantic kind survives however old, only the named kinds
+are swept, each of the three env knobs, both halves of the two-policy shape and each disabled alone, a
+sweep never exceeding its batch, successive sweeps draining the backlog, a full batch NOT stamped so
+it retries, the open-time sweep, the two stamps being distinct keys, `emit` driving the counter and
+firing on the boundary, a failing sweep never breaking the write that triggered it, and the three
+indexes present AND the sweep's predicate planning through one) and
+`tests/unit/test_json_store_fallback_is_loud.py` (9 — a per-operation counter on every keyed and every
+list method, the reason naming the file being served, the file contents still returned, append writing
+one row without rewriting the store, insertion order preserved, and an item without an id staying
+append-only).
+
+⏳ **Not done, and this is the honest half.** ① None of it is on `main`: `3b642c2a`, built 2026-09-20,
+merged into `claude/jev-align-and-traces-storage` at `9298316e`, **no PR opened** — this line must be
+re-measured when it merges, per IP-4's lesson. ② **The 336 failed deliveries are a live defect this
+commit made VISIBLE and did not fix** — nobody has yet asked why every outbound send on that install
+failed, and the answer is worth more than the storage change that surfaced it. ③ The three env knobs
+(`AUGHOR_EVENTS_PRUNE_KINDS` · `AUGHOR_EVENTS_OPS_KEEP_DAYS` · `AUGHOR_EVENTS_OPS_MAX_ROWS`) are
+tuning, not store paths, so MI's store-hygiene law does not bind them — verified by precedent rather
+than assumed: `AUGHOR_SESSION_LOG_KEEP_DAYS` appears in neither `tests/conftest.py` nor
+`scripts/dump_openapi.py` either.
 #### MI-3 · The dataset plane (Tangle's schema, our law — §4.5) — ✅ SHIPPED 2026-09-03
 
 > **Built, and honest about what it currently exports: ~0 examples.** The plane is the
@@ -2224,6 +2364,107 @@ truth (volume is currently the scarce input; this is the honest accelerator).
 **Receipt:** the same dataset exported twice yields the same content hash; a provenance
 query walks dataset → runs → verdicts; a golden set shows up in the evals plane.
 
+(after MI-3's block, before `#### MI-4 · First distillation`)
+============================================================
+
+#### MI-3a · The decision corpus: a row that knows which world it was made in, and an outcome that can come out negative — ✅ BUILT 2026-09-19/20 (`e68beffa` · `2174fc48` · `79d01b44`)
+
+> **Origin.** `docs/JEV_ALIGN_STUDY_2026-09-19.md`, finding **A1** (§3.20) — the smallest diff in that
+> study and the one needing no vendor and no model. **The store itself is not new and has never been
+> recorded in this document:** `record_decision` and the `decision_record` table landed on main with
+> #526 (squash `e65b9d17`, 2026-09-18), giving `mark_outcome`, `list_for_export`, `site_stats` and
+> three registered sites. This wave is what A1 adds ON TOP of them.
+>
+> **The premise, measured on the live store 2026-09-19 — three columns, none of them usable.** 40
+> rows, all from ONE of the three sites (`converse.tool`); the other two (`ask.route`,
+> `framing.definition`) had produced nothing on this deployment. Every row `conn_id = ''`. Every row
+> `confidence = 0.0`. And `outcome` = **`'ok'` on 40 of 40**, because its only writer was
+> `tool_loop.py:226`'s inline *"the tool did not raise"*. 🔑 **The column is not empty, it is
+> CONSTANT** — a label that never takes its other value carries no information, and what it records is
+> that the tool RAN, not that the pick was RIGHT, so `exporters.list_for_export` would have shipped 40
+> positive examples into MI-3's plane. `mark_outcome` — the seam that exists to write the real outcome
+> once the answer is judged — had **zero call sites** outside its own tests. (The study's first draft
+> reported `outcome=''`; that was a misread of an unlabelled sqlite column, and it is corrected in
+> place rather than deleted — `df98b8fb`. The corrected finding is the sharper one.)
+>
+> **Built unconditional: no prompt change, no behaviour change.** `record_decision` takes `inv_id`;
+> `decision_record` grows the column additively and 🔑 **its index is created AFTER the ALTER rather
+> than inside `_DDL`** — `executescript` runs first, so an index over `inv_id` in the DDL takes down
+> every pre-existing store. Caught by running the new harness against a SNAPSHOT of the live one, not
+> in review. All three sites now carry `conn_id`/`trace_id`/`inv_id` (`nodes.classify_question` behind
+> optional kwargs so `ask_router` keeps its signature, `run_tool_loop` threaded from both callers,
+> `choose_definition` threaded through `resolve_frame`/`frame_from_state`). `mark_outcomes_for_run`
+> closes every decision a run made, driven from `record_verdict` on **reject** and **correct** — the
+> first caller `mark_outcome` has ever had. **`accept` deliberately does NOT propagate:** a right
+> finding does not establish that any individual pick inside it was right.
+> **A correctness fix the verify pass turned up:** `ask.route` had been recording the model's
+> confidence against the FINAL route — the model said 0.4 about "direct", the 0.65 floor then moved the
+> route to "investigate", and the number described a different answer. An overridden route now records
+> `source=rule` with no probability, and the test that had pinned the old behaviour says why.
+> **The ordering defect, found by running two real turns** (`79d01b44`): the four `converse.tool` rows
+> carried `conn_id` and an EMPTY `inv_id` — attribution with no way to ever close it — because a chat
+> turn has no investigation id while it runs; `save_chat_turn` mints one FROM the answer. The loop now
+> records against a trace the router chooses up front, and `decisions.attach_run` stitches the
+> investigation on once it exists, filling **only empty** `inv_id`s so a later turn sharing a trace
+> cannot reassign a decision that already belongs to a run. Re-run after the change: 5 rows, all
+> carrying `conn_id` + `trace_id` + `inv_id`, and `mark_outcomes_for_run` can now reach them.
+>
+> **The measurement** — `evals/decision_yield_eval.py`, the first eval here that scores the RECORD
+> rather than an answer, over `decisions.corpus_yield` (attributable · with_probability ·
+> discriminating · trainable, the last keeping `list_for_export`'s own floor so the two reads cannot
+> drift). **No model call and no warehouse**, so it is free and safe to run often; read a live store
+> through a `.backup` snapshot, never in place. Arm A is DERIVED PER SITE (`_ARM_A_CAPABILITY`), not as
+> a blanket zero — `ask.route` always passed the model's confidence, so the probability column is not
+> what A1 bought there, and an unknown site is assumed arm-A-capable so a new site cannot flatter the
+> result by being missing from the table (`2174fc48`, which corrects an overstatement of A1 and says
+> so in its own subject line).
+> - *Baseline, live 40 rows, 2026-09-19:* 0 attributable · 0 with a probability · outcomes `{ok: 40}`
+>   · **falsifier FIRES**, as it must on rows the old code wrote.
+> - *Arm B, 8 LuxExperience questions through the instrumented router* (gemini-3.1-flash-lite,
+>   hermetic scratch store): `ask.route` attributable **0 → 8**, with a probability 8 → 8,
+>   discriminating **False → True** on `{rejected: 1, corrected: 1}`. **Falsifier HOLDS.**
+> - *Arm B on the conversational path, 2 real LuxExperience turns, 2026-09-20:* `converse.tool`
+>   attributable **0 → 5**, with a probability 0 → 0 (the loop passes none, by design), outcomes
+>   `{ok: 5}` after two truthful `accept` verdicts. **Falsifier HOLDS on attribution alone.** Both
+>   turns answered correctly against the warehouse (783 cancelled FY2025 orders and 26.2% of order
+>   lines returned, against 783 and 26.19% measured directly), so `accept` was the honest verdict.
+>
+> 🔑 **Two findings worth more than the pass.** (1) **The router returned confidence 1.00 on all eight
+> questions** — including lb11, the one both models in the ON-10 receipts got wrong. The probability
+> column is populated and **FLAT**, so the uncertainty-scheduling half (study finding A2) has an input
+> that cannot rank anything. That is a calibration finding on real traffic, not an assertion, and it is
+> the gap the companion study already named: nothing here checks that 0.6 means 60%. (2) **The negative
+> class only ever arrives from failures**, because `accept` does not propagate — so on a mostly-correct
+> system this corpus is heavily imbalanced by construction. Both are properties MI-4's gates will be
+> counted against, and both are better stated now than discovered at the gate.
+>
+> ⚠️ **A flag registered whose ON arm has never executed — recorded as a finding, not as readiness.**
+> `framing.choice_confidence` (`kernel/flags.py`, env `AUGHOR_FRAMING_CHOICE_CONFIDENCE`) asks the
+> definition chooser for its own number through a SEPARATE response model
+> (`DefinitionChoiceWithConfidence`), so the off-arm ships today's schema byte-identically — it is an
+> `EXPERIMENT` entry in group D, because adding a field to a response model changes the prompt. Its
+> grid is marked **GRID BLOCKED ON CORPUS**, premise-checked 2026-09-19: `choose_definition` runs only
+> on an ambiguous frame (`chosen is None and len(candidates()) > 1`, where `candidates()` keeps only
+> `usable` outcomes), and **all 32 authored LuxExperience questions frame to 0 ambiguous** — 27 reach
+> no usable candidate, 5 reach exactly one — measured through the read-only `POST /ontology/frame`,
+> no model and no warehouse. So the flag is registered, the second response model is written, and the
+> ON arm has run on **not one** authored question; a grid would buy a no-op on every case, which is
+> exactly what `explore.route_wide` is parked for. 🔑 This is the #530 shape one plane over — a guard
+> that never saw what it gated — and the register is where it has to be visible, because a flag that
+> reads as an experiment-in-progress is how one stays parked for a quarter.
+> **UNBLOCK:** author a set whose questions fit TWO executable declared measures on one connection,
+> then grid the fired subset. **EXIT once fired:** graduate if agreement is unchanged within noise AND
+> the recorded confidence is lower on overturned picks than on upheld ones; **DELETE the flag and the
+> second response model if the number is flat**, because a probability that does not separate cannot
+> rank a queue and study finding A2 then has no input at all.
+>
+> **Held as tests:** `tests/unit/test_decision_yield.py` (the seams hermetic, including that an EMPTY
+> store reads INCONCLUSIVE rather than as a pass) and `tests/unit/test_decision_records.py`. The full
+> suite caught one collateral failure — two tests stubbed `classify_question` with a positional-only
+> callable — fixed in `0475c1ed`; 11,273 passed, 5 skipped, 1 failed before, green after.
+
+
+============================================================
 #### MI-4 · First distillation: NL2SQL, rented
 
 **Entry gates (measured, not vibes):** ≥1,000 SFT pairs · ≥150 DPO pairs · a golden set
@@ -6291,6 +6532,74 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   > its literal message states the order count); marking a verdict is not enforced to the addressee while identity
   > is off (HB-1's posture); a deep run records no falsifier SURVIVAL for causal claims beyond its licence;
   > "wrong" said in a Slack thread does not yet return as a correction.
+(after HB-2's last blockquote line, before `- **HB-3 · promises and findings as triggers`)
+Keep the two-space indent: this is a continuation of HB-2's bullet.
+============================================================
+
+  > **A4 · THE IMPOSSIBLE-LAG CAVEAT, AND THEN THE HOLD — BUILT 2026-09-20** (`407f0a4c`, then
+  > `7cd717e0`; origin `docs/JEV_ALIGN_STUDY_2026-09-19.md` finding A4 — the frozen-population rule as
+  > a standing guard, §3.20). **The live anchor.** LuxExperience declares a refund promise — refund
+  > within 10 calendar days of the return arriving — and the platform measured it: **11,648 of 50,048
+  > Returns breached, 23.27%**, as of 2025-08-14, `flags: []`. The same stage, ONE LEVEL UP from the
+  > promise block, already counted `out_of_order: 4,199` and already said so in its own note:
+  > **4,199 Returns were refunded BEFORE they were received.** A negative lag can never exceed the
+  > window, so every one of them was counted as KEPT. Without them the rate is **25.41%** — the failure
+  > understated by **2.14 points**, in the business's favour, on a number that leaves the building.
+  > 🔑 Nothing was hidden. It was computed one level away from the reader, which is the same thing.
+  > **The caveat first** (`407f0a4c`). `_flag_out_of_order` puts it on the PROMISE, reusing the `flags`
+  > vocabulary that already exists ("never broken", "always broken") rather than inventing a second
+  > one — so it rides for free into the panel's red text, the object door's query caveats and the
+  > frame's notes. The alternative rate is arithmetic, not a second query, and it is stated only when
+  > it is SOUND to state: a **window** promise, never a `deadline` one (where `out_of_order` compares
+  > stages the deadline says nothing about, so *"cannot break the promise"* would be a FALSE sentence
+  > rather than merely an unhelpful one); counted per the process's own type, so the two counts share a
+  > population; and something left once they are removed. When any of those fails the ordering is still
+  > flagged, just without a rate — saying less beats saying something derived from the wrong
+  > denominator. The departure path was the one surface that dropped it: `Measurement` had no caveat
+  > field, so 23.27% departed clean. It now carries `caveats`, filled from the promise's flags on BOTH
+  > the ontology and hub-stamp paths (`govern/departure_basis.py`), and `receipt_line` states them
+  > **before** the guard list, because a caveat after a row of green ticks reads as a footnote to
+  > reassurance.
+  > **Then the hold** (`7cd717e0`), **the user's call**, made once A4 showed the caveat travelling and
+  > stopping nothing: *a measurement that refutes its own number does not leave.* A ninth guard,
+  > **`caveat`**, placed beside `trust` because both are accuracy holds about the FIGURE itself rather
+  > than about who may receive it, and reached the same way — from the measurement, never from the
+  > text. Which caveats block is `departure_basis._blocking`'s call and not the gate's, so the gate
+  > never has to learn a promise's vocabulary. `Measurement.blocking_caveats` is kept separate from
+  > `caveats` deliberately: collapsing them turns *"a caveat holds"* into *"every caveat holds"*, and
+  > 🔑 **a gate that blocks on every caveat teaches senders to stop writing them.** "Never broken" still
+  > rides the receipt and still departs. `web/lib/departures.ts` gains the guard in `GUARD_ORDER` and
+  > `GUARD_LABEL` — verified by INSPECTION, not by running, because that worktree has no
+  > `node_modules`, and it is safe because both maps are `Record<string, …>` and the one `GUARD_ORDER`
+  > consumer widens to `readonly string[]`.
+  > ⚠️ **One clause taken on the builder's own authority, and it is one line to reverse — §6 item 29.**
+  > Three live promises carry impossible rows, not one: LuxExperience `return_to_refund/refunded`
+  > 23.27% → 25.41% (**8.4% relative**), theLook `order_to_delivery/dispatched` 9.35% → 9.47% (1.2%),
+  > theLook `order_to_delivery/delivered` 8.11% → 8.11% (**0.0%**). An unconditional hold stops
+  > theLook's dispatch watch — the live send this module's own docstring cites as its anchor — over a
+  > tenth of a point, and the delivery one over nothing at all. So the blocking prefix is used only
+  > once the two readings disagree by more than the platform's OWN bar for that
+  > (`IMPOSSIBLE_LAG_MATERIAL_REL` = `govern.departure.NOISE_REL` = the deep run's
+  > `_METRIC_DIVERGENCE_REL`, 0.05); below it the same finding is stated in full under a DISTINCT
+  > prefix that departs, never a suffix on a shared stem, because a `startswith` match against a shared
+  > stem would block both and the distinction would exist only in the prose. The ontology RESTATES the
+  > constant rather than importing `govern`, and a test asserts the two stay equal so the restatement
+  > cannot drift. **To make it unconditional, delete the `moved >= IMPOSSIBLE_LAG_MATERIAL_REL`
+  > branch.** A rate that cannot be computed at all (a promise counted per another type) blocks either
+  > way: unquantified is not the same as small.
+  > **Mutation-tested across both commits, each mutant killed by the test written for it, by ASSERTION
+  > rather than by a crash:** drop the deadline early-return · never call the flag · wrong denominator
+  > (reached instead of reached − early) · ignore the grain mismatch · the guard never holding · every
+  > caveat blocking · nothing blocking · the two prefixes sharing a stem. 🔑 The existing 55 process
+  > tests all passed BEFORE the new ones existed — the #530 shape again, a guard nothing exercised — so
+  > the new fixture GENERATES the out-of-order rows and counts every expectation from the table rather
+  > than listing it beside the assertion. One of A4's own tests was passing for the wrong reason (it
+  > asserted the impossible-lag caveat DEPARTS, which production can no longer do) and was rewritten.
+  > Suite 11,293 passed, 0 failed, pytest exit 0. Verified on the live declaration, read-only: the real
+  > 50,048 / 11,648 / 4,199 produce exactly *"without them the rate is 25.41%, not 23.27%"*.
+
+
+============================================================
 - **HB-3 · promises and findings as triggers; outcomes and the manifest's first links.** `promise_breached` and
   `finding_created` beside the five triggers; a proposed ticket and a Slack thread filed on the object they are about;
   an outcome column (ticket closed, number recovered). *The first live receipt, end to end:* Olist's dispatch promise
@@ -6488,6 +6797,177 @@ file is edited: the `aughor` command sits in uv's own command folder. A download
 commands, and a Windows machine without Git already installs from a zip snapshot; Termux — a Next.js build does not
 belong on a phone; a root, multi-user install; a machine-readable stage protocol (`--manifest`, `--stage`, `--json`)
 until there is a desktop app to drive it; shell rc edits — uv's command folder already reaches PATH.
+
+---
+
+### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; studies: `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and its +1, `docs/JEV_ALIGN_STUDY_2026-09-19.md`; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; nothing from the JD series built)
+
+> ⚠️ **Read the numbering before the arc.** This text was written 2026-09-17 on
+> `origin/claude/fervent-cori-w9ogfc` (`93112558`, ROADMAP.md +106) and it claimed **§3.19 and §6 item
+> 25**. Arc IN was drafted the same day, landed on main first, and holds both. Arc JD is therefore
+> renumbered to **§3.20 / item 28** and Arc IN is left exactly as it stands — the arc that arrives
+> second renumbers. **Item 28 sits after items 26 and 27, which were both decided 2026-09-19, although
+> this arc predates them by two days.** The register is ordered by the number a thing was given, not by
+> the day it was drafted, and no other line in §6 would tell a reader that.
+
+**The observation.** TypeSafe shipped a model class that gives up text generation and returns typed,
+calibrated decisions — one **state**, N independent **questions**, each a Choice (one of a closed set,
+with a probability per option), a Score (a position on 2–10 ordered levels, which may fall between
+them) or a Noul (the probability a proposition is true). `vinnylarouge/jevlike` re-derives the *shape*
+in 400 lines of MIT PyTorch: an option becomes a query, it attends over the context, one dot product
+scores it, a softmax runs across the options — one forward pass instead of writing an answer word by
+word. Neither is adopted here. **What is adopted is the request shape**, which we can have on our own
+providers today, and which the study shows we are already approximating badly in two hot places.
+
+**What is true today (measured first-hand 2026-09-17; anchors re-verified on this tree 2026-09-20).**
+The deep path's wall-clock is ~100% phase-serial LLM calls (`AGENT_NOTES.md:215`): 373 s serial
+against 304 s with `ada.parallel_phases` = **1.23×**, both arms 14 calls, and the note's own verdict is
+that intake and synthesis dominate and phase-level parallelism is spent. Intake is ONE decoder call
+carrying **28 fields** (`aughor/agent/prompts_investigate.py:761`, `IntakeOutput`, re-counted
+2026-09-20 — the study said ~25 at `:755`) of which about ten are pure judgments over one state
+(`descriptive_only`, `cross_sectional`, `metric_is_ratio`, `claim_type_suggestion`) and three are picks
+from a set the schema already holds (`date_column`, `metric_table`, `dimensions`) — asked as free text,
+then repaired: "collect ALL spec errors and fix them in ONE combined LLM retry (was up to 3 sequential
+round-trips on the critical path of every investigation)" (`aughor/agent/investigate.py:5654`), with
+the date column repaired deterministically by `_resolve_date_column` (`:1452`) because asking again is
+less reliable. The semantic operators put 25 rows in one prompt (`aughor/semops/operators.py:32`,
+`DEFAULT_BATCH`; cap 200 at `:31`), so a row's verdict can be moved by its neighbours, a parse failure
+loses all 25 verdicts fail-open, and the champion cascade escalates **all** 200 rows on a sampled 20%
+disagreement (`_CHAMPION_ESCALATE = 0.20`, `:141`) — paying the strong tier for the rows the cheap tier
+already had right. And `earned_confidence` is COMPUTED, never asserted by the model
+(`aughor/agent/state.py:253`) — the right instinct, and the exact seam a calibrated per-item
+probability belongs in. The gates a hosted backend would have to ride already exist: `security/pii`,
+`govern/outbound`, `govern/guardrails.py`, and the 428 `approval_required` graduated gate
+(`aughor/govern/actions.py:166`).
+
+**The arc in one line:** make a judgment a first-class call with a declared answer space, an isolated
+per-question score, and a probability our code bands on — then measure it with a control before
+believing any of it.
+
+- **JD-1 — the seam.** `judge(state, questions) -> answers` over the EXISTING providers: one call per
+  bundle, one closed schema per question (`noul` / `choice` / `score`), each question scored on its own
+  against the state, answers keyed by question id and carrying a probability. Flag-gated,
+  default-byte-identical, one backend at first. *Receipt:* the same bundle answered through the seam
+  and through today's path agree on the golden set. *Falsifier:* if isolation changes no answer and
+  saves no call, it is ceremony — drop it.
+- 🛑 **JD-2 — intake's judgments leave the prose call. THE PREMISE IS REFUTED (2026-09-20); the
+  closed-option-list half does not proceed.** As drafted: the ~10 judgment fields become typed
+  questions, and `date_column` / `metric_table` / `dimensions` become **choices over the real schema**,
+  which cannot return a column that does not exist — argued as monotonic by construction, and therefore
+  provable below the ±7–10 noise floor. **The measurement, taken on this branch:**
+  `evals/intake_validity_eval.py` scored 202 threads / 201 investigations (29 Jun – 19 Sep) against the
+  schema block persisted WITH each run (`filtered_schema` on the spec — the list the model was actually
+  handed, and the one ground truth that cannot drift). **1,833 of 1,835 picks — 99.9% — were names the
+  model had been shown**: `metric_table` 201/201, `date_column` 183/185 (98.9%), `dimensions`
+  1,449/1,449. 0 of 202 threads had their spec rewritten mid-run, so this is what the runs used, not a
+  proposal a repair caught. **The falsifier fires:** a closed option list removes a failure that is not
+  happening.
+  🔴 **And the first number was mine, and it was wrong.** `5176820e` claimed ~20% of deep runs used a
+  table or column that does not exist, from the same corpus; `8797dfef` retracts it. The harness had
+  compared three-month-old specs against today's `data/*.duckdb`, and `workspace` — which owns 140 of
+  the 202 specs — is a `local_upload` connection whose tables live as CSVs under
+  `data/uploads/default/workspace/`, never opened. Re-pointing per connection swung the rate to 46%,
+  equally meaningless, because `missimi` is a schema the workspace no longer has. **Both numbers
+  measured warehouse drift and called it model behaviour.** Matching is by identifier TOKEN, not
+  substring, because a substring test would count `order` as shown on the strength of `order_id` — an
+  error in the direction that flatters the retraction; a run that persisted no schema is excluded
+  rather than scored as a miss, which is precisely the mistake the retracted version made. Both rules
+  are pinned by `tests/unit/test_intake_validity.py`.
+  ✅ **What survives the retraction, and is worth fixing on its own merits:** `dimensions` is validated
+  against the schema nowhere; the `metric_table` correction retry is accepted without re-validation
+  (`aughor/agent/investigate.py:5676`); and no counter or event fires on a spec repair, so the
+  spec-repair retry rate JD-2 named as its receipt **is not instrumented and never was**. Those are
+  real defects. They are simply not evidenced by an invalid-name rate, because there isn't one. This
+  refutation says nothing about whether the picks were the RIGHT ones — only that they were real — and
+  it does not touch the other half of the Jev proposition, the calibrated probability.
+- **JD-3 — bands, not batches, in the semops cascade.** `semantic_filter` / `semantic_top_k` ask one
+  question per row through JD-1's seam; the champion tier is spent ONLY on the rows inside the
+  uncertainty band, and the band's floor routes to a person rather than to a guess. Thresholds live in
+  our code, never in the model. *Receipt:* strong-tier calls spent per 200-row filter, at equal
+  agreement with today's escalation. *Falsifier:* banding costs more strong-tier calls than the sampled
+  cascade → keep the sampled one.
+- **JD-4 — the instrument, and it comes first.** `jevlike/eval.py`'s battery adopted as a standing
+  guard on every judgment seam: top-1, expected calibration error over ten bins, and the
+  **shuffled-context control** — every question paired with the WRONG state, on the rule that a
+  judgment must beat that control to count. *Receipt:* the control run on our own logged judgments.
+  *Falsifier:* if real and shuffled score within noise, our judgments are not reading the state and the
+  rest of this arc is pointless. 🔑 JD-2's retraction is the argument for building this first: the arc's
+  one measured claim was wrong for three days because its ground truth drifted, and the harness that
+  caught it costs no model call.
+- **JD-5 — the hosted binding, optional and last.** Jev behind JD-1's seam as one backend among ours,
+  OFF by default, riding `govern/outbound` and the PII gate because the state is customer row text
+  leaving the box, surfaced in the Trust Receipt, and never on the verdict path: on TypeSafe's own
+  four-workflow benchmark Jev scores 67.8% against Opus 5's 73.1% — it is a speed and cost result, not
+  an accuracy one. *Receipt:* the same JD-4 battery, both backends, same bundles. *Falsifier:* no
+  wall-clock or cost win at equal calibrated accuracy → refuse and record it in §4.
+- **JD-6 — the local scorer, if JD-4 earns it.** A `jevlike`-shaped one-pass head trained on our own
+  logged `{state, options, chosen}` rows, weights outside the repo and installer per §3.9's adapter
+  law, used as a pre-filter and ranker (cut 200 candidate columns to 12 before a real model reads them)
+  and never as a decider — its own authors measure 26–29% where controls score 8% and call the option
+  head a capacity bottleneck. *Falsifier:* cannot beat a shuffled control by more than the noise floor
+  → stop, and say so.
+
+#### The alignment movement (the +1 study, 2026-09-19 — `docs/JEV_ALIGN_STUDY_2026-09-19.md`)
+
+`sutro-sh/jev-align` at `49753df` (MIT, ~4,000 lines, read in full, **not executed** — no API key, and
+a run spends a reflection model's tokens) answers the question after the JD series: where the text of a
+judgment comes from, and how it gets better. Its findings are lettered **A1–A6** because when the study
+was written §3.19 was contested between this arc and Arc IN; that is now settled at §3.20, and the
+letters are kept so the study and the roadmap still read as one thing.
+
+- ✅ **A1 — an outcome that can come out negative. BUILT 2026-09-19/20** (`e68beffa`, `2174fc48`,
+  `79d01b44`). Measured on the live store first: **40 rows, every one `conn_id` empty, every one
+  `confidence` 0.0, and `outcome` `'ok'` on 40 of 40** — because the only writer of that column was
+  `tool_loop`'s inline "the tool did not raise" (`aughor/agent/tool_loop.py:235`; the study cites `:226`,
+  pre-A1). A label that never takes its other value is a constant, and `exporters.list_for_export` would
+  have shipped 40 positive examples. Now: `record_decision` carries `conn_id`/`trace_id`/`inv_id`,
+  `mark_outcomes_for_run` closes a run's decisions from `record_verdict` on reject/correct — the first
+  caller `mark_outcome` has ever had — and `accept` is deliberately NOT propagated, because a right
+  finding does not establish that any individual pick was right. Measured by
+  `evals/decision_yield_eval.py`, the first eval here that scores the RECORD rather than an answer, and
+  it makes no model call: arm B on `ask.route`, 8 rows, attributable **0 → 8**; on `converse.tool`,
+  5 rows, attributable **0 → 5**. ⚠️ Two caveats worth more than the pass: the model returned confidence
+  **1.00 on all 8**, including the question both models got wrong in ON-10's receipts, so the
+  probability column is populated but flat and **A2 has an input that cannot yet rank anything**; and
+  because only failures produce a negative, the corpus is heavily imbalanced by construction.
+- ⏳ **A2 — uncertainty schedules the human, not policy.** Blocked on JD-1's probability, and on A1's
+  flat-confidence finding above. Today the only things that route work to a person are policy gates —
+  the 428 approval, the departure hold — and neither knows which decisions were close. *Falsifier:* if
+  audit-slot disagreement is indistinguishable from ambiguous-slot disagreement, the ranking reads
+  nothing and the queue may as well be random.
+- ⏳ **A3 — a definition change is a diff, a score, and a named population.** The screen the departure
+  hold is missing: `draft → proposed → approved` already exists on metrics
+  (`aughor/semantic/metrics.py:85`), but a person is asked for a definition with no instrument beside
+  the question. Needs A4.
+- ✅ **A4 — the frozen-population rule as a standing guard. BUILT 2026-09-20** (`407f0a4c`).
+  LuxExperience declares a refund promise and the platform measured it: 11,648 of 50,048 Returns
+  breached, **23.27%** — while the stage one level up already counted `out_of_order: 4,199`, Returns
+  refunded BEFORE they were received. A negative lag can never exceed the window, so all 4,199 were
+  counted as KEPT. Without them the rate is **25.41%**, the failure understated by 2.14 points in the
+  business's favour, on a number that leaves the platform. Nothing was hidden; it was computed one level
+  away from the reader, which is the same thing. `Measurement` now carries `caveats`, filled from the
+  promise's flags on both the ontology and hub-stamp paths, and `receipt_line` states them BEFORE the
+  guard list — a caveat after a row of green ticks reads as a footnote to reassurance. Guard
+  mutation-tested four ways, each killed by assertion rather than a crash. Whether such a caveat should
+  HOLD a send was left to the user, and answered the same day: **§6 item 29**.
+- ⏳ **A5 — capture as a budget, not just a tolerated write.** `record_decision` is already
+  observation-never-control and already never raises; it has no bound. One field is capped
+  (`_MAX_CONTEXT = 2000`); nothing caps the store's growth or counts what was lost.
+- 🛑 **A6 — an optimizer over definitions. HOLD, with the number.** GEPA over a definition optimizes
+  against human labels; we have five verdicts, none carrying `sql_source`, unchanged in sixteen days. An
+  optimizer on that corpus is an optimizer on noise. Revisit at ~150 labeled decisions with outcomes at
+  a single site — the order of magnitude MI-4's gates already use. *Falsifier for the hold:* a site
+  reaches that volume and a human-labeled holdout shows a proposed definition beating the incumbent
+  outside the noise floor.
+- 🛑 **Refused from jev-align:** the label picker that pre-selects the model's own answer — automation
+  bias at exactly the screen where the human is supposed to decide.
+
+**Not this:** a judgment model anywhere a person acts on the number it produced; a model replacing a
+deterministic resolver that already works; a hosted dependency on by default, or one that sees row text
+without an outbound grant; weights in the repo or installer; a second confidence vocabulary beside
+`earned_confidence`; and no figure from a vendor page this session could not open treated as measured —
+`docs.typesafe.ai` and `typesafe.ai` were blocked by egress, and the study says which numbers are
+second-hand.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -6731,6 +7211,12 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
         MI-0 annex ✅ DECIDED (§6.7b); remaining code: the langfuse.trace.input gate
         MI-1 grade what already runs · MI-2 verdict pins evidence — substrate-sized,
              may ride alongside any band above
+        MI-2b ✅ BUILT 2026-09-20 (`3b642c2a`, BRANCH ONLY — no PR, not on main) — the journal
+             had no sweep at all: 430,768 events over 95 days, 76.8% of them unreachable by
+             aughor_ops's 100k snapshot; scoped retention (named chatter only, 2-day window +
+             50k cap, bounded at 20k/sweep, driven by emit) · Migration 12's trace and
+             retention indexes · the store facade's silent fallback made loud · the outbound
+             delivery log moved to the Ledger, where it showed 336 rows, 336 failed
         MI-3 dataset plane (learning store; Tangle's schema per §4.5)
         MI-4 NL2SQL adapter — starts ONLY at measured gates (≥1,000 SFT · ≥150 DPO ·
              golden ≥150 · verdicts flowing ≥30 days); rented training; ratchet-gated
@@ -6831,6 +7317,9 @@ ARC HB  ✅ ADOPTED 2026-09-16 (§3.18; §6 item 24 (a)(b)(d) stamped on the use
         The measure is landings, not doors. ✅ HB-1…HB-6 first slices merged (#513 · #515 · #516);
         HB-2 REMAINDER built 2026-09-17 — every outbound transport gated (AST-held), laws 1·2·4·5·6·7
         and the receipt on the message, the departures screen
+        · ✅ AMENDED 2026-09-20 (§6 item 29, `7cd717e0`): the departure gate gains a `caveat` guard
+        beside `trust` — a measurement that refutes its own number is HELD, above a 5% relative bar
+        (`IMPOSSIBLE_LAG_MATERIAL_REL`); below it the finding departs in full under a distinct prefix.
 ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chosen at install and read
         for the connection's own industry. IP-0 ✅ MERGED #503 (`aebe5feb`): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
@@ -6885,6 +7374,27 @@ ARC IN  ⏳ DRAFTED 2026-09-17 (§3.19; §6 item 25) — the install, from what 
         command, a two-command README. Waves: IN-1 `aughor update` + `aughor doctor` → IN-2 the
         README's install section → IN-3 hostile networks → IN-4 a data home outside the checkout
         (its own plan first)
+ARC JD  ⏳ DRAFTED 2026-09-17, RECORDED 2026-09-20 (§3.20; §6 item 28) — the judgment seam: one state,
+        N independent typed questions, a closed answer space, and a probability our code bands on.
+        Nothing from the JD series built. ⚠️ The numbers are NOT the ones the draft asked for: it was
+        written on an unmerged branch claiming §3.19 / item 25, which Arc IN took the same day, so it
+        renumbers here and Arc IN is untouched — and item 28 therefore follows items 26 and 27
+        (2026-09-19) while predating them. Measured 2026-09-17: the deep path is ~100% phase-serial LLM
+        calls (373 s vs 304 s = 1.23×, 14 calls both arms); intake is ONE decoder call of 28 fields, ten
+        of them pure judgments; semops batches 25 rows per prompt and escalates all 200 on a sampled 20%
+        disagreement; `earned_confidence` is computed, never asserted. Waves: JD-4 the instrument FIRST
+        (ECE + a shuffled-context control) → JD-1 the seam over our own providers → 🛑 JD-2 REFUTED
+        2026-09-20 (`8797dfef`): 1,833 of 1,835 intake picks — 99.9% — were names the model was shown,
+        so a closed option list removes a failure that is not happening; the retracted ~20% (`5176820e`)
+        measured warehouse drift → JD-3 bands, not batches, in the cascade → JD-5 the hosted Jev binding
+        (HOLD — 67.8% against Opus 5's 73.1% on the vendor's own benchmark; speed and cost, not
+        accuracy) → JD-6 a local one-pass scorer (HOLD, pre-filter only). Alignment movement, from the
+        +1 study 2026-09-19: ✅ A1 an outcome that can come out negative BUILT (`e68beffa`) —
+        attributable 0 → 8 on `ask.route`, 0 → 5 on `converse.tool`, but confidence 1.00 on all 8, so
+        A2 has no usable ranking signal yet · ✅ A4 the frozen-population rule BUILT (`407f0a4c`) —
+        LuxExperience's refund breach 23.27% → 25.41% once 4,199 impossible rows stop counting as kept
+        · ⏳ A2 (needs JD-1) · ⏳ A3 (needs A4) · ⏳ A5 · 🛑 A6 HOLD until ~150 labeled decisions.
+        The user has not sequenced this arc against Arc IN; both are drafted and unbuilt.
 ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — ON-0 STARTED. The user's challenge
         ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
         measured and largely confirmed: table = entity by construction; no instance
@@ -7317,6 +7827,18 @@ the browser** · **measure the premise before building.**
 > to them. Open: 16, 18(c), 22(c), 24(f·g), 25, 26(e).
 > **Amended 2026-09-19, same turn:** 26 (e) decided too — the palette ranking is taken SEPARATELY and first, as
 > DS-17b. Item 26 is closed whole. Open: 16, 18(c), 22(c), 24(f·g), 25.
+> **Amended 2026-09-20:** item 28 (Arc JD — the judgment seam) is recorded three days after it was
+> drafted. It was written 2026-09-17 on the unmerged branch `origin/claude/fervent-cori-w9ogfc`
+> (`93112558`) and it claimed **§3.19 and item 25** — both of which Arc IN, drafted the same day, had
+> already taken on main. Arc JD renumbers to §3.20 / item 28 and Arc IN is untouched. **So item 28 sits
+> after items 26 and 27, both decided 2026-09-19, although it predates them by two days:** this
+> register is ordered by the number a thing was given, not by the day it was written, and every item
+> carries its own drafting date for exactly this reason. Its clause (b) arrives **already refuted** —
+> measured on the branch that recorded it, not on a later date — so it is stamped 🛑, not left reading
+> as an open recommendation. Open: 16, 18(c), 22(c), 24(f·g), 25, 28(a·c·d·e·f).
+> **Amended 2026-09-20, later:** item 29 (a measurement that refutes its own number does not leave)
+> arrived from A4's receipt and was decided in the same turn. Open: 16, 18(c), 22(c), 24(f·g), 25,
+> 28(a·c·d·e·f).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -7750,6 +8272,96 @@ the browser** · **measure the premise before building.**
     Not part of this: law 2's approved-definition requirement, which held the same send because theLook's
     `units_sold` was a draft. An ordinary metric call, and the user made it the same turn — `units_sold`
     proposed and approved (v1), after which the gate's `definition` check reads *"cites metric units_sold v1"*.
+
+---
+
+28. ⏳ **DRAFTED 2026-09-17 (the user: "find ways to improve our platform", after reading TypeSafe's Jev
+    and the `jevlike` re-derivation); RECORDED 2026-09-20 — Arc JD, the judgment seam (§3.20): three
+    adoptions that need no vendor, two that wait, and one that was measured and REFUTED before it could
+    be built.** ⚠️ **This item is out of date order and deliberately so.** It was drafted two days
+    before items 26 and 27 and takes a number after them, because it was written on a branch that never
+    merged and claimed §3.19 / item 25 — numbers Arc IN had already taken the same day. It renumbers;
+    Arc IN does not. The studies are `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and its +1,
+    `docs/JEV_ALIGN_STUDY_2026-09-19.md`; the first states plainly which of its numbers are second-hand
+    (`docs.typesafe.ai` and `typesafe.ai` are blocked by this environment's egress policy, so the
+    vendor's own pages were never read — the API contract comes from a third-party client that calls
+    it), and the second was read in full but **never executed**.
+    **(a) The seam and the instrument (JD-1, JD-4)** — a typed `judge(state, questions)` call over our
+    existing providers, and `jevlike`'s calibration battery (ECE + a shuffled-context control) as the
+    standing guard on it. *Recommended: yes, and JD-4 first — it is the instrument every other slice is
+    measured with, it would have caught ON-0's lift-that-wasn't, and clause (b) below is what happens
+    without it.*
+    🛑 **(b) Intake's judgments as typed questions, with closed option lists (JD-2) — THE PREMISE IS
+    REFUTED; this clause is NOT an open recommendation.** As drafted, `date_column`, `metric_table` and
+    `dimensions` became choices over the schema, which cannot name a column that does not exist,
+    retiring a repair path that cost up to three sequential round-trips on the critical path of every
+    investigation; *recommended yes, as monotonic by construction and therefore provable below the noise
+    floor.* Measured 2026-09-20 against the schema block persisted with each run (`filtered_schema`, the
+    one ground truth that cannot drift): **1,833 of 1,835 picks — 99.9% — were names the model had been
+    shown** (`metric_table` 201/201, `date_column` 183/185, `dimensions` 1,449/1,449, over 202 threads /
+    201 investigations, 29 Jun – 19 Sep), and 0 of 202 specs were rewritten mid-run. **The falsifier
+    fires.** 🔴 The first measurement was wrong in the other direction and is retracted with its
+    replacement: `5176820e` reported ~20% invalid picks by comparing three-month-old specs against
+    today's `data/*.duckdb`, never opening the `local_upload` store that owns 140 of the 202 specs;
+    `8797dfef` retracts it. Re-pointing per connection gave 46%, equally meaningless. Both numbers
+    measured warehouse drift and called it model behaviour. ✅ What survives and is still worth doing:
+    `dimensions` is validated nowhere, the `metric_table` correction retry is accepted without
+    re-validation (`aughor/agent/investigate.py:5676`), and **no counter or event fires on a spec
+    repair** — so the receipt this clause named for itself does not exist yet. *Recommendation as
+    amended: fix those three on their own merits; do not build a closed option list to remove a failure
+    this corpus says is not happening.*
+    **(c) Confidence bands in the semops cascade (JD-3)** — spend the champion tier on the uncertain
+    rows only, and route the band's floor to a person. *Recommended: yes, after (a).*
+    **(d) The hosted Jev binding (JD-5)** — one backend behind the seam, off by default, behind the
+    outbound grant and the PII gate, never on the verdict path. The state is customer row text leaving
+    the box, and Jev's own benchmark puts it at 67.8% against Opus 5's 73.1%. *Recommended: hold until
+    (a) exists and can measure it; adopt only for pre-filters and rankings where a wrong answer is cheap
+    and recoverable.*
+    **(e) The local one-pass scorer (JD-6)** — sovereign, CPU-sized, trained on our own logged
+    decisions, weights outside the installer. *Recommended: hold behind (a) and (d)'s measurement; it is
+    a pre-filter, not a decider.*
+    **(f) The alignment movement (A1–A6), added 2026-09-19 from the `jev-align` study** — the loop
+    around the judgment, rather than its shape. ✅ **A1 (an outcome that can come out negative) and A4
+    (a measurement carries its impossible rows) are BUILT** (`e68beffa`, `407f0a4c`), which is why this
+    clause arrives with receipts and the JD series does not: A1 moved attributable decisions from 0 to 8
+    on `ask.route` and 0 to 5 on `converse.tool`, and A4 moved LuxExperience's refund-breach rate from
+    23.27% to 25.41% by refusing to count 4,199 impossible rows as kept. ⏳ A2 waits on (a)'s
+    probability — and A1 measured that probability arriving **flat, 1.00 on all 8**, so (a) has to
+    produce a usable one before A2 means anything. ⏳ A3 waits on A4; ⏳ A5 is small and unstarted.
+    🛑 A6 (an optimizer over definitions) is HELD on a number: five verdicts, unchanged in sixteen days,
+    is an optimizer on noise. 🛑 Refused outright: a label picker that pre-selects the model's own answer.
+    Not decided here because it isn't ripe: whether a judgment's probability may ever reach a reader
+    (today `earned_confidence` is computed from evidence and nothing else asserts confidence); and
+    whether the uncertainty band's floor routes through the existing 428 approval gate or somewhere new.
+
+29. ✅ **DECIDED 2026-09-20 (the user, after A4 showed the caveat travelling but not stopping anything)
+    — a measurement that refutes its own number does not leave; BUILT the same day** (`7cd717e0`).
+    §3.20's A4 put a promise's impossible rows on the measurement and carried them into `receipt_line`,
+    and they departed anyway: a caveat qualified the number and never held it. It now holds. A new
+    `caveat` guard sits beside `trust` in the departure gate, because both are accuracy holds about the
+    figure itself rather than about who may receive it, and both are reached from the measurement
+    instead of from the text. **Which caveats block is `departure_basis._blocking`'s call, not the
+    gate's** — the gate asks the measurement, so it never has to learn a promise's vocabulary, and
+    `Measurement.blocking_caveats` stays separate from `caveats` deliberately: collapsing them would
+    turn "a caveat holds" into "every caveat holds", and a gate that blocks on every caveat teaches
+    senders to stop writing them. "Never broken" still rides the receipt and still departs.
+    ⚠️ **One thing the builder chose alone, and it is one line to reverse.** Three live promises carry
+    impossible rows, not one — LuxExperience `return_to_refund/refunded` 23.27% → 25.41% (+2.13pp, 8.4%
+    relative), theLook `order_to_delivery/dispatched` 9.35% → 9.47% (+0.12pp, 1.2%), theLook
+    `order_to_delivery/delivered` 8.11% → 8.11% (+0.00pp, 0.0%). An unconditional hold would stop
+    theLook's dispatch watch — the live send this module's own docstring cites as its anchor — over a
+    tenth of a point, and the delivery one over nothing at all. So the blocking prefix is used only once
+    the two readings disagree by more than the platform's OWN bar for that
+    (`IMPOSSIBLE_LAG_MATERIAL_REL = 0.05`, equal to the deep run's `_METRIC_DIVERGENCE_REL`, with a test
+    asserting the two stay equal); below it the same finding is stated in full under a distinct prefix
+    that departs. **A rate that cannot be computed at all blocks, because unquantified is not the same
+    as small.** To make the hold unconditional, delete the `moved >= IMPOSSIBLE_LAG_MATERIAL_REL`
+    branch. Mutation-tested four ways — the guard never holding, every caveat blocking, nothing
+    blocking, and the two prefixes sharing a stem — each killed by assertion; one of the builder's own
+    A4 tests had been passing for the wrong reason (it asserted the impossible-lag caveat departs, which
+    production can no longer do) and was rewritten. Suite 11,293 passed, 0 failed, pytest exit 0.
+    `web/lib/departures.ts` carries the guard in both maps, verified by INSPECTION and not by running —
+    that worktree had no `node_modules`.
 
 ---
 

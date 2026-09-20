@@ -54,7 +54,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 #: The state key the spec lives under. Leading underscore: it is internal to the run, and the
-#: un-underscored `ada_intake` is a different (absent) thing — looking for that one finds
+#: same name WITHOUT that underscore is a different (absent) thing — looking for that one finds
 #: nothing and reads as "no investigation ever recorded a spec".
 SPEC_KEY = "_ada_intake"
 

@@ -191,9 +191,9 @@ is the stronger design and should not be replaced by an uncertainty threshold.
 ## 5 · The findings, in value order
 
 Each carries its receipt and its falsifier. These extend the companion study's JD series but are
-numbered separately (**A1–A6**) because `ROADMAP.md` §3.19 is currently contested between Arc JD
-(unmerged, `origin/claude/fervent-cori-w9ogfc`) and Arc IN — the section number is the user's call, not
-this study's.
+numbered separately (**A1–A6**) because `ROADMAP.md` §3.19 was contested between Arc JD and Arc IN when
+this study was written. **Settled 2026-09-20:** Arc IN keeps §3.19 and §6 item 25 — both were already on
+main — and Arc JD was ported and renumbered to **§3.20 / §6 item 28**, carrying JD-2's refutation with it.
 
 ### A1 · The return path: an outcome that can be wrong *(no vendor, no model, smallest diff here)*
 
@@ -313,8 +313,9 @@ instrument; `jev-align` owns the loop; neither owns the proof.**
 
 - `sutro-sh/jev-align` at `49753df` — full source, 121 tests, `README.md`, `AGENTS.md`. Read first-hand
   2026-09-19; **not executed** (no `TYPESAFE_API_KEY`, and a run spends a reflection model's tokens).
-- `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and `ROADMAP.md` §3.19 / §6 item 25 — on the unmerged branch
-  `origin/claude/fervent-cori-w9ogfc` at `93112558`.
+- `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and Arc JD's roadmap text — drafted on
+  `origin/claude/fervent-cori-w9ogfc` at `93112558`, and **ported here 2026-09-20 as `ROADMAP.md` §3.20 /
+  §6 item 28** (renumbered; Arc IN holds §3.19 / item 25 on main).
 - Aughor measurements taken 2026-09-19 from this checkout and from `data/decisions.db` and
   `data/verdicts.db`, opened read-only.
 - GEPA: <https://gepa-ai.github.io/gepa/>. TypeSafe's own documentation remains unreachable from this
