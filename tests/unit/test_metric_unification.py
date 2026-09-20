@@ -30,6 +30,46 @@ def samples_db():
     db.close()
 
 
+#: The canonical order-grain revenue, seeded rather than read from `data/metrics.json`.
+#:
+#: These invariants used to resolve it out of the live catalogue, which made them depend on two
+#: things they never meant to assert: that the operator had not deleted the row, and that it
+#: sorted FIRST in file order — because `get_metric(name)` with no connection returns the first
+#: match, whatever connection owns it. Both assumptions broke on 2026-09-20 when the `samples`
+#: definitions were deleted at the operator's request: `get_metric("revenue")` fell through to
+#: theLook's item-grain `SUM(sale_price)` and three tests failed, having been green only by the
+#: luck of file order. Name-alone resolution is the exact pattern removed from five call sites
+#: the same day as a defect, so these tests no longer rely on it either — they seed the
+#: definition they are about and ask for it BY CONNECTION.
+CANONICAL_REVENUE = {
+    "name": "revenue", "connection": "samples", "label": "Revenue",
+    "sql": "SUM(total_amount)", "tables": ["orders"],
+    "dimensions": ["status", "order_date", "customer_id", "payment_method"],
+    "filters": ["status <> 'cancelled'"], "unit": "$",
+    "owner": "Revenue team", "approved_by": "Finance", "status": "approved",
+    "lineage": ["ecommerce.orders.total_amount — order-level paid total"],
+    "caveats": ("Order-grain booked revenue: SUM(orders.total_amount) over orders not "
+                "cancelled."),
+}
+
+
+@pytest.fixture(autouse=True)
+def canonical_catalogue(tmp_path, monkeypatch):
+    """Give this module its own metrics registry holding exactly the metric it is about.
+
+    `tests/conftest.py` points `AUGHOR_METRICS_PATH` at a session-scoped temp COPY of the live
+    `data/metrics.json` — which keeps writes off live data but leaves every test in the run
+    reading whatever the operator's catalogue happens to contain. An invariant about the
+    canonical definition must not be able to fail because somebody curated their own metrics.
+    """
+    import json as _json
+
+    path = tmp_path / "metrics.json"
+    path.write_text(_json.dumps([CANONICAL_REVENUE]))
+    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(path))
+    return path
+
+
 def _scalar(db, sql):
     db._conn.execute(sql)
     return db._conn.fetchone()[0]
@@ -38,8 +78,11 @@ def _scalar(db, sql):
 class TestRegisteredMetric:
     def test_revenue_metric_is_registered_and_order_grain(self):
         from aughor.semantic.metrics import get_metric
-        m = get_metric("revenue")
-        assert m is not None, "revenue must be registered in data/metrics.json"
+        # BY CONNECTION. `get_metric("revenue")` resolves by name alone and returns the first
+        # row matching it whatever connection owns it — the pattern removed from five call
+        # sites as a defect, and the reason this test was green by luck rather than by law.
+        m = get_metric("revenue", connection_id="samples")
+        assert m is not None, "the canonical revenue must resolve for the samples connection"
         assert "total_amount" in m.sql, "canonical revenue is order-grain total_amount"
         assert "line_total" not in m.sql, "line_total is a different grain (4.3x divergence)"
         assert any("cancel" in f.lower() for f in m.filters), "net-of-cancelled is the default"
@@ -69,7 +112,8 @@ class TestRegisteredMetric:
         from aughor.semantic.metrics import list_metrics
         from aughor.semantic.canonical import resolve_contracts, render_contracts_block
         metrics = resolve_contracts(
-            samples_db, "ecommerce", catalog=list_metrics(), ontology=None
+            samples_db, "ecommerce", catalog=list_metrics(connection_id="samples"),
+            ontology=None
         )
         block = render_contracts_block(metrics)
         assert block and "revenue" in block and "SUM(total_amount)" in block, (
@@ -84,7 +128,7 @@ class TestReconciliation:
         are the same metric under one explicit convention choice, not two
         unrelated numbers."""
         from aughor.semantic.metrics import get_metric
-        m = get_metric("revenue")
+        m = get_metric("revenue", connection_id="samples")
         gross = _scalar(samples_db, "SELECT ROUND(SUM(total_amount),2) FROM ecommerce.orders")
         net = _scalar(samples_db, f"SELECT ROUND({m.sql},2) FROM ecommerce.orders WHERE {m.filters[0]}")
         cancelled = _scalar(samples_db, "SELECT ROUND(SUM(total_amount),2) FROM ecommerce.orders WHERE status = 'cancelled'")
