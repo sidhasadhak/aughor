@@ -819,6 +819,9 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
         # FROM the answer. So the loop records the trace the caller chose, and the caller
         # stitches the investigation on afterwards with `decisions.attach_run`.
         trace_id=trace_id or "",
+        # Explicit rather than defaulted, so the two callers of this loop read as a pair
+        # and a reader can see there are two sites without going to find the other one.
+        site="converse.tool",
     )
 
 

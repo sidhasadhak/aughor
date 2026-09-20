@@ -115,6 +115,7 @@ def run_tool_loop(
     conn_id: str = "",
     trace_id: str = "",
     inv_id: str = "",
+    site: str = "converse.tool",
 ) -> LoopResult:
     """Run one converse turn to an answer, or until the budget runs out.
 
@@ -135,6 +136,17 @@ def run_tool_loop(
     not have a run around it is unchanged; a caller that does should pass them, because a
     tool pick recorded without its connection cannot be attributed to the roster and
     schema the model was actually choosing against.
+
+    ``site`` names WHICH decider this is, and it matters because this loop has two callers
+    with different rosters: `converse_tools.converse` (38 tools) and `analyst.run_analyst`
+    (11). The site was a hardcoded ``"converse.tool"`` literal here until 2026-09-21, so
+    every analyst pick was filed under the conversational label — measured on the live
+    corpus that was **46 of 58 rows, 79%**, and the two are discriminable only by an
+    accident of roster size (the 38-entry menu carries ``delegate_task``; the 11-entry one
+    does not). A corpus whose site column answers "which decider" wrongly cannot be
+    segmented by decider at all, which is what every judgment measurement over it needs.
+    The default stays ``"converse.tool"`` so a caller that has not been updated keeps the
+    label its rows already carry rather than silently starting a third population.
     """
     by_name = {t.name: t for t in tools}
     wire = [t.as_wire() for t in tools]
@@ -228,7 +240,7 @@ def run_tool_loop(
             prev = steps[-2] if len(steps) >= 2 else None
             from aughor.learning.decisions import record_decision
             record_decision(
-                "converse.tool",
+                site,
                 f"step {len(steps)} | last {prev.tool + (' ok' if prev.ok else ' error') if prev else '(start)'}"
                 f" | {question}",
                 menu, chosen=call.name, source="llm",

@@ -967,6 +967,10 @@ def run_analyst(
         conn_id=eff_conn_id or "",
         trace_id=state.get("trace_id", "") or "",
         inv_id=state.get("investigation_id", "") or "",
+        # The analyst is its OWN decider: a different roster (11 tools vs converse's 38)
+        # and a system prompt carrying the resolved spec. Filing its picks under
+        # `converse.tool` made 79% of the live corpus unsegmentable by decider.
+        site="analyst.tool",
     )
 
     answer = (result.answer or "").strip()

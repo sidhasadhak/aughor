@@ -209,3 +209,50 @@ def test_export_is_deterministic_and_idempotent():
     again = exporters.export_decisions(site="test.export")["test.export"]
     assert first["choice"]["data_id"] == again["choice"]["data_id"]
     assert first["choice"]["version"] == again["choice"]["version"]   # no new version minted
+
+
+def test_each_tool_loop_caller_files_under_its_own_site():
+    """The site is the caller's, not a literal in the loop.
+
+    Until 2026-09-21 `run_tool_loop` hardcoded `"converse.tool"`, so the analyst — a
+    different roster (11 tools, no `delegate_task`) behind a system prompt carrying the
+    resolved spec — filed every pick under the conversational label. Measured on the live
+    corpus that was **46 of 58 rows, 79%**, and the two populations were separable only by an
+    accident of roster size. A site column that answers "which decider" wrongly cannot be
+    segmented by decider at all, which is what every judgment measurement over it needs.
+    """
+    _wipe()
+    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
+    from aughor.llm.faux import FauxToolCall, set_responses
+    from aughor.llm.provider import LLMProvider
+
+    params = {"type": "object", "properties": {}}
+    tools = [ToolSpec(name="run_sql", description="d", parameters=params, run=lambda a: "1"),
+             ToolSpec(name="baseline", description="d", parameters=params, run=lambda a: "2")]
+
+    set_responses([FauxToolCall(payload={}, name="run_sql"), "done"])
+    run_tool_loop(LLMProvider(backend="faux", role="coder"), "sys", "q", tools,
+                  site="analyst.tool")
+    set_responses([FauxToolCall(payload={}, name="baseline"), "done"])
+    run_tool_loop(LLMProvider(backend="faux", role="coder"), "sys", "q", tools,
+                  site="converse.tool")
+
+    assert [r["chosen"] for r in decisions.list_for_export("analyst.tool")] == ["run_sql"]
+    assert [r["chosen"] for r in decisions.list_for_export("converse.tool")] == ["baseline"]
+
+
+def test_the_default_site_is_unchanged_so_an_un_updated_caller_keeps_its_label():
+    """The default must stay `converse.tool`. Changing it would start a THIRD population
+    under a new name for callers nobody updated, which is the same unsegmentable corpus in a
+    different spelling."""
+    _wipe()
+    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
+    from aughor.llm.faux import FauxToolCall, set_responses
+    from aughor.llm.provider import LLMProvider
+
+    params = {"type": "object", "properties": {}}
+    set_responses([FauxToolCall(payload={}, name="a"), "done"])
+    run_tool_loop(LLMProvider(backend="faux", role="coder"), "sys", "q",
+                  [ToolSpec(name="a", description="d", parameters=params, run=lambda x: "1"),
+                   ToolSpec(name="b", description="d", parameters=params, run=lambda x: "2")])
+    assert len(decisions.list_for_export("converse.tool")) == 1

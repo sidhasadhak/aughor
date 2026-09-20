@@ -61,7 +61,7 @@ sys.path.insert(0, str(REPO))
 
 #: The three registered decision sites, in the order they run on a deep turn — named so a site
 #: that stops recording shows up as a zero row rather than vanishing from the table.
-SITES = ("ask.route", "framing.definition", "converse.tool")
+SITES = ("ask.route", "framing.definition", "converse.tool", "analyst.tool")
 
 #: Ten bins, as the battery specifies. Named rather than inlined because a battery whose bin
 #: count drifts between runs is not comparable with itself.
@@ -79,10 +79,22 @@ ECE_REASONS = {
     "ask.route": (
         "a probability exists and IS recorded at this site (`agent/nodes.py`); this deployment "
         "has produced no rows here. A traffic gap, not a confidence gap."),
+    "analyst.tool": (
+        "same seam and same cause as `converse.tool` — a different roster (11 tools, no "
+        "`delegate_task`) and a system prompt carrying the resolved spec, but the same "
+        "tool-calling path that returns a function call and is never asked for a number."),
     "framing.definition": (
         "a probability exists behind the flag `framing.choice_confidence`, whose ON arm has "
         "never executed here; the population is empty."),
 }
+
+#: ⚠️ Rows written before 2026-09-21 carry `converse.tool` for BOTH tool-loop callers, because
+#: the site was a hardcoded literal in `agent/tool_loop.py`. On the live corpus that is 46 of 58
+#: rows (79%) that are really `analyst.tool`. They are discriminable after the fact only by
+#: roster size — the converse menu carries `delegate_task`, the analyst menu does not — and this
+#: battery does NOT rewrite them: a corpus that silently relabels its own history cannot be
+#: compared with a reading taken before the relabel. Segment by site with that date in mind.
+MISLABELLED_BEFORE = "2026-09-21"
 
 _UNKNOWN_SITE_REASON = "no rows, and this site is not one the battery has a recorded cause for"
 

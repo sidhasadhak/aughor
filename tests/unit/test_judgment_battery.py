@@ -94,11 +94,18 @@ def test_ece_refuses_a_corpus_with_no_probabilities_and_names_a_cause_per_site()
     m = ece([row(site="converse.tool"), row(site="converse.tool")])
     assert m.available is False and m.value is None
     per_site = m.detail["per_site"]
-    # THREE sites, THREE distinct causes — a single global reason would be wrong for two.
-    assert len(set(per_site.values())) == 3
-    assert "never produced" in per_site["converse.tool"]
-    assert "traffic gap" in per_site["ask.route"]
-    assert per_site == {s: ECE_REASONS[s] for s in ECE_REASONS}
+    # Every registered site names its OWN cause, and no two share a string — a single global
+    # reason would be wrong for most of them. Asserted against the module's roster rather than
+    # a hardcoded count, which would go stale the moment a site is added (`analyst.tool` was,
+    # on 2026-09-21).
+    assert set(per_site) == set(ECE_REASONS)
+    assert len(set(per_site.values())) == len(ECE_REASONS)
+    assert all(v.strip() for v in per_site.values())
+    # And the causes are semantically different, which is the point the count only gestures at:
+    assert "never produced" in per_site["converse.tool"]   # the decider emits none
+    assert "traffic gap" in per_site["ask.route"]          # it emits one, nobody asked it
+    assert "same seam" in per_site["analyst.tool"]         # same cause as converse, own roster
+    assert "flag" in per_site["framing.definition"]        # gated off, empty population
 
 
 def test_ece_is_zero_for_a_perfectly_calibrated_bin():
