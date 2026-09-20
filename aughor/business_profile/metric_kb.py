@@ -131,6 +131,97 @@ def match_industry(industry: str, *, among: Optional[tuple[dict, ...]] = None) -
     return None
 
 
+def _metric_key(text: str) -> str:
+    """A metric name reduced to what two authors would agree on: "Cancellation Rate",
+    "cancellation_rate" and "cancellation rate" are one metric."""
+    import re
+    return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
+
+def _render_sane_range(raw) -> str:
+    """A typed `SaneRange` as one line the prompt can carry, or a prose range unchanged.
+
+    IP-3's band is a claim with a published population behind it (`basis`, `sources`); the static
+    gate refuses one without a source. The prose ranges in `industry.json` have no such backing, so
+    where both exist the typed one is the better sentence to put in front of a model — but it is
+    only better if the BASIS travels with the numbers, otherwise "0.0025-0.0495" reads as a rule of
+    thumb rather than as what a regulator published."""
+    if not isinstance(raw, dict):
+        return str(raw or "")
+    lo, hi = raw.get("min"), raw.get("max")
+    span = f"{lo}–{hi}" if lo is not None and hi is not None else (
+        f"at least {lo}" if lo is not None else (f"at most {hi}" if hi is not None else ""))
+    basis = " ".join(str(raw.get("basis") or "").split())[:220]
+    if span and basis:
+        return f"{span} ({basis})"
+    return span or basis
+
+
+def _anatomy_metrics(industry: str) -> list[dict]:
+    """The typed metric recipes the ACTIVE package for this industry declares in `metrics/*.yaml`.
+
+    Gate 6 rides along for free: `knowledge_index()` carries only active packages, so a draft's
+    recipes reach no prompt. Returns the same dict shape `industry.json` carries, so one renderer
+    reads both."""
+    if not industry:
+        return []
+    from aughor.packs.knowledge import knowledge_index
+    from aughor.packs.loader import load_pack
+
+    out: list[dict] = []
+    for package in knowledge_index().packages:
+        if package.industry != industry:
+            continue
+        try:
+            pack = load_pack(package.directory)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"package {package.pack_id} did not load; its metric recipes are skipped",
+                     counter="metric_kb.pack_load")
+            continue
+        for pm in (getattr(pack, "metrics", None) or []):
+            sr = getattr(pm, "sane_range", None)
+            raw = sr.model_dump() if hasattr(sr, "model_dump") else sr
+            # "published" is a claim about PROVENANCE, so derive it from the sources the band
+            # actually names — not from "this came out of a pack". Gate 3 refuses an unsourced
+            # band on an ANATOMY package, but `metrics/*.yaml` is readable on a pack that never
+            # declared `anatomy: 1` (packs/retail does exactly that), so the gate is not the
+            # thing guaranteeing it here. Every band shipping today is sourced; the marker must
+            # stay honest for the first one that is not.
+            sourced = bool(isinstance(raw, dict) and (raw.get("sources") or []))
+            out.append({
+                "name": pm.title or pm.name,
+                "aliases": [pm.name, *(pm.aliases or [])],
+                "definition": (pm.definition or "").strip(),
+                "formula": " ".join((pm.formula or "").split()),
+                "grain": " ".join((pm.grain or "").split()),
+                "sane_range": _render_sane_range(raw),
+                "anti_patterns": list(pm.anti_patterns or []),
+                "sourced": sourced,
+            })
+    return out
+
+
+def curated_metrics(industry: str) -> list[dict]:
+    """The curated metric recipes for an industry: the package's TYPED, gate-checked ones first,
+    then `industry.json`'s prose ones for the metrics the package does not cover.
+
+    Before this, the prompt block in `explorer.agent` read `industry.json` alone. Airline shows
+    what that cost: `cancellation_rate` is in both, and the prose one offered "ratio 0..1;
+    industry-typical 0.75-0.90"-style guidance while the package carries 0.0025-0.0495 measured
+    against the BTS figures gate 4 reproduces. The verified band never reached a model.
+
+    Typed first is deliberate — the renderer truncates, so the ones with a published basis must
+    not be the ones that fall off the end."""
+    typed = _anatomy_metrics(industry_id(industry) if industry else "")
+    seen = {_metric_key(k) for m in typed for k in (m["name"], *(m.get("aliases") or []))}
+    seen.discard("")
+    kb = match_industry(industry) or {}
+    prose = [m for m in (kb.get("metrics") or [])
+             if not ({_metric_key(m.get("name"))} | {_metric_key(a) for a in (m.get("aliases") or [])}) & seen]
+    return [*typed, *prose]
+
+
 def industry_id(industry: str, *, among: Optional[tuple[dict, ...]] = None) -> str:
     """The curated industry an industry text names, as its KB id ("airline", "retail", …), or ""."""
     kb = match_industry(industry, among=among)
