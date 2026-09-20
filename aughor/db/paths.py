@@ -22,6 +22,7 @@ Deliberately NOT a global `data/` switch: authored files keep their own resolver
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from aughor.db.sqlite_util import resolve_db_path
@@ -37,5 +38,21 @@ def state_dir() -> Path:
     the convention here so the existing `monkeypatch.setattr(mod, "_DATA_DIR", tmp)` fixtures
     keep working) capture it at IMPORT — which is why the test conftest must set the env in
     its `setdefault` block ahead of every app import.
+
+    Precedence, and the order is the safety property (IN-4):
+
+    1. ``AUGHOR_STATE_DIR`` — an explicit answer always wins. The suite sets it, an operator who
+       has pointed state at durable storage keeps it, and a migrated home never overrides it.
+    2. The data home, but ONLY once `aughor migrate-state` has verified a copy and written its
+       marker (`db.home.in_use`). Existing on disk is not enough.
+    3. ``data/``, unchanged — what every install answers until somebody migrates.
+
+    Step 2 is deliberately not "the home exists". The live deployment measured for this wave
+    holds 1.4 GB under `data/`; a default that relocated on a directory's mere existence would
+    make its connections, history and receipts invisible rather than missing.
     """
-    return resolve_db_path(STATE_DIR_ENV, Path("data"))
+    explicit = resolve_db_path(STATE_DIR_ENV, Path("data"))
+    if os.environ.get(STATE_DIR_ENV):
+        return explicit
+    from aughor.db import home as _home
+    return _home.state_home() if _home.in_use() else explicit
