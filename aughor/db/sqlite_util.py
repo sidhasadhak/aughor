@@ -64,7 +64,18 @@ def resolve_db_path(env_var: str, default: Path | str) -> Path:
     NEVER mutate the live ``data/`` stores (OPS-02 / DATA-01) — and on-prem
     operators get per-store path control for free.
     """
-    resolved = Path(os.environ.get(env_var) or default)
+    env = os.environ.get(env_var)
+    # IN-4 — one seam for the four path conventions. An env override always wins; otherwise a
+    # default that names a generated store under `data/` follows the data home, but ONLY once a
+    # migration has verified a copy (`db.home.in_use`). Until then `rehome` returns the default
+    # untouched, so every install answers exactly what it answered before.
+    if env:
+        resolved = Path(env)
+    else:
+        from aughor.db.home import rehome
+        resolved = rehome(Path(default))
+    # Keyed on the SHIPPED default, so the Postgres backend still names this store's schema from
+    # the filename it was born with rather than from wherever it currently sits.
     _DEFAULT_FOR_PATH[str(resolved)] = Path(default)
     return resolved
 

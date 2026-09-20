@@ -1,8 +1,8 @@
 """Platform secret-at-rest manager.
 
 One Fernet key for the whole platform — `AUGHOR_SECRET_KEY` env, else the
-auto-generated `data/.aughor_key` (the same key the connection registry uses to
-encrypt DSNs). Encrypted values carry a version prefix so a *plaintext* value (from
+auto-generated key file `aughor.db.keyfile` resolves (the same key the connection
+registry uses to encrypt DSNs — one resolver owns that path since IN-4). Encrypted values carry a version prefix so a *plaintext* value (from
 before a field was encrypted) round-trips unchanged through `decrypt_secret` — making
 per-field adoption safe and reversible, with no migration step.
 
@@ -13,11 +13,9 @@ leaves the server.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
-_KEY_FILE = Path(__file__).parent.parent / "data" / ".aughor_key"
 _PREFIX = "enc:v1:"
 
 
@@ -25,13 +23,11 @@ def _fernet() -> Fernet:
     key_env = os.getenv("AUGHOR_SECRET_KEY")
     if key_env:
         return Fernet(key_env.encode())
-    if _KEY_FILE.exists():
-        return Fernet(_KEY_FILE.read_bytes().strip())
-    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    key = Fernet.generate_key()
-    _KEY_FILE.write_bytes(key)
-    _KEY_FILE.chmod(0o600)
-    return Fernet(key)
+    # IN-4 — `aughor.db.keyfile` owns this path now. It was computed here AND in
+    # `db/registry.py`, from anchors a different number of `.parent` hops apart, and neither
+    # had an override; the key is gitignored generated state, so it has to follow the state.
+    from aughor.db import keyfile
+    return Fernet(keyfile.read_or_create_key())
 
 
 def is_encrypted(value: object) -> bool:

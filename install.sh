@@ -31,6 +31,8 @@ main() {
   printf '\n  %sAughor installer%s\n\n' "$bold" "$reset"
   blank=1 # the header ends with a blank line
 
+  # Before the first slow step, not after three retries into it.
+  preflight github.com
   find_checkout
   # The hint for next time has to name the checkout when this terminal is not in it.
   if [ "$ROOT" != "$(pwd -P)" ]; then
@@ -39,6 +41,7 @@ main() {
   LOGS="$ROOT/.aughor/logs"
   mkdir -p "$LOGS"
 
+  preflight astral.sh
   ensure_uv
   check_uv_version
   cd "$ROOT"
@@ -106,7 +109,10 @@ find_checkout() {
       DOWNLOAD_LOG="${DOWNLOAD_LOG%/}/aughor-download.log" # macOS's TMPDIR ends in a slash
       : >"$DOWNLOAD_LOG"
       download_aughor "$ROOT" ||
-        fail "Could not download Aughor." "Check your internet connection, then run this again. Log: $DOWNLOAD_LOG"
+        {
+          proxy_hint_if_certificate "$DOWNLOAD_LOG"
+          fail "Could not download Aughor." "Check your internet connection, then run this again. Log: $DOWNLOAD_LOG"
+        }
       ok "Aughor downloaded"
     fi
     ROOT=$(CDPATH='' cd -- "$ROOT" && pwd -P)
@@ -116,8 +122,18 @@ find_checkout() {
 # A clone when this computer has a working Git, so the checkout can `git pull` later;
 # otherwise the same code as a snapshot, so a fresh computer needs nothing installed first.
 download_aughor() {
-  if have_git && git clone --quiet "$REPO_URL" "$1" >>"$DOWNLOAD_LOG" 2>&1 </dev/null; then
-    return 0
+  if have_git; then
+    if git clone --quiet "$REPO_URL" "$1" >>"$DOWNLOAD_LOG" 2>&1 </dev/null; then
+      return 0
+    fi
+    # IN-3 — a throttled or flaky GitHub fails a full clone long before it fails a blobless
+    # one, which fetches far less to reach the same working tree. Tried once, then the
+    # snapshot path below, so a hostile network degrades rather than stops.
+    rm -rf "$1"
+    echo "full clone failed; trying a blobless clone" >>"$DOWNLOAD_LOG"
+    if git clone --quiet --filter=blob:none "$REPO_URL" "$1" >>"$DOWNLOAD_LOG" 2>&1 </dev/null; then
+      return 0
+    fi
   fi
   rm -rf "$1" # a failed clone's leftovers: find_checkout refused a folder with anything else in it
   mkdir -p "$(dirname "$1")" || return 1
@@ -145,14 +161,68 @@ have_git() {
   git --version >/dev/null 2>&1
 }
 
+# IN-3 — a preflight, so an unreachable network is named in a second rather than discovered
+# three retries into the first slow step. It probes ONLY reachability of the host the very
+# next step needs, with a short timeout, and it never blocks: a probe that cannot run (no
+# curl, a host that refuses HEAD) must not stop an install that would have worked. A warning
+# is the whole contribution — it turns "it hung for two minutes then failed" into "this host
+# is unreachable" before the waiting starts.
+preflight() {
+  command -v curl >/dev/null 2>&1 || return 0
+  for host in "$@"; do
+    if ! curl -sSf --connect-timeout 5 --max-time 8 -o /dev/null "https://$host" 2>/dev/null; then
+      say ""
+      say "Warning: $host did not answer. The next step downloads from it."
+      say "If this is a corporate network, a proxy or its certificate is the usual reason."
+      return 0
+    fi
+  done
+}
+
+# IN-3 — one attempt is not an answer on a hostile network. Three tries, doubling from a
+# second. POSIX sh throughout: no arrays, no `local`, no bashisms.
 fetch() {
+  fetch_try=1
+  fetch_wait=1
+  while :; do
+    if fetch_once "$1" "$2"; then
+      return 0
+    fi
+    if [ "$fetch_try" -ge 3 ]; then
+      return 1
+    fi
+    echo "attempt $fetch_try for $1 failed; retrying in ${fetch_wait}s" >>"$DOWNLOAD_LOG"
+    sleep "$fetch_wait"
+    fetch_try=$((fetch_try + 1))
+    fetch_wait=$((fetch_wait * 2))
+  done
+}
+
+fetch_once() {
+  # A partial file from a cut-off attempt must never be handed to the next step: the caller
+  # untars what it finds here, so a half-download would surface as a corrupt archive rather
+  # than as a network problem. Removing it first makes the failure say what it is.
+  rm -f "$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -LsSf "$1" -o "$2" 2>>"$DOWNLOAD_LOG"
+    curl -LsSf --connect-timeout 10 "$1" -o "$2" 2>>"$DOWNLOAD_LOG"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$2" "$1" 2>>"$DOWNLOAD_LOG"
+    wget -qO "$2" --connect-timeout=10 "$1" 2>>"$DOWNLOAD_LOG"
   else
     echo "neither curl nor wget is installed" >>"$DOWNLOAD_LOG"
     return 1
+  fi
+}
+
+# IN-3 — say the useful thing about a TLS-inspecting proxy. Python and Node each need their
+# own pointer at the CA bundle, and neither error message names the cause.
+proxy_hint_if_certificate() {
+  if [ -f "$1" ] && grep -qiE 'certificate|SSL|self.signed' "$1" 2>/dev/null; then
+    say ""
+    say "This looks like a TLS-inspecting proxy re-signing the connection."
+    say "Point curl, Python and Node at your organisation's CA bundle, then run this again:"
+    say "  export CURL_CA_BUNDLE=/path/to/ca-bundle.pem"
+    say "  export SSL_CERT_FILE=/path/to/ca-bundle.pem"
+    say "  export NODE_EXTRA_CA_CERTS=/path/to/ca-bundle.pem"
   fi
 }
 
