@@ -16,6 +16,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+from aughor.db import keyfile as _keyfile
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
@@ -26,7 +27,11 @@ from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 # Postgres backend can name this store's schema from its default (db/backend.py).
 REGISTRY_DB = resolve_db_path(
     "AUGHOR_REGISTRY_DB", Path(__file__).parent.parent.parent / "data" / "connections.db")
-KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".aughor_key"
+# IN-4 — the `KEY_FILE` constant that stood here is GONE rather than re-pointed. It had no
+# readers left once `_get_fernet` moved to the shared resolver, and keeping it would have been
+# a name that lies twice: it bound at IMPORT, so it snapshotted an anchor the resolver
+# re-decides on every call, and it named one candidate path out of four. `aughor.db.keyfile`
+# owns the question; ask `keyfile.key_file()` for the answer.
 
 BUILTIN_ID = "fixture"
 POSTGRES_BUILTIN_ID = "mydb"
@@ -55,14 +60,9 @@ def _get_fernet() -> Fernet:
     key_env = os.getenv("AUGHOR_SECRET_KEY")
     if key_env:
         return Fernet(key_env.encode())
-    if KEY_FILE.exists():
-        return Fernet(KEY_FILE.read_bytes().strip())
-    # Generate and persist a new key
-    KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    key = Fernet.generate_key()
-    KEY_FILE.write_bytes(key)
-    KEY_FILE.chmod(0o600)
-    return Fernet(key)
+    # One resolver, shared with `secretvault` — the two used to compute this path separately,
+    # from anchors a different number of `.parent` hops apart, with no override on either.
+    return Fernet(_keyfile.read_or_create_key())
 
 
 def _encrypt(value: str) -> str:
