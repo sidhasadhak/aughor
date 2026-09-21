@@ -56,9 +56,12 @@ def test_the_installer_imports_only_the_standard_library():
     on a developer's machine — the package is installed there — and breaks the first install
     on every fresh one. Walks nested imports too: a lazy `import rich` inside the download
     path would not surface until a machine without Node.js ran it."""
-    tree = ast.parse((REPO / "aughor" / "installer.py").read_text(encoding="utf-8"))
+    # `update.py` too: the installer imports it (relatively) to fast-forward an existing clone,
+    # so a third-party import there would break every fresh install exactly as one here would.
     imported: set[str] = set()
-    for node in ast.walk(tree):
+    for tree in (ast.parse((REPO / "aughor" / name).read_text(encoding="utf-8"))
+                 for name in ("installer.py", "update.py")):
+      for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imported |= {alias.name.split(".")[0] for alias in node.names}
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
