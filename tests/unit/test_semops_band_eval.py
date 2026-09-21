@@ -288,3 +288,17 @@ def test_paired_rows_scores_only_what_every_arm_judged():
                         "banded": {"kept_rows": [0], "calls": {"champion": 1}}}}]}
     f = paired_rows(results, {"p": {0: True, 1: False, 2: True}})[0]
     assert f["rows"] == 2 and f["sampled_right"] == [True, True] and f["banded_right"] == [True, True]
+
+
+def test_better_but_costlier_is_named_as_a_trade_off_not_a_yes():
+    fs = [_filter([True] * 95 + [False] * 5, [True] * 100, 1, 3) for _ in range(12)]
+    d = decide(fs)
+    assert d["decision"] == "INCONCLUSIVE" and "trade-off" in d["reason"]
+
+
+def test_a_filter_with_no_scored_rows_counts_for_nothing():
+    """Its champion calls must not enter the cost comparison, nor its emptiness the interval."""
+    results = {"predicates": [{"predicate": "p", "excluded_rows": [0, 1],
+               "arms": {"sampled": {"kept_rows": [], "calls": {"champion": 9}},
+                        "banded": {"kept_rows": [], "calls": {"champion": 1}}}}]}
+    assert paired_rows(results, {"p": {0: True, 1: False}}) == []

@@ -486,6 +486,8 @@ def paired_rows(results: Mapping[str, Any], gold_by_predicate: Mapping[str, Mapp
         ex = set(p.get("excluded_rows") or [])
         s, b = set(arms["sampled"]["kept_rows"]), set(arms["banded"]["kept_rows"])
         rows = [i for i in gold if i not in ex]
+        if not rows:
+            continue    # every row lost to failed calls: nothing was measured, and its calls bought nothing
         out.append({"predicate": p["predicate"], "rows": len(rows),
                     "sampled_right": [(i in s) == bool(gold[i]) for i in rows],
                     "banded_right": [(i in b) == bool(gold[i]) for i in rows],
@@ -530,6 +532,11 @@ def decide(filters: Sequence[Mapping[str, Any]], *, margin: float = DECISION_MAR
     if cb >= cs and lo <= 0:
         return {**out, "decision": "NO",
                 "reason": f"banding spent {cb} champion calls against {cs} without being clearly more accurate"}
+    if cb >= cs:
+        # Clearly better AND costlier: a trade-off, which the rule does not settle — more filters would not either.
+        return {**out, "decision": "INCONCLUSIVE",
+                "reason": f"banding is clearly MORE accurate (95% CI {lo:+.1%} to {hi:+.1%}) but spent MORE champion "
+                          f"calls ({cb} vs {cs}): a quality-for-cost trade-off, not a yes by the rule"}
     return {**out, "decision": "INCONCLUSIVE",
             "reason": f"the interval ({lo:+.1%} to {hi:+.1%}) still crosses -{margin:.0%}: more filters needed"}
 

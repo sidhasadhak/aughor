@@ -6925,6 +6925,15 @@ believing any of it.
   2-point tolerance; accessory — banded 1 vs sampled 9, 98.7% vs 100% (75 rows): **holds**. Today's batch prompt errs
   only by keeping (8 and 12 wrong keeps, never a wrong drop); the seam's per-row question makes fewer (5 and 8). Every
   difference is 1–4 rows: a direction, not a proof.
+  ✅ **DECIDED BY MEASUREMENT 2026-09-21 — YES on quality, with a token cost.** Re-run at scale with the yes/no rule fixed
+  BEFORE the runs (`--decide`, `DECISION_MARGIN`): 800 product names × 6 predicates, gold labels on all 4,800, two setups —
+  A as deployed (both tiers `gemini-3.1-flash-lite`) and B with `deepseek/deepseek-v4.1-flash` as the champion. **A: banded
+  95.1% vs sampled 92.7%, +2.4 points (95% CI +1.1 to +3.8) over 2,350 rows, 4 champion calls vs 12. B: 96.4% vs 92.9%,
+  +3.6 (CI +1.9 to +5.4) over 1,375 rows, 2 vs 7. YES on both by the rule.** ⚠️ The cost the rule did not weigh: banding's
+  per-row question sends ~65% MORE cheap-tier tokens, and the sampled cascade seldom escalates, so in TOTAL banding costs
+  ~60% more tokens — for fewer silently wrong rows. ⚠️ Disclosed: A read INCONCLUSIVE until a bug in the pooling was fixed
+  after the runs — filters that lost every row (Gemini's quota ran out at ~20:50 mid-batch) still counted their champion
+  calls, which the quota failures had inflated. B has only 7 usable filters; the gold is model labels.
   🔴 **Two findings about this deployment, bigger than the receipt:** (1) the cheap and champion tiers are the SAME model
   (`fast` = `coder` = `gemini-3.1-flash-lite`), so today's cascade spends its "strong" calls re-asking the model it is
   checking — the first run escalated all 200 rows on one predicate to do exactly that; a real champion is the user's
