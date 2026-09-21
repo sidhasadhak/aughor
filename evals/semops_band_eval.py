@@ -66,6 +66,19 @@ DEFAULT_BATCH = 25
 #: Two arms "agree equally" when their agreement with the reference is within this.
 DEFAULT_TOLERANCE = 0.02
 
+#: THE DECISION RULE, fixed before the runs it judges (2026-09-21). Pooled over every filter,
+#: banded-minus-sampled accuracy against the gold set, with a 95% interval from a bootstrap that
+#: resamples whole FILTERS (rows inside one filter share a call, a batch and its failures, so
+#: resampling rows would overstate the certainty):
+#:   YES — the interval's low end is above -MARGIN (banding is not worse by more than a point)
+#:         AND banding spent fewer champion calls in total.
+#:   NO  — the interval's high end is below -MARGIN (banding is worse), OR banding spent at least
+#:         as many champion calls without being clearly better (interval low end <= 0).
+#:   otherwise INCONCLUSIVE — more filters are needed, and the output says so.
+DECISION_MARGIN = 0.01
+BOOTSTRAP_RESAMPLES = 4000
+BOOTSTRAP_SEED = 20260921
+
 #: Predicates over theLook's product names: one crisp, two with a real grey zone, because a
 #: cascade that is only ever asked easy questions never escalates and measures nothing.
 DEFAULT_PREDICATES = (
@@ -460,6 +473,67 @@ def rescore(results: Mapping[str, Any], gold: Mapping[str, Mapping[int, bool]], 
     return out
 
 
+def paired_rows(results: Mapping[str, Any], gold_by_predicate: Mapping[str, Mapping[int, bool]]
+                ) -> list[dict]:
+    """One record per FILTER (a predicate on one row sample): per scored row, whether each arm got
+    it right, plus the champion calls each arm spent. Rows any arm left unjudged are excluded."""
+    out = []
+    for p in results.get("predicates") or []:
+        gold = gold_by_predicate.get(p["predicate"])
+        arms = p.get("arms") or {}
+        if not gold or "sampled" not in arms or "banded" not in arms:
+            continue
+        ex = set(p.get("excluded_rows") or [])
+        s, b = set(arms["sampled"]["kept_rows"]), set(arms["banded"]["kept_rows"])
+        rows = [i for i in gold if i not in ex]
+        out.append({"predicate": p["predicate"], "rows": len(rows),
+                    "sampled_right": [(i in s) == bool(gold[i]) for i in rows],
+                    "banded_right": [(i in b) == bool(gold[i]) for i in rows],
+                    "sampled_champion": int(arms["sampled"]["calls"].get("champion", 0)),
+                    "banded_champion": int(arms["banded"]["calls"].get("champion", 0)),
+                    "sampled_tokens": sum((arms["sampled"].get("approx_prompt_tokens") or {}).values()),
+                    "banded_tokens": sum((arms["banded"].get("approx_prompt_tokens") or {}).values())})
+    return out
+
+
+def decide(filters: Sequence[Mapping[str, Any]], *, margin: float = DECISION_MARGIN,
+           resamples: int = BOOTSTRAP_RESAMPLES, seed: int = BOOTSTRAP_SEED) -> dict:
+    """The pooled yes/no, by the rule stated at :data:`DECISION_MARGIN`."""
+    import random
+    if not filters:
+        return {"decision": "INCONCLUSIVE", "reason": "no filter carried both arms and a gold set"}
+
+    def diff(fs) -> float:
+        n = sum(f["rows"] for f in fs)
+        return (sum(sum(f["banded_right"]) for f in fs) - sum(sum(f["sampled_right"]) for f in fs)) / n
+
+    point = diff(filters)
+    rng = random.Random(seed)
+    boots = sorted(diff([filters[rng.randrange(len(filters))] for _ in filters]) for _ in range(resamples))
+    lo, hi = boots[int(0.025 * resamples)], boots[int(0.975 * resamples) - 1]
+    n = sum(f["rows"] for f in filters)
+    acc_s = sum(sum(f["sampled_right"]) for f in filters) / n
+    acc_b = sum(sum(f["banded_right"]) for f in filters) / n
+    cs, cb = sum(f["sampled_champion"] for f in filters), sum(f["banded_champion"] for f in filters)
+    out = {"filters": len(filters), "rows_scored": n, "sampled_accuracy": round(acc_s, 4),
+           "banded_accuracy": round(acc_b, 4), "accuracy_difference": round(point, 4),
+           "ci95": [round(lo, 4), round(hi, 4)], "margin": margin,
+           "sampled_champion_calls": cs, "banded_champion_calls": cb,
+           "sampled_prompt_tokens": sum(f["sampled_tokens"] for f in filters),
+           "banded_prompt_tokens": sum(f["banded_tokens"] for f in filters)}
+    if lo > -margin and cb < cs:
+        return {**out, "decision": "YES",
+                "reason": f"banding is not worse by more than {margin:.0%} (95% CI {lo:+.1%} to {hi:+.1%}) "
+                          f"and spent {cb} champion calls against {cs}"}
+    if hi < -margin:
+        return {**out, "decision": "NO", "reason": f"banding is less accurate (95% CI {lo:+.1%} to {hi:+.1%})"}
+    if cb >= cs and lo <= 0:
+        return {**out, "decision": "NO",
+                "reason": f"banding spent {cb} champion calls against {cs} without being clearly more accurate"}
+    return {**out, "decision": "INCONCLUSIVE",
+            "reason": f"the interval ({lo:+.1%} to {hi:+.1%}) still crosses -{margin:.0%}: more filters needed"}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rows", required=True, help="JSON rows file (see load_rows)")
@@ -474,9 +548,27 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", help="print the planned calls and stop")
     ap.add_argument("--gold", help="gold labels (see load_gold): score accuracy against them")
     ap.add_argument("--rescore", help="a saved results file to score again — no model call")
+    ap.add_argument("--champion", help="BACKEND:MODEL for the champion tier (e.g. openrouter:<model>) "
+                                       "instead of the deployment's coder role")
+    ap.add_argument("--decide", nargs="+", metavar="RESULTS",
+                    help="pool saved results files (each naming its gold file) into the yes/no — no model call")
     ap.add_argument("--output", default="")
     args = ap.parse_args()
     gold = load_gold(Path(args.gold)) if args.gold else {}
+
+    if args.decide:
+        filters = []
+        for f in args.decide:
+            res = json.loads(Path(f).read_text())
+            gpath = res.get("gold_file") or args.gold
+            if not gpath:
+                raise SystemExit(f"{f} names no gold file; pass --gold")
+            filters += paired_rows(res, load_gold(Path(gpath)))
+        verdict_ = decide(filters)
+        print(json.dumps(verdict_, indent=2))
+        if args.output:
+            Path(args.output).write_text(json.dumps({"decision": verdict_, "runs": args.decide}, indent=2))
+        return
 
     if args.rescore:
         report = json.loads(Path(args.rescore).read_text())
@@ -508,6 +600,12 @@ def main() -> None:
     models = {"backend": cfg.get("backend"), "cheap": (cfg.get("models") or {}).get(ops.DEFAULT_ROLE),
               "champion": (cfg.get("models") or {}).get(ops.CHAMPION_ROLE),
               "config": os.environ.get("AUGHOR_LLM_CONFIG_PATH") or "(isolated: environment only)"}
+    if args.champion:
+        backend, _, model = args.champion.partition(":")
+        if not backend or not model:
+            raise SystemExit("--champion is BACKEND:MODEL")
+        champion = llm.LLMProvider(backend, ops.CHAMPION_ROLE, model=model)
+        models["champion"], models["champion_backend"] = model, backend
     print(f"tiers resolved: {models}")
     if models["cheap"] and models["cheap"] == models["champion"]:
         print("⚠️ the cheap and champion tiers are the SAME model: the cascade's escalations re-ask it")
@@ -520,7 +618,8 @@ def main() -> None:
         print(f"the Jev arm sends these {len(rows)} product names to {JEV_URL} ({args.jev_model})")
         jev = JevBackend(key, ArmResult("banded-jev", True), model=args.jev_model)
 
-    report = {"rows_file": args.rows, "rows": len(rows), "sample": args.sample, "batch": args.batch,
+    report = {"rows_file": args.rows, "gold_file": args.gold, "rows": len(rows), "sample": args.sample,
+              "batch": args.batch,
               "models": models, "jev_model": args.jev_model if jev else None,
               "fetched_with": fetch_rows_sql(len(rows)), "predicates": []}
     for pred in predicates:

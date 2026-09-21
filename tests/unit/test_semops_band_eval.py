@@ -21,6 +21,8 @@ from evals.semops_band_eval import (  # noqa: E402
     _Retryable,
     accuracy,
     agreement,
+    decide,
+    paired_rows,
     load_rows,
     rescore,
     rows_in,
@@ -241,3 +243,48 @@ def test_a_saved_run_rescores_the_same_with_no_model_call():
     assert again["yardstick"] == "gold"
     assert again["arms"]["banded"]["accuracy_vs_gold"] == 1.0
     assert again["arms"]["banded"]["kept_rows"] == run["arms"]["banded"]["kept_rows"]
+
+
+# ── the pooled decision, and that it can say every one of its three answers ─────────────────
+
+def _filter(sampled_right, banded_right, sampled_champion, banded_champion):
+    return {"predicate": "p", "rows": len(sampled_right), "sampled_right": sampled_right,
+            "banded_right": banded_right, "sampled_champion": sampled_champion,
+            "banded_champion": banded_champion, "sampled_tokens": 0, "banded_tokens": 0}
+
+
+def test_the_decision_says_yes_when_banding_is_as_good_and_cheaper():
+    fs = [_filter([True] * 100, [True] * 100, 9, 1) for _ in range(12)]
+    assert decide(fs)["decision"] == "YES"
+
+
+def test_the_decision_says_no_when_banding_is_clearly_worse():
+    fs = [_filter([True] * 100, [True] * 90 + [False] * 10, 9, 1) for _ in range(12)]
+    d = decide(fs)
+    assert d["decision"] == "NO" and d["ci95"][1] < -0.01
+
+
+def test_the_decision_says_no_when_banding_costs_more_and_is_not_clearly_better():
+    fs = [_filter([True] * 100, [True] * 100, 1, 3) for _ in range(12)]
+    assert decide(fs)["decision"] == "NO"
+
+
+def test_the_decision_is_inconclusive_when_the_interval_straddles_the_margin():
+    """Half the filters say banding is 5 points worse, half 5 points better: pooled, the interval
+    crosses the margin, and the rule must not pick a side."""
+    worse = [_filter([True] * 100, [True] * 95 + [False] * 5, 9, 1) for _ in range(3)]
+    better = [_filter([True] * 95 + [False] * 5, [True] * 100, 9, 1) for _ in range(3)]
+    assert decide(worse + better)["decision"] == "INCONCLUSIVE"
+
+
+def test_the_bootstrap_is_deterministic():
+    fs = [_filter([True] * 50 + [False] * 50, [True] * 55 + [False] * 45, 9, 1) for _ in range(5)]
+    assert decide(fs)["ci95"] == decide(fs)["ci95"]
+
+
+def test_paired_rows_scores_only_what_every_arm_judged():
+    results = {"predicates": [{"predicate": "p", "excluded_rows": [2],
+               "arms": {"sampled": {"kept_rows": [0, 2], "calls": {"champion": 9}},
+                        "banded": {"kept_rows": [0], "calls": {"champion": 1}}}}]}
+    f = paired_rows(results, {"p": {0: True, 1: False, 2: True}})[0]
+    assert f["rows"] == 2 and f["sampled_right"] == [True, True] and f["banded_right"] == [True, True]
