@@ -6915,7 +6915,23 @@ believing any of it.
   `validate_sample > 0`); everywhere else the code that ran before runs unchanged. The band is 0.30 / 0.70,
   in code. A row the cheap call could not answer goes to the champion; a row still uncertain after the
   champion is KEPT, never silently dropped, and named in the notes. ⚠️ "Left for a person" is a note on
-  the result today, **not a review queue**. ⏳ Receipt and falsifier unmeasured — both are model calls.
+  the result today, **not a review queue**.
+  ✅ **RECEIPT TAKEN 2026-09-21 — the falsifier did not fire** (`evals/semops_band_eval.py`; results, gold labels and
+  rows committed beside it). 200 of theLook's product names, 3 predicates, the deployment's own models — ~75 calls on
+  `gemini-3.1-flash-lite`. Scored against a gold set (3 labelings by a stronger model, majority vote; NOT human labels —
+  and the three agreed on every row, which shows consistency, not independence), over the rows every arm judged:
+  outerwear — banded 0 champion calls vs sampled 1, accuracy 97.1% vs 95.4% (175 rows): **holds**; aimed at women —
+  banded 3 vs 1, accuracy 94.7% vs 92.0% (150 rows): **inconclusive by the rule**, banding MORE accurate by more than the
+  2-point tolerance; accessory — banded 1 vs sampled 9, 98.7% vs 100% (75 rows): **holds**. Today's batch prompt errs
+  only by keeping (8 and 12 wrong keeps, never a wrong drop); the seam's per-row question makes fewer (5 and 8). Every
+  difference is 1–4 rows: a direction, not a proof.
+  🔴 **Two findings about this deployment, bigger than the receipt:** (1) the cheap and champion tiers are the SAME model
+  (`fast` = `coder` = `gemini-3.1-flash-lite`), so today's cascade spends its "strong" calls re-asking the model it is
+  checking — the first run escalated all 200 rows on one predicate to do exactly that; a real champion is the user's
+  model choice and would make this receipt mean what it says. (2) that model returned EMPTY structured output on 4 and
+  then 8 of ~75 calls (5–10%), not content-driven — the batch with the most explicit names never failed — and
+  `semantic_filter` keeps a failed batch whole (fail-open), so in production 25 rows no model judged are kept with only
+  a note. The harness excludes such rows from every arm; production does not.
 - **JD-4 — the instrument, and it comes first.** `jevlike/eval.py`'s battery adopted as a standing
   guard on every judgment seam: top-1, expected calibration error over ten bins, and the
   **shuffled-context control** — every question paired with the WRONG state, on the rule that a
@@ -7502,7 +7518,8 @@ ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 and JD-6 on HOLD); 
         ✅ MERGED #535 (`583c8d9f`) 2026-09-21: JD-4 the instrument · JD-1 the seam (wired into no
         production path; its probability is STATED, not measured) · JD-3 the banded cascade (OFF,
         `semops.banded_cascade`) · JD-2's three survivors · A3 the definition-report screen · A5 the
-        decision budget. ⏳ Every receipt is a model call — the operator's spend. JD-4's first run
+        decision budget. ✅ JD-3's receipt TAKEN 2026-09-21 — falsifier did not fire (2 holds, 1 inconclusive with banding
+        more accurate; the cheap and champion tiers are one model here). ⏳ JD-1's and JD-4's are still model calls. JD-4's first run
         took no reading on three of five measures; the floor is `choice_prior` 44.8%.
         ⚠️ The numbers are NOT the ones the draft asked for: it was
         written on an unmerged branch claiming §3.19 / item 25, which Arc IN took the same day, so it

@@ -28,8 +28,10 @@ unchanged around it.
 **What this touches.** Before importing `aughor` it isolates every store the way a live drive does
 (`scripts/dump_openapi._isolate_stores`), so no process but the running API opens `data/`. Models
 therefore resolve from the ENVIRONMENT (`AUGHOR_BACKEND`, `AUGHOR_FAST_NARRATOR_MODEL`,
-`AUGHOR_CODER_MODEL` and their keys, loaded with ``--env-file``), not from a model chosen in
-Settings; the output names the model each tier resolved to. Rows come from a file: fetch them once
+`AUGHOR_CODER_MODEL` and their keys, loaded with ``--env-file``) — or, to measure the models a
+deployment actually runs, from a COPY of its saved config named by ``AUGHOR_LLM_CONFIG_PATH`` (a JSON
+file, copied, never read in place; its keys decrypt with ``AUGHOR_SECRET_KEY`` from the env file).
+The output names the backend and model each tier resolved to. Rows come from a file: fetch them once
 through the running API (see ``fetch_rows_sql``), never by opening a connection here.
 
 Usage:
@@ -46,6 +48,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -126,11 +129,29 @@ def total_range(plan: Mapping[str, Mapping[str, tuple]]) -> tuple[int, int]:
     return lo, hi
 
 
-def agreement(a: set, b: set, n: int) -> float:
-    """Share of the ``n`` rows two arms decide the same way (kept by both, or by neither)."""
-    if n <= 0:
+def agreement(a: set, b: set, n: int, *, exclude: frozenset = frozenset()) -> float:
+    """Share of the ``n`` rows two arms decide the same way (kept by both, or by neither), over
+    the rows not in ``exclude``."""
+    pop = [i for i in range(n) if i not in exclude]
+    if not pop:
         raise ValueError("agreement over no rows is undefined")
-    return sum(1 for i in range(n) if (i in a) == (i in b)) / n
+    return sum(1 for i in pop if (i in a) == (i in b)) / len(pop)
+
+
+def accuracy(kept: set, gold: Mapping[int, bool], *, exclude: frozenset = frozenset()) -> float:
+    """Share of the LABELLED rows (minus ``exclude``) an arm decides the way the gold set does."""
+    pop = [i for i in gold if i not in exclude]
+    if not pop:
+        raise ValueError("accuracy over no labelled rows is undefined")
+    return sum(1 for i in pop if (i in kept) == bool(gold[i])) / len(pop)
+
+
+#: Row indices a prompt carries: today's batch prompt lists ``[gi] text``, the seam ``- r<gi> [...]``.
+_ROW_MARKS = (re.compile(r"^\[(\d+)\]", re.M), re.compile(r"^- r(\d+) \[", re.M))
+
+
+def rows_in(prompt: str) -> set[int]:
+    return {int(m) for pat in _ROW_MARKS for m in pat.findall(prompt or "")}
 
 
 @dataclass
@@ -138,6 +159,9 @@ class ArmResult:
     name: str
     available: bool
     kept: set = field(default_factory=set)
+    #: Rows some call of this arm failed on. A failed batch is KEPT by the operator (fail-open),
+    #: so without this a row no model judged would score as a decision.
+    unjudged: set = field(default_factory=set)
     calls: dict = field(default_factory=dict)          # tier -> calls
     prompt_chars: dict = field(default_factory=dict)   # tier -> chars sent (≈ 4 chars a token)
     tokens: dict = field(default_factory=dict)         # tier -> tokens a provider REPORTED
@@ -148,40 +172,52 @@ class ArmResult:
         if not self.available and not self.reason.strip():
             raise ValueError(f"{self.name}: an unavailable arm must carry its reason")
 
-    def as_dict(self, n: int, reference: Optional["ArmResult"]) -> dict:
+    def as_dict(self, n: int, reference: Optional["ArmResult"], *, gold: Optional[Mapping[int, bool]] = None,
+                exclude: frozenset = frozenset()) -> dict:
         d = {"arm": self.name, "available": self.available, "reason": self.reason,
              "calls": dict(self.calls), "approx_prompt_tokens": {t: c // 4 for t, c in self.prompt_chars.items()},
-             "reported_tokens": dict(self.tokens), "kept": len(self.kept), "notes": list(self.notes)}
+             "reported_tokens": dict(self.tokens), "kept": len(self.kept),
+             "kept_rows": sorted(self.kept), "unjudged_rows": sorted(self.unjudged), "notes": list(self.notes)}
         if self.available and reference is not None and reference.available:
-            d["agreement_with_reference"] = round(agreement(self.kept, reference.kept, n), 4)
+            d["agreement_with_reference"] = round(agreement(self.kept, reference.kept, n, exclude=exclude), 4)
+        if self.available and gold:
+            d["accuracy_vs_gold"] = round(accuracy(self.kept, gold, exclude=exclude), 4)
         return d
 
 
 def verdict(arms: Mapping[str, ArmResult], n: int, *, tolerance: float = DEFAULT_TOLERANCE,
-            banded: str = "banded") -> dict:
+            banded: str = "banded", gold: Optional[Mapping[int, bool]] = None,
+            exclude: frozenset = frozenset()) -> dict:
     """The receipt for one predicate: does ``banded`` spend fewer champion calls than ``sampled``
-    at equal agreement with the reference? Typed: ``holds`` · ``falsified`` · ``inconclusive``."""
+    at equal quality? Quality is accuracy against ``gold`` when a gold set is given, else agreement
+    with the reference arm — always over the same rows, minus ``exclude``.
+    Typed: ``holds`` · ``falsified`` · ``inconclusive``."""
     s, b, ref = arms.get("sampled"), arms.get(banded), arms.get("reference")
-    missing = [name for name, a in (("sampled", s), (banded, b), ("reference", ref))
-               if a is None or not a.available]
+    needed = (("sampled", s), (banded, b)) + (() if gold else (("reference", ref),))
+    missing = [name for name, a in needed if a is None or not a.available]
     if missing:
         return {"verdict": "inconclusive", "reason": f"no reading from {', '.join(missing)}"}
-    ag_s, ag_b = agreement(s.kept, ref.kept, n), agreement(b.kept, ref.kept, n)
+    if gold:
+        yardstick, q_s, q_b = "gold", accuracy(s.kept, gold, exclude=exclude), accuracy(b.kept, gold, exclude=exclude)
+    else:
+        yardstick = "reference"
+        q_s, q_b = (agreement(s.kept, ref.kept, n, exclude=exclude),
+                    agreement(b.kept, ref.kept, n, exclude=exclude))
     cs, cb = s.calls.get("champion", 0), b.calls.get("champion", 0)
-    out = {"sampled_champion_calls": cs, "banded_champion_calls": cb,
-           "sampled_agreement": round(ag_s, 4), "banded_agreement": round(ag_b, 4),
-           "tolerance": tolerance}
-    if abs(ag_s - ag_b) > tolerance:
-        better = banded if ag_b > ag_s else "sampled"
+    out = {"yardstick": yardstick, "sampled_champion_calls": cs, "banded_champion_calls": cb,
+           "sampled_score": round(q_s, 4), "banded_score": round(q_b, 4), "tolerance": tolerance,
+           "excluded_rows": len(exclude)}
+    if abs(q_s - q_b) > tolerance:
+        better = banded if q_b > q_s else "sampled"
         return {**out, "verdict": "inconclusive",
-                "reason": f"the arms do not agree equally with the reference ({ag_s:.1%} vs {ag_b:.1%}; "
-                          f"{better} is closer), so their spend is not comparable"}
+                "reason": f"the arms do not score equally against the {yardstick} ({q_s:.1%} vs {q_b:.1%}; "
+                          f"{better} is better), so their spend is not comparable"}
     if cb > cs:
         return {**out, "verdict": "falsified",
-                "reason": f"banding spent MORE champion calls ({cb} vs {cs}) at equal agreement — "
+                "reason": f"banding spent MORE champion calls ({cb} vs {cs}) at equal quality — "
                           "keep the sampled cascade"}
     return {**out, "verdict": "holds",
-            "reason": f"banding spent {cb} champion call(s) against sampling's {cs}, at equal agreement"}
+            "reason": f"banding spent {cb} champion call(s) against sampling's {cs}, at equal quality"}
 
 
 # ── the providers, counted ────────────────────────────────────────────────────────────────────
@@ -197,7 +233,11 @@ class Counted:
         self._arm.calls[self._tier] = self._arm.calls.get(self._tier, 0) + 1
         chars = len(str(kw.get("system") or "")) + len(str(kw.get("user") or ""))
         self._arm.prompt_chars[self._tier] = self._arm.prompt_chars.get(self._tier, 0) + chars
-        return self._inner.complete(**kw)
+        try:
+            return self._inner.complete(**kw)
+        except Exception:
+            self._arm.unjudged |= rows_in(str(kw.get("user") or ""))
+            raise
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
@@ -228,6 +268,7 @@ class JevBackend:
         try:
             got = self._with_backoff(body)
         except Exception as exc:  # noqa: BLE001 — a failed bundle is an answer, as the seam says
+            self.arm.unjudged |= _row_ids(q.id for q in qs)
             return {q.id: Answer(q.id, NOUL, False, reason=f"the Jev call failed: {exc}") for q in qs}
         usage = got.get("usage") or {}
         for k in ("input_tokens", "output_tokens"):
@@ -238,6 +279,7 @@ class JevBackend:
             a = answers.get(q.id) or {}
             p = a.get("noul")
             if not isinstance(p, (int, float)) or not 0.0 <= float(p) <= 1.0:
+                self.arm.unjudged |= _row_ids([q.id])
                 out[q.id] = Answer(q.id, NOUL, False, reason=f"Jev returned no noul for {q.id}: {a!r}"[:200])
                 continue
             p = float(p)
@@ -256,6 +298,11 @@ class JevBackend:
                 time.sleep(delay)
                 delay *= 2
         raise RuntimeError("unreachable")
+
+
+def _row_ids(ids) -> set[int]:
+    """The rows behind the seam's question ids (``r<gi>``)."""
+    return {int(i[1:]) for i in ids if str(i)[1:].isdigit()}
 
 
 class _Retryable(Exception):
@@ -332,7 +379,8 @@ def run_reference(rows: Sequence[str], predicate: str, champion: Any, *,
 
 
 def run_predicate(rows: Sequence[str], predicate: str, *, cheap, champion, jev: Optional[JevBackend],
-                  sample: int, batch: int, tolerance: float, reference: bool = True) -> dict:
+                  sample: int, batch: int, tolerance: float, reference: bool = True,
+                  gold: Optional[Mapping[int, bool]] = None) -> dict:
     arms: dict[str, ArmResult] = {}
     if reference:
         arms["reference"] = run_reference(rows, predicate, champion, batch=batch)
@@ -343,12 +391,22 @@ def run_predicate(rows: Sequence[str], predicate: str, *, cheap, champion, jev: 
     if jev is not None:
         arms["banded-jev"] = run_arm("banded-jev", rows, predicate, banded=True, cheap=jev,
                                      champion=champion, sample=sample, batch=batch)
-    n, ref = len(rows), arms.get("reference")
-    out = {"predicate": predicate, "rows": n,
-           "arms": {k: a.as_dict(n, ref) for k, a in arms.items()},
-           "verdict": verdict(arms, n, tolerance=tolerance)}
-    if jev is not None:
-        out["verdict_jev"] = verdict(arms, n, tolerance=tolerance, banded="banded-jev")
+    return score_predicate(predicate, len(rows), arms, tolerance=tolerance, gold=gold)
+
+
+def score_predicate(predicate: str, n: int, arms: Mapping[str, ArmResult], *, tolerance: float,
+                    gold: Optional[Mapping[int, bool]] = None) -> dict:
+    """Every arm scored on the SAME rows: any row some call failed on, in any arm, is excluded from
+    all of them — a fail-open row is a row no model decided, and scoring it would reward the arm
+    that happened to fail on it."""
+    exclude = frozenset().union(*(a.unjudged for a in arms.values()))
+    ref = arms.get("reference")
+    out = {"predicate": predicate, "rows": n, "excluded_rows": sorted(exclude),
+           "yardstick": "gold" if gold else "reference",
+           "arms": {k: a.as_dict(n, ref, gold=gold, exclude=exclude) for k, a in arms.items()},
+           "verdict": verdict(arms, n, tolerance=tolerance, gold=gold, exclude=exclude)}
+    if "banded-jev" in arms:
+        out["verdict_jev"] = verdict(arms, n, tolerance=tolerance, banded="banded-jev", gold=gold, exclude=exclude)
     return out
 
 
@@ -379,6 +437,29 @@ def _load_env_file(path: Path) -> list[str]:
     return loaded
 
 
+def load_gold(path: Path) -> dict[str, dict[int, bool]]:
+    """``{predicate: {row: label}}`` from a gold file: a list of ``{predicate, gold: {row: bool}}``."""
+    data = json.loads(Path(path).read_text())
+    return {e["predicate"]: {int(i): bool(v) for i, v in (e.get("gold") or {}).items()} for e in data}
+
+
+def rescore(results: Mapping[str, Any], gold: Mapping[str, Mapping[int, bool]], *,
+            tolerance: float) -> list[dict]:
+    """Score a saved run again — against a gold set, say — with no model call."""
+    out = []
+    for p in results.get("predicates") or []:
+        arms = {}
+        for name, a in (p.get("arms") or {}).items():
+            if "kept_rows" not in a:
+                raise ValueError(f"{name} on {p['predicate']!r} carries no kept_rows: that run predates rescoring")
+            arms[name] = ArmResult(name, bool(a.get("available", True)), kept=set(a["kept_rows"]),
+                                   unjudged=set(a.get("unjudged_rows") or []), calls=dict(a.get("calls") or {}),
+                                   notes=list(a.get("notes") or []), reason=a.get("reason") or "")
+        out.append(score_predicate(p["predicate"], int(p["rows"]), arms, tolerance=tolerance,
+                                   gold=gold.get(p["predicate"])))
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rows", required=True, help="JSON rows file (see load_rows)")
@@ -391,8 +472,20 @@ def main() -> None:
     ap.add_argument("--jev-model", default=JEV_DEFAULT_MODEL)
     ap.add_argument("--env-file", help="load model keys from this file (values are never printed)")
     ap.add_argument("--dry-run", action="store_true", help="print the planned calls and stop")
+    ap.add_argument("--gold", help="gold labels (see load_gold): score accuracy against them")
+    ap.add_argument("--rescore", help="a saved results file to score again — no model call")
     ap.add_argument("--output", default="")
     args = ap.parse_args()
+    gold = load_gold(Path(args.gold)) if args.gold else {}
+
+    if args.rescore:
+        report = json.loads(Path(args.rescore).read_text())
+        report["predicates"] = rescore(report, gold, tolerance=args.tolerance)
+        _print(report["predicates"])
+        if args.output:
+            Path(args.output).write_text(json.dumps(report, indent=2))
+            print(f"\nwrote {args.output}")
+        return
 
     rows = load_rows(Path(args.rows))
     predicates = tuple(args.predicate or DEFAULT_PREDICATES)
@@ -408,11 +501,16 @@ def main() -> None:
     if args.env_file:
         keys = _load_env_file(Path(args.env_file))
         print(f"loaded {len(keys)} key(s) from {args.env_file} (values not shown)")
-    from aughor.llm.provider import get_provider
+    from aughor.llm import provider as llm
     from aughor.semops import operators as ops
-    cheap, champion = get_provider(ops.DEFAULT_ROLE), get_provider(ops.CHAMPION_ROLE)
-    models = {"cheap": getattr(cheap, "model", None), "champion": getattr(champion, "model", None)}
-    print(f"tiers resolved from the environment: {models}")
+    cheap, champion = llm.get_provider(ops.DEFAULT_ROLE), llm.get_provider(ops.CHAMPION_ROLE)
+    cfg = llm.current_config()                    # the same effective view GET /llm/config serves
+    models = {"backend": cfg.get("backend"), "cheap": (cfg.get("models") or {}).get(ops.DEFAULT_ROLE),
+              "champion": (cfg.get("models") or {}).get(ops.CHAMPION_ROLE),
+              "config": os.environ.get("AUGHOR_LLM_CONFIG_PATH") or "(isolated: environment only)"}
+    print(f"tiers resolved: {models}")
+    if models["cheap"] and models["cheap"] == models["champion"]:
+        print("⚠️ the cheap and champion tiers are the SAME model: the cascade's escalations re-ask it")
 
     jev = None
     if args.jev:
@@ -427,18 +525,25 @@ def main() -> None:
               "fetched_with": fetch_rows_sql(len(rows)), "predicates": []}
     for pred in predicates:
         res = run_predicate(rows, pred, cheap=cheap, champion=champion, jev=jev, sample=args.sample,
-                            batch=args.batch, tolerance=args.tolerance, reference=not args.no_reference)
+                            batch=args.batch, tolerance=args.tolerance, reference=not args.no_reference,
+                            gold=gold.get(pred))
         report["predicates"].append(res)
-        v = res["verdict"]
-        print(f"\n{pred}\n  {v['verdict']}: {v['reason']}")
-        for a in res["arms"].values():
-            print(f"  {a['arm']:<11} calls={a['calls']} kept={a['kept']} "
-                  f"agree={a.get('agreement_with_reference', '-')}")
-        if "verdict_jev" in res:
-            print(f"  jev: {res['verdict_jev']['verdict']}: {res['verdict_jev']['reason']}")
+        _print([res])
     if args.output:
         Path(args.output).write_text(json.dumps(report, indent=2))
         print(f"\nwrote {args.output}")
+
+
+def _print(predicates: Sequence[Mapping[str, Any]]) -> None:
+    for res in predicates:
+        v = res["verdict"]
+        print(f"\n{res['predicate']}\n  {v['verdict']}: {v['reason']}"
+              f"  [excluded {len(res.get('excluded_rows') or [])} unjudged row(s)]")
+        for a in res["arms"].values():
+            print(f"  {a['arm']:<11} calls={a['calls']} kept={a['kept']} "
+                  f"agree={a.get('agreement_with_reference', '-')} gold={a.get('accuracy_vs_gold', '-')}")
+        if "verdict_jev" in res:
+            print(f"  jev: {res['verdict_jev']['verdict']}: {res['verdict_jev']['reason']}")
 
 
 if __name__ == "__main__":

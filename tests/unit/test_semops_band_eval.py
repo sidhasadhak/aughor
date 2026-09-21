@@ -19,8 +19,11 @@ from evals.semops_band_eval import (  # noqa: E402
     ArmResult,
     JevBackend,
     _Retryable,
+    accuracy,
     agreement,
     load_rows,
+    rescore,
+    rows_in,
     planned_calls,
     run_arm,
     run_predicate,
@@ -182,3 +185,59 @@ def test_a_rate_limit_is_retried_and_a_dead_call_is_an_unavailable_answer(monkey
         raise RuntimeError("HTTP 401: bad key")
     got = JevBackend("k", ArmResult("j", True), post=dead).judge("s", [Noul("r0", "p")])
     assert not got["r0"].available and "401" in got["r0"].reason
+
+
+# ── failed calls, gold labels and rescoring ─────────────────────────────────────────────────
+
+class Refuses(Stub):
+    """A tier that returns nothing for any batch carrying a row it will not read — the shape of a
+    provider's content filter emptying a response."""
+
+    def complete(self, *, system, user, response_model):
+        if "silk scarf" in user:
+            raise RuntimeError("structured output empty: the model returned no content")
+        return super().complete(system=system, user=user, response_model=response_model)
+
+
+def test_the_rows_a_prompt_carries_are_read_from_both_prompt_shapes():
+    assert rows_in("Rows (index: text):\n[3] a\n[17] b") == {3, 17}
+    assert rows_in("QUESTIONS:\n- r4 [true/false]: x\n- r12 [true/false]: y") == {4, 12}
+
+
+def test_a_row_no_model_decided_is_excluded_from_every_arm():
+    """The operator keeps a failed batch (fail-open). Scored, those rows would reward whichever arm
+    happened to fail on them. Kills: scoring over every row regardless of failures."""
+    out = run_predicate(ROWS, PRED, cheap=Stub(False), champion=Refuses(True), jev=None,
+                        sample=4, batch=5, tolerance=0.02)
+    failed_batch = set(range(5, 10))                            # the batch holding "silk scarf" (row 6)
+    assert out["arms"]["reference"]["unjudged_rows"] == sorted(failed_batch)
+    # Conservative on purpose: EVERY row of every failed call, in any arm, leaves the population —
+    # here also the sampled arm's validation sample (0, 2, 4, 6), whose champion call carried row 6.
+    union = set().union(*(set(a["unjudged_rows"]) for a in out["arms"].values()))
+    assert set(out["excluded_rows"]) == union >= failed_batch
+    assert {0, 2, 4} <= union
+    assert out["verdict"]["excluded_rows"] == len(union)
+
+
+def test_gold_makes_the_verdict_about_accuracy_and_needs_no_reference():
+    gold = {i: (i in TRUTH) for i in range(len(ROWS))}
+    # With a WRONG reference present, the gold must still be what decides…
+    arms = {"sampled": _arm("sampled", TRUTH, 9), "banded": _arm("banded", TRUTH, 1),
+            "reference": _arm("reference", set(), 1)}
+    v = verdict(arms, len(ROWS), gold=gold)
+    assert v["yardstick"] == "gold" and v["banded_score"] == 1.0
+    # …and with none at all, the gold is enough.
+    del arms["reference"]
+    v = verdict(arms, len(ROWS), gold=gold)
+    assert v["yardstick"] == "gold" and v["verdict"] == "holds"
+    assert accuracy(set(), gold) == 1 - len(TRUTH) / len(ROWS)
+
+
+def test_a_saved_run_rescores_the_same_with_no_model_call():
+    run = run_predicate(ROWS, PRED, cheap=Stub(False), champion=Stub(True), jev=None,
+                        sample=4, batch=25, tolerance=0.02)
+    gold = {PRED: {i: (i in TRUTH) for i in range(len(ROWS))}}
+    again = rescore({"predicates": [run]}, gold, tolerance=0.02)[0]
+    assert again["yardstick"] == "gold"
+    assert again["arms"]["banded"]["accuracy_vs_gold"] == 1.0
+    assert again["arms"]["banded"]["kept_rows"] == run["arms"]["banded"]["kept_rows"]
