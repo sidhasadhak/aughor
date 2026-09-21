@@ -3,7 +3,8 @@
 
   *every outbound transport asks the departure gate* — a monitor alert, a scheduled
   briefing, an agent alert, a person's Share and Execute, and the engine's Slack post and
-  notify — and what departs carries its receipt ON the message;
+  notify — and what departs carries its receipt in CONTEXT (recorded on the departure
+  row; since the 2026-09-22 amendment the Slack rendering omits it);
 
   *the laws hold on real paths* — the 2026-09-16 dispatch watch's order count is held at
   departure; a finding whose number moved since it was found is held when a person shares

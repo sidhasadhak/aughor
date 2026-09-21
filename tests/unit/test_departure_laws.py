@@ -286,6 +286,35 @@ def test_a_measurement_older_than_the_window_is_re_executed_first():
     assert "re-executed at departure" in v.checks["remeasure"]
 
 
+def test_a_numeral_inside_a_quoted_row_string_is_not_a_magnitude_claim():
+    """Found live 2026-09-22: theLook product names carry size tokens ("...Sandal
+    6B(M)US"), and the parser read a quoted name's "6B" as six BILLION — holding a fully
+    grounded top-sellers send twice. Text copied verbatim from the measured rows is
+    grounded by construction; only the prose around the quotes makes claims."""
+    fresh = Measurement(
+        source="the rows of top_sellers.rows", values=[10304.87, 77.0, 319.99],
+        texts=["Nine West Women's Sandal 6B(M)US", "Outerwear & Coats"],
+        measured_at=datetime.now(timezone.utc).isoformat())
+    v = _gate("Outerwear & Coats ranked first at 10304.87 with 77 units sold. "
+              "Nine West Women's Sandal 6B(M)US closed the list at 319.99.",
+              measurement=fresh)
+    assert v.state == "departed", v.reason_sentence()
+
+
+def test_a_billion_claim_outside_the_quotes_still_holds():
+    """The mutation guard for the strip: blanking quoted names must not blind law 1 to a
+    real ungrounded magnitude in the surrounding prose — the same token, asserted rather
+    than quoted, still holds the send and is named in the reason."""
+    fresh = Measurement(
+        source="the rows of top_sellers.rows", values=[10304.87, 77.0, 319.99],
+        texts=["Nine West Women's Sandal 6B(M)US"],
+        measured_at=datetime.now(timezone.utc).isoformat())
+    v = _gate("Nine West Women's Sandal 6B(M)US sold 319.99 — revenue reached 6B overall.",
+              measurement=fresh)
+    assert v.state == "held"
+    assert "6b" in v.reason_sentence().lower()
+
+
 def test_a_code_rendered_alert_is_grounded_by_construction():
     """"1440m" is a window in minutes — read as a numeral it is 1.44 billion. An alert's
     template prints exactly the values it measured, so nothing is matched token by token."""

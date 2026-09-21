@@ -270,9 +270,11 @@ def test_a_cron_posts_as_the_bot_and_the_thread_is_repliable(monkeypatch):
 
     assert out.status == "executed"
     assert seen["token"] == "xoxb-live-token", "must post with the BOT's token, not a webhook"
-    # HB-2 law 8 — the message leaves verbatim, and the departure gate's receipt travels
-    # on it: what measured it, what defines it, the guards that ran, the ledger row.
-    assert seen["channel"] == "C123" and seen["text"].startswith("revenue is up\n\nReceipt: ")
+    # HB-2 law 8, amended 2026-09-22 (the user): the message leaves verbatim and CLEAN —
+    # no receipt rides a Slack message. The gate still ran (the verdict was taken above);
+    # the receipt lives on the departure row, not in the channel.
+    assert seen["channel"] == "C123" and seen["text"] == "revenue is up"
+    assert "Receipt:" not in seen["text"]
     assert "1788000000.000100" in out.message, "the thread root must come back"
 
 

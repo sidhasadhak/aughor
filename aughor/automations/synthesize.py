@@ -112,6 +112,38 @@ def _is_empty(data: Any) -> bool:
     return False
 
 
+def _measured_texts(data: Any) -> list[str]:
+    """Every string cell in the rows — the names and labels a write-up QUOTES.
+
+    2026-09-22, found live: theLook product names carry size tokens ("...Sandal 6B(M)US"),
+    and a writeup quoting a name verbatim handed the departure gate "6B" to parse as six
+    BILLION — a phantom magnitude in fully grounded prose, held at the door twice. Text
+    copied verbatim from the measured rows is grounded by construction (the same reasoning
+    as Measurement.rendered, scoped to the quoted spans), so the basis carries the strings
+    and law 1 blanks them from the message before it reads its numerals."""
+    out: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, str):
+            t = node.strip()
+            if len(t) >= 4:
+                try:
+                    float(t.replace(",", ""))
+                except ValueError:
+                    out.append(t)
+        elif isinstance(node, dict):
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, (list, tuple)):
+            for v in node:
+                walk(v)
+
+    walk(data)
+    seen: set[str] = set()
+    uniq = [t for t in out if not (t in seen or seen.add(t))]
+    return uniq[:500]
+
+
 def _measured_values(data: Any) -> list[float]:
     """Every number in the rows the answer was written from.
 
@@ -235,6 +267,7 @@ def dispatch_synthesize(effect: "Effect", automation: "Automation") -> "EffectOu
               # the evidence would ground a figure the writer could not have known.
               SYNTHESIS_BASIS_KEY: {
                   "values": _measured_values(shown),
+                  "texts": _measured_texts(shown),
                   "source": f"the rows of {source}" if source else "the rows this step read",
                   "measured_at": _now(),
                   "definition": f"synthesised from {source}" if source else "",

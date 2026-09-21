@@ -383,6 +383,7 @@ def measurement_for_synthesis(basis: dict) -> Measurement:
     return Measurement(
         source=source,
         values=values,
+        texts=[str(t) for t in (basis.get("texts") or []) if str(t).strip()],
         measured_at=str(basis.get("measured_at") or ""),
         definition=str(basis.get("definition") or source),
         rendered=False,

@@ -6518,7 +6518,9 @@ leave, a causal claim only with its falsifier's verdict (`agent/claim_type.py`),
 exists); (6) **disagreement holds** — where the ambiguity probe finds divergent readings a departure has no asker, so
 it asks the OWNER and sends nothing until answered; (7) **the noise band** of the triage's change term, never the same
 finding twice, monitors' anti-flap; (8) **the receipt travels** — source, definition version, as-of, guards applied and
-a link to the chain on every message. **Probation:** a new automation's departures go only to the person who declared
+a link to the chain on every message. **AMENDED 2026-09-22 (the user): not on Slack** — "make sure that Slack
+messages do not contain Receipts.. its unnecessary for business functions". The receipt is still taken and
+recorded on the departure row (the gate is untouched); Slack renders the message clean, tickets keep theirs. **Probation:** a new automation's departures go only to the person who declared
 it, who marks each right or wrong through the feedback plane (accept · correct · reject); it graduates to its
 subscribers at a measured precision and the ratchet holds it there — a change that lowers a departure kind's precision
 cannot ship. This is MI-1's graded ledger with an outcome column, the hub's contribution to §3.9. **Corrections

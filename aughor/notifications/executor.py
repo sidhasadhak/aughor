@@ -190,9 +190,9 @@ def _build_slack_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict
             fields.append({"title": "Caveat", "value": _trim(ctx["caveat"]), "short": False})
         if ctx.get("deep_link"):
             fields.append({"title": "Open", "value": ctx["deep_link"], "short": False})
-        if ctx.get("receipt_line"):
-            # HB-2 law 8 — the departure gate's receipt travels on the message.
-            fields.append({"title": "Receipt", "value": _trim(ctx["receipt_line"]), "short": False})
+        # HB-2 law 8, amended 2026-09-22 (the user): no Receipt field on Slack — the
+        # receipt stays on the departure row; the Caveat above still travels, it is the
+        # guard's own finding about the number, not provenance ceremony.
         return {
             "channel": trigger.channel or "#general",
             "text": _trim(f"*Monitor alert*: {ctx.get('monitor_name') or 'Monitor'}"),
@@ -208,9 +208,7 @@ def _build_slack_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict
         {"title": "Metric",        "value": payload.metric_name or "—",    "short": True},
         {"title": "Headline",      "value": _trim(payload.headline) or "—", "short": False},
     ]
-    if ctx.get("receipt_line"):
-        # HB-2 law 8 — the departure gate's receipt travels on the message.
-        fields.append({"title": "Receipt", "value": _trim(ctx["receipt_line"]), "short": False})
+    # HB-2 law 8, amended 2026-09-22 (the user): no Receipt field on Slack (see above).
     return {
         "channel": trigger.channel or "#general",
         "text": _trim(f"*Aughor recommendation*: {payload.recommendation}"),

@@ -1073,11 +1073,12 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
         return EffectOutcome(kind=effect.kind, target=bot_id, status="dispatch_error",
                              message=f"Slack bot '{bot.name}' is disabled")
 
-    # HB-2 law 8 — the receipt travels ON the message: what measured it, what defines it,
-    # as of when, the guards that ran, and where the full record lives.
-    receipt = verdict.receipt_line() if verdict is not None else ""
+    # HB-2 law 8, AMENDED 2026-09-22 (the user: Slack messages carry no receipts — "its
+    # unnecessary for business functions"): the receipt is still taken, recorded on the
+    # departure row and reachable from the departures screen via the filed link below —
+    # it no longer travels on the Slack message itself. Tickets (Jira) keep theirs.
     ok, info = post_as_bot(
-        bot.bot_token, channel, f"{message_text}\n\n{receipt}" if receipt else message_text,
+        bot.bot_token, channel, message_text,
         thread_ts=str(effect.config.get("thread_ts") or "") or None,
     )
     if ok:
