@@ -590,13 +590,15 @@ def audit(graph: Optional[OntologyGraph] = None) -> Audit:
 
 def action_census(root: Optional[Path] = None) -> dict[str, list[str]]:
     """``"{conn}/{schema}" → [action ids]`` from the overrides tree — the number Arc ON's
-    verb-layer claim rests on. Counts FILES, which is what a declaration is here."""
-    from aughor.ontology.overrides import overrides_root
-    base = root or overrides_root()
+    verb-layer claim rests on. Counts FILES, which is what a declaration is here — the ones a
+    reader sees, so this install's and the shipped seed's, unless ``root`` names one tree."""
+    from aughor.ontology.overrides import visible_override_files
     out: dict[str, list[str]] = {}
-    if not base.exists():
+    if root is not None and not root.exists():
         return out
-    for f in sorted(base.glob("*/*/action/*.yaml")):
+    files = sorted(root.glob("*/*/action/*.yaml")) if root is not None \
+        else visible_override_files("*/*/action/*.yaml")
+    for f in files:
         scope = f"{f.parents[2].name}/{f.parents[1].name}"
         out.setdefault(scope, []).append(f.stem)
     return out

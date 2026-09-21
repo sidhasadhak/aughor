@@ -25,10 +25,11 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
 def test_glossary_and_metrics_paths_are_isolated():
-    for p in (str(glossary._default_path()), str(metrics._default_path())):
+    for p in (str(glossary._default_path()), str(glossary._seed_path()), str(glossary.generated_path()),
+              str(metrics._default_path()), str(metrics._seed_path())):
         assert "aughor-test-stores" in p          # the conftest temp dir, not the repo data/ dir
-    assert str(glossary._default_path()).endswith("glossary.yaml")
-    assert str(metrics._default_path()).endswith("metrics.json")
+    assert str(glossary._default_path()).endswith("glossary.instance.yaml")  # the overlays' instance layers
+    assert str(metrics._default_path()).endswith("metrics.instance.json")
 
 
 def test_reads_still_see_the_real_content_via_the_copy():
@@ -38,7 +39,7 @@ def test_reads_still_see_the_real_content_via_the_copy():
 
 
 def test_no_path_glossary_write_never_touches_the_repo_file():
-    repo_file = pathlib.Path(glossary._DEFAULT_PATH)          # the real data/glossary.yaml
+    repo_file = pathlib.Path(glossary._LEGACY_PATH)           # the real, tracked data/glossary.yaml
     temp_file = glossary._default_path()                      # the isolated session copy
     before_repo = repo_file.read_bytes() if repo_file.exists() else None
     before_temp = temp_file.read_bytes() if temp_file.exists() else None
@@ -129,6 +130,7 @@ def test_ontology_overrides_and_export_trees_are_isolated():
     from aughor.ontology import filetree, overrides, recommendations
     assert "aughor-test-stores" in str(overrides.overrides_root())
     assert str(overrides.overrides_root()).endswith("ontology_overrides")
+    assert "aughor-test-stores" in str(overrides._SEED_ROOT)        # the overlay's shipped layer, read-only
     assert "aughor-test-stores" in str(filetree._EXPORT_ROOT)
     assert "aughor-test-stores" in str(recommendations._ROOT)      # the family's third writer, same fix
 

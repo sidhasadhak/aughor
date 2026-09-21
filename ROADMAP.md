@@ -46,7 +46,7 @@ semantics, not just governs them.** The moat is the ontology→agent loop.
 it is shipped when something *consumes* it. Repeatedly, the gap has been a complete and inert
 plane — see §7.
 
-**Amended 2026-09-16 — the hub (§3.18; §6 item 24).** The three planes are the platform's infrastructure. Its
+**Amended 2026-09-16 — the hub (§3.18; §6 item 24); ADOPTED 2026-09-21 (item 24 (g), the user).** The three planes are the platform's infrastructure. Its
 purpose, in the user's own definition, is two-sided: every reason to come to the platform stays — ask, run your own
 SQL, read the Briefing, open an object, approve a change — and the platform also **receives** data, documents,
 definitions and what people say where they already work, and **exports** findings, analyses, Briefings and proposals
@@ -2179,7 +2179,7 @@ survives the sweep and its ungraded neighbour does not, in ONE test, because sur
 proves nothing if nothing is being swept. Plus the restart case the counter could never
 cover, both directions of the durable clock, and the row-cap exemption.
 
-#### MI-2a · The journal had no sweep at all (substrate-sized) — ✅ BUILT 2026-09-20; ⚠️ **BRANCH ONLY** — `3b642c2a`, merged into `claude/jev-align-and-traces-storage` at `9298316e`; no PR, not on main
+#### MI-2a · The journal had no sweep at all (substrate-sized) — ✅ BUILT 2026-09-20; ✅ **MERGED #532** (`d91fb9be`) with its follow-up `a45ad258` — this header read "BRANCH ONLY" after the merge, corrected 2026-09-21
 
 > **MI-2 fixed the sweep that was not running. This band found the table that had no sweep to run.**
 > MI-2's law above — *"ungraded exhaust keeps expiring on the 14-day sweep"* — was written about
@@ -6157,8 +6157,15 @@ belongs in any read of this document that a decision hangs on.
     hand, no download. An average of the banks' margins, and a quarter left unannualized, each fail; the committed
     receipt holds the 51 goldens.
 - **Open:**
-  - **The runtime reads a package's anatomy** — metrics, plays, questions. Banking carries no `industry.json` or
-    `kb/`, so activating it today would change nothing an agent reads.
+  - ✅ **The runtime reads a package's anatomy — plays and metric recipes MERGED #534** (`06d9d296`, 2026-09-21).
+    An active package's declared plays are seeded into the playbook store, where the retriever, the Verifier's
+    rule-outs and the prompt already read (`seed_from_packs`, sourced through `knowledge_index()`, so gate 6 holds
+    by construction: banking, `draft`, contributes nothing). Its typed metric recipes reach the explorer's prompt
+    ahead of `industry.json`'s prose, and `resolve_recipes` and `metric_vocabulary` read the same merged view —
+    which stopped `match_metric` answering "completion factor" with the **Cancellation Rate** recipe on airline.
+    ⏳ A package's **questions** are not named by #534 and were not re-measured here. Banking still carries no
+    `industry.json` or `kb/`, but it has `metrics/` and `playbooks/` — so activating it now changes what an agent
+    reads, through the seam above, where before #534 it would have changed nothing.
   - **Industry matching.** `_UNCURATED_INDUSTRY_TERMS` lists banking's words; they come out at activation, and a
     shipped industry that is not chosen must keep blocking a generic match (measured: "Retail Banking" would match
     retail again).
@@ -6728,7 +6735,7 @@ nomenclature for the analogy's sake; a persona named "Analyst".
 ---
 
 
-### 3.19 · Arc IN — the install: what Hermes Agent's installer teaches (drafted 2026-09-17 at the user's direction — §6 item 25; **ALL FOUR WAVES MERGED #531**, squash `2ae9ae9d`, 2026-09-20, at the user's instruction *"we are stuck with IN arc since a long time.. just take it all in one go and finish the Arc"* — which OVERRODE the "finish Arc IP first" order recorded below, and which is why item 25 (a) is still UNSTAMPED: the arc shipped on a direct instruction, never on a recorded adoption)
+### 3.19 · Arc IN — the install: what Hermes Agent's installer teaches (drafted 2026-09-17 at the user's direction — §6 item 25; **ALL FOUR WAVES MERGED #531**, squash `2ae9ae9d`, 2026-09-20, at the user's instruction *"we are stuck with IN arc since a long time.. just take it all in one go and finish the Arc"* — which OVERRODE the "finish Arc IP first" order recorded below, and why item 25 (a) went unstamped until 2026-09-21: the arc shipped on a direct instruction, and was stamped as shipped afterwards)
 
 > **Origin.** The user, 2026-09-17, with a screenshot of Hermes Agent's Quick Install
 > (https://github.com/nousresearch/hermes-agent): *"I like how hermes does it here… Im not suggesting to the exact same
@@ -6800,7 +6807,7 @@ until there is a desktop app to drive it; shell rc edits — uv's command folder
 
 ---
 
-### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; studies: `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and its +1, `docs/JEV_ALIGN_STUDY_2026-09-19.md`; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; nothing from the JD series built)
+### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; studies: `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and its +1, `docs/JEV_ALIGN_STUDY_2026-09-19.md`; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; **JD-4, JD-1 and JD-3 BUILT and MERGED #535**, squash `583c8d9f`, 2026-09-21, with JD-2's three survivors, A3 and A5; JD-3 ships OFF behind `semops.banded_cascade`. **RECEIPTS, later the same day:** JD-3's taken and re-decided on total tokens after the seam slim (falsifier quiet, flag still OFF), and **JD-5's taken LIVE against the real Jev** — the operator entered the key and asked for the keep-or-throw answer; verdict KEEP, `docs/JEV_LIVE_RECEIPT_2026-09-21.md` — **and then, on the user's word ("Flip the flag on and build the Jev binding"), JD-3 GRADUATED to default-ON and JD-5's production binding was BUILT** (`aughor/judgment/jev.py`, flag `semops.jev_cheap_tier` OFF, four gates, house-tier fallback). JD-4's own corpus receipt is still blocked on faithful rows, but its shuffled-context control was exercised live that night and did its job. This header read "nothing from the JD series built" after the merge — §5's prose-rot lesson again, corrected 2026-09-21, and again the same night when "none of the three JD waves has its receipt" had itself rotted)
 
 > ⚠️ **Read the numbering before the arc.** This text was written 2026-09-17 on
 > `origin/claude/fervent-cori-w9ogfc` (`93112558`, ROADMAP.md +106) and it claimed **§3.19 and §6 item
@@ -6850,6 +6857,15 @@ believing any of it.
   default-byte-identical, one backend at first. *Receipt:* the same bundle answered through the seam
   and through today's path agree on the golden set. *Falsifier:* if isolation changes no answer and
   saves no call, it is ceremony — drop it.
+  ✅ **BUILT, MERGED #535** (`583c8d9f`, 2026-09-21). Three kinds after Jev — Noul, Choice, Score. A choice
+  or a score is a sub-model with one probability field per option, so there is no field in which to name
+  an option that does not exist; the answer is the highest-weighted option, read back in code. A failed
+  call makes every answer unavailable with its reason, never a raise, and `agreement()` takes the receipt
+  in one call, counting an unanswered question apart from a disagreement. ⚠️ Two departures from the
+  draft: **no flag is registered, because the seam is wired into NO production path** — its first
+  consumer is JD-3, flagged there — and **the probability is STATED by the model, not measured**: the
+  provider has no logprobs seam, so it is the input JD-4's ECE exists to judge, not a calibrated number.
+  ⏳ The receipt and the falsifier are both model calls — the operator's spend.
 - 🛑 **JD-2 — intake's judgments leave the prose call. THE PREMISE IS REFUTED (2026-09-20); the
   closed-option-list half does not proceed.** As drafted: the ~10 judgment fields become typed
   questions, and `date_column` / `metric_table` / `dimensions` become **choices over the real schema**,
@@ -6880,12 +6896,73 @@ believing any of it.
   real defects. They are simply not evidenced by an invalid-name rate, because there isn't one. This
   refutation says nothing about whether the picks were the RIGHT ones — only that they were real — and
   it does not touch the other half of the Jev proposition, the calibrated probability.
+  ✅ **All three survivors FIXED in #535.** `dimensions` validated by exact column name, reusing
+  `_typed_columns`, failing OPEN on an expression or an unparseable schema because a false alarm buys a
+  paid retry; the correction retry re-validated, and a spec still invalid after one correction is kept
+  (no loop) and noted in `intake_notes`; and spec repair counted —
+  `deep_analysis.spec_repair.{attempted,repaired,still_invalid}` and `.error.{metric_table,dimensions,windows}`.
+  ⚠️ No harness drives the intake node, so the re-validation branch is exercised only through the shared
+  validator.
 - **JD-3 — bands, not batches, in the semops cascade.** `semantic_filter` / `semantic_top_k` ask one
   question per row through JD-1's seam; the champion tier is spent ONLY on the rows inside the
   uncertainty band, and the band's floor routes to a person rather than to a guess. Thresholds live in
   our code, never in the model. *Receipt:* strong-tier calls spent per 200-row filter, at equal
   agreement with today's escalation. *Falsifier:* banding costs more strong-tier calls than the sampled
   cascade → keep the sampled one.
+  ✅ **BUILT, MERGED #535 — behind `semops.banded_cascade`, default OFF** (registered in EXPERIMENT with
+  the question that settles it). `semantic_filter` only — `semantic_top_k` has no cascade, so there is
+  nothing there to band — and only where the sampled cascade would have run (flag on AND
+  `validate_sample > 0`); everywhere else the code that ran before runs unchanged. The band is 0.30 / 0.70,
+  in code. A row the cheap call could not answer goes to the champion; a row still uncertain after the
+  champion is KEPT, never silently dropped, and named in the notes. ⚠️ "Left for a person" is a note on
+  the result today, **not a review queue**.
+  ✅ **RECEIPT TAKEN 2026-09-21 — the falsifier did not fire** (`evals/semops_band_eval.py`; results, gold labels and
+  rows committed beside it). 200 of theLook's product names, 3 predicates, the deployment's own models — ~75 calls on
+  `gemini-3.1-flash-lite`. Scored against a gold set (3 labelings by a stronger model, majority vote; NOT human labels —
+  and the three agreed on every row, which shows consistency, not independence), over the rows every arm judged:
+  outerwear — banded 0 champion calls vs sampled 1, accuracy 97.1% vs 95.4% (175 rows): **holds**; aimed at women —
+  banded 3 vs 1, accuracy 94.7% vs 92.0% (150 rows): **inconclusive by the rule**, banding MORE accurate by more than the
+  2-point tolerance; accessory — banded 1 vs sampled 9, 98.7% vs 100% (75 rows): **holds**. Today's batch prompt errs
+  only by keeping (8 and 12 wrong keeps, never a wrong drop); the seam's per-row question makes fewer (5 and 8). Every
+  difference is 1–4 rows: a direction, not a proof.
+  ✅ **DECIDED BY MEASUREMENT 2026-09-21 — YES on quality, with a token cost.** Re-run at scale with the yes/no rule fixed
+  BEFORE the runs (`--decide`, `DECISION_MARGIN`): 800 product names × 6 predicates, gold labels on all 4,800, two setups —
+  A as deployed (both tiers `gemini-3.1-flash-lite`) and B with `deepseek/deepseek-v4.1-flash` as the champion. **A: banded
+  95.1% vs sampled 92.7%, +2.4 points (95% CI +1.1 to +3.8) over 2,350 rows, 4 champion calls vs 12. B: 96.4% vs 92.9%,
+  +3.6 (CI +1.9 to +5.4) over 1,375 rows, 2 vs 7. YES on both by the rule.** ⚠️ The cost the rule did not weigh: banding's
+  per-row question sends ~65% MORE cheap-tier tokens, and the sampled cascade seldom escalates, so in TOTAL banding costs
+  ~60% more tokens — for fewer silently wrong rows. ⚠️ Disclosed: A read INCONCLUSIVE until a bug in the pooling was fixed
+  after the runs — filters that lost every row (Gemini's quota ran out at ~20:50 mid-batch) still counted their champion
+  calls, which the quota failures had inflated. B has only 7 usable filters; the gold is model labels.
+  🔴 **NOT switched on — the arc's goal is FEWER tokens, and this spends more** (the user, 2026-09-21: *"The whole point
+  of adding the Jd arc was to reduce the tokens"*). Measured offline on one 25-row call, prompt AND schema: today 2,306
+  chars, banded 8,987 (~3.9×) — the harness had counted the prompt only. Cause: `_banded_verdicts` puts each row's text in
+  its Noul proposition, and `seam._field_for` copies the proposition into every schema field's `description`, so every
+  row travels twice. ⏳ NEXT: slim the seam (condition once, row once, bare schema fields — est. ≈ today's size), count
+  schema tokens in the harness, and re-decide on TOTAL tokens (as accurate AND no more tokens) — the accuracy gain must be
+  re-measured, since part of it may come from the verbose prompt.
+  ✅ **SLIMMED AND RE-DECIDED 2026-09-21** (`docs/JEV_LIVE_RECEIPT_2026-09-21.md` §2). Rows now ride in the STATE once, in
+  the same `[index] text` listing the sampled path sends; each question is a short reference to its row; a noul's schema
+  field is its id and its [0,1] bound, nothing else — the schema constrains, the prompt carries. Same builders, same 25
+  rows: **9,021 → 5,228 chars (0.58×)**, against today's 2,340; the remaining 2.23× per-call floor IS the per-row-field
+  isolation. Recorded totals re-cost at the measured ratio: **banded ≈ 0.92× sampled on BOTH setups** (A ≈ 44.5k vs 48.3k;
+  B ≈ 25.5k vs 27.8k) at unchanged accuracy (+2.4 / +3.6 points) and unchanged champion counts (4 vs 12; 2 vs 7) — **the
+  token falsifier no longer fires**. ⚠️ A deterministic re-cost of the recorded runs, not a live re-run (no funded LLM
+  backend on this machine that night: Gemini quota shared and spent, Groq 401, Together 402); the harness now records
+  per-arm wall-clock and per-row probabilities, so the confirming live run also buys the LLM-side ECE that is still
+  unmeasured. Flag still OFF — the flip is the operator's, now with the numbers on the table.
+  ✅ **FLIPPED 2026-09-21, the user, on the receipts: "Flip the flag on."** `semops.banded_cascade`
+  GRADUATED to FLAG_DEFAULT (default-ON, the `ask.converse` shape): the sampled cascade stays alive as
+  the off-arm, `AUGHOR_SEMOPS_BANDED_CASCADE=0` is the kill switch, and the graduation guard in
+  `test_feature_flags.py` was widened deliberately with the receipt. The two sampled-cascade tests now
+  opt into the kill-switch arm explicitly — the off-path keeps its own tests, as a live off-path must.
+  🔴 **Two findings about this deployment, bigger than the receipt:** (1) the cheap and champion tiers are the SAME model
+  (`fast` = `coder` = `gemini-3.1-flash-lite`), so today's cascade spends its "strong" calls re-asking the model it is
+  checking — the first run escalated all 200 rows on one predicate to do exactly that; a real champion is the user's
+  model choice and would make this receipt mean what it says. (2) that model returned EMPTY structured output on 4 and
+  then 8 of ~75 calls (5–10%), not content-driven — the batch with the most explicit names never failed — and
+  `semantic_filter` keeps a failed batch whole (fail-open), so in production 25 rows no model judged are kept with only
+  a note. The harness excludes such rows from every arm; production does not.
 - **JD-4 — the instrument, and it comes first.** `jevlike/eval.py`'s battery adopted as a standing
   guard on every judgment seam: top-1, expected calibration error over ten bins, and the
   **shuffled-context control** — every question paired with the WRONG state, on the rule that a
@@ -6894,12 +6971,75 @@ believing any of it.
   rest of this arc is pointless. 🔑 JD-2's retraction is the argument for building this first: the arc's
   one measured claim was wrong for three days because its ground truth drifted, and the harness that
   caught it costs no model call.
+  ✅ **BUILT, MERGED #535** — a free harness in `evals/` plus a hermetic companion in `tests/unit/`, the
+  shape its two siblings use. **Its first run on the live corpus (58 rows, all `converse.tool`, 18–20 Sep)
+  took no reading on three of its five measures, each with its reason, and that is the finding:** top-1
+  has no reference (`outcome` is `ok` on all 58 — A1's constant, because no decision had been recorded
+  since A1's code reached that machine); ECE has no probability (`confidence` 0.0 on all 58 —
+  `converse.tool` NEVER produces one, `ask.route` records one and has no traffic, `framing.definition`
+  has one behind a flag whose ON arm has never run); and the shuffled control was blocked on FIDELITY,
+  not cost — no row's prompt was recoverable. Measured free: **`choice_prior` = 44.8%** (always
+  `run_sql`) against a 2.6% uniform baseline — the floor a control must beat, published before any
+  control runs so an arm at ~45% cannot later read as a pass.
+  The control was then made takeable, in the same PR: every decision row carries a sha256 of its
+  assembled prompt, and the first decision of a turn records the prompt BUILDER'S ARGUMENTS — gated by
+  the operator's capture window, closed by default — so a replay swaps ONE argument and rebuilds, and
+  refuses a drifted rebuild before spending a token. (Recording the assembled prompt was the obvious
+  fix and was wrong: the state lives inside that string, and swapping whole prompts moves five things
+  and attributes them to one.) On the live corpus that is **0 faithful rows**: 44 mid-loop, never
+  replayable; 14 recorded before the fingerprint existed. And **46 of the 58 rows (79%) had been filed
+  under `converse.tool` when the analyst made them**, because the site was a literal in the loop;
+  `analyst.tool` is its own site now.
+  ⏳ The control run itself: rows recorded under an open capture window, then model calls.
 - **JD-5 — the hosted binding, optional and last.** Jev behind JD-1's seam as one backend among ours,
   OFF by default, riding `govern/outbound` and the PII gate because the state is customer row text
   leaving the box, surfaced in the Trust Receipt, and never on the verdict path: on TypeSafe's own
   four-workflow benchmark Jev scores 67.8% against Opus 5's 73.1% — it is a speed and cost result, not
   an accuracy one. *Receipt:* the same JD-4 battery, both backends, same bundles. *Falsifier:* no
   wall-clock or cost win at equal calibrated accuracy → refuse and record it in §4.
+  ✅ **RECEIPT TAKEN LIVE 2026-09-21 — the falsifier did not fire, and neither did JD-4's control**
+  (the operator entered `TYPESAFE_API_KEY` and said *"prove me the value … if yes, we keep it; if not,
+  we throw it out"*; `docs/JEV_LIVE_RECEIPT_2026-09-21.md`, numbers in `evals/jd5_jev_receipt.json`).
+  `jev-1.13.0` live against the recorded arms, paired on the same frozen rows and gold, 5,400
+  row-judgments for ≈ $0.011: **jev-solo 95.3% vs production's sampled 92.7% (+2.6, CI +1.1 to +4.2,
+  12 filters / 2,350 rows)**, parity with the full banded LLM cascade (+0.2, CI −1.3 to +1.9) at
+  **zero** champion calls; the composed jev+champion cascade matches or beats sampled with 1 champion
+  call against up to 9. **JD-4's shuffled-context control, exercised live on the eval corpus:** real
+  0.975/0.990/0.945 → deranged-state 0.755/0.470/0.750, BELOW the majority-class floor on all three —
+  the probabilities read the state. **Calibration, the honest part:** ECE 0.058 over 5,400 — the tails
+  are excellent and the middle is not (stated 0.45–0.65 → true 19–30%), i.e. the miscalibration lives
+  exactly INSIDE the 0.30–0.70 band the cascade escalates; "calibrated" is not global, the band edges
+  are where trust ends, and the design survives its own audit. **$0.00196 per 1k rows** (2.6× under
+  flash-lite's sampled arm at $0.25/M; Jev $0.042/M input corroborated by pg-jev's independent
+  ≈$0.0405/M), 0.68 s median per 25-row bundle sequential, repeatability |Δp| ≤ 0.009 (5 flips/600).
+  Fuzzy predicates are the named limit (sport: 0.86–0.90, ~4× the band occupancy) — the champion stays.
+  **VERDICT: works — KEEP.** The production binding stays unbuilt and the flag stays OFF: a hosted
+  dependency in the serving path, behind the outbound grant and the PII gate, is the operator's flip,
+  now with numbers. `pg-jev` (same model behind a Postgres-superuser-only surface, managed hosts
+  excluded by its own README) examined and NOT adopted — semops already sit at the seam and speak every
+  warehouse; its batch-degradation measurement (≤20 rows 100%, 40 → 92–98%, 80 → 77–94%) pins our
+  batch at 25 and is the second first-hand-adjacent source for the price.
+  ✅ **BUILT the same night — the user, on the receipt: "Flip the flag on and build the Jev binding."**
+  `aughor/judgment/jev.py` behind flag `semops.jev_cheap_tier` (EXPERIMENT, default OFF), the cheap
+  tier of the banded cascade only, never the champion, never the verdict path. Four gates, each
+  failing toward the house: the flag; loud configuration (`TYPESAFE_API_KEY` AND `AUGHOR_JEV_MODEL` —
+  no model id ships in the product, so the operator names even "jev-latest"); a PII scan that
+  withholds a bundle WHOLE on any redactable cell (a withheld bundle's rows come back unanswered,
+  which the band already routes to the in-house champion — conservative over clever, because a
+  governance gate that parses its own prompt has a parsing bug waiting inside it); and
+  `govern.outbound.external_call("typesafe","systemone")` — cap before send, span, EXTERNAL_CALL
+  event, so every call is countable. The seam itself now DISPATCHES to any judge-shaped backend after
+  its own misuse checks, which is what "one backend among ours" means in code. `FallbackJudge` is the
+  outage guarantee: a bundle Jev cannot answer (withheld, blocked, down, unconfigured) is re-judged by
+  the house cheap tier through the same seam — an outage degrades to yesterday's cascade and NEVER
+  floods the champion (pinned by test: Jev dead → house tier 1 call, champion 0). The third party is
+  NAMED in the cascade's notes where the Trust Receipt reads them. 11 hermetic tests
+  (`tests/unit/test_jev_binding.py`); smoke-tested LIVE through `semantic_filter` end-to-end the same
+  night (5 rows: peacoat+puffer kept, cap/belt/socks dropped, 0 champion calls, note names the judge).
+  The deployment's `.env` carries the key, the model and the flag; they take effect when this branch
+  merges and the API restarts. Open question on the flag's EXPERIMENT entry: does the live deployment
+  hold the receipt's numbers at its measured ~7% band occupancy, or does the fallback rate say the
+  house tier is doing the work anyway?
 - **JD-6 — the local scorer, if JD-4 earns it.** A `jevlike`-shaped one-pass head trained on our own
   logged `{state, options, chosen}` rows, weights outside the repo and installer per §3.9's adapter
   law, used as a pre-filter and ranker (cut 200 candidate columns to 12 before a real model reads them)
@@ -6934,11 +7074,22 @@ letters are kept so the study and the roadmap still read as one thing.
   flat-confidence finding above. Today the only things that route work to a person are policy gates —
   the 428 approval, the departure hold — and neither knows which decisions were close. *Falsifier:* if
   audit-slot disagreement is indistinguishable from ambiguous-slot disagreement, the ranking reads
-  nothing and the queue may as well be random.
-- ⏳ **A3 — a definition change is a diff, a score, and a named population.** The screen the departure
-  hold is missing: `draft → proposed → approved` already exists on metrics
-  (`aughor/semantic/metrics.py:85`), but a person is asked for a definition with no instrument beside
-  the question. Needs A4.
+  nothing and the queue may as well be random. ⏳ **Still blocked after #535, on a different thing:**
+  JD-1's seam exists, but its probability is stated rather than measured, and JD-4 found that
+  `converse.tool` — the site carrying the traffic — NEVER produces one. A2 now waits on a site that
+  yields a probability at all.
+- ✅ **A3 — a definition change is a diff, a score, and a named population. BUILT, MERGED #535.** The
+  screen beside `POST /metrics/{name}/transition`: what the definition changes from, whether it runs and
+  what it reads, what it leaves undeclared, and how reproducible that read is. **ADVISORY** — it never
+  holds an approval, and `definition_report.py` cannot import the module that holds a send (an
+  AST-parsed import guard). ⚠️ **"A named population" did not survive measurement:** on the receipt
+  target's BigQuery warehouse there is no as-of read in this tree (`snapshot.execute_as_of` is
+  DuckLake-only), `return_rate`'s numerator accrues in place, and `data_version` returns None silently —
+  so `Population` is a typed verdict, **pinned / fingerprinted / unpinnable**, and an unpinnable with no
+  reason is a construction error, never a silent null. 🔴 Found on the way and fixed: **the approve
+  button 404'd for every connection-scoped metric** — `transitionMetric` sent no connection, so the
+  server looked for a global metric of that name. ⏳ Not yet driven live: the running API predated the
+  route.
 - ✅ **A4 — the frozen-population rule as a standing guard. BUILT 2026-09-20** (`407f0a4c`).
   LuxExperience declares a refund promise and the platform measured it: 11,648 of 50,048 Returns
   breached, **23.27%** — while the stage one level up already counted `out_of_order: 4,199`, Returns
@@ -6950,9 +7101,18 @@ letters are kept so the study and the roadmap still read as one thing.
   guard list — a caveat after a row of green ticks reads as a footnote to reassurance. Guard
   mutation-tested four ways, each killed by assertion rather than a crash. Whether such a caveat should
   HOLD a send was left to the user, and answered the same day: **§6 item 29**.
-- ⏳ **A5 — capture as a budget, not just a tolerated write.** `record_decision` is already
-  observation-never-control and already never raises; it has no bound. One field is capped
-  (`_MAX_CONTEXT = 2000`); nothing caps the store's growth or counts what was lost.
+- ✅ **A5 — capture as a budget, not just a tolerated write. BUILT, MERGED #535.** `record_decision`
+  was observation-never-control and never raised, but had no bound: one field capped
+  (`_MAX_CONTEXT = 2000`), nothing capping the store's growth or counting what was lost. Now, in the
+  shape of `session_events_prune`: `AUGHOR_DECISIONS_MAX_ROWS` (default 200,000) and
+  `AUGHOR_DECISIONS_KEEP_DAYS` (default **OFF** — this corpus is what A6 waits to accumulate); a row a
+  person's verdict labelled is never pruned and never counts toward the cap; losses counted as
+  `learning.decision_record.pruned` / `.truncated`. At 58 live rows the counter is the part that earns
+  its place, as the study predicted.
+  🔴 **Found beside it and fixed in the same PR: `GET /learning/decisions` served every row's `context` —
+  users' questions, verbatim — to an UNAUTHENTICATED caller** (HTTP 200, no auth header, 58 rows). Rows
+  are now served metadata-only, with `payload_withheld` saying why. ⚠️ Still open: the column itself is
+  stored verbatim, with no retention beyond the row cap.
 - 🛑 **A6 — an optimizer over definitions. HOLD, with the number.** GEPA over a definition optimizes
   against human labels; we have five verdicts, none carrying `sql_source`, unchanged in sixteen days. An
   optimizer on that corpus is an optimizer on noise. Revisit at ~150 labeled decisions with outcomes at
@@ -7079,6 +7239,18 @@ with a typed filter language (the minimum viable experiment tracker).
 **Falsifier:** ships real releases + auth, AND we own enough training volume that a
 containerized offline *factory* (beside the product, never in it) beats rented
 fine-tuning — then the factory question reopens, against Flyte/Metaflow as controls.
+
+### 4.6 · An ontology export to Microsoft Fabric IQ — REFUSED (2026-09-21)
+
+The Fabric IQ study (§3.15, amended 2026-09-11) found that Fabric's ontology item wants exactly what Aughor
+measures — object types with a verified key and a display property, properties bound to their source columns,
+relationships with a cardinality, ids stable across exports — and asked in §6 item 16 whether to build an
+export door. The recommendation was to defer until a customer on Fabric asked. **The user refused it outright
+when asked, 2026-09-21.** The case against it on record is §0's: the measured ontology feeding this platform's
+own agents is the moat, and an export hands it to another vendor's. An RDF/OWL export is the same question and
+the same answer. Re-propose only with new facts: a customer on Fabric asking, and Fabric's published
+item-definition format verified against Microsoft's documentation (the playground's `fabric.ts` is a community
+implementation, not a contract).
 
 ## 5 · Sequencing
 
@@ -7211,7 +7383,7 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
         MI-0 annex ✅ DECIDED (§6.7b); remaining code: the langfuse.trace.input gate
         MI-1 grade what already runs · MI-2 verdict pins evidence — substrate-sized,
              may ride alongside any band above
-        MI-2b ✅ BUILT 2026-09-20 (`3b642c2a`, BRANCH ONLY — no PR, not on main) — the journal
+        MI-2b ✅ BUILT 2026-09-20, MERGED #532 (`d91fb9be`) — the journal
              had no sweep at all: 430,768 events over 95 days, 76.8% of them unreachable by
              aughor_ops's 100k snapshot; scoped retention (named chatter only, 2-day window +
              50k cap, bounded at 20k/sweep, driven by emit) · Migration 12's trace and
@@ -7295,14 +7467,16 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
         ⚠ cross-user Know waits on VA-10's auth decision
         SECOND MOVEMENT ✅ ADOPTED 2026-09-15 (§6 item 22 (a)) — authoring by sentence: the user's own
              ⌘K turn measured six breaks between a draft and an agent that runs
-        SP-7 ✅ BUILT 2026-09-15 (session branch, unmerged; live receipt waits on the user) — honest
+        SP-7 ✅ MERGED #506, widened in #511 — honest
              drafts: a real schema or none · a channel or sender the
              request did not name stays open, and Accept refuses until it is filled · the first
              run stated · drafted declared writes wait for a person · the guide's labels pinned
-        SP-8 agent + its schedule, one proposal (needs SP-7) → SP-9 the approval card → SP-10 show
-             the work (22 b) · SP-11 revise in place → SP-12 edit, monitor, brief · SP-13 your
-             timezone · SP-14 on by default (needs SP-12, SP-M; 22 d) · SP-M measure authoring,
-             alongside every band
+        SP-8 agent + its schedule, one proposal · SP-9 the approval card ✅ MERGED #508 → SP-10 show
+             the work (22 b) ✅ MERGED #509 · SP-11 revise in place · SP-12 edit, monitor, brief ·
+             SP-13 your timezone · SP-14 on by default (first slice; 22 d) · SP-M measure authoring
+             ✅ ALL MERGED #510. The movement is closed; §3.11 carries each wave's receipts and
+             leftovers. (This band read "session branch, unmerged" for five PRs after the merges —
+             corrected 2026-09-21.)
 ARC HB  ✅ ADOPTED 2026-09-16 (§3.18; §6 item 24 (a)(b)(d) stamped on the user's "go"; HB-1 first
         slice started the same day) — the hub: people still come to the platform, and it also
         receives data and exports intelligence. Measured 2026-09-15: no email either way, neither a
@@ -7339,12 +7513,11 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         published figures reproduced, no model. 🔴 banking ships `status: draft`, so gate 6 keeps it
         INERT until a person activates it — the next act on this wave is a REVIEW, not a build.
         Next, after that review: payments & fintech (it reuses banking's parties, accounts and
-        transactions), then insurance. ⚠️ This band also carried "the runtime reads a package's
-        anatomy" as the first next step; that was written BEFORE #520 and has not been
-        re-measured since. On `c7085899` the word lives in the loader and both gates
-        (`packs/loader.py`, `gate3.py`, `gate4.py`) — whether the AGENT runtime consumes it is the
-        open question, and it is one grep away for whoever schedules this. Re-measure before
-        scheduling from it; a catalogue is a measurement with a timestamp.
+        transactions), then insurance. ✅ "The runtime reads a package's anatomy" is ANSWERED by
+        #534 (`06d9d296`, 2026-09-21): measured first, the agent runtime consumed none of it; now
+        an active package's plays reach the playbook store and its typed metric recipes reach the
+        prompt, `resolve_recipes` and `metric_vocabulary` — gate 6 held by construction, so draft
+        banking still contributes nothing. A package's questions are not covered (§3.17).
         The user, 2026-09-17: finish Arc IP before Arc IN
 ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE clauses decided the same day) —
         the authored step. ✅ ALL THREE BUILT 2026-09-19 in the user's order — DS-17b (ranking was NOT
@@ -7396,13 +7569,40 @@ ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. 
              for a measurement nobody has taken); item 25 (d)'s short address is not invented.
         ⏳ Still owed: `migrate-state` has NEVER run for real — it needs the API stopped, which is
              the operator's, and until then every path resolves exactly as before, which is the
-             design and not an omission. `connectors/api/base_sync.py` still has no env override
-             and is invisible to BOTH hermeticity guards. `metrics.json` and `ontology_overrides/`
-             are tracked AND runtime-written; the overlay that resolves that is its own slice.
-             Re-running `install.sh` on an existing clone still does not update it.
-ARC JD  ⏳ DRAFTED 2026-09-17, RECORDED 2026-09-20 (§3.20; §6 item 28) — the judgment seam: one state,
+             design and not an omission.
+             ✅ The overlay BUILT 2026-09-21 (branch `claude/roadmap-catch-up-535`, not merged): the
+             catalogue's seed ships at `data/shipped/metrics.json`, this install's rows live in the
+             ignored `data/metrics.instance.json`, and `data/metrics.json` is FROZEN — upstream never
+             changes it again, so an install that wrote to it still fast-forwards. It is read once,
+             in memory, and converted, verified, on the first metric write. `ontology_overrides/`
+             gains a shipped seed layer (empty) and stays in the checkout. `glossary.yaml` split
+             the same way the same day (seed `data/shipped/glossary.yaml`, instance
+             `data/glossary.instance.yaml`; the generated sidecar stays where it always resolved).
+             ⏳ Still owed from it: `context_graph/` and `ontology_column_config/` are tracked and
+             rewritten by the app too — the same stranding, in other stores; and moving
+             `ontology_overrides/` into the data home needs a verified top-up step, because an
+             install that already migrated never received it.
+             ✅ Closed in #535: `connectors/api/base_sync.py` resolves through `state_dir()`, whose
+             env both hermeticity guards already carry, so `migrate-state` no longer leaves it
+             behind · re-running `install.sh` / `install.ps1` on an existing clone fast-forwards it
+             through the function `aughor update` uses — a refusal or an error is one line and never
+             fails the install.
+ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 BUILT on the user's flip the same night; JD-6 on HOLD); drafted 2026-09-17, recorded 2026-09-20 — the judgment seam: one state,
         N independent typed questions, a closed answer space, and a probability our code bands on.
-        Nothing from the JD series built. ⚠️ The numbers are NOT the ones the draft asked for: it was
+        ✅ MERGED #535 (`583c8d9f`) 2026-09-21: JD-4 the instrument · JD-1 the seam (wired into no
+        production path; its probability is STATED, not measured) · JD-3 the banded cascade (OFF,
+        `semops.banded_cascade`) · JD-2's three survivors · A3 the definition-report screen · A5 the
+        decision budget. ✅ JD-3's receipt TAKEN 2026-09-21 — falsifier did not fire (2 holds, 1 inconclusive with banding
+        more accurate; the cheap and champion tiers are one model here) — then SLIMMED the same night (0.58× the request,
+        banded ≈ 0.92× sampled total tokens, re-cost) and the token objection closed. ✅ JD-5's receipt TAKEN LIVE
+        2026-09-21 (`docs/JEV_LIVE_RECEIPT_2026-09-21.md`): Jev beats production +2.6 (CI +1.1 to +4.2) at zero champion
+        calls, 2.6× cheaper, passes the shuffled-context control — VERDICT KEEP. Then the user: "Flip the flag on and
+        build the Jev binding" — JD-3 GRADUATED to default-ON (sampled cascade = the kill switch) and JD-5 BUILT
+        (`aughor/judgment/jev.py`: flag `semops.jev_cheap_tier` OFF by default, PII withholds whole bundles, outbound
+        seam counts every call, house-tier fallback so an outage is yesterday, never a champion flood; smoke-tested
+        live end-to-end). pg-jev examined, not adopted. ⏳ JD-1's and JD-4's corpus receipts are still model calls. JD-4's first run
+        took no reading on three of five measures; the floor is `choice_prior` 44.8%.
+        ⚠️ The numbers are NOT the ones the draft asked for: it was
         written on an unmerged branch claiming §3.19 / item 25, which Arc IN took the same day, so it
         renumbers here and Arc IN is untouched — and item 28 therefore follows items 26 and 27
         (2026-09-19) while predating them. Measured 2026-09-17: the deep path is ~100% phase-serial LLM
@@ -7419,8 +7619,8 @@ ARC JD  ⏳ DRAFTED 2026-09-17, RECORDED 2026-09-20 (§3.20; §6 item 28) — th
         attributable 0 → 8 on `ask.route`, 0 → 5 on `converse.tool`, but confidence 1.00 on all 8, so
         A2 has no usable ranking signal yet · ✅ A4 the frozen-population rule BUILT (`407f0a4c`) —
         LuxExperience's refund breach 23.27% → 25.41% once 4,199 impossible rows stop counting as kept
-        · ⏳ A2 (needs JD-1) · ⏳ A3 (needs A4) · ⏳ A5 · 🛑 A6 HOLD until ~150 labeled decisions.
-        The user has not sequenced this arc against Arc IN; both are drafted and unbuilt.
+        · ⏳ A2 (JD-1's seam exists; now waits on a site that yields a probability at all —
+        `converse.tool` never does) · ✅ A3 · ✅ A5 (#535) · 🛑 A6 HOLD until ~150 labeled decisions.
 ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — ON-0 STARTED. The user's challenge
         ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
         measured and largely confirmed: table = entity by construction; no instance
@@ -7865,6 +8065,11 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-20, later:** item 29 (a measurement that refutes its own number does not leave)
 > arrived from A4's receipt and was decided in the same turn. Open: 16, 18(c), 22(c), 24(f·g), 25,
 > 28(a·c·d·e·f).
+> **Amended 2026-09-21:** every open item put to the user and answered in one sitting. 16 REFUSED, not deferred
+> (§4.6). 18(c) neither host offered: theLook, the live warehouse, is the go-to connection. 22(c) Accept stays the
+> arming. 24(f) email holds for the OAuth client; 24(g) §0's amendment adopted. 25(a) stamped as shipped, and (c),
+> (d), (e) offered and not chosen. 28 adopted — (a), (c), (f) — with JD-5 and JD-6 on hold. **The register is back
+> at zero open.**
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -8026,7 +8231,7 @@ the browser** · **measure the premise before building.**
     both blocks. No new ontology prose is built toward the prompt. The blocks that already reach
     it are untouched by this decision — removing them (keeping only those a guard cites) is its
     own measured change, not a side effect of cancelling a wave.
-16. ⏳ **OPEN (2026-09-11, not scheduled) — export the measured ontology to Microsoft Fabric IQ?**
+16. ✅ **DECIDED 2026-09-21 (the user) — REFUSED: no export of the measured ontology to Microsoft Fabric IQ (§4.6).**
     Arrived with the Fabric IQ study (§3.15, "Amended 2026-09-11"). Fabric's ontology item wants what
     Aughor measures and Microsoft's own playground export drops: object types with a verified key and a
     display property, properties bound to their source columns, relationships with a cardinality, and ids
@@ -8039,6 +8244,8 @@ the browser** · **measure the premise before building.**
     and once Fabric's published item-definition format is verified against Microsoft's documentation — the
     playground's `fabric.ts` is a community implementation, not a contract.
     *Recommended: not now; revisit when a customer on Fabric asks, with (b)'s preconditions.*
+    **The user refused it outright rather than defer, 2026-09-21** — recorded in §4.6 so it is not re-proposed
+    without new facts.
 
 17. ✅ **DECIDED 2026-09-12 — Arc MT is not the next build, and not while this runs locally.** Asked what
     followed ON-5, the recommendation was MT-0 + MT-1 (§3.12's own "next"). The user: *"MT-0 and MT-1 make no
@@ -8050,7 +8257,7 @@ the browser** · **measure the premise before building.**
     saying hosting matters. The signal was there a month earlier — MT-2 was keyed on a Google OAuth client the
     user never created — and was read as waiting rather than as not wanted.
 
-18. ⏳ **OPEN (2026-09-12, none blocks ON-7) — the second movement's shape questions.** Arrived with the
+18. ✅ **DECIDED — the second movement's shape questions, all three answered ((c) 2026-09-21).** Arrived with the
     adoption of ON-7…ON-10 (§3.15, "Amended 2026-09-12 — the SECOND MOVEMENT"). The user fixed the order's
     head (ON-7 first) and added ON-7b; three shape questions remain, each with a recommendation:
     ✅ **(a) The scope key for ON-8 — TAKEN AS RECOMMENDED 2026-09-14.** The organisation, or a named DOMAIN inside it
@@ -8083,6 +8290,12 @@ the browser** · **measure the premise before building.**
     dispatch lags so the demo pack can host the question. *Recommended: Olist first — no generator change,
     real data; the pack enrichment follows as its own small, deterministic change so the demo can tell the
     story.*
+    ✅ **(c) DECIDED 2026-09-21 (the user) — neither: theLook.** Asked whether to enrich the LuxExperience
+    generator, the user answered *"thelook should be the go-to connection as it updates daily.."* — so these
+    receipts, and a demo of them, are hosted on a live warehouse rather than on a frozen dataset or a generator,
+    and the Lux generator is not changed. ⚠️ theLook keeps rewriting its most recent days (measured earlier: its
+    counts are a function of a row's age), so a receipt taken there states its as-of date and leaves the
+    unsettled window out.
 
 
 19. ✅ **DECIDED 2026-09-13 — Instrument (§3.16): what the first pass covers, and the two places the design met a
@@ -8171,7 +8384,7 @@ the browser** · **measure the premise before building.**
     ✅ **(b) DECIDED 2026-09-15 (the user) — both, as recommended.** Asked as "markdown renderer plus cards, or cards
     only" with the recommendation stated; the user answered "Go for SP-10" on it. react-markdown + remark-gfm carry
     the prose behind an allowlisted, designed surface (§3.11 SP-10); the cards carry the acts.
-    ⏳ **(c) Accept stays the arming** — or a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
+    ✅ **(c) DECIDED 2026-09-21 (the user) — Accept stays the arming, as recommended** — not a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
     refuses while a choice is still open and the first run is stated, so a second click would add no check.* SP-7 is
     built on the recommendation; the call stays the user's.
     ✅ **(d) DECIDED 2026-09-16 (the user) — graduate AFTER the richer-fixture re-record, as recommended.** Asked with
@@ -8189,8 +8402,9 @@ the browser** · **measure the premise before building.**
     design system, never the Teams card aesthetic — the user's standing rule that chat feels like a frontier-LLM
     conversation points the same way.
 
-24. ⏳ **DRAFTED 2026-09-16 (the user: "Create a roadmap now") — Arc HB, the hub (§3.18): the shape decided in
-    conversation 2026-09-15; (a), (b) and (d) DECIDED 2026-09-16, the rest open with recommendations.** Decided in the
+24. ✅ **DRAFTED 2026-09-16 (the user: "Create a roadmap now") — Arc HB, the hub (§3.18): the shape decided in
+    conversation 2026-09-15; (a), (b) and (d) DECIDED 2026-09-16, (c) and (e) that week, (f) and (g) 2026-09-21 —
+    every clause decided.** Decided in the
     user's own
     words, recorded here so they are not re-asked: the nomenclature does not change — the airport stays an analogy;
     the four people were examples, and the mechanism serves every layer with no layer taxonomy; personas as
@@ -8216,16 +8430,16 @@ the browser** · **measure the premise before building.**
     note recorded with the decision: Olist is a FROZEN historical dataset, so the "number recovered" leg can prove
     its MECHANISM (re-measure at close) but the rate itself cannot move — the receipt reports that plainly.
     **(f) The email channel** — keyed on the Google OAuth client (VA-11); HB-5's email half waits for it.
-    *Recommended: hold.*
+    *Recommended: hold.* **✅ DECIDED 2026-09-21 (the user) — hold, as recommended**, until a Google OAuth client exists.
     **(g) The §0 amendment** as written — the hub as the platform's purpose, the three planes its infrastructure.
-    *Recommended: yes.*
+    *Recommended: yes.* **✅ DECIDED 2026-09-21 (the user) — yes; §0 carries it.**
     Not decided here because it isn't ripe: hosting and uptime (§6 item 17 stands — the hub exports only from where the
     platform runs); persona names beyond the three; row policies by group (HB-1's enforcement half, when identity is
     on).
 
-25. ⏳ **DRAFTED 2026-09-17 (the user: "Lets add this to the roadmap first.. I want to finish IP arc first though..")
-    — Arc IN, the install (§3.19): ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — and (a) was
-    NEVER STAMPED.** The arc shipped on the user's direct instruction ("just take it all in one go and
+25. ✅ **DRAFTED 2026-09-17 (the user: "Lets add this to the roadmap first.. I want to finish IP arc first though..")
+    — Arc IN, the install (§3.19): ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — and (a) STAMPED
+    2026-09-21, as shipped.** The arc shipped on the user's direct instruction ("just take it all in one go and
     finish the Arc"), which also overrode their own "finish Arc IP first" order. Recorded plainly rather
     than back-filled as an adoption: what follows are the recommendations as drafted, and (a) is now moot
     for sequencing but still unanswered as a decision. (b) the data home LANDED as recommended, planned on
@@ -8234,7 +8448,7 @@ the browser** · **measure the premise before building.**
     exactly as recommended. Open, each with the builder's
     recommendation:
     **(a) Adoption and order** — IN-1 and IN-2 first (cheap, low risk, real gaps), IN-3 beside them, IN-4 last with its
-    own plan. *Recommended: yes, after Arc IP.*
+    own plan. *Recommended: yes, after Arc IP.* **✅ STAMPED 2026-09-21 (the user) — adopted as shipped.**
     **(b) A data home (IN-4)** — the state leaves the checkout. *Recommended: yes, planned on its own — it touches every
     store.*
     **(c) The industries question** — it stays in the install (§6 item 21, answer 1), now asked only where a person can
@@ -8245,6 +8459,9 @@ the browser** · **measure the premise before building.**
     **(e) WSL2** — named as supported. *Recommended: measure the installer there first, then say so.*
     **(f) Not copied** — a portable Git Bash, Termux, a root multi-user install, the stage protocol, shell rc edits.
     *Recommended: not now (reasons in §3.19).*
+    **Put to the user 2026-09-21: only (a) was selected.** (c) `--non-interactive` with a Windows-console
+    measurement, (d) the short address and (e) measuring WSL2 were offered and NOT chosen, so none is adopted:
+    the install stays as it shipped — WSL2 named and not claimed, no short address, no new flag.
 
 26. ✅ **DECIDED 2026-09-19 (the user) — Arc DS's second movement, the authored step (§3.7): a `synthesize` node,
     and explicit SQL on the Trusted query step.** Drafted and answered the same day; (a)–(d) stamped in the user's own
@@ -8308,8 +8525,8 @@ the browser** · **measure the premise before building.**
 
 ---
 
-28. ⏳ **DRAFTED 2026-09-17 (the user: "find ways to improve our platform", after reading TypeSafe's Jev
-    and the `jevlike` re-derivation); RECORDED 2026-09-20 — Arc JD, the judgment seam (§3.20): three
+28. ✅ **DRAFTED 2026-09-17 (the user: "find ways to improve our platform", after reading TypeSafe's Jev
+    and the `jevlike` re-derivation); RECORDED 2026-09-20; ADOPTED 2026-09-21 — Arc JD, the judgment seam (§3.20): three
     adoptions that need no vendor, two that wait, and one that was measured and REFUTED before it could
     be built.** ⚠️ **This item is out of date order and deliberately so.** It was drafted two days
     before items 26 and 27 and takes a number after them, because it was written on a branch that never
@@ -8342,14 +8559,22 @@ the browser** · **measure the premise before building.**
     re-validation (`aughor/agent/investigate.py:5676`), and **no counter or event fires on a spec
     repair** — so the receipt this clause named for itself does not exist yet. *Recommendation as
     amended: fix those three on their own merits; do not build a closed option list to remove a failure
-    this corpus says is not happening.*
+    this corpus says is not happening.* ✅ The three were fixed in #535 (§3.20).
     **(c) Confidence bands in the semops cascade (JD-3)** — spend the champion tier on the uncertain
     rows only, and route the band's floor to a person. *Recommended: yes, after (a).*
     **(d) The hosted Jev binding (JD-5)** — one backend behind the seam, off by default, behind the
     outbound grant and the PII gate, never on the verdict path. The state is customer row text leaving
     the box, and Jev's own benchmark puts it at 67.8% against Opus 5's 73.1%. *Recommended: hold until
     (a) exists and can measure it; adopt only for pre-filters and rankings where a wrong answer is cheap
-    and recoverable.*
+    and recoverable.* ✅ **MEASURED LIVE 2026-09-21 at the user's direction** (*"prove me the value …
+    if yes, we keep it; if not, we throw it out"* — the key entered the same evening): **it works, keep
+    it** — +2.6 points over production at zero champion calls, 2.6× cheaper, control passed, ECE's
+    miscalibration confined inside the escalation band; the binding itself stays unbuilt and the flip
+    stays the operator's (`docs/JEV_LIVE_RECEIPT_2026-09-21.md`). `pg-jev` examined the same night and
+    not adopted (Postgres-superuser-only surface; the seam already owns this ground). ✅ **And the
+    operator flipped, in words: "Flip the flag on and build the Jev binding" — JD-3 default-ON, JD-5
+    BUILT** (four gates, house-tier fallback, flag `semops.jev_cheap_tier` awaiting its live-deployment
+    numbers; the hold on (d) is LIFTED by the user's own sentence).
     **(e) The local one-pass scorer (JD-6)** — sovereign, CPU-sized, trained on our own logged
     decisions, weights outside the installer. *Recommended: hold behind (a) and (d)'s measurement; it is
     a pre-filter, not a decider.*
@@ -8360,7 +8585,13 @@ the browser** · **measure the premise before building.**
     on `ask.route` and 0 to 5 on `converse.tool`, and A4 moved LuxExperience's refund-breach rate from
     23.27% to 25.41% by refusing to count 4,199 impossible rows as kept. ⏳ A2 waits on (a)'s
     probability — and A1 measured that probability arriving **flat, 1.00 on all 8**, so (a) has to
-    produce a usable one before A2 means anything. ⏳ A3 waits on A4; ⏳ A5 is small and unstarted.
+    produce a usable one before A2 means anything. ✅ A3 and A5 BUILT in #535 (§3.20).
+    ✅ **ADOPTED 2026-09-21 (the user), as recommended: (a) the seam and the instrument, (c) the bands and (f)
+    the alignment movement — with (d) JD-5 and (e) JD-6 on HOLD, and A6 held on its number.** JD-4, JD-1 and
+    JD-3 were built and merged in #535 before the stamp, the same shape as item 25 (a). Later the same day the
+    operator spent the receipts that were waiting on their word: JD-3's (falsifier quiet; then the seam slimmed
+    and the token objection closed at ≈0.92× — flag still OFF) and JD-5's, LIVE (verdict KEEP; binding still
+    unbuilt). JD-1's agreement receipt and JD-4's corpus receipt remain unspent model calls.
     🛑 A6 (an optimizer over definitions) is HELD on a number: five verdicts, unchanged in sixteen days,
     is an optimizer on noise. 🛑 Refused outright: a label picker that pre-selects the model's own answer.
     Not decided here because it isn't ripe: whether a judgment's probability may ever reach a reader

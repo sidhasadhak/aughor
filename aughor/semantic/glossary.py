@@ -12,9 +12,14 @@ connection type. Both schema paths call apply_glossary() at the end.
 """
 from __future__ import annotations
 
+import hashlib
+import logging
+import os
 import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from aughor.tools.table_names import qualify, resolve_in, same_table
 
@@ -23,16 +28,49 @@ try:
 except ImportError:
     yaml = None  # type: ignore[assignment]
 
-_DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "glossary.yaml"
+logger = logging.getLogger(__name__)
+
+# ── The two layers (IN, the overlay — the metrics catalogue's split, for the same reason) ─────
+#
+# The autoseed sidecar took the model-written entries out of `data/glossary.yaml`, but the file
+# was still shipped content AND this install's glossary: a person's edit, the explorer's column
+# caveats and an agent's grain notes all rewrote it, and every save rewrote it whole. A modified
+# tracked file that upstream also edits refuses the fast-forward that would fix it. So the seed
+# ships at `data/shipped/glossary.yaml` and is never written, this install's entries go to an
+# ignored instance file, and `data/glossary.yaml` is frozen.
+_DATA = Path(__file__).parent.parent.parent / "data"
+#: The INSTANCE layer. Ignored by `.gitignore`; not authored, so `migrate-state` carries it home.
+_DEFAULT_PATH = _DATA / "glossary.instance.yaml"
+#: The SEED layer — what the repo ships. Tracked, and read-only to the app.
+_SEED_DEFAULT = _DATA / "shipped" / "glossary.yaml"
+#: FROZEN. Where every install kept its glossary before the overlay; never written again, never
+#: changed upstream (`test_seed_overlay_frozen`). Read, in memory, until this install's first save.
+_LEGACY_PATH = _DATA / "glossary.yaml"
+#: A byte copy of what `_LEGACY_PATH` shipped as: an entry still equal to it was never this install's.
+_LEGACY_BASELINE = _DATA / "shipped" / "glossary.legacy.yaml"
+
+INSTANCE_FORMAT = "aughor.glossary.instance/1"
+_ABSENT = object()
+_YAML_ERRORS: tuple[type[BaseException], ...] = (yaml.YAMLError,) if yaml is not None else ()
+
+
+class GlossaryStoreError(RuntimeError):
+    """The instance layer cannot be read. Raised, never answered with a thinner glossary."""
 
 
 def _default_path() -> Path:
-    """The glossary file, honouring the ``AUGHOR_GLOSSARY_PATH`` override. The suite points it at a
-    throwaway temp copy (conftest) so the autoseed / knowledge-sync WRITES can never mutate the live
-    ``data/glossary.yaml`` — the non-hermeticity that leaked a glossary edit into two commits
-    (task_213affac). Resolved per call so it always reflects the current env."""
+    """The INSTANCE file, honouring the ``AUGHOR_GLOSSARY_PATH`` override. The suite points it at a
+    throwaway temp copy (conftest) so the autoseed / knowledge-sync WRITES can never mutate live
+    data — the non-hermeticity that leaked a glossary edit into two commits (task_213affac).
+    Resolved per call so it always reflects the current env."""
     from aughor.db.sqlite_util import resolve_db_path
     return resolve_db_path("AUGHOR_GLOSSARY_PATH", _DEFAULT_PATH)
+
+
+def _seed_path() -> Path:
+    """The SEED file, honouring ``AUGHOR_GLOSSARY_SEED_PATH``."""
+    from aughor.db.sqlite_util import resolve_db_path
+    return resolve_db_path("AUGHOR_GLOSSARY_SEED_PATH", _SEED_DEFAULT)
 
 
 # ── Load / Save ───────────────────────────────────────────────────────────────
@@ -44,9 +82,17 @@ def generated_path(authored: Path | None = None) -> Path:
     than configured separately, so it follows ``AUGHOR_GLOSSARY_PATH`` automatically: the
     suite's temp copy gets a temp sidecar, a caller passing an explicit path gets one beside
     it, and there is no second env var to forget to isolate.
+
+    With no path it is where it has ALWAYS resolved — beside `data/glossary.yaml`, which never
+    rehomes — not beside the instance, which does: an install that already ran `migrate-state`
+    keeps writing its sidecar in the checkout, and must keep reading it there.
     """
-    p = Path(authored) if authored else _default_path()
-    return p.with_name(f"{p.stem}_generated{p.suffix}")
+    if authored:
+        p = Path(authored)
+    else:
+        env = os.environ.get("AUGHOR_GLOSSARY_PATH")
+        p = Path(env) if env else _LEGACY_PATH
+    return p.with_name(f"{p.stem.removesuffix('.instance')}_generated{p.suffix}")
 
 
 def _read_yaml(p: Path) -> dict:
@@ -59,6 +105,177 @@ def _read_yaml(p: Path) -> dict:
 def _generated(entry: Any) -> bool:
     """Whether a glossary entry is one a model wrote (autoseed marks it ``auto_generated``)."""
     return isinstance(entry, dict) and bool(entry.get("auto_generated"))
+
+
+# ── The overlay: seed + instance, by shadowable unit ─────────────────────────
+
+Unit = tuple[str, ...]
+
+
+def _flatten(doc: dict) -> dict[Unit, Any]:
+    """A glossary as its SHADOWABLE units, in order: each table entry, each connection's table
+    entry and other keys, each other top-level key. The instance replaces a unit WHOLE — patching
+    fields would carry a shipped description's caveat across a person's rewrite of it."""
+    out: dict[Unit, Any] = {}
+    for k, v in (doc or {}).items():
+        if k == "tables":
+            out.update({("tables", t): e for t, e in (v or {}).items()})
+        elif k == CONNECTIONS_KEY:
+            for cid, section in (v or {}).items():
+                for sk, sv in (section or {}).items():
+                    if sk == "tables":
+                        out.update({(CONNECTIONS_KEY, cid, "tables", t): e for t, e in (sv or {}).items()})
+                    else:
+                        out[(CONNECTIONS_KEY, cid, sk)] = sv
+        else:
+            out[(k,)] = v
+    return out
+
+
+def _unflatten(units: dict[Unit, Any]) -> dict:
+    out: dict = {}
+    for u, v in units.items():
+        if u[0] == "tables":
+            out.setdefault("tables", {})[u[1]] = v
+        elif u[0] == CONNECTIONS_KEY and len(u) == 4:
+            out.setdefault(CONNECTIONS_KEY, {}).setdefault(u[1], {}).setdefault("tables", {})[u[3]] = v
+        elif u[0] == CONNECTIONS_KEY:
+            out.setdefault(CONNECTIONS_KEY, {}).setdefault(u[1], {})[u[2]] = v
+        else:
+            out[u[0]] = v
+    return out
+
+
+@dataclass
+class _Instance:
+    """This install's layer: the units it holds shadow the seed's, and ``hidden`` are units the
+    seed ships that this install removed."""
+    units: dict[Unit, Any] = field(default_factory=dict)
+    hidden: set[Unit] = field(default_factory=set)
+    converted_from: Optional[dict] = None
+
+
+def derive(doc: dict, against: dict) -> _Instance:
+    """What ``doc`` holds of its own, relative to ``against``: a unit equal to it is an echo and
+    follows the seed; any other unit is this install's; a unit ``against`` has and ``doc`` lacks
+    was removed here, and stays hidden. Read out of the frozen file it is judged against the
+    frozen baseline; on a save, against the current seed the writer read its view from."""
+    base, mine = _flatten(against), _flatten(doc)
+    return _Instance(units={u: v for u, v in mine.items() if base.get(u, _ABSENT) != v},
+                     hidden={u for u in base if u not in mine})
+
+
+def _converted_marker(p: Path) -> Path:
+    """Written beside the instance on this install's first save. It outlives the instance file, so
+    a MISSING instance afterwards is an error, not a quiet re-read of the frozen file."""
+    return p.with_name(p.stem + ".converted" + p.suffix)
+
+
+def _parse_instance(p: Path) -> _Instance:
+    doc = yaml.safe_load(p.read_text()) if yaml is not None else {}
+    doc = {} if doc is None else doc
+    if isinstance(doc, dict) and doc.get("format") == INSTANCE_FORMAT:
+        return _Instance(units=_flatten(doc.get("glossary") or {}),
+                         hidden={tuple(h) for h in doc.get("hidden") or []},
+                         converted_from=doc.get("converted_from"))
+    if isinstance(doc, dict):
+        # A plain glossary is a WHOLE one written before the overlay (a named AUGHOR_GLOSSARY_PATH,
+        # or a test's own): all of it is this install's, and a shipped unit it lacks was removed
+        # there — so it reads as it read alone, and only units shipped since arrive.
+        present = _flatten(doc)
+        return _Instance(units=present, hidden={u for u in _flatten(_read_yaml(_LEGACY_BASELINE))
+                                                if u not in present})
+    raise ValueError(f"not a glossary instance file (a {type(doc).__name__})")
+
+
+def _instance() -> _Instance:
+    """This install's layer. Reading it never writes."""
+    p = _default_path()
+    if p.exists():
+        try:
+            return _parse_instance(p)
+        except (OSError, ValueError, TypeError, AttributeError, *_YAML_ERRORS) as exc:
+            logger.error("glossary instance %s is unreadable: %s", p, exc)
+            raise GlossaryStoreError(f"the glossary instance file {p} is unreadable ({exc}). It was left "
+                                     "as it is: repair it or restore it from a backup — do not delete it, "
+                                     "since without it this install's glossary entries are gone") from exc
+    if os.environ.get("AUGHOR_GLOSSARY_PATH"):
+        # A path somebody named IS the instance; an absent one is empty. Falling through to the
+        # checkout's file would hand a test the developer's live glossary.
+        return _Instance()
+    marker = _converted_marker(p)
+    if marker.exists():
+        raise GlossaryStoreError(f"this install's glossary was converted into {p} (recorded in {marker}), "
+                                 f"and that file is missing. Restore it from a backup; {_LEGACY_PATH} no "
+                                 "longer describes this glossary")
+    if not _LEGACY_PATH.exists():
+        return _Instance()
+    return derive(_read_yaml(_LEGACY_PATH), _read_yaml(_LEGACY_BASELINE))
+
+
+def _merge(seed: dict, inst: _Instance) -> dict:
+    """Seed order, each unit the instance holds in the seed's place, hidden units dropped, the
+    instance's own units after."""
+    units: dict[Unit, Any] = {}
+    for u, v in _flatten(seed).items():
+        if u in inst.units:
+            units[u] = inst.units[u]
+        elif u not in inst.hidden:
+            units[u] = v
+    for u, v in inst.units.items():
+        units.setdefault(u, v)
+    return _unflatten(units)
+
+
+def _authored_view() -> dict:
+    return _merge(_read_yaml(_seed_path()), _instance())
+
+
+def _refuse_shipped(p: Path) -> None:
+    """The seed, the frozen legacy file and its baseline are never a write target."""
+    target = Path(p).resolve()
+    for shipped in (_seed_path(), _LEGACY_PATH, _LEGACY_BASELINE):
+        if target == Path(shipped).resolve():
+            raise GlossaryStoreError(f"{p} is shipped content; the glossary is written to the instance "
+                                     f"file ({_default_path()}), never to it")
+
+
+def _atomic_write_yaml(p: Path, data: dict) -> None:
+    """Write-then-rename, so a crash leaves the old file or the new one, never half of either."""
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _write_instance(authored: dict) -> None:
+    """Persist the authored half of a save as this install's layer: what differs from the seed,
+    and what the seed ships that the writer's glossary no longer holds."""
+    p = _default_path()
+    _refuse_shipped(p)
+    current = _instance()                     # raises if a converted instance went missing
+    inst = derive(authored, _read_yaml(_seed_path()))
+    inst.converted_from = current.converted_from
+    first = not p.exists() and not os.environ.get("AUGHOR_GLOSSARY_PATH") and _LEGACY_PATH.exists()
+    if first:
+        raw = _LEGACY_PATH.read_bytes()
+        inst.converted_from = {"path": str(_LEGACY_PATH), "sha256": hashlib.sha256(raw).hexdigest(),
+                               "size": len(raw), "at": datetime.now(timezone.utc).isoformat()}
+    payload: dict = {"format": INSTANCE_FORMAT, "glossary": _unflatten(inst.units),
+                     "hidden": [list(u) for u in sorted(inst.hidden)]}
+    if inst.converted_from:
+        payload["converted_from"] = inst.converted_from
+    _atomic_write_yaml(p, payload)
+    if first:
+        _atomic_write_yaml(_converted_marker(p), inst.converted_from)
+        logger.info("glossary: converted %s into %s (%d units, %d hidden)",
+                    _LEGACY_PATH, p, len(inst.units), len(inst.hidden))
 
 
 def _load_raw(path: Path | None = None) -> dict:
@@ -78,9 +295,12 @@ def _load_raw(path: Path | None = None) -> dict:
     The re-join is per table key, authored winning — the same direction as the merge below,
     so a key present in both reads exactly as it did when both lived in one file. Reading
     is therefore unchanged for every caller, marker and all.
+
+    With no ``path`` the authored half is the overlay: the shipped seed with this install's
+    instance laid over it (`_authored_view`). A named ``path`` is read alone, as before.
     """
-    authored_p = Path(path) if path else _default_path()
-    authored = _read_yaml(authored_p)
+    authored_p = Path(path) if path else None
+    authored = _read_yaml(authored_p) if authored_p else _authored_view()
     generated = _read_yaml(generated_path(authored_p))
     if not generated:
         return authored          # nothing split out (yet, or ever) — byte-identical behaviour
@@ -305,21 +525,19 @@ def _write_yaml(p: Path, data: dict) -> None:
 def save_glossary(data: dict, path: Path | None = None) -> None:
     """Persist the glossary, routing each table entry to the file that owns it.
 
-    ``auto_generated: true`` → the gitignored sidecar; everything else → the tracked
-    authored file. Every caller (``update_table``, ``update_column``, the autoseed writer)
-    is unchanged: they still hand over one dict, and the partition happens here, in the one
-    place that already knew how to write.
-
-    This also migrates in place. The tracked file currently holds both kinds; the first
-    save moves the generated ones out, so an app run cleans up after itself instead of
-    needing a script.
+    ``auto_generated: true`` → the gitignored sidecar; everything else → the authored layer,
+    which with no ``path`` is this install's INSTANCE (what differs from the shipped seed, and
+    what the seed ships that ``data`` no longer holds) and never the tracked file. Every caller
+    (``update_table``, ``update_column``, the autoseed writer) is unchanged: they still hand
+    over one dict, and the partition happens here, in the one place that already knew how to
+    write. A named ``path`` is written whole, as before.
 
     The sidecar is only created when there is something to put in it — a deployment that
     never runs the autodoc keeps exactly one file, as before.
     """
     if yaml is None:
         raise RuntimeError("PyYAML is required: uv add pyyaml")
-    authored_p = Path(path) if path else _default_path()
+    authored_p = Path(path) if path else None
     tables = (data or {}).get("tables") or {}
 
     generated = {t: e for t, e in tables.items() if _generated(e)}
@@ -350,8 +568,13 @@ def save_glossary(data: dict, path: Path | None = None) -> None:
                 rest[k] = sections_authored
             continue
         rest[k] = v
-    _write_yaml(authored_p, {**rest, "tables": authored} if tables or rest or sections_generated
-                else dict(data or {}))
+    authored_doc = ({**rest, "tables": authored} if tables or rest or sections_generated
+                    else dict(data or {}))
+    if authored_p is None:
+        _write_instance(authored_doc)     # the overlay: never the tracked file
+    else:
+        _refuse_shipped(authored_p)
+        _write_yaml(authored_p, authored_doc)
 
     gen_p = generated_path(authored_p)
     if generated or sections_generated:

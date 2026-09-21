@@ -1,0 +1,805 @@
+{
+ "source": "bigquery-public-data.thelook_ecommerce.products, fetched 2026-09-21 through the running API (/query/run)",
+ "rows": [
+  [
+   "211",
+   "Patty Women Sexy V Neck Ruched Bust Long Sleeve Blouse Top"
+  ],
+  [
+   "11977",
+   "A3006S013 - Black Diamante Corset with Tutu"
+  ],
+  [
+   "12234",
+   "Popsi Lingerie Shelf Bra Babydoll With Matching G-String"
+  ],
+  [
+   "1436",
+   "Lucky Brand Women's Lana Cowl Neck Poncho"
+  ],
+  [
+   "403",
+   "Allegra K Sheer Long Sleeves Round Neck Pullover Shirt L for Ladies"
+  ],
+  [
+   "7558",
+   "Vivienne Westwood Anglomania Women's New Petite Jacket"
+  ],
+  [
+   "3746",
+   "Blue Banana - Grecian Slinky Dress"
+  ],
+  [
+   "9246",
+   "CEP Women's Compression Ski Socks"
+  ],
+  [
+   "16010",
+   "Volcom Men's Blackout Mix Polo Slubbed Short Sleeve"
+  ],
+  [
+   "10821",
+   "Hanes Elegance Nylon Hi-Cut Brief # P573CA"
+  ],
+  [
+   "21934",
+   "Tru-Spec 24-7 Lightweight Tactical Pants Navy Blue"
+  ],
+  [
+   "25985",
+   "Slim Fit Cotton Crew - 3 pack"
+  ],
+  [
+   "17139",
+   "DC Men's Star Ph1 Top"
+  ],
+  [
+   "272",
+   "Harriton Ladies 5 oz Easy Blend Polo Shirt. M265W"
+  ],
+  [
+   "10379",
+   "Le Mystere Women's Dream Tisha"
+  ],
+  [
+   "4428",
+   "Lucky Brand Women's Wescoat Sweet N Low Five-Pocket Jean"
+  ],
+  [
+   "13041",
+   "BLOW OUT PRICE!!! CLOSE OUT PRICE!!! Speedo FastSkin Female High Neck Knee Skin High Performance Competition Swim Suit (MADE IN THE USA) Size-25 --Color: Blue"
+  ],
+  [
+   "28479",
+   "Oakley Men's Flak Jacket XLJ Iridium Sunglasses"
+  ],
+  [
+   "12763",
+   "Speedo Women's Mighty Python Xtra Life Lycra Flyback Performance Swimsuit"
+  ],
+  [
+   "8687",
+   "Allegra K Ladies Puff Sleeves Tired Lining Tunic Casual Autumn Coat S"
+  ],
+  [
+   "19235",
+   "Farah Men's The Falcon Cardigan"
+  ],
+  [
+   "14117",
+   "Anne Klein Women's Ombre Stripe Neckwrap"
+  ],
+  [
+   "5150",
+   "Allegra K Women Black White Striped Sport Stretchy Skinny Harem Pants S"
+  ],
+  [
+   "4076",
+   "Anna-Kaci S/M Fit Brown Wild Cheetah Mock One Shoulder Layer Lace Trim Romper"
+  ],
+  [
+   "26374",
+   "DKNY Men's Digital Print Camo Hip Trunk"
+  ],
+  [
+   "26152",
+   "Harbor Bay Big & Tall 2-Pack Knit Boxers"
+  ],
+  [
+   "1091",
+   "Ed Hardy Long Sleeve V-Neck Mesh Hooded Sweater -Black"
+  ],
+  [
+   "22439",
+   "Caterpillar Men's Skill Pro Pant"
+  ],
+  [
+   "23768",
+   "Mountain Hardwear Men's Mountain Tech Jacket"
+  ],
+  [
+   "5365",
+   "Allegra K Woman Drawstring Elastic Waist Corduroy Harem Pants Army Green M"
+  ],
+  [
+   "23684",
+   "Columbia Men's Tall Steens Mountain Full Zip"
+  ],
+  [
+   "185",
+   "UltraClub Ladies Classic Wrinkle-Free Long-Sleeve Oxford Shirt. 8990"
+  ],
+  [
+   "19064",
+   "Alex Stevens Men's Full-Zip Military Cardigan"
+  ],
+  [
+   "3580",
+   "VIP Womens Ladies Belted Pleated Skater Party Dress"
+  ],
+  [
+   "3015",
+   "Straight Leg Yoga Pant"
+  ],
+  [
+   "17809",
+   "Superdry Training Zip Hoodie- Navy Marl"
+  ],
+  [
+   "7273",
+   "Alfred Dunner Classics Elastic Waist Straight Skirt"
+  ],
+  [
+   "8749",
+   "Columbia Women's Arch Cape Trench Coat"
+  ],
+  [
+   "22016",
+   "Dockers Men's Limited Offer Big & Tall D2 Straight Fit Khaki Pant"
+  ],
+  [
+   "14915",
+   "Motherhood Maternity: Secret Fit Belly(r) Twill Front Slash Pockets Maternity Crop Pants"
+  ],
+  [
+   "20173",
+   "Men's 2 Button Luxury Natural Fabric Brown Windowpane Sport Coat"
+  ],
+  [
+   "22676",
+   "Carhartt 100098 Men's Weathered Duck Double-Front Dungaree Black 38W x 30L"
+  ],
+  [
+   "24555",
+   "Thorlo Unisex Combat Boot Overcalf Socks"
+  ],
+  [
+   "16813",
+   "I Have Daughters Father's Day T-Shirt"
+  ],
+  [
+   "25191",
+   "PACT Men's Crew Sock"
+  ],
+  [
+   "19176",
+   "Arrow Men's 12GG Classic Color Block Sweater"
+  ],
+  [
+   "22882",
+   "Dickies Men's Traditional Flat Front Work Short"
+  ],
+  [
+   "24289",
+   "Tri-Mountain Men's Big And Tall Contrast Color Panda Fleece Vest. 8350"
+  ],
+  [
+   "14181",
+   "Buckle-Down Ford Mustang Black Seatbelt Belt"
+  ],
+  [
+   "25057",
+   "Dockers Men's 3-Pack Performance Dress Pin Dot Pattern Socks"
+  ],
+  [
+   "4414",
+   "Lucky Brand Women's Sweet-N-Flare Five Pocket Jean"
+  ],
+  [
+   "28642",
+   "Oakley Men's Plaintiff Round Sunglasses"
+  ],
+  [
+   "13018",
+   "Black Affair Underwire"
+  ],
+  [
+   "29111",
+   "Cole Haan Webster Belt"
+  ],
+  [
+   "24844",
+   "Dickies Men's Industrial Strength Flat Knit Crew 3-pack Socks"
+  ],
+  [
+   "8190",
+   "Tahari Women's Double Breasted Jacket & Pant Suit 12 [Apparel] [Apparel]"
+  ],
+  [
+   "28885",
+   "TopTie Unisex Elastic Y-Back Suspenders 1 inch(3CM) Solid J-Clip Suspender--Black"
+  ],
+  [
+   "13705",
+   "Michael Stars Women's Crepe Scarf"
+  ],
+  [
+   "24369",
+   "Brooks Men's Utopia Soft Shell Jacket"
+  ],
+  [
+   "6745",
+   "Allegra K Woman Guipure Cake Layered Black Belted Divided Skirt XS"
+  ],
+  [
+   "913",
+   "Blue Banana - Long Sleeve Shrug"
+  ],
+  [
+   "20031",
+   "FactoryExtreme Neptune Men's Black Biker Leather Jacket"
+  ],
+  [
+   "23022",
+   "Canyon Ridge Big & Tall Elastic-Waist Twill Shorts"
+  ],
+  [
+   "16355",
+   "Harley-Davidson\u00c2\u00ae Men's Black Label #1 HDMC Long Sleeve Ride 2 Live T-Shirt. 302917340"
+  ],
+  [
+   "5162",
+   "Hurley Juniors Slam Dunk Pant"
+  ],
+  [
+   "23193",
+   "Perry Ellis Men's Ombre Plaid Flat Front Short"
+  ],
+  [
+   "11332",
+   "Flattering Me Longline Bridal Bra Bustier 728"
+  ],
+  [
+   "10712",
+   "Classics Womens Stretch Sport Bikini Assorted"
+  ],
+  [
+   "3307",
+   "Switchblade Stiletto Womens DARLING DRESS in Choice of Colors and Patterns"
+  ],
+  [
+   "3640",
+   "Ever Pretty Women's Duchess Lace Long Dress"
+  ],
+  [
+   "16925",
+   "G by GUESS Poler Tee"
+  ],
+  [
+   "8584",
+   "Mountain Hardwear Women's Citilicious Coat"
+  ],
+  [
+   "4520",
+   "Not Your Daughter's Jeans Women's Petite Alina Legging"
+  ],
+  [
+   "26772",
+   "Tommy Bahama Men's Thermal Knit Sleep Pant"
+  ],
+  [
+   "2239",
+   "Ed Hardy Womens Gradient Love is A Gamble Hoodie - Purple"
+  ],
+  [
+   "24087",
+   "Kenneth Cole Men's Wool Peacoat With Sweater Insert"
+  ],
+  [
+   "11329",
+   "Assets by Sara Blakely Standout Slimmers Tank Slip (1649)"
+  ],
+  [
+   "25317",
+   "Icebreaker Men's Hike+id Crew Socks"
+  ],
+  [
+   "7487",
+   "Robert Rodriguez Women's Tux Boyfriend Blazer"
+  ],
+  [
+   "28000",
+   "Beach Depot UPF 50+ Men's Short Sleeve Rash Guard Shirt"
+  ],
+  [
+   "19030",
+   "RVCA Men's Skaville Cardigan"
+  ],
+  [
+   "2663",
+   "prAna Women's Bliss Capri"
+  ],
+  [
+   "6848",
+   "American Apparel Unisex Sateen Kool Short"
+  ],
+  [
+   "999",
+   "Black Tribal Fringe Wool Sweater Cardigan Fits US Size 4 - 8 (Item# 5116B)"
+  ],
+  [
+   "10653",
+   "Comfort Choice Plus Size Bra cotton everyday wirefree Leisure Bra"
+  ],
+  [
+   "24943",
+   "Gold Toe Cotton Quarter 6-Pack Socks"
+  ],
+  [
+   "9062",
+   "Nine West Women's Floral Textured and Solid Flat Knit 3 Pair Pack Knee High Sock"
+  ],
+  [
+   "19834",
+   "Ben Sherman Men's Plectrum Tuxedo Blazer"
+  ],
+  [
+   "10518",
+   "Maidenform Women's Custom Lift? Tailored Satin Demi Bra #9729"
+  ],
+  [
+   "19907",
+   "Men's Single Breasted One Button White 3 Pcs Vested Tuxedo Slim Fit"
+  ],
+  [
+   "17121",
+   "Southpole Men's Sleeveless Striped Full Zip Basic Vest With Hoody"
+  ],
+  [
+   "11028",
+   "Felina Women's Lace Appeal Low Rise Thong"
+  ],
+  [
+   "20892",
+   "7 For All Mankind Men's Austyn Relaxed Straight Leg Jean in Watercrest"
+  ],
+  [
+   "6377",
+   "BLANK NYC Women's I Get Around Shorts"
+  ],
+  [
+   "28136",
+   "ALPINESTARS Men's Stick It Boardshort"
+  ],
+  [
+   "19426",
+   "Matix Men's Burbank Sweater"
+  ],
+  [
+   "24464",
+   "Grey Navy Multi-colored Stripe Mens Dress Sock - PACT"
+  ],
+  [
+   "16261",
+   "Billabong - Billabong Tee - BBR"
+  ],
+  [
+   "24831",
+   "Puma Men's Mens 2 Pack No ShowBlackSize 10-13"
+  ],
+  [
+   "11181",
+   "Bali Women's Lace And Smooth Camisole Top"
+  ],
+  [
+   "15754",
+   "Carhartt Women's Hooded Sweatshirt"
+  ],
+  [
+   "28557",
+   "Black Silk Pre-Tied Bow Tie"
+  ],
+  [
+   "20777",
+   "Wrangler Men's Rugged Wear Classic Fit Jean"
+  ],
+  [
+   "14803",
+   "Motherhood Maternity: Plus Size Petite Secret Fit Belly(r) Maternity Jeans"
+  ],
+  [
+   "26211",
+   "Tommy Hilfiger Men's Football Woven Boxer"
+  ],
+  [
+   "13072",
+   "KENNETH COLE REACTION Tiered Halter & Print Banded Bottom Tankini Set [RS2SL89/RS2SU96] Black"
+  ],
+  [
+   "839",
+   "Design History Women's Jersey Stripe Sweater"
+  ],
+  [
+   "22815",
+   "Unionbay Men's Salem Yd Cargo Short"
+  ],
+  [
+   "10452",
+   "Lilyette Women's Dream Minimizer"
+  ],
+  [
+   "8413",
+   "The North Face S-XL Gotham Jacket"
+  ],
+  [
+   "20948",
+   "7 For All Mankind Men's The Brett Boot Leg Modern Jean"
+  ],
+  [
+   "982",
+   "Womens Lambswool Turtle Neck Sweater"
+  ],
+  [
+   "6448",
+   "Not Your Daughter's Jeans Women's Plus-Size Hannah Short"
+  ],
+  [
+   "9589",
+   "Intimo Women's Plush Fleece Robe"
+  ],
+  [
+   "3583",
+   "Wrapper Cap-Sleeve Scoop-Neck Maxi Dress"
+  ],
+  [
+   "11547",
+   "Comfort Choice Plus Size 2-Pack Half Slip 31 \u00c2\u00ae"
+  ],
+  [
+   "10493",
+   "NuBra Feather Lite"
+  ],
+  [
+   "1",
+   "Seven7 Women's Long Sleeve Stripe Belted Top"
+  ],
+  [
+   "4645",
+   "AG Adriano Goldschmied Women's Stilt In Willow Jean"
+  ],
+  [
+   "25100",
+   "WrightSock Anti-Blister Double Layer WALKING Crew Sock"
+  ],
+  [
+   "4071",
+   "TAUPE JUMPSUIT LACING POCKETS LAGENLOOK - FITS (ONE SIZE) - L 1X 2X -T592S LOTUSTRADERS"
+  ],
+  [
+   "20789",
+   "Dockers Men's 5 Pocket Straight Fit Jean"
+  ],
+  [
+   "11602",
+   "4 Bone Hoop Skirt Bridal Wedding Slip (140DSXF)"
+  ],
+  [
+   "25043",
+   "HUGO BOSS Men's Boss Black Solid Sock With HUGO BOSS Logo"
+  ],
+  [
+   "18111",
+   "Hanes Men's 10-Pack Classics Cushion Crew Socks 6-12"
+  ],
+  [
+   "13032",
+   "Black diamond Mini dress Swim cover up"
+  ],
+  [
+   "13664",
+   "LibbySue-Essential Solid Crinkle Scarf"
+  ],
+  [
+   "15266",
+   "Smartwool Women's Jovian Stripe Sock"
+  ],
+  [
+   "23143",
+   "Hurley Men's Winston Trouser Walkshort"
+  ],
+  [
+   "21022",
+   "Diesel Men's Thavar Skinny Straight Leg Jean"
+  ],
+  [
+   "7831",
+   "Parker Women's Leather Jacket"
+  ],
+  [
+   "19130",
+   "Paul Fredrick Silk Cotton \\ Cashmere Mock Collar Sweater"
+  ],
+  [
+   "22998",
+   "Hurley Men's Mariner Cargo Boardwalk Short"
+  ],
+  [
+   "17926",
+   "12XLShop Hooded Sweat Jacket with Tribal Motif"
+  ],
+  [
+   "4533",
+   "Lucky Brand Women's Sofia Skinny Leg Jean"
+  ],
+  [
+   "15196",
+   "Ingrid & Isabel Banded Bikini Top"
+  ],
+  [
+   "19385",
+   "Trukfit Palm This Crewneck Pullover Sweater Gunmetal Grey\u00c3\u0160"
+  ],
+  [
+   "27205",
+   "Green Plaid Fleece Lounge Pants for Men"
+  ],
+  [
+   "11458",
+   "Half Slip 24'' with Snip It All Around Lace"
+  ],
+  [
+   "5949",
+   "Catherine Malandrino Women's Stretch Leather Pant"
+  ],
+  [
+   "13830",
+   "D&Y Women's Animal Face Knit Hat"
+  ],
+  [
+   "27707",
+   "Speedo Boys 8-20 Youth Circle Sound Splice Xtra Life Lycra Jammer"
+  ],
+  [
+   "9832",
+   "Munki Munki Women's Classic Flannel Pajama Set With Contrast Trim"
+  ],
+  [
+   "17042",
+   "Van Heusen Men's Industry Studio Shirt"
+  ],
+  [
+   "22779",
+   "Columbia Men's Ultimate Roc Cargo Short"
+  ],
+  [
+   "24442",
+   "Sons of Anarchy - Highway Twill - Men's Jacket"
+  ],
+  [
+   "12700",
+   "Pure Style Girlfriends Women's Gather-The-Girls"
+  ],
+  [
+   "21770",
+   "Savane Men's Pleated Wrinkle Free Twill"
+  ],
+  [
+   "24002",
+   "Genuine leather Trench Coat - Style GFTRM"
+  ],
+  [
+   "15838",
+   "Osgoode Marley Eight Hook Zip Key Case with Valet"
+  ],
+  [
+   "3821",
+   "LAT Junior Fine Jersey V-Neck Tee Dress"
+  ],
+  [
+   "5436",
+   "Woman Within Plus Size Petite leggings capris in stretch knit"
+  ],
+  [
+   "13906",
+   "Tory Burch Sunglasses TY7026 501/95 Black/Grey Orange Fade 59mm"
+  ],
+  [
+   "9912",
+   "Eileen West Women's Cascade Ballet Nightgown"
+  ],
+  [
+   "16018",
+   "Volcom Men's Solid Heather Short Sleeve V Neck Tee"
+  ],
+  [
+   "13643",
+   "Ray-Ban Unisex RB4021P Polarized Sunglasses"
+  ],
+  [
+   "3950",
+   "2B Tropical Stripe Tina Maxi Dress"
+  ],
+  [
+   "23458",
+   "O'Neill Men's Vortex Shorts"
+  ],
+  [
+   "519",
+   "Fruit Of The Loom Ladies' Cotton Ribbed Tank 2 Pack (2R2402)"
+  ],
+  [
+   "1850",
+   "John Deere Womens Zip Front Hoodie - Green"
+  ],
+  [
+   "1457",
+   "Volcom Juniors My Favorite Long Sleeve Cardigan"
+  ],
+  [
+   "21865",
+   "Woolrich Men's Elite Concealed Carry Tactical Chinos Pant"
+  ],
+  [
+   "15045",
+   "Leading Lady Baby Sees It Cotton Spandex Nursing Softcup #423"
+  ],
+  [
+   "27420",
+   "Hurley Young Men's Hurley One and Only Solid Boardshort"
+  ],
+  [
+   "16812",
+   "Classics By Palmland Men's Pocket Pique Polo Shirt"
+  ],
+  [
+   "29029",
+   "Outdoor Research Face Mask"
+  ],
+  [
+   "14254",
+   "Kenneth Cole Reaction Womens Slim Croc Print Clutch Wallet"
+  ],
+  [
+   "801",
+   "Isaac Mizrahi Women's Daria Striped Sweater"
+  ],
+  [
+   "25846",
+   "Jockey\u00c2\u00ae Pouch Big Man Midway\u00c2\u00ae Brief - 2 pack"
+  ],
+  [
+   "1307",
+   "Aventura Women's Lockhart Vest"
+  ],
+  [
+   "18820",
+   "Williams Cashmere Men's 100% Cashmere Zip Mock-Neck Sweater"
+  ],
+  [
+   "24676",
+   "Sugoi R + R Knee High Socks"
+  ],
+  [
+   "27020",
+   "Fall Print Fleece Lounge Pants for Men"
+  ],
+  [
+   "21220",
+   "Hudson Men's Beau Flap Pocket Microboot Jean"
+  ],
+  [
+   "28442",
+   "Dickies Men's 35mm Genuine Leather Belt"
+  ],
+  [
+   "451",
+   "Three Dots Women's Long Sleeve Cowl Neck Top"
+  ],
+  [
+   "5967",
+   "eloquii Ponte Legging"
+  ],
+  [
+   "7424",
+   "Allegra K Woman Plaid Elastic Waist Preppy Above Knee Skirt Gray Black S"
+  ],
+  [
+   "4156",
+   "Love Tease Print Shortall"
+  ],
+  [
+   "19134",
+   "Haggar Men's Bankley Solid Sweater"
+  ],
+  [
+   "25765",
+   "Tommy Hilfiger Men's Tommy Star Print Boxer"
+  ],
+  [
+   "25667",
+   "Calvin Klein Men's Core Sculpt Compression Short Sleeve V-Neck Tee"
+  ],
+  [
+   "22478",
+   "Santa Fe Washed-twill Pants Weathered Navy"
+  ],
+  [
+   "1517",
+   "Design History Women's 100% Cashmere Rectangle-Shape Sweater"
+  ],
+  [
+   "10570",
+   "Maidenform Women's Pressure Free Underwire Bra"
+  ],
+  [
+   "26623",
+   "Tommy Bahama Men's Basic Short Sleeve Crew Neck Shirt"
+  ],
+  [
+   "7937",
+   "Anne Klein Collection Women's Shawl Collar Jacket"
+  ],
+  [
+   "9848",
+   "N Natori Women's Mongolia Robe"
+  ],
+  [
+   "24658",
+   "adidas Men's Climalite II No Show Sock (2-Pack)(Shoe Size  6-12)"
+  ],
+  [
+   "13539",
+   "Trina Turk Halter Marrakesh V Neck Colorful Swimsuit"
+  ],
+  [
+   "19654",
+   "Ed Garments Men's Ottoman Weave Bistro Vest. 4392"
+  ],
+  [
+   "15145",
+   "Condessa Veronica Nursing Bra - Sparkling Silver"
+  ],
+  [
+   "10947",
+   "Barely There Flawless Fit Microfiber Boyshort"
+  ],
+  [
+   "23931",
+   "Tommy Hilfiger Men's Wool Plush Peacoat"
+  ],
+  [
+   "26126",
+   "PS-111-MU-1369- Spectrum - Lowrise Classic Boxer Brief Trunks"
+  ],
+  [
+   "776",
+   "Women's Cotton Crochet Knit Sheer Top with a Scalloped Hem and Slight Bell Sleeves"
+  ],
+  [
+   "26369",
+   "Intimo Men's Liquid Metallic Boxer"
+  ],
+  [
+   "4893",
+   "Lucky Brand Women's Charlie Skinny Leg Jean"
+  ],
+  [
+   "25656",
+   "Emporio Armani Men's Cotton Stretch 2 Pack Crew Neck Tee"
+  ],
+  [
+   "6064",
+   "ililily Nordic reindeer patterned winter leggings Fleece blended winter leggings Full length Stretch Skinny Pants (leggings-021)"
+  ]
+ ]
+}

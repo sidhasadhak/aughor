@@ -12,6 +12,9 @@
 !/data/global_rules.md
 !/data/events.yaml
 !/data/metrics.json
+# The overlay's shipped seed (the catalogue a deployment starts from) and the frozen baseline
+# `data/metrics.json` is read against — without it every shipped row reads as this install's own.
+!/data/shipped
 /tests
 /evals
 /docs

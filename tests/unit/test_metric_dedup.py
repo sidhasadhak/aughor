@@ -30,7 +30,7 @@ from aughor.semantic.metrics import (
 )
 from aughor.semantic.enforcement import check_metric_enforcement, enforcement_summary
 
-_REAL_CATALOG = Path(M.__file__).parent.parent.parent / "data" / "metrics.json"
+_REAL_CATALOG = Path(M.__file__).parent.parent.parent / "data" / "shipped" / "metrics.json"
 
 # A schema that contains BOTH grains of the catalog (every table, formula column
 # AND declared dimension of both the orders-grain and order_items-grain metrics)

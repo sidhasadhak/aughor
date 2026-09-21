@@ -1,10 +1,11 @@
 """JD-3 — bands, not batches, in `semantic_filter`'s cascade. Faux providers, no model call.
 
 The sampled cascade re-runs EVERY row on the champion when a sample disagrees. The banded path
-(flag `semops.banded_cascade`, default off) judges each row through JD-1's seam and spends the
-champion only on rows inside the uncertainty band. What is pinned:
+(flag `semops.banded_cascade` — GRADUATED default-ON 2026-09-21 on the receipts, with the env
+var as the kill switch) judges each row through JD-1's seam and spends the champion only on
+rows inside the uncertainty band. What is pinned:
 
-* OFF, or no cascade asked for: the code that ran before, untouched;
+* the kill switch (env "0"), or no cascade asked for: the code that ran before, untouched;
 * ON: confident rows are decided by the cheap tier, and only the uncertain ones reach the
   champion — fewer champion questions than rows, which is the claim the receipt will price;
 * a row still uncertain after the champion is KEPT and named for a person, never guessed;
@@ -54,10 +55,18 @@ def _cheap_p(gi):
     return 0.95 if gi < 4 else 0.05 if gi < 7 else 0.5
 
 
-def test_off_by_default_the_sampled_cascade_runs_unchanged(monkeypatch):
+def test_on_by_default_since_graduation_and_the_kill_switch_restores_the_sampled_path(monkeypatch):
+    """The flag graduated to default-ON (2026-09-21, the user's flip on the receipts); the
+    env var stays as the operator's kill switch, and "0" must restore yesterday exactly."""
     cheap, champ = FakeJudge(_cheap_p), FakeJudge(lambda gi: 0.9)
     _route(monkeypatch, cheap, champ)
     monkeypatch.delenv("AUGHOR_SEMOPS_BANDED_CASCADE", raising=False)
+    on = semantic_filter(_qr(10), "note", "keepers", validate_sample=4)
+    assert any("banded cascade" in n for n in on.notes), "unset env must mean ON now"
+
+    cheap, champ = FakeJudge(_cheap_p), FakeJudge(lambda gi: 0.9)
+    _route(monkeypatch, cheap, champ)
+    monkeypatch.setenv("AUGHOR_SEMOPS_BANDED_CASCADE", "0")
     out = semantic_filter(_qr(10), "note", "keepers", validate_sample=4)
     # Asserted by each path's OWN note, not by an exception: the old path swallows provider
     # errors (it never raises into the query path), so "it raised" could not tell the paths

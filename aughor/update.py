@@ -17,6 +17,21 @@ So: untracked files never block (git itself refuses a fast-forward that would cl
 modifications under `data/` never block, and a tracked modification anywhere ELSE does —
 those are real local edits and a person should know before their tree moves.
 
+⚠️ "Never block" is this check's promise, not git's: git still refuses a fast-forward that
+would overwrite a MODIFIED tracked file upstream also changed — which #514 did to
+`data/metrics.json`. Since the overlay the app no longer writes that file, `data/glossary.yaml`
+or the tracked file under `data/ontology_overrides/`, and upstream no longer changes any of
+them (`test_seed_overlay_frozen`), so for THOSE paths the refusal cannot recur. It still can
+for the other tracked files the app rewrites — `context_graph/`, `ontology_column_config/` —
+the first time upstream edits one on an install that changed it.
+An install already behind #514 with its own rows in it is recovered by hand, API stopped:
+copy the file out, `git checkout HEAD -- data/metrics.json` (HEAD — a bare `--` restores from
+the index), update, copy it back. Its rows are then read as this install's — including the
+unscoped `revenue` and `aov` it shipped with before #514, which then stay global on that
+install; delete them if only the `samples` connection should carry them.
+And git overwrites an IGNORED file by default, which is where instance data now lives, so the
+fast-forward passes `--no-overwrite-ignore`.
+
 **Never reset.** A diverged checkout — local commits the remote does not have — is refused
 and named, not rewound. `git reset --hard` has destroyed work on this project before and is
 not in this module's vocabulary.
@@ -117,7 +132,7 @@ def update(root: Path, *, ref: str | None = None) -> Result:
     if not behind:
         return Result("noop", "already up to date.", before=before, after=before)
 
-    merged = _git(root, "merge", "--ff-only", target)
+    merged = _git(root, "merge", "--ff-only", "--no-overwrite-ignore", target)
     if merged.returncode != 0:
         return Result("failed",
                       f"the fast-forward did not apply: {merged.stderr.strip()}",

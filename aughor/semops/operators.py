@@ -194,16 +194,21 @@ def _banded_verdicts(rows: list, ci: int, predicate: str, provider, batch: int,
 
     One JD-1 bundle per ``batch`` rows, each row its OWN typed question with its own field and its
     own probability — so a row is not read out of a shared list its neighbours can shift, and a
-    failed call makes those rows explicitly unanswered rather than silently kept."""
+    failed call makes those rows explicitly unanswered rather than silently kept.
+
+    The rows ride in the STATE, once, in the same ``[index] text`` listing the sampled path
+    sends; each question is a short reference to its row. The first cut put every row's text
+    inside its question, which the request then carried twice (prompt AND schema) — measured at
+    ~4x today's batch call, the exact spend JD-3 exists to cut (cf695915)."""
     from aughor.judgment.seam import Noul, judge
     probs: dict = {}
     calls = 0
     for start in range(0, len(indices), max(1, batch)):
         chunk = indices[start:start + batch]
+        listing = "\n".join(f"[{gi}] {str(rows[gi][ci])[:_MAX_CELL]}" for gi in chunk)
         answers = judge(
-            f"Predicate: {predicate}",
-            [Noul(f"r{gi}", "This text satisfies the predicate. Text: "
-                             f"{str(rows[gi][ci])[:_MAX_CELL]}") for gi in chunk],
+            f"Predicate: {predicate}\n\nRows (index: text):\n{listing}",
+            [Noul(f"r{gi}", f"Row [{gi}] satisfies the predicate.") for gi in chunk],
             provider=provider)
         calls += 1
         for gi in chunk:
@@ -238,6 +243,10 @@ def _banded_filter(result: QueryResult, rows: list, ci: int, column: str, predic
         f"banded cascade: the cheap tier ({role}) decided {len(rows) - len(escalate)} of "
         f"{len(rows)} rows with confidence; {len(escalate)} uncertain row(s) went to "
         f"{champion_role} ({champ_calls} call(s)) instead of all {len(rows)}")
+    # The third party is NAMED where a reader will see it (the Trust Receipt reads these
+    # notes; the calls themselves are counted by `govern.outbound`'s EXTERNAL_CALL events).
+    if hasattr(cheap, "note"):
+        notes.append(cheap.note(role))
     if person:
         notes.append(
             f"{len(person)} row(s) still uncertain after {champion_role} — KEPT and left for a "
@@ -289,8 +298,14 @@ def semantic_filter(
     if validate_sample > 0 and rows and role != champion_role:
         from aughor.kernel.flags import flag_enabled
         if flag_enabled("semops.banded_cascade"):
+            # JD-5: with `semops.jev_cheap_tier` on AND configured, the cheap tier is Jev
+            # with the house tier as its fallback; otherwise exactly the provider below.
+            from aughor.judgment.jev import cheap_judge_for
+            cheap, jev_note = cheap_judge_for(get_provider(role))
+            if jev_note:
+                notes.append(jev_note)
             return _banded_filter(result, rows, ci, column, predicate, notes,
-                                  cheap=get_provider(role), champ=get_provider(champion_role),
+                                  cheap=cheap, champ=get_provider(champion_role),
                                   role=role, champion_role=champion_role, batch=batch)
     kept, llm_calls, fnotes = _filter_verdicts(rows, ci, predicate, get_provider(role), batch, all_idx)
     notes.extend(fnotes)

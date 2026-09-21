@@ -87,8 +87,12 @@ def _isolate_stores() -> None:
     # not just in a live database. Found the hard way TWICE: a live-drive scratch
     # server wrote both (memory, pre-2026-09), and SP-M's recorder re-seeded
     # metrics.json on 2026-09-16 because this list still lacked them.
-    os.environ.setdefault("AUGHOR_METRICS_PATH", os.path.join(tmp, "metrics.json"))
-    os.environ.setdefault("AUGHOR_GLOSSARY_PATH", os.path.join(tmp, "glossary.yaml"))
+    # Since the overlay the catalogue is two layers; both are pinned, the seed left absent so a
+    # drive still starts from an empty catalogue.
+    os.environ.setdefault("AUGHOR_METRICS_PATH", os.path.join(tmp, "metrics.instance.json"))
+    os.environ.setdefault("AUGHOR_METRICS_SEED_PATH", os.path.join(tmp, "metrics.seed.json"))
+    os.environ.setdefault("AUGHOR_GLOSSARY_PATH", os.path.join(tmp, "glossary.instance.yaml"))
+    os.environ.setdefault("AUGHOR_GLOSSARY_SEED_PATH", os.path.join(tmp, "glossary.seed.yaml"))
     # …and the vetted-query store beside them, which saving a query writes.
     os.environ.setdefault("AUGHOR_TRUSTED_QUERIES_PATH", os.path.join(tmp, "trusted_queries.json"))
     # File trees and registries outside the directory family below, each written when used:
@@ -123,7 +127,7 @@ def _isolate_stores() -> None:
     # ON-1b — the ontology's file trees: human overrides (a measure WRITES verdicts back into it), the export beside it,
     # the engine's recommendations, (ON-7b) the explorer's draft record, and (R8) the compiled doc tree. Isolated in
     # tests/conftest.py too.
-    for _tree in ("OVERRIDES", "EXPORT", "RECOMMENDATIONS", "DRAFTS", "DOCS"):
+    for _tree in ("OVERRIDES", "OVERRIDES_SEED", "EXPORT", "RECOMMENDATIONS", "DRAFTS", "DOCS"):
         os.environ.setdefault(f"AUGHOR_ONTOLOGY_{_tree}_DIR", os.path.join(tmp, f"ontology_{_tree.lower()}"))
 
 

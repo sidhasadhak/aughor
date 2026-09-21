@@ -1,0 +1,111 @@
+tables:
+  customers:
+    description: 'Master customer list. One row per customer account. Use for all
+      segment and region breakdowns — do not re-derive these from other tables.
+
+      '
+    grain: one row per customer_id
+    joins:
+    - JOIN daily_revenue ON customers.customer_id = daily_revenue.customer_id
+    - JOIN kpi_daily ON customers.region = kpi_daily.region AND customers.segment
+      = kpi_daily.segment
+    columns:
+      customer_id:
+        description: Surrogate key — unique identifier for every customer account
+      segment:
+        description: Customer size tier assigned at account creation
+        values: SMB, Enterprise
+        caveats: Segment is assigned once and never changes — do not use as a proxy
+          for ARR
+      region:
+        description: Geographic sales region
+        values: APAC, EMEA, NA
+      signup_date:
+        description: Date the customer account was first created (UTC)
+  daily_revenue:
+    description: 'Transactional revenue log. One row per payment attempt per customer
+      per day. This is the source of truth for revenue and payment failure analysis.
+      Aggregate with SUM(amount) and filter status = ''success'' for recognised revenue.
+
+      '
+    grain: one row per (customer_id, date, payment_id)
+    joins:
+    - JOIN customers ON daily_revenue.customer_id = customers.customer_id
+    columns:
+      customer_id:
+        description: Foreign key to customers table
+        caveats: customer_id alone is not a stable trace identifier—must be combined
+          with date to form a composite trace_id, as individual customer_id appears
+          in 90 rows (one per date) despite only 800 unique customers.
+      date:
+        description: Calendar date of the payment attempt (UTC, date only — no time
+          component)
+      amount:
+        description: Payment amount in USD. Includes all successful and failed attempts.
+        caveats: Do NOT sum amount without filtering status = 'success' — failed rows
+          inflate revenue figures
+      status:
+        description: Outcome of the payment attempt
+        values: success, failed
+        caveats: 'Failed rows are real attempts that were declined. Payment failure
+          rate = COUNT(*) FILTER (WHERE status = ''failed'') / COUNT(*). A spike in
+          failed rows is a leading indicator of a gateway or card issue.
+
+          '
+  events:
+    description: 'Business event calendar. One row per notable event (outages, promotions,
+      holidays, product launches) that may explain metric movements. Always check
+      this table when investigating anomalies before concluding a root cause.
+
+      '
+    grain: one row per event_id (an event may span multiple dates via start_date/end_date)
+    columns:
+      event_type:
+        description: Category of the business event
+        values: outage, promotion, holiday, product_launch
+      event_date:
+        description: Date the event occurred or started (UTC)
+      description:
+        description: Free-text human-readable description of the event
+      impact:
+        description: 'Expected directional impact on revenue. Values: positive (promotion/launch),
+          negative (outage), neutral (holiday — varies by region)
+
+          '
+      event_id:
+        caveats: event_id has only 3 distinct values across all rows and cannot support
+          cross-table tracing or segmentation due to severely limited coverage of
+          business events.
+  kpi_daily:
+    description: 'Pre-aggregated daily KPI summary by region and customer segment.
+      Use this table for trend queries and period-over-period comparisons — it is
+      much faster than aggregating daily_revenue directly. Do not use for payment
+      failure analysis (status not available here).
+
+      '
+    grain: one row per (date, region, segment, metric)
+    joins:
+    - JOIN customers ON kpi_daily.region = customers.region AND kpi_daily.segment
+      = customers.segment
+    columns:
+      date:
+        description: Calendar date (UTC)
+      region:
+        description: Geographic sales region (matches customers.region)
+        values: APAC, EMEA, NA
+      segment:
+        description: Customer size tier (matches customers.segment)
+        values: SMB, Enterprise
+      metric:
+        description: Name of the KPI being reported
+        values: revenue, churn_count, new_customers, payment_failure_rate
+      value:
+        description: Numeric value of the metric for this (date, region, segment)
+          combination
+        caveats: 'revenue values are in USD and represent successfully collected amounts
+          only. payment_failure_rate is a ratio (0.0–1.0), not a percentage.
+
+          '
+      composite_key(date,region,segment,metric):
+        caveats: The composite_key is not a physical column but a derived concatenation—analysts
+          must reconstruct it identically to join or filter correctly.

@@ -24,11 +24,9 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
 # ── Stop words ────────────────────────────────────────────────────────────────
 _STOP_WORDS: frozenset[str] = frozenset({
@@ -213,10 +211,12 @@ def build_connection_hints(
     # 1. Metrics catalog — metric name/label → its tables; metric sql → columns.
     #    This is the strongest, fully schema-specific signal (data-derived).
     try:
-        import json
-        mpath = _DATA_DIR / "metrics.json"
-        metrics = json.loads(mpath.read_text()) if mpath.exists() else []
-        for m in metrics if isinstance(metrics, list) else []:
+        # Through the store, never the file: a direct read of `data/metrics.json` saw neither
+        # the test isolation nor, once the catalogue became a seed with an instance over it,
+        # anything this install wrote.
+        from aughor.semantic.metrics import list_metrics
+        metrics = [md.model_dump() for md in list_metrics()]
+        for m in metrics:
             name_tokens = set(_tokenise(f"{m.get('name','')} {m.get('label','')}"))
             name_tokens = _expand_tokens(name_tokens) - _STOP_WORDS
             tables = [str(t) for t in (m.get("tables") or [])]

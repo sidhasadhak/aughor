@@ -156,11 +156,20 @@ class TestAuthoredContentStaysInTheCheckout:
         assert resolve_db_path(f"X_{entry}", default) == default
 
     @pytest.mark.parametrize("entry", ["context_graph", "ontology_column_config",
-                                       "ontology_overrides", "demo_packs"])
+                                       "ontology_overrides", "shipped", "demo_packs"])
     def test_an_authored_directory_does_not_move(self, clean_env, entry):
         (clean_env / home.MARKER).write_text("migrated")
         default = self.CHECKOUT / "data" / entry / "inner.json"
         assert resolve_db_path(f"X_{entry}", default) == default
+
+    @pytest.mark.parametrize("entry", ["metrics.instance.json", "metrics.instance.converted.json",
+                                       "glossary.instance.yaml", "glossary.instance.converted.yaml"])
+    def test_the_metrics_instance_moves_although_the_file_beside_it_is_authored(self, clean_env, entry):
+        """The overlay's instance and its conversion marker are generated state; the frozen
+        `metrics.json` beside them stays."""
+        (clean_env / home.MARKER).write_text("migrated")
+        default = self.CHECKOUT / "data" / entry
+        assert resolve_db_path(f"X_{entry}", default) == clean_env / home.STATE_SUBDIR / entry
 
     def test_the_authored_list_matches_what_git_actually_tracks(self):
         """The population is measured, not hand-listed beside its expectation. If somebody adds
@@ -174,3 +183,12 @@ class TestAuthoredContentStaysInTheCheckout:
         assert tracked == set(home.AUTHORED_ENTRIES), {
             "tracked but would be rehomed": sorted(tracked - set(home.AUTHORED_ENTRIES)),
             "listed but no longer tracked": sorted(set(home.AUTHORED_ENTRIES) - tracked)}
+
+    def test_an_install_migrated_before_the_overlay_still_reads_its_overrides(self, clean_env):
+        """The review's finding, pinned: `ontology_overrides/` was authored when `migrate-state`
+        first shipped, so a home migrated then never received it. If it ever rehomed, every
+        declaration on such an install would resolve into an empty tree, and `migrate-state`
+        cannot repair it — it answers "already" once the marker exists."""
+        (clean_env / home.MARKER).write_text("migrated")
+        default = self.CHECKOUT / "data" / "ontology_overrides"
+        assert resolve_db_path("X_OVR", default) == default
