@@ -46,7 +46,7 @@ semantics, not just governs them.** The moat is the ontology→agent loop.
 it is shipped when something *consumes* it. Repeatedly, the gap has been a complete and inert
 plane — see §7.
 
-**Amended 2026-09-16 — the hub (§3.18; §6 item 24).** The three planes are the platform's infrastructure. Its
+**Amended 2026-09-16 — the hub (§3.18; §6 item 24); ADOPTED 2026-09-21 (item 24 (g), the user).** The three planes are the platform's infrastructure. Its
 purpose, in the user's own definition, is two-sided: every reason to come to the platform stays — ask, run your own
 SQL, read the Briefing, open an object, approve a change — and the platform also **receives** data, documents,
 definitions and what people say where they already work, and **exports** findings, analyses, Briefings and proposals
@@ -2179,7 +2179,7 @@ survives the sweep and its ungraded neighbour does not, in ONE test, because sur
 proves nothing if nothing is being swept. Plus the restart case the counter could never
 cover, both directions of the durable clock, and the row-cap exemption.
 
-#### MI-2a · The journal had no sweep at all (substrate-sized) — ✅ BUILT 2026-09-20; ⚠️ **BRANCH ONLY** — `3b642c2a`, merged into `claude/jev-align-and-traces-storage` at `9298316e`; no PR, not on main
+#### MI-2a · The journal had no sweep at all (substrate-sized) — ✅ BUILT 2026-09-20; ✅ **MERGED #532** (`d91fb9be`) with its follow-up `a45ad258` — this header read "BRANCH ONLY" after the merge, corrected 2026-09-21
 
 > **MI-2 fixed the sweep that was not running. This band found the table that had no sweep to run.**
 > MI-2's law above — *"ungraded exhaust keeps expiring on the 14-day sweep"* — was written about
@@ -6735,7 +6735,7 @@ nomenclature for the analogy's sake; a persona named "Analyst".
 ---
 
 
-### 3.19 · Arc IN — the install: what Hermes Agent's installer teaches (drafted 2026-09-17 at the user's direction — §6 item 25; **ALL FOUR WAVES MERGED #531**, squash `2ae9ae9d`, 2026-09-20, at the user's instruction *"we are stuck with IN arc since a long time.. just take it all in one go and finish the Arc"* — which OVERRODE the "finish Arc IP first" order recorded below, and which is why item 25 (a) is still UNSTAMPED: the arc shipped on a direct instruction, never on a recorded adoption)
+### 3.19 · Arc IN — the install: what Hermes Agent's installer teaches (drafted 2026-09-17 at the user's direction — §6 item 25; **ALL FOUR WAVES MERGED #531**, squash `2ae9ae9d`, 2026-09-20, at the user's instruction *"we are stuck with IN arc since a long time.. just take it all in one go and finish the Arc"* — which OVERRODE the "finish Arc IP first" order recorded below, and why item 25 (a) went unstamped until 2026-09-21: the arc shipped on a direct instruction, and was stamped as shipped afterwards)
 
 > **Origin.** The user, 2026-09-17, with a screenshot of Hermes Agent's Quick Install
 > (https://github.com/nousresearch/hermes-agent): *"I like how hermes does it here… Im not suggesting to the exact same
@@ -7150,6 +7150,18 @@ with a typed filter language (the minimum viable experiment tracker).
 containerized offline *factory* (beside the product, never in it) beats rented
 fine-tuning — then the factory question reopens, against Flyte/Metaflow as controls.
 
+### 4.6 · An ontology export to Microsoft Fabric IQ — REFUSED (2026-09-21)
+
+The Fabric IQ study (§3.15, amended 2026-09-11) found that Fabric's ontology item wants exactly what Aughor
+measures — object types with a verified key and a display property, properties bound to their source columns,
+relationships with a cardinality, ids stable across exports — and asked in §6 item 16 whether to build an
+export door. The recommendation was to defer until a customer on Fabric asked. **The user refused it outright
+when asked, 2026-09-21.** The case against it on record is §0's: the measured ontology feeding this platform's
+own agents is the moat, and an export hands it to another vendor's. An RDF/OWL export is the same question and
+the same answer. Re-propose only with new facts: a customer on Fabric asking, and Fabric's published
+item-definition format verified against Microsoft's documentation (the playground's `fabric.ts` is a community
+implementation, not a contract).
+
 ## 5 · Sequencing
 
 ```
@@ -7281,7 +7293,7 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
         MI-0 annex ✅ DECIDED (§6.7b); remaining code: the langfuse.trace.input gate
         MI-1 grade what already runs · MI-2 verdict pins evidence — substrate-sized,
              may ride alongside any band above
-        MI-2b ✅ BUILT 2026-09-20 (`3b642c2a`, BRANCH ONLY — no PR, not on main) — the journal
+        MI-2b ✅ BUILT 2026-09-20, MERGED #532 (`d91fb9be`) — the journal
              had no sweep at all: 430,768 events over 95 days, 76.8% of them unreachable by
              aughor_ops's 100k snapshot; scoped retention (named chatter only, 2-day window +
              50k cap, bounded at 20k/sweep, driven by emit) · Migration 12's trace and
@@ -7485,7 +7497,7 @@ ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. 
              behind · re-running `install.sh` / `install.ps1` on an existing clone fast-forwards it
              through the function `aughor update` uses — a refusal or an error is one line and never
              fails the install.
-ARC JD  ⏳ DRAFTED 2026-09-17, RECORDED 2026-09-20 (§3.20; §6 item 28) — the judgment seam: one state,
+ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 and JD-6 on HOLD); drafted 2026-09-17, recorded 2026-09-20 — the judgment seam: one state,
         N independent typed questions, a closed answer space, and a probability our code bands on.
         ✅ MERGED #535 (`583c8d9f`) 2026-09-21: JD-4 the instrument · JD-1 the seam (wired into no
         production path; its probability is STATED, not measured) · JD-3 the banded cascade (OFF,
@@ -7955,6 +7967,11 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-20, later:** item 29 (a measurement that refutes its own number does not leave)
 > arrived from A4's receipt and was decided in the same turn. Open: 16, 18(c), 22(c), 24(f·g), 25,
 > 28(a·c·d·e·f).
+> **Amended 2026-09-21:** every open item put to the user and answered in one sitting. 16 REFUSED, not deferred
+> (§4.6). 18(c) neither host offered: theLook, the live warehouse, is the go-to connection. 22(c) Accept stays the
+> arming. 24(f) email holds for the OAuth client; 24(g) §0's amendment adopted. 25(a) stamped as shipped, and (c),
+> (d), (e) offered and not chosen. 28 adopted — (a), (c), (f) — with JD-5 and JD-6 on hold. **The register is back
+> at zero open.**
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -8116,7 +8133,7 @@ the browser** · **measure the premise before building.**
     both blocks. No new ontology prose is built toward the prompt. The blocks that already reach
     it are untouched by this decision — removing them (keeping only those a guard cites) is its
     own measured change, not a side effect of cancelling a wave.
-16. ⏳ **OPEN (2026-09-11, not scheduled) — export the measured ontology to Microsoft Fabric IQ?**
+16. ✅ **DECIDED 2026-09-21 (the user) — REFUSED: no export of the measured ontology to Microsoft Fabric IQ (§4.6).**
     Arrived with the Fabric IQ study (§3.15, "Amended 2026-09-11"). Fabric's ontology item wants what
     Aughor measures and Microsoft's own playground export drops: object types with a verified key and a
     display property, properties bound to their source columns, relationships with a cardinality, and ids
@@ -8129,6 +8146,8 @@ the browser** · **measure the premise before building.**
     and once Fabric's published item-definition format is verified against Microsoft's documentation — the
     playground's `fabric.ts` is a community implementation, not a contract.
     *Recommended: not now; revisit when a customer on Fabric asks, with (b)'s preconditions.*
+    **The user refused it outright rather than defer, 2026-09-21** — recorded in §4.6 so it is not re-proposed
+    without new facts.
 
 17. ✅ **DECIDED 2026-09-12 — Arc MT is not the next build, and not while this runs locally.** Asked what
     followed ON-5, the recommendation was MT-0 + MT-1 (§3.12's own "next"). The user: *"MT-0 and MT-1 make no
@@ -8140,7 +8159,7 @@ the browser** · **measure the premise before building.**
     saying hosting matters. The signal was there a month earlier — MT-2 was keyed on a Google OAuth client the
     user never created — and was read as waiting rather than as not wanted.
 
-18. ⏳ **OPEN (2026-09-12, none blocks ON-7) — the second movement's shape questions.** Arrived with the
+18. ✅ **DECIDED — the second movement's shape questions, all three answered ((c) 2026-09-21).** Arrived with the
     adoption of ON-7…ON-10 (§3.15, "Amended 2026-09-12 — the SECOND MOVEMENT"). The user fixed the order's
     head (ON-7 first) and added ON-7b; three shape questions remain, each with a recommendation:
     ✅ **(a) The scope key for ON-8 — TAKEN AS RECOMMENDED 2026-09-14.** The organisation, or a named DOMAIN inside it
@@ -8173,6 +8192,12 @@ the browser** · **measure the premise before building.**
     dispatch lags so the demo pack can host the question. *Recommended: Olist first — no generator change,
     real data; the pack enrichment follows as its own small, deterministic change so the demo can tell the
     story.*
+    ✅ **(c) DECIDED 2026-09-21 (the user) — neither: theLook.** Asked whether to enrich the LuxExperience
+    generator, the user answered *"thelook should be the go-to connection as it updates daily.."* — so these
+    receipts, and a demo of them, are hosted on a live warehouse rather than on a frozen dataset or a generator,
+    and the Lux generator is not changed. ⚠️ theLook keeps rewriting its most recent days (measured earlier: its
+    counts are a function of a row's age), so a receipt taken there states its as-of date and leaves the
+    unsettled window out.
 
 
 19. ✅ **DECIDED 2026-09-13 — Instrument (§3.16): what the first pass covers, and the two places the design met a
@@ -8261,7 +8286,7 @@ the browser** · **measure the premise before building.**
     ✅ **(b) DECIDED 2026-09-15 (the user) — both, as recommended.** Asked as "markdown renderer plus cards, or cards
     only" with the recommendation stated; the user answered "Go for SP-10" on it. react-markdown + remark-gfm carry
     the prose behind an allowlisted, designed surface (§3.11 SP-10); the cards carry the acts.
-    ⏳ **(c) Accept stays the arming** — or a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
+    ✅ **(c) DECIDED 2026-09-21 (the user) — Accept stays the arming, as recommended** — not a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
     refuses while a choice is still open and the first run is stated, so a second click would add no check.* SP-7 is
     built on the recommendation; the call stays the user's.
     ✅ **(d) DECIDED 2026-09-16 (the user) — graduate AFTER the richer-fixture re-record, as recommended.** Asked with
@@ -8279,8 +8304,9 @@ the browser** · **measure the premise before building.**
     design system, never the Teams card aesthetic — the user's standing rule that chat feels like a frontier-LLM
     conversation points the same way.
 
-24. ⏳ **DRAFTED 2026-09-16 (the user: "Create a roadmap now") — Arc HB, the hub (§3.18): the shape decided in
-    conversation 2026-09-15; (a), (b) and (d) DECIDED 2026-09-16, the rest open with recommendations.** Decided in the
+24. ✅ **DRAFTED 2026-09-16 (the user: "Create a roadmap now") — Arc HB, the hub (§3.18): the shape decided in
+    conversation 2026-09-15; (a), (b) and (d) DECIDED 2026-09-16, (c) and (e) that week, (f) and (g) 2026-09-21 —
+    every clause decided.** Decided in the
     user's own
     words, recorded here so they are not re-asked: the nomenclature does not change — the airport stays an analogy;
     the four people were examples, and the mechanism serves every layer with no layer taxonomy; personas as
@@ -8306,16 +8332,16 @@ the browser** · **measure the premise before building.**
     note recorded with the decision: Olist is a FROZEN historical dataset, so the "number recovered" leg can prove
     its MECHANISM (re-measure at close) but the rate itself cannot move — the receipt reports that plainly.
     **(f) The email channel** — keyed on the Google OAuth client (VA-11); HB-5's email half waits for it.
-    *Recommended: hold.*
+    *Recommended: hold.* **✅ DECIDED 2026-09-21 (the user) — hold, as recommended**, until a Google OAuth client exists.
     **(g) The §0 amendment** as written — the hub as the platform's purpose, the three planes its infrastructure.
-    *Recommended: yes.*
+    *Recommended: yes.* **✅ DECIDED 2026-09-21 (the user) — yes; §0 carries it.**
     Not decided here because it isn't ripe: hosting and uptime (§6 item 17 stands — the hub exports only from where the
     platform runs); persona names beyond the three; row policies by group (HB-1's enforcement half, when identity is
     on).
 
-25. ⏳ **DRAFTED 2026-09-17 (the user: "Lets add this to the roadmap first.. I want to finish IP arc first though..")
-    — Arc IN, the install (§3.19): ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — and (a) was
-    NEVER STAMPED.** The arc shipped on the user's direct instruction ("just take it all in one go and
+25. ✅ **DRAFTED 2026-09-17 (the user: "Lets add this to the roadmap first.. I want to finish IP arc first though..")
+    — Arc IN, the install (§3.19): ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — and (a) STAMPED
+    2026-09-21, as shipped.** The arc shipped on the user's direct instruction ("just take it all in one go and
     finish the Arc"), which also overrode their own "finish Arc IP first" order. Recorded plainly rather
     than back-filled as an adoption: what follows are the recommendations as drafted, and (a) is now moot
     for sequencing but still unanswered as a decision. (b) the data home LANDED as recommended, planned on
@@ -8324,7 +8350,7 @@ the browser** · **measure the premise before building.**
     exactly as recommended. Open, each with the builder's
     recommendation:
     **(a) Adoption and order** — IN-1 and IN-2 first (cheap, low risk, real gaps), IN-3 beside them, IN-4 last with its
-    own plan. *Recommended: yes, after Arc IP.*
+    own plan. *Recommended: yes, after Arc IP.* **✅ STAMPED 2026-09-21 (the user) — adopted as shipped.**
     **(b) A data home (IN-4)** — the state leaves the checkout. *Recommended: yes, planned on its own — it touches every
     store.*
     **(c) The industries question** — it stays in the install (§6 item 21, answer 1), now asked only where a person can
@@ -8335,6 +8361,9 @@ the browser** · **measure the premise before building.**
     **(e) WSL2** — named as supported. *Recommended: measure the installer there first, then say so.*
     **(f) Not copied** — a portable Git Bash, Termux, a root multi-user install, the stage protocol, shell rc edits.
     *Recommended: not now (reasons in §3.19).*
+    **Put to the user 2026-09-21: only (a) was selected.** (c) `--non-interactive` with a Windows-console
+    measurement, (d) the short address and (e) measuring WSL2 were offered and NOT chosen, so none is adopted:
+    the install stays as it shipped — WSL2 named and not claimed, no short address, no new flag.
 
 26. ✅ **DECIDED 2026-09-19 (the user) — Arc DS's second movement, the authored step (§3.7): a `synthesize` node,
     and explicit SQL on the Trusted query step.** Drafted and answered the same day; (a)–(d) stamped in the user's own
@@ -8398,8 +8427,8 @@ the browser** · **measure the premise before building.**
 
 ---
 
-28. ⏳ **DRAFTED 2026-09-17 (the user: "find ways to improve our platform", after reading TypeSafe's Jev
-    and the `jevlike` re-derivation); RECORDED 2026-09-20 — Arc JD, the judgment seam (§3.20): three
+28. ✅ **DRAFTED 2026-09-17 (the user: "find ways to improve our platform", after reading TypeSafe's Jev
+    and the `jevlike` re-derivation); RECORDED 2026-09-20; ADOPTED 2026-09-21 — Arc JD, the judgment seam (§3.20): three
     adoptions that need no vendor, two that wait, and one that was measured and REFUTED before it could
     be built.** ⚠️ **This item is out of date order and deliberately so.** It was drafted two days
     before items 26 and 27 and takes a number after them, because it was written on a branch that never
@@ -8451,9 +8480,10 @@ the browser** · **measure the premise before building.**
     23.27% to 25.41% by refusing to count 4,199 impossible rows as kept. ⏳ A2 waits on (a)'s
     probability — and A1 measured that probability arriving **flat, 1.00 on all 8**, so (a) has to
     produce a usable one before A2 means anything. ✅ A3 and A5 BUILT in #535 (§3.20).
-    📌 **2026-09-21: JD-4, JD-1 and JD-3 were BUILT and MERGED in #535 while this item is still unstamped** —
-    the same shape as Arc IN's item 25 (a). Built is not decided: clauses (a) and (c) still want the user's
-    stamp, and every JD receipt is still a model call nobody has spent.
+    ✅ **ADOPTED 2026-09-21 (the user), as recommended: (a) the seam and the instrument, (c) the bands and (f)
+    the alignment movement — with (d) JD-5 and (e) JD-6 on HOLD, and A6 held on its number.** JD-4, JD-1 and
+    JD-3 were built and merged in #535 before the stamp, the same shape as item 25 (a); every JD receipt is
+    still a model call nobody has spent.
     🛑 A6 (an optimizer over definitions) is HELD on a number: five verdicts, unchanged in sixteen days,
     is an optimizer on noise. 🛑 Refused outright: a label picker that pre-selects the model's own answer.
     Not decided here because it isn't ripe: whether a judgment's probability may ever reach a reader
