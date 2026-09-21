@@ -155,11 +155,15 @@ def test_the_committed_glossary_carries_only_authored_terms():
     `git status` is 5,000 lines of machine output again and this whole split is undone."""
     import pathlib
 
-    p = pathlib.Path("data/glossary.yaml")
-    if not p.exists():
-        pytest.skip("no repo glossary in this checkout")
-    tables = (yaml.safe_load(p.read_text()) or {}).get("tables") or {}
-    leaked = [t for t, e in tables.items() if isinstance(e, dict) and e.get("auto_generated")]
-    assert not leaked, (
-        f"{len(leaked)} auto-generated entr(ies) leaked into the TRACKED glossary: {leaked[:5]} — "
-        "run `save_glossary(load_glossary())` to re-split")
+    # Both tracked files: the frozen pre-overlay one and the shipped seed. A generated entry in
+    # the SEED would also be pinned into every install's sidecar on its first save, and stop
+    # following the seed there.
+    repo = pathlib.Path(G.__file__).resolve().parents[2]
+    for p in (repo / "data" / "glossary.yaml", repo / "data" / "shipped" / "glossary.yaml"):
+        if not p.exists():
+            pytest.skip(f"no {p.name} in this checkout")
+        tables = (yaml.safe_load(p.read_text()) or {}).get("tables") or {}
+        leaked = [t for t, e in tables.items() if isinstance(e, dict) and e.get("auto_generated")]
+        assert not leaked, (
+            f"{len(leaked)} auto-generated entr(ies) leaked into the TRACKED {p}: {leaked[:5]} — "
+            "move them to the generated sidecar")

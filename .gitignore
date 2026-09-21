@@ -63,6 +63,10 @@ data/smoke_*.json
 # buried four real analyst notes in the churn. Tests were never the cause — conftest points
 # AUGHOR_GLOSSARY_PATH at a throwaway temp copy, and the sidecar follows it automatically.
 data/glossary_generated.yaml
+# The overlay (aughor/semantic/glossary.py): the seed ships in data/shipped/, data/glossary.yaml is
+# FROZEN, and this install's own entries — and the marker of their one-time conversion — live here.
+data/glossary.instance.yaml
+data/glossary.instance.converted.yaml
 
 # Claude Code internal state
 .claude/

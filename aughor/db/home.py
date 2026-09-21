@@ -56,7 +56,9 @@ STATE_SUBDIR = "state"
 #: seed content and live instance data in one path. The overlay splits them: the seed ships
 #: under `shipped/`, which is authored and stays; the metrics instance is
 #: `metrics.instance.json`, which is generated and moves; and `metrics.json` stays as the frozen
-#: file a pre-overlay install is converted from.
+#: file a pre-overlay install is converted from. `glossary.yaml` is split the same way
+#: (`glossary.instance.yaml` moves; its generated sidecar resolves beside the frozen file, as it
+#: always has, so it never moves).
 #:
 #: ⚠️ `ontology_overrides/` is instance data and STILL stays in the checkout. Reclassifying it
 #: would send it to the home on an install that already migrated with it listed here — a home

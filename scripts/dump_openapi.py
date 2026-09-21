@@ -91,7 +91,8 @@ def _isolate_stores() -> None:
     # drive still starts from an empty catalogue.
     os.environ.setdefault("AUGHOR_METRICS_PATH", os.path.join(tmp, "metrics.instance.json"))
     os.environ.setdefault("AUGHOR_METRICS_SEED_PATH", os.path.join(tmp, "metrics.seed.json"))
-    os.environ.setdefault("AUGHOR_GLOSSARY_PATH", os.path.join(tmp, "glossary.yaml"))
+    os.environ.setdefault("AUGHOR_GLOSSARY_PATH", os.path.join(tmp, "glossary.instance.yaml"))
+    os.environ.setdefault("AUGHOR_GLOSSARY_SEED_PATH", os.path.join(tmp, "glossary.seed.yaml"))
     # …and the vetted-query store beside them, which saving a query writes.
     os.environ.setdefault("AUGHOR_TRUSTED_QUERIES_PATH", os.path.join(tmp, "trusted_queries.json"))
     # File trees and registries outside the directory family below, each written when used:

@@ -162,7 +162,8 @@ class TestAuthoredContentStaysInTheCheckout:
         default = self.CHECKOUT / "data" / entry / "inner.json"
         assert resolve_db_path(f"X_{entry}", default) == default
 
-    @pytest.mark.parametrize("entry", ["metrics.instance.json", "metrics.instance.converted.json"])
+    @pytest.mark.parametrize("entry", ["metrics.instance.json", "metrics.instance.converted.json",
+                                       "glossary.instance.yaml", "glossary.instance.converted.yaml"])
     def test_the_metrics_instance_moves_although_the_file_beside_it_is_authored(self, clean_env, entry):
         """The overlay's instance and its conversion marker are generated state; the frozen
         `metrics.json` beside them stays."""

@@ -315,6 +315,8 @@ LOGIC_VERSIONS: dict[str, LogicVersionSpec] = {
         LogicVersionSpec("metrics_instance", "aughor.semantic.metrics", "INSTANCE_FORMAT",
                          "the overlay's instance-file envelope; a reader refuses a format it "
                          "does not know rather than serving the catalogue without this install's rows."),
+        LogicVersionSpec("glossary_instance", "aughor.semantic.glossary", "INSTANCE_FORMAT",
+                         "the glossary overlay's instance-file envelope, refused the same way."),
         LogicVersionSpec("briefing", "aughor.knowledge.briefing", "BRIEFING_LOGIC_VERSION",
                          "the narrative's shape; bumping it regenerates cached briefs whose "
                          "source data never moved (Wave V2's logic half)."),

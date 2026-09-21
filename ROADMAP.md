@@ -7473,8 +7473,10 @@ ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. 
              ignored `data/metrics.instance.json`, and `data/metrics.json` is FROZEN — upstream never
              changes it again, so an install that wrote to it still fast-forwards. It is read once,
              in memory, and converted, verified, on the first metric write. `ontology_overrides/`
-             gains a shipped seed layer (empty) and stays in the checkout. ⏳ Still owed from it:
-             `glossary.yaml`, `context_graph/` and `ontology_column_config/` are tracked and
+             gains a shipped seed layer (empty) and stays in the checkout. `glossary.yaml` split
+             the same way the same day (seed `data/shipped/glossary.yaml`, instance
+             `data/glossary.instance.yaml`; the generated sidecar stays where it always resolved).
+             ⏳ Still owed from it: `context_graph/` and `ontology_column_config/` are tracked and
              rewritten by the app too — the same stranding, in other stores; and moving
              `ontology_overrides/` into the data home needs a verified top-up step, because an
              install that already migrated never received it.

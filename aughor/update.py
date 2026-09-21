@@ -19,11 +19,11 @@ those are real local edits and a person should know before their tree moves.
 
 ⚠️ "Never block" is this check's promise, not git's: git still refuses a fast-forward that
 would overwrite a MODIFIED tracked file upstream also changed — which #514 did to
-`data/metrics.json`. Since the overlay the app no longer writes that file or the tracked file
-under `data/ontology_overrides/`, and upstream no longer changes either
-(`test_seed_overlay_frozen`), so for THOSE paths the refusal cannot recur. It still can for
-the other tracked files the app rewrites — `glossary.yaml`, `context_graph/`,
-`ontology_column_config/` — the first time upstream edits one on an install that changed it.
+`data/metrics.json`. Since the overlay the app no longer writes that file, `data/glossary.yaml`
+or the tracked file under `data/ontology_overrides/`, and upstream no longer changes any of
+them (`test_seed_overlay_frozen`), so for THOSE paths the refusal cannot recur. It still can
+for the other tracked files the app rewrites — `context_graph/`, `ontology_column_config/` —
+the first time upstream edits one on an install that changed it.
 An install already behind #514 with its own rows in it is recovered by hand, API stopped:
 copy the file out, `git checkout HEAD -- data/metrics.json` (HEAD — a bare `--` restores from
 the index), update, copy it back. Its rows are then read as this install's — including the

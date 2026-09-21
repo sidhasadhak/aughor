@@ -311,7 +311,8 @@ os.environ.setdefault("AUGHOR_AUTOSEED", "false")
 import shutil as _shutil  # noqa: E402
 
 _repo_data = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-for _env, _file, _name in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml", "glossary.yaml"),
+for _env, _file, _name in (("AUGHOR_GLOSSARY_PATH", os.path.join("shipped", "glossary.yaml"),
+                            "glossary.instance.yaml"),
                            # DS-12 — the vetted-query store, added the same commit the automations
                            # plane started reading it. It was the last authored file here with a
                            # hardcoded path, so a test that saved one wrote to live data/.
@@ -329,6 +330,9 @@ for _env, _file, _name in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml", "glossary.y
         _shutil.copyfile(_src, _dst)
     os.environ[_env] = _dst                                    # assigned, not setdefault
 os.environ["AUGHOR_METRICS_SEED_PATH"] = os.path.join(_test_stores_dir, "metrics.seed.json")
+# The glossary is split the same way, for the same reason: its session instance above is a copy of the SHIPPED glossary,
+# and its seed is absent. Its generated sidecar still follows AUGHOR_GLOSSARY_PATH into this dir.
+os.environ["AUGHOR_GLOSSARY_SEED_PATH"] = os.path.join(_test_stores_dir, "glossary.seed.yaml")
 
 # The authored pack root, same reasoning one level up: a DIRECTORY of tracked content the
 # suite reads (the sample pack) and could write (promotion rewrites pack.yaml). A copy gives
