@@ -153,8 +153,8 @@ def run_tool_loop(
     wire = [t.as_wire() for t in tools]
     # JD-4 — a fingerprint of what the decider was shown. `system` is built once by the
     # caller and never mutated across steps, so one fingerprint covers the whole turn. It is
-    # metadata (irreversible) and rides every decision row; see `_replay_fingerprint`.
-    prompt_fingerprint = _replay_fingerprint(system)
+    # metadata (irreversible) and rides every decision row; see `_prompt_sha256`.
+    prompt_fingerprint = _prompt_sha256(system)
     # The decision-record menu: SORTED, so the option order (and therefore each label
     # index) is stable across turns regardless of roster assembly order. Only real
     # menus are recorded — one tool is not a choice.
@@ -272,7 +272,7 @@ def run_tool_loop(
 _REQUESTED_TEMPERATURE = 0.1
 
 
-def _replay_fingerprint(system: str) -> str:
+def _prompt_sha256(system: str) -> str:
     """sha256 of the assembled system prompt, or '' when there is none.
 
     Irreversible, so it is METADATA under §6 item 4 and is written on every row. A replay that
