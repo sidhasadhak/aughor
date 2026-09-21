@@ -7467,8 +7467,17 @@ ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. 
              for a measurement nobody has taken); item 25 (d)'s short address is not invented.
         ⏳ Still owed: `migrate-state` has NEVER run for real — it needs the API stopped, which is
              the operator's, and until then every path resolves exactly as before, which is the
-             design and not an omission. `metrics.json` and `ontology_overrides/` are tracked AND
-             runtime-written; the overlay that resolves that is its own slice.
+             design and not an omission.
+             ✅ The overlay BUILT 2026-09-21 (branch `claude/roadmap-catch-up-535`, not merged): the
+             catalogue's seed ships at `data/shipped/metrics.json`, this install's rows live in the
+             ignored `data/metrics.instance.json`, and `data/metrics.json` is FROZEN — upstream never
+             changes it again, so an install that wrote to it still fast-forwards. It is read once,
+             in memory, and converted, verified, on the first metric write. `ontology_overrides/`
+             gains a shipped seed layer (empty) and stays in the checkout. ⏳ Still owed from it:
+             `glossary.yaml`, `context_graph/` and `ontology_column_config/` are tracked and
+             rewritten by the app too — the same stranding, in other stores; and moving
+             `ontology_overrides/` into the data home needs a verified top-up step, because an
+             install that already migrated never received it.
              ✅ Closed in #535: `connectors/api/base_sync.py` resolves through `state_dir()`, whose
              env both hermeticity guards already carry, so `migrate-state` no longer leaves it
              behind · re-running `install.sh` / `install.ps1` on an existing clone fast-forwards it

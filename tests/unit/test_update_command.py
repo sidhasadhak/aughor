@@ -110,6 +110,53 @@ class TestItRefuses:
         assert "state is not touched" in result.reason
 
 
+class TestTheOverlayKeepsAUsedInstallUpdatable:
+    """The overlay's premise, against real git: the release that ships it fast-forwards on the OLD
+    updater, and an ignored instance file is never overwritten."""
+
+    def _used(self, clone):
+        (clone / "data" / "metrics.json").write_text('[{"name": "mine"}]\n')
+        (clone / "data" / "ontology_overrides" / "c1").mkdir(parents=True)
+        (clone / "data" / "ontology_overrides" / "c1" / "x.yaml").write_text("mine\n")
+
+    def _upstream(self, clone, rel, text):
+        origin = clone.parent / "origin"
+        (origin / rel).parent.mkdir(parents=True, exist_ok=True)
+        (origin / rel).write_text(text)
+        _git(origin, "add", "-A")
+        _git(origin, "commit", "--quiet", "-m", f"upstream touches {rel}")
+
+    def test_U1_a_release_that_ships_only_under_data_shipped_reaches_a_used_install(self, clone):
+        self._used(clone)
+        self._upstream(clone, "data/shipped/metrics.json", "[]\n")
+        result = up.update(clone)
+        assert result.status == "updated", result.reason
+        assert (clone / "data" / "metrics.json").read_text() == '[{"name": "mine"}]\n'
+        assert (clone / "data" / "ontology_overrides" / "c1" / "x.yaml").read_text() == "mine\n"
+
+    def test_U1_the_control_an_upstream_edit_of_a_written_path_strands_it(self, clone):
+        """Why `test_seed_overlay_frozen` exists: this is #514's shape, and no update can fix it."""
+        self._used(clone)
+        self._upstream(clone, "data/metrics.json", "[]\n")
+        result = up.update(clone)
+        assert result.status == "failed"
+        assert (clone / "data" / "metrics.json").read_text() == '[{"name": "mine"}]\n'
+
+    def test_U2_an_ignored_instance_file_is_never_overwritten(self, clone):
+        """Git overwrites an IGNORED file by default when upstream starts tracking its path — which
+        is where instance data now lives. Kills: dropping `--no-overwrite-ignore`."""
+        self._upstream(clone, ".gitignore", "data/*.json\n")
+        assert up.update(clone).status == "updated"
+        (clone / "data" / "metrics.instance.json").write_text('{"rows": ["mine"]}\n')
+        origin = clone.parent / "origin"
+        (origin / "data" / "metrics.instance.json").write_text("{}\n")
+        _git(origin, "add", "-f", "data/metrics.instance.json")      # ignored: only -f tracks it
+        _git(origin, "commit", "--quiet", "-m", "upstream tracks an instance path")
+        result = up.update(clone)
+        assert result.status == "failed", result.reason
+        assert (clone / "data" / "metrics.instance.json").read_text() == '{"rows": ["mine"]}\n'
+
+
 class TestNeverReset:
     def test_no_git_call_can_reset_anything(self):
         """A standing rule on this project, asserted rather than trusted — `git reset --hard`

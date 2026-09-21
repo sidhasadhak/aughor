@@ -221,6 +221,9 @@ os.environ["AUGHOR_COLUMN_CONFIG_ROOT"] = os.path.join(_test_stores_dir,
 # three-row fixture. Found by the ON-1b live receipt, whose panel suddenly read "3 of 3 objects"; restored by
 # re-measuring through the running API. No tracked override is copied in: no test reads one.
 os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides")
+# …and its shipped seed layer (data/shipped/ontology_overrides), left ABSENT: no test reads a shipped override either,
+# and one that tests the layering names its own.
+os.environ["AUGHOR_ONTOLOGY_OVERRIDES_SEED_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_seed")
 os.environ["AUGHOR_ONTOLOGY_EXPORT_DIR"] = os.path.join(_test_stores_dir, "ontology_export")
 # …and the third tree of the family, the engine-proposed recommendations (a writer with the same hardcoded root).
 os.environ["AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR"] = os.path.join(_test_stores_dir, "ontology_recommendations")
@@ -308,16 +311,24 @@ os.environ.setdefault("AUGHOR_AUTOSEED", "false")
 import shutil as _shutil  # noqa: E402
 
 _repo_data = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-for _env, _file in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml"), ("AUGHOR_METRICS_PATH", "metrics.json"),
-                    # DS-12 — the vetted-query store, added the same commit the automations
-                    # plane started reading it. It was the last authored file here with a
-                    # hardcoded path, so a test that saved one wrote to live data/.
-                    ("AUGHOR_TRUSTED_QUERIES_PATH", "trusted_queries.json")):
-    _dst = os.path.join(_test_stores_dir, _file)
+for _env, _file, _name in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml", "glossary.yaml"),
+                           # DS-12 — the vetted-query store, added the same commit the automations
+                           # plane started reading it. It was the last authored file here with a
+                           # hardcoded path, so a test that saved one wrote to live data/.
+                           ("AUGHOR_TRUSTED_QUERIES_PATH", "trusted_queries.json", "trusted_queries.json"),
+                           # The metrics catalogue is two layers since the overlay. The session's
+                           # INSTANCE is a copy of the SHIPPED catalogue — what CI always read, and
+                           # never again the developer's live one — and its SEED (below) is absent,
+                           # so a test that names its own instance reads exactly that file, as it
+                           # did when the catalogue was one file.
+                           ("AUGHOR_METRICS_PATH", os.path.join("shipped", "metrics.json"),
+                            "metrics.instance.json")):
+    _dst = os.path.join(_test_stores_dir, _name)
     _src = os.path.join(_repo_data, _file)
     if os.path.exists(_src) and not os.path.exists(_dst):
         _shutil.copyfile(_src, _dst)
     os.environ[_env] = _dst                                    # assigned, not setdefault
+os.environ["AUGHOR_METRICS_SEED_PATH"] = os.path.join(_test_stores_dir, "metrics.seed.json")
 
 # The authored pack root, same reasoning one level up: a DIRECTORY of tracked content the
 # suite reads (the sample pack) and could write (promotion rewrites pack.yaml). A copy gives

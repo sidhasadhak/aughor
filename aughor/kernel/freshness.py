@@ -312,6 +312,9 @@ LOGIC_VERSIONS: dict[str, LogicVersionSpec] = {
         LogicVersionSpec("ontology_bundle", "aughor.ontology.interchange", "BUNDLE_VERSION",
                          "Wave O7 connection-as-code interchange shape; an importer refuses "
                          "a bundle newer than it understands rather than half-applying it."),
+        LogicVersionSpec("metrics_instance", "aughor.semantic.metrics", "INSTANCE_FORMAT",
+                         "the overlay's instance-file envelope; a reader refuses a format it "
+                         "does not know rather than serving the catalogue without this install's rows."),
         LogicVersionSpec("briefing", "aughor.knowledge.briefing", "BRIEFING_LOGIC_VERSION",
                          "the narrative's shape; bumping it regenerates cached briefs whose "
                          "source data never moved (Wave V2's logic half)."),

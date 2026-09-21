@@ -52,11 +52,16 @@ STATE_SUBDIR = "state"
 #: `ontology_overrides/` and `context_graph/` stay tracked because they are the reviewable
 #: governed artifacts.
 #:
-#: ⚠️ `metrics.json` and `ontology_overrides/` are BOTH tracked and written at runtime — shipped
-#: seed content and live instance data in one path. The roadmap's split does not anticipate
-#: that, and the honest answer is an overlay (seed in the checkout, instance data in the home,
-#: read home-over-checkout) rather than picking a side. Until that exists they stay put, which
-#: is unchanged behaviour, and this list is where that decision is recorded.
+#: `metrics.json` and `ontology_overrides/` were BOTH tracked and written at runtime — shipped
+#: seed content and live instance data in one path. The overlay splits them: the seed ships
+#: under `shipped/`, which is authored and stays; the metrics instance is
+#: `metrics.instance.json`, which is generated and moves; and `metrics.json` stays as the frozen
+#: file a pre-overlay install is converted from.
+#:
+#: ⚠️ `ontology_overrides/` is instance data and STILL stays in the checkout. Reclassifying it
+#: would send it to the home on an install that already migrated with it listed here — a home
+#: that never received a copy, because `migrate-state` answers "already" once the marker exists.
+#: Every declaration would read as gone. Moving it needs a verified top-up step first.
 AUTHORED_ENTRIES = frozenset({
     "answer_sweep.jsonl",
     "context_graph",
@@ -71,6 +76,7 @@ AUTHORED_ENTRIES = frozenset({
     "quality_sweep_findings.md",
     "quality_sweep_report.md",
     "seed.py",
+    "shipped",
 })
 
 

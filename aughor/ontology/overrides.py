@@ -29,7 +29,9 @@ typo that won't bind is surfaced (``bound=False``) and never injected.
 """
 from __future__ import annotations
 
+import os
 import re
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
@@ -52,14 +54,50 @@ from aughor.ontology.models import (
 #: display property, a binding) reads this tree for the connection it measures and WRITES the verdict back, so a door
 #: test that cached a graph under LuxExperience's real connection id rewrote that connection's live Order override
 #: with counts from a three-row fixture.
+#:
+#: It is the INSTANCE layer: what this install declared. The tree was also tracked, which put shipped content and
+#: instance data in one path that no update may touch while an install has written to it — so upstream no longer adds
+#: anything under it (`test_seed_overlay_frozen`), and an override the repo ships goes in `_SEED_ROOT` instead.
 _ROOT = resolve_db_path("AUGHOR_ONTOLOGY_OVERRIDES_DIR",
                         Path(__file__).parent.parent.parent / "data" / "ontology_overrides")
+#: The SEED layer: overrides the repo ships (`data/shipped/ontology_overrides`, absent today — an absent tree is an
+#: empty layer). Never written here. A file this install writes at the same relative path SHADOWS it whole, and a
+#: deleted one leaves a `<file>.hidden` marker in the instance tree so it stays gone. ⚠️ A measure door WRITES its
+#: verdict back into the file it read, which copies a seed file up into the instance for good — so ship a seed
+#: override only for a kind no door writes back to, or it stops following the seed on first use.
+_SEED_ROOT = resolve_db_path("AUGHOR_ONTOLOGY_OVERRIDES_SEED_DIR",
+                             Path(__file__).parent.parent.parent / "data" / "shipped" / "ontology_overrides")
+_HIDDEN = ".hidden"
 
 
 def overrides_root() -> Path:
     """The overrides tree's root (`data/ontology_overrides`) — the public door for a caller
-    that walks it (the declared-action census) rather than importing the private constant."""
+    that walks it (the declared-action census) rather than importing the private constant.
+    This is the INSTANCE tree; `visible_override_files` is the layered read."""
     return _ROOT
+
+
+def _visible(rel_dir: Path, pattern: str, *, recursive: bool) -> list[Path]:
+    """The files a reader sees under ``rel_dir``: this install's, then every seed file it neither
+    shadows nor hid — sorted by relative path, the order `sorted(rglob)` gave before the seed."""
+    found: dict[Path, Path] = {}
+    for root in (_ROOT, _SEED_ROOT):
+        base = root / rel_dir
+        if not base.is_dir():
+            continue
+        for f in (base.rglob(pattern) if recursive else base.glob(pattern)):
+            rel = f.relative_to(root)
+            if rel in found:
+                continue                                  # the instance's copy wins, even unparseable
+            if root == _SEED_ROOT and (_ROOT / rel).with_name(rel.name + _HIDDEN).exists():
+                continue
+            found[rel] = f
+    return [found[rel] for rel in sorted(found)]
+
+
+def visible_override_files(pattern: str) -> list[Path]:
+    """Every visible override file matching ``pattern`` (relative to the tree's root) — the census's read."""
+    return _visible(Path("."), pattern, recursive=False)
 
 # FROZEN VALUES. A target kind is BOTH a field written into every override YAML and the
 # directory it lives in (`{conn}/{schema}/{kind}/{id}.yaml`), so `"object_set"` stays even
@@ -223,21 +261,52 @@ def _path(conn: str, schema: str, kind: TargetKind, target_id: str) -> Path:
     return _dir(conn, schema) / kind / f"{_safe(target_id)}.yaml"
 
 
+def _refuse_seed_root() -> None:
+    """The seed is never a write target. Raised OUTSIDE the writers' try blocks, which swallow everything."""
+    instance, seed = _ROOT.resolve(), _SEED_ROOT.resolve()
+    if instance == seed or seed in instance.parents:
+        raise RuntimeError(f"the overrides instance tree ({_ROOT}) resolves inside the shipped seed ({_SEED_ROOT}); "
+                           "an install's declarations are never written into shipped content")
+
+
+def _seed_twin(p: Path) -> Path:
+    return _SEED_ROOT / p.relative_to(_ROOT)
+
+
 def _write(conn: str, schema: str, ov: OntologyOverride) -> None:
+    _refuse_seed_root()
+    p = _path(conn, schema, ov.target_kind, ov.target_id)
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
-        p = _path(conn, schema, ov.target_kind, ov.target_id)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(yaml.safe_dump(ov.model_dump(), sort_keys=False, allow_unicode=True))
+        text = yaml.safe_dump(ov.model_dump(), sort_keys=False, allow_unicode=True)
+        tmp.write_text(text)
+        try:
+            tmp.replace(p)                                      # a reader sees the old file or the new one
+        except PermissionError:
+            # Windows refuses to replace a file another request holds open, where an in-place write
+            # succeeds — the pre-overlay behaviour, kept rather than dropping the declaration.
+            p.write_text(text)
+        p.with_name(p.name + _HIDDEN).unlink(missing_ok=True)   # re-declared: no longer hidden
     except Exception:
         pass
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
+    """Withdraw one declaration. True if one was visible. A shipped one is hidden, never deleted."""
+    _refuse_seed_root()
     try:
         p = _path(conn, schema, kind, target_id)
-        if p.exists():
-            p.unlink()
-            return True
+        hidden = p.with_name(p.name + _HIDDEN)
+        seed = _seed_twin(p)
+        visible = p.exists() or (seed.exists() and not hidden.exists())
+        p.unlink(missing_ok=True)
+        if seed.exists():
+            hidden.parent.mkdir(parents=True, exist_ok=True)
+            hidden.write_text("withdrawn on this install; the shipped declaration stays hidden\n")
+        return visible
     except Exception:
         pass
     return False
@@ -336,21 +405,21 @@ def override_scopes(conn: str) -> list[str]:
     planes need is an interface that has not been declared yet.)
     """
     try:
-        base = _ROOT / _safe(conn)
-        if not base.exists():
-            return []
-        return sorted(p.name for p in base.iterdir() if p.is_dir())
+        scopes: set[str] = set()
+        for root in (_ROOT, _SEED_ROOT):
+            base = root / _safe(conn)
+            if base.is_dir():
+                scopes |= {p.name for p in base.iterdir() if p.is_dir()}
+        return sorted(scopes)
     except Exception:
         return []
 
 
 def load_overrides(conn: str, schema: str) -> list[OntologyOverride]:
-    """Read every override under {conn}/{schema}, sorted for deterministic apply."""
+    """Read every override under {conn}/{schema} — this install's over the shipped seed — sorted for
+    deterministic apply."""
     out: list[OntologyOverride] = []
-    base = _dir(conn, schema)
-    if not base.exists():
-        return out
-    for f in sorted(base.rglob("*.yaml")):
+    for f in _visible(Path(_safe(conn)) / _safe(schema), "*.yaml", recursive=True):
         try:
             data = yaml.safe_load(f.read_text()) or {}
             out.append(OntologyOverride.model_validate(data))
