@@ -105,13 +105,50 @@ def get_datasets():
     return {"stats": store.stats(), "gates": exporters.gate_status()}
 
 
+#: Fields a decision row carries that are PAYLOAD under §6 item 4 ("visible metadata, gated
+#: payloads"). `context` embeds the user's question verbatim — the recorder writes
+#: `step N | last <tool> | <question>` — and §6 item 4 defines a payload as "a prompt or a
+#: response body". Everything else on the row (site, menu, choice, label, confidence, outcome,
+#: provenance, the prompt Fingerprint) is metadata and stays visible without ceremony.
+_PAYLOAD_FIELDS = ("context",)
+
+
+def _metadata_only(row: dict) -> dict:
+    """A decision row with its payload withheld, and a sentence saying so.
+
+    Withheld EXPLICITLY rather than deleted: a row whose `context` simply vanished would read
+    as a row that never had one, and a reader would conclude the recorder is broken. The key
+    stays, empty, and `payload_withheld` says why and where the posture is decided.
+    """
+    out = dict(row)
+    for field in _PAYLOAD_FIELDS:
+        if field in out:
+            out[field] = ""
+    out["payload_withheld"] = ("context carries the user's question verbatim, which is a payload "
+                               "under ROADMAP §6 item 4; it is not served on this ungated read")
+    return out
+
+
 @router.get("/learning/decisions")
 def get_decisions(site: Optional[str] = None, limit: int = 50):
     """The decision-record accumulation, made visible: per-site volume (total, trainable,
     outcome-closed) and the newest rows. This is the observability half of "is this
-    decision learnable" — the volume answer that must exist before any scorer does."""
+    decision learnable" — the volume answer that must exist before any scorer does.
+
+    🔴 Rows are served METADATA-ONLY. Until 2026-09-21 this returned `list_decisions` verbatim,
+    so an UNAUTHENTICATED request received every user's question text: measured live, a
+    `GET /learning/decisions` with no auth header answered 200 with 58 rows whose `context`
+    included questions such as "What is today's revenue and profit?". §6 item 4 decided that a
+    prompt is a payload readable only through an audited break-glass, and the product's own
+    `obs/prompt_window.py` calls the user's question "the most sensitive thing this product can
+    write down" — while this door served it to anyone. The volume answer this route exists for
+    needs no payload at all, so none is served. In-process, operator-run readers
+    (`evals/judgment_battery_eval.py`) call `decisions.list_decisions` directly and are
+    unaffected; it is the open HTTP door that was the leak.
+    """
     from aughor.learning.decisions import list_decisions, site_stats
-    return {"stats": site_stats(), "recent": list_decisions(site=site, limit=limit)}
+    return {"stats": site_stats(),
+            "recent": [_metadata_only(r) for r in list_decisions(site=site, limit=limit)]}
 
 
 @router.post("/learning/export/decisions")

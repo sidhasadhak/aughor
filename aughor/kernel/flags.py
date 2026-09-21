@@ -88,6 +88,7 @@ FLAG_ENV = {
     "ask.query_objects": "AUGHOR_ASK_QUERY_OBJECTS",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "framing.choice_confidence": "AUGHOR_FRAMING_CHOICE_CONFIDENCE",
+    "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
@@ -362,6 +363,14 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # JD-3 (ROADMAP §3.20). ON judges each row of `semantic_filter` through JD-1's seam
+    # (`aughor/judgment/seam.py`) and spends the champion tier ONLY on rows inside the
+    # uncertainty band, instead of re-running every row when a sample disagrees. Changes the
+    # prompt and the call pattern — group D. The off-arm runs the identical code it ran before.
+    "semops.banded_cascade": "at equal agreement with today's sampled escalation, does the "
+                             "banded cascade spend FEWER champion-tier calls per 200-row "
+                             "filter? Falsifier: if it spends more, keep the sampled one. "
+                             "Unmeasured — the receipt needs model calls (the operator's).",
     # A1 (docs/JEV_ALIGN_STUDY_2026-09-19.md, finding A1). ON adds `confidence` to the
     # definition chooser's response model, which CHANGES THE PROMPT — hence group D, not a
     # free instrumentation switch. The off-arm ships the identical schema it ships today.

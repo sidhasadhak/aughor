@@ -13,7 +13,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db import keyfile as _keyfile
@@ -67,6 +67,29 @@ def _get_fernet() -> Fernet:
 
 def _encrypt(value: str) -> str:
     return _get_fernet().encrypt(value.encode()).decode()
+
+
+class ConnectionKeyMismatch(Exception):
+    """A registered connection's stored credentials cannot be decrypted with the current key.
+
+    The operator's error, not an internal one — the same shape as `llm.provider.NoModelConfigured`.
+    Measured 2026-09-21: `.env` lost its `AUGHOR_SECRET_KEY`, every one of 7 connections became
+    undecryptable, and each request that opened one came back `500 {"error": "internal_error"}` —
+    correct to fail, but it hid the one cause the operator could fix behind a request id.
+
+    Deliberately NOT a `KeyError`: routes turn `KeyError` into "404 Connection not found", which
+    would send the operator looking for a connection that is right there. The message names the
+    connection and the fix and carries no secret — never the key, never the DSN.
+    """
+
+    def __init__(self, conn_id: str, name: str = "") -> None:
+        self.conn_id, self.name = conn_id, name
+        label = f"{name!r} ({conn_id})" if name else repr(conn_id)
+        super().__init__(
+            f"Connection {label} has stored credentials that cannot be decrypted: the encryption "
+            "key does not match the one they were saved with. Restore the original "
+            "AUGHOR_SECRET_KEY (or data/.aughor_key); a changed key makes saved connections "
+            "undecryptable.")
 
 
 def _decrypt(value: str) -> str:
@@ -384,11 +407,15 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
         return "postgres", _postgres_builtin_dsn()
     with _db() as conn:
         row = conn.execute(
-            "SELECT conn_type, dsn_enc FROM connections WHERE id = ?", [conn_id]
+            "SELECT conn_type, dsn_enc, name FROM connections WHERE id = ?", [conn_id]
         ).fetchone()
     if not row:
         raise KeyError(f"Connection {conn_id!r} not found")
-    return row["conn_type"], _decrypt(row["dsn_enc"])
+    try:
+        dsn = _decrypt(row["dsn_enc"])
+    except InvalidToken as exc:
+        raise ConnectionKeyMismatch(conn_id, row["name"] or "") from exc
+    return row["conn_type"], dsn
 
 
 def delete_connection(conn_id: str) -> bool:

@@ -1094,15 +1094,75 @@ export async function deleteMetric(name: string, sql?: string): Promise<void> {
   await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}${q}`, { method: "DELETE" });
 }
 
-/** B-8 — drive a metric through its governance lifecycle (propose/approve/reject/deprecate). */
-export async function transitionMetric(name: string, action: string, actor: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
+/** B-8 — drive a metric through its governance lifecycle (propose/approve/reject/deprecate).
+ *
+ *  SEND THE CONNECTION. This is the same defect the `connection` field above records on the
+ *  SAVE path, one route over and never fixed: the server's `TransitionRequest.connection`
+ *  defaults to `"*"`, so a transition posted without it looked for a GLOBAL metric of that name
+ *  and 404'd for every connection-scoped one. Measured 2026-09-20 against the real route — the
+ *  client-shaped POST answers `404 Metric 'x' not found for connection '*'`, and the identical
+ *  body carrying the connection answers 200. The server comment at `routers/metrics.py` records
+ *  this failure happening live (an approve intended for theLook's draft was refused because the
+ *  samples `revenue` was already approved) and fixing it server-side; the client was never
+ *  updated, so the approve button has been dead for every scoped metric since. */
+export async function transitionMetric(name: string, action: string, actor: string,
+                                       connection?: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
   const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/transition`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, actor }),
+    body: JSON.stringify(connection ? { action, actor, connection } : { action, actor }),
   });
   if (!res.ok) {
     const detail = await res.json().then(d => d?.detail).catch(() => null);
     throw new Error(detail || "Transition failed");
+  }
+  return res.json();
+}
+
+/** A3 — one section of the definition report. `outcome` travels as a WORD on purpose:
+ *  "clean" (checked, nothing found) and "unavailable" (could not check) are different answers,
+ *  and a client that rendered both as an empty section would undo the whole point. */
+export interface DefinitionClaim {
+  outcome: "clean" | "findings" | "not_applicable" | "unavailable";
+  summary: string;
+  findings: { code: string; severity: "defect" | "caution"; what: string; evidence: string }[];
+  detail: Record<string, unknown>;
+}
+
+/** A3 — how reproducible the report's numbers are. `unpinnable` always carries its reason;
+ *  the server refuses to construct one without it. */
+export interface DefinitionPopulation {
+  mode: "pinned" | "fingerprinted" | "unpinnable";
+  reason: string;
+  token: string;
+  tables: string[];
+  taken_at: string;
+  reproducible: boolean;
+}
+
+/** A3 — the instrument beside the approval ask. Advisory: it never blocks an approval. */
+export interface DefinitionReport {
+  metric: string;
+  connection_id: string;
+  status: string;
+  version: number;
+  advisory: boolean;
+  taken_at: string;
+  predecessor: DefinitionClaim;
+  execution: DefinitionClaim;
+  declaration: DefinitionClaim;
+  segments: DefinitionClaim;
+  population: DefinitionPopulation;
+  defects: string[];
+}
+
+/** A3 — fetch the report for one metric on one connection. Spelled `conn_id` to match its
+ *  siblings (`/value`, `/validate`, `/freshness`); see the route's own note for why. */
+export async function getDefinitionReport(name: string, connId: string): Promise<DefinitionReport> {
+  const res = await fetch(
+    `${getApiBase()}/metrics/${encodeURIComponent(name)}/definition-report?conn_id=${encodeURIComponent(connId)}`);
+  if (!res.ok) {
+    const detail = await res.json().then(d => d?.detail).catch(() => null);
+    throw new Error(detail || "Could not build the definition report");
   }
   return res.json();
 }

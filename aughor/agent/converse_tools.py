@@ -819,6 +819,17 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
         # FROM the answer. So the loop records the trace the caller chose, and the caller
         # stitches the investigation on afterwards with `decisions.attach_run`.
         trace_id=trace_id or "",
+        # Explicit rather than defaulted, so the two callers of this loop read as a pair
+        # and a reader can see there are two sites without going to find the other one.
+        site="converse.tool",
+        # JD-4: the BUILDER'S arguments, not its output, so a shuffled-context control can
+        # swap ONE of them and rebuild. Written only while an operator's capture window is
+        # open (`session_log.capture_replay`); by default this records nothing.
+        replay_args={
+            "builder": "converse_system_prompt",
+            "connection_id": connection_id or "",
+            "extra": extra_context or "",
+        },
     )
 
 

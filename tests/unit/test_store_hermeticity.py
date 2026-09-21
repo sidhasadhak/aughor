@@ -593,3 +593,16 @@ def test_every_store_a_live_drive_reads_from_the_checkout_still_earns_it(isolati
     assert seeders == [], (
         f"aughor/ now seeds the samples warehouse ({seeders}), so a live drive can write it: isolate "
         "AUGHOR_SAMPLES_DB in _isolate_stores() and drop its exclusion.")
+
+
+def test_api_sync_state_resolves_through_the_state_dir():
+    """`connectors/api/base_sync.py` hardcoded `Path("data/api_sync")` and `Path("data")`, so it
+    was invisible to both isolation lists (this suite's conftest and `scripts/dump_openapi.py`)
+    and would have been left behind by `aughor migrate-state`. It now resolves through
+    `state_dir()`, whose env both lists already carry — isolated by construction."""
+    from aughor.connectors.api import base_sync
+    from aughor.db.paths import state_dir
+
+    assert base_sync._STATE_ROOT == state_dir()
+    assert base_sync._SYNC_ROOT == state_dir() / "api_sync"
+    assert "aughor-test-stores" in str(base_sync._SYNC_ROOT), "the API sync store is not isolated"

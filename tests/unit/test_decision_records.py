@@ -209,3 +209,254 @@ def test_export_is_deterministic_and_idempotent():
     again = exporters.export_decisions(site="test.export")["test.export"]
     assert first["choice"]["data_id"] == again["choice"]["data_id"]
     assert first["choice"]["version"] == again["choice"]["version"]   # no new version minted
+
+
+def test_each_tool_loop_caller_files_under_its_own_site():
+    """The site is the caller's, not a literal in the loop.
+
+    Until 2026-09-21 `run_tool_loop` hardcoded `"converse.tool"`, so the analyst — a
+    different roster (11 tools, no `delegate_task`) behind a system prompt carrying the
+    resolved spec — filed every pick under the conversational label. Measured on the live
+    corpus that was **46 of 58 rows, 79%**, and the two populations were separable only by an
+    accident of roster size. A site column that answers "which decider" wrongly cannot be
+    segmented by decider at all, which is what every judgment measurement over it needs.
+    """
+    _wipe()
+    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
+    from aughor.llm.faux import FauxToolCall, set_responses
+    from aughor.llm.provider import LLMProvider
+
+    params = {"type": "object", "properties": {}}
+    tools = [ToolSpec(name="run_sql", description="d", parameters=params, run=lambda a: "1"),
+             ToolSpec(name="baseline", description="d", parameters=params, run=lambda a: "2")]
+
+    set_responses([FauxToolCall(payload={}, name="run_sql"), "done"])
+    run_tool_loop(LLMProvider(backend="faux", role="coder"), "sys", "q", tools,
+                  site="analyst.tool")
+    set_responses([FauxToolCall(payload={}, name="baseline"), "done"])
+    run_tool_loop(LLMProvider(backend="faux", role="coder"), "sys", "q", tools,
+                  site="converse.tool")
+
+    assert [r["chosen"] for r in decisions.list_for_export("analyst.tool")] == ["run_sql"]
+    assert [r["chosen"] for r in decisions.list_for_export("converse.tool")] == ["baseline"]
+
+
+def test_the_default_site_is_unchanged_so_an_un_updated_caller_keeps_its_label():
+    """The default must stay `converse.tool`. Changing it would start a THIRD population
+    under a new name for callers nobody updated, which is the same unsegmentable corpus in a
+    different spelling."""
+    _wipe()
+    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
+    from aughor.llm.faux import FauxToolCall, set_responses
+    from aughor.llm.provider import LLMProvider
+
+    params = {"type": "object", "properties": {}}
+    set_responses([FauxToolCall(payload={}, name="a"), "done"])
+    run_tool_loop(LLMProvider(backend="faux", role="coder"), "sys", "q",
+                  [ToolSpec(name="a", description="d", parameters=params, run=lambda x: "1"),
+                   ToolSpec(name="b", description="d", parameters=params, run=lambda x: "2")])
+    assert len(decisions.list_for_export("converse.tool")) == 1
+
+
+# ── JD-4: what a replay needs, recorded under the posture that governs it ─────
+
+import hashlib as _hashlib  # noqa: E402
+
+import pytest as _pytest  # noqa: E402
+
+
+@_pytest.fixture
+def closed_window():
+    """Every capture test starts and ends with the window CLOSED — the product's default, and
+    the state a test that forgot to close one would otherwise leak into the next."""
+    from aughor.obs import prompt_window as PW
+    PW.close_window()
+    yield PW
+    PW.close_window()
+
+
+def _loop(tools, responses, **kw):
+    from aughor.agent.tool_loop import run_tool_loop
+    from aughor.llm.faux import set_responses
+    from aughor.llm.provider import LLMProvider
+    set_responses(responses)
+    return run_tool_loop(LLMProvider(backend="faux", role="coder"), "THE SYSTEM PROMPT", "q",
+                         tools, **kw)
+
+
+def _two_tools():
+    from aughor.agent.tool_loop import ToolSpec
+    params = {"type": "object", "properties": {}}
+    return [ToolSpec(name="run_sql", description="d", parameters=params, run=lambda a: "1"),
+            ToolSpec(name="baseline", description="d", parameters=params, run=lambda a: "2")]
+
+
+def test_every_decision_carries_a_digest_of_what_the_decider_was_shown(closed_window):
+    """ALWAYS written, window or no window: a sha256 cannot be reversed into the prompt, so it
+    is metadata under §6 item 4. It is what lets a later rebuild PROVE it produced the same
+    input before a token is spent."""
+    from aughor.llm.faux import FauxToolCall
+    _wipe()
+    _loop(_two_tools(), [FauxToolCall(payload={}, name="run_sql"), "done"])
+    [r] = decisions.list_decisions(site="converse.tool")
+    assert r["prompt_fingerprint"] == _hashlib.sha256(b"THE SYSTEM PROMPT").hexdigest()
+    assert closed_window.active() is False, "writing a fingerprint must not need, or open, a window"
+
+
+def test_no_replay_payload_is_captured_while_the_window_is_closed(closed_window, monkeypatch):
+    """The DEFAULT. The builder's arguments carry the user's question and prior answers — a
+    payload — so nothing is emitted, and no operator's budget is spent, unless a window is open."""
+    from aughor.llm.faux import FauxToolCall
+    from aughor.obs import session_log
+    emitted = []
+    monkeypatch.setattr(session_log, "emit", lambda kind, **kw: emitted.append((kind, kw)))
+    _wipe()
+    _loop(_two_tools(), [FauxToolCall(payload={}, name="run_sql"), "done"],
+          trace_id="tr-1", replay_args={"builder": "converse_system_prompt", "extra": "secret"})
+    assert [k for k, _ in emitted if k == "decision_replay"] == []
+
+
+def test_an_open_window_captures_the_first_turn_only(closed_window, monkeypatch):
+    """A mid-loop decision saw a tool-result history persisted nowhere, so its arguments could
+    not rebuild its prompt — capturing them would spend an operator's budget on a row no replay
+    can use. Only the FIRST decision of a turn is captured."""
+    from aughor.llm.faux import FauxToolCall
+    from aughor.obs import session_log
+    emitted = []
+    monkeypatch.setattr(session_log, "emit", lambda kind, **kw: emitted.append((kind, kw)))
+    closed_window.open_window(calls=10, minutes=5, opened_by="t", reason="jd-4 test")
+    _wipe()
+    _loop(_two_tools(),
+          [FauxToolCall(payload={}, name="run_sql"), FauxToolCall(payload={}, name="baseline"),
+           "done"],
+          trace_id="tr-1",
+          replay_args={"builder": "analyst_system_prompt", "intake": "{}", "budget": 6})
+    replays = [kw for k, kw in emitted if k == "decision_replay"]
+    assert len(replays) == 1, f"expected one capture (the first turn), got {len(replays)}"
+    payload = replays[0]["payload"]
+    assert payload["builder"] == "analyst_system_prompt"
+    assert payload["question"] == "q"
+    assert payload["prompt_fingerprint"] == _hashlib.sha256(b"THE SYSTEM PROMPT").hexdigest()
+    assert payload["requested_temperature"] == 0.1
+    # The decision row and the capture are joinable, which is what the battery reads.
+    first = [r for r in decisions.list_decisions(site="converse.tool")
+             if r["context"].startswith("step 1 |")][0]
+    assert payload["decision_id"] == first["id"]
+
+
+def test_a_replay_capture_costs_exactly_one_unit_of_the_operators_budget(closed_window,
+                                                                        monkeypatch):
+    """The window's budget is SHARED with every other content capture — with a window open,
+    each model call's prompt is stored too (`capture_prompt`). That is right: the window is the
+    one control over how much sensitive content gets written, and a separate budget would let
+    replay content bypass the operator's number.
+
+    So what is pinned is the DELTA: the same turn run with and without replay arguments differs
+    by exactly one unit. Not zero (the capture would be free, so unbounded) and not two (it would
+    double-spend the operator's window).
+    """
+    from aughor.llm.faux import FauxToolCall
+    from aughor.obs import session_log
+    monkeypatch.setattr(session_log, "emit", lambda kind, **kw: None)
+    responses = [FauxToolCall(payload={}, name="run_sql"), "done"]
+
+    closed_window.open_window(calls=50, minutes=5)
+    _wipe()
+    _loop(_two_tools(), list(responses), trace_id="tr-a")
+    spent_without = 50 - closed_window.status()["remaining"]
+
+    closed_window.open_window(calls=50, minutes=5)
+    _wipe()
+    _loop(_two_tools(), list(responses), trace_id="tr-b",
+          replay_args={"builder": "converse_system_prompt", "extra": "x"})
+    spent_with = 50 - closed_window.status()["remaining"]
+
+    assert spent_with - spent_without == 1, (
+        f"a replay capture cost {spent_with - spent_without} units; it must cost exactly one")
+
+
+def test_a_truncated_argument_is_marked_so_the_battery_can_refuse_it(closed_window, monkeypatch):
+    """A capped intake rebuilds a DIFFERENT prompt. Marking it is what lets a replay refuse it
+    instead of silently measuring a different question."""
+    from aughor.obs import session_log
+    monkeypatch.setattr(session_log, "_prompt_cap", lambda: 10)
+    closed_window.open_window(calls=5, minutes=5)
+    out = session_log.capture_replay({"intake": "x" * 50, "budget": 6})
+    # `.get`, not indexing: a missing marker must FAIL AS AN ASSERTION that says what went
+    # wrong. Indexing raised KeyError instead, which killed the mutant for the wrong reason —
+    # a renamed key would crash the same way and the message would name neither.
+    assert out.get("intake_truncated") is True, "a truncated argument was not marked"
+    assert out["budget"] == 6
+
+
+def test_the_ungated_decisions_door_no_longer_serves_the_users_question(client):
+    """Measured live 2026-09-21: an UNAUTHENTICATED `GET /learning/decisions` answered 200 with
+    58 rows whose `context` carried questions verbatim — a payload under §6 item 4, served with
+    no gate while `obs/prompt_window.py` calls the question "the most sensitive thing this
+    product can write down". The metadata the route exists for is still all there."""
+    _wipe()
+    decisions.record_decision("converse.tool", "step 1 | last (start) | what is my revenue?",
+                              ["a", "b"], chosen="a", conn_id="c1", prompt_fingerprint="d" * 64)
+    body = client.get("/learning/decisions").json()
+    [r] = body["recent"]
+    assert "revenue" not in r["context"], "the question leaked through the ungated door"
+    assert "§6 item 4" in r["payload_withheld"]
+    # Metadata survives: the route's actual job.
+    assert r["chosen"] == "a" and r["conn_id"] == "c1" and r["prompt_fingerprint"] == "d" * 64
+    assert body["stats"]
+
+
+# ── A5: capture as a budget ────────────────────────────────────────────────────
+
+def _counter(key):
+    """Counters live under `snapshot()["counters"]`, not at the top level. The first draft read
+    the top level, so every "before" was 0 and the next read raised KeyError — a test killed for
+    the wrong reason — and guarded itself with `hasattr` checks that could only skip, not fail."""
+    from aughor.stats import stats
+    return stats.snapshot()["counters"].get(key, 0)
+
+def test_a_flood_stops_at_the_cap_and_counts_what_it_dropped(monkeypatch):
+    """The study's receipt: a store that stops growing at its cap, and a `dropped` counter that
+    is non-zero under a synthetic flood. Before A5 nothing capped the store's growth and nothing
+    counted a loss."""
+    _wipe()
+    before = _counter("learning.decision_record.pruned")
+    for i in range(12):
+        decisions.record_decision("converse.tool", f"q{i}", ["a", "b"], chosen="a", outcome="ok")
+    assert decisions.prune(max_rows=5) == 7
+    assert len(decisions.list_decisions(limit=100)) == 5
+    kept = {r["context"] for r in decisions.list_decisions(limit=100)}
+    assert kept == {f"q{i}" for i in range(7, 12)}, "the cap must keep the NEWEST rows"
+    assert _counter("learning.decision_record.pruned") - before == 7
+
+
+def test_a_row_a_person_labelled_is_never_pruned_and_never_counts_toward_the_cap():
+    """A label is evidence, not budget — the rule `session_events` pins follow. Without it,
+    enough ordinary traffic would quietly erase the human verdicts A6 is waiting for."""
+    _wipe()
+    decisions.record_decision("converse.tool", "labelled-1", ["a", "b"], chosen="a",
+                              outcome="rejected")
+    decisions.record_decision("converse.tool", "labelled-2", ["a", "b"], chosen="a",
+                              outcome="corrected")
+    for i in range(6):
+        decisions.record_decision("converse.tool", f"q{i}", ["a", "b"], chosen="a", outcome="ok")
+    decisions.prune(max_rows=2)
+    contexts = {r["context"] for r in decisions.list_decisions(limit=100)}
+    assert {"labelled-1", "labelled-2"} <= contexts, "a human label was pruned"
+    # the cap of 2 applies to the UNLABELLED rows alone: both labels plus two newest survive
+    assert contexts == {"labelled-1", "labelled-2", "q4", "q5"}
+
+
+def test_the_age_window_is_off_by_default_because_the_corpus_must_accumulate(monkeypatch):
+    monkeypatch.delenv("AUGHOR_DECISIONS_KEEP_DAYS", raising=False)
+    monkeypatch.delenv("AUGHOR_DECISIONS_MAX_ROWS", raising=False)
+    _wipe()
+    decisions.record_decision("converse.tool", "old", ["a", "b"], chosen="a", outcome="ok")
+    assert decisions.prune() == 0
+
+
+def test_a_truncated_field_is_counted_not_silently_clipped():
+    _wipe()
+    before = _counter("learning.decision_record.truncated")
+    decisions.record_decision("converse.tool", "x" * 10_000, ["a", "b"], chosen="a")
+    assert _counter("learning.decision_record.truncated") - before == 1

@@ -41,7 +41,13 @@ def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
     elif monitor.metric_name:
         try:
             from aughor.semantic.metrics import get_metric
-            m = get_metric(monitor.metric_name)
+            # SCOPED to the connection this monitor runs against. Resolving by name alone
+            # returns the first row carrying that name whatever connection owns it, so a
+            # monitor on one warehouse could evaluate another's formula — and unlike the read
+            # routes that shared this defect, a monitor ALERTS on the number, unattended, to
+            # people who never see which definition produced it. `conn_id` is required on
+            # `Monitor` and has always been right here; only this lookup ignored it.
+            m = get_metric(monitor.metric_name, connection_id=monitor.conn_id or None)
             if m:
                 sql = m.sql.strip()
         except Exception:

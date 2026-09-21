@@ -6587,6 +6587,17 @@ export interface paths {
          * @description The decision-record accumulation, made visible: per-site volume (total, trainable,
          *     outcome-closed) and the newest rows. This is the observability half of "is this
          *     decision learnable" — the volume answer that must exist before any scorer does.
+         *
+         *     🔴 Rows are served METADATA-ONLY. Until 2026-09-21 this returned `list_decisions` verbatim,
+         *     so an UNAUTHENTICATED request received every user's question text: measured live, a
+         *     `GET /learning/decisions` with no auth header answered 200 with 58 rows whose `context`
+         *     included questions such as "What is today's revenue and profit?". §6 item 4 decided that a
+         *     prompt is a payload readable only through an audited break-glass, and the product's own
+         *     `obs/prompt_window.py` calls the user's question "the most sensitive thing this product can
+         *     write down" — while this door served it to anyone. The volume answer this route exists for
+         *     needs no payload at all, so none is served. In-process, operator-run readers
+         *     (`evals/judgment_battery_eval.py`) call `decisions.list_decisions` directly and are
+         *     unaffected; it is the open HTTP door that was the leak.
          */
         get: operations["get_decisions_learning_decisions_get"];
         put?: never;
@@ -7596,6 +7607,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/{name}/definition-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Metric Definition Report
+         * @description A3 — the instrument beside the approval ask.
+         *
+         *     `POST /metrics/{name}/transition` validates the lifecycle, persists and journals, and tells
+         *     the approver nothing about what they are approving. This answers the four questions the bare
+         *     ask leaves open: what this is changing from, whether it executes and what it reads, what the
+         *     definition leaves undeclared, and how reproducible that read is.
+         *
+         *     **Advisory.** It never holds or refuses anything — the definition is the user's call, and
+         *     `semantic/definition_report.py` cannot even import the module that holds a send.
+         *
+         *     Spelled `conn_id`, like its three siblings (`/value`, `/validate`, `/freshness`) and for the
+         *     same reason `/metrics/catalogue/{conn_id}` is: `require_capability` declares `connection_id`
+         *     as a QUERY parameter and FastAPI refuses one name declared both ways on a route. This door is
+         *     ungated because it is a read, as every other read on this router is.
+         *
+         *     🔴 It resolves the metric SCOPED, then checks the connection came back matching — the same
+         *     two steps `transition_metric` takes. `get_metric` falls back to the GLOBAL definition when a
+         *     connection has none of its own, which is why `/value`, `/validate` and `/freshness` (all of
+         *     which call `get_metric(name)` with no connection) can answer for a formula belonging to
+         *     somebody else entirely. Reporting on the wrong definition is worse here than anywhere: this
+         *     screen exists to be trusted at the moment a person commits to one.
+         */
+        get: operations["metric_definition_report_metrics__name__definition_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/{name}/freshness": {
         parameters: {
             query?: never;
@@ -7606,6 +7657,10 @@ export interface paths {
         /**
          * Get Metric Freshness
          * @description Check the freshness of a metric's underlying data against its SLA.
+         *
+         *     Resolved SCOPED — see `get_metric_value`. An SLA is a promise a particular team made about
+         *     a particular warehouse; answering with another connection's is not a near-miss, it is a
+         *     different promise.
          */
         get: operations["get_metric_freshness_metrics__name__freshness_get"];
         put?: never;
@@ -7650,6 +7705,9 @@ export interface paths {
         /**
          * Run Metric Validation
          * @description Run all quality_tests for a metric against the given connection.
+         *
+         *     Resolved SCOPED — see `get_metric_value` for the measurement behind this. Running one
+         *     connection's quality tests against another's warehouse reports on a contract nobody wrote.
          */
         post: operations["run_metric_validation_metrics__name__validate_post"];
         delete?: never;
@@ -7671,6 +7729,20 @@ export interface paths {
          *     against a connection — the exact governed number, not an LLM re-derivation.
          *     This is what the MCP `get_metric` tool returns so an external agent binds to
          *     the same definition the rest of Aughor enforces (vs improvising a formula).
+         *
+         *     🔴 Resolved SCOPED. Until 2026-09-20 this read `get_metric(name)` with no connection, and
+         *     the resolver's no-connection branch returns the FIRST row matching the name, whatever
+         *     connection owns it. Measured live: `GET /metrics/revenue/value?conn_id=8233e4fd` answered
+         *     `SUM(total_amount) FROM orders` — the `samples` definition, on a connection id that is no
+         *     longer in `GET /connections` at all — with the `samples` caveat prose attached, at HTTP 200,
+         *     and no field naming whose definition had run. It failed on theLook only because
+         *     `total_amount` is not a column there; where the names overlap it returns a confident number
+         *     for a formula the caller never asked about. The promise in the docstring above — "the exact
+         *     governed number, not an LLM re-derivation" — was the thing being broken.
+         *
+         *     Passing the connection is the whole fix. A strict `metric.connection == conn_id` check would
+         *     also close it and would break `"*"`, which is how a house-wide definition reaches every
+         *     connection; the resolver already shadows a global row with a scoped one.
          */
         get: operations["get_metric_value_metrics__name__value_get"];
         put?: never;
@@ -28818,6 +28890,39 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    metric_definition_report_metrics__name__definition_report_get: {
+        parameters: {
+            query: {
+                conn_id: string;
             };
             header?: never;
             path: {

@@ -43,7 +43,7 @@ sys.path.insert(0, str(REPO))
 
 #: The three registered decision sites, in the order they run on a deep turn. Named here so
 #: a site that stops recording shows up as a zero row rather than vanishing from the table.
-SITES = ("ask.route", "framing.definition", "converse.tool")
+SITES = ("ask.route", "framing.definition", "converse.tool", "analyst.tool")
 
 
 def load_yield(db_path: Path) -> dict:

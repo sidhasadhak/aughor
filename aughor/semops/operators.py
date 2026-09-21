@@ -140,6 +140,15 @@ _FILTER_SYS = (
 CHAMPION_ROLE: Role = "coder"        # the strong tier, vs DEFAULT_ROLE = "fast"
 _CHAMPION_ESCALATE = 0.20            # sample disagreement above this → re-run the batch on the champion
 
+# ── JD-3 — bands, not batches (flag `semops.banded_cascade`, default OFF) ───────────
+# The sampled cascade above re-runs EVERY row on the champion when a sample disagrees — paying the
+# strong tier for the rows the cheap tier already had right. The banded path judges each row
+# through JD-1's seam (`aughor/judgment/seam.py`), so each row carries its own stated probability,
+# and spends the champion ONLY on rows inside the uncertainty band. The band lives HERE, in code,
+# never in the model. A row still inside it after the champion is KEPT (this operator never
+# silently drops a row) and NAMED for a person, rather than guessed.
+_BAND_LO, _BAND_HI = 0.30, 0.70
+
 
 def _filter_verdicts(
     rows: list, ci: int, predicate: str, provider, batch: int, indices: list[int],
@@ -167,6 +176,79 @@ def _filter_verdicts(
             notes.append(f"batch failed ({str(e)[:80]}) — rows kept unchanged")
             kept.update(chunk_idx)
     return kept, llm_calls, notes
+
+
+def _band(p: "float | None") -> str:
+    if p is None:
+        return "unanswered"
+    if p >= _BAND_HI:
+        return "keep"
+    if p <= _BAND_LO:
+        return "drop"
+    return "uncertain"
+
+
+def _banded_verdicts(rows: list, ci: int, predicate: str, provider, batch: int,
+                     indices: list[int]) -> tuple[dict, int]:
+    """P(row satisfies ``predicate``) per index — ``None`` where the call gave no answer.
+
+    One JD-1 bundle per ``batch`` rows, each row its OWN typed question with its own field and its
+    own probability — so a row is not read out of a shared list its neighbours can shift, and a
+    failed call makes those rows explicitly unanswered rather than silently kept."""
+    from aughor.judgment.seam import Noul, judge
+    probs: dict = {}
+    calls = 0
+    for start in range(0, len(indices), max(1, batch)):
+        chunk = indices[start:start + batch]
+        answers = judge(
+            f"Predicate: {predicate}",
+            [Noul(f"r{gi}", "This text satisfies the predicate. Text: "
+                             f"{str(rows[gi][ci])[:_MAX_CELL]}") for gi in chunk],
+            provider=provider)
+        calls += 1
+        for gi in chunk:
+            a = answers.get(f"r{gi}")
+            probs[gi] = a.distribution.get("true") if (a is not None and a.available) else None
+    return probs, calls
+
+
+def _banded_filter(result: QueryResult, rows: list, ci: int, column: str, predicate: str,
+                   notes: list[str], *, cheap, champ, role: Role, champion_role: Role,
+                   batch: int) -> "SemanticOpResult":
+    all_idx = list(range(len(rows)))
+    cheap_p, calls = _banded_verdicts(rows, ci, predicate, cheap, batch, all_idx)
+    bands = {gi: _band(p) for gi, p in cheap_p.items()}
+    keep = {gi for gi, b in bands.items() if b == "keep"}
+    dropped = sum(1 for b in bands.values() if b == "drop")
+    escalate = [gi for gi, b in bands.items() if b in ("uncertain", "unanswered")]
+
+    champ_calls, person = 0, []
+    if escalate:
+        champ_p, champ_calls = _banded_verdicts(rows, ci, predicate, champ, batch, escalate)
+        for gi in escalate:
+            b = _band(champ_p.get(gi))
+            if b == "keep":
+                keep.add(gi)
+            elif b == "drop":
+                dropped += 1
+            else:
+                keep.add(gi)          # fail-open: never silently dropped
+                person.append(gi)
+    notes.append(
+        f"banded cascade: the cheap tier ({role}) decided {len(rows) - len(escalate)} of "
+        f"{len(rows)} rows with confidence; {len(escalate)} uncertain row(s) went to "
+        f"{champion_role} ({champ_calls} call(s)) instead of all {len(rows)}")
+    if person:
+        notes.append(
+            f"{len(person)} row(s) still uncertain after {champion_role} — KEPT and left for a "
+            f"person to decide, not guessed: rows {person[:20]}"
+            + (" …" if len(person) > 20 else ""))
+    keep_idx = sorted(keep)
+    kept_rows = [rows[i] for i in keep_idx]
+    new_result = result.model_copy(update={"rows": kept_rows, "row_count": len(kept_rows)})
+    notes.insert(0, f"kept {len(kept_rows)} of {len(rows)} rows matching: {predicate}")
+    return SemanticOpResult(new_result, "filter", column, len(rows), len(kept_rows), False, notes,
+                            calls + champ_calls)
 
 
 def semantic_filter(
@@ -202,6 +284,14 @@ def semantic_filter(
     rows = result.rows
     notes = _materialized_note(result)
     all_idx = list(range(len(rows)))
+    # JD-3: only where the sampled cascade would have run. With the flag off, or no cascade asked
+    # for, the code below is the code that ran before — byte-identical.
+    if validate_sample > 0 and rows and role != champion_role:
+        from aughor.kernel.flags import flag_enabled
+        if flag_enabled("semops.banded_cascade"):
+            return _banded_filter(result, rows, ci, column, predicate, notes,
+                                  cheap=get_provider(role), champ=get_provider(champion_role),
+                                  role=role, champion_role=champion_role, batch=batch)
     kept, llm_calls, fnotes = _filter_verdicts(rows, ci, predicate, get_provider(role), batch, all_idx)
     notes.extend(fnotes)
 

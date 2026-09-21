@@ -142,3 +142,43 @@ class TestNeverReset:
         assert "reset" not in passed, passed
         assert "--hard" not in passed, passed
         assert "checkout" not in passed, passed
+
+
+# ── re-running the installer updates an existing clone ────────────────────────
+
+@pytest.mark.parametrize("status", ["updated", "noop", "refused", "failed", "raises"])
+def test_the_installer_updates_a_clone_and_never_fails_on_a_refusal(tmp_path, monkeypatch,
+                                                                    capsys, status):
+    """A re-run used to reuse an existing checkout exactly as it was — re-syncing the old code's
+    dependencies and never pulling. It now fast-forwards first, through the same function
+    `aughor update` uses. What must NOT change is that an install finishes: a refusal (local
+    changes, a diverged branch) or an error is one line, never an abort."""
+    from aughor import installer
+
+    (tmp_path / ".git").mkdir()
+    calls = []
+
+    def fake_update(root, ref=None):
+        calls.append(root)
+        if status == "raises":
+            raise RuntimeError("network down")
+        return up.Result(status, "local changes outside data/",
+                         before="a" * 40, after="b" * 40) if status != "noop" else \
+            up.Result("noop", "already current", before="a" * 40, after="a" * 40)
+
+    monkeypatch.setattr(up, "update", fake_update)
+    installer.update_checkout(tmp_path, installer.Steps())  # must not raise, whatever the status
+    assert calls == [tmp_path]
+    out = capsys.readouterr().out
+    if status in ("refused", "failed"):
+        assert "Not updating the code" in out
+    if status == "raises":
+        assert "installing what is here" in out
+
+
+def test_a_snapshot_install_is_not_asked_to_update_itself(tmp_path, monkeypatch):
+    """No `.git`: the installer that is running IS how a snapshot updates, so `update` — whose
+    snapshot answer is "re-run the installer" — must not be called from inside it."""
+    from aughor import installer
+    monkeypatch.setattr(up, "update", lambda *a, **k: pytest.fail("update called on a snapshot"))
+    installer.update_checkout(tmp_path, installer.Steps())

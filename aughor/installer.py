@@ -1297,6 +1297,40 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def update_checkout(root: Path, steps: Steps) -> None:
+    """Fast-forward an existing clone before the install steps, so re-running the installer
+    takes the newest code — the same thing `aughor update` does, through the same function.
+
+    Until 2026-09-21 a re-run reused an existing checkout exactly as it was: it re-synced the
+    dependencies of the OLD code and never pulled. Here, not in `install.sh`, so `install.ps1`
+    gets it too without a second copy.
+
+    Never blocks an install. `update.update` REFUSES a diverged checkout or one with local
+    changes outside `data/`, and never resets — so a refusal is reported in one line and the
+    install carries on with the checkout as it stands. A snapshot (no `.git`) is skipped
+    silently: the installer that is running IS how a snapshot updates.
+    """
+    # RELATIVE, on purpose: the installer runs on a bare interpreter before `uv sync`, and
+    # `test_the_installer_imports_only_the_standard_library` refuses an absolute `aughor`
+    # import. A sibling in the checkout is not the third-party package that rule guards
+    # against — and `update.py` is scanned by the same test, so it stays stdlib-only.
+    from . import update as _update
+
+    if not _update.is_git_install(root):
+        return
+    try:
+        result = _update.update(root)
+    except Exception as exc:                       # noqa: BLE001 — never fail an install on this
+        steps.line(steps.dim(f"  Could not check for newer code ({exc}); installing what is here."))
+        return
+    if result.status == "updated":
+        steps.done(f"Code updated {result.before[:8]} → {result.after[:8]}")
+    elif result.status == "noop":
+        steps.up_to_date("Code")
+    else:
+        steps.line(steps.dim(f"  Not updating the code: {result.reason}"))
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     tolerate_narrow_output()
     args = list(sys.argv[1:] if argv is None else argv)
@@ -1311,6 +1345,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                hint="Run the installer from the folder Aughor was cloned into.")
         choose_industries(root, steps, options.industries if options.industries is not None
                           else os.environ.get("AUGHOR_INDUSTRIES"))
+        update_checkout(root, steps)
         sync_python(root, steps)
         if not options.api_only:
             prepare_web(root, steps, api_port=options.api_port, build=not options.dev)

@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from aughor.learning import decisions  # noqa: E402
-from evals.decision_yield_eval import arm_a, summarize  # noqa: E402
+from evals.decision_yield_eval import SITES, arm_a, summarize  # noqa: E402
 
 
 def _wipe() -> None:
@@ -174,7 +174,10 @@ def test_an_empty_store_is_inconclusive_not_a_pass():
     s = summarize(arm_a({}), {})
     assert s["inconclusive"] is True
     assert s["falsifier"]["a1_bought_nothing"] is False
-    assert set(s["sites_silent"]) == {"ask.route", "framing.definition", "converse.tool"}
+    # Against the module's OWN roster, not a list copied beside the expectation: a hardcoded
+    # set here goes stale the moment a decision site is added, and then reads as a failure of
+    # the thing under test rather than of the copy. (`analyst.tool` was added 2026-09-21.)
+    assert set(s["sites_silent"]) == set(SITES)
 
 
 def test_the_definition_chooser_is_asked_for_confidence_only_behind_its_flag():

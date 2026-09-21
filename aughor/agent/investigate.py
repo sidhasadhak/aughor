@@ -1602,6 +1602,35 @@ def _qualify_intake_table_names(intake, schema: str) -> None:
         else:
             qualified_dims.append(dim)
     intake.dimensions = qualified_dims
+_PLAIN_IDENT = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$")
+
+
+def _validate_intake_dimensions(dimensions, schema: str) -> str | None:
+    """Return an error if a dimension names no column in the schema.
+
+    JD-2's survivor: `dimensions` was validated against the schema NOWHERE, while
+    `metric_table` was. Matched by EXACT column name (after dropping a table qualifier), not
+    substring — a substring test would pass `order` on the strength of `order_date`.
+
+    Fails OPEN, deliberately, in the two cases where it could only be wrong: a schema it parses
+    no columns from, and a dimension that is not a plain identifier (an expression). A false
+    alarm here is not free — it buys a paid LLM retry on the critical path — and JD-2 measured
+    1,449 of 1,449 real dimensions as names the model was shown, so the failure this catches is
+    rare and a spurious one would cost more than it saves.
+    """
+    dims = [str(d).strip() for d in (dimensions or []) if str(d or "").strip()]
+    if not dims or not schema:
+        return None
+    cols = {c.lower() for pairs in _typed_columns(schema).values() for c, _ in pairs}
+    if not cols:
+        return None
+    unknown = [d for d in dims if _PLAIN_IDENT.match(d) and _bare(d).lower() not in cols]
+    if not unknown:
+        return None
+    return (f"dimension(s) {', '.join(repr(d) for d in unknown)} do not exist in the schema. "
+            "Use only columns listed in the schema.")
+
+
 def _validate_intake_metric_table(metric_table: str, schema: str) -> str | None:
     """Return an error if metric_table does not exist in the schema."""
     if not metric_table or not schema:
@@ -5655,16 +5684,31 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # (was up to 3 sequential round-trips on the critical path of every investigation). The
     # date column needs no LLM retry — the deterministic _resolve_date_column below fixes an
     # ID-like / non-date column far more reliably.
+    def _spec_errors(spec) -> tuple[list[str], list[str]]:
+        """Every validation error on a spec, and which check raised each. ONE function, run
+        before the retry and again after it: the retry used to be accepted unchecked, so a
+        correction that still named a table that does not exist went straight downstream."""
+        errs, kinds = [], []
+        for kind, err in (
+            ("metric_table", _validate_intake_metric_table(spec.metric_table, schema)),
+            ("dimensions", _validate_intake_dimensions(getattr(spec, "dimensions", None), schema)),
+            ("windows", _validate_intake_windows(
+                spec, *_extract_data_date_range(scan, getattr(spec, "metric_table", "") or ""))),
+        ):
+            if err:
+                errs.append(err)
+                kinds.append(kind)
+        return errs, kinds
+
     if intake is not None:
-        _errs = []
-        mt_error = _validate_intake_metric_table(intake.metric_table, schema)
-        if mt_error:
-            _errs.append(mt_error)
-        _dmin, _dmax = _extract_data_date_range(scan, getattr(intake, "metric_table", "") or "")
-        win_error = _validate_intake_windows(intake, _dmin, _dmax)
-        if win_error:
-            _errs.append(win_error)
+        from aughor.stats import stats as _stats
+        _errs, _kinds = _spec_errors(intake)
         if _errs:
+            # The spec-repair RATE is what JD-2 named as its receipt, and it was never
+            # instrumented: nothing fired on a repair, only on a retry that raised.
+            _stats.inc("deep_analysis.spec_repair.attempted")
+            for _k in _kinds:
+                _stats.inc(f"deep_analysis.spec_repair.error.{_k}")
             retry_prompt = (
                 prompt
                 + "\n\nCORRECTION REQUIRED — fix ALL of the following:\n- "
@@ -5682,6 +5726,21 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake correction retry failed; keeping the original intake "
                                "spec despite validation errors", counter="deep_analysis.intake_retry")
+            else:
+                # Re-validate the correction. One retry is the design — no loop — so a spec that
+                # is still invalid is kept (it is the model's best correction, and the original
+                # was invalid too) but COUNTED and NOTED, so downstream and the operator can see
+                # it rather than reading it as repaired.
+                _left, _left_kinds = _spec_errors(intake)
+                if _left:
+                    _stats.inc("deep_analysis.spec_repair.still_invalid")
+                    intake.intake_notes = (
+                        (intake.intake_notes or "").rstrip()
+                        + " SPEC STILL INVALID AFTER ONE CORRECTION ("
+                        + ", ".join(_left_kinds) + "): " + " ".join(_left)
+                    ).strip()
+                else:
+                    _stats.inc("deep_analysis.spec_repair.repaired")
 
     # RC1 — metric-feasibility caveat: when the question needs a metric the schema can't
     # support (margin/profit with no cost column; efficiency with no spend/outcome), record

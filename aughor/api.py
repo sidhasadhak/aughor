@@ -90,6 +90,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
 from aughor.db.registry import list_connections, get_connection_settings
+from aughor.db.registry import ConnectionKeyMismatch
 from aughor.llm.provider import NoModelConfigured
 
 # Shared mutable state — imported here so startup events can populate the dicts
@@ -424,6 +425,22 @@ async def _no_model_configured_handler(request: "Request", exc: NoModelConfigure
     return JSONResponse(status_code=400, content={
         "error": "no_model_configured", "role": exc.role,
         "backend": exc.backend, "detail": str(exc),
+    })
+
+
+# ── a connection that cannot be decrypted is the operator's error too ─────────────
+# Same reasoning as the handler above: the catch-all would report a key mismatch as
+# "internal_error", hiding the one cause the operator can fix. 503, not 400 — the request is
+# fine; the server cannot reach the connection's credentials. The message names the connection
+# and the fix, and carries no secret.
+@app.exception_handler(ConnectionKeyMismatch)
+async def _connection_key_mismatch_handler(request: "Request", exc: ConnectionKeyMismatch):
+    from fastapi.responses import JSONResponse
+    logger.error("Connection %s cannot be decrypted (%s %s)", exc.conn_id,
+                 request.method, request.url.path)
+    return JSONResponse(status_code=503, content={
+        "error": "connection_key_mismatch", "connection_id": exc.conn_id,
+        "detail": str(exc),
     })
 
 

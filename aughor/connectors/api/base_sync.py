@@ -17,17 +17,24 @@ import json
 import logging
 from abc import abstractmethod
 from datetime import datetime, timezone
-from pathlib import Path
 
 import duckdb
 
 from aughor.connectors.base import Connector
 from aughor.control_plane.contracts.execution import QueryResult
+from aughor.db.paths import state_dir
 
 logger = logging.getLogger(__name__)
 
-_SYNC_ROOT  = Path("data/api_sync")
-_STATE_ROOT = Path("data")
+# Through `state_dir()`, like every other per-connection generated store — so
+# `AUGHOR_STATE_DIR` isolates it (both hermeticity lists already carry that env, so this
+# needed no new one) and the IN-4 data home reaches it once `migrate-state` has run.
+# These were `Path("data/api_sync")` / `Path("data")`: invisible to both isolation lists,
+# and a migration would have moved every store EXCEPT the API sync state. Module constants
+# on purpose — the house convention `db/paths.state_dir` documents, which conftest meets by
+# setting the env before any app import.
+_STATE_ROOT = state_dir()
+_SYNC_ROOT  = _STATE_ROOT / "api_sync"
 MAX_ROWS    = 2_000
 FULL_SYNC_LOOKBACK_DAYS = 730   # 2 years of history on first sync
 
