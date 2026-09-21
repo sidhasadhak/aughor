@@ -179,11 +179,16 @@ class StagedProposal(BaseModel):
     #: person on its first run: params carry the resolved send, accept performs it through
     #: the same `post_as_bot` the engine uses, and `mint_grant` records a standing
     #: send-grant so later runs of that chain to that channel go unattended.
+    #: ``agent_limit`` (2026-09-22) is a proposed value for ONE declared knob of a fleet
+    #: agent (params: agent_id, limit, value, and the `before` the approver compares
+    #: against); accept writes it through `kernel.agents.set_governance`, which re-checks
+    #: the knob is declared and the value in range — a cap on spend is governance
+    #: however small the number, so Spotlight stages it rather than applying it.
     kind: Literal["declared_action", "integration",
                   "agent_draft", "automation_draft", "agent_bundle",
                   "automation_state", "agent_grant",
                   "automation_edit", "monitor_bundle", "brief_draft",
-                  "outbound_send"] = "declared_action"
+                  "outbound_send", "agent_limit"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -550,7 +555,7 @@ def gov_action_of(p: StagedProposal) -> str:
         if op is not None:
             return op.gov_action
     if p.kind in ("agent_draft", "automation_draft", "agent_bundle",
-                  "automation_edit", "monitor_bundle", "brief_draft"):
+                  "automation_edit", "monitor_bundle", "brief_draft", "agent_limit"):
         return f"spotlight.{p.kind}"
     if p.kind == "outbound_send":
         return "automations.outbound_send"
@@ -699,6 +704,8 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
         return _accept_automation_state(p, actor=actor), ""
     if p.kind == "agent_grant":
         return _accept_agent_grant(p, actor=actor), ""
+    if p.kind == "agent_limit":
+        return _accept_agent_limit(p, actor=actor), ""
 
     action = _load_action(p.connection_id, p.schema_name, p.action_id)
     if action is None:
@@ -1141,6 +1148,38 @@ def _accept_automation_state(p: StagedProposal, *, actor: str):
     _record_outcome(p.id, "executed", f"automation {out['automation_id']} {verb}", out)
     return _Result("executed", True, p.action_id,
                    message=f"automation '{out['name']}' {verb}",
+                   outcome=out, detail=out)
+
+
+def _accept_agent_limit(p: StagedProposal, *, actor: str):
+    """Write the accepted knob value through the ONE governance door. Validation re-runs
+    HERE in the registry's own words: the knob must still be declared and the value in
+    range — a charter can lose a knob between stage and accept, and the store is
+    history, never the law."""
+    _Result = _executor_result()
+    from aughor.kernel.agents import get_charter, set_governance
+
+    params = dict(p.params or {})
+    agent_id = str(params.get("agent_id") or "")
+    knob_id = str(params.get("limit") or "")
+    charter = get_charter(agent_id)
+    if charter is None:
+        _record_outcome(p.id, "failed", f"no such agent {agent_id!r}", {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"limit change no longer valid: no such agent {agent_id!r}")
+    try:
+        gov = set_governance(agent_id, scope=params.get("workspace_id") or None,
+                             limits={knob_id: params.get("value")})
+    except ValueError as exc:
+        _record_outcome(p.id, "failed", str(exc), {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"limit change no longer valid: {exc}")
+    out = {"agent_id": agent_id, "limit": knob_id, "value": gov.limits.get(knob_id),
+           "before": params.get("before")}
+    _record_outcome(p.id, "executed",
+                    f"{charter.name} {knob_id} = {out['value']:,}", out)
+    return _Result("executed", True, p.action_id,
+                   message=f"{charter.name}'s {knob_id} is now {out['value']:,}",
                    outcome=out, detail=out)
 
 

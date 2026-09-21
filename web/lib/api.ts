@@ -5019,7 +5019,8 @@ export interface StagedProposal {
    *  records, and accept creates the agent then saves its chain, all or nothing. */
   kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
       | "agent_bundle" | "automation_state" | "agent_grant"
-      | "automation_edit" | "monitor_bundle" | "brief_draft" | "outbound_send";
+      | "automation_edit" | "monitor_bundle" | "brief_draft" | "outbound_send"
+      | "agent_limit";
   /** The connected account an `integration` proposal would act as. "" otherwise. */
   grant_id: string;
   action_id: string;
@@ -5849,13 +5850,26 @@ export async function cancelJob(jobId: string): Promise<{ job_id: string; cancel
 
 // ── Agent registry + governance: manage the fleet (Phase 0) ──────────────────
 
-export interface AgentGovernance { enabled: boolean; token_budget: number | null; time_budget_s: number | null; model?: string | null }
+export interface AgentGovernance {
+  enabled: boolean; token_budget: number | null; time_budget_s: number | null; model?: string | null;
+  /** Resolved values of the charter's declared knobs, by knob id — always every knob. */
+  limits?: Record<string, number>;
+}
 export interface AgentSpend { runs: number; total_tokens: number; query_count: number }
+/** One declared, governable LIMIT an agent's pipelines read at run time (the Curator's
+ *  warehouse-sized caps). The registry is the charter's; this is its wire shape. */
+export interface AgentKnob {
+  id: string; label: string; description: string;
+  default: number; min: number; max: number; unit: string;
+  /** Where it bites, in a reader's words — Spotlight's "what is where". */
+  applies_to: string;
+}
 export interface AgentRosterEntry {
   id: string; name: string; role: string; goal: string;
   lane: "background" | "interactive";
   job_kinds: string[]; tools: string[]; icon: string; reserved: boolean;
   default_budget: { token_budget: number | null; time_budget_s: number | null };
+  knobs?: AgentKnob[];
   governance: AgentGovernance;
   spend: AgentSpend;
   backend?: string;
@@ -5870,12 +5884,22 @@ export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[
 
 export async function patchAgent(
   agentId: string,
-  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string; workspace_id?: string; allow_paid?: boolean },
+  body: {
+    enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string;
+    /** Declared-knob values by id; null clears one back to its default. */
+    limits?: Record<string, number | null>;
+    workspace_id?: string; allow_paid?: boolean;
+  },
 ): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
   const res = await fetch(`${getApiBase()}/agents/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // The registry's own sentence (an undeclared knob, an out-of-range value) is the
+    // message the operator should read — not a bare null.
+    const detail = await res.json().catch(() => null);
+    throw new Error(String(detail?.detail ?? `PATCH /agents/${agentId} failed (${res.status})`));
+  }
   return res.json();
 }
 

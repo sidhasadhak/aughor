@@ -585,6 +585,62 @@ _AUDIT_PARAMS = {
 }
 
 
+def platform_limits(args: dict) -> dict:
+    """Every spend control the fleet carries, resolved as it stands NOW — each agent's
+    per-run token and time budget, and each declared knob (the Curator's warehouse-sized
+    caps) with its value, default, range and WHERE it bites. This is Spotlight's "what
+    is where" for cost: the registry the roster page renders and the enforcement sites
+    read, served from one function so the numbers cannot disagree with the UI.
+    """
+    from aughor.kernel.agents import effective_governance, list_charters
+
+    agents: list[dict] = []
+    knob_words: list[str] = []
+    budget_words: list[str] = []
+    for c in list_charters():
+        try:
+            gov = effective_governance(c.id)
+        except Exception as exc:  # noqa: BLE001 — a read error is reported, never masked
+            logger.debug("platform_limits: governance unreadable for %s: %s", c.id, exc)
+            agents.append({"agent": c.name, "agent_id": c.id, "unavailable": True})
+            continue
+        row = {
+            "agent": c.name, "agent_id": c.id, "enabled": gov.enabled,
+            "token_budget_per_run": gov.token_budget,
+            "time_budget_s_per_run": gov.time_budget_s,
+            "limits": [],
+        }
+        if gov.token_budget:
+            budget_words.append(f"{c.name} {gov.token_budget:,}")
+        for k in c.knobs:
+            v = int(gov.limits.get(k.id, k.default))
+            row["limits"].append({
+                "limit": k.id, "label": k.label, "value": v, "unit": k.unit,
+                "default": k.default, "min": k.min, "max": k.max,
+                "applies_to": k.applies_to, "description": k.description,
+            })
+            state = "the default" if v == k.default else f"default {k.default:,}"
+            knob_words.append(f"{c.name}'s {k.label.lower()} is {v:,} {k.unit} ({state}) — "
+                              f"it bounds {k.applies_to}")
+        agents.append(row)
+
+    budgets = ("Per-run token budgets: " + ", ".join(budget_words) + "."
+               if budget_words else "No per-run token budgets are set.")
+    knobs = (" Declared limits: " + "; ".join(knob_words) + "."
+             if knob_words else " No agent declares a limit beyond its budget.")
+    return {
+        "summary": (budgets + knobs +
+                    " Change any of them on the Agent Ops roster page, or ask me for a "
+                    "value — set_agent_limit stages it for a person to accept."),
+        "agents": agents,
+        "how_to_change": {
+            "page": "Agent Ops → Roster → the agent → Limits",
+            "tool": "set_agent_limit",
+            "custody": "a proposal a person accepts in the inbox; nothing applies from chat alone",
+        },
+    }
+
+
 def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec]:
     """SP-1's org-level Know reads, bound the same way as every other roster: the
     connection by closure, nothing model-nameable that the caller did not grant."""
@@ -612,6 +668,21 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
             ),
             parameters=_USAGE_PARAMS,
             run=lambda a: platform_usage(a),
+        ),
+        ToolSpec(
+            name="platform_limits",
+            description=(
+                "Every spend control this deployment has, as it stands now: each "
+                "agent's per-run token and time budget, and every declared limit — "
+                "the Curator's cap on how many tables the glossary autoseed annotates "
+                "and on how much schema the business-profile prompt carries — with "
+                "its value, default, range and WHERE it bites. Use this for 'what "
+                "limits/caps/budgets exist', 'how much can the explorer burn', 'is "
+                "autoseed capped' questions, and BEFORE proposing a change with "
+                "set_agent_limit. Quote the summary field verbatim for the numbers — never re-derive them from the other fields."
+            ),
+            parameters=_EMPTY_PARAMS,
+            run=lambda a: platform_limits(a),
         ),
         ToolSpec(
             name="platform_runs",

@@ -331,9 +331,10 @@ def test_premortem_discloses_a_partial_scan_instead_of_a_clean_bill(monkeypatch)
 def test_spotlight_roster_names_and_read_contract():
     tools = spot.spotlight_tools("c1")
     names = [t.name for t in tools]
-    assert names == ["list_platform_connections", "platform_usage", "platform_runs",
-                     "investigation_cadence", "answer_accuracy", "table_popularity",
-                     "platform_traces", "platform_premortem", "platform_audit"]
+    assert names == ["list_platform_connections", "platform_usage", "platform_limits",
+                     "platform_runs", "investigation_cadence", "answer_accuracy",
+                     "table_popularity", "platform_traces", "platform_premortem",
+                     "platform_audit"]
 
 
 def test_conversation_gets_the_spotlight_roster():

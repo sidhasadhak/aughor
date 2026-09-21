@@ -699,6 +699,84 @@ def draft_brief(connection_id: str, args: dict, *, emit=None) -> dict:
 
 # ── the roster ───────────────────────────────────────────────────────────────────────
 
+def _resolve_charter(ref: str):
+    """A fleet agent by id or display name (case-insensitive) — or (None, refusal
+    naming the roster). Charter names are the registry's own, never attacker text."""
+    from aughor.kernel.agents import list_charters
+    want = str(ref or "").strip().lower()
+    charters = list_charters()
+    for c in charters:
+        if want and want in (c.id.lower(), c.name.lower()):
+            return c, ""
+    names = ", ".join(f"{c.name} ({c.id})" for c in charters)
+    return None, f"no fleet agent {clip(ref, NAME_CLIP)!r} — the agents are: {names}"
+
+
+def _resolve_knob(charter, ref: str):
+    """One of the charter's declared knobs by id or by label words — or (None, refusal
+    naming the declared ones)."""
+    want = str(ref or "").strip().lower()
+    for k in charter.knobs:
+        if want and (want == k.id.lower() or want == k.label.lower()
+                     or want.replace(" ", "_") == k.id.lower()):
+            return k, ""
+    # A looser match: every word of the ask appears in the label or the id.
+    words = [w for w in want.replace("_", " ").split() if w]
+    hits = [k for k in charter.knobs
+            if words and all(w in (k.label + " " + k.id).lower().replace("_", " ") for w in words)]
+    if len(hits) == 1:
+        return hits[0], ""
+    known = "; ".join(f"{k.id} ({k.label}, {k.min:,}–{k.max:,} {k.unit})" for k in charter.knobs)
+    return None, (f"{charter.name} declares no limit {clip(ref, NAME_CLIP)!r} — "
+                  + (f"its limits are: {known}" if known
+                     else "it declares no limits beyond its per-run budget"))
+
+
+def set_agent_limit(connection_id: str, args: dict, *, emit=None) -> dict:
+    """STAGE a new value for one declared knob of a fleet agent — never applied here.
+    A cap on spend is governance however small the number (SP-3's line), so the change
+    rides the one inbox: the approver sees before → after, accept writes it through
+    `set_governance`, reject leaves the platform byte-identical."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.kernel.agents import effective_governance
+    from aughor.org.context import current_org_id
+
+    charter, refusal = _resolve_charter(str(args.get("agent") or "curator"))
+    if charter is None:
+        return {"staged": False, "summary": f"Nothing staged: {refusal}"}
+    knob, refusal = _resolve_knob(charter, str(args.get("limit") or ""))
+    if knob is None:
+        return {"staged": False, "summary": f"Nothing staged: {refusal}"}
+    try:
+        value = knob.clamp_or_refuse(args.get("value"))
+    except ValueError as exc:
+        return {"staged": False, "summary": f"Nothing staged: {exc}"}
+    before = int(effective_governance(charter.id).limits.get(knob.id, knob.default))
+    if value == before:
+        return {"staged": False,
+                "summary": (f"Nothing staged: {charter.name}'s {knob.label.lower()} is "
+                            f"already {before:,} {knob.unit}.")}
+
+    reasoning = (str(args.get("reasoning") or "limit change requested in conversation")
+                 [:_MAX_REASON])
+    p = stage_proposal(StagedProposal(
+        kind="agent_limit", org_id=current_org_id() or "",
+        connection_id=connection_id,
+        action_id=f"agent-limit:{charter.id}:{knob.id}",
+        params={"agent_id": charter.id, "agent": charter.name, "limit": knob.id,
+                "label": knob.label, "unit": knob.unit, "value": value, "before": before},
+        reasoning=reasoning, proposer="spotlight", source="agent"))
+    _announce(emit, p)
+    return {
+        "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+        "agent_id": charter.id, "limit": knob.id, "before": before, "value": value,
+        "summary": (f"Proposed: {charter.name} {knob.label.lower()} {before:,} → {value:,} "
+                    f"{knob.unit} (proposal {p.id}). Nothing changed yet — a human accepts "
+                    f"it in the inbox and only then does it apply; the next run that reads "
+                    f"the limit honours it."),
+    }
+
+
 _PREF_PARAMS = {
     "type": "object",
     "properties": {
@@ -710,6 +788,25 @@ _PREF_PARAMS = {
                   "description": "The value (e.g. dark, light, system for theme)."},
     },
     "required": ["key", "value"],
+}
+_LIMIT_PARAMS = {
+    "type": "object",
+    "properties": {
+        "agent": {"type": "string",
+                  "description": "The fleet agent by name or id — Curator (curator) carries "
+                                 "the warehouse-sized caps; defaults to curator."},
+        "limit": {"type": "string",
+                  "description": "The declared limit by id or its label words: "
+                                 "autoseed_max_tables (glossary autoseed, tables per "
+                                 "connection) or profile_schema_chars (business profile, "
+                                 "schema chars per prompt). platform_limits lists them."},
+        "value": {"type": "integer",
+                  "description": "The new whole-number value; out of range is refused "
+                                 "naming the range."},
+        "reasoning": {"type": "string",
+                      "description": "Why, in the user's words — the approver reads it."},
+    },
+    "required": ["limit", "value"],
 }
 _AGENT_PARAMS = {
     "type": "object",
@@ -988,6 +1085,21 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "",
             ),
             parameters=_STATE_PARAMS,
             run=lambda a: pause_or_resume_automation(connection_id, a, emit=emit),
+        ),
+        ToolSpec(
+            name="set_agent_limit",
+            description=(
+                "STAGE a new value for one of a fleet agent's declared limits — the "
+                "Curator's cap on glossary-autoseed tables per connection, or on the "
+                "schema chars the business-profile prompt carries — for human approval "
+                "in the inbox. Use for 'cap autoseed at 20 tables', 'limit the profile "
+                "prompt to 30k chars', 'restrict what the Curator spends' asks; read "
+                "platform_limits first for the current value and range. A cap on spend "
+                "is governance, so nothing applies until a person accepts. Quote the "
+                "summary field verbatim."
+            ),
+            parameters=_LIMIT_PARAMS,
+            run=lambda a: set_agent_limit(connection_id, a, emit=emit),
         ),
         ToolSpec(
             name="propose_agent_grant",

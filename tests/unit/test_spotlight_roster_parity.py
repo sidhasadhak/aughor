@@ -110,7 +110,7 @@ def test_dispatch_runs_the_same_body_conversation_runs():
     assert r.status_code == 200
     out = r.json()["result"]
     assert set(out["topics"]) == {"create_agent", "create_automation",
-                                  "connect_data", "appearance"}
+                                  "connect_data", "appearance", "limits"}
 
 
 def test_dispatch_refuses_an_unknown_tool_naming_the_roster():

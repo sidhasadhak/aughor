@@ -25,7 +25,7 @@ def test_unknown_topic_lists_topics_and_routes_concepts_to_help():
     out = guide.platform_guide({"topic": "quantum blockchain"})
     assert "steps" not in out                          # never a guessed walkthrough
     assert set(out["topics"]) == {"create_agent", "create_automation",
-                                  "connect_data", "appearance"}
+                                  "connect_data", "appearance", "limits"}
     assert "help tool" in out["summary"]
 
 
