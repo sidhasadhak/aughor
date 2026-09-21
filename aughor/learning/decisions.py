@@ -19,6 +19,7 @@ commit as this file (`AUGHOR_DECISIONS_DB` in `tests/conftest.py` and
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import uuid
@@ -36,6 +37,29 @@ _DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "decisions.db"
 _MAX_CONTEXT = 2000
 _MAX_OPTION = 400
 _MAX_OPTIONS = 64
+
+# A5 — capture as a BUDGET, not just a tolerated write. Before this, three fields were capped and
+# nothing capped the store's growth or counted what was lost. The shape is the one
+# `Ledger.session_events_prune` and `events_prune` already use — an age window plus a row cap,
+# newest kept, env-tunable, 0 disabling a half — because a second retention idiom is a second
+# thing to reason about.
+#
+# The age window is OFF by default: this corpus is a training asset that A6 needs to ACCUMULATE
+# (~150 labelled decisions at one site), so expiring by age would destroy the thing the arc is
+# waiting on. The row cap is on, at session_events' own default.
+_DEFAULT_KEEP_DAYS = 0
+_DEFAULT_MAX_ROWS = 200_000
+#: Prune at most once per this many writes — a DELETE over the cap window is not free, and this
+#: sits on the answer path.
+_PRUNE_EVERY = 500
+_writes_since_prune = 0
+
+#: Outcomes the LOOP writes inline. Every other outcome was set by a person's verdict
+#: (`feedback/verdicts.py` -> `rejected` / `corrected`, or `mark_outcome`), and a labelled row is
+#: EVIDENCE, not budget — exempt from both halves of the prune and not counted toward the cap,
+#: exactly as a pinned session event is. Otherwise enough traffic would quietly erase the labels.
+_LOOP_OUTCOMES = ("", "ok", "error")
+_UNLABELLED = "outcome IN ('', 'ok', 'error')"
 
 
 def _db_path() -> Path:
@@ -120,6 +144,8 @@ def record_decision(site: str, context: str, options: list, *,
     `mark_outcomes_for_run` can ever close the loop on these rows.
     """
     try:
+        _truncated = (len(str(context)) > _MAX_CONTEXT or len(list(options)) > _MAX_OPTIONS
+                      or any(len(str(o)) > _MAX_OPTION for o in list(options)))
         opts = [str(o)[:_MAX_OPTION] for o in list(options)[:_MAX_OPTIONS]]
         if label is None:
             capped = str(chosen)[:_MAX_OPTION]
@@ -140,6 +166,7 @@ def record_decision(site: str, context: str, options: list, *,
         }
         cols = ", ".join(row)
         binds = ", ".join(f":{c}" for c in row)
+        global _writes_since_prune
         with _LOCK:
             conn = _connect()
             try:
@@ -147,12 +174,66 @@ def record_decision(site: str, context: str, options: list, *,
                 conn.commit()
             finally:
                 conn.close()
+            _writes_since_prune += 1
+            due = _writes_since_prune >= _PRUNE_EVERY
+            if due:
+                _writes_since_prune = 0
+        if _truncated:
+            from aughor.stats import stats
+            stats.inc("learning.decision_record.truncated")
+        if due:
+            prune()
         return row["id"]
     except Exception as exc:  # noqa: BLE001 — observation must never fail the observed
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a decision that could not be recorded still happened; the turn goes on",
                  counter="learning.decision_record")
         return ""
+
+
+def prune(*, keep_days: Optional[int] = None, max_rows: Optional[int] = None) -> int:
+    """Hold the corpus to its budget; returns rows deleted. Never raises.
+
+    ``keep_days`` / ``max_rows`` default to ``AUGHOR_DECISIONS_KEEP_DAYS`` (0 — off) and
+    ``AUGHOR_DECISIONS_MAX_ROWS`` (200,000); 0 disables that half. Rows a person's verdict has
+    labelled are never deleted and never count toward the cap. What is deleted is COUNTED under
+    ``learning.decision_record.pruned`` — the half of A5 the study said was worth keeping even if
+    the cap is never reached.
+    """
+    try:
+        if keep_days is None:
+            keep_days = int(os.environ.get("AUGHOR_DECISIONS_KEEP_DAYS", _DEFAULT_KEEP_DAYS) or 0)
+        if max_rows is None:
+            max_rows = int(os.environ.get("AUGHOR_DECISIONS_MAX_ROWS", _DEFAULT_MAX_ROWS) or 0)
+        deleted = 0
+        with _LOCK:
+            conn = _connect()
+            try:
+                if keep_days > 0:
+                    from datetime import datetime, timedelta, timezone
+                    cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)
+                              ).strftime("%Y-%m-%dT%H:%M:%S")
+                    deleted += conn.execute(
+                        f"DELETE FROM decision_record WHERE {_UNLABELLED} AND ts < ?",
+                        (cutoff,)).rowcount
+                if max_rows > 0:
+                    deleted += conn.execute(
+                        f"DELETE FROM decision_record WHERE {_UNLABELLED} AND rowid NOT IN ("
+                        f"  SELECT rowid FROM decision_record WHERE {_UNLABELLED} "
+                        f"  ORDER BY ts DESC, rowid DESC LIMIT ?)", (max_rows,)).rowcount
+                conn.commit()
+            finally:
+                conn.close()
+        deleted = max(deleted, 0)
+        if deleted:
+            from aughor.stats import stats
+            stats.inc("learning.decision_record.pruned", deleted)
+        return deleted
+    except Exception as exc:  # noqa: BLE001 — observation must never fail the observed
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a decision-store prune that failed leaves the rows in place",
+                 counter="learning.decision_record.prune")
+        return 0
 
 
 def mark_outcome(decision_id: str, outcome: str) -> bool:

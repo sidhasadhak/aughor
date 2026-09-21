@@ -404,3 +404,59 @@ def test_the_ungated_decisions_door_no_longer_serves_the_users_question(client):
     # Metadata survives: the route's actual job.
     assert r["chosen"] == "a" and r["conn_id"] == "c1" and r["prompt_fingerprint"] == "d" * 64
     assert body["stats"]
+
+
+# ── A5: capture as a budget ────────────────────────────────────────────────────
+
+def _counter(key):
+    """Counters live under `snapshot()["counters"]`, not at the top level. The first draft read
+    the top level, so every "before" was 0 and the next read raised KeyError — a test killed for
+    the wrong reason — and guarded itself with `hasattr` checks that could only skip, not fail."""
+    from aughor.stats import stats
+    return stats.snapshot()["counters"].get(key, 0)
+
+def test_a_flood_stops_at_the_cap_and_counts_what_it_dropped(monkeypatch):
+    """The study's receipt: a store that stops growing at its cap, and a `dropped` counter that
+    is non-zero under a synthetic flood. Before A5 nothing capped the store's growth and nothing
+    counted a loss."""
+    _wipe()
+    before = _counter("learning.decision_record.pruned")
+    for i in range(12):
+        decisions.record_decision("converse.tool", f"q{i}", ["a", "b"], chosen="a", outcome="ok")
+    assert decisions.prune(max_rows=5) == 7
+    assert len(decisions.list_decisions(limit=100)) == 5
+    kept = {r["context"] for r in decisions.list_decisions(limit=100)}
+    assert kept == {f"q{i}" for i in range(7, 12)}, "the cap must keep the NEWEST rows"
+    assert _counter("learning.decision_record.pruned") - before == 7
+
+
+def test_a_row_a_person_labelled_is_never_pruned_and_never_counts_toward_the_cap():
+    """A label is evidence, not budget — the rule `session_events` pins follow. Without it,
+    enough ordinary traffic would quietly erase the human verdicts A6 is waiting for."""
+    _wipe()
+    decisions.record_decision("converse.tool", "labelled-1", ["a", "b"], chosen="a",
+                              outcome="rejected")
+    decisions.record_decision("converse.tool", "labelled-2", ["a", "b"], chosen="a",
+                              outcome="corrected")
+    for i in range(6):
+        decisions.record_decision("converse.tool", f"q{i}", ["a", "b"], chosen="a", outcome="ok")
+    decisions.prune(max_rows=2)
+    contexts = {r["context"] for r in decisions.list_decisions(limit=100)}
+    assert {"labelled-1", "labelled-2"} <= contexts, "a human label was pruned"
+    # the cap of 2 applies to the UNLABELLED rows alone: both labels plus two newest survive
+    assert contexts == {"labelled-1", "labelled-2", "q4", "q5"}
+
+
+def test_the_age_window_is_off_by_default_because_the_corpus_must_accumulate(monkeypatch):
+    monkeypatch.delenv("AUGHOR_DECISIONS_KEEP_DAYS", raising=False)
+    monkeypatch.delenv("AUGHOR_DECISIONS_MAX_ROWS", raising=False)
+    _wipe()
+    decisions.record_decision("converse.tool", "old", ["a", "b"], chosen="a", outcome="ok")
+    assert decisions.prune() == 0
+
+
+def test_a_truncated_field_is_counted_not_silently_clipped():
+    _wipe()
+    before = _counter("learning.decision_record.truncated")
+    decisions.record_decision("converse.tool", "x" * 10_000, ["a", "b"], chosen="a")
+    assert _counter("learning.decision_record.truncated") - before == 1
