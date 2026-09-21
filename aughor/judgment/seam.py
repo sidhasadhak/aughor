@@ -197,6 +197,15 @@ def judge(state: str, questions: Sequence[Question], *, provider=None,
     bad = [i for i in ids if not str(i).isidentifier()]
     if bad:
         raise ValueError(f"question ids must be identifiers (they become schema fields): {bad}")
+    # A judge-shaped backend (JD-5: it carries its own `judge`) answers the bundle itself —
+    # same misuse checks above, same never-raise promise below. This is how a hosted judgment
+    # model is "one backend among ours behind the seam" instead of a second code path.
+    if provider is not None and hasattr(provider, "judge"):
+        try:
+            return provider.judge(state, qs)
+        except Exception as exc:  # noqa: BLE001 — the seam's promise holds for every backend
+            return {q.id: Answer(q.id, _kind(q), False,
+                                 reason=f"the judgment call failed: {exc}") for q in qs}
     try:
         if provider is None:
             from aughor.llm.provider import get_provider

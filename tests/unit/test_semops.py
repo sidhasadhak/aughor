@@ -519,6 +519,9 @@ def test_champion_cascade_off_by_default_no_champion_calls(monkeypatch):
 
 
 def test_champion_cascade_agreement_trusts_cheap(monkeypatch):
+    # The banded path graduated to default-ON (JD-3, 2026-09-21); this test pins the
+    # SAMPLED cascade — the kill-switch arm — so it opts into it explicitly.
+    monkeypatch.setenv("AUGHOR_SEMOPS_BANDED_CASCADE", "0")
     cheap = FakeProvider(filter_fn=lambda t: "keep" in t)
     champ = FakeProvider(filter_fn=lambda t: "keep" in t)       # agrees with cheap on the sample
     _patch_by_role(monkeypatch, cheap, champ)
@@ -531,6 +534,9 @@ def test_champion_cascade_agreement_trusts_cheap(monkeypatch):
 
 
 def test_champion_cascade_disagreement_escalates(monkeypatch):
+    # The banded path graduated to default-ON (JD-3, 2026-09-21); this test pins the
+    # SAMPLED cascade — the kill-switch arm — so it opts into it explicitly.
+    monkeypatch.setenv("AUGHOR_SEMOPS_BANDED_CASCADE", "0")
     cheap = FakeProvider(filter_fn=lambda t: True)             # cheap is wrong: keeps all
     champ = FakeProvider(filter_fn=lambda t: "keep" in t)      # champion is right
     _patch_by_role(monkeypatch, cheap, champ)

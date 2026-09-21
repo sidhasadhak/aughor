@@ -6807,7 +6807,7 @@ until there is a desktop app to drive it; shell rc edits — uv's command folder
 
 ---
 
-### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; studies: `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and its +1, `docs/JEV_ALIGN_STUDY_2026-09-19.md`; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; **JD-4, JD-1 and JD-3 BUILT and MERGED #535**, squash `583c8d9f`, 2026-09-21, with JD-2's three survivors, A3 and A5; JD-3 ships OFF behind `semops.banded_cascade`. **RECEIPTS, later the same day:** JD-3's taken and re-decided on total tokens after the seam slim (falsifier quiet, flag still OFF), and **JD-5's taken LIVE against the real Jev** — the operator entered the key and asked for the keep-or-throw answer; verdict KEEP, binding still unbuilt, `docs/JEV_LIVE_RECEIPT_2026-09-21.md`. JD-4's own corpus receipt is still blocked on faithful rows, but its shuffled-context control was exercised live that night and did its job. This header read "nothing from the JD series built" after the merge — §5's prose-rot lesson again, corrected 2026-09-21, and again the same night when "none of the three JD waves has its receipt" had itself rotted)
+### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; studies: `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and its +1, `docs/JEV_ALIGN_STUDY_2026-09-19.md`; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; **JD-4, JD-1 and JD-3 BUILT and MERGED #535**, squash `583c8d9f`, 2026-09-21, with JD-2's three survivors, A3 and A5; JD-3 ships OFF behind `semops.banded_cascade`. **RECEIPTS, later the same day:** JD-3's taken and re-decided on total tokens after the seam slim (falsifier quiet, flag still OFF), and **JD-5's taken LIVE against the real Jev** — the operator entered the key and asked for the keep-or-throw answer; verdict KEEP, `docs/JEV_LIVE_RECEIPT_2026-09-21.md` — **and then, on the user's word ("Flip the flag on and build the Jev binding"), JD-3 GRADUATED to default-ON and JD-5's production binding was BUILT** (`aughor/judgment/jev.py`, flag `semops.jev_cheap_tier` OFF, four gates, house-tier fallback). JD-4's own corpus receipt is still blocked on faithful rows, but its shuffled-context control was exercised live that night and did its job. This header read "nothing from the JD series built" after the merge — §5's prose-rot lesson again, corrected 2026-09-21, and again the same night when "none of the three JD waves has its receipt" had itself rotted)
 
 > ⚠️ **Read the numbering before the arc.** This text was written 2026-09-17 on
 > `origin/claude/fervent-cori-w9ogfc` (`93112558`, ROADMAP.md +106) and it claimed **§3.19 and §6 item
@@ -6951,6 +6951,11 @@ believing any of it.
   backend on this machine that night: Gemini quota shared and spent, Groq 401, Together 402); the harness now records
   per-arm wall-clock and per-row probabilities, so the confirming live run also buys the LLM-side ECE that is still
   unmeasured. Flag still OFF — the flip is the operator's, now with the numbers on the table.
+  ✅ **FLIPPED 2026-09-21, the user, on the receipts: "Flip the flag on."** `semops.banded_cascade`
+  GRADUATED to FLAG_DEFAULT (default-ON, the `ask.converse` shape): the sampled cascade stays alive as
+  the off-arm, `AUGHOR_SEMOPS_BANDED_CASCADE=0` is the kill switch, and the graduation guard in
+  `test_feature_flags.py` was widened deliberately with the receipt. The two sampled-cascade tests now
+  opt into the kill-switch arm explicitly — the off-path keeps its own tests, as a live off-path must.
   🔴 **Two findings about this deployment, bigger than the receipt:** (1) the cheap and champion tiers are the SAME model
   (`fast` = `coder` = `gemini-3.1-flash-lite`), so today's cascade spends its "strong" calls re-asking the model it is
   checking — the first run escalated all 200 rows on one predicate to do exactly that; a real champion is the user's
@@ -7014,6 +7019,27 @@ believing any of it.
   excluded by its own README) examined and NOT adopted — semops already sit at the seam and speak every
   warehouse; its batch-degradation measurement (≤20 rows 100%, 40 → 92–98%, 80 → 77–94%) pins our
   batch at 25 and is the second first-hand-adjacent source for the price.
+  ✅ **BUILT the same night — the user, on the receipt: "Flip the flag on and build the Jev binding."**
+  `aughor/judgment/jev.py` behind flag `semops.jev_cheap_tier` (EXPERIMENT, default OFF), the cheap
+  tier of the banded cascade only, never the champion, never the verdict path. Four gates, each
+  failing toward the house: the flag; loud configuration (`TYPESAFE_API_KEY` AND `AUGHOR_JEV_MODEL` —
+  no model id ships in the product, so the operator names even "jev-latest"); a PII scan that
+  withholds a bundle WHOLE on any redactable cell (a withheld bundle's rows come back unanswered,
+  which the band already routes to the in-house champion — conservative over clever, because a
+  governance gate that parses its own prompt has a parsing bug waiting inside it); and
+  `govern.outbound.external_call("typesafe","systemone")` — cap before send, span, EXTERNAL_CALL
+  event, so every call is countable. The seam itself now DISPATCHES to any judge-shaped backend after
+  its own misuse checks, which is what "one backend among ours" means in code. `FallbackJudge` is the
+  outage guarantee: a bundle Jev cannot answer (withheld, blocked, down, unconfigured) is re-judged by
+  the house cheap tier through the same seam — an outage degrades to yesterday's cascade and NEVER
+  floods the champion (pinned by test: Jev dead → house tier 1 call, champion 0). The third party is
+  NAMED in the cascade's notes where the Trust Receipt reads them. 11 hermetic tests
+  (`tests/unit/test_jev_binding.py`); smoke-tested LIVE through `semantic_filter` end-to-end the same
+  night (5 rows: peacoat+puffer kept, cap/belt/socks dropped, 0 champion calls, note names the judge).
+  The deployment's `.env` carries the key, the model and the flag; they take effect when this branch
+  merges and the API restarts. Open question on the flag's EXPERIMENT entry: does the live deployment
+  hold the receipt's numbers at its measured ~7% band occupancy, or does the fallback rate say the
+  house tier is doing the work anyway?
 - **JD-6 — the local scorer, if JD-4 earns it.** A `jevlike`-shaped one-pass head trained on our own
   logged `{state, options, chosen}` rows, weights outside the repo and installer per §3.9's adapter
   law, used as a pre-filter and ranker (cut 200 candidate columns to 12 before a real model reads them)
@@ -7561,7 +7587,7 @@ ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. 
              behind · re-running `install.sh` / `install.ps1` on an existing clone fast-forwards it
              through the function `aughor update` uses — a refusal or an error is one line and never
              fails the install.
-ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 and JD-6 on HOLD); drafted 2026-09-17, recorded 2026-09-20 — the judgment seam: one state,
+ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 BUILT on the user's flip the same night; JD-6 on HOLD); drafted 2026-09-17, recorded 2026-09-20 — the judgment seam: one state,
         N independent typed questions, a closed answer space, and a probability our code bands on.
         ✅ MERGED #535 (`583c8d9f`) 2026-09-21: JD-4 the instrument · JD-1 the seam (wired into no
         production path; its probability is STATED, not measured) · JD-3 the banded cascade (OFF,
@@ -7570,8 +7596,11 @@ ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 and JD-6 on HOLD); 
         more accurate; the cheap and champion tiers are one model here) — then SLIMMED the same night (0.58× the request,
         banded ≈ 0.92× sampled total tokens, re-cost) and the token objection closed. ✅ JD-5's receipt TAKEN LIVE
         2026-09-21 (`docs/JEV_LIVE_RECEIPT_2026-09-21.md`): Jev beats production +2.6 (CI +1.1 to +4.2) at zero champion
-        calls, 2.6× cheaper, passes the shuffled-context control — VERDICT KEEP; binding unbuilt, flag OFF, both the
-        operator's. pg-jev examined, not adopted. ⏳ JD-1's and JD-4's corpus receipts are still model calls. JD-4's first run
+        calls, 2.6× cheaper, passes the shuffled-context control — VERDICT KEEP. Then the user: "Flip the flag on and
+        build the Jev binding" — JD-3 GRADUATED to default-ON (sampled cascade = the kill switch) and JD-5 BUILT
+        (`aughor/judgment/jev.py`: flag `semops.jev_cheap_tier` OFF by default, PII withholds whole bundles, outbound
+        seam counts every call, house-tier fallback so an outage is yesterday, never a champion flood; smoke-tested
+        live end-to-end). pg-jev examined, not adopted. ⏳ JD-1's and JD-4's corpus receipts are still model calls. JD-4's first run
         took no reading on three of five measures; the floor is `choice_prior` 44.8%.
         ⚠️ The numbers are NOT the ones the draft asked for: it was
         written on an unmerged branch claiming §3.19 / item 25, which Arc IN took the same day, so it
@@ -8542,7 +8571,10 @@ the browser** · **measure the premise before building.**
     it** — +2.6 points over production at zero champion calls, 2.6× cheaper, control passed, ECE's
     miscalibration confined inside the escalation band; the binding itself stays unbuilt and the flip
     stays the operator's (`docs/JEV_LIVE_RECEIPT_2026-09-21.md`). `pg-jev` examined the same night and
-    not adopted (Postgres-superuser-only surface; the seam already owns this ground).
+    not adopted (Postgres-superuser-only surface; the seam already owns this ground). ✅ **And the
+    operator flipped, in words: "Flip the flag on and build the Jev binding" — JD-3 default-ON, JD-5
+    BUILT** (four gates, house-tier fallback, flag `semops.jev_cheap_tier` awaiting its live-deployment
+    numbers; the hold on (d) is LIFTED by the user's own sentence).
     **(e) The local one-pass scorer (JD-6)** — sovereign, CPU-sized, trained on our own logged
     decisions, weights outside the installer. *Recommended: hold behind (a) and (d)'s measurement; it is
     a pre-filter, not a decider.*

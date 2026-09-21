@@ -89,6 +89,7 @@ FLAG_ENV = {
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "framing.choice_confidence": "AUGHOR_FRAMING_CHOICE_CONFIDENCE",
     "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
+    "semops.jev_cheap_tier": "AUGHOR_SEMOPS_JEV_CHEAP_TIER",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
@@ -261,6 +262,14 @@ FLAG_DEFAULT: dict = {
     "ask.converse": "SP-14 (2026-09-16): 26/26 staged drafts honest across SP-M's two "
                     "recordings; 81% of real asks behaved correctly on the richer "
                     "fixture; the residual is the step-budget knob, accepted as-is.",
+    # Same shape as ask.converse — the off-path (the sampled cascade) is ALIVE, so this is
+    # a graduation with a kill switch (AUGHOR_SEMOPS_BANDED_CASCADE=0), not a deletion.
+    "semops.banded_cascade": "JD-3 (2026-09-21, the user's flip on the receipts): banded "
+                             "+2.4/+3.6 points over sampled on both recorded setups (95% "
+                             "CIs excluding zero), a third the champion calls, and after "
+                             "the seam slim ~0.92x sampled's total prompt tokens "
+                             "(docs/JEV_LIVE_RECEIPT_2026-09-21.md; "
+                             "evals/semops_band_decision.json).",
     #   trust/obs/LLM group — hardwired by Wave 2 group 1 (2c981ea1);
     #   graph/ontology group — group 2 (f2dfa99f); govern/automations — group 3 (cbbf6927);
     #   the final 14 (this wave): snapshot_receipts 2dee7a36c03f · specialist_packs
@@ -363,14 +372,22 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
-    # JD-3 (ROADMAP §3.20). ON judges each row of `semantic_filter` through JD-1's seam
-    # (`aughor/judgment/seam.py`) and spends the champion tier ONLY on rows inside the
-    # uncertainty band, instead of re-running every row when a sample disagrees. Changes the
-    # prompt and the call pattern — group D. The off-arm runs the identical code it ran before.
-    "semops.banded_cascade": "at equal agreement with today's sampled escalation, does the "
-                             "banded cascade spend FEWER champion-tier calls per 200-row "
-                             "filter? Falsifier: if it spends more, keep the sampled one. "
-                             "Unmeasured — the receipt needs model calls (the operator's).",
+    # "semops.banded_cascade" GRADUATED to FLAG_DEFAULT 2026-09-21 (the user's flip): its
+    # question was answered by measurement — fewer champion calls AND, after the seam slim,
+    # fewer total tokens, at higher accuracy. Receipt on the FLAG_DEFAULT entry.
+    # JD-5 (ROADMAP §3.20; docs/JEV_LIVE_RECEIPT_2026-09-21.md). ON puts TypeSafe's Jev
+    # behind JD-1's seam as the banded cascade's CHEAP tier — customer row text leaves the
+    # box, so every bundle rides govern.outbound (cap + EXTERNAL_CALL event), a PII-bearing
+    # bundle is withheld whole, and any bundle Jev cannot answer falls back to the house
+    # tier (aughor/judgment/jev.py). Needs TYPESAFE_API_KEY and AUGHOR_JEV_MODEL — no model
+    # id ships in the product, the operator names it. Group D on the cheap tier only; the
+    # champion and every non-banded path are untouched.
+    "semops.jev_cheap_tier": "on the LIVE deployment's filters, does Jev as the cheap tier "
+                             "hold the live receipt's numbers (jev-solo +2.6 over sampled, "
+                             "parity with the LLM cascade, ~2.6x cheaper) at its measured "
+                             "band occupancy (~7%)? Falsifier: accuracy below the sampled "
+                             "cascade's, or fallback rate so high the house tier is doing "
+                             "the work anyway — then turn it off and say so in §3.20.",
     # A1 (docs/JEV_ALIGN_STUDY_2026-09-19.md, finding A1). ON adds `confidence` to the
     # definition chooser's response model, which CHANGES THE PROMPT — hence group D, not a
     # free instrumentation switch. The off-arm ships the identical schema it ships today.
