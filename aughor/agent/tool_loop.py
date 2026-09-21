@@ -152,9 +152,9 @@ def run_tool_loop(
     by_name = {t.name: t for t in tools}
     wire = [t.as_wire() for t in tools]
     # JD-4 — a fingerprint of what the decider was shown. `system` is built once by the
-    # caller and never mutated across steps, so one digest covers the whole turn. It is
-    # metadata (irreversible) and rides every decision row; see `_replay_digest`.
-    prompt_digest = _replay_digest(system)
+    # caller and never mutated across steps, so one fingerprint covers the whole turn. It is
+    # metadata (irreversible) and rides every decision row; see `_replay_fingerprint`.
+    prompt_fingerprint = _replay_fingerprint(system)
     # The decision-record menu: SORTED, so the option order (and therefore each label
     # index) is stable across turns regardless of roster assembly order. Only real
     # menus are recorded — one tool is not a choice.
@@ -251,12 +251,12 @@ def run_tool_loop(
                 menu, chosen=call.name, source="llm",
                 outcome="ok" if ok else "error",
                 conn_id=conn_id, trace_id=trace_id, inv_id=inv_id,
-                prompt_digest=prompt_digest)
+                prompt_fingerprint=prompt_fingerprint)
             # `history` has not had THIS step appended yet (that is the next line), so an
             # empty history here means the model decided with nothing but system + question
             # + tools in front of it: the only rows a shuffled control can rebuild faithfully.
             if not history and replay_args:
-                _capture_replay(decision_id, site, question, wire, provider, prompt_digest,
+                _capture_replay(decision_id, site, question, wire, provider, prompt_fingerprint,
                                 replay_args, trace_id=trace_id)
         history.extend(_exchange(call, payload))
 
@@ -272,7 +272,7 @@ def run_tool_loop(
 _REQUESTED_TEMPERATURE = 0.1
 
 
-def _replay_digest(system: str) -> str:
+def _replay_fingerprint(system: str) -> str:
     """sha256 of the assembled system prompt, or '' when there is none.
 
     Irreversible, so it is METADATA under §6 item 4 and is written on every row. A replay that
@@ -287,7 +287,7 @@ def _replay_digest(system: str) -> str:
 
 
 def _capture_replay(decision_id: str, site: str, question: str, wire: list[dict],
-                    provider: LLMProvider, prompt_digest: str, replay_args: dict,
+                    provider: LLMProvider, prompt_fingerprint: str, replay_args: dict,
                     *, trace_id: str = "") -> None:
     """Emit the arguments that rebuild this decision's prompt — only while a window is open.
 
@@ -320,14 +320,14 @@ def _capture_replay(decision_id: str, site: str, question: str, wire: list[dict]
                      counter="learning.replay_capture.no_trace")
             return
         session_log.emit(
-            "decision_replay", name=site, trace_id=trace_id,
+            session_log.DECISION_REPLAY, name=site, trace_id=trace_id,
             provider=str(getattr(provider, "backend", "") or ""),
             model=str(getattr(provider, "model", "") or ""),
             payload={
                 **captured,
                 "decision_id": decision_id,
                 "site": site,
-                "prompt_digest": prompt_digest,
+                "prompt_fingerprint": prompt_fingerprint,
                 "role": str(getattr(provider, "role", "") or ""),
                 "requested_temperature": _REQUESTED_TEMPERATURE,
             })

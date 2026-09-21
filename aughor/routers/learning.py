@@ -109,7 +109,7 @@ def get_datasets():
 #: payloads"). `context` embeds the user's question verbatim — the recorder writes
 #: `step N | last <tool> | <question>` — and §6 item 4 defines a payload as "a prompt or a
 #: response body". Everything else on the row (site, menu, choice, label, confidence, outcome,
-#: provenance, the prompt DIGEST) is metadata and stays visible without ceremony.
+#: provenance, the prompt Fingerprint) is metadata and stays visible without ceremony.
 _PAYLOAD_FIELDS = ("context",)
 
 

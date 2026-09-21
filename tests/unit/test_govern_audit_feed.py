@@ -111,8 +111,12 @@ def test_every_categorized_kind_has_a_sink_that_reads_it():
     src = (pathlib.Path(aughor.govern.audit_categories.__file__)).read_text()
     sinks_block = src.split("_SINKS: list[")[1].split("]\n")[0]
     read_by_sink = set(re.findall(r'_from_ledger\("([^"]+)"', sinks_block))
-    # `llm_call` and the audit table ride dedicated readers, not `_from_ledger`.
-    mapped = set(KIND_CATEGORY) - {"llm_call"}
+    # Session-event kinds ride dedicated readers, not `_from_ledger`. Taken from the MODULE,
+    # not a set typed here: a hand-kept `{"llm_call"}` went red the moment a second
+    # session-event kind arrived, which is a list beside its expectation going stale. The
+    # readers themselves are proven to work by `test_each_session_event_kind_is_actually_read`.
+    from aughor.govern.audit_categories import SESSION_EVENT_KINDS
+    mapped = set(KIND_CATEGORY) - set(SESSION_EVENT_KINDS)
     assert mapped <= read_by_sink, (
         f"categorized but unreadable: {sorted(mapped - read_by_sink)} — KIND_CATEGORY "
         "claims the kind, no sink reads it, so the feed shows nothing")

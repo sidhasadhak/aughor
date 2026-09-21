@@ -972,7 +972,7 @@ def run_analyst(
         # and a system prompt carrying the resolved spec. Filing its picks under
         # `converse.tool` made 79% of the live corpus unsegmentable by decider.
         site="analyst.tool",
-        # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (`ada_intake`) and cannot be
+        # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (the intake step's) and cannot be
         # recomputed, and it is where the analyst's state lives — `_spec_section(intake)` sits
         # mid-prompt — so it is the argument a shuffle actually swaps. Serialised to a string
         # so that a capped copy is MARKED truncated rather than silently clipped: a truncated

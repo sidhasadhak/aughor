@@ -299,8 +299,8 @@ def test_every_decision_carries_a_digest_of_what_the_decider_was_shown(closed_wi
     _wipe()
     _loop(_two_tools(), [FauxToolCall(payload={}, name="run_sql"), "done"])
     [r] = decisions.list_decisions(site="converse.tool")
-    assert r["prompt_digest"] == _hashlib.sha256(b"THE SYSTEM PROMPT").hexdigest()
-    assert closed_window.active() is False, "writing a digest must not need, or open, a window"
+    assert r["prompt_fingerprint"] == _hashlib.sha256(b"THE SYSTEM PROMPT").hexdigest()
+    assert closed_window.active() is False, "writing a fingerprint must not need, or open, a window"
 
 
 def test_no_replay_payload_is_captured_while_the_window_is_closed(closed_window, monkeypatch):
@@ -336,7 +336,7 @@ def test_an_open_window_captures_the_first_turn_only(closed_window, monkeypatch)
     payload = replays[0]["payload"]
     assert payload["builder"] == "analyst_system_prompt"
     assert payload["question"] == "q"
-    assert payload["prompt_digest"] == _hashlib.sha256(b"THE SYSTEM PROMPT").hexdigest()
+    assert payload["prompt_fingerprint"] == _hashlib.sha256(b"THE SYSTEM PROMPT").hexdigest()
     assert payload["requested_temperature"] == 0.1
     # The decision row and the capture are joinable, which is what the battery reads.
     first = [r for r in decisions.list_decisions(site="converse.tool")
@@ -396,11 +396,11 @@ def test_the_ungated_decisions_door_no_longer_serves_the_users_question(client):
     product can write down". The metadata the route exists for is still all there."""
     _wipe()
     decisions.record_decision("converse.tool", "step 1 | last (start) | what is my revenue?",
-                              ["a", "b"], chosen="a", conn_id="c1", prompt_digest="d" * 64)
+                              ["a", "b"], chosen="a", conn_id="c1", prompt_fingerprint="d" * 64)
     body = client.get("/learning/decisions").json()
     [r] = body["recent"]
     assert "revenue" not in r["context"], "the question leaked through the ungated door"
     assert "§6 item 4" in r["payload_withheld"]
     # Metadata survives: the route's actual job.
-    assert r["chosen"] == "a" and r["conn_id"] == "c1" and r["prompt_digest"] == "d" * 64
+    assert r["chosen"] == "a" and r["conn_id"] == "c1" and r["prompt_fingerprint"] == "d" * 64
     assert body["stats"]

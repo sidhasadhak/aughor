@@ -26,12 +26,12 @@ somebody schedules work against:
   different question measures nothing.
 
   **Unblocked going forward (2026-09-21), not retroactively.** Every decision row now carries a
-  ``prompt_digest`` (sha256 of the assembled system prompt — metadata, always written), and while
+  ``prompt_fingerprint`` (sha256 of the assembled system prompt — metadata, always written), and while
   an operator's capture window is open the loop also records the prompt BUILDER'S ARGUMENTS for
   the first decision of a turn (``session_log.capture_replay``, the same gated posture as
   ``capture_prompt``). The control then swaps ONE argument (:data:`STATE_ARG`), rebuilds, and
-  refuses any row whose rebuild does not reproduce the recorded digest — before a token is spent.
-  The 58 rows that predate this carry no digest and stay unreplayable; the battery says so row by
+  refuses any row whose rebuild does not reproduce the recorded fingerprint — before a token is spent.
+  The 58 rows that predate this carry no fingerprint and stay unreplayable; the battery says so row by
   row rather than approximating them. A run is still APPROXIMATE on what it cannot hold constant
   (:data:`UNCONTROLLED`), and reports that too.
 
@@ -303,7 +303,7 @@ UNCONTROLLED = (
 )
 
 
-def _digest(text: str) -> str:
+def _fingerprint(text: str) -> str:
     import hashlib
     return hashlib.sha256((text or "").encode("utf-8", "replace")).hexdigest()
 
@@ -315,16 +315,16 @@ def _faithful(row: Mapping[str, Any], cap: Optional[Mapping[str, Any]]) -> tuple
     """
     if not str(row.get("context") or "").startswith("step 1 |"):
         return False, "mid-loop: its tool-result history is persisted nowhere"
-    if not str(row.get("prompt_digest") or ""):
-        return False, "no prompt digest: recorded before JD-4's capture existed"
+    if not str(row.get("prompt_fingerprint") or ""):
+        return False, "no prompt fingerprint: recorded before JD-4's capture existed"
     if not cap:
         return False, "no captured arguments: no capture window was open when it was decided"
     if any(k.endswith("_truncated") and v for k, v in cap.items()):
         return False, "a captured argument was truncated, so the prompt cannot be rebuilt"
     if STATE_ARG.get(str(cap.get("builder") or "")) is None:
         return False, f"unknown builder {cap.get('builder')!r}: no state argument to swap"
-    if str(cap.get("prompt_digest") or "") != str(row.get("prompt_digest") or ""):
-        return False, "the capture's digest does not match the row's"
+    if str(cap.get("prompt_fingerprint") or "") != str(row.get("prompt_fingerprint") or ""):
+        return False, "the capture's fingerprint does not match the row's"
     return True, ""
 
 
@@ -335,7 +335,7 @@ def replayability(rows: Sequence[Mapping[str, Any]], *,
 
     Three things have to be true of a row, and before JD-4's capture none of the 58 met the
     third: it was decided FIRST (``step 1``, so there is no tool-result history to reconstruct),
-    it carries a ``prompt_digest`` (so a rebuild can be proven identical), and its builder's
+    it carries a ``prompt_fingerprint`` (so a rebuild can be proven identical), and its builder's
     ARGUMENTS were captured untruncated (so the prompt can be rebuilt with one of them swapped).
 
     ``value`` is the count of rows meeting all three. It used to be the first-turn count, which
@@ -365,7 +365,7 @@ def replayability(rows: Sequence[Mapping[str, Any]], *,
             "rows": len(rows),
             "first_turn": first_turn,
             "mid_loop": len(rows) - first_turn,
-            "with_digest": sum(1 for r in rows if str(r.get("prompt_digest") or "")),
+            "with_digest": sum(1 for r in rows if str(r.get("prompt_fingerprint") or "")),
             "with_capture": sum(1 for r in rows if str(r.get("id") or "") in caps),
             "faithful": faithful,
             "not_replayable_because": dict(reasons.most_common()),
@@ -383,7 +383,7 @@ def shuffled_control(rows: Sequence[Mapping[str, Any]], *, ask=None, rebuild=Non
 
     ``rebuild(args) -> system_prompt`` and ``ask(system, question, options) -> chosen`` are
     PARAMETERS, so the default run stays free and a test can drive the arm with stubs. Before any
-    shuffle, every row's rebuild is checked against its recorded ``prompt_digest``: a rebuild
+    shuffle, every row's rebuild is checked against its recorded ``prompt_fingerprint``: a rebuild
     that drifted (live state moved, a builder changed) would be asking a different question than
     the one logged, and it is refused BEFORE a token is spent rather than scored after.
     """
@@ -410,13 +410,13 @@ def shuffled_control(rows: Sequence[Mapping[str, Any]], *, ask=None, rebuild=Non
     drifted = []
     for r in usable:
         cap = caps[str(r["id"])]
-        if _digest(rebuild(dict(cap))) != str(r.get("prompt_digest") or ""):
+        if _fingerprint(rebuild(dict(cap))) != str(r.get("prompt_fingerprint") or ""):
             drifted.append(str(r["id"]))
     if drifted:
         return Measure(
             "shuffled_control", False,
             reason=(f"{len(drifted)} of {len(usable)} rebuilds did not reproduce the recorded "
-                    "prompt digest — live state moved or a builder changed since capture, so a "
+                    "prompt fingerprint — live state moved or a builder changed since capture, so a "
                     "replay would ask a different question than the one logged"),
             detail={"drifted": drifted, "uncontrolled": list(UNCONTROLLED)})
 
@@ -435,7 +435,7 @@ def shuffled_control(rows: Sequence[Mapping[str, Any]], *, ask=None, rebuild=Non
                    detail={"n": len(usable), "agreed_with_real_choice": agree,
                            "swapped": "one builder argument (STATE_ARG), prompt rebuilt",
                            "pairing": "rotate-by-one (deterministic)",
-                           "digests_verified": len(usable),
+                           "fingerprints_verified": len(usable),
                            "uncontrolled": list(UNCONTROLLED),
                            "approximate": True})
 

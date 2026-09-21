@@ -45,6 +45,9 @@ USER_REQUEST = "user_request"
 TOOL_CALL = "tool_call"
 TOOL_CALL_RESULT = "tool_call_result"
 LLM_CALL = "llm_call"
+#: JD-4 — the arguments that rebuild a decider's prompt, captured only while a window is
+#: open (`capture_replay`). A PAYLOAD under §6 item 4, so it is categorised `data_access`.
+DECISION_REPLAY = "decision_replay"
 FINAL_RESPONSE = "final_response"
 EXECUTION_ERROR = "execution_error"
 GUARDRAIL = "guardrail"

@@ -63,6 +63,11 @@ KIND_CATEGORY: dict[str, str] = {
     # nobody anything.
     "pack.installed": "governance_change",
     "llm_call": "model_call",
+    # JD-4 — a decider's prompt-builder arguments, captured only while an operator's window
+    # is open. That is exactly what `data_access` says it covers: "a run's captured payloads
+    # (which carry … when a capture window is open, prompt content)". NOT operational
+    # telemetry: an auditor asking "what content did we store, and when" filters here.
+    "decision_replay": "data_access",
     # Arc VA decision ③ — admins may read any trace's payloads, and every such read is
     # auditable. Filed as data_access because that is what an auditor asking "who saw
     # what" filters on; the `kind` separates it from query execution within that view.
@@ -224,6 +229,8 @@ def _summarize(kind: str, p: dict) -> str:
                 f" ({p.get('staged', 0)} staged, {p.get('refused', 0)} refused)")
     if kind == "llm_call":
         return f"{p.get('role') or 'model'} call"
+    if kind == "decision_replay":
+        return f"captured replay arguments for a {p.get('site') or 'decision'} pick"
     if kind in ("chat.feedback", "trace.feedback"):
         subject = p.get("turn_id") or p.get("trace_id") or "?"
         note = str(p.get("note") or "").strip()
@@ -278,6 +285,47 @@ def _from_session_log(limit: int) -> list[AuditEvent]:
     return out
 
 
+def _from_session_replays(limit: int) -> list[AuditEvent]:
+    """Replay captures — read through ``session_events``, like model calls, and for the same
+    reason: the generic ``events`` reader returns NOTHING for a session-event kind. Pointing a
+    ledger sink at ``decision_replay`` would satisfy the categorisation ratchet and render an
+    empty feed on a system writing captures — a guard passing for the wrong reason.
+
+    🔒 The ``detail`` carries METADATA ONLY. The captured payload (the user's question, the
+    analyst's intake, prior answers) is exactly what the capture window gates, and copying it
+    into an audit row would turn the feed into a second, ungated read path for it. What an
+    auditor needs is THAT content was stored, when, for which decision — not the content.
+    """
+    from aughor.kernel.ledger import Ledger
+    from aughor.obs.session_log import DECISION_REPLAY
+    from aughor.security.authz import tenant_scope
+
+    try:
+        rows = Ledger.default().session_events(kind=DECISION_REPLAY, limit=limit,
+                                               org_id=tenant_scope()) or []
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+
+        tolerate(exc, "one audit sink being unreadable must not blank the whole feed",
+                 counter="govern.audit_feed_sink")
+        return []
+    out: list[AuditEvent] = []
+    for e in rows:
+        p = e.get("payload") or {}
+        out.append(AuditEvent(
+            category="data_access", kind=DECISION_REPLAY,
+            at=str(e.get("at") or e.get("created_at") or ""),
+            actor=str(e.get("user_id") or ""), org_id=str(e.get("org_id") or ""),
+            conn_id=str(e.get("conn_id") or ""),
+            summary=f"captured replay arguments for a {p.get('site') or 'decision'} pick",
+            detail={"site": p.get("site"), "builder": p.get("builder"),
+                    "decision_id": p.get("decision_id"),
+                    "prompt_fingerprint": p.get("prompt_fingerprint"),
+                    "truncated": sorted(k for k, v in p.items()
+                                        if k.endswith("_truncated") and v)}))
+    return out
+
+
 def _from_audit_table(limit: int) -> list[AuditEvent]:
     """The append-only query-execution log — the one non-Ledger sink.
 
@@ -308,6 +356,17 @@ def _from_audit_table(limit: int) -> list[AuditEvent]:
 
 
 #: Sink readers, keyed by the category they contribute to.
+#: Kinds written to ``session_events`` rather than the generic ledger. The ``_from_ledger``
+#: reader returns NOTHING for these, so each rides a dedicated reader below. Declared HERE,
+#: beside the readers, so the categorisation ratchet reads it from the code instead of a
+#: hand-kept exemption in the test — which was `{"llm_call"}` until 2026-09-21, and went red the
+#: moment a second session-event kind arrived for the identical reason. A list copied beside its
+#: expectation is the shape that cannot fail; `tests/unit/test_govern_audit_feed.py` now also
+#: proves each of these readers actually returns an event, since exempting a kind from the
+#: string check is only safe if something else shows its reader works.
+SESSION_EVENT_KINDS: frozenset[str] = frozenset({"llm_call", "decision_replay"})
+
+
 _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("data_access", _from_audit_table),
     ("data_access", lambda n: _from_ledger("trace.payload_access", n)),
@@ -318,6 +377,7 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("governance_change", lambda n: _from_ledger("intake.governance", n)),
     ("governance_change", lambda n: _from_ledger("pack.installed", n)),
     ("model_call", _from_session_log),
+    ("data_access", _from_session_replays),
     # A mapping entry alone renders NOTHING: `feed` walks this list, not KIND_CATEGORY.
     # The two lists are parallel and hand-maintained, which is why the ratchet now
     # asserts they agree rather than trusting that whoever edited one edited the other.

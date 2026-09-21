@@ -170,10 +170,10 @@ def replayable(i, *, chosen="run_sql", state=None, builder="analyst_system_promp
     """One first-turn row plus the capture that makes it faithfully replayable."""
     args = {"builder": builder, "connection_id": "c1", "budget": 6,
             "question": f"question {i}", STATE_ARG[builder]: state or f"state {i}"}
-    digest = _sha(_rebuild(args))
+    fingerprint = _sha(_rebuild(args))
     r = row(id=f"d{i}", context=f"step 1 | last (start) | question {i}", chosen=chosen,
-            prompt_digest=digest)
-    return r, {**args, "prompt_digest": digest}
+            prompt_fingerprint=fingerprint)
+    return r, {**args, "prompt_fingerprint": fingerprint}
 
 
 def test_step_one_is_matched_as_a_prefix_not_a_substring():
@@ -188,7 +188,7 @@ def test_step_one_is_matched_as_a_prefix_not_a_substring():
 def test_a_first_turn_row_is_not_replayable_by_being_first_alone():
     """`value` used to be the first-turn COUNT — a ceiling mislabelled as a count; the old
     docstring itself said none of those rows was a byte-faithful replay. The live corpus shape:
-    14 first-turn rows, no digest, no capture, and the honest count is zero."""
+    14 first-turn rows, no fingerprint, no capture, and the honest count is zero."""
     m = replayability([row(id=f"x{i}") for i in range(3)])
     assert m.detail["first_turn"] == 3
     assert m.value == 0.0, "first-turn is necessary, not sufficient"
@@ -202,18 +202,18 @@ def test_each_disqualifier_is_named_not_merely_counted():
     drift_row, drift_cap = replayable(2)
     rows = [
         row(id="mid", context="step 3 | last run_sql ok | q"),          # mid-loop
-        row(id="old", context="step 1 | a", prompt_digest=""),           # pre-JD-4
-        row(id="nocap", context="step 1 | a", prompt_digest="abc"),      # window closed
+        row(id="old", context="step 1 | a", prompt_fingerprint=""),           # pre-JD-4
+        row(id="nocap", context="step 1 | a", prompt_fingerprint="abc"),      # window closed
         trunc_row, drift_row, ok_row,
     ]
     caps = {"d0": ok_cap,
             "d1": {**trunc_cap, "intake_truncated": True},
-            "d2": {**drift_cap, "prompt_digest": "not-the-rows-digest"}}
+            "d2": {**drift_cap, "prompt_fingerprint": "not-the-rows-fingerprint"}}
     m = replayability(rows, captures=caps)
     why = m.detail["not_replayable_because"]
     assert m.value == 1.0
     assert any("mid-loop" in k for k in why)
-    assert any("no prompt digest" in k for k in why)
+    assert any("no prompt fingerprint" in k for k in why)
     assert any("no captured arguments" in k for k in why)
     assert any("truncated" in k for k in why)
     assert any("does not match" in k for k in why)
@@ -240,7 +240,7 @@ def test_the_control_refuses_a_corpus_it_cannot_replay_faithfully_and_names_why(
 
 
 def test_a_rebuild_that_drifted_is_refused_BEFORE_a_token_is_spent():
-    """The digest exists for exactly this. Live state moves (a roster, a pack index, an org
+    """The fingerprint exists for exactly this. Live state moves (a roster, a pack index, an org
     context), a rebuild stops matching what the decider was shown, and a replay on it would ask
     a different question than the one logged. It must be refused before the judge is called —
     so the judge here raises if it is reached at all."""
@@ -254,7 +254,7 @@ def test_a_rebuild_that_drifted_is_refused_BEFORE_a_token_is_spent():
                          rebuild=lambda a: _rebuild(a) + " <live state moved>",
                          captures=captures)
     assert m.available is False
-    assert "did not reproduce the recorded prompt digest" in m.reason
+    assert "did not reproduce the recorded prompt fingerprint" in m.reason
     assert len(m.detail["drifted"]) == 3
 
 
@@ -290,7 +290,7 @@ def test_a_state_blind_judge_reproduces_the_prior_and_fires_the_falsifier():
                   rebuild=_rebuild, captures=captures)
     control = s["measures"]["shuffled_control"]
     assert control["available"] is True and control["value"] == pytest.approx(1.0)
-    assert control["detail"]["digests_verified"] == 4
+    assert control["detail"]["fingerprints_verified"] == 4
     assert control["detail"]["approximate"] is True
     assert s["falsifier"]["judgments_do_not_read_the_state"] is True
     assert s["inconclusive"] is False
