@@ -6934,6 +6934,13 @@ believing any of it.
   ~60% more tokens — for fewer silently wrong rows. ⚠️ Disclosed: A read INCONCLUSIVE until a bug in the pooling was fixed
   after the runs — filters that lost every row (Gemini's quota ran out at ~20:50 mid-batch) still counted their champion
   calls, which the quota failures had inflated. B has only 7 usable filters; the gold is model labels.
+  🔴 **NOT switched on — the arc's goal is FEWER tokens, and this spends more** (the user, 2026-09-21: *"The whole point
+  of adding the Jd arc was to reduce the tokens"*). Measured offline on one 25-row call, prompt AND schema: today 2,306
+  chars, banded 8,987 (~3.9×) — the harness had counted the prompt only. Cause: `_banded_verdicts` puts each row's text in
+  its Noul proposition, and `seam._field_for` copies the proposition into every schema field's `description`, so every
+  row travels twice. ⏳ NEXT: slim the seam (condition once, row once, bare schema fields — est. ≈ today's size), count
+  schema tokens in the harness, and re-decide on TOTAL tokens (as accurate AND no more tokens) — the accuracy gain must be
+  re-measured, since part of it may come from the verbose prompt.
   🔴 **Two findings about this deployment, bigger than the receipt:** (1) the cheap and champion tiers are the SAME model
   (`fast` = `coder` = `gemini-3.1-flash-lite`), so today's cascade spends its "strong" calls re-asking the model it is
   checking — the first run escalated all 200 rows on one predicate to do exactly that; a real champion is the user's
