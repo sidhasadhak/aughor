@@ -194,16 +194,21 @@ def _banded_verdicts(rows: list, ci: int, predicate: str, provider, batch: int,
 
     One JD-1 bundle per ``batch`` rows, each row its OWN typed question with its own field and its
     own probability — so a row is not read out of a shared list its neighbours can shift, and a
-    failed call makes those rows explicitly unanswered rather than silently kept."""
+    failed call makes those rows explicitly unanswered rather than silently kept.
+
+    The rows ride in the STATE, once, in the same ``[index] text`` listing the sampled path
+    sends; each question is a short reference to its row. The first cut put every row's text
+    inside its question, which the request then carried twice (prompt AND schema) — measured at
+    ~4x today's batch call, the exact spend JD-3 exists to cut (cf695915)."""
     from aughor.judgment.seam import Noul, judge
     probs: dict = {}
     calls = 0
     for start in range(0, len(indices), max(1, batch)):
         chunk = indices[start:start + batch]
+        listing = "\n".join(f"[{gi}] {str(rows[gi][ci])[:_MAX_CELL]}" for gi in chunk)
         answers = judge(
-            f"Predicate: {predicate}",
-            [Noul(f"r{gi}", "This text satisfies the predicate. Text: "
-                             f"{str(rows[gi][ci])[:_MAX_CELL]}") for gi in chunk],
+            f"Predicate: {predicate}\n\nRows (index: text):\n{listing}",
+            [Noul(f"r{gi}", f"Row [{gi}] satisfies the predicate.") for gi in chunk],
             provider=provider)
         calls += 1
         for gi in chunk:

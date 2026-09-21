@@ -178,6 +178,11 @@ class ArmResult:
     calls: dict = field(default_factory=dict)          # tier -> calls
     prompt_chars: dict = field(default_factory=dict)   # tier -> chars sent (≈ 4 chars a token)
     tokens: dict = field(default_factory=dict)         # tier -> tokens a provider REPORTED
+    #: tier -> {row: P(true) or None} for the banded arms — the number the band thresholds act
+    #: on, saved so calibration (ECE vs the gold set) is computable OFFLINE from the results
+    #: file instead of needing a re-run. Empty for arms that never state a probability.
+    probs: dict = field(default_factory=dict)
+    elapsed_s: float = 0.0                             # wall-clock of the operator run
     notes: list = field(default_factory=list)
     reason: str = ""
 
@@ -189,8 +194,11 @@ class ArmResult:
                 exclude: frozenset = frozenset()) -> dict:
         d = {"arm": self.name, "available": self.available, "reason": self.reason,
              "calls": dict(self.calls), "approx_prompt_tokens": {t: c // 4 for t, c in self.prompt_chars.items()},
-             "reported_tokens": dict(self.tokens), "kept": len(self.kept),
-             "kept_rows": sorted(self.kept), "unjudged_rows": sorted(self.unjudged), "notes": list(self.notes)}
+             "reported_tokens": dict(self.tokens), "elapsed_s": round(self.elapsed_s, 2),
+             "kept": len(self.kept),
+             "kept_rows": sorted(self.kept), "unjudged_rows": sorted(self.unjudged),
+             "probs": {t: {str(gi): p for gi, p in sorted(m.items())} for t, m in self.probs.items()},
+             "notes": list(self.notes)}
         if self.available and reference is not None and reference.available:
             d["agreement_with_reference"] = round(agreement(self.kept, reference.kept, n, exclude=exclude), 4)
         if self.available and gold:
@@ -257,10 +265,12 @@ class Counted:
 
 
 class JevBackend:
-    """TypeSafe's Jev behind the seam: one ``POST /v1/systemone`` per bundle, each row a ``noul``
-    question whose instructions carry the row as data. The request shape is the vendor's documented
-    one (docs.typesafe.ai/api, read 2026-09-21). ``post`` is injectable so the companion test never
-    touches the network."""
+    """TypeSafe's Jev behind the seam: one ``POST /v1/systemone`` per bundle. The rows ride in the
+    ``state`` (once — the seam's slimmed shape) and each ``noul`` question is a short reference to
+    its row, which is also the batched shape pg-jev measured at 100% on bundles of ≤20 rows. The
+    request shape is the vendor's documented one (docs.typesafe.ai/api, read 2026-09-21, and
+    confirmed live the same day: HTTP 200, ``jev-1.13.0``, usage block present). ``post`` is
+    injectable so the companion test never touches the network."""
 
     def __init__(self, api_key: str, arm: ArmResult, *, model: str = JEV_DEFAULT_MODEL,
                  url: str = JEV_URL, post: Optional[Callable[[str, dict, dict], dict]] = None,
@@ -365,17 +375,28 @@ def run_arm(name: str, rows: Sequence[str], predicate: str, *, banded: bool,
 
     def judge(state, questions, *, provider=None, **kw):
         if isinstance(provider, JevBackend):
-            return provider.judge(state, questions)
-        return original_judge(state, questions, provider=provider, **kw)
+            out = provider.judge(state, questions)
+            tier = "jev"
+        else:
+            out = original_judge(state, questions, provider=provider, **kw)
+            tier = "champion" if provider is wrapped.get(ops.CHAMPION_ROLE) else "cheap"
+        store = arm.probs.setdefault(tier, {})
+        for qid, a in out.items():
+            if str(qid)[1:].isdigit():
+                p = a.distribution.get("true") if a.available else None
+                store[int(str(qid)[1:])] = round(p, 6) if p is not None else None
+        return out
 
     result = QueryResult(hypothesis_id="semops_band_eval", sql="-- semops_band_eval", columns=["i", "text"],
                          rows=[[i, t] for i, t in enumerate(rows)], row_count=len(rows))
     ops.get_provider, seam.judge = get_provider, judge
+    t0 = time.monotonic()
     try:
         with flag_overrides({"semops.banded_cascade": banded}):
             out = ops.semantic_filter(result, "text", predicate, role=role, batch=batch,
                                       validate_sample=sample, max_rows=max(len(rows), 1))
     finally:
+        arm.elapsed_s = time.monotonic() - t0
         ops.get_provider, seam.judge = original_get, original_judge
     arm.kept = {r[0] for r in out.result.rows}
     arm.notes = list(out.notes)
@@ -451,8 +472,14 @@ def _load_env_file(path: Path) -> list[str]:
 
 
 def load_gold(path: Path) -> dict[str, dict[int, bool]]:
-    """``{predicate: {row: label}}`` from a gold file: a list of ``{predicate, gold: {row: bool}}``."""
+    """``{predicate: {row: label}}`` from a gold file — either shape it has been given in:
+    a list of ``{predicate, gold: {row: bool}}``, or the labelled-corpus dict
+    (``{predicates: [{key, text}], gold: {key: {row: bool}}}``, keys joined to their text)."""
     data = json.loads(Path(path).read_text())
+    if isinstance(data, Mapping):
+        texts = {p["key"]: p["text"] for p in data.get("predicates") or []}
+        return {texts[k]: {int(i): bool(v) for i, v in (g or {}).items()}
+                for k, g in (data.get("gold") or {}).items() if k in texts}
     return {e["predicate"]: {int(i): bool(v) for i, v in (e.get("gold") or {}).items()} for e in data}
 
 
@@ -473,28 +500,30 @@ def rescore(results: Mapping[str, Any], gold: Mapping[str, Mapping[int, bool]], 
     return out
 
 
-def paired_rows(results: Mapping[str, Any], gold_by_predicate: Mapping[str, Mapping[int, bool]]
-                ) -> list[dict]:
+def paired_rows(results: Mapping[str, Any], gold_by_predicate: Mapping[str, Mapping[int, bool]],
+                *, arm: str = "banded") -> list[dict]:
     """One record per FILTER (a predicate on one row sample): per scored row, whether each arm got
-    it right, plus the champion calls each arm spent. Rows any arm left unjudged are excluded."""
+    it right, plus the champion calls each arm spent. Rows any arm left unjudged are excluded.
+    ``arm`` names the challenger scored against ``sampled`` — ``banded`` (JD-3) or ``banded-jev``
+    (JD-5); the record keys keep the ``banded_*`` names either way so :func:`decide` reads both."""
     out = []
     for p in results.get("predicates") or []:
         gold = gold_by_predicate.get(p["predicate"])
         arms = p.get("arms") or {}
-        if not gold or "sampled" not in arms or "banded" not in arms:
+        if not gold or "sampled" not in arms or arm not in arms:
             continue
         ex = set(p.get("excluded_rows") or [])
-        s, b = set(arms["sampled"]["kept_rows"]), set(arms["banded"]["kept_rows"])
+        s, b = set(arms["sampled"]["kept_rows"]), set(arms[arm]["kept_rows"])
         rows = [i for i in gold if i not in ex]
         if not rows:
             continue    # every row lost to failed calls: nothing was measured, and its calls bought nothing
-        out.append({"predicate": p["predicate"], "rows": len(rows),
+        out.append({"predicate": p["predicate"], "rows": len(rows), "arm": arm,
                     "sampled_right": [(i in s) == bool(gold[i]) for i in rows],
                     "banded_right": [(i in b) == bool(gold[i]) for i in rows],
                     "sampled_champion": int(arms["sampled"]["calls"].get("champion", 0)),
-                    "banded_champion": int(arms["banded"]["calls"].get("champion", 0)),
+                    "banded_champion": int(arms[arm]["calls"].get("champion", 0)),
                     "sampled_tokens": sum((arms["sampled"].get("approx_prompt_tokens") or {}).values()),
-                    "banded_tokens": sum((arms["banded"].get("approx_prompt_tokens") or {}).values())})
+                    "banded_tokens": sum((arms[arm].get("approx_prompt_tokens") or {}).values())})
     return out
 
 
@@ -559,6 +588,8 @@ def main() -> None:
                                        "instead of the deployment's coder role")
     ap.add_argument("--decide", nargs="+", metavar="RESULTS",
                     help="pool saved results files (each naming its gold file) into the yes/no — no model call")
+    ap.add_argument("--decide-arm", default="banded", choices=("banded", "banded-jev"),
+                    help="which challenger --decide scores against the sampled cascade")
     ap.add_argument("--output", default="")
     args = ap.parse_args()
     gold = load_gold(Path(args.gold)) if args.gold else {}
@@ -570,8 +601,9 @@ def main() -> None:
             gpath = res.get("gold_file") or args.gold
             if not gpath:
                 raise SystemExit(f"{f} names no gold file; pass --gold")
-            filters += paired_rows(res, load_gold(Path(gpath)))
+            filters += paired_rows(res, load_gold(Path(gpath)), arm=args.decide_arm)
         verdict_ = decide(filters)
+        verdict_["arm"] = args.decide_arm
         print(json.dumps(verdict_, indent=2))
         if args.output:
             Path(args.output).write_text(json.dumps({"decision": verdict_, "runs": args.decide}, indent=2))

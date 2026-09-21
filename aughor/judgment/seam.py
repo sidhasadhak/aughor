@@ -103,10 +103,18 @@ class Answer:
 
 
 def _field_for(q: Question):
-    """The closed schema for one question, as a pydantic field."""
+    """The closed schema for one question, as a pydantic field.
+
+    The schema CONSTRAINS, the prompt CARRIES: the prompt states each question once against
+    its id, and the schema's job is to make an answer outside the declared space
+    unrepresentable — not to restate the question. The first cut repeated every proposition
+    (and the full option order) in the schema too, so a bundle's request carried its text
+    twice — ~4x today's batch call on a 25-row bundle (JD-3's token falsifier, cf695915). A
+    noul field is therefore just its id and its [0,1] bound; option and level NAMES stay in
+    the schema exactly once, on their own sub-fields, because the p<i>-to-name binding is the
+    closed set."""
     if isinstance(q, Noul):
-        return (float, Field(..., ge=0.0, le=1.0,
-                             description=f"Probability, 0-1, that this is TRUE: {q.proposition}"))
+        return (float, Field(..., ge=0.0, le=1.0))
     names = q.options if isinstance(q, Choice) else q.levels
     kind = "option" if isinstance(q, Choice) else "level"
     # One probability per option/level, keyed p0..pN in declared order (option text is not a
@@ -115,10 +123,9 @@ def _field_for(q: Question):
     fields = {f"p{i}": (float, Field(..., ge=0.0, le=1.0, description=f"probability of {n!r}"))
               for i, n in enumerate(names)}
     sub = create_model(f"Q_{q.id}", **fields)
-    order = ", ".join(f"p{i}={n!r}" for i, n in enumerate(names))
     ordered = " The levels are ORDERED lowest first." if isinstance(q, Score) else ""
-    return (sub, Field(..., description=f"{q.question} Give a probability for each {kind} "
-                                        f"({order}).{ordered}"))
+    return (sub, Field(..., description=f"Answer to {q.id} (in QUESTIONS): one probability "
+                                        f"per {kind}.{ordered}"))
 
 
 def _response_model(questions: Sequence[Question]) -> type[BaseModel]:

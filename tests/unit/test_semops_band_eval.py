@@ -25,6 +25,7 @@ from evals.semops_band_eval import (  # noqa: E402
     paired_rows,
     load_rows,
     rescore,
+    load_gold,
     rows_in,
     planned_calls,
     run_arm,
@@ -152,12 +153,26 @@ def _jev_post(answer_for):
 
 
 def test_the_jev_arm_speaks_the_documented_shape_and_banding_still_decides():
-    def answer(qid, q):
-        text = q["instructions"].split("Text: ", 1)[1]
+    state_seen = {}
+
+    def answer(qid, q, state):
+        # The slimmed shape: the row rides in the STATE's "[gi] text" listing, once, and the
+        # question is a short reference to it — the fake reads the row the way Jev would.
+        state_seen.setdefault("rows", {int(m[0]): m[1] for m in
+                              re.findall(r"^\[(\d+)\] (.*)$", state, re.M)})
+        gi = int(qid[1:])
+        text = state_seen["rows"][gi]
+        assert f"[{gi}]" in q["instructions"], "the question does not reference its row"
         if text.startswith("maybe"):
             return 0.5
         return 0.95 if re.search(r"coat|jacket|vest|parka|blazer", text) else 0.05
-    post, sent = _jev_post(answer)
+    sent = []
+
+    def post(url, body, headers):
+        sent.append((url, body, headers))
+        return {"model": "jev-test", "usage": {"input_tokens": 100, "output_tokens": 5},
+                "answers": {qid: {"type": "noul", "noul": answer(qid, q, body["state"])}
+                            for qid, q in body["questions"].items()}}
     jev = JevBackend("k", ArmResult("banded-jev", True), post=post)
     champ = Stub(decisive=True)
     arm = run_arm("banded-jev", ROWS, PRED, banded=True, cheap=jev, champion=champ, sample=4, batch=25)
@@ -165,6 +180,11 @@ def test_the_jev_arm_speaks_the_documented_shape_and_banding_still_decides():
     url, body, headers = sent[0]
     assert headers["Authorization"] == "Bearer k" and body["model"] == "jev-latest"
     assert all(q["type"] == "noul" for q in body["questions"].values())
+    listing = body["state"]
+    for gi in range(len(ROWS)):
+        assert listing.count(f"[{gi}] ") == 1, "each row must ride in the state exactly once"
+        assert ("Text: " not in (body["questions"][f"r{gi}"]["instructions"])), \
+            "a question must not carry the row again"
     assert arm.calls == {"jev": 1, "champion": 1}                 # the champion only for the unsure rows
     assert arm.tokens == {"jev_input_tokens": 100, "jev_output_tokens": 5}
     assert arm.kept == TRUTH
@@ -199,6 +219,19 @@ class Refuses(Stub):
         if "silk scarf" in user:
             raise RuntimeError("structured output empty: the model returned no content")
         return super().complete(system=system, user=user, response_model=response_model)
+
+
+def test_gold_loads_both_of_its_shapes(tmp_path):
+    """The per-run list, and the labelled-corpus dict whose keys join to their predicate text."""
+    import json
+    lst = tmp_path / "l.json"
+    lst.write_text(json.dumps([{"predicate": "p1", "gold": {"0": True, "3": False}}]))
+    assert load_gold(lst) == {"p1": {0: True, 3: False}}
+    corpus = tmp_path / "c.json"
+    corpus.write_text(json.dumps({"predicates": [{"key": "a", "text": "the text of a"}],
+                                  "gold": {"a": {"7": False}, "ghost": {"1": True}}}))
+    assert load_gold(corpus) == {"the text of a": {7: False}}, \
+        "a gold key with no predicate text must be dropped, not invented"
 
 
 def test_the_rows_a_prompt_carries_are_read_from_both_prompt_shapes():
