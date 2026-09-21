@@ -44,6 +44,13 @@ class _Fake:
             return _ScoreBatch(scores=[_RowScore(index=i, score=1.0 if "open" in t.lower() else 0.0) for i, t in items])
         if response_model is _Aggregation:
             return _Aggregation(answer=f"{len(items)} tickets summarized")
+        fields = list(response_model.model_fields)
+        if fields and all(f.startswith("r") and f[1:].isdigit() for f in fields):
+            # JD-1's bundle (the banded cascade, default-ON since JD-3 graduated): one
+            # probability per row field, the rows riding in the prompt's [i] text listing.
+            by_index = dict(items)
+            return response_model(**{f: (0.95 if "open" in by_index[int(f[1:])].lower() else 0.05)
+                                     for f in fields})
         raise AssertionError(f"unexpected response_model {response_model!r}")
 
 
@@ -65,10 +72,13 @@ def test_filter_subsets_rows(client: TestClient, builtin_conn_id: str, _mock_llm
     assert body["output_rows"] == 2
     assert body["row_count"] == 2
     assert all("open" in row[0].lower() for row in body["rows"])
-    # 2, not 1: the filter's own call plus the champion validation sample —
-    # permanent since flag endgame Wave 5 (2026-08-06); the verdict sheet priced
-    # exactly this one extra bounded call per filter op.
-    assert body["llm_calls"] == 2
+    # 1, not 2: the sampled cascade spent a champion validation call on every filter
+    # (permanent since flag endgame Wave 5, 2026-08-06 — priced as one extra bounded
+    # call per op). JD-3's graduation (2026-09-21) replaced it with the banded path,
+    # which spends the champion only on rows inside the uncertainty band — and every
+    # row here is confidently decided, so the whole op is ONE bundle call. That saved
+    # call is the graduation receipt's own number showing up in the route.
+    assert body["llm_calls"] == 1
     assert body["truncated"] is False
 
 
