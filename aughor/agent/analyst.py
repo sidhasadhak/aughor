@@ -31,6 +31,7 @@ streams a converse turn.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -971,6 +972,19 @@ def run_analyst(
         # and a system prompt carrying the resolved spec. Filing its picks under
         # `converse.tool` made 79% of the live corpus unsegmentable by decider.
         site="analyst.tool",
+        # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (`ada_intake`) and cannot be
+        # recomputed, and it is where the analyst's state lives — `_spec_section(intake)` sits
+        # mid-prompt — so it is the argument a shuffle actually swaps. Serialised to a string
+        # so that a capped copy is MARKED truncated rather than silently clipped: a truncated
+        # intake rebuilds a different prompt, and the replay must refuse it.
+        replay_args={
+            "builder": "analyst_system_prompt",
+            "connection_id": eff_conn_id or "",
+            "intake": json.dumps(turn.intake or {}, ensure_ascii=False, sort_keys=True,
+                                 default=str),
+            "budget": int(budget),
+            "extra": extra_context or "",
+        },
     )
 
     answer = (result.answer or "").strip()

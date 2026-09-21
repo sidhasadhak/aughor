@@ -116,6 +116,7 @@ def run_tool_loop(
     trace_id: str = "",
     inv_id: str = "",
     site: str = "converse.tool",
+    replay_args: Optional[dict] = None,
 ) -> LoopResult:
     """Run one converse turn to an answer, or until the budget runs out.
 
@@ -150,6 +151,10 @@ def run_tool_loop(
     """
     by_name = {t.name: t for t in tools}
     wire = [t.as_wire() for t in tools]
+    # JD-4 — a fingerprint of what the decider was shown. `system` is built once by the
+    # caller and never mutated across steps, so one digest covers the whole turn. It is
+    # metadata (irreversible) and rides every decision row; see `_replay_digest`.
+    prompt_digest = _replay_digest(system)
     # The decision-record menu: SORTED, so the option order (and therefore each label
     # index) is stable across turns regardless of roster assembly order. Only real
     # menus are recorded — one tool is not a choice.
@@ -239,18 +244,97 @@ def run_tool_loop(
         if len(menu) >= 2:
             prev = steps[-2] if len(steps) >= 2 else None
             from aughor.learning.decisions import record_decision
-            record_decision(
+            decision_id = record_decision(
                 site,
                 f"step {len(steps)} | last {prev.tool + (' ok' if prev.ok else ' error') if prev else '(start)'}"
                 f" | {question}",
                 menu, chosen=call.name, source="llm",
                 outcome="ok" if ok else "error",
-                conn_id=conn_id, trace_id=trace_id, inv_id=inv_id)
+                conn_id=conn_id, trace_id=trace_id, inv_id=inv_id,
+                prompt_digest=prompt_digest)
+            # `history` has not had THIS step appended yet (that is the next line), so an
+            # empty history here means the model decided with nothing but system + question
+            # + tools in front of it: the only rows a shuffled control can rebuild faithfully.
+            if not history and replay_args:
+                _capture_replay(decision_id, site, question, wire, provider, prompt_digest,
+                                replay_args, trace_id=trace_id)
         history.extend(_exchange(call, payload))
 
     # Budget spent. The turn is not an error — it is an answer we did not reach, and
     # saying so plainly beats presenting a half-derived guess as a conclusion.
     return LoopResult(answer=None, steps=steps, stop_reason="budget")
+
+
+#: The temperature `LLMProvider.complete_with_tools` defaults to, and therefore what this loop
+#: REQUESTS (it passes none). Recorded as requested, not as served: a run-scoped pin in the
+#: provider can silently beat the argument, which is one of the things a replay cannot hold
+#: constant and the battery says so rather than assuming it.
+_REQUESTED_TEMPERATURE = 0.1
+
+
+def _replay_digest(system: str) -> str:
+    """sha256 of the assembled system prompt, or '' when there is none.
+
+    Irreversible, so it is METADATA under §6 item 4 and is written on every row. A replay that
+    rebuilds a prompt from captured arguments compares against this before it spends a token;
+    a mismatch means the rebuild drifted (live state moved, a builder changed) and the replay
+    would be asking a different question than the one logged.
+    """
+    if not system:
+        return ""
+    import hashlib
+    return hashlib.sha256(system.encode("utf-8", "replace")).hexdigest()
+
+
+def _capture_replay(decision_id: str, site: str, question: str, wire: list[dict],
+                    provider: LLMProvider, prompt_digest: str, replay_args: dict,
+                    *, trace_id: str = "") -> None:
+    """Emit the arguments that rebuild this decision's prompt — only while a window is open.
+
+    Observation, never control: every failure is counted and swallowed, and nothing here can
+    change what the turn does. `session_log.capture_replay` returns ``{}`` unless an operator's
+    capture window is open, so by default this writes NOTHING and spends nothing.
+
+    A capture that cannot be written is COUNTED rather than dropped silently — A5's concern
+    about this exact seam. `session_log.emit` discards an event with no trace (explicit or
+    ambient), and the analyst passes an empty `trace_id`, so this is a real loss path rather
+    than a hypothetical one, and an operator should be able to see its size.
+    """
+    try:
+        from aughor.obs import session_log
+        captured = session_log.capture_replay({
+            **replay_args,
+            "question": question,
+            # The roster in SENT order, full schemas. `options` on the decision row keeps only
+            # sorted names, and a tool whose description interpolates live state changes the
+            # input while its name stays identical.
+            "wire": json.dumps(wire, ensure_ascii=False, sort_keys=False),
+        })
+        if not captured:
+            return  # no window open — the expected, default case, and not a loss
+        from aughor import telemetry as _tel
+        if not (trace_id or _tel.current_trace_id()):
+            from aughor.kernel.errors import tolerate
+            tolerate(RuntimeError("no trace to attach a replay capture to"),
+                     "a replay capture with no trace cannot be emitted; the decision still stands",
+                     counter="learning.replay_capture.no_trace")
+            return
+        session_log.emit(
+            "decision_replay", name=site, trace_id=trace_id,
+            provider=str(getattr(provider, "backend", "") or ""),
+            model=str(getattr(provider, "model", "") or ""),
+            payload={
+                **captured,
+                "decision_id": decision_id,
+                "site": site,
+                "prompt_digest": prompt_digest,
+                "role": str(getattr(provider, "role", "") or ""),
+                "requested_temperature": _REQUESTED_TEMPERATURE,
+            })
+    except Exception as exc:  # noqa: BLE001 — observation must never fail the observed
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a replay capture that failed leaves the decision recorded",
+                 counter="learning.replay_capture")
 
 
 def _history_chars(history: list[dict]) -> int:

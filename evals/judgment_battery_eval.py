@@ -25,6 +25,16 @@ somebody schedules work against:
   "replay" would be asking a different question than the one logged, and a control that asks a
   different question measures nothing.
 
+  **Unblocked going forward (2026-09-21), not retroactively.** Every decision row now carries a
+  ``prompt_digest`` (sha256 of the assembled system prompt — metadata, always written), and while
+  an operator's capture window is open the loop also records the prompt BUILDER'S ARGUMENTS for
+  the first decision of a turn (``session_log.capture_replay``, the same gated posture as
+  ``capture_prompt``). The control then swaps ONE argument (:data:`STATE_ARG`), rebuilds, and
+  refuses any row whose rebuild does not reproduce the recorded digest — before a token is spent.
+  The 58 rows that predate this carry no digest and stay unreplayable; the battery says so row by
+  row rather than approximating them. A run is still APPROXIMATE on what it cannot hold constant
+  (:data:`UNCONTROLLED`), and reports that too.
+
 **What IS computable, free, and worth having today** is the floor the control must beat. The
 choice distribution is skewed — ``run_sql`` is 44.8% of 58 — so a shuffled arm agreeing with the
 real choice at ~45% has demonstrated nothing; it has reproduced the prior. Random over an
@@ -274,84 +284,171 @@ def choice_prior(rows: Sequence[Mapping[str, Any]]) -> Measure:
                 "uniform_baseline": uniform})
 
 
-def replayability(rows: Sequence[Mapping[str, Any]]) -> Measure:
-    """How many rows a shuffled-context control could be run on FAITHFULLY.
+#: Which builder argument carries the STATE a shuffled control swaps. A shuffle is only a
+#: single-variable change if exactly one argument moves, so this names it per builder. For the
+#: analyst it is `intake` — model output, and the source of `_spec_section(intake)`, which sits
+#: MID-prompt where no trailing-section rule could split it back out of the assembled string.
+STATE_ARG = {"analyst_system_prompt": "intake", "converse_system_prompt": "extra"}
 
-    The control's premise is that the only thing changed between arms is the state. That holds
-    only if the rest of the prompt can be reconstructed exactly. It cannot be here: a mid-loop
-    decision saw a history of tool results that is persisted nowhere, so re-asking it would
-    silently drop the largest part of its input and then attribute the difference to the
-    shuffle. Counting the faithful rows is the honest version of "can we run this yet".
+#: What a replay CANNOT hold constant, stated rather than assumed. The loop passes no
+#: temperature (so it requests the provider default), and `complete_with_tools` exposes no seam
+#: for the rest; a run-scoped pin in the provider can silently beat the requested temperature.
+#: A control run under these is APPROXIMATE, and its report says so.
+UNCONTROLLED = (
+    "temperature: requested 0.1 via the provider default; a run-scoped pin can override it",
+    "max_tokens: complete_with_tools accepts none, so the provider's default applies",
+    "extra_body: complete_with_tools accepts none",
+    "served model: the capture records the configured backend, not the model the call was "
+    "actually served by",
+)
 
-    ``step 1`` is read from the context prefix the recorder writes. Matched as a prefix, not a
-    substring: ``step 1`` also occurs inside ``step 12``.
+
+def _digest(text: str) -> str:
+    import hashlib
+    return hashlib.sha256((text or "").encode("utf-8", "replace")).hexdigest()
+
+
+def _faithful(row: Mapping[str, Any], cap: Optional[Mapping[str, Any]]) -> tuple[bool, str]:
+    """Whether ONE row can be replayed faithfully, and if not, the first reason why.
+
+    Checked in the order a reader would want the failure named: the cheapest disqualifier first.
+    """
+    if not str(row.get("context") or "").startswith("step 1 |"):
+        return False, "mid-loop: its tool-result history is persisted nowhere"
+    if not str(row.get("prompt_digest") or ""):
+        return False, "no prompt digest: recorded before JD-4's capture existed"
+    if not cap:
+        return False, "no captured arguments: no capture window was open when it was decided"
+    if any(k.endswith("_truncated") and v for k, v in cap.items()):
+        return False, "a captured argument was truncated, so the prompt cannot be rebuilt"
+    if STATE_ARG.get(str(cap.get("builder") or "")) is None:
+        return False, f"unknown builder {cap.get('builder')!r}: no state argument to swap"
+    if str(cap.get("prompt_digest") or "") != str(row.get("prompt_digest") or ""):
+        return False, "the capture's digest does not match the row's"
+    return True, ""
+
+
+def replayability(rows: Sequence[Mapping[str, Any]], *,
+                  captures: Optional[Mapping[str, Mapping[str, Any]]] = None) -> Measure:
+    """How many rows a shuffled-context control could be run on FAITHFULLY — and why the rest
+    cannot.
+
+    Three things have to be true of a row, and before JD-4's capture none of the 58 met the
+    third: it was decided FIRST (``step 1``, so there is no tool-result history to reconstruct),
+    it carries a ``prompt_digest`` (so a rebuild can be proven identical), and its builder's
+    ARGUMENTS were captured untruncated (so the prompt can be rebuilt with one of them swapped).
+
+    ``value`` is the count of rows meeting all three. It used to be the first-turn count, which
+    was a CEILING mislabelled as a count — the old docstring even said none of those rows was a
+    byte-faithful replay. ``captures`` maps a decision id to its captured payload; it is injected
+    rather than read here because the captures live in the ledger, and opening the live ledger
+    from a harness is the two-mappings SIGBUS precondition.
+
+    ``step 1`` is matched as a PREFIX: it also occurs inside ``step 12``.
     """
     if not rows:
         return Measure("replayable_rows", False, reason="the corpus is empty",
                        detail={"rows": 0})
-    first_turn = [r for r in rows if str(r.get("context") or "").startswith("step 1 |")]
+    caps = captures or {}
+    reasons: Counter = Counter()
+    faithful = 0
+    for r in rows:
+        ok, why = _faithful(r, caps.get(str(r.get("id") or "")))
+        if ok:
+            faithful += 1
+        else:
+            reasons[why] += 1
+    first_turn = sum(1 for r in rows if str(r.get("context") or "").startswith("step 1 |"))
     return Measure(
-        "replayable_rows", True, value=float(len(first_turn)),
+        "replayable_rows", True, value=float(faithful),
         detail={
             "rows": len(rows),
-            "first_turn": len(first_turn),
-            "mid_loop": len(rows) - len(first_turn),
-            "caveat": ("even first-turn rows never recorded the system prompt the decider saw, "
-                       "so none of them is a byte-faithful replay either"),
+            "first_turn": first_turn,
+            "mid_loop": len(rows) - first_turn,
+            "with_digest": sum(1 for r in rows if str(r.get("prompt_digest") or "")),
+            "with_capture": sum(1 for r in rows if str(r.get("id") or "") in caps),
+            "faithful": faithful,
+            "not_replayable_because": dict(reasons.most_common()),
         })
 
 
-def shuffled_control(rows: Sequence[Mapping[str, Any]], *, ask=None) -> Measure:
-    """JD-4's control arm: each question paired with the WRONG state.
+def shuffled_control(rows: Sequence[Mapping[str, Any]], *, ask=None, rebuild=None,
+                     captures: Optional[Mapping[str, Mapping[str, Any]]] = None) -> Measure:
+    """JD-4's control arm: each decision re-asked with ANOTHER decision's state.
 
-    ``ask`` is the judge — ``ask(context, options) -> chosen``. It is a PARAMETER rather than an
-    import so this harness stays free by default and so a test can drive the arm with a stub:
-    the scoring must be exercisable without spending a model call, or the only way to find a bug
-    in it is to pay for one.
+    The state is ONE builder argument (:data:`STATE_ARG`). Swapping it and REBUILDING the prompt
+    is a single-variable change. The first version of this arm swapped the recorded ``context``
+    strings instead — which swaps a label, not the state the model read, and would have produced
+    a publishable-looking number about nothing.
 
-    Refuses rather than approximating when the corpus cannot support a faithful replay. A
-    control that asks a different question than the one logged measures nothing, and reporting
-    its agreement rate anyway would be the exact "guard that passed for the wrong reason" this
-    battery exists to catch.
+    ``rebuild(args) -> system_prompt`` and ``ask(system, question, options) -> chosen`` are
+    PARAMETERS, so the default run stays free and a test can drive the arm with stubs. Before any
+    shuffle, every row's rebuild is checked against its recorded ``prompt_digest``: a rebuild
+    that drifted (live state moved, a builder changed) would be asking a different question than
+    the one logged, and it is refused BEFORE a token is spent rather than scored after.
     """
-    rep = replayability(rows)
-    faithful = int(rep.detail.get("first_turn", 0)) if rep.available else 0
-    if ask is None:
+    caps = captures or {}
+    rep = replayability(rows, captures=caps)
+    usable = [r for r in rows if _faithful(r, caps.get(str(r.get("id") or "")))[0]]
+    if ask is None or rebuild is None:
         return Measure(
             "shuffled_control", False,
             reason=("not run: no judge was supplied. Running it costs one model call per row "
                     "per arm, which is the operator's spend, never this harness's default"),
-            detail={"would_cost_calls": 2 * len(rows), "faithful_rows": faithful})
-    if faithful < 2:
+            detail={"would_cost_calls": 2 * len(usable), "faithful_rows": len(usable),
+                    "uncontrolled": list(UNCONTROLLED)})
+    if len(usable) < 2:
+        why = rep.detail.get("not_replayable_because") or {}
+        top = next(iter(why), "no row qualified")
         return Measure(
             "shuffled_control", False,
-            reason=(f"only {faithful} row(s) could be replayed faithfully — the rest are "
-                    "mid-loop decisions whose tool-result history is persisted nowhere, so a "
-                    "replay would change more than the state and attribute it to the shuffle"),
-            detail=dict(rep.detail))
+            reason=(f"only {len(usable)} row(s) could be replayed faithfully; the most common "
+                    f"reason the rest cannot: {top}"),
+            detail={**dict(rep.detail), "uncontrolled": list(UNCONTROLLED)})
 
-    # Pair each row's options with ANOTHER row's context. Rotation by one, not a random
-    # shuffle: a run whose control arm changes between invocations cannot be compared with
-    # itself, and `Math.random`-style nondeterminism is how a battery stops being a ratchet.
-    usable = [r for r in rows if str(r.get("context") or "").startswith("step 1 |")]
+    # Prove every rebuild is faithful BEFORE shuffling anything.
+    drifted = []
+    for r in usable:
+        cap = caps[str(r["id"])]
+        if _digest(rebuild(dict(cap))) != str(r.get("prompt_digest") or ""):
+            drifted.append(str(r["id"]))
+    if drifted:
+        return Measure(
+            "shuffled_control", False,
+            reason=(f"{len(drifted)} of {len(usable)} rebuilds did not reproduce the recorded "
+                    "prompt digest — live state moved or a builder changed since capture, so a "
+                    "replay would ask a different question than the one logged"),
+            detail={"drifted": drifted, "uncontrolled": list(UNCONTROLLED)})
+
+    # Rotation by one, not a random shuffle: a control arm that changes between invocations
+    # cannot be compared with itself.
     agree = 0
     for i, r in enumerate(usable):
-        wrong_state = usable[(i + 1) % len(usable)].get("context")
-        picked = ask(wrong_state, list(r.get("options") or []))
+        own = dict(caps[str(r["id"])])
+        donor = caps[str(usable[(i + 1) % len(usable)]["id"])]
+        state = STATE_ARG[str(own["builder"])]
+        own[state] = donor.get(state, "")
+        picked = ask(rebuild(own), str(own.get("question") or ""), list(r.get("options") or []))
         if picked == r.get("chosen"):
             agree += 1
     return Measure("shuffled_control", True, value=agree / len(usable),
                    detail={"n": len(usable), "agreed_with_real_choice": agree,
-                           "pairing": "rotate-by-one (deterministic)"})
+                           "swapped": "one builder argument (STATE_ARG), prompt rebuilt",
+                           "pairing": "rotate-by-one (deterministic)",
+                           "digests_verified": len(usable),
+                           "uncontrolled": list(UNCONTROLLED),
+                           "approximate": True})
 
 
 # ── The report ────────────────────────────────────────────────────────────────
 
 def summarize(rows: Sequence[Mapping[str, Any]], truncation: Mapping[str, Any],
-              *, ask=None) -> dict:
+              *, ask=None, rebuild=None,
+              captures: Optional[Mapping[str, Mapping[str, Any]]] = None) -> dict:
     """The battery, and JD-4's falsifier."""
     measures = [top1(rows), ece(rows), choice_prior(rows),
-                replayability(rows), shuffled_control(rows, ask=ask)]
+                replayability(rows, captures=captures),
+                shuffled_control(rows, ask=ask, rebuild=rebuild, captures=captures)]
     by_name = {m.name: m for m in measures}
     by_site = Counter(str(r.get("site") or "?") for r in rows)
 

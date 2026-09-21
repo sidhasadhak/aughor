@@ -185,6 +185,49 @@ def capture_prompt(system: Any = None, user: Any = None, output: Any = None) -> 
     return out
 
 
+def capture_replay(args: Optional[dict] = None) -> dict:
+    """The arguments that REBUILD a decider's prompt, or ``{}`` when no window is open.
+
+    JD-4's shuffled-context control pairs each question with the WRONG state and asks again.
+    That is only a single-variable change if the prompt can be rebuilt with one argument
+    swapped — so what is captured is the prompt BUILDER'S ARGUMENTS, not its output. Recording
+    the assembled system string instead looked sufficient and is not: the state a shuffle must
+    swap lives INSIDE that string (for the analyst, mid-prompt in `_spec_section(intake)`), so
+    swapping whole prompts would change the spec, the connection name, the budget, the roster
+    block and the disclosure block at once, and attribute all five to one. That fails in the
+    direction that produces a publishable-looking number.
+
+    These arguments are PAYLOAD under §6 item 4 ("visible metadata, gated payloads") — they
+    carry the user's question and prior answers verbatim — so they ride exactly the posture
+    `capture_prompt` does: written only while an operator's capture window is open, budget
+    claimed only when content is actually stored, capped with truncation marked. There is one
+    posture for stored prompt content in this product, and this is it.
+    """
+    if not args:
+        return {}
+    if not enabled():
+        return {}
+    try:
+        from aughor.obs import prompt_window
+        if not prompt_window.consume():
+            return {}
+    except Exception:
+        return {}
+    cap = _prompt_cap()
+    out: dict[str, Any] = {}
+    for key, value in args.items():
+        if isinstance(value, str):
+            text, truncated = _cap_text(value, cap)
+            out[key] = text
+            if truncated:
+                # A truncated argument cannot rebuild the prompt, and a replay that ran on one
+                # anyway would measure a different question. Marked so the battery refuses it.
+                out[f"{key}_truncated"] = True
+        else:
+            out[key] = _clip(value)
+    return out
+
+
 def emit(
     kind: str,
     *,

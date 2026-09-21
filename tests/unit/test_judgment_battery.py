@@ -149,69 +149,166 @@ def test_choice_prior_is_the_majority_class_rate():
 
 # ── replayability ─────────────────────────────────────────────────────────────
 
+import hashlib  # noqa: E402
+
+from evals.judgment_battery_eval import STATE_ARG, UNCONTROLLED  # noqa: E402
+
+
+def _rebuild(args):
+    """A stand-in prompt builder: deterministic, and it puts the STATE argument in the middle of
+    the prompt — where the analyst's `_spec_section(intake)` really sits — so a test that
+    swapped the whole assembled string instead of one argument would visibly change more."""
+    state = args.get(STATE_ARG[args["builder"]], "")
+    return f"IDENTITY for {args.get('connection_id')}\n[STATE:{state}]\nGUARDS budget={args.get('budget')}"
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+
+
+def replayable(i, *, chosen="run_sql", state=None, builder="analyst_system_prompt"):
+    """One first-turn row plus the capture that makes it faithfully replayable."""
+    args = {"builder": builder, "connection_id": "c1", "budget": 6,
+            "question": f"question {i}", STATE_ARG[builder]: state or f"state {i}"}
+    digest = _sha(_rebuild(args))
+    r = row(id=f"d{i}", context=f"step 1 | last (start) | question {i}", chosen=chosen,
+            prompt_digest=digest)
+    return r, {**args, "prompt_digest": digest}
+
+
 def test_step_one_is_matched_as_a_prefix_not_a_substring():
     """`step 1` occurs inside `step 12`. A substring test would count a twelfth-step decision as
     a first-turn one and then replay it as if it had no history — the error in the direction
     that flatters the control."""
     rows = [row(context="step 1 | a"), row(context="step 12 | b"), row(context="step 2 | c")]
     m = replayability(rows)
-    assert m.value == 1.0
     assert m.detail["first_turn"] == 1 and m.detail["mid_loop"] == 2
 
 
-def test_replayability_says_even_first_turn_rows_are_not_byte_faithful():
-    """The caveat is part of the reading, not decoration: the system prompt was never recorded,
-    so 'faithful' here is a ceiling, not a guarantee."""
-    assert "system prompt" in replayability([row()]).detail["caveat"]
+def test_a_first_turn_row_is_not_replayable_by_being_first_alone():
+    """`value` used to be the first-turn COUNT — a ceiling mislabelled as a count; the old
+    docstring itself said none of those rows was a byte-faithful replay. The live corpus shape:
+    14 first-turn rows, no digest, no capture, and the honest count is zero."""
+    m = replayability([row(id=f"x{i}") for i in range(3)])
+    assert m.detail["first_turn"] == 3
+    assert m.value == 0.0, "first-turn is necessary, not sufficient"
+
+
+def test_each_disqualifier_is_named_not_merely_counted():
+    """A zero is only actionable if it says WHICH requirement failed. Each row here fails a
+    different one, in the order a reader would want them named."""
+    ok_row, ok_cap = replayable(0)
+    trunc_row, trunc_cap = replayable(1)
+    drift_row, drift_cap = replayable(2)
+    rows = [
+        row(id="mid", context="step 3 | last run_sql ok | q"),          # mid-loop
+        row(id="old", context="step 1 | a", prompt_digest=""),           # pre-JD-4
+        row(id="nocap", context="step 1 | a", prompt_digest="abc"),      # window closed
+        trunc_row, drift_row, ok_row,
+    ]
+    caps = {"d0": ok_cap,
+            "d1": {**trunc_cap, "intake_truncated": True},
+            "d2": {**drift_cap, "prompt_digest": "not-the-rows-digest"}}
+    m = replayability(rows, captures=caps)
+    why = m.detail["not_replayable_because"]
+    assert m.value == 1.0
+    assert any("mid-loop" in k for k in why)
+    assert any("no prompt digest" in k for k in why)
+    assert any("no captured arguments" in k for k in why)
+    assert any("truncated" in k for k in why)
+    assert any("does not match" in k for k in why)
 
 
 # ── the control arm, exercised without spending ───────────────────────────────
 
 def test_the_control_refuses_when_no_judge_is_supplied():
     """The default path must stay free, and 'not run' must be distinguishable from 'ran and
-    found nothing'."""
-    m = shuffled_control([row(), row()])
+    found nothing'. It still reports what it CANNOT hold constant, so a reader sizing the spend
+    knows the result would be approximate before paying for it."""
+    rows, caps = zip(*(replayable(i) for i in range(3)))
+    m = shuffled_control(list(rows), captures=dict(zip((r["id"] for r in rows), caps)))
     assert m.available is False
     assert "no judge was supplied" in m.reason
-    assert m.detail["would_cost_calls"] == 4
+    assert m.detail["would_cost_calls"] == 6
+    assert m.detail["uncontrolled"] == list(UNCONTROLLED)
 
 
-def test_the_control_refuses_a_corpus_it_cannot_replay_faithfully():
-    """Mid-loop rows saw a tool-result history persisted nowhere. Re-asking them would change
-    more than the state and then attribute the difference to the shuffle."""
+def test_the_control_refuses_a_corpus_it_cannot_replay_faithfully_and_names_why():
     rows = [row(context="step 4 | a"), row(context="step 5 | b"), row(context="step 6 | c")]
-    m = shuffled_control(rows, ask=lambda ctx, opts: "run_sql")
+    m = shuffled_control(rows, ask=lambda s, q, o: "run_sql", rebuild=_rebuild)
     assert m.available is False and "mid-loop" in m.reason
 
 
+def test_a_rebuild_that_drifted_is_refused_BEFORE_a_token_is_spent():
+    """The digest exists for exactly this. Live state moves (a roster, a pack index, an org
+    context), a rebuild stops matching what the decider was shown, and a replay on it would ask
+    a different question than the one logged. It must be refused before the judge is called —
+    so the judge here raises if it is reached at all."""
+    rows, caps = zip(*(replayable(i) for i in range(3)))
+    captures = dict(zip((r["id"] for r in rows), caps))
+
+    def judge_must_not_be_called(system, question, options):
+        raise AssertionError("the judge was called on a rebuild that had drifted")
+
+    m = shuffled_control(list(rows), ask=judge_must_not_be_called,
+                         rebuild=lambda a: _rebuild(a) + " <live state moved>",
+                         captures=captures)
+    assert m.available is False
+    assert "did not reproduce the recorded prompt digest" in m.reason
+    assert len(m.detail["drifted"]) == 3
+
+
+def test_the_swap_changes_exactly_one_argument_and_nothing_else():
+    """The property the whole control rests on. The first version of this arm swapped recorded
+    CONTEXT strings — a label, not the state the model read. Swapping whole assembled prompts
+    would have been worse: the connection, the budget, the roster and the disclosure block move
+    with the state, and five changes get attributed to one. Here every argument but the state is
+    held fixed and the judge sees it."""
+    rows, caps = zip(*(replayable(i, state=f"S{i}") for i in range(3)))
+    captures = dict(zip((r["id"] for r in rows), caps))
+    seen = []
+
+    def judge(system, question, options):
+        seen.append((system, question))
+        return "run_sql"
+
+    shuffled_control(list(rows), ask=judge, rebuild=_rebuild, captures=captures)
+    # Row 0 carries row 1's STATE, and nothing else of row 1's.
+    system0, question0 = seen[0]
+    assert "[STATE:S1]" in system0, "the state was not swapped"
+    assert "IDENTITY for c1" in system0 and "budget=6" in system0
+    assert question0 == "question 0", "the question moved with the state — two changes, not one"
+
+
 def test_a_state_blind_judge_reproduces_the_prior_and_fires_the_falsifier():
-    """A stub judge that ignores the context entirely and always answers `run_sql` — which is
-    exactly what "not reading the state" looks like. It agrees with every real choice, the
-    control lands at 1.0 against a 1.0 prior, and JD-4's falsifier must fire.
-
-    Driving the arm with a stub is the point: the scoring is exercised for free, so a bug in it
-    does not have to be paid for to be found.
-    """
-    rows = [row(context=f"step 1 | ctx {i}") for i in range(4)]
-    m = shuffled_control(rows, ask=lambda ctx, opts: "run_sql")
-    assert m.available is True and m.value == pytest.approx(1.0)
-    assert m.detail["pairing"] == "rotate-by-one (deterministic)"
-
-    s = summarize(rows, {"truncated": False}, ask=lambda ctx, opts: "run_sql")
+    """A judge that ignores the state entirely and always answers `run_sql` — exactly what "not
+    reading the state" looks like. It agrees with every real choice, lands at the prior, and
+    JD-4's falsifier must fire."""
+    rows, caps = zip(*(replayable(i) for i in range(4)))
+    captures = dict(zip((r["id"] for r in rows), caps))
+    s = summarize(list(rows), {"truncated": False}, ask=lambda sy, q, o: "run_sql",
+                  rebuild=_rebuild, captures=captures)
+    control = s["measures"]["shuffled_control"]
+    assert control["available"] is True and control["value"] == pytest.approx(1.0)
+    assert control["detail"]["digests_verified"] == 4
+    assert control["detail"]["approximate"] is True
     assert s["falsifier"]["judgments_do_not_read_the_state"] is True
     assert s["inconclusive"] is False
 
 
 def test_a_state_reading_judge_beats_the_prior_and_the_falsifier_holds():
     """The negative control, and the reason the test above proves anything: a judge that DOES
-    read the state picks differently under a shuffled one, lands below the prior, and the
+    read the state picks differently once the state is swapped, lands below the prior, and the
     falsifier holds. Without this, a falsifier that always fired would pass the test above."""
-    rows = [row(context=f"step 1 | ctx {i}", chosen=MENU[i % 3], label=i % 3) for i in range(6)]
+    pairs = [replayable(i, chosen=MENU[i % 3], state=MENU[i % 3]) for i in range(6)]
+    rows, caps = zip(*pairs)
+    captures = dict(zip((r["id"] for r in rows), caps))
 
-    def reads_the_state(ctx, opts):
-        return MENU[int(str(ctx).split("ctx ")[1]) % 3]
+    def reads_the_state(system, question, options):
+        return system.split("[STATE:")[1].split("]")[0]
 
-    s = summarize(rows, {"truncated": False}, ask=reads_the_state)
+    s = summarize(list(rows), {"truncated": False}, ask=reads_the_state, rebuild=_rebuild,
+                  captures=captures)
     control = s["measures"]["shuffled_control"]
     assert control["available"] is True
     assert control["value"] < s["measures"]["choice_prior"]["value"]

@@ -81,6 +81,11 @@ def _connect() -> sqlite3.Connection:
     if not _MIGRATED:
         from aughor.db.migrations import add_column_if_missing
         add_column_if_missing(conn, "decision_record", "inv_id", "TEXT NOT NULL DEFAULT ''")
+        # JD-4: a sha256 of the assembled system prompt the decider was shown. METADATA, not
+        # payload — it cannot be reversed into the prompt, so §6 item 4 lets it be written on
+        # every row without a capture window. It is what lets a later replay PROVE it rebuilt
+        # the same input before spending a token, the way `evals/frozen.py` fingerprints state.
+        add_column_if_missing(conn, "decision_record", "prompt_digest", "TEXT NOT NULL DEFAULT ''")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_decision_inv ON decision_record (inv_id)")
         conn.commit()
         _MIGRATED = True
@@ -96,7 +101,8 @@ def record_decision(site: str, context: str, options: list, *,
                     chosen: str = "", label: Optional[int] = None,
                     source: str = "llm", confidence: float = 0.0,
                     outcome: str = "", conn_id: str = "", trace_id: str = "",
-                    inv_id: str = "", org_id: Optional[str] = None) -> str:
+                    inv_id: str = "", org_id: Optional[str] = None,
+                    prompt_digest: str = "") -> str:
     """Record one closed-set choice; returns its id, or '' when the write failed.
 
     `label` is derived from `chosen` when not given (exact match against `options`);
@@ -125,7 +131,7 @@ def record_decision(site: str, context: str, options: list, *,
             "id": uuid.uuid4().hex, "ts": _now(),
             "org_id": org_id or current_org_id() or "default",
             "site": str(site), "conn_id": str(conn_id), "trace_id": str(trace_id),
-            "inv_id": str(inv_id),
+            "inv_id": str(inv_id), "prompt_digest": str(prompt_digest)[:64],
             "context": str(context)[:_MAX_CONTEXT],
             "options": json.dumps(opts, ensure_ascii=False),
             "label": int(label), "chosen": str(chosen)[:_MAX_OPTION],
