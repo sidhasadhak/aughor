@@ -1,0 +1,237 @@
+{
+ "run_at": "2026-09-21",
+ "rule": "evals/semops_band_eval.py DECISION_MARGIN docstring; challenger=jev-solo@0.5, paired on the recorded runs' rows and gold; CI bootstraps whole filters (seed 20260921)",
+ "model_seen_live": "jev-1.13.0 (probe)",
+ "jev_vs_sampled_primary": {
+  "filters": 12,
+  "rows": 2350,
+  "jev_accuracy": 0.9528,
+  "sampled_accuracy": 0.9268,
+  "difference": 0.026,
+  "ci95": [
+   0.0106,
+   0.0417
+  ]
+ },
+ "jev_vs_banded_primary": {
+  "filters": 12,
+  "rows": 2350,
+  "jev_accuracy": 0.9528,
+  "banded_accuracy": 0.9506,
+  "difference": 0.0021,
+  "ci95": [
+   -0.0131,
+   0.0194
+  ]
+ },
+ "jev_vs_sampled_sensitivity_B": {
+  "filters": 7,
+  "rows": 1375,
+  "jev_accuracy": 0.9629,
+  "sampled_accuracy": 0.9287,
+  "difference": 0.0342,
+  "ci95": [
+   0.0148,
+   0.0557
+  ]
+ },
+ "gold_only_accuracy_unique_filters": {
+  "filters": 24,
+  "accuracy": 0.9517,
+  "note": "s0-s3 x 6 predicates; the products file duplicates s0 and is excluded"
+ },
+ "repeatability_products_vs_s0": [
+  {
+   "predicate": "the product is outerwear: a coat, jacket, pa",
+   "verdict_flips": 1,
+   "rows": 200,
+   "mean_abs_dp": 0.0035
+  },
+  {
+   "predicate": "the product is aimed at women",
+   "verdict_flips": 0,
+   "rows": 200,
+   "mean_abs_dp": 0.0073
+  },
+  {
+   "predicate": "the product is an accessory rather than a ga",
+   "verdict_flips": 4,
+   "rows": 200,
+   "mean_abs_dp": 0.0089
+  }
+ ],
+ "composed_banded_jev_products": [
+  {
+   "predicate": "the product is outerwear: a coat, jacket, parka, blazer or vest",
+   "rows": 175,
+   "accuracy": 0.9657,
+   "escalated": 8,
+   "champion_calls": 1,
+   "sampled_accuracy": 0.9543,
+   "sampled_champion_calls": 1,
+   "reference_accuracy": 0.9543
+  },
+  {
+   "predicate": "the product is aimed at women",
+   "rows": 150,
+   "accuracy": 0.9867,
+   "escalated": 10,
+   "champion_calls": 1,
+   "sampled_accuracy": 0.92,
+   "sampled_champion_calls": 1,
+   "reference_accuracy": 0.92
+  },
+  {
+   "predicate": "the product is an accessory rather than a garment (e.g. a bag, belt, hat, scarf, jewellery)",
+   "rows": 75,
+   "accuracy": 0.9867,
+   "escalated": 6,
+   "champion_calls": 1,
+   "sampled_accuracy": 1.0,
+   "sampled_champion_calls": 9,
+   "reference_accuracy": 1.0
+  }
+ ],
+ "shuffled_context_control": [
+  {
+   "predicate": "the product is outerwear: a coat, jacket, parka, blazer or vest",
+   "real_accuracy": 0.975,
+   "shuffled_accuracy": 0.755,
+   "majority_class_floor": 0.89
+  },
+  {
+   "predicate": "the product is aimed at women",
+   "real_accuracy": 0.99,
+   "shuffled_accuracy": 0.47,
+   "majority_class_floor": 0.505
+  },
+  {
+   "predicate": "the product is an accessory rather than a garment (e.g. a bag, belt, hat, scarf, jewellery)",
+   "real_accuracy": 0.945,
+   "shuffled_accuracy": 0.75,
+   "majority_class_floor": 0.84
+  }
+ ],
+ "calibration": {
+  "ece": 0.0576,
+  "reliability": [
+   {
+    "bin": "0.0-0.1",
+    "n": 3366,
+    "mean_p": 0.026,
+    "frac_true": 0.001
+   },
+   {
+    "bin": "0.1-0.2",
+    "n": 390,
+    "mean_p": 0.136,
+    "frac_true": 0.021
+   },
+   {
+    "bin": "0.2-0.3",
+    "n": 199,
+    "mean_p": 0.239,
+    "frac_true": 0.04
+   },
+   {
+    "bin": "0.3-0.4",
+    "n": 104,
+    "mean_p": 0.342,
+    "frac_true": 0.067
+   },
+   {
+    "bin": "0.4-0.5",
+    "n": 103,
+    "mean_p": 0.448,
+    "frac_true": 0.194
+   },
+   {
+    "bin": "0.5-0.6",
+    "n": 104,
+    "mean_p": 0.542,
+    "frac_true": 0.279
+   },
+   {
+    "bin": "0.6-0.7",
+    "n": 102,
+    "mean_p": 0.648,
+    "frac_true": 0.304
+   },
+   {
+    "bin": "0.7-0.8",
+    "n": 79,
+    "mean_p": 0.751,
+    "frac_true": 0.709
+   },
+   {
+    "bin": "0.8-0.9",
+    "n": 153,
+    "mean_p": 0.848,
+    "frac_true": 0.837
+   },
+   {
+    "bin": "0.9-1.0",
+    "n": 800,
+    "mean_p": 0.964,
+    "frac_true": 0.988
+   }
+  ],
+  "n": 5400
+ },
+ "bands_pooled": {
+  "drop": 3967,
+  "uncertain": 401,
+  "keep": 1032
+ },
+ "framework_token_redecision": {
+  "A": {
+   "sampled_prompt_tokens": 48288,
+   "banded_prompt_tokens_preslim": 76772,
+   "banded_prompt_tokens_slimmed_est": 44492,
+   "slim_ratio_measured": 0.58,
+   "banded_vs_sampled_after_slim": 0.92,
+   "accuracy_difference": 0.0238,
+   "ci95": [
+    0.0108,
+    0.0379
+   ],
+   "champion_calls": [
+    4,
+    12
+   ]
+  },
+  "B": {
+   "sampled_prompt_tokens": 27785,
+   "banded_prompt_tokens_preslim": 43978,
+   "banded_prompt_tokens_slimmed_est": 25487,
+   "slim_ratio_measured": 0.58,
+   "banded_vs_sampled_after_slim": 0.92,
+   "accuracy_difference": 0.0356,
+   "ci95": [
+    0.0186,
+    0.0543
+   ],
+   "champion_calls": [
+    2,
+    7
+   ]
+  }
+ },
+ "cost_and_latency": {
+  "jev_input_tokens_total": 251396,
+  "jev_output_tokens_total": 100494,
+  "jev_rows_judged": 5400,
+  "jev_tokens_per_row": 46.6,
+  "jev_usd_per_1k_rows": 0.00196,
+  "sampled_flashlite_usd_per_1k_rows_mean": 0.00503,
+  "bundle_latency_s": {
+   "median": 0.678,
+   "p90": 0.744,
+   "n": 216
+  },
+  "prices_usd_per_M_input": {
+   "jev": 0.042,
+   "gemini-3.1-flash-lite": 0.25
+  }
+ }
+}

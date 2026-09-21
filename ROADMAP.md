@@ -6807,7 +6807,7 @@ until there is a desktop app to drive it; shell rc edits — uv's command folder
 
 ---
 
-### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; studies: `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and its +1, `docs/JEV_ALIGN_STUDY_2026-09-19.md`; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; **JD-4, JD-1 and JD-3 BUILT and MERGED #535**, squash `583c8d9f`, 2026-09-21, with JD-2's three survivors, A3 and A5 — **none of the three JD waves has its receipt**, because every receipt is a model call and that is the operator's spend; JD-3 ships OFF behind `semops.banded_cascade`. This header read "nothing from the JD series built" after the merge — §5's prose-rot lesson again, corrected 2026-09-21)
+### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; studies: `docs/TYPESAFE_JEV_STUDY_2026-09-17.md` and its +1, `docs/JEV_ALIGN_STUDY_2026-09-19.md`; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; **JD-4, JD-1 and JD-3 BUILT and MERGED #535**, squash `583c8d9f`, 2026-09-21, with JD-2's three survivors, A3 and A5; JD-3 ships OFF behind `semops.banded_cascade`. **RECEIPTS, later the same day:** JD-3's taken and re-decided on total tokens after the seam slim (falsifier quiet, flag still OFF), and **JD-5's taken LIVE against the real Jev** — the operator entered the key and asked for the keep-or-throw answer; verdict KEEP, binding still unbuilt, `docs/JEV_LIVE_RECEIPT_2026-09-21.md`. JD-4's own corpus receipt is still blocked on faithful rows, but its shuffled-context control was exercised live that night and did its job. This header read "nothing from the JD series built" after the merge — §5's prose-rot lesson again, corrected 2026-09-21, and again the same night when "none of the three JD waves has its receipt" had itself rotted)
 
 > ⚠️ **Read the numbering before the arc.** This text was written 2026-09-17 on
 > `origin/claude/fervent-cori-w9ogfc` (`93112558`, ROADMAP.md +106) and it claimed **§3.19 and §6 item
@@ -6941,6 +6941,16 @@ believing any of it.
   row travels twice. ⏳ NEXT: slim the seam (condition once, row once, bare schema fields — est. ≈ today's size), count
   schema tokens in the harness, and re-decide on TOTAL tokens (as accurate AND no more tokens) — the accuracy gain must be
   re-measured, since part of it may come from the verbose prompt.
+  ✅ **SLIMMED AND RE-DECIDED 2026-09-21** (`docs/JEV_LIVE_RECEIPT_2026-09-21.md` §2). Rows now ride in the STATE once, in
+  the same `[index] text` listing the sampled path sends; each question is a short reference to its row; a noul's schema
+  field is its id and its [0,1] bound, nothing else — the schema constrains, the prompt carries. Same builders, same 25
+  rows: **9,021 → 5,228 chars (0.58×)**, against today's 2,340; the remaining 2.23× per-call floor IS the per-row-field
+  isolation. Recorded totals re-cost at the measured ratio: **banded ≈ 0.92× sampled on BOTH setups** (A ≈ 44.5k vs 48.3k;
+  B ≈ 25.5k vs 27.8k) at unchanged accuracy (+2.4 / +3.6 points) and unchanged champion counts (4 vs 12; 2 vs 7) — **the
+  token falsifier no longer fires**. ⚠️ A deterministic re-cost of the recorded runs, not a live re-run (no funded LLM
+  backend on this machine that night: Gemini quota shared and spent, Groq 401, Together 402); the harness now records
+  per-arm wall-clock and per-row probabilities, so the confirming live run also buys the LLM-side ECE that is still
+  unmeasured. Flag still OFF — the flip is the operator's, now with the numbers on the table.
   🔴 **Two findings about this deployment, bigger than the receipt:** (1) the cheap and champion tiers are the SAME model
   (`fast` = `coder` = `gemini-3.1-flash-lite`), so today's cascade spends its "strong" calls re-asking the model it is
   checking — the first run escalated all 200 rows on one predicate to do exactly that; a real champion is the user's
@@ -6982,6 +6992,28 @@ believing any of it.
   four-workflow benchmark Jev scores 67.8% against Opus 5's 73.1% — it is a speed and cost result, not
   an accuracy one. *Receipt:* the same JD-4 battery, both backends, same bundles. *Falsifier:* no
   wall-clock or cost win at equal calibrated accuracy → refuse and record it in §4.
+  ✅ **RECEIPT TAKEN LIVE 2026-09-21 — the falsifier did not fire, and neither did JD-4's control**
+  (the operator entered `TYPESAFE_API_KEY` and said *"prove me the value … if yes, we keep it; if not,
+  we throw it out"*; `docs/JEV_LIVE_RECEIPT_2026-09-21.md`, numbers in `evals/jd5_jev_receipt.json`).
+  `jev-1.13.0` live against the recorded arms, paired on the same frozen rows and gold, 5,400
+  row-judgments for ≈ $0.011: **jev-solo 95.3% vs production's sampled 92.7% (+2.6, CI +1.1 to +4.2,
+  12 filters / 2,350 rows)**, parity with the full banded LLM cascade (+0.2, CI −1.3 to +1.9) at
+  **zero** champion calls; the composed jev+champion cascade matches or beats sampled with 1 champion
+  call against up to 9. **JD-4's shuffled-context control, exercised live on the eval corpus:** real
+  0.975/0.990/0.945 → deranged-state 0.755/0.470/0.750, BELOW the majority-class floor on all three —
+  the probabilities read the state. **Calibration, the honest part:** ECE 0.058 over 5,400 — the tails
+  are excellent and the middle is not (stated 0.45–0.65 → true 19–30%), i.e. the miscalibration lives
+  exactly INSIDE the 0.30–0.70 band the cascade escalates; "calibrated" is not global, the band edges
+  are where trust ends, and the design survives its own audit. **$0.00196 per 1k rows** (2.6× under
+  flash-lite's sampled arm at $0.25/M; Jev $0.042/M input corroborated by pg-jev's independent
+  ≈$0.0405/M), 0.68 s median per 25-row bundle sequential, repeatability |Δp| ≤ 0.009 (5 flips/600).
+  Fuzzy predicates are the named limit (sport: 0.86–0.90, ~4× the band occupancy) — the champion stays.
+  **VERDICT: works — KEEP.** The production binding stays unbuilt and the flag stays OFF: a hosted
+  dependency in the serving path, behind the outbound grant and the PII gate, is the operator's flip,
+  now with numbers. `pg-jev` (same model behind a Postgres-superuser-only surface, managed hosts
+  excluded by its own README) examined and NOT adopted — semops already sit at the seam and speak every
+  warehouse; its batch-degradation measurement (≤20 rows 100%, 40 → 92–98%, 80 → 77–94%) pins our
+  batch at 25 and is the second first-hand-adjacent source for the price.
 - **JD-6 — the local scorer, if JD-4 earns it.** A `jevlike`-shaped one-pass head trained on our own
   logged `{state, options, chosen}` rows, weights outside the repo and installer per §3.9's adapter
   law, used as a pre-filter and ranker (cut 200 candidate columns to 12 before a real model reads them)
@@ -7535,7 +7567,11 @@ ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 and JD-6 on HOLD); 
         production path; its probability is STATED, not measured) · JD-3 the banded cascade (OFF,
         `semops.banded_cascade`) · JD-2's three survivors · A3 the definition-report screen · A5 the
         decision budget. ✅ JD-3's receipt TAKEN 2026-09-21 — falsifier did not fire (2 holds, 1 inconclusive with banding
-        more accurate; the cheap and champion tiers are one model here). ⏳ JD-1's and JD-4's are still model calls. JD-4's first run
+        more accurate; the cheap and champion tiers are one model here) — then SLIMMED the same night (0.58× the request,
+        banded ≈ 0.92× sampled total tokens, re-cost) and the token objection closed. ✅ JD-5's receipt TAKEN LIVE
+        2026-09-21 (`docs/JEV_LIVE_RECEIPT_2026-09-21.md`): Jev beats production +2.6 (CI +1.1 to +4.2) at zero champion
+        calls, 2.6× cheaper, passes the shuffled-context control — VERDICT KEEP; binding unbuilt, flag OFF, both the
+        operator's. pg-jev examined, not adopted. ⏳ JD-1's and JD-4's corpus receipts are still model calls. JD-4's first run
         took no reading on three of five measures; the floor is `choice_prior` 44.8%.
         ⚠️ The numbers are NOT the ones the draft asked for: it was
         written on an unmerged branch claiming §3.19 / item 25, which Arc IN took the same day, so it
@@ -8501,7 +8537,12 @@ the browser** · **measure the premise before building.**
     outbound grant and the PII gate, never on the verdict path. The state is customer row text leaving
     the box, and Jev's own benchmark puts it at 67.8% against Opus 5's 73.1%. *Recommended: hold until
     (a) exists and can measure it; adopt only for pre-filters and rankings where a wrong answer is cheap
-    and recoverable.*
+    and recoverable.* ✅ **MEASURED LIVE 2026-09-21 at the user's direction** (*"prove me the value …
+    if yes, we keep it; if not, we throw it out"* — the key entered the same evening): **it works, keep
+    it** — +2.6 points over production at zero champion calls, 2.6× cheaper, control passed, ECE's
+    miscalibration confined inside the escalation band; the binding itself stays unbuilt and the flip
+    stays the operator's (`docs/JEV_LIVE_RECEIPT_2026-09-21.md`). `pg-jev` examined the same night and
+    not adopted (Postgres-superuser-only surface; the seam already owns this ground).
     **(e) The local one-pass scorer (JD-6)** — sovereign, CPU-sized, trained on our own logged
     decisions, weights outside the installer. *Recommended: hold behind (a) and (d)'s measurement; it is
     a pre-filter, not a decider.*
@@ -8515,8 +8556,10 @@ the browser** · **measure the premise before building.**
     produce a usable one before A2 means anything. ✅ A3 and A5 BUILT in #535 (§3.20).
     ✅ **ADOPTED 2026-09-21 (the user), as recommended: (a) the seam and the instrument, (c) the bands and (f)
     the alignment movement — with (d) JD-5 and (e) JD-6 on HOLD, and A6 held on its number.** JD-4, JD-1 and
-    JD-3 were built and merged in #535 before the stamp, the same shape as item 25 (a); every JD receipt is
-    still a model call nobody has spent.
+    JD-3 were built and merged in #535 before the stamp, the same shape as item 25 (a). Later the same day the
+    operator spent the receipts that were waiting on their word: JD-3's (falsifier quiet; then the seam slimmed
+    and the token objection closed at ≈0.92× — flag still OFF) and JD-5's, LIVE (verdict KEEP; binding still
+    unbuilt). JD-1's agreement receipt and JD-4's corpus receipt remain unspent model calls.
     🛑 A6 (an optimizer over definitions) is HELD on a number: five verdicts, unchanged in sixteen days,
     is an optimizer on noise. 🛑 Refused outright: a label picker that pre-selects the model's own answer.
     Not decided here because it isn't ripe: whether a judgment's probability may ever reach a reader
