@@ -315,7 +315,10 @@ def effective_governance(agent_id: str, workspace_id: Optional[str] = None) -> G
                 continue
             try:
                 limits[kid] = min(k.max, max(k.min, int(raw)))
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, f"stored limit {kid!r} for {agent_id} is not a number — "
+                              f"the charter default stands", counter="agents.limit_unreadable")
                 continue
     # P6: a deployment-wide hard ceiling. An operator can bound worst-case cost across
     # ALL agents at once (without per-agent config) by setting AUGHOR_MAX_TOKEN_BUDGET;
