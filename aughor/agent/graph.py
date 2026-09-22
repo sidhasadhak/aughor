@@ -25,6 +25,7 @@ from aughor.agent.investigate import (
     ada_intake,
     ada_baseline,
     deep_breakdown,
+    frame_breakdowns,
     ada_cross_section,
     ada_cross_section_multilens,
     ada_decompose,
@@ -194,6 +195,12 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         graph.add_node("ada_cross_section_multilens", _xsec_node)
         graph.add_edge("ada_cross_section_multilens", "ada_synthesize")
         _xsec_target = "ada_cross_section_multilens"
+    # ON-10 (2026-09-22) — the diagnostic route runs the frame's declared breakdowns in a node of its
+    # own BEFORE the scan (the scan does not own a breakdown; that law is pinned). Unframed runs pass
+    # through it untouched: it emits no phase, so their phases are byte-identical.
+    graph.add_node("frame_breakdowns", ada["frame_breakdowns"] if "frame_breakdowns" in ada else (lambda s: {}))
+    graph.add_edge("frame_breakdowns", _xsec_target)
+    _xsec_target = "frame_breakdowns"
 
     # Parallel phase wave (transport-derived, A1 ModelProfile) — the temporal chain's middle
     # phases (baseline ∥ decompose ∥ dimensional) run as ONE wave node; the serial tier-routers'
@@ -356,6 +363,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
         "intake":     partial(ada_intake,     conn=db),
         "baseline":   partial(ada_baseline,   conn=db),
         "breakdown":  partial(deep_breakdown,  conn=db),
+        "frame_breakdowns": partial(frame_breakdowns, conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
         "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
         "phase_wave":  partial(ada_phase_wave, conn=db),
@@ -379,6 +387,7 @@ def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False, clarify
         "intake":      partial(ada_intake,      conn=db),
         "baseline":    partial(ada_baseline,    conn=db),
         "breakdown":  partial(deep_breakdown,  conn=db),
+        "frame_breakdowns": partial(frame_breakdowns, conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
         "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
         "phase_wave":  partial(ada_phase_wave, conn=db),
