@@ -2397,7 +2397,7 @@ class SchemaExplorer:
                     f"  - {m.name}: {m.definition} [from {m.maps_to}] (sane value: {m.unit_or_range})"
                     for m in _bp.north_star_metrics[:8]
                 )
-                _qlines = "\n".join(f"  - {q}" for q in _bp.key_questions[:8])
+                _qlines = "\n".join(f"  - {q}" for q in _bp.key_questions[:8])   # rewritten below once the industry resolves
                 # Computation recipes (curated industry KB + LLM fallback) — the
                 # SQL-ACCURACY knowledge: each metric's canonical formula, the grain
                 # to compute at, and the anti-pattern that produces a wrong number
@@ -2457,7 +2457,21 @@ class SchemaExplorer:
                 # none of it.
                 _kb_block = ""
                 try:
-                    from aughor.business_profile.metric_kb import curated_metrics, match_industry
+                    from aughor.business_profile.metric_kb import (curated_metrics, declared_key_questions,
+                                                                   match_industry, package_questions)
+                    # IP — the questions the ACTIVE package declares in `questions.yaml` lead the
+                    # QUESTIONS THAT MATTER block, marked as declared, ahead of the ones the profile
+                    # inferred; and its explorer angles lead the angle checklist below. Measured
+                    # before this: `questions.yaml` reached no prompt at all — its only readers were
+                    # the steering router (which excludes industry packages) and a projection no
+                    # renderer read. Deterministic; nothing without an active package.
+                    _declared_q = declared_key_questions(_eff_industry, list(_bp.key_questions or []))
+                    if any(declared for _q, declared in _declared_q):
+                        _qlines = "\n".join(f"  - {q}{' [declared by the industry package]' if declared else ''}"
+                                             for q, declared in _declared_q)
+                    _pkg_angles = list(package_questions(_eff_industry)["explorer_angles"])
+                    if _pkg_angles:
+                        profile_angles = list(dict.fromkeys(_pkg_angles + profile_angles))[:12]
                     _sel_kb = match_industry(_eff_industry)
                     # IP — the ACTIVE package's typed recipes first, then industry.json's prose ones
                     # for what the package does not cover. A band marked "published" was measured

@@ -201,6 +201,20 @@ class _Suggestions(BaseModel):
     suggestions: list[_Suggestion]
 
 
+def _lead_with_package(connection_id: str, suggestions: list[dict]) -> list[dict]:
+    """IP (2026-09-22) — the questions the connection's active industry package DECLARES lead the
+    suggestions, ahead of the model's cached six. Never written to the cache (the cache is the
+    model's answer to a schema fingerprint; a package is activated and deactivated by a person and
+    must show up and go away on the next request). A repeat of a package question by the model is
+    dropped so a chip never appears twice. Empty package → the list is returned untouched."""
+    from aughor.starters import package_suggestions
+    lead = package_suggestions(connection_id)
+    if not lead:
+        return suggestions
+    texts = {s.get("text") for s in lead}
+    return lead + [s for s in (suggestions or []) if s.get("text") not in texts]
+
+
 @router.get("/suggestions")
 async def get_suggestions(connection_id: str = BUILTIN_ID):
     """Return 6 starter questions tailored to the schema of the given connection."""
@@ -242,7 +256,7 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
     try:
         cached = get_cached(connection_id, fingerprint)
         if cached:
-            out = {"suggestions": cached, "cached": True}
+            out = {"suggestions": _lead_with_package(connection_id, cached), "cached": True}
             if _starters is not None:
                 out["starters"] = _starters
             return out
@@ -316,7 +330,7 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
                          "layer still holds it for this process",
                  counter="suggestions.cache_write", conn_id=connection_id or None)
 
-    out = {"suggestions": suggestions, "cached": False}
+    out = {"suggestions": _lead_with_package(connection_id, suggestions), "cached": False}
     if _starters is not None:
         out["starters"] = _starters
     return out

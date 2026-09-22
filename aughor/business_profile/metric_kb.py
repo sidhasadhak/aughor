@@ -202,6 +202,78 @@ def _anatomy_metrics(industry: str) -> list[dict]:
     return out
 
 
+QUESTION_KINDS = ("canonical", "diagnostic", "explorer_angles", "intent_tags")
+
+
+def package_questions(industry: str) -> dict:
+    """The questions the ACTIVE package(s) for this industry declare in `questions.yaml`: the four
+    lists (`canonical`, `diagnostic`, `explorer_angles`, `intent_tags`) merged in package order and
+    deduplicated, plus `packs`, the ids they came from. Every list is empty when nothing declares.
+
+    Measured before this seam (2026-09-22): `PackQuestions` had three readers and none of them was
+    the runtime for an industry package. `routing.score_pack` reads canonical + intent_tags over the
+    STEERING pool, which excludes every knowledge layer by construction (`PackManifest.steers`);
+    `inject.build_injection` copies diagnostic + explorer_angles into a `PackInjection` field no
+    renderer reads; the agent template projects canonical + diagnostic into suggested goldens. So
+    airline's six questions and its two angles reached no prompt and no person. Gate 6 rides along as
+    it does for the recipes: `knowledge_index()` carries only active packages, so a draft's questions
+    reach nothing — and a package is reached by its curated industry id, exactly as its recipes are."""
+    empty = {k: [] for k in QUESTION_KINDS}
+    empty["packs"] = []
+    iid = industry_id(industry) if industry else ""
+    if not iid:
+        return empty
+    from aughor.packs.knowledge import knowledge_index
+    from aughor.packs.loader import load_pack
+
+    out = {k: [] for k in QUESTION_KINDS}
+    out["packs"] = []
+    for package in knowledge_index().packages:
+        if package.industry != iid:
+            continue
+        try:
+            pack = load_pack(package.directory)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"package {package.pack_id} did not load; its questions are skipped",
+                     counter="metric_kb.pack_load")
+            continue
+        questions = getattr(pack, "questions", None)
+        if questions is None:
+            continue
+        contributed = False
+        for kind in QUESTION_KINDS:
+            for item in (getattr(questions, kind, None) or []):
+                text = " ".join(str(item).split())
+                if text and text not in out[kind]:
+                    out[kind].append(text)
+                    contributed = True
+        if contributed:
+            out["packs"].append(package.pack_id)
+    return out
+
+
+def declared_key_questions(industry: str, inferred: list[str], *, declared_cap: int = 6,
+                           inferred_cap: int = 6) -> list[tuple[str, bool]]:
+    """The key questions a prompt names for an industry, as ``(question, declared)`` pairs: the
+    package's canonical then diagnostic questions first, then the profile's inferred ones for what
+    the package did not ask. Declared first is deliberate for the same reason the recipes are —
+    the renderer truncates, and a question a package declared must not be the one that falls off.
+    An inferred question that repeats a declared one (after whitespace and case) is dropped."""
+    pq = package_questions(industry)
+    declared = (pq["canonical"] + [q for q in pq["diagnostic"] if q not in pq["canonical"]])[:declared_cap]
+    seen = {" ".join(q.split()).lower() for q in declared}
+    out = [(q, True) for q in declared]
+    for q in inferred:
+        text = " ".join(str(q or "").split())
+        key = text.lower()
+        if not text or key in seen or len(out) - len(declared) >= inferred_cap:
+            continue
+        seen.add(key)
+        out.append((text, False))
+    return out
+
+
 def curated_metrics(industry: str) -> list[dict]:
     """The curated metric recipes for an industry: the package's TYPED, gate-checked ones first,
     then `industry.json`'s prose ones for the metrics the package does not cover.
