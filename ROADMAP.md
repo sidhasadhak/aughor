@@ -7237,8 +7237,12 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   north-star word rule, so a bare 'orders' is no 'average order value' goal); the narrator's context carries DECLARED
   PRIORITIES THIS QUARTER and each citation says the goal it bears on (`priority`), which the brief shows. Receipts:
   `tests/unit/test_priorities.py` (6). ✅ Live: the settings door on the scratch pair saved *total sales, up 10% vs last
-  quarter, up is good, by Q4*. ⏳ The brief line needs a brief, and neither live connection on the copy has exploration
-  findings to brief from (`available: false`) — an explorer run (minutes of model calls) would earn that receipt.
+  quarter, up is good, by Q4*. ✅ **BRIEF RECEIPT 2026-09-23 (the user: "Run the brief receipt on Gemini models")**: the
+  explorer ran on theLook on the scratch pair with `gemini-3.1-flash-lite` (the deployment's own pinned Gemini default) to 16
+  findings, then one brief: the narrator wrote the goal INTO the synthesis — *"…must be streamlined to support the 10%
+  quarterly sales growth target [1]"* — from the DECLARED PRIORITIES block. The per-citation `priority` tag stayed empty on
+  all eight: the findings say *revenue* and *AOV*, never *total sales*, and the tag holds the north-star word rule on
+  purpose (a tag that guessed would be worse than none). The explorer was stopped after the brief to cap the spend.
 - ✅ **CB-7 · One action beside each Briefing item** (idea 20) — **BUILT 2026-09-23**. `briefing.best_action_for`: the cited
   investigation's own first recommendation when the item came from one (executable through the inbox's gated door —
   the brief links to it), else the playbook's best play for the finding's labels by learned success rate, read for the
@@ -7246,7 +7250,13 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   Each citation carries `action`; `BriefActions` renders the line under the synthesis. Receipts: `tests/unit/
   test_brief_actions.py` (5) + `BriefActions.test.tsx` (3). ⚠️ Honest limit: today's exploration insights carry no
   investigation id, so the executable branch is rare and most items get a play; "the same gated path" therefore means
-  the brief points AT the inbox's door rather than firing through it. ⏳ Live receipt owed with CB-6's, for the same reason.
+  the brief points AT the inbox's door rather than firing through it. ✅ **BRIEF RECEIPT 2026-09-23** (same brief as CB-6's):
+  all eight citations carried an action, every one a playbook play, every one at learned success rate **0.0** — no outcome has
+  ever been recorded on this deployment, so nothing has been learned yet — and the nearest plays were poor fits (a delivery-time
+  finding drew *"Concentration risk up, churn_rate up…"*): the retriever matches on angle and domain, and until CB-2's reviews
+  accumulate the "best" play is the nearest, not the proven. The mechanism is live; its quality is what the outcome loop is
+  for. ⚠️ Adjacent: the action's relevance needs a better label than the finding's angle — the finding's metric, once the
+  explorer names one — before the line is worth a reader's trust.
 - ✅ **CB-8 · Said versus measured** (idea 17) — **BUILT 2026-09-23**, first source **filed Slack thread replies** (the user's
   call). `hub/claims.check_claim`: the numbers a reply states, checked against the measures its thread was filed with
   (`links.metrics_at_filing` — the promise's breached/reached/breach rate; a rate said as a percentage matches its
