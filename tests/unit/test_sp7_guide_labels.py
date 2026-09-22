@@ -18,7 +18,7 @@ import pytest
 import aughor.agent.spotlight_guide as guide
 
 WEB = Path(__file__).resolve().parents[2] / "web"
-TOPICS = ["create_agent", "create_automation", "connect_data", "appearance"]
+TOPICS = ["create_agent", "create_automation", "connect_data", "appearance", "limits"]
 _QUOTED = re.compile(r"“([^”]+)”")
 
 

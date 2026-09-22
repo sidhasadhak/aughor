@@ -5,6 +5,8 @@ forcing every metric/question to be grounded in the ACTUAL columns present.
 """
 from __future__ import annotations
 
+import re
+
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -152,6 +154,12 @@ def _gather_context(connection_id: str, schema_name: Optional[str]) -> tuple[str
                                 connection_id=connection_id)
     except Exception as exc:
         logger.debug("apply_glossary failed (non-fatal): %s", exc)
+    # The Curator's `profile_schema_chars` knob: this prompt used to carry the WHOLE
+    # rendered schema, and the provider chokepoint only warns on overflow — on a wide
+    # warehouse that was the one uncapped prompt in the pipeline (2026-09-22). Capped
+    # AFTER the glossary lands, so the cut counts the text the model actually sees.
+    from aughor.kernel.agents import effective_limit
+    schema = cap_schema(schema, effective_limit("curator", "profile_schema_chars"))
 
     domains: list[str] = []
     try:
@@ -162,6 +170,85 @@ def _gather_context(connection_id: str, schema_name: Optional[str]) -> tuple[str
     except Exception as exc:
         logger.debug("ontology domain hint unavailable (non-fatal): %s", exc)
     return schema, domains
+
+
+_ROWS_RE = re.compile(r"\((\d[\d,]*)\s+rows\)")
+_LIMIT_LABEL = "Business profile · schema chars per prompt"
+
+
+def _schema_blocks(schema: str) -> tuple[str, list[str], str]:
+    """(preamble, TABLE blocks in render order, trailer) — a block runs from its
+    ``TABLE:`` header to the next header; the trailer is what follows the last table's
+    blank line (SQL hints, date range) and is kept whole."""
+    lines = schema.splitlines()
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("TABLE:")]
+    if not starts:
+        return schema, [], ""
+    pre = "\n".join(lines[:starts[0]]).rstrip("\n")
+    blocks: list[str] = []
+    trailer = ""
+    for n, i in enumerate(starts):
+        j = starts[n + 1] if n + 1 < len(starts) else len(lines)
+        chunk = lines[i:j]
+        if n + 1 == len(starts):
+            # The last block ends at its first blank line; the rest is the trailer.
+            for k, ln in enumerate(chunk):
+                if ln.strip() == "" and k > 0:
+                    trailer = "\n".join(chunk[k:])
+                    chunk = chunk[:k]
+                    break
+        blocks.append("\n".join(chunk).rstrip("\n"))
+    return pre, blocks, trailer
+
+
+def cap_schema(schema: str, limit: int) -> str:
+    """Bound the rendered schema to `limit` chars by WHOLE tables — the largest by row
+    count survive, emitted in their original order, and the cut is said in the text
+    itself (which table count was shown of which, and where the knob lives). Under the
+    limit the text is returned byte-identical, so the cap changes nothing it need not."""
+    if limit <= 0 or len(schema) <= limit:
+        return schema
+    pre, blocks, trailer = _schema_blocks(schema)
+    if not blocks:
+        return schema[:limit] + f"\n… [schema truncated at {limit:,} chars by the Curator's " \
+                                f"'{_LIMIT_LABEL}' limit]"
+
+    def _rows(b: str) -> int:
+        m = _ROWS_RE.search(b.splitlines()[0])
+        return int(m.group(1).replace(",", "")) if m else -1
+
+    ranked = sorted(range(len(blocks)), key=lambda i: (-_rows(blocks[i]), i))
+
+    def _notice(shown: int) -> str:
+        return (f"[schema truncated: showing {shown} of {len(blocks)} tables, the largest "
+                f"by row count, to stay within the Curator's '{_LIMIT_LABEL}' limit of "
+                f"{limit:,} chars — raise it in Agent Ops → Roster → Curator, or ask Spotlight]")
+
+    # Reserve the notice's REAL length (its widest form), not a guess — a fixed reserve
+    # starved the tables at small limits.
+    budget = limit - len(pre) - len(trailer) - len(_notice(len(blocks))) - 8
+    keep: set[int] = set()
+    used = 0
+    for i in ranked:
+        cost = len(blocks[i]) + 2
+        if used + cost > budget:
+            continue        # a smaller table further down may still fit
+        keep.add(i)
+        used += cost
+    kept = [blocks[i] for i in range(len(blocks)) if i in keep]
+    if not kept:
+        # Nothing fit whole (one table wider than the whole budget): show the largest,
+        # hard-cut, rather than a schema with no tables in it.
+        top = blocks[ranked[0]]
+        tail = "\n  … [table truncated to fit the limit]"
+        kept = [top[:max(0, budget - len(tail))] + tail]
+    notice = _notice(len(kept))
+    parts = [pre] if pre.strip() else []
+    parts.extend(kept)
+    parts.append(notice)
+    if trailer.strip():
+        parts.append(trailer.strip("\n"))
+    return "\n\n".join(parts)
 
 
 def infer_business_profile(connection_id: str,

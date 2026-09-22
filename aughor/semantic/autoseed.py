@@ -108,6 +108,31 @@ def _parse_table_blocks(schema_str: str) -> dict[str, str]:
     return blocks
 
 
+_ROWS_RE = re.compile(r"\((\d[\d,]*)\s+rows\)")
+
+
+def _table_rows(block: str) -> int:
+    """The row count the TABLE: header carries, or -1 when the renderer said none."""
+    m = _ROWS_RE.search((block.splitlines() or [""])[0])
+    return int(m.group(1).replace(",", "")) if m else -1
+
+
+def eligible_tables(table_blocks: dict, cap: int) -> list[str]:
+    """The tables the Curator may seed under `cap`: the largest by row count, ties and
+    unknown counts in name order — the SAME "largest N" the profiler keeps, so what gets
+    words is what the explorer can see. Deterministic across rebuilds, which is what
+    makes the cap a cap on the CONNECTION and not a per-run allowance that creeps to
+    every table over successive builds."""
+    ranked = sorted(table_blocks, key=lambda t: (-_table_rows(table_blocks[t]), t))
+    return ranked[:max(0, int(cap))]
+
+
+def _max_tables() -> int:
+    """The Curator's `autoseed_max_tables` knob — Agent Ops / Spotlight set it."""
+    from aughor.kernel.agents import effective_limit
+    return effective_limit("curator", "autoseed_max_tables")
+
+
 def _block_columns(block: str) -> set[str]:
     """Column names declared in a schema block — the `  <col>  <type>` detail lines
     (skip the TABLE: header, `--` comments, and hint lines)."""
@@ -267,6 +292,24 @@ def _seed(raw_schema: str, schema: str | None = None,
             logger.info("autoseed: re-seeding %r — stored glossary columns drifted from live schema", t)
             missing[t] = block
 
+    # The Curator's cap (a declared knob, not a constant): only the largest `cap` tables
+    # of the connection are ever seeded. The cut is said — in the log here, and by
+    # Spotlight's `platform_limits`, which reports the cap and where it bites.
+    cap = _max_tables()
+    if len(table_blocks) > cap:
+        eligible = set(eligible_tables(table_blocks, cap))
+        cut = sorted(t for t in missing if t not in eligible)
+        missing = {t: b for t, b in missing.items() if t in eligible}
+        if cut:
+            logger.info("autoseed: Curator limit autoseed_max_tables=%d keeps the largest %d of "
+                        "%d tables — %d unseeded table(s) skipped (no model call): %s%s",
+                        cap, cap, len(table_blocks), len(cut), ", ".join(cut[:10]),
+                        " …" if len(cut) > 10 else "")
+
+    # Largest tables first whether or not the cap bit: a run the budget ends mid-loop
+    # (BudgetExceeded below) has then annotated the tables that matter most.
+    missing = {t: missing[t] for t in eligible_tables(missing, len(missing))}
+
     # Fast-path: schema fingerprint matches a previously fully-seeded schema. Scoped to THIS
     # connection+schema — an unscoped hash meant a structurally identical sibling (or a dev
     # copy of the same warehouse) counted as already seeded.
@@ -281,6 +324,8 @@ def _seed(raw_schema: str, schema: str | None = None,
     provider = get_provider()
     tables_meta: dict = yaml_tables   # this connection's own section
     wrote_any = False
+    budget_hit: BaseException | None = None
+    from aughor.kernel.metering import BudgetExceeded
 
     for table_name, schema_block in missing.items():
         try:
@@ -313,6 +358,15 @@ def _seed(raw_schema: str, schema: str | None = None,
             }
             wrote_any = True
 
+        except BudgetExceeded as exc:
+            # The run's budget fired on this call (a BaseException by design, so the
+            # fail-open branch below cannot swallow it). Stop HERE, save what was
+            # annotated, then re-raise: the tables already seeded must not be lost to
+            # the abort, and the abort must still reach the kernel.
+            budget_hit = exc
+            logger.info("autoseed: %s — stopping at %r; %d table(s) annotated this run are kept",
+                        exc.reason, table_name, sum(1 for _ in tables_meta))
+            break
         except Exception as exc:
             # Best-effort — a failed seed for one table never blocks the rest
             from aughor.kernel.errors import tolerate
@@ -328,4 +382,6 @@ def _seed(raw_schema: str, schema: str | None = None,
         if not remaining:
             mark_complete(fp)
 
+    if budget_hit is not None:
+        raise budget_hit
     return wrote_any

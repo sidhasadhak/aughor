@@ -79,6 +79,9 @@ class AgentGovernancePatch(BaseModel):
     token_budget: Optional[int] = None
     time_budget_s: Optional[int] = None
     model: Optional[str] = None          # per-agent LLM model; "" clears back to the role default
+    #: Declared-knob values by knob id (the charter's `knobs` list names them); a null
+    #: value clears that knob back to inherit. Undeclared or out-of-range → 400.
+    limits: Optional[dict[str, Optional[int]]] = None
     workspace_id: Optional[str] = None   # None → app scope (the Org default)
     # Free-by-default: pinning a non-`:free` OpenRouter model needs explicit consent.
     allow_paid: Optional[bool] = None
@@ -99,14 +102,20 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
                 allow_paid=bool(body.allow_paid))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    gov = set_governance(
-        agent_id,
-        scope=body.workspace_id,
-        enabled=body.enabled,
-        token_budget=body.token_budget,
-        time_budget_s=body.time_budget_s,
-        model=body.model,
-    )
+    try:
+        gov = set_governance(
+            agent_id,
+            scope=body.workspace_id,
+            enabled=body.enabled,
+            token_budget=body.token_budget,
+            time_budget_s=body.time_budget_s,
+            model=body.model,
+            limits=body.limits,
+        )
+    except ValueError as exc:
+        # The registry's own sentence — an undeclared knob names the declared ones, an
+        # out-of-range value names the range.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"agent_id": agent_id, "governance": gov.to_dict()}
 
 

@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { acceptProposal, getProposalById, rejectProposal, type StagedProposal } from "@/lib/api";
-import { relTime, zonedTimeWords } from "@/lib/format";
+import { formatCount, relTime, zonedTimeWords } from "@/lib/format";
 
 /** "2026-09-16T09:00:00Z" → "Tue, 16 Sep 2026 09:00 UTC" — the clock is always named. */
 export function utcWords(iso: string): string {
@@ -56,6 +56,7 @@ const KIND_CHIP: Record<string, { hue: ChipHue; label: string }> = {
   monitor_bundle: { hue: "info", label: "monitor + chain" },
   brief_draft: { hue: "info", label: "brief delivery" },
   outbound_send: { hue: "caution", label: "Slack post" },
+  agent_limit: { hue: "accent", label: "agent limit" },
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -334,6 +335,18 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
           {String(p.params?.action ?? "")} automation {String(p.params?.automation_id ?? "")}
           {p.params?.until ? ` until ${utcWords(String(p.params.until))}` : ""}
         </Row>
+      )}
+      {p.kind === "agent_limit" && (
+        <div className="flex flex-col gap-1">
+          <Row label="Change">
+            {String(p.params?.agent ?? p.params?.agent_id ?? "")} · {String(p.params?.label ?? p.params?.limit ?? "")}:{" "}
+            {formatCount(Number(p.params?.before ?? 0))} → {formatCount(Number(p.params?.value ?? 0))}{" "}
+            {String(p.params?.unit ?? "")}
+          </Row>
+          <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
+            A cap on spend is governance — it applies on accept and the next run that reads it honours it.
+          </span>
+        </div>
       )}
       {p.kind === "agent_grant" && (
         <div className="flex flex-col gap-1">

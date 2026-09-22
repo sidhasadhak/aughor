@@ -140,6 +140,50 @@ def test_cancelled_run_marks_status_terminal(monkeypatch):
     assert "cancelled" in (ex._status.error or "").lower()
 
 
+def test_budget_exceeded_in_context_is_handled_like_a_cancel(monkeypatch):
+    """The same wedge, second guard (2026-09-22): the kernel now arms the job's budget
+    IN-CONTEXT, so the LLM funnel raises BudgetExceeded on the call that crosses it — a
+    BaseException that passes every fail-open `except Exception` in the phases. It must
+    land in the same handler as a cancel: status TERMINAL, progress saved, the reason
+    recorded, and the error re-raised so the kernel can stamp the job CANCELLED."""
+    import pytest
+    from aughor.kernel.metering import BudgetExceeded
+
+    ex = SchemaExplorer.__new__(SchemaExplorer)
+    ex.connection_id = "c"
+    ex.schema_name = None
+    ex._store_key = "c"
+    ex._state = {}
+    ex._rate_seconds = 0
+
+    class _Status:
+        phase = ExplorationPhase.PENDING
+        error = None
+        domain_intel_skipped = False
+        domain_intel_note = None
+        tables_total = columns_total = joins_total = 0
+
+    ex._status = _Status()
+    saved: list = []
+    monkeypatch.setattr(ex, "_load_profiler_data", lambda: ({"t": object()}, {}, {"joins": []}))
+    monkeypatch.setattr(ex, "_compute_time_window", lambda *a, **k: None)
+    monkeypatch.setattr(ex, "_compute_macro_context", lambda *a, **k: None)
+    monkeypatch.setattr(ex, "_save_state", lambda: saved.append(ex._status.phase))
+    monkeypatch.setattr(ex, "_journal", lambda *a, **k: None)
+
+    async def _over(*a, **k):
+        raise BudgetExceeded("token budget (200,000 tokens)")
+
+    monkeypatch.setattr(ex, "_phase8_domain_intelligence", _over)
+
+    with pytest.raises(BudgetExceeded):
+        asyncio.run(ex._explore_run(domain_intel_only=True))
+
+    assert ex._status.phase == ExplorationPhase.FAILED
+    assert saved == [ExplorationPhase.FAILED]                   # progress saved, once, terminal
+    assert ex._status.error == "cancelled (token budget (200,000 tokens) exceeded) — progress saved"
+
+
 def test_manifest_nq_pops_cell_and_builds_deterministic_question():
     """Tier-1 #4 wiring: _manifest_nq pops the next uncovered manifest cell whose table is in
     scope and builds a deterministic next-question (zero LLM), marking it attempted so the run

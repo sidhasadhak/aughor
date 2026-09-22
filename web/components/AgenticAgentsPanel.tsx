@@ -36,12 +36,12 @@ import {
   getLlmConfig, getPacks, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
   restoreAgentRevision, setAgentGuardrails,
-  type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentObservability,
+  type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentKnob, type AgentObservability,
   type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
   type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
 } from "@/lib/api";
 import { evalChip } from "@/lib/agentEval";
-import { compactNumber, countNoun, formatTimestamp } from "@/lib/format";
+import { compactNumber, countNoun, formatCount, formatTimestamp } from "@/lib/format";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 
 type Selection =
@@ -1077,6 +1077,10 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
           <AgentModelPin pinned={gov.model ?? null} busy={busy}
             onPin={(model, allowPaid) =>
               patch(allowPaid ? { model, allow_paid: true } : { model })} />
+          {(charter.knobs ?? []).length > 0 && (
+            <AgentLimits knobs={charter.knobs ?? []} limits={gov.limits ?? {}} busy={busy}
+              onSet={(id, value) => patch({ limits: { [id]: value } })} />
+          )}
           {/* No "use recommended" / "apply to all": the charters carried a hardcoded
               model id per agent, and those were removed with every other model list
               (2026-08-15). An agent runs on the operator's pin, or inherits the role
@@ -1089,6 +1093,84 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+/** The charter's declared LIMITS — the Curator's warehouse-sized caps (2026-09-22).
+ *
+ *  These are knobs the charter DECLARES (id, label, range, where it bites), served by
+ *  /agents and read by the enforcement sites through one resolver — so this block, the
+ *  Spotlight read (`platform_limits`) and the Spotlight act (`set_agent_limit`) all show
+ *  the same registry. A number input per knob; save writes governance, and the next run
+ *  that reads the limit honours it. "Default" resets one knob back to inherit.
+ */
+export function AgentLimits({ knobs, limits, busy, onSet }: {
+  knobs: AgentKnob[];
+  limits: Record<string, number>;
+  busy: boolean;
+  /** Persist one knob. `null` clears it back to the charter default. */
+  onSet: (id: string, value: number | null) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span className="aug-label">Limits</span>
+      {knobs.map(k => (
+        <AgentLimitRow key={k.id} knob={k} value={limits[k.id] ?? k.default} busy={busy}
+          onSet={v => onSet(k.id, v)} />
+      ))}
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+        A limit bounds how much of a warehouse one act may touch; the token budget above
+        bounds one run. Spotlight reads these and can stage a change for approval.
+      </div>
+    </div>
+  );
+}
+
+function AgentLimitRow({ knob, value, busy, onSet }: {
+  knob: AgentKnob; value: number; busy: boolean; onSet: (v: number | null) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  // Re-seed when the SAVED value moves under the field — same rule as the model pin.
+  useEffect(() => { setDraft(String(value)); }, [value]);
+  const n = Number(draft.trim());
+  const valid = draft.trim() !== "" && Number.isInteger(n) && n >= knob.min && n <= knob.max;
+  const dirty = valid && n !== value;
+  const isDefault = value === knob.default;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>{knob.label}</span>
+        <input type="number" value={draft} disabled={busy}
+          min={knob.min} max={knob.max} step={1} inputMode="numeric"
+          aria-label={knob.label}
+          className="aug-input aug-fs-xs"
+          style={{ padding: "3px 6px", width: 120, fontVariantNumeric: "tabular-nums" }}
+          onChange={e => setDraft(e.target.value)} />
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{knob.unit}</span>
+        {dirty && (
+          <Button size="xs" variant="secondary" disabled={busy} onClick={() => onSet(n)}>
+            Save
+          </Button>
+        )}
+        {!dirty && !isDefault && (
+          <Button size="xs" variant="ghost" disabled={busy}
+            title={`Back to the charter default (${formatCount(knob.default)} ${knob.unit})`}
+            onClick={() => onSet(null)}>
+            Default
+          </Button>
+        )}
+        {draft.trim() !== "" && !valid && (
+          <span className="aug-fs-xs" style={{ color: "var(--amb5)" }}>
+            {formatCount(knob.min)}–{formatCount(knob.max)}
+          </span>
+        )}
+      </label>
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5, paddingLeft: 118 }}>
+        {knob.description} Default {formatCount(knob.default)} {knob.unit}.
+        {" "}Applies to {knob.applies_to}.
+      </div>
     </div>
   );
 }

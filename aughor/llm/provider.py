@@ -2401,7 +2401,7 @@ class LLMProvider:
                                 if (_cached := _extract_cached_tokens(raw)) is not None else {}),
                          } or None)
         _answered.set((backend, model, bool(fallback)))
-        metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
+        metering.check_budget()   # in-context budget — the ask stream's, or the job's own (JobKernel._run)
         return out
 
     @staticmethod
@@ -2583,7 +2583,7 @@ class LLMProvider:
                          completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
                          temperature=temperature, streamed=True,
                          system=system, user=user, output=final_dict)
-        metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
+        metering.check_budget()   # in-context budget — the ask stream's, or the job's own (JobKernel._run)
         # Terminal validation is the contract; a mismatch heals via complete() fallback.
         return response_model.model_validate(final_dict)
 

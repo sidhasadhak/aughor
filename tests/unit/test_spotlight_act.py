@@ -285,7 +285,8 @@ def test_act_roster_names_and_conversation_wiring():
     names = [t.name for t in act.spotlight_act_tools("c1")]
     assert names == ["set_preference", "draft_agent", "draft_automation",
                      "edit_automation", "draft_monitor", "draft_brief",
-                     "pause_or_resume_automation", "propose_agent_grant"]
+                     "pause_or_resume_automation", "set_agent_limit",
+                     "propose_agent_grant"]
     from aughor.agent.converse_tools import converse_tools
     got = {t.name for t in converse_tools("c1")}
     assert {"set_preference", "draft_agent", "draft_automation",

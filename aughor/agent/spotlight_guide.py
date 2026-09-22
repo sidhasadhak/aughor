@@ -297,11 +297,56 @@ def _guide_appearance() -> dict:
             "offer": offer, "summary": summary}
 
 
+def _limits_grounding() -> dict | None:
+    """The fleet's spend controls as they stand — the same read platform_limits serves."""
+    try:
+        from aughor.agent.spotlight_tools import platform_limits
+        return platform_limits({})
+    except Exception as exc:  # noqa: BLE001
+        _tolerate(exc, "guide: could not read the fleet's limits",
+                  "spotlight_guide.limits")
+        return None
+
+
+def _guide_limits() -> dict:
+    steps = [
+        "Open “Agent Ops” → “Roster” and pick the agent. Every agent shows its “Token "
+        "budget / run” — the kernel cancels a run that exceeds it. The Curator also "
+        "carries the two warehouse-sized caps under “Limits”: how many tables the "
+        "glossary autoseed annotates per connection (largest first), and how many "
+        "schema characters the business-profile prompt may carry.",
+        "Type the new value and save — it is stored as governance and read by the next "
+        "birth job, schema rebuild or profile refresh; a run already in flight keeps the "
+        "value it started with. Set the autoseed cap to 0 to turn autoseed off.",
+        "Or say the number here: I stage it as a proposal for a person to accept in the "
+        "inbox. A cap on spend is governance however small the number, so it never "
+        "applies from chat alone.",
+    ]
+    g = _limits_grounding()
+    offer = {
+        "tool": "set_agent_limit",
+        "sentence": ("Say the agent, the limit and the number and I will stage it for "
+                     "approval — read platform_limits first if you want the current "
+                     "value and range."),
+    }
+    if g is None:
+        summary = (f"Limits live on the Agent Ops roster: a per-run token budget on "
+                   f"every agent, and the Curator's caps on autoseed tables and "
+                   f"profile-schema chars. The current values could not be read just "
+                   f"now; {_UNAVAILABLE}.")
+    else:
+        summary = (g["summary"] + " Change them on the roster page, or say a number and "
+                   "I stage it for approval.")
+    return {"topic": "limits", "steps": steps, "grounding": g,
+            "offer": offer, "summary": summary}
+
+
 _GUIDE_TOPICS = {
     "create_agent": _guide_create_agent,
     "create_automation": _guide_create_automation,
     "connect_data": _guide_connect_data,
     "appearance": _guide_appearance,
+    "limits": _guide_limits,
 }
 
 _GUIDE_ALIASES = {
@@ -316,6 +361,11 @@ _GUIDE_ALIASES = {
     "theme": "appearance", "dark mode": "appearance", "light mode": "appearance",
     "density": "appearance", "preferences": "appearance",
     "preference": "appearance", "look": "appearance",
+    "limit": "limits", "cap": "limits", "caps": "limits", "budget": "limits",
+    "budgets": "limits", "token budget": "limits", "spend": "limits",
+    "spending": "limits", "cost": "limits", "costs": "limits", "tokens": "limits",
+    "autoseed": "limits", "glossary autoseed": "limits", "business profile": "limits",
+    "profile prompt": "limits", "governance": "limits",
 }
 
 
@@ -345,8 +395,10 @@ _GUIDE_PARAMS = {
     "properties": {"topic": {
         "type": "string",
         "description": "What to walk through: create_agent, create_automation, "
-                       "connect_data, or appearance (theme, density, defaults). "
-                       "Plain words like 'agent' or 'dark mode' resolve too.",
+                       "connect_data, appearance (theme, density, defaults), or "
+                       "limits (spend caps: per-run budgets, autoseed tables, "
+                       "profile-schema chars). Plain words like 'agent', 'dark "
+                       "mode' or 'cap' resolve too.",
     }},
     "required": ["topic"],
 }
@@ -361,7 +413,9 @@ def spotlight_guide_tools(connection_id: str, *, session_id: str = "") -> list[T
                 "HOW to do something on this platform, step by step, grounded in "
                 "THIS deployment's live state and ending in an offered next action. "
                 "Topics: creating an agent, creating or scheduling an automation, "
-                "connecting data, appearance (theme, density, defaults). Use it for "
+                "connecting data, appearance (theme, density, defaults), limits "
+                "(capping what an agent may spend — budgets, autoseed tables, the "
+                "profile prompt). Use it for "
                 "'how do I / how should I…' questions about USING the product; for "
                 "what a concept IS use platform_help, and for questions about the "
                 "data itself use the data tools. Walk the steps in order, cite the "

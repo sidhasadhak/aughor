@@ -411,10 +411,12 @@ class JobKernel:
         # returns the _UNKNOWN charter for a kind nothing claims (the automation tick),
         # which is exactly what the Overview's background-runner lane needs to see.
         _charter_token = None
+        _agent_id = "worker"
         try:
             from aughor.kernel.agents import charter_for_kind
             _kind = (self.ledger.job_get(job_id) or {}).get("kind")
-            _charter_token = _current_charter.set(charter_for_kind(_kind).id)
+            _agent_id = charter_for_kind(_kind).id
+            _charter_token = _current_charter.set(_agent_id)
         except Exception as _c_exc:
             from aughor.kernel.errors import tolerate
             tolerate(_c_exc, "charter attribution is best-effort; the run proceeds",
@@ -426,6 +428,29 @@ class JobKernel:
         _org_token = set_org_id((self.ledger.job_get(job_id) or {}).get("org_id") or DEFAULT_ORG_ID)
         _m_token = metering.start()
         metering.register_job(job_id)   # so the heartbeat can enforce this run's budget
+        # Arm the SAME budget the heartbeat enforces as the run's IN-CONTEXT budget too.
+        # The heartbeat's cancel is the reliable kill for the coroutine, but a cancel
+        # cannot reach a synchronous loop the run dispatched into an executor thread —
+        # the birth job's intelligence step (one model call per table under
+        # `run_in_executor`) ran to completion with its spend metered and never enforced
+        # (measured 2026-09-22). The LLM funnel already calls `metering.check_budget()`
+        # after every call and the context executor carries this contextvar into the
+        # thread, so armed here the call that crosses the line is the LAST one, in any
+        # thread; BudgetExceeded is a BaseException, so it unwinds past the loop's
+        # fail-open `except Exception` and lands in the branch below. A job submitted
+        # from inside an ask's metered stream inherits the ASK's budget through the
+        # context copy — this re-arm replaces it with the job's own governance, which
+        # is the law inside the job and what the heartbeat reads. Best-effort: a resolve
+        # failure arms nothing and the heartbeat still enforces.
+        _b_token = None
+        try:
+            _gov, _ = self._resolve_governance(job_id)
+            _b_token = metering.set_budget(getattr(_gov, "token_budget", None),
+                                           getattr(_gov, "time_budget_s", None))
+        except Exception as _b_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_b_exc, "in-context budget arm is best-effort; the heartbeat still "
+                             "enforces", counter="metering")
         _model_token = self._set_run_model(job_id)   # per-agent LLM model override (best-effort)
         # Correlate background work (explorer, briefs, monitors, birth) — those
         # never pass an ask door, so nothing else would bind them a trace and their
@@ -451,6 +476,24 @@ class JobKernel:
             self._transition(job_id, JobState.CANCELLED)
             # Deliberately not re-raised: cancellation is an intended outcome,
             # and this task is the top of its own stack.
+        except metering.BudgetExceeded as be:
+            # The in-context budget fired inside the run — in a thread the cancel could
+            # not reach, or in the coroutine between two heartbeats. Same terminal state,
+            # same event and the same reason string as the heartbeat's kill, so the
+            # reconcile and the Fleet view read ONE story whichever guard fired first.
+            final = JobState.CANCELLED
+            reason = f"budget exceeded: {be.reason}"
+            _stop_reasons.setdefault(job_id, reason)
+            logger.info("job %s exceeded %s in-context — cancelling (agent %s)",
+                        job_id, be.reason, _agent_id)
+            try:
+                self.ledger.emit("budget.exceeded", {"agent": _agent_id, "reason": be.reason},
+                                 job_id=job_id,
+                                 conn_id=(self.ledger.job_get(job_id) or {}).get("conn_id"))
+            except Exception:
+                logger.debug("budget.exceeded emit failed for job %s", job_id, exc_info=True)
+            self.ledger.job_update(job_id, error=reason)
+            self._transition(job_id, JobState.CANCELLED)
         except Exception as exc:
             final = JobState.FAILED
             self._transition(job_id, JobState.FAILED, error=str(exc))
@@ -468,6 +511,8 @@ class JobKernel:
                 tolerate(_m_exc, "job metrics flush", counter="metering")
             metering.unregister_job(job_id)
             _stop_reasons.pop(job_id, None)
+            if _b_token is not None:
+                metering.clear_budget(_b_token)
             metering.reset(_m_token)
             if _model_token is not None:
                 from aughor.llm.provider import reset_run_model

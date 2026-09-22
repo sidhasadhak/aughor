@@ -11802,6 +11802,10 @@ export interface components {
             allow_paid?: boolean | null;
             /** Enabled */
             enabled?: boolean | null;
+            /** Limits */
+            limits?: {
+                [key: string]: number | null;
+            } | null;
             /** Model */
             model?: string | null;
             /** Time Budget S */
