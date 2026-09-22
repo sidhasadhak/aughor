@@ -1546,9 +1546,10 @@ def _frame_named_dimensions(frame, schema: str = "") -> list[str]:
 
 
 def _frame_breakdowns(frame_dump, schema: str = "") -> dict:
-    """ON-10 — ``{table.column: {sql, label}}`` for each breakdown the frame compiled for its chosen, usable promise or
-    lag by a driver the question named — keyed the way `_frame_named_dimensions` names that dimension. Empty when the
-    run carries no such frame."""
+    """ON-10 — ``{table.column: {sql, label, named, path}}`` for each breakdown the frame compiled for its chosen,
+    usable promise or lag: by the drivers the question NAMED first, then by the CANDIDATE drivers the frame reached
+    (``named: False``) — keyed the way `_frame_named_dimensions` names a dimension. Empty when the run carries no
+    such frame. A named entry keeps its key when a candidate path lands on the same column."""
     if not isinstance(frame_dump, dict):
         return {}
     try:
@@ -1561,12 +1562,90 @@ def _frame_breakdowns(frame_dump, schema: str = "") -> dict:
         return {}
     mapping = _extract_qualified_tables(schema) if schema else {}
     out = {}
-    for d in frame.drivers or []:
+    for d in sorted(frame.drivers or [], key=lambda d: not d.named):      # named first, stable
         entry = frame.compiled.get(f"by {d.path}") or {}
-        if d.named and d.table and entry.get("sql"):
+        if d.table and entry.get("sql"):
             table = mapping.get(_bare(d.table), d.table)
-            out[f"{table}.{d.property}".lower()] = {"sql": entry["sql"], "label": chosen.metric or chosen.lag or chosen.name}
+            key = f"{table}.{d.property}".lower()
+            if key in out:
+                continue
+            out[key] = {"sql": entry["sql"], "label": chosen.metric or chosen.lag or chosen.name,
+                        "named": bool(d.named), "path": d.path}
     return out
+
+
+#: How many CANDIDATE-driver breakdowns one run executes (2026-09-22). The frame compiles up to
+#: `framing._MAX_COMPILED_CANDIDATES` of them for free; running one is a GROUP BY on the warehouse, so
+#: the run takes the first two in the frame's own order (nearest hop, reference data first) — the same
+#: two-cut ceiling the named breakdown lives under, for the same reason: a report of six near-identical
+#: bar charts answers nothing the first two did not.
+_MAX_CANDIDATE_BREAKDOWNS = 2
+
+
+def _declared_breakdown_findings(state: "AgentState", conn, intake_data: dict, *, candidates: bool,
+                                 cap: int, exclude: frozenset = frozenset()) -> list:
+    """ON-10 — run the breakdowns the frame COMPILED, and only those: the chosen definition by the drivers the
+    question named (``candidates=False``) or by the candidate drivers it reached (``candidates=True``), each through
+    the same guard battery every phase query runs through. No planner, no model call, and no fallback to the
+    intake's re-derived metric — a compiled breakdown that does not run is simply absent, which is honest on the
+    diagnostic route where the scan will cut the metric its own way anyway."""
+    declared = _frame_breakdowns(intake_data.get("ontology_frame"), state.get("schema_context") or "")
+    picked = [(k, e) for k, e in declared.items()
+              if bool(e.get("named")) != candidates and k.lower() not in exclude][:max(0, int(cap))]
+    tag = "candidate" if candidates else "named"
+    out = []
+    for i, (dim, compiled) in enumerate(picked):
+        col = dim.split(".")[-1]
+        r = _execute_safe(conn, f"{tag}_breakdown_{i}_declared", compiled["sql"],
+                          schema=state.get("schema_context"))
+        if getattr(r, "error", None) or not getattr(r, "rows", None):
+            continue
+        out.append(InvestigationFinding(
+            finding_id=f"{tag}_breakdown_{i}",
+            title=f"{compiled['label']} by {col} (declared{', candidate driver' if candidates else ''})",
+            sql=r.sql, columns=r.columns, rows=r.rows[:50],
+            row_count=r.row_count, error=None,
+            interpretation="", key_numbers=[], chart_type="auto",
+            stat_note=None, is_significant=False,
+        ))
+    return out
+
+
+def _candidate_breakdown_findings(state: "AgentState", conn, intake_data: dict,
+                                  exclude: frozenset = frozenset()) -> list:
+    """The candidate half of `_declared_breakdown_findings`, under its own run cap."""
+    return _declared_breakdown_findings(state, conn, intake_data, candidates=True,
+                                        cap=_MAX_CANDIDATE_BREAKDOWNS, exclude=exclude)
+
+
+def frame_breakdowns(state: "AgentState", conn: "DatabaseConnection") -> dict:
+    """ON-10 — the diagnostic route's declared breakdowns, one node of their own (2026-09-22).
+
+    "What is causing late dispatch" routes to the weakness scan, and the scan does not own a breakdown —
+    that law is pinned (`test_the_weakness_scan_no_longer_owns_a_breakdown`), because a second answer to
+    the same question was what the route replaced. So the breakdowns the frame compiled run HERE, before
+    the scan: the chosen promise or lag by the drivers the question named, then by the candidate drivers
+    the frame reached over measured to-one links. Every query is the object door's SQL; no planner and no
+    model call. A run with no usable frame passes through and emits nothing, so an unframed question's
+    phases stay byte-identical to before this node existed."""
+    intake_data = state.get("_ada_intake") or {}
+    if not _frame_breakdowns(intake_data.get("ontology_frame"), state.get("schema_context") or ""):
+        return {}
+    named = _declared_breakdown_findings(state, conn, intake_data, candidates=False, cap=2)
+    taken = frozenset(f["title"].lower() for f in named)
+    candidates = _candidate_breakdown_findings(state, conn, intake_data)
+    findings = named + [f for f in candidates if f["title"].lower() not in taken]
+    if not findings:
+        return {}
+    for f in findings:
+        _chart_primary_is_metric(f)
+        f["chart_type"] = _chart_type_for_finding(f, "ranking")
+    summary = (f"{len(findings)} breakdown(s) of the declared definition, compiled by the object door — "
+               f"{len(named)} by the driver(s) the question named, {len(findings) - len(named)} by candidate "
+               f"driver(s) the frame reached. The scan that follows ranks weakness; these show the shape of \"by\".")
+    phases = state.get("investigation_phases", [])
+    return {"investigation_phases": phases + [_phase_result(
+        "frame_breakdowns", "Declared breakdowns", "📐", "complete", summary, findings)]}
 
 
 def _qualify_intake_table_names(intake, schema: str) -> None:
@@ -7509,6 +7588,10 @@ def deep_breakdown(state: AgentState, conn: "DatabaseConnection") -> dict:
         )[:2]
 
     findings = _named_breakdown_findings(state, conn, {**intake_data, "named_dimensions": dims})
+    # ON-10 — the candidate drivers the frame reached ride after the named cut, as declared breakdowns
+    # (compiled SQL only, no intake fallback), under their own cap.
+    findings = findings + _candidate_breakdown_findings(
+        state, conn, intake_data, exclude=frozenset(d.lower() for d in dims))
     if not findings:
         return {"investigation_phases": phases + [_phase_result(
             "breakdown", _title, _emoji, "skipped", "",

@@ -33,6 +33,28 @@ class ComputedProperty(BaseModel):
     verification_note: str = ""   # why it failed, when not verified
 
 
+class ExpressionProperty(BaseModel):
+    """2026-09-22 (ON-1b's deferred half) — a typed property a person mapped to a SQL EXPRESSION over the type's own
+    row (`days_to_ship = date_diff('day', order_date, shipped_at)`), declared through
+    PUT /ontology/entities/{id}/expressions/{name}. Verified against the data at declaration (the expression runs on
+    one row), and read by the object door, the framing and the pages like any column: each verified one is minted
+    into the type's `properties` as a derived property so every reader finds it by name. Not a metric — an
+    expression is per row and carries no aggregate; and not a rollup — it reads the backing's own columns only."""
+    expression: str
+    semantic_type: Literal["measure", "dimension"] = "measure"
+    data_type: str = ""
+    unit: str = ""
+    description: str = ""
+    verified: Optional[bool] = None
+    note: str = ""
+    source: str = "human"
+
+    def as_property(self, name: str) -> "EntityProperty":
+        return EntityProperty(name=name, display_name=name.replace("_", " "), data_type=self.data_type,
+                              semantic_type=self.semantic_type, description=self.description or f"= {self.expression}",
+                              is_derived=True, unit=self.unit)
+
+
 class Segment(BaseModel):
     """A saved, named filter over one entity's rows.
 
@@ -400,6 +422,9 @@ class OntologyEntity(BaseModel):
 
     # Per-entity derived KPIs (LLM-generated, one SELECT-clause expression each)
     computed_properties: list[ComputedProperty] = Field(default_factory=list)
+    # 2026-09-22 — typed properties a PERSON mapped to an expression over the type's own row (see ExpressionProperty),
+    # keyed by property name; each verified one is also minted into `properties`.
+    expressions: dict[str, ExpressionProperty] = Field(default_factory=dict)
 
     # Interfaces this entity implements — set by the builder's interface detector.
     # e.g. ["HasTimestamp", "HasMonetaryValue", "HasLifecycle"]
@@ -477,6 +502,11 @@ class OntologyRelationship(BaseModel):
     origin: Literal["join_map", "human", "model"] = "join_map"
     #: ON-7b — who said a declared link exists, when a model did: `model:<id>@<version>`, kept after a person confirms.
     provenance: str = ""
+    #: 2026-09-22 — who set `name`: `human` (a person, through PUT /ontology/links/{id}), `model` (the explorer's
+    #: proposal, PROPOSED until a person confirms it), "" (no business name set). A name recorded before this field
+    #: existed was a person's — only the person's door wrote names then — and reads `human` through the overrides.
+    name_origin: Literal["", "human", "model"] = ""
+    name_provenance: str = ""
     #: ON-8 — `join` when both types are read from one connection, so one statement joins them; `cross-source` when
     #: they live on two, and the compiler reads the far side by key through the batched-foreach engine instead. Stamped
     #: from the two types' connections (`aughor.ontology.domains.stamp_traversals`) by the law the compiler follows,
@@ -502,8 +532,11 @@ class OntologyRelationship(BaseModel):
         return f"{snake_name(self.from_entity)}_{verb}_{snake_name(self.to_entity)}"
 
     def business_name_source(self) -> str:
-        """``human`` when a person named the link, ``proposed`` when its verb did, "" when nothing names it."""
-        return "human" if self.name else ("proposed" if self.business_name() else "")
+        """``human`` when a person named the link, ``model`` when the explorer proposed the name and no person has
+        confirmed it yet, ``proposed`` when its verb names it at read time, "" when nothing names it."""
+        if self.name:
+            return "model" if self.name_origin == "model" else "human"
+        return "proposed" if self.business_name() else ""
 
 
 #: ON-3b — the verb the builder writes before enrichment names nothing, so no link name is proposed from it.

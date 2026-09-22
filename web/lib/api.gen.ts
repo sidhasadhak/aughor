@@ -8766,6 +8766,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/entities/{entity_id}/bindings/{name}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Ontology Binding
+         * @description 2026-09-22 — put back a builder-found binding a person withdrew: the name leaves `withdrawn_bindings`, and
+         *     the next read carries the binding again. 404 when nothing of that name was withdrawn.
+         */
+        post: operations["restore_ontology_binding_ontology_entities__entity_id__bindings__name__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities/{entity_id}/computed-properties/{prop_id}": {
         parameters: {
             query?: never;
@@ -8782,6 +8803,33 @@ export interface paths {
         put: operations["override_ontology_computed_property_ontology_entities__entity_id__computed_properties__prop_id__put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/expressions/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Declare Ontology Expression
+         * @description 2026-09-22 — map a typed property to an expression over the type's own row (ON-1b's deferred half). The
+         *     name must be free on the type, the expression must parse flat (no subquery, aggregate or window) over the
+         *     backing's own columns, and it is VERIFIED by running it on one row before anything is written — a refusal
+         *     says why and writes nothing. The compiler, the framing and the pages then read it like any column.
+         */
+        put: operations["declare_ontology_expression_ontology_entities__entity_id__expressions__name__put"];
+        post?: never;
+        /**
+         * Withdraw Ontology Expression
+         * @description 2026-09-22 — remove an expression property a person declared. 404 when the type has none of that name.
+         */
+        delete: operations["withdraw_ontology_expression_ontology_entities__entity_id__expressions__name__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9173,7 +9221,10 @@ export interface paths {
          * Name Ontology Link
          * @description Name a link by its business verb (ON-3b). Its mechanical names stay — every query and page still accepts
          *     them — and this one is accepted beside them. Refused when it is not snake_case, or already names another
-         *     link or a property on either type the link joins: a path segment must name exactly one thing.
+         *     link or a property on either type the link joins: a path segment must name exactly one thing. An empty
+         *     name clears it. Merges into the link's override, so a declared link keeps its declaration. ON-8 — with
+         *     ``domain``, a link of the organisation's ontology, whatever connections its types live on: a name reads no
+         *     warehouse, so the door is open there.
          */
         put: operations["name_ontology_link_ontology_links__relationship_id__put"];
         post?: never;
@@ -9183,6 +9234,26 @@ export interface paths {
          *     ``domain``, from the organisation's ontology.
          */
         delete: operations["delete_declared_link_ontology_links__relationship_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/links/{relationship_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Ontology Link
+         * @description 2026-09-22 — put back a found link a person withdrew. 404 when it was not withdrawn.
+         */
+        post: operations["restore_ontology_link_ontology_links__relationship_id__restore_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -15095,7 +15166,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "entity" | "binding" | "link" | "process" | "rule";
+            kind: "entity" | "binding" | "link" | "link_name" | "process" | "rule";
             /** Process */
             process?: string | null;
             /** Relationship */
@@ -15330,6 +15401,30 @@ export interface components {
             terminal_states?: string[] | null;
             use_instead?: components["schemas"]["_UseInstead"] | null;
         };
+        /**
+         * _ExpressionSpec
+         * @description 2026-09-22 — a property mapped to a SQL expression over the type's own row.
+         */
+        _ExpressionSpec: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Expression */
+            expression: string;
+            /**
+             * Semantic Type
+             * @default measure
+             * @enum {string}
+             */
+            semantic_type: "measure" | "dimension";
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+        };
         /** _ExtractFieldReq */
         _ExtractFieldReq: {
             /**
@@ -15417,7 +15512,8 @@ export interface components {
         };
         /**
          * _LinkName
-         * @description ON-3b — a link's business-verb name (`shipment_ships_order`).
+         * @description ON-3b — a link's business-verb name (`shipment_ships_order`). An empty name CLEARS the business name
+         *     (2026-09-22): the withdrawal of a name, a person's or the explorer's.
          */
         _LinkName: {
             /** Name */
@@ -30924,6 +31020,42 @@ export interface operations {
             };
         };
     };
+    restore_ontology_binding_ontology_entities__entity_id__bindings__name__restore_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+                domain?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     override_ontology_computed_property_ontology_entities__entity_id__computed_properties__prop_id__put: {
         parameters: {
             query?: {
@@ -30942,6 +31074,80 @@ export interface operations {
                 "application/json": components["schemas"]["_ComputedPropertyOverride"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_ontology_expression_ontology_entities__entity_id__expressions__name__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_ExpressionSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_ontology_expression_ontology_entities__entity_id__expressions__name__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -31527,6 +31733,8 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                /** @description ON-8 — name a link of an organisation's ontology */
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -31566,6 +31774,40 @@ export interface operations {
                 connection_id?: string | null;
                 schema_name?: string | null;
                 domain?: string | null;
+            };
+            header?: never;
+            path: {
+                relationship_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_ontology_link_ontology_links__relationship_id__restore_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
             };
             header?: never;
             path: {

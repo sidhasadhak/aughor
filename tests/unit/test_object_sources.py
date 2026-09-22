@@ -1274,7 +1274,10 @@ def test_the_object_doors_open_an_organisations_objects_where_they_live_over_htt
     assert (named.json()["domain"], named.json()["override"]["fields"]["display_property"]) == ("default/default",
                                                                                                "full_name")
     worded = client.put("/ontology/entities/Customer", params=domain, json={"description": "people who buy"})
-    assert worded.status_code == 400 and "display property" in worded.json()["detail"]
+    # 2026-09-22 — a description is declarative and now lands on a far type; what SQL binds is still refused, saying so
+    assert worded.status_code == 200, worded.text
+    sql_bound = client.put("/ontology/entities/Order", params=domain, json={"active_filter": "1=1"})
+    assert sql_bound.status_code == 400 and "active_filter" in sql_bound.json()["detail"]
     moving = client.put("/ontology/entities/Order", params=domain, json={"display_property": "latest_status"})
     assert moving.status_code == 400 and "timeseries" in moving.json()["detail"]
     unknown = client.put("/ontology/entities/Order", params=domain, json={"display_property": "nickname"})
@@ -1457,3 +1460,62 @@ def test_a_declaration_that_names_a_proposer_is_refused_at_the_domain_doors(clie
     assert entity.status_code == 400 and "edited by people only" in entity.json()["detail"]
     link = client.post("/ontology/links", params=domain, json={**PLACED_BY, "provenance": "model:some-model@1"})
     assert link.status_code == 400 and "edited by people only" in link.json()["detail"]
+
+
+# ── ON-8's last slice (2026-09-22): the DECLARATIVE doors open on a far type ─────────────────────────────────────
+# A link's name, a type's description, filters as words, lifecycle states, routing guidance and the part mark read no
+# warehouse — so they open on a type of an organisation's ontology whatever connection it lives on. What SQL binds
+# (`active_filter`, a backing) stays with the type's own connection, and the door says so.
+
+def test_the_declarative_doors_open_on_a_far_type_over_http(client, sources):
+    domain = {"domain": "default"}
+    assert client.post("/ontology/entities", params=domain,
+                       json=typed("Order", "orders", "order_id", sources["shop"])).status_code == 200
+    assert client.post("/ontology/entities", params=domain,
+                       json=typed("Customer", "customers", "customer_id", sources["crm"])).status_code == 200
+    linked = client.post("/ontology/links", params=domain, json=PLACED_BY)
+    assert linked.status_code == 200, linked.text
+    rel_id = linked.json()["relationship"]
+
+    named = client.put(f"/ontology/links/{rel_id}", params=domain, json={"name": "ordered_by"})
+    assert named.status_code == 200, named.text
+    detail = client.get("/object-types/order", params=domain).json()
+    assert rel_id in [l["relationship"] for l in detail.get("links", [])], (rel_id, detail.get("path"), detail.get("links"))
+    row = next(l for l in detail["links"] if l["relationship"] == rel_id)
+    assert (row["business_name"], row["business_name_source"], row["traversal"]) == ("ordered_by", "human", "cross-source")
+    assert row["origin"] == "human"                              # the declaration survived the naming (a merge)
+    assert client.put(f"/ontology/links/{rel_id}", params=domain, json={"name": "Not Snake"}).status_code == 400
+    # a declared link's name IS its verb — clearing it would erase the declaration, so the door refuses and says how
+    cleared = client.put(f"/ontology/links/{rel_id}", params=domain, json={"name": ""})
+    assert cleared.status_code == 400 and "declared link" in cleared.json()["detail"]
+    assert rel_id in [l["relationship"] for l in client.get("/object-types/order", params=domain).json()["links"]]
+
+    edited = client.put("/ontology/entities/Customer", params=domain,
+                        json={"description": "a person who buys", "default_filters": ["exclude test accounts"]})
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["entity"]["description"] == "a person who buys"
+    refused = client.put("/ontology/entities/Customer", params=domain, json={"active_filter": "1=1"})
+    assert refused.status_code == 400 and "active_filter" in refused.json()["detail"]
+
+    # the part mark is held to the law with the connection added: Order binds no customers table on crm
+    mark = client.put("/ontology/entities/Customer", params=domain, json={"absorbed_into": "Order"})
+    assert mark.status_code == 400 and "own connection" in mark.json()["detail"]
+
+
+def test_a_part_binding_must_read_from_the_parts_own_connection():
+    from aughor.ontology.models import Backing, Binding, OntologyEntity, OntologyGraph
+    from aughor.ontology.parts import absorb_problem, part_binding
+    parent = OntologyEntity(id="Order", display_name="Order", source_tables=["orders"], identity_key="order_id",
+                            grain_verified=True,
+                            backing=Backing(kind="table", table="orders", primary_key="order_id", connection_id="shop"),
+                            bindings=[Binding(name="lines", kind="detail", table="order_items", key="order_id",
+                                              connection_id="crm")])
+    part = OntologyEntity(id="OrderItem", display_name="Line", source_tables=["order_items"], identity_key="line_id",
+                          grain_verified=True,
+                          backing=Backing(kind="table", table="order_items", primary_key="line_id", connection_id="shop"))
+    graph = OntologyGraph(connection_id="shop", schema_fingerprint="fp", entities={"Order": parent, "OrderItem": part})
+    assert part_binding(parent, part) is not None                # by name alone, as the home ontology always read it
+    assert part_binding(parent, part, graph) is None             # the same name on crm is another table
+    assert "own connection" in absorb_problem(graph, "Order", part)
+    parent.bindings[0].connection_id = "shop"
+    assert part_binding(parent, part, graph) is not None and absorb_problem(graph, "Order", part) == ""

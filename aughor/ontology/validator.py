@@ -144,6 +144,21 @@ def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
     return graph
 
 
+def probe_query(db: Any, sql: str) -> tuple[bool, str, Any]:
+    """Public face of `_probe` for other modules (2026-09-22): run a guarded probe, ``(ok, error, first cell)``."""
+    return _probe(db, sql)
+
+
+def check_value(value: Any) -> tuple[bool, str]:
+    """Public face of `_check_value`: magnitude sanity on a numeric probe result."""
+    return _check_value(value)
+
+
+def entity_table(graph: OntologyGraph, entity_id: str) -> str:
+    """Public face of `_entity_table`: the FROM clause a type's own rows are read from."""
+    return _entity_table(graph, entity_id)
+
+
 def _entity_table(graph: OntologyGraph, entity_id: str) -> str:
     """The FROM fragment the entity's SQL is probed against: its table (byte-identical to
     before ON-1) or, for a query-backed object, the keyed SELECT as a subquery."""

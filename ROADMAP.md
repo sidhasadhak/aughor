@@ -4185,7 +4185,7 @@ surface needs its capability inventory first; (c) an arc about "polish" invites 
 creep — every wave has a receipt that is a *behavior*, not an adjective, and a wave
 with no receipt left to take is done.
 
-### 3.15 · Arc ON — the ontology the agent runs ON (drafted AND adopted 2026-09-10 — §6 item 14, all four clauses YES; **ON-0 STARTED** the same day; rebuild delete-bug FIXED, **MERGED #499**, squash `5281e5a7`, 2026-09-13 — the route and the hourly auto-refresh deleted built ontologies and built nothing; now build-first with a strict read-back)
+### 3.15 · Arc ON — the ontology the agent runs ON (drafted AND adopted 2026-09-10 — §6 item 14, all four clauses YES; **ON-0 STARTED** the same day; rebuild delete-bug FIXED, **MERGED #499**, squash `5281e5a7`, 2026-09-13 — the route and the hourly auto-refresh deleted built ontologies and built nothing; now build-first with a strict read-back) · **ARC FINISHED 2026-09-22** — five waves on `claude/finish-arc-on` (the user: *"Finish ON arc.. ask questions early on.."*; four questions asked and answered before the build): ON-10 candidate breakdowns (`36554edb`) · ON-7b link names (`1fc2ded5`) · ON-8 declarative doors on far types (`a11d42f1`) · ON-7 delink/withdraw from the panel (`644499e3`) · ON-1b expression properties (`85d1cddf`); ON-0a's `human` tier REFUSED; theLook's links MEASURED. Receipts that cost model calls run as reached (the user's call) — see each wave's line.
 
 > **Origin.** The user's 2026-09-10 challenge, verbatim: *"I feel the ontology that we have
 > is just a Fancy representation of the ERD of the schema. I don't know how our ontology
@@ -4640,7 +4640,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   rebuild should look for. The claims are recorded on both measured fixtures. Trimmed from
   the draft: the harness `--builder` flag (two `--graph-json` inputs already are the two
   arms) and the `human` tier, declared but not yet written (the overrides tree does not
-  say which claims it settled). **The re-run — DONE 2026-09-11** (the user:
+  say which claims it settled) — ❌ **REFUSED 2026-09-22** (the user's call, asked before the build: *expressions yes, human tier no*): an eval-only arm nobody reads; who declared a claim is already on every override, which is the only 'human tier' a person needs. **The re-run — DONE 2026-09-11** (the user:
   *"run both measurements"*): ON-0's hard set on the block the measured graph renders
   (`--graph-json 914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json`),
   `gemini` / `gemini-3.1-flash-lite`, fallback none, every store redirected, in one run beside
@@ -4704,8 +4704,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   draft, honestly:**
   `dedup.merge_entities` is not yet rewritten as "two tables, one backing" (it still
   concatenates `source_tables`; ✅ closed 2026-09-15, `83e97c49`); a query backing has no UI and no diff view (✅ closed
-  2026-09-15, `5c3d3181`: previewed, set and withdrawn from the type panel); properties
-  are still copied ColumnProfiles, not typed properties mapped to expressions.
+  2026-09-15, `5c3d3181`: previewed, set and withdrawn from the type panel); ~~properties
+  are still copied ColumnProfiles, not typed properties mapped to expressions~~ — ✅ **closed 2026-09-22** (`85d1cddf`): `ExpressionProperty` on the type, declared through `PUT /ontology/entities/{id}/expressions/{name}` — a free name, flat SQL over the backing's own columns (no subquery, aggregate or window), VERIFIED by running it on one row before anything is written; the overlay mints a verified one into `properties` so the object door, the framing and the pages read it by name, and the compiler anchors it on the object's alias. A binding's columns are not read by an expression yet — the next slice, if one is asked for.
   **The draft:** An `ObjectType` with a stable
   `api_name`, a **backing** (one table today; a SELECT with a declared primary key
   tomorrow — `users ⋈ customer_profiles`), typed properties mapped to columns or
@@ -4787,7 +4787,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   MODEL reaches, and whether the tool in the roster lifts or regresses the ON-0 hard set, is a
   model run: `ask.query_objects`'s exit, and the user's call (§6 item 15).
   **Also measured:** theLook's served graph has five links and all are unmeasured (the ON-0a door
-  never ran there — on BigQuery its COUNT DISTINCT scans bill), so every linked object query on it
+  never ran there — on BigQuery its COUNT DISTINCT scans bill) — ✅ **MEASURED 2026-09-22** (the user's spend: `POST /ontology/measure`, 77 s of BigQuery scans): 12 links by then, every one now carrying a measured cardinality (8 found, N:1 and one 1:1; 4 model-declared N:1 at 100% key overlap), 6 of 7 backings verified (Event not), 4 display properties verified and 2 refuted with the reason — so every linked object query on it
   is refused today; and its `revenue` metric, marked verified, is `SUM(num_of_item)` — an item
   count. The compiler inherits what "verified" means (the formula EXECUTES), so a metric that runs
   and is not true compiles as faithfully as one that is: ON-0a's lesson a third time, now for
@@ -5489,18 +5489,17 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   receipt:** the explore door ran without a trace and the session log drops a trace-less event, so draft 1's
   model call was metered and never recorded (fixed; draft 2's call is in the log under its run) · the panel
   kept offering *Bind* for four tables the draft had just bound — the builder proposes `schema.table`, the draft
-  binds the bare name (fixed in code; reaches a running API on its next restart). **Open on this wave:** tickets
-  under Order is the user's call (confirm, or remove the binding) · ~~a name join (`warehouse = name`) was guessed
+  binds the bare name (fixed in code; reaches a running API on its next restart). **Open on this wave:** ~~tickets
+  under Order is the user's call (confirm, or remove the binding)~~ — ✅ **answered 2026-09-22**, and not as a choice: *"user should be able to do such linking/delinking in the UI properly"*. The served graph already kept tickets under Customer; what was missing was the door back — a builder-found binding and a found link could not be withdrawn from the panel (a withdrawal was not representable). Now `withdrawn_bindings` on the type and `withdrawn` on the link leave both out of the served graph, restorable from a Withdrawn section (`644499e3`) · ~~a name join (`warehouse = name`) was guessed
   wrong once and not re-proposed~~ — closed 2026-09-15 (`8e442d4a`: a link whose keys never meet is counted again on
   the name its target is known by, when that name is measured one object per row) · run-to-run variance means a second
   draft ADDS rather than repeats (inherent to one call; recorded) · ~~the explorer proposes no processes yet (ON-9)~~ —
   closed 2026-09-15 (`3207f413`: processes and rules, measured before they land; live on LuxExperience's explorer record
   the same day, one call: two processes, two rules and a link written, one rule refused for an `=` given a list — and one
   process reads payment STATES as stages, captured → refunded → failed, which counting the objects in each state does not
-  refute — withdrawn by the user the same day, so the explorer does not propose it again) · the explorer does not name the
-  builder's found links — kept open ON PURPOSE: a model-written name would read as a person's, because a link carries no
-  origin for its name and the confirm door no link-name target; that field is the next slice · two model-proposed links
-  between one pair of types collide on the default reverse name (the explorer proposes none) · the §6 item 18(b)
+  refute — withdrawn by the user the same day, so the explorer does not propose it again) · ~~the explorer does not name the
+  builder's found links — kept open ON PURPOSE~~ — ✅ **closed 2026-09-22** (`1fc2ded5`): a link carries `name_origin` (human | model) and `name_provenance`; the catalogue lists each found link by [id] with whether it is named; the model proposes a verb for an unnamed one (`link_names`), PROPOSED until a person confirms it (confirm target `link_name`), withdrawn by clearing the name and never proposed again. 🔴 Found on the way: the person's naming door REPLACED a declared link's override file with `{name}` — naming a declared link erased its declaration; it merges now, and a declared link's name (its verb) cannot be cleared, only renamed or withdrawn · ~~two model-proposed links
+  between one pair of types collide on the default reverse name (the explorer proposes none)~~ — closed the same commit: the second carries the column it joins on in its reverse name · the §6 item 18(b)
   shape it drafted (Payment and Shipment as parts) agrees with the recommendation. When a
   connection is registered — or on demand from the map — an explorer agent reads the SOURCE
   CATALOGUE (table profiles, the join map with measured cardinality, sample values, glossary,
@@ -5552,7 +5551,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   scope the web carries. Web: the Ontology layer's **Domain** view — the entity-type map over every connection a type is
   declared on, each card and binding naming its connection, a cross-source link drawn dotted and labelled, the declare forms
   picking a connection (from another one a binding is static only); the doors that read one connection's graph (a display
-  property, part marks, link names, the explorer, declared actions) are not offered there. **Tests:**
+  property, part marks, link names, the explorer, declared actions) are not offered there. ✅ **2026-09-22** (`a11d42f1`, the user's call: *declarative doors only*): a link's name, a type's words (description, filters, lifecycle states, routing) and the part mark now open on a far type — none reads a warehouse — and the part mark is held to ONE connection (the parent, its binding and the part's table); the explorer and declared actions stay home-only, and what SQL binds (`active_filter`, a backing) is refused by name. **Tests:**
   `tests/unit/test_object_sources.py` (37: a warehouse split across two DuckDB files and written whole into a third — every
   cross-source count equal to the same claim on one connection, eight query shapes equal to the single statement row for
   row and three to hand-written SQL, every refusal, both caps, a repeated far key, the typed read's label rule, the gates, the
@@ -5831,7 +5830,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   the carrier its question named: it took the scan route, where breakdowns by the frame's drivers are still the next
   slice · ~~the frame is not yet a phase of compiled breakdowns~~ — a first slice built
   (`e29fb3e9`: the deep analysis's named breakdown runs the breakdown the frame compiled for its chosen promise or lag);
-  breakdowns by UNNAMED candidate drivers are the next slice · the model does not word the frame — kept ON PURPOSE: the
+  ~~breakdowns by UNNAMED candidate drivers are the next slice~~ — ✅ **closed 2026-09-22** (`36554edb`): the frame compiles up to four candidate breakdowns beside the named ones (a candidate that cannot compile is recorded, never raised), a declared runner executes two per run, the descriptive route appends them after the named cut, and the diagnostic route gets a `frame_breakdowns` node BEFORE the scan (the scan still owns no breakdown; an unframed run passes through emitting nothing) — and the analyst body (CA-3), which reaches the scan as a TOOL and never meets the graph node, runs the same function once per turn before its first clean scan; the deep run taken for the receipt took that body, which is how the gap showed. The prompt-reach baseline records the nine binding and link fields the frame block now reaches. ✅ **LIVE RECEIPT TAKEN 2026-09-22 19:50Z** (scratch pair on a copy of the data, worktree code, deepseek via OpenRouter; *"Why are orders dispatched late, and which carrier or warehouse is behind it?"* on LuxExperience `914df862`, investigation `e7e55fe1`; every order in the data ships in 0 or 1 days): the analyst body streamed `Declared breakdowns` BEFORE its scan — 3 breakdowns of the shipping promise's breach rate compiled by the object door, 1 by the driver the question NAMED (carrier: FedEx · UPS · DPD · DHL Express) and 2 by candidate drivers the frame reached (channel, currency); every rate reads 0.0 because no order in the data breaches the declared 2-day promise — a fact about the declaration, not the door. Two runs came first: `b05cb577` (the ontology was not served on that scratch pair — no frame at all) and `6f5c7da0` (framed, but the model PINNED its one scan to the carrier and the first draft ran the breakdowns only on an unpinned scan — fixed the same day: first scan, pinned or not) · the model does not word the frame — kept ON PURPOSE: the
   deterministic reading is free, exact and says only what was declared and measured, where a model-worded one would
   spend a call per question to paraphrase definitions it could re-derive in prose · ~~the explorer proposes no
   processes~~ — closed (`3207f413`) · ~~the conversational agent does not frame~~ — closed (`d2173f49`: the quick answer
@@ -7293,6 +7292,11 @@ NOW
         receipts in §3.7 Phase 3
 
 NEXT (order within a band is the user's knob)
+  ✅ ARC ON FINISHED 2026-09-22 — five waves, one branch (`claude/finish-arc-on`): ON-10 candidate
+                                   breakdowns · ON-7b link names (+ the naming door merges) · ON-8 declarative
+                                   doors on far types · ON-7 delink/withdraw/restore from the panel · ON-1b
+                                   expression properties · ON-0a human tier refused · theLook's 12 links
+                                   measured. Receipts that spend run as reached (§3.15).
   ✅ VA-9d FIRST SLICE SHIPPED 2026-09-02 — the allowlist IS the off state (no flag; an
                                    empty registry reaches nothing). Discovery + health + the
                                    read-only gate + `mcp_call` as a chain step, every hop

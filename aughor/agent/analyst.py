@@ -69,6 +69,10 @@ class AnalystTurn:
     emit: Emit = _noop_emit
     #: Phases already streamed (so a tool that appends two streams two).
     emitted_phases: int = 0
+    #: ON-10 — the frame's declared breakdowns ran this turn (the scan tool runs them once). A field
+    #: on the turn, not a private state channel: the CA-0 law requires every `state["_…"]` read to
+    #: be declared on AgentState, and this flag belongs to the analyst's turn alone.
+    frame_breakdowns_ran: bool = False
     #: Tools that produced at least one phase — the "did any evidence land" signal.
     phase_tools_run: list[str] = field(default_factory=list)
     #: Rows returned by tools that do NOT build a phase — `run_sql` above all. The
@@ -557,8 +561,14 @@ def decompose(turn: AnalystTurn, args: dict) -> dict:
     return _phase_payload(turn.merge(ada_decompose(state, turn.conn), tool="decompose"))
 
 
-def cross_section(turn: AnalystTurn, args: dict) -> dict:
+def _scan(state: dict, conn, **kwargs) -> dict:
+    """The weakness scan itself — one seam, so a test can stand in for it by this name."""
     from aughor.agent.investigate import ada_cross_section
+    return ada_cross_section(state, conn, **kwargs)
+
+
+def cross_section(turn: AnalystTurn, args: dict) -> dict:
+    from aughor.agent.investigate import frame_breakdowns
 
     state = dict(turn.state)
     state["_ada_intake"] = _spec_overrides(turn.intake, args)
@@ -568,8 +578,21 @@ def cross_section(turn: AnalystTurn, args: dict) -> dict:
         dims = list(turn.intake.get("dimensions") or [])
         matched = [d for d in dims if dim.lower() in d.lower()]
         kwargs["dims_override"] = matched or [dim]
-    return _phase_payload(
-        turn.merge(ada_cross_section(state, turn.conn, **kwargs), tool="cross_section"))
+    fresh: list[dict] = []
+    if not turn.frame_breakdowns_ran:
+        # ON-10 (2026-09-22) — the frame's declared breakdowns run BEFORE the scan here too. The analyst
+        # body reaches the scan as a tool, not through the graph's `frame_breakdowns` node (the live
+        # receipt on LuxExperience took this body and never met the node), so the node's function runs
+        # once per turn, on the first scan — pinned or not: the live model pins the scan to the driver
+        # the question named, and the declared breakdown by that driver is the definition's own "by",
+        # not the scan's cut. Deterministic, no model call, nothing without a usable frame. The scan
+        # itself still owns no breakdown.
+        turn.frame_breakdowns_ran = True
+        fresh += turn.merge(frame_breakdowns(state, turn.conn), tool="frame_breakdowns")
+        state = dict(turn.state)
+        state["_ada_intake"] = _spec_overrides(turn.intake, args)
+    fresh += turn.merge(_scan(state, turn.conn, **kwargs), tool="cross_section")
+    return _phase_payload(fresh)
 
 
 # ── The roster ────────────────────────────────────────────────────────────────

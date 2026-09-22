@@ -181,6 +181,15 @@ ships_from a warehouse. For each:
 Skip any pair of columns the JOINS list already joins.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LINK NAMES  (link_names)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A JOIN the builder found that is still (unnamed) may be given the business's verb for it. For each:
+  • link — the join's [id] exactly as the JOINS list shows it
+  • name — snake_case, read from → to: placed_by, contains, ships_from
+  • reason — one short sentence
+Name only what the columns make plain; a name a person set already is not yours to change.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROCESSES  (processes)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 A PROCESS is the stages one entity's objects move through, in order: an order is placed, then shipped, then delivered.

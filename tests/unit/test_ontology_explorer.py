@@ -424,3 +424,139 @@ def test_a_link_whose_keys_never_meet_is_counted_again_on_the_name_its_target_is
     again = {o["key"]: o for o in explore(client)["outcomes"]}[SHIPS_FROM]
     assert again["outcome"] == "already"
 
+
+
+# ── 2026-09-22 — ON-7b's next slice: the explorer names the builder's found links ──────────────────────────────────
+# A found link had no name of its own, and the explorer left it unnamed on purpose while a name carried no origin — a
+# model's name would have read as a person's. Now a name carries `name_origin`, the explorer proposes names for found
+# links by their [id], each is PROPOSED until a person confirms it, a withdrawn name is not proposed again, and the
+# person's naming door MERGES into the override (it used to replace a declared link's file with just the name).
+
+def _order_customer_link() -> str:
+    graph = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
+    return next(r.id for r in graph.relationships.values()
+                if r.origin == "join_map" and {r.from_entity, r.to_entity} == {"Order", "Customer"})
+
+
+def _link_row(client, type_id: str, rel_id: str) -> dict:
+    return next(l for l in client.get(f"/object-types/{type_id}", params=PARAMS).json()["links"]
+                if l["relationship"] == rel_id)
+
+
+def test_the_explorer_names_a_found_link_and_a_person_confirms_it(door, client, faux_llm):
+    rel_id = _order_customer_link()
+    draft = {**DRAFT, "link_names": [
+        {"link": f"[{rel_id}]", "name": "Placed By", "reason": "an order is placed by its customer"},
+        {"link": "no_such_link", "name": "whatever", "reason": "a mistake"},
+    ]}
+    faux_llm.set_responses([draft])
+    rows = {o["key"]: o for o in explore(client)["outcomes"]}
+    assert rows[f"link_name:{rel_id}"]["outcome"] == "written"
+    assert rows["link_name:no_such_link"]["outcome"] == "refused" and "[id]" in rows["link_name:no_such_link"]["note"]
+    link = _link_row(client, "order", rel_id)
+    assert (link["business_name"], link["business_name_source"]) == ("placed_by", "model")
+    tiers = {p["key"]: p["tier"] for p in client.get("/ontology/draft", params=PARAMS).json()["proposals"]}
+    assert tiers[f"link_name:{rel_id}"] == "proposed"
+
+    one = client.post("/ontology/draft/confirm", params=PARAMS,
+                      json={"targets": [{"kind": "link_name", "relationship": rel_id}], "actor": "tester"})
+    assert one.status_code == 200, one.text
+    assert one.json()["confirmed"] == [{"kind": "link_name", "relationship": rel_id}]
+    assert _link_row(client, "order", rel_id)["business_name_source"] == "human"
+    twice = client.post("/ontology/draft/confirm", params=PARAMS,
+                        json={"targets": [{"kind": "link_name", "relationship": rel_id}]}).json()
+    assert twice["confirmed"] == [] and "named by a person" in twice["refused"][0]["why"]
+
+    faux_llm.set_responses([draft])
+    again = {o["key"]: o["outcome"] for o in explore(client)["outcomes"]}
+    assert again[f"link_name:{rel_id}"] == "already"                    # a second run writes nothing twice
+
+
+def test_a_withdrawn_link_name_is_not_proposed_again(door, client, faux_llm):
+    rel_id = _order_customer_link()
+    draft = {**DRAFT, "link_names": [{"link": rel_id, "name": "placed_by", "reason": "r"}]}
+    faux_llm.set_responses([draft])
+    explore(client)
+    cleared = client.put(f"/ontology/links/{rel_id}", params=PARAMS, json={"name": ""})
+    assert cleared.status_code == 200, cleared.text
+    assert _link_row(client, "order", rel_id)["business_name_source"] != "model"
+    tiers = {p["key"]: p["tier"] for p in client.get("/ontology/draft", params=PARAMS).json()["proposals"]}
+    assert tiers[f"link_name:{rel_id}"] == "withdrawn"
+    faux_llm.set_responses([draft])
+    rows = {o["key"]: o for o in explore(client)["outcomes"]}
+    assert rows[f"link_name:{rel_id}"]["outcome"] == "withdrawn"
+    assert "not proposed again" in rows[f"link_name:{rel_id}"]["note"]
+
+
+def test_the_persons_naming_door_keeps_a_declared_links_declaration(door, client):
+    """The door used to replace the override file with `{name}`: naming a declared link erased its declaration."""
+    spec = {"from_entity": "Review", "to_entity": "Order", "name": "reviews", "from_column": "order_id",
+            "to_column": "order_id"}
+    declared = client.post("/ontology/links", params=PARAMS, json=spec)
+    assert declared.status_code == 200, declared.text
+    rel_id = "Review_reviews_Order"                                   # link_id: <from>_<name>_<to>
+    renamed = client.put(f"/ontology/links/{rel_id}", params=PARAMS, json={"name": "is_about"})
+    assert renamed.status_code == 200, renamed.text
+    link = _link_row(client, "review", rel_id)
+    assert (link["business_name"], link["business_name_source"], link["origin"]) == ("is_about", "human", "human")
+
+
+def test_two_model_links_between_one_pair_of_types_no_longer_collide_on_the_reverse_name(door, client, faux_llm):
+    draft = {**DRAFT, "links": [
+        {"from_entity": "Review", "to_entity": "Order", "verb": "reviews", "from_column": "order_id",
+         "to_column": "order_id", "reason": "a review is about an order"},
+        {"from_entity": "Review", "to_entity": "Order", "verb": "written_by_buyer_of", "from_column": "customer_id",
+         "to_column": "customer_id", "reason": "the reviewer bought"},
+    ]}
+    faux_llm.set_responses([draft])
+    rows = {o["key"]: o for o in explore(client)["outcomes"]}
+    first, second = rows["link:Order.order_id=Review.order_id"], rows["link:Order.customer_id=Review.customer_id"]
+    assert first["outcome"] == "written", first
+    assert second["outcome"] == "written", second
+    rels = client.get("/ontology/relationships", params=PARAMS).json()
+    reverse = {r["id"]: r["reverse_api_name"] for r in rels.values() if r.get("origin") == "model"}
+    assert reverse["Review_reviews_Order"] == "order_to_review"
+    assert reverse["Review_written_by_buyer_of_Order"] == "order_to_review_by_customer_id"
+
+
+# ── 2026-09-22 — a person can delink from the UI: a found link and a builder-found binding are WITHDRAWABLE ──────
+# A found link was "named, never deleted" and a builder binding could only be unbound if a person had bound it — so a
+# join the builder guessed wrong, or a table it read under the wrong type, could not be undone from the panel. Both
+# withdrawals are now recorded on the overrides (representable, restorable), the served graph leaves them out, and the
+# type detail lists them with a door back.
+
+def test_a_found_link_is_withdrawn_and_restored_over_http(door, client):
+    rel_id = _order_customer_link()
+    assert rel_id in client.get("/ontology/relationships", params=PARAMS).json()
+    gone = client.delete(f"/ontology/links/{rel_id}", params=PARAMS)
+    assert gone.status_code == 200 and gone.json()["withdrawn"] is True
+    assert rel_id not in client.get("/ontology/relationships", params=PARAMS).json()      # the compiler cannot follow it
+    order = client.get("/object-types/order", params=PARAMS).json()
+    assert rel_id not in [l["relationship"] for l in order["links"]]
+    assert [w["relationship"] for w in order["withdrawn"]["links"]] == [rel_id]
+    assert client.post(f"/ontology/links/{rel_id}/restore", params=PARAMS).status_code == 200
+    assert rel_id in client.get("/ontology/relationships", params=PARAMS).json()
+    assert client.get("/object-types/order", params=PARAMS).json()["withdrawn"] == {"bindings": [], "links": []}
+    assert client.post(f"/ontology/links/{rel_id}/restore", params=PARAMS).status_code == 404
+    assert client.delete("/ontology/links/no_such_link", params=PARAMS).status_code == 404
+
+
+def test_a_builder_found_binding_is_withdrawn_and_restored_over_http(door, client):
+    from aughor.ontology import store as ST
+    from aughor.ontology.models import Binding
+    graph = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
+    graph.entities["Order"].bindings.append(Binding(name="lines", kind="detail", table="order_items", key="order_id",
+                                                     source="proposed", verified=True))   # the data's, not a person's
+    ST.save_ontology(CONN, "ecommerce", "fp", graph)
+    names = lambda: [b["name"] for b in client.get("/object-types/order", params=PARAMS).json()["bindings"]]
+    assert "lines" in names()
+    backing = client.delete("/ontology/entities/Order/bindings/orders", params=PARAMS)
+    assert backing.status_code in (400, 404)                                 # the backing is not a binding to withdraw
+    gone = client.delete("/ontology/entities/Order/bindings/lines", params=PARAMS)
+    assert gone.status_code == 200 and gone.json()["withdrawn"] is True
+    assert "lines" not in names()
+    assert client.get("/object-types/order", params=PARAMS).json()["withdrawn"]["bindings"] == ["lines"]
+    assert client.post("/ontology/entities/Order/bindings/lines/restore", params=PARAMS).status_code == 200
+    assert "lines" in names()
+    assert client.post("/ontology/entities/Order/bindings/lines/restore", params=PARAMS).status_code == 404
+    assert client.delete("/ontology/entities/Order/bindings/nothing", params=PARAMS).status_code == 404

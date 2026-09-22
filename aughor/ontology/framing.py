@@ -46,6 +46,12 @@ DEFAULT_HOPS = 2
 _MAX_DRIVERS = 8
 #: Breakdowns of the chosen outcome compiled by the drivers the question names — enough to show the shape of "by".
 _MAX_COMPILED_BY = 2
+#: …and by the CANDIDATE drivers it did not name (2026-09-22): the dimensions the frame reached by measured to-one
+#: links, compiled the same way — so a diagnostic run ("what is causing late dispatch") breaks the DECLARED definition
+#: down by carrier, category or seller instead of asking a planner to invent the cut, which is where the LuxExperience
+#: receipt lost the carrier its question named. Compiling is free (SQL only, no warehouse read); the RUN is bounded on
+#: its own (`investigate._MAX_CANDIDATE_BREAKDOWNS`).
+_MAX_COMPILED_CANDIDATES = 4
 _MAX_PATH_EXPANSIONS = 400
 
 # ── words ───────────────────────────────────────────────────────────────────────────────────
@@ -987,6 +993,14 @@ def _qualified(graph: OntologyGraph) -> OntologyGraph:
     return work
 
 
+def _compile_candidate(graph: OntologyGraph, query: dict, dialect: str) -> dict:
+    """`_compile` for a candidate breakdown: any failure is a recorded refusal, never an exception."""
+    try:
+        return _compile(graph, query, dialect)
+    except Exception as exc:  # noqa: BLE001 — a candidate the compiler cannot take is said, not raised
+        return {"query": query, "refused": f"could not compile: {type(exc).__name__}: {exc}"}
+
+
 def _compile(graph: OntologyGraph, query: dict, dialect: str) -> dict:
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
     try:
@@ -1020,10 +1034,15 @@ def _frame_compiled(graph: OntologyGraph, frame: Frame, dialect: str) -> None:
     if chosen is not None and chosen.kind in ("promise", "lag"):
         measure = ({"name": chosen.metric, "metric": chosen.metric} if chosen.kind == "promise"
                    else {"name": f"avg_{chosen.lag}", "agg": "avg", "path": chosen.lag})
-        for d in [d for d in frame.drivers if d.named][:_MAX_COMPILED_BY]:
-            frame.compiled[f"by {d.path}"] = _compile(
-                graph, {"object_type": chosen.object_type, "filters": filters, "by": [d.path], "measures": [measure]},
-                dialect)
+        named = [d for d in frame.drivers if d.named][:_MAX_COMPILED_BY]
+        candidates = [d for d in frame.drivers if not d.named][:_MAX_COMPILED_CANDIDATES]
+        for d in named + candidates:
+            query = {"object_type": chosen.object_type, "filters": filters, "by": [d.path], "measures": [measure]}
+            # A NAMED driver compiles the way it always did — the question asked for it, so a failure is
+            # loud. A CANDIDATE is the frame's own suggestion: one that cannot compile (a binding shape the
+            # compiler refuses, a field a walk mutated) is recorded with its reason and the frame stands.
+            frame.compiled[f"by {d.path}"] = (_compile(graph, query, dialect) if d.named
+                                              else _compile_candidate(graph, query, dialect))
     if not frame.outcomes:
         for r in frame.rules:
             if r.usable and r.id not in frame.compiled:

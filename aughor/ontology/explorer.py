@@ -141,12 +141,14 @@ def source_catalogue(graph: OntologyGraph, *, glossary: Optional[dict] = None,
             out.append(f"  lifecycle: {e.lifecycle_column} in {', '.join(e.lifecycle_states[:8])}")
 
     found = sorted((r for r in graph.relationships.values() if r.origin == "join_map"), key=lambda x: x.id)
-    out += ["", "JOINS the builder found — from table.column → to table.column · measured cardinality · keys that meet"]
+    out += ["", "JOINS the builder found — [id] from table.column → to table.column · measured cardinality · keys that "
+                "meet · its business name, or (unnamed)"]
     for r in found:
         label = r.measured_cardinality or f"{r.cardinality} (not measured)"
         overlap = "" if r.value_overlap is None else f" · {r.value_overlap:.0%} meet"
-        out.append(f"- {bare(r.from_table)}.{r.from_col} → {bare(r.to_table)}.{r.to_col} · {label}{overlap} "
-                   f"({r.from_entity} → {r.to_entity})")
+        named = f"named {r.name}" if r.name else "(unnamed)"
+        out.append(f"- [{r.id}] {bare(r.from_table)}.{r.from_col} → {bare(r.to_table)}.{r.to_col} · {label}{overlap} "
+                   f"({r.from_entity} → {r.to_entity}) · {named}")
     if not found:
         out.append("- none")
 
@@ -246,6 +248,16 @@ class ProposedLink(BaseModel):
     reason: str = ""
 
 
+class ProposedLinkName(BaseModel):
+    """2026-09-22 — a business verb for a link the BUILDER found, named by its `[id]` in the catalogue. A found link
+    has no name of its own (only the mechanical pair), and the explorer left them unnamed on purpose while a name
+    carried no origin — a model's name would have read as a person's. Now it carries one, and is PROPOSED until a
+    person confirms it."""
+    link: str
+    name: str
+    reason: str = ""
+
+
 class ProposedEntity(BaseModel):
     id: str
     display_name: str = ""
@@ -314,10 +326,11 @@ class BusinessDraft(BaseModel):
     entities: list[ProposedEntity] = Field(default_factory=list)
     parts: list[ProposedPart] = Field(default_factory=list)
     links: list[ProposedLink] = Field(default_factory=list)
+    link_names: list[ProposedLinkName] = Field(default_factory=list)
     processes: list[ProposedProcess] = Field(default_factory=list)
     rules: list[ProposedRule] = Field(default_factory=list)
 
-    @field_validator("entities", "parts", "links", "processes", "rules", mode="before")
+    @field_validator("entities", "parts", "links", "link_names", "processes", "rules", mode="before")
     @classmethod
     def _lists(cls, v: Any) -> Any:
         v = _coerce_json(v)
@@ -382,6 +395,8 @@ class DraftWriters:
     #: ON-9's doors; an explorer handed none writes no processes or rules and says so.
     declare_process: Optional[Callable[[dict], Any]] = None
     declare_rule: Optional[Callable[[dict], Any]] = None
+    #: 2026-09-22 — (relationship id, name) → the naming door's response, as the explorer's proposal.
+    name_link: Optional[Callable[[str, str], Any]] = None
 
 
 @dataclass
@@ -490,6 +505,12 @@ def proposal_tier(graph: Optional[OntologyGraph], proposal: DraftProposal) -> st
         if entity is None or entity.origin == "table":
             return "withdrawn"
         return "proposed" if entity.origin == "model" else "confirmed"
+    if proposal.kind == "link_name":
+        rel = graph.relationships.get(str(t.get("relationship") or ""))
+        wanted = str((proposal.spec or {}).get("name") or "")
+        if rel is None or not rel.name or (wanted and rel.name != wanted):
+            return "withdrawn"
+        return "proposed" if rel.name_origin == "model" else "confirmed"
     if proposal.kind == "link":
         rel = graph.relationships.get(str(t.get("relationship") or ""))
         if rel is None or rel.origin == "join_map":
@@ -549,6 +570,8 @@ def apply_draft(said: BusinessDraft, graph: OntologyGraph, db: Any, *, provenanc
         settle(_part_outcome(p, current, db, describe, earlier, writers))
     for p in said.links[:MAX_PER_KIND]:
         settle(_link_outcome(p, current, db, earlier, writers, provenance))
+    for p in said.link_names[:MAX_PER_KIND]:
+        settle(_link_name_outcome(p, current, earlier, writers, provenance))
     for p in said.processes[:MAX_PER_KIND]:
         settle(_process_outcome(p, current, db, earlier, writers, provenance))
     for p in said.rules[:MAX_PER_KIND]:
@@ -719,6 +742,54 @@ def _part_outcome(p: ProposedPart, graph: OntologyGraph, db: Any, describe: Any,
                 target={"entity": parent.id, "binding": name, "table": table, "part": absorbed})
 
 
+def link_name_key(relationship_id: str) -> str:
+    return f"link_name:{relationship_id}"
+
+
+def _link_name_outcome(p: ProposedLinkName, graph: OntologyGraph, earlier: dict[str, str], writers: DraftWriters,
+                       provenance: str) -> Outcome:
+    """A business verb for a found link (2026-09-22): the link must be one the builder found (a declared link was
+    named by whoever declared it), the name must be free on both types, and a name a person withdrew is not
+    proposed again. Written through the naming door with `origin: model`."""
+    from aughor.semantic.object_types import link_name_problem
+    said = p.model_dump()
+    ident = (p.link or "").strip().strip("[]")
+    name = snake_name(p.name)[:80] if (p.name or "").strip() else ""
+    key = link_name_key(ident)
+    rel = graph.relationships.get(ident)
+    sentence = (f"{rel.from_entity} {name or '?'} {rel.to_entity} — the name of a link the builder found"
+                if rel is not None else f"{ident or '?'} {name or '?'} — the name of a link the builder found")
+
+    def done(outcome: str, note: str = "", **extra: Any) -> Outcome:
+        return Outcome(key=key, kind="link_name", outcome=outcome, sentence=sentence, note=note, said=said, **extra)
+
+    if rel is None:
+        return done("refused", f"no link '{ident}' in this ontology — name a found link by its [id]")
+    if rel.origin != "join_map":
+        return done("refused", f"{ident} was declared, and carries the name its declarer gave it")
+    if not name:
+        return done("refused", "a link name is snake_case: a lowercase letter, then lowercase letters, digits or underscores")
+    why = _withdrawn(earlier, key)
+    if why:
+        return done("withdrawn", why)
+    if rel.name:
+        if rel.name == name:
+            return done("already", f"{ident} is already named {name}", target={"relationship": ident},
+                        spec={"name": name})
+        if rel.name_origin != "model":
+            return done("refused", f"a person named {ident} {rel.name}", spec={"name": name})
+    problem = link_name_problem(graph, ident, name)
+    if problem:
+        return done("refused", problem, spec={"name": name})
+    if writers.name_link is None:
+        return done("refused", "this explorer was handed no naming door")
+    try:
+        writers.name_link(ident, name)
+    except ExplorerRefused as exc:
+        return done("refused", str(exc), spec={"name": name})
+    return done("written", "", spec={"name": name}, target={"relationship": ident})
+
+
 def _link_outcome(p: ProposedLink, graph: OntologyGraph, db: Any, earlier: dict[str, str], writers: DraftWriters,
                   provenance: str) -> Outcome:
     said = p.model_dump()
@@ -750,6 +821,13 @@ def _link_outcome(p: ProposedLink, graph: OntologyGraph, db: Any, earlier: dict[
         return done("already", f"{same.id} already joins these columns", target={"relationship": same.id})
     spec = {"from_entity": a.id, "to_entity": b.id, "name": verb, "from_column": a_col, "to_column": b_col,
             "origin": "model", "provenance": provenance}
+    # 2026-09-22 — two model-proposed links between one pair of types used to collide on the default reverse
+    # name (`<to>_to_<from>`), so the second was refused. When that name is already taken on the to-side, this
+    # link's reverse name carries the column it joins on — deterministic, and free by construction.
+    from aughor.ontology.declared import reverse_name_of
+    default_reverse = reverse_name_of(spec)
+    if default_reverse.lower() in taken_names(graph, b, list(b.bindings or [])):
+        spec["reverse_name"] = f"{default_reverse}_by_{snake_name(a_col)}"[:80]
     problem = link_spec_problem(spec)
     if problem:
         return done("refused", problem, spec=spec)
@@ -926,7 +1004,8 @@ def record_run(draft: OntologyDraft, outcomes: list[Outcome], answerer: Answerer
                    model=answerer.model, fallback=answerer.fallback, version=EXPLORER_VERSION,
                    provenance=answerer.provenance, catalogue_chars=catalogue_chars, trace_id=trace_id,
                    said={"entities": len(said.entities), "parts": len(said.parts), "links": len(said.links),
-                         "processes": len(said.processes), "rules": len(said.rules)},
+                         "processes": len(said.processes), "rules": len(said.rules),
+                         **({"link_names": len(said.link_names)} if said.link_names else {})},
                    written=tally["written"], refused=tally["refused"], already=tally["already"],
                    withdrawn=tally["withdrawn"])
     for o in outcomes:
@@ -946,7 +1025,7 @@ def record_run(draft: OntologyDraft, outcomes: list[Outcome], answerer: Answerer
     return run
 
 
-_KIND_ORDER = {"entity": 0, "part": 1, "link": 2, "process": 3, "rule": 4}
+_KIND_ORDER = {"entity": 0, "part": 1, "link": 2, "link_name": 3, "process": 4, "rule": 5}
 
 
 def _opens(graph: Optional[OntologyGraph], proposal: DraftProposal) -> str:
@@ -988,6 +1067,8 @@ def confirm_targets(graph: Optional[OntologyGraph], draft: OntologyDraft) -> lis
             out.append({"kind": "entity", "entity": t["entity"]})
         elif p.kind == "link":
             out.append({"kind": "link", "relationship": t["relationship"]})
+        elif p.kind == "link_name":
+            out.append({"kind": "link_name", "relationship": t["relationship"]})
         elif p.kind in ("process", "rule"):
             out.append({"kind": p.kind, p.kind: t[p.kind]})
         else:

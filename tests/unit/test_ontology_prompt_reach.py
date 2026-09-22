@@ -53,9 +53,9 @@ REACH_BASELINE: dict[str, set[str]] = {
     "relationships.*.verb": {'relationships'},
     "relationships.*.cardinality": {'relationships'},
     "relationships.*.from_table": {'explorer_catalogue', 'relationships'},
-    "relationships.*.from_col": {'explorer_catalogue', 'relationships'},
+    "relationships.*.from_col": {'explorer_catalogue', 'relationships', 'question_frame'},
     "relationships.*.to_table": {'explorer_catalogue', 'relationships'},
-    "relationships.*.to_col": {'explorer_catalogue', 'relationships'},
+    "relationships.*.to_col": {'explorer_catalogue', 'relationships', 'question_frame'},
     "relationships.*.join_confidence": {'relationships'},
     "relationships.*.nullable": {'relationships'},
     "relationships.*.value_overlap": {'explorer_catalogue', 'relationships'},
@@ -149,7 +149,22 @@ REACH_BASELINE: dict[str, set[str]] = {
     "core_claims[].subject": {'explorer_catalogue'},
     "core_claims[].tier": {'explorer_catalogue'},
     "entities.*.backing.rows": {'explorer_catalogue'},
-    "entities.*.bindings[].kind": {'explorer_catalogue'},
+    # 2026-09-22 — ON-10 compiles breakdowns by the CANDIDATE drivers the frame reached, so the frame block
+    # now renders SQL through a binding (its source, key, clock, frames, connection) and a found link's
+    # columns — fields the block reached only for the drivers a question NAMED before.
+    "entities.*.bindings[].sql": {'question_frame'},
+    "entities.*.bindings[].key": {'question_frame'},
+    "entities.*.bindings[].time_column": {'question_frame'},
+    "entities.*.bindings[].properties.*.name": {'question_frame'},
+    "entities.*.bindings[].frames": {'question_frame'},
+    "entities.*.bindings[].connection_id": {'question_frame'},
+    # 2026-09-22 — ON-7b: the explorer's catalogue lists each found link by [id] with its business name, so the model
+    # can propose a name for an unnamed one.
+    "relationships.*.id": {'explorer_catalogue'},
+    # 2026-09-22 — ON-7b: the explorer's catalogue lists each found link by [id] with its business name, so the model
+    # can propose a name for an unnamed one.
+    "relationships.*.name": {'explorer_catalogue'},
+    "entities.*.bindings[].kind": {'explorer_catalogue', 'question_frame'},
     "entities.*.bindings[].name": {'explorer_catalogue'},
     "entities.*.bindings[].table": {'explorer_catalogue'},
     "entities.*.description": {'explorer_catalogue'},

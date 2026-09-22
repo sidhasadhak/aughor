@@ -91,6 +91,7 @@ _PHASE_META = {
     "cross_section": ("Cross-Sectional Weakness Scan", "🧭"),
     "temporal_when": ("Temporal Trend — When", "📈"),
     "breakdown":     ("Breakdown", "📑"),
+    "frame_breakdowns": ("Declared breakdowns", "📐"),
     "synthesis":     ("Synthesis", "📋"),
 }
 

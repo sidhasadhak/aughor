@@ -462,6 +462,26 @@ def _qualify(fragment: str, alias: str, read: str, *, what: str, expression: boo
     return node.sql(dialect="duckdb")
 
 
+def _qualify_row_expression(fragment: str, alias: str, read: str, *, what: str) -> str:
+    """`_qualify` for a per-row expression property (2026-09-22): parsed as a SELECT expression, refused when it
+    holds a subquery, an aggregate or a window, and anchored on `alias` so a join cannot make a bare name mean
+    another table."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        node = sqlglot.parse_one(f"SELECT {fragment} FROM _t", read=read).expressions[0]
+    except Exception as exc:  # noqa: BLE001 — an unparseable fragment is a refusal, never a guess
+        raise ObjectQueryRefused(f"{what} could not be parsed to anchor it on the object ({exc})") from exc
+    if node.find(exp.Select) is not None:
+        raise ObjectQueryRefused(f"{what} holds a subquery; an expression property is a flat expression")
+    if node.find(exp.AggFunc) is not None or node.find(exp.Window) is not None:
+        raise ObjectQueryRefused(f"{what} holds an aggregate or a window; an expression property is per row")
+    for col in node.find_all(exp.Column):
+        if not col.table:
+            col.set("table", exp.to_identifier(alias))
+    return node.sql(dialect="duckdb")
+
+
 def _within(formula: str, condition: str) -> str:
     """A measure's formula with every aggregate restricted to the rows ``condition`` admits (ON-9 — a rule that scopes a
     metric): COUNT(*) counts only them, and every other aggregate reads its argument on them alone, so the rule scopes
@@ -674,6 +694,9 @@ class _Compiler:
         The source is read, never written."""
         if alias in self.far_paths:
             return self.far_column(scope, alias, entity, p)
+        expression = (entity.expressions or {}).get(p.name)
+        if expression is not None:
+            return self.expression_column(alias, entity, p.name, expression)
         binding = property_binding(entity, p.name)
         if binding is not None:
             return self.binding_column(scope, alias, entity, binding, p)
@@ -704,6 +727,16 @@ class _Compiler:
             scope.join_alias[slot] = ov
             self.note_overlay(entity, p.name, edits)
         return f"CAST({ov}.v AS BOOLEAN)" if _is_bool(p) else f"{ov}.v"
+
+    def expression_column(self, alias: str, entity: OntologyEntity, name: str, expression) -> str:
+        """2026-09-22 — a property a person mapped to an expression over the type's own row: anchored on the
+        object's alias the way a segment's WHERE is, refused while unverified — a wrong expression must not
+        become a silent column."""
+        if expression.verified is not True:
+            raise ObjectQueryRefused(f"{entity.id}.{name} is an expression that did not bind: "
+                                     f"{expression.note or 'not yet verified'}")
+        self.plan.append(f"{entity.id}.{name}: = {expression.expression} (an expression property)")
+        return _qualify_row_expression(expression.expression, alias, self.dialect, what=f"{entity.id}.{name}")
 
     def derived_column(self, scope: _Scope, alias: str, entity: OntologyEntity, d) -> str:
         """ON-9 — a derived lag: the calendar days between two of the object's moments, each read under the compiler's

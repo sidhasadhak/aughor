@@ -486,7 +486,10 @@ def test_an_entity_a_link_and_a_part_are_declared_read_back_and_withdrawn_over_h
 
     assert client.delete("/ontology/links/Payment_pays_for_Order", params=PARAMS).status_code == 200
     assert client.delete("/ontology/links/Payment_pays_for_Order", params=PARAMS).status_code == 404
-    assert client.delete("/ontology/links/OrderItem_RELATES_TO_Order", params=PARAMS).status_code == 404
+    # 2026-09-22 — a found link is no longer "named, never deleted": a person withdraws it (recorded, restorable)
+    withdrawn = client.delete("/ontology/links/OrderItem_RELATES_TO_Order", params=PARAMS)
+    assert withdrawn.status_code == 200 and withdrawn.json()["withdrawn"] is True
+    assert client.post("/ontology/links/OrderItem_RELATES_TO_Order/restore", params=PARAMS).status_code == 200
     assert client.delete("/ontology/entities/Payment", params=PARAMS).status_code == 200
     kept = client.delete("/ontology/entities/Order", params=PARAMS)
     assert kept.status_code == 404 and "built from its table" in kept.json()["detail"]

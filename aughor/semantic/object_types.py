@@ -116,6 +116,12 @@ def _part_of_row(graph: OntologyGraph, entity: OntologyEntity) -> Optional[dict]
     return None
 
 
+def _expression_source(entity: OntologyEntity, name: str) -> dict:
+    """2026-09-22 — what an expression property IS, said beside where its inputs are read from."""
+    e = (entity.expressions or {}).get(name)
+    return {"expression": e.expression, "verified": e.verified} if e is not None else {}
+
+
 def _source(binding: dict, column: str) -> dict:
     """Where one property is read from: its binding by name, the binding's table (a keyed SELECT has none), the column."""
     if binding["reads"] == "query":
@@ -246,7 +252,8 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
     further = [(b, _further_binding(entity, b)) for b in entity.bindings or [] if (b.table or "").lower() not in hidden]
     properties = [{"name": name, "display_name": p.display_name or name, "role": p.semantic_type or "",
                    "data_type": p.data_type, "unit": p.unit, "is_key": name.lower() == key.lower(),
-                   "null_rate": p.null_rate, "description": p.description, "source": _source(binding, name)}
+                   "null_rate": p.null_rate, "description": p.description,
+                   "source": {**_source(binding, name), **_expression_source(entity, name)}}
                   for name, p in (entity.properties or {}).items()]
     for bound, row in further:
         for name, p in bound.properties.items():
@@ -286,6 +293,10 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
         "properties_truncated": len(properties) > _MAX_PROPERTIES,
         "bindings": [binding] + [row for _, row in further],
         "proposed_bindings": proposals,
+        # 2026-09-22 — the expression properties a person declared, verified or not
+        "expressions": [{"name": n, "expression": e.expression, "role": e.semantic_type, "unit": e.unit,
+                         "description": e.description, "verified": e.verified, "note": e.note}
+                        for n, e in (entity.expressions or {}).items()],
         "links": links,
         "actions": actions,
         "metrics": metrics,

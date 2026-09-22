@@ -457,3 +457,91 @@ def test_a_breakdown_the_frame_compiled_is_run_as_declared_not_as_the_intake_re_
     I._named_breakdown_findings({"schema_context": ""}, None, {**intake, "ontology_frame": unheld})
     assert len(ran) == 1 and "AVG(CASE WHEN shipped_at > ship_by" in ran[0][1]
 
+
+
+# ── ON-10, the next slice (2026-09-22): breakdowns by the CANDIDATE drivers the frame reached ──────────────────────
+# The LuxExperience receipt: the frame reached the carrier the question named and listed it in prose, but only NAMED
+# drivers were compiled, and the diagnostic route never ran a compiled breakdown at all — the run "took the scan
+# route" and no query returned the carrier. Now candidates compile too, a declared runner executes them under a cap,
+# and the diagnostic route has a node of its own for them, before the scan (which still owns no breakdown).
+
+def _late_frame(declared):
+    return frame_question("What is causing orders to be shipped late?", declared)
+
+
+def test_candidate_drivers_are_compiled_beside_the_named_ones(declared):
+    from aughor.ontology import framing as F
+    frame = _late_frame(declared)
+    assert frame.outcome is not None and frame.outcome.usable and frame.outcome.kind == "promise"
+    unnamed = [d for d in frame.drivers if not d.named]
+    assert unnamed, "the fixture graph reaches candidate dimensions by to-one links"
+    compiled_candidates = [d for d in unnamed if f"by {d.path}" in frame.compiled]
+    assert compiled_candidates == unnamed[:F._MAX_COMPILED_CANDIDATES]
+    assert all(frame.compiled[f"by {d.path}"].get("sql") for d in compiled_candidates)
+
+
+def test_mutation_the_candidate_cap_is_what_compiles_them(declared, monkeypatch):
+    from aughor.ontology import framing as F
+    monkeypatch.setattr(F, "_MAX_COMPILED_CANDIDATES", 0)
+    frame = _late_frame(declared)
+    assert not [d for d in frame.drivers if not d.named and f"by {d.path}" in frame.compiled]
+
+
+def test_the_frame_reader_carries_candidates_flagged_and_named_first(declared):
+    from aughor.agent import investigate as I
+    frame = _late_frame(declared)
+    entries = I._frame_breakdowns(frame.model_dump(mode="json"))
+    flags = [e["named"] for e in entries.values()]
+    assert False in flags                                   # candidates ride along…
+    assert flags == sorted(flags, reverse=True)             # …after every named one
+    assert all(e["sql"] and e["path"] for e in entries.values())
+
+
+def test_candidate_breakdowns_run_as_declared_under_their_own_cap(declared, monkeypatch):
+    from types import SimpleNamespace
+    from aughor.agent import investigate as I
+    ran = []
+
+    def execute(conn, phase_id, sql, schema=None):
+        ran.append(phase_id)
+        return SimpleNamespace(sql=sql, columns=["x", "rate"], rows=[["a", 0.1]], row_count=1, error=None)
+    monkeypatch.setattr(I, "_execute_safe", execute)
+    frame = _late_frame(declared)
+    intake = {"named_dimensions": [], "ontology_frame": frame.model_dump(mode="json")}
+    findings = I._candidate_breakdown_findings({"schema_context": ""}, None, intake)
+    assert 0 < len(findings) <= I._MAX_CANDIDATE_BREAKDOWNS
+    assert ran == [f"candidate_breakdown_{i}_declared" for i in range(len(findings))]
+    assert all(f["title"].endswith("(declared, candidate driver)") for f in findings)
+    # mutation: the cap is the bound
+    ran.clear()
+    monkeypatch.setattr(I, "_MAX_CANDIDATE_BREAKDOWNS", 0)
+    assert I._candidate_breakdown_findings({"schema_context": ""}, None, intake) == [] and ran == []
+
+
+def test_the_diagnostic_route_node_runs_the_declared_breakdowns_without_a_model(declared, monkeypatch):
+    """The node before the scan: declared findings, one phase, zero model calls — and nothing at all
+    for a run that carries no frame, so unframed phases stay byte-identical."""
+    from types import SimpleNamespace
+    from aughor.agent import investigate as I
+    ran = []
+    monkeypatch.setattr(I, "_execute_safe", lambda conn, pid, sql, schema=None: (ran.append(pid) or
+        SimpleNamespace(sql=sql, columns=["x", "rate"], rows=[["a", 0.1]], row_count=1, error=None)))
+    monkeypatch.setattr(I, "_provider", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no model call here")))
+    frame = _late_frame(declared)
+    state = {"question": "why late", "investigation_phases": [{"phase_id": "x"}], "schema_context": "",
+             "_ada_intake": {"named_dimensions": [], "ontology_frame": frame.model_dump(mode="json")}}
+    out = I.frame_breakdowns(state, None)
+    phases = out["investigation_phases"]
+    assert [p["phase_id"] for p in phases] == ["x", "frame_breakdowns"]
+    phase = phases[-1]
+    assert phase["status"] == "complete" and phase["findings"] and "candidate" in phase["summary"]
+    assert all(pid.startswith("candidate_breakdown_") for pid in ran)      # named none → candidates only
+    assert I.frame_breakdowns({"investigation_phases": [], "schema_context": "", "_ada_intake": {}}, None) == {}
+
+
+def test_the_graph_routes_the_diagnostic_branch_through_the_node():
+    """The scan's own law (it owns no breakdown) is pinned in test_named_breakdown; this pins the wiring."""
+    import inspect
+    from aughor.agent import graph as G
+    src = inspect.getsource(G)
+    assert 'graph.add_node("frame_breakdowns"' in src and 'graph.add_edge("frame_breakdowns", _xsec_target)' in src

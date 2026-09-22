@@ -116,6 +116,9 @@ export interface PropertySource {
   frame?: string;
   /** ON-7 — set when the property is a ROLLUP over a detail binding's rows rather than a column of the source. */
   rollup?: string;
+  /** 2026-09-22 — set when the property is an EXPRESSION a person mapped over the type's own row. */
+  expression?: string;
+  verified?: boolean | null;
 }
 
 export interface TypeProperty {
@@ -226,7 +229,8 @@ export interface ProposedBinding {
 export interface TypeLink {
   name: string;
   business_name: string;
-  business_name_source: "human" | "proposed" | "";
+  /** `model` (2026-09-22): the explorer proposed the name; a person confirms it in the draft rail. */
+  business_name_source: "human" | "model" | "proposed" | "";
   verb: string;
   relationship: string;
   direction: "out" | "in";
@@ -265,7 +269,22 @@ export interface TypeMetric {
   formula_sql: string;
 }
 
+/** 2026-09-22 — a typed property mapped to a SQL expression over the type's own row. */
+export interface TypeExpression {
+  name: string;
+  expression: string;
+  role: "measure" | "dimension";
+  unit: string;
+  description: string;
+  verified: boolean | null;
+  note: string;
+}
+
 export interface ObjectTypeDetail {
+  /** 2026-09-22 — the expression properties a person declared on this type, verified or not. */
+  expressions?: TypeExpression[];
+  /** 2026-09-22 — what a person withdrew on this type: builder-found bindings and found links, restorable. */
+  withdrawn?: { bindings: string[]; links: { relationship: string; from_entity: string; to_entity: string }[] };
   path: "object_type";
   connection_id: string;
   schema_name: string;
@@ -535,6 +554,40 @@ export async function declareLink(connectionId: string, spec: DeclaredLinkSpec, 
 }
 
 /** ON-7 — withdraw a DECLARED link. A found link is named, never deleted. */
+/** 2026-09-22 — map a typed property to a SQL expression over the type's own row. The server checks the shape, runs
+ *  it on one row, and refuses with the reason when it does not bind; nothing is written on a refusal. */
+export async function declareExpression(
+  connectionId: string, entityId: string, name: string,
+  spec: { expression: string; semantic_type?: "measure" | "dimension"; unit?: string; description?: string },
+  schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/expressions/${encodeURIComponent(name)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+export async function removeExpression(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/expressions/${encodeURIComponent(name)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** 2026-09-22 — put back a builder-found binding a person withdrew. */
+export async function restoreBinding(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
+  const res = await fetch(`${bindingUrl(connectionId, entityId, name, schemaName).replace(/\?/, "/restore?")}`, { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** 2026-09-22 — put back a found link a person withdrew. */
+export async function restoreLink(connectionId: string, relationshipId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}/restore?${scope(connectionId, schemaName)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
 export async function deleteLink(connectionId: string, relationshipId: string, schemaName?: string): Promise<void> {
   const res = await fetch(
     `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}?${scope(connectionId, schemaName)}`,
@@ -606,7 +659,7 @@ export type ProposalTier = "proposed" | "confirmed" | "released" | "withdrawn" |
 /** ON-7b — one thing an explorer proposed: an entity, a part (a table read under an entity), or a link. */
 export interface DraftProposal {
   key: string;
-  kind: "entity" | "part" | "link" | "process" | "rule";
+  kind: "entity" | "part" | "link" | "link_name" | "process" | "rule";
   tier: ProposalTier;
   sentence: string;
   /** What the measurement said — the counts it rests on, or why it was refused. */
@@ -652,7 +705,7 @@ export interface OntologyDraft {
 
 /** ON-7b — a declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read through. */
 export interface ConfirmTarget {
-  kind: "entity" | "binding" | "link" | "process" | "rule";
+  kind: "entity" | "binding" | "link" | "link_name" | "process" | "rule";
   entity?: string;
   binding?: string;
   relationship?: string;

@@ -17,6 +17,9 @@ import userEvent from "@testing-library/user-event";
 import type { BackingPreview, ObjectTypeDetail } from "@/lib/objectTypes";
 
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
+const deleteLink = vi.fn(async (..._args: unknown[]) => undefined);
+const restoreLink = vi.fn(async (..._args: unknown[]) => undefined);
+const declareExpression = vi.fn(async (..._args: unknown[]) => undefined);
 const nameLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareProcess = vi.fn(async (..._args: unknown[]) => ({ id: "order_fulfilment" }));
@@ -40,6 +43,9 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   previewBacking: (...a: unknown[]) => previewBacking(...a),
   setQueryBacking: (...a: unknown[]) => setQueryBacking(...a),
   withdrawBacking: (...a: unknown[]) => withdrawBacking(...a),
+  deleteLink: (...a: unknown[]) => deleteLink(...a),
+  restoreLink: (...a: unknown[]) => restoreLink(...a),
+  declareExpression: (...a: unknown[]) => declareExpression(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -349,7 +355,8 @@ describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () =
     expect(await screen.findByTestId("entity-connection")).toHaveTextContent("read from Shop");
     expect(screen.getAllByTestId("entity-binding-connection").map((n) => n.textContent)).toEqual(["Shop", "CRM"]);
     expect(screen.getByTestId("entity-link-cross-source")).toHaveTextContent("cross-source");
-    expect(screen.queryByRole("button", { name: "Name it" })).toBeNull();
+    // 2026-09-22 — naming is declarative and opens on a far link; the explorer's confirm and the SQL-bound doors do not.
+    expect(screen.getByRole("button", { name: /Name it|Rename/ })).toBeInTheDocument();
     expect(screen.queryByLabelText("Declare")).toBeNull();
     expect(screen.getByRole("button", { name: "Measure" })).toBeInTheDocument();
   });
@@ -498,5 +505,45 @@ describe("EntityTypePanel — reading a type from a keyed SELECT", () => {
     await user.click(screen.getByRole("button", { name: "Set as backing" }));
     expect(previewBacking).toHaveBeenLastCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
     expect(setQueryBacking).toHaveBeenCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
+  });
+});
+
+describe("withdrawing what the builder found (2026-09-22)", () => {
+  it("offers Withdraw on a found link and lists a withdrawal with its door back", async () => {
+    const user = userEvent.setup();
+    deleteLink.mockClear();
+    restoreLink.mockClear();
+    shown.detail = {
+      ...detail,
+      withdrawn: { bindings: ["lines"], links: [{ relationship: "product_to_supplier", from_entity: "Product", to_entity: "Supplier" }] },
+    };
+    render(<EntityTypePanel connectionId="c1" objectType="product" types={rows} version={0} onOpen={() => {}} onChanged={() => {}} />);
+    const link = await screen.findByTestId("entity-link");
+    await user.click(within(link).getByRole("button", { name: "Withdraw" }));
+    await user.click(within(link).getByRole("button", { name: /Withdraw/ }));
+    await waitFor(() => expect(deleteLink).toHaveBeenCalled());
+    const rows_ = screen.getAllByTestId("entity-withdrawn");
+    expect(rows_).toHaveLength(2);
+    expect(rows_[1]).toHaveTextContent("product_to_supplier");
+    await user.click(within(rows_[1]).getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(restoreLink).toHaveBeenCalledWith("c1", "product_to_supplier", undefined));
+    shown.detail = undefined;
+  });
+});
+
+
+describe("expression properties (2026-09-22)", () => {
+  it("declares an expression through the door with its role and unit", async () => {
+    const user = userEvent.setup();
+    declareExpression.mockClear();
+    render(<EntityTypePanel connectionId="c1" objectType="product" types={rows} version={0} onOpen={() => {}} onChanged={() => {}} />);
+    await user.click(await screen.findByRole("button", { name: "Declare an expression" }));
+    await user.type(screen.getByLabelText("Expression name"), "days_listed");
+    await user.type(screen.getByLabelText("Expression SQL"), "date_diff('day', listed_at, now())");
+    await user.selectOptions(screen.getByLabelText("Expression role"), "dimension");
+    await user.type(screen.getByLabelText("Expression unit"), "days");
+    await user.click(screen.getByRole("button", { name: "Declare" }));
+    await waitFor(() => expect(declareExpression).toHaveBeenCalledWith("c1", detail.id, "days_listed",
+      { expression: "date_diff('day', listed_at, now())", semantic_type: "dimension", unit: "days" }, undefined));
   });
 });
