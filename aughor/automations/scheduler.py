@@ -92,7 +92,36 @@ def tick_once() -> dict[str, int]:
     except Exception as exc:
         logger.warning("automation heartbeat could not resume parked runs: %s", exc)
         counts["resumed"] = 0
+    # CB-2 — the reviews that came due: measure again with the answer's own definition and ask.
+    # Once an hour is the right grain for a question dated in days; the tick is a minute.
+    try:
+        counts["reviews"] = run_due_reviews_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not run due reviews: %s", exc)
+        counts["reviews"] = 0
     return counts
+
+
+REVIEW_CHECK_SECONDS = 3600
+_last_review_check: float = 0.0
+
+
+def run_due_reviews_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Run `playbook.outcomes.run_due_reviews` at most once per `REVIEW_CHECK_SECONDS`. Returns how
+    many reviews ran (0 when the hour has not passed). ``force`` is for an external clock."""
+    global _last_review_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_review_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_review_check = t
+    from aughor.playbook.outcomes import run_due_reviews
+    from aughor.db.measure import run_sql_for
+    reviewed = run_due_reviews(run_sql_for=run_sql_for)
+    for o in reviewed:
+        logger.info("review due on %s asked %s: %s", o.id, o.review_asked_to or "(nobody linked)",
+                    o.review_question[:120])
+    return len(reviewed)
 
 
 def _run_one(automation) -> None:

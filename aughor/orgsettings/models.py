@@ -14,7 +14,20 @@ silently clobbers good inference; only an explicit choice does.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
+
+
+class Priority(BaseModel):
+    """CB-6 — one thing the organisation is trying to do this quarter, written by a person: the
+    metric it names, the target, which way is good, by when. Triage counts a finding that bears
+    on one; the Briefing says so. Never inferred — people write these (§6 item 20's rule)."""
+    metric: str = Field(description="The metric the goal names, as people say it: 'return rate', 'net revenue'")
+    target: str = Field(default="", description="The target, as written: '< 8%', '£1.2M', 'down 10%'")
+    direction: Literal["", "up", "down"] = Field(default="", description="Which way is good")
+    by: str = Field(default="", description="By when, as written: 'Q4', '2026-12-31'")
+    note: str = Field(default="", description="Why it matters, one line")
 
 
 class OrgSettings(BaseModel):
@@ -63,6 +76,12 @@ class OrgSettings(BaseModel):
         ),
     )
 
+
+    # ── Working memory (CB-6) ──
+    priorities: list[Priority] = Field(
+        default_factory=list,
+        description="What the organisation is trying to do this quarter — written by people, never inferred.",
+    )
     @field_validator("currency_code")
     @classmethod
     def _norm_currency(cls, v: str) -> str:

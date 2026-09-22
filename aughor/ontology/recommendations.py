@@ -43,6 +43,18 @@ from aughor.ontology.models import OntologyGraph
 _ROOT = resolve_db_path("AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR",
                         Path(__file__).parent.parent.parent / "data" / "ontology_recommendations")
 
+
+def recommendations_root() -> Path:
+    """The root of the people's-decisions tree (`data/ontology_recommendations`, or
+    `AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR`) — public so a sibling store (CB-4's rejected duplicates)
+    lives beside the dismissed recommendations without reaching for a private name."""
+    return _ROOT
+
+
+def safe_name(s: str) -> str:
+    """The tree's own file-name rule for a connection, schema or id — public for the sibling stores."""
+    return _safe(s)
+
 # A measure must look like money and not be per-unit to be SUM-proposable.
 _CURRENCY_HINTS = ("currency", "money", "usd", "revenue", "amount", "spend", "sales")
 SURFACE_SUPPORT = 2  # a recommendation is "ripe" (surfaced) once seen this many times

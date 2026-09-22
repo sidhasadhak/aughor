@@ -28,6 +28,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
+import json
+
 from pydantic import BaseModel, Field
 
 from aughor.kernel.errors import tolerate
@@ -39,6 +41,10 @@ EdgeKind = Literal["joins_on", "defines", "derived_from", "grounded_in", "resolv
 # origin (schema/profiler/guard/human-curated store). There is deliberately no
 # "llm_inferred" source and no self-reported model-confidence source — see module
 # docstring (J4).
+#: CB-1 — where a fact's date came from: the source's own stamp, or the build's because the
+#: source carries none. Empty only on a graph written before dates existed.
+ObservedBasis = Literal["", "source", "build"]
+
 ProvenanceSource = Literal[
     "ontology.entity",     # a projected OntologyEntity (schema + profiler)
     "ontology.metric",     # an OntologyMetric (governed formula)
@@ -67,6 +73,32 @@ class Provenance(BaseModel):
     source: ProvenanceSource
     measured: Optional[float] = None  # e.g. join value_overlap; None ⇒ not a measurement
     note: str = ""
+    # CB-1 (2026-09-22) — a date on every fact. The names are the hub envelope's
+    # (`aughor.hub.provenance.Provenance`), so the platform's two provenance carriers
+    # agree on when. ``observed_at`` is when the SOURCE observed the fact — a finding's
+    # own ``generated_at``, the ontology build that profiled a table — never the moment
+    # the graph was rebuilt, so an old fact re-projected today keeps its date.
+    # ``observed_basis`` says which: "source" when the source carries a stamp, "build"
+    # when it carries none and the graph's own build time stands in (stated, not hidden).
+    observed_at: str = ""
+    observed_basis: ObservedBasis = ""
+    valid_until: str = ""
+    author: str = ""
+
+
+class FactRevision(BaseModel):
+    """CB-1 — what a node said before it changed: kept, not dropped. ``reason`` separates
+    two events that look alike (Codos's distinction, made deterministic): "changed" when the
+    source observed the fact anew (``observed_at`` moved — the launch moved), "corrected"
+    when the same observation now reads differently (``observed_at`` did not move — the
+    date was wrong). A fact stamped from the build can only ever read "changed", because a
+    rebuild is a new observation by construction."""
+    replaced_at: str
+    observed_at: str = ""
+    reason: Literal["changed", "corrected"]
+    label: str = ""
+    summary: str = ""
+    facts: dict = Field(default_factory=dict)
 
 
 class GraphNode(BaseModel):
@@ -80,6 +112,19 @@ class GraphNode(BaseModel):
     provenance: Provenance
     # Kind-specific payload — columns, formula_sql, source_tables, finding text, …
     data: dict = Field(default_factory=dict)
+    # CB-1 — the node's own history, carried across rebuilds by the store (`carry_history`):
+    # when it was first seen, when its FACT last changed, and what it said before (newest
+    # first, capped). A rebuild overwrote all of this before; git was the only history.
+    first_seen: str = ""
+    last_changed: str = ""
+    history: list[FactRevision] = Field(default_factory=list)
+
+
+class RetiredNode(BaseModel):
+    """CB-1 — a node a rebuild no longer emits, kept with its last state. Supersede, not
+    delete: idea 5 ("tell people an answer is no longer true") needs the fact that went."""
+    node: GraphNode
+    retired_at: str
 
 
 class GraphEdge(BaseModel):
@@ -122,6 +167,9 @@ class ContextGraph(BaseModel):
     version: int = 1
     nodes: dict[str, GraphNode] = Field(default_factory=dict)
     edges: dict[str, GraphEdge] = Field(default_factory=dict)
+    # CB-1 — nodes earlier builds emitted and this one does not, with their last state
+    # (newest-retired kept when the cap is hit). A node that returns takes its history back.
+    retired: dict[str, RetiredNode] = Field(default_factory=dict)
 
     # ── construction helpers ──────────────────────────────────────────────────
     def add_node(self, node: GraphNode) -> None:
@@ -193,6 +241,112 @@ def _edge_id(from_id: str, kind: str, to_id: str) -> str:
 
 # ── the projection ────────────────────────────────────────────────────────────
 
+# ── CB-1 · a date on every fact, and what it replaced ────────────────────────────
+#: The data keys that ARE the fact for each kind — what a revision records and what a change
+#: is judged on. Everything else in ``data`` (insight lists, consolidation marks, staleness)
+#: is about the fact, not the fact, and must not write history on every rebuild.
+FACT_FIELDS: dict[str, tuple[str, ...]] = {
+    "table": ("source_tables", "identity_key", "columns"),
+    "domain": ("members",),
+    "metric": ("formula_sql", "unit", "grain", "tables"),
+    "glossary_term": ("table", "column", "values", "caveats", "subject", "resolution_source", "evidence"),
+    "finding": ("sql", "tables"),
+    "brief": ("theme", "scope"),
+}
+HISTORY_CAP = 10
+RETIRED_CAP = 200
+
+
+def fact_facts(node: GraphNode) -> dict:
+    """The fact-bearing subset of ``node.data`` (see :data:`FACT_FIELDS`)."""
+    return {k: node.data.get(k) for k in FACT_FIELDS.get(node.kind, ()) if k in node.data}
+
+
+def fact_view(node: GraphNode) -> tuple:
+    """What a node SAYS — label, summary and its fact fields — compared across builds."""
+    return (node.label, node.summary, json.dumps(fact_facts(node), sort_keys=True, default=str))
+
+
+def stamp_observed(cg: ContextGraph, ontology=None) -> None:
+    """Give every node and edge an ``observed_at`` it does not already carry. A finding or a
+    brief keeps its own ``generated_at`` (basis "source"); a table, domain or metric takes the
+    ontology build that profiled it (basis "source"); anything the sources leave undated takes
+    the graph's build time and SAYS so (basis "build"). An edge is as old as the fact that
+    asserts it: it takes its ``from`` node's stamp."""
+    build = cg.generated_at
+    source_stamp = str(getattr(ontology, "generated_at", "") or "") if ontology is not None else ""
+    for node in cg.nodes.values():
+        p = node.provenance
+        if p.observed_at:
+            continue
+        own = str(node.data.get("generated_at") or "") if node.kind in ("finding", "brief") else ""
+        if own:
+            p.observed_at, p.observed_basis = own, "source"
+        elif source_stamp and node.kind in ("table", "domain", "metric"):
+            p.observed_at, p.observed_basis = source_stamp, "source"
+        else:
+            p.observed_at, p.observed_basis = build, "build"
+    for edge in cg.edges.values():
+        p = edge.provenance
+        if p.observed_at:
+            continue
+        src = cg.nodes.get(edge.from_id)
+        if src is not None and src.provenance.observed_at:
+            p.observed_at, p.observed_basis = src.provenance.observed_at, src.provenance.observed_basis
+        else:
+            p.observed_at, p.observed_basis = build, "build"
+
+
+def carry_history(graph: ContextGraph, prior: Optional[ContextGraph], *, now: str = "") -> dict:
+    """Carry each node's history from the graph a rebuild replaces, and record what changed.
+
+    For a node in both: ``first_seen`` and ``history`` come across; when its fact view differs
+    a :class:`FactRevision` holding the OLD reading is prepended, ``reason`` "corrected" if the
+    old and new ``observed_at`` agree (same observation, different words) and "changed"
+    otherwise. A node the prior held and this build does not is retired with its last state;
+    one that returns from ``retired`` takes its history back. Pure — the store calls it before
+    writing, a test calls it on two in-memory graphs. Returns the counts."""
+    now = now or graph.generated_at
+    stats = {"changed": 0, "corrected": 0, "retired": 0, "restored": 0}
+    if prior is None:
+        for node in graph.nodes.values():
+            node.first_seen = node.first_seen or node.provenance.observed_at or now
+        return stats
+    for nid, node in graph.nodes.items():
+        old = prior.nodes.get(nid)
+        restored = False
+        if old is None and nid in prior.retired:
+            old, restored = prior.retired[nid].node, True
+        if old is None:
+            node.first_seen = node.first_seen or node.provenance.observed_at or now
+            continue
+        node.first_seen = old.first_seen or old.provenance.observed_at or now
+        node.history = list(old.history)
+        node.last_changed = old.last_changed
+        if fact_view(node) != fact_view(old):
+            same_observation = bool(old.provenance.observed_at) and \
+                old.provenance.observed_at == node.provenance.observed_at
+            reason = "corrected" if same_observation else "changed"
+            node.history.insert(0, FactRevision(
+                replaced_at=now, observed_at=old.provenance.observed_at, reason=reason,
+                label=old.label, summary=old.summary, facts=fact_facts(old)))
+            del node.history[HISTORY_CAP:]
+            node.last_changed = now
+            stats[reason] += 1
+        if restored:
+            stats["restored"] += 1
+    retired = {k: v for k, v in prior.retired.items() if k not in graph.nodes}
+    for nid, old in prior.nodes.items():
+        if nid not in graph.nodes:
+            retired[nid] = RetiredNode(node=old, retired_at=now)
+            stats["retired"] += 1
+    if len(retired) > RETIRED_CAP:
+        keep = sorted(retired.items(), key=lambda kv: kv[1].retired_at, reverse=True)[:RETIRED_CAP]
+        retired = dict(keep)
+    graph.retired = retired
+    return stats
+
+
 def project_graph(
     ontology,
     *,
@@ -233,6 +387,7 @@ def project_graph(
     # Briefs last: their `derived_from` edges point at finding nodes, which must
     # already exist or the citation is dropped as dangling.
     _project_briefs(cg, briefs or [])
+    stamp_observed(cg, ontology)   # CB-1: after every projector, so no fact leaves undated
     return cg
 
 
@@ -512,7 +667,9 @@ def add_findings(cg: ContextGraph, findings: list) -> list[str]:
     the same receipt are byte-identical rather than two hand-kept-in-sync shapes.
     ``add_node``/``add_edge`` are id-keyed, so re-adding a finding supersedes it.
     """
-    return _project_findings(cg, findings)
+    emitted = _project_findings(cg, findings)
+    stamp_observed(cg)   # CB-1: the incremental path dates its findings like a full build does
+    return emitted
 
 
 def finding_node_data(f: dict) -> dict:
@@ -532,6 +689,8 @@ def finding_node_data(f: dict) -> dict:
     if f.get("supersedes"):
         data["supersedes"] = int(f["supersedes"])
         data["superseded_ids"] = list(f.get("superseded_ids") or [])
+        if f.get("superseded"):          # CB-1: what the survivor replaced, not only its ids
+            data["superseded"] = list(f["superseded"])
     if f.get("contested"):
         data["contested"] = True
         data["contested_variants"] = list(f.get("contested_variants") or [])

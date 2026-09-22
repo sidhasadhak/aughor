@@ -7139,6 +7139,174 @@ without an outbound grant; weights in the repo or installer; a second confidence
 `docs.typesafe.ai` and `typesafe.ai` were blocked by egress, and the study says which numbers are
 second-hand.
 
+### 3.21 · Arc CB — the company brain: what people SAY, checked against what the data SHOWS (drafted 2026-09-22 at the user's *"Once done, lets consider & plan for Codos roadmap items"* — §6 item 30, four answers; **REORDERED 2026-09-22 at the user's *"reorder it that way.. and lets build the foundation first.."*: the two waves that record what cannot be backfilled come first, then owners, then the rest; CB-1 STARTED the same day**; source: the **Codos idea set**, `IDEAS.md` 15–22, whose 36 cited starting points were re-verified on `1a8a3a88` the same day)
+
+**Thesis.** Codos builds a "company brain" from what employees write and say; Aughor's context graph is the same
+machinery over what the warehouse measures, and admits no model-inferred source. Aughor's company brain is therefore
+**said versus measured**: a claim a person makes comes in at the hub's `said` tier, the platform checks it against the
+data, agreement raises it to `measured`, disagreement becomes a question to its owner, and what cannot be checked stays
+visibly unknown. Everything else in the set is what that needs — owners a question can reach, a date on every fact, a
+place to put the action — plus two finishes of machinery that already exists and shows nothing.
+
+**Laws (standing, restated):** people edit the organisation's ontology and the platform never does (§6 item 20) · the
+hub owns meaning, not data (§3.18 law 1) — no crawling of Slack history or email bodies, judged not worth copying · a
+person is never linked by matching a display name (`identity/resolver.py`) · no model-inferred source enters the graph
+(`context_graph.py:40`) · a question is asked once and the answer remembered (`departure.answer_owner_question`).
+
+**Waves — in the user's order (2026-09-22, revised the same day): the foundations first — a date on every fact and the baseline at acceptance record what a running organisation cannot backfill, so they must exist BEFORE real traffic; owners next, because every later wave ends in a question to someone; then the finishes; the thesis last.** The earlier reading — "nobody has opened the Briefing, nobody has accepted a recommendation" — measured a one-person dev instance, not the design; the user's ruling is that the arc is judged by what it does for an organisation with real traffic, and by that bar it is the layer the platform lacks: who owns a number, what leadership is trying to do, what people claimed, what was decided, and whether it worked — with the one property Codos cannot have, that a claim is checked against the data.
+- ✅ **CB-1 · A date on every fact, and what it replaced** (idea 16) — **BUILT 2026-09-22** (`claude/arc-cb-foundation`).
+  The graph's `Provenance` carries the hub envelope's names — `observed_at`, `valid_until`, `author` — plus `observed_basis`,
+  which says whether the date is the SOURCE's own stamp (a finding's `generated_at`, the ontology build that profiled a
+  table) or the build's, stated because the source carries none. An old finding re-projected today keeps its own date; an
+  edge is as old as the fact that asserts it. `carry_history` (pure; the store calls it before every write) brings each
+  node's `first_seen`, `last_changed` and `history` across a rebuild: a changed fact keeps its old reading as a
+  `FactRevision` whose `reason` is *changed* when the observation moved and *corrected* when the same observation now
+  reads differently (Codos's two events, made deterministic; a build-stamped fact can only ever read *changed*); what IS
+  the fact per kind is `FACT_FIELDS` (a table's columns, a metric's formula, a finding's text and SQL — never an insight
+  list or a staleness mark, which would write history on every rebuild). A node a rebuild no longer emits is `retired`
+  with its last state (cap 200, newest kept) and takes its history back when it returns. Consolidation keeps a superseded
+  finding's text, not only its id. Receipts: `tests/unit/test_context_graph_dated_facts.py` (16) + the parity test
+  updated (the projector is still one shape; the store carries the history). ✅ **LIVE RECEIPT 2026-09-22 21:21Z** (a
+  forced refresh of theLook's graph on the scratch copy, API stopped, one writer): version 108 → 109; **93 of 93 nodes and 27
+  of 27 edges dated** (27 from their source's own stamp — tables and domains from the ontology build of 2026-09-18, findings
+  from their `generated_at` back to 2026-08-27 — 66 from the build, stated); **41 revisions kept**, every one a glossary
+  definition the rebuild reworded (the old text survives on the node, reason *changed*); **200 nodes retired with their
+  last state** — the cap, because the rebuild emitted 93 nodes where the prior graph held 275. ⚠️ Adjacent, not fixed: a
+  full rebuild does not re-emit findings that were NOTED incrementally (`note_finding`) — 180-odd of them went from the
+  live graph on this rebuild; before CB-1 they vanished without a trace, now they sit in `retired`. `first_seen` reads
+  2026-09-22 for every node because the graph it replaced carried no dates — the first dated build starts the clock.
+  ⏳ Owed: the dates and history on a screen — they land with the map below.
+- ✅ **CB-2 · Decide when to ask whether a recommendation worked, when it is accepted** (idea 22) — **BUILT 2026-09-22**.
+  The report now carries `spec`, the intake's MEASURABLE definition (metric SQL, table, date column, window length) — what
+  a baseline and a review are measured with, recorded from day one because it cannot be backfilled. Accepting through the
+  inbox door measures the metric NOW over a same-length window ending yesterday (`outcomes.record_acceptance`; canonical
+  SQL rendered native through `db.dialects.native_sql`, one runner in `db.measure`), and sets `review_at` (default 30 days,
+  `review_days` on the request). A definition the answer cannot measure alone — a metric whose SQL or date column reaches
+  another table — is REFUSED with the reason on the record, never guessed. The heartbeat runs due reviews hourly
+  (`scheduler.run_due_reviews_hourly`): measures again, writes `review_value` and the question, and asks **the metric's
+  owner** when the catalog names one the router can reach, else the person who accepted (`accepted_by`, the request's
+  principal) — each once. The inbox shows the baseline, the review date and the question; marking *verified* or
+  *rejected* is the answer, and it keeps everything acceptance recorded (`log_outcome` merges; before/after default to
+  the two measurements, so idea 13 has its numbers). Receipts: `tests/unit/test_recommendation_review.py` (20) · tsc, six
+  lints, vitest 1,132 green. ✅ **LIVE RECEIPT 2026-09-22 21:19Z** (scratch pair on a copy of the data, theLook, BigQuery): a
+  fresh deep run (`0b0575f9`, 13 min) wrote `spec` on its report (`SUM(sale_price)` on `order_items` by `created_at`); accepting
+  through the door measured the baseline on BigQuery — **10,710,477.39** — and set the review date; the review date moved
+  into the past and one `GET /cron/tick` ran the review: measured again on BigQuery, wrote the question (*"You accepted …
+  total sales was … then; it is … now. Did it work?"*), before/after filled, asked once. Two defects the receipt found,
+  fixed the same hour (`033899c8`): the cross-sectional run's observation window was the whole coverage (**2,808 days**) —
+  a baseline over all history answers nothing, so a window past a year takes four weeks and says `window_basis: default`;
+  and the question printed `1.07105e+07`. ⚠️ Adjacent, not fixed: the outcome door accepts a `rec_index` the report does not
+  have (this report carried 0 recommendations; the receipt accepted "{}"); and on an identity-off instance `accepted_by`
+  is empty, so the question reaches nobody — CB-3's owners are what makes it reach someone. This closes the open call *"when is a person asked
+  whether a recommendation WORKED?"* — at the moment it is accepted.
+- ✅ **CB-3 · Owners the platform can reach** (idea 18) — **BUILT 2026-09-22**. An owner text ("Ana (logistics)",
+  "Revenue team") is linked to a principal ONCE, by a person, in Settings ▸ Organization ▸ *Owners the platform can reach*
+  (`rbac/owners.py`, rows in `rbac.db` keyed by the casefolded text; doors `GET /owners`, `PUT`/`DELETE /owners/links`).
+  `owner_principal` reads the link after the principal spelling, so every owner field carrying that text routes —
+  departures (`route`), the review's question (CB-2) — with no YAML rewritten. **Never by matching a name**: a link
+  resolves exactly the text it was written for (not "Ana", not the address inside the principal, not a looser
+  spelling), and nothing searches users. The glossary takes an `owner` on a table and a column (`PUT /glossary/…`).
+  The inventory names every owner in use across the metrics catalog, each connection's processes and rules, and the
+  glossary, with its uses and its resolution (*as written* · *linked by whom* · *unresolved*), the unresolved first —
+  the map's "owners reachable: N of M". Where a question would have gone to an unresolved owner, the record now says
+  so ("owner 'Ana (logistics)' of late dispatch is not linked to a person; asked the accepter instead"). Receipts:
+  `tests/unit/test_owner_links.py` (13) + `OwnersPanel.test.tsx` (3); tsc, six lints, vitest green. ✅ **LIVE RECEIPT
+  2026-09-22 21:5xZ** (scratch pair on a copy of the data): `GET /owners` found **7 owners in use, 7 unresolved** — `finance`
+  (3 rules), `customer_care` (a process and a rule), `Revenue team` (2 metrics), `crm`, `merchandising`, `operations`,
+  `risk` — every one a display word no question could reach. Linking `finance` to a principal made `GET /access/route`
+  for `rule:completed_orders` answer that principal ("owner of rule:completed_orders"); a bare name was refused (422);
+  unlinking emptied the route again. The map's first count: owners reachable 0 of 7 on this deployment, until people link
+  them. ⏳ Screenshot of the panel owed — the browser pane is hidden in this session.
+- ✅ **CB-4 · Remember a rejected duplicate** (idea 19) — **BUILT 2026-09-23**. `GET /ontology/duplicate-entities` recomputed the
+  same clusters on every read and nothing recorded a "no, these are different". Now `POST …/duplicate-entities/reject`
+  records it — the unordered pair, the reason, who said so — in the people's-decisions tree beside dismissed
+  recommendations (`ontology/dedup_decisions.py`, `{conn}/{schema}/rejected_duplicates.yaml`), and the read applies it: a
+  cluster whose every pair was rejected is hidden and counted, a larger cluster with one pair rejected stays annotated
+  (its other pairs were never judged), `DELETE` reconsiders. Detection stays pure. The drawer has *Not duplicates* with a
+  reason, shows "already judged different" inside a surviving cluster, and lists what was judged earlier with *Reconsider*
+  (both `<Button>` — the raw-element ratchet holds at 55). Receipts: `tests/unit/test_dedup_rejections.py` (9); tsc, six
+  lints, vitest green. No live receipt is possible on this deployment: theLook and LuxExperience suggest 0 clusters today
+  (measured 2026-09-22), so the door tests are the receipt.
+- ✅ **CB-5 · Show how much of the business the platform can see** (idea 15) — **BUILT 2026-09-23**. `GET /visibility`
+  (`ontology/visibility.py`) is the number and the gap for one connection: the share of tables the ontology maps against the
+  PROFILER's universe (`profile_cache.latest_profiled_tables`; a never-profiled connection says its denominator is unknown
+  rather than reporting 100%), declared exclusions out of the denominator (`PUT`/`DELETE /visibility/exclusions`, one of the
+  honest reasons, kept in the people's-decisions tree), the joins measured rather than name-matched (`graph_warrant.audit`),
+  and the held sends grouped by the definition that would clear them — the departure gate now records the missing
+  definitions structurally (`checks.definition_missing`; older rows are read back from the guard's own sentence). The
+  ontology header says it in one line (`VisibilityLine`). Receipts: `tests/unit/test_visibility.py` (9); tsc, six lints,
+  vitest 1,137 green. ✅ **LIVE RECEIPT 2026-09-23** (scratch pair on a copy of the data): theLook — *joins measured 4 of 9
+  · approve `revenue` and 2 held sends unblock* (the 2026-09-18 case, read from its rows; `aov` and `units_sold` hold one
+  each); LuxExperience — joins measured 13 of 13, nothing held. ⚠️ Adjacent, not fixed: the profiler's cache holds no entry
+  for either BigQuery connection (it has only the uploads), so the table share reads *denominator unknown* on the two
+  connections that matter most — the honest answer, and the next thing to fix before the map shows a table share.
+- ✅ **CB-6 · What the company is trying to do this quarter** (idea 21) — **BUILT 2026-09-23**. `OrgSettings.priorities`
+  (metric, target, which way is good, by when, note) — written by people in Settings ▸ Organization ▸ *This quarter's
+  priorities* (`OrgPrioritiesSection`), never inferred; a workspace with none inherits the organisation's. `triage.impact_score`
+  weighs a finding that clearly names a declared priority as it weighs a north-star hit, on top of it (`_W_PRIORITY`, the
+  north-star word rule, so a bare 'orders' is no 'average order value' goal); the narrator's context carries DECLARED
+  PRIORITIES THIS QUARTER and each citation says the goal it bears on (`priority`), which the brief shows. Receipts:
+  `tests/unit/test_priorities.py` (6). ✅ Live: the settings door on the scratch pair saved *total sales, up 10% vs last
+  quarter, up is good, by Q4*. ✅ **BRIEF RECEIPT 2026-09-23 (the user: "Run the brief receipt on Gemini models")**: the
+  explorer ran on theLook on the scratch pair with `gemini-3.1-flash-lite` (the deployment's own pinned Gemini default) to 16
+  findings, then one brief: the narrator wrote the goal INTO the synthesis — *"…must be streamlined to support the 10%
+  quarterly sales growth target [1]"* — from the DECLARED PRIORITIES block. The per-citation `priority` tag stayed empty on
+  all eight: the findings say *revenue* and *AOV*, never *total sales*, and the tag holds the north-star word rule on
+  purpose (a tag that guessed would be worse than none). The explorer was stopped after the brief to cap the spend.
+- ✅ **CB-7 · One action beside each Briefing item** (idea 20) — **BUILT 2026-09-23**. `briefing.best_action_for`: the cited
+  investigation's own first recommendation when the item came from one (executable through the inbox's gated door —
+  the brief links to it), else the playbook's best play for the finding's labels by learned success rate, read for the
+  brief's industry only (`industry_scope`) — a suggestion, never fired on its own; an item with neither carries none.
+  Each citation carries `action`; `BriefActions` renders the line under the synthesis. Receipts: `tests/unit/
+  test_brief_actions.py` (5) + `BriefActions.test.tsx` (3). ⚠️ Honest limit: today's exploration insights carry no
+  investigation id, so the executable branch is rare and most items get a play; "the same gated path" therefore means
+  the brief points AT the inbox's door rather than firing through it. ✅ **BRIEF RECEIPT 2026-09-23** (same brief as CB-6's):
+  all eight citations carried an action, every one a playbook play, every one at learned success rate **0.0** — no outcome has
+  ever been recorded on this deployment, so nothing has been learned yet — and the nearest plays were poor fits (a delivery-time
+  finding drew *"Concentration risk up, churn_rate up…"*): the retriever matches on angle and domain, and until CB-2's reviews
+  accumulate the "best" play is the nearest, not the proven. The mechanism is live; its quality is what the outcome loop is
+  for. ⚠️ Adjacent: the action's relevance needs a better label than the finding's angle — the finding's metric, once the
+  explorer names one — before the line is worth a reader's trust.
+- ✅ **CB-8 · Said versus measured** (idea 17) — **BUILT 2026-09-23**, first source **filed Slack thread replies** (the user's
+  call). `hub/claims.check_claim`: the numbers a reply states, checked against the measures its thread was filed with
+  (`links.metrics_at_filing` — the promise's breached/reached/breach rate; a rate said as a percentage matches its
+  fraction). Agreement raises the note to **measured** (authority `measured`, verification `measured`); disagreement makes
+  it **contradicted** and writes the owner's question (*"You said 412 about promise:…; the platform measured 0 (breached)
+  when the thread was filed. Which is right?"*), resolved the CB-3 way and saying when it has nowhere to go; no number or
+  nothing measured stays **unchecked**. The check rides the staged note (`check` on the row; `GET /arrivals/notes`
+  shows it; `GET /arrivals/claims` counts per verification and lists every contradiction). `hub/injection`: the first kind
+  through the gate is `conversation:measured` — a note the data confirmed reaches a prompt ("CONTEXT FROM PEOPLE, CHECKED
+  AGAINST THE DATA"); a said, unchecked or contradicted note still never does, and the `conversation` kind as a whole still
+  waits on measured lift (HB-4's law amended, its test rewritten to say so). Receipts: `tests/unit/test_claims.py` (9).
+  ✅ **LIVE RECEIPT 2026-09-23** (scratch pair, LuxExperience): a thread filed on `promise:order_to_shipment.shipping` (0
+  breached of 107,903 at filing); a reply saying *"we breached on 0 orders, breach rate 0.0%"* read **measured**; a reply
+  saying *412* read **contradicted** with the question above — to nobody, because the promise's owner `operations` is not
+  linked (CB-3's inventory already said so). ⚠️ Adjacent, not fixed: a note is ONE record per object (`_stage` keys by
+  target), so the latest reply's check overwrites the earlier one's — the claims count is per object, not per reply.
+
+**The map — what Aughor offers in place of Codos's "Deploy the company brain" diagram (the user, 2026-09-22: *"lets keep this
+diagram in mind and build one that aughor would offer.. a real, provable one"*).** Theirs: sources → raw data → four
+observers (people, product, operations, market) → a merge-judge (dedup, resolve, write plan) → three vaults (company:
+stable facts · engagement: operational record · working memory: synthesis and priorities). Ours has the same four layers
+and one rule: **every box is a store that exists, with a door and a live count, and every arrow is a measurement** — so
+the map is a screen, never a picture. **Sources:** the warehouse connections, dbt and the glossary, the metrics catalog,
+the industry packages, what people declared (the organisation ontology), filed Slack threads and uploaded documents.
+**Observers:** the profiler, the explorer, the join guard, the investigation engine, the departure gate, the prose mapper.
+**The judge** (theirs merges; ours measures): the authority ladder `measured > approved > declared > said > inferred`,
+`verify_numeric_claims`, finding consolidation (dedup, supersede, contested), ambiguity resolution, gate 4. **Vaults:**
+*company* = the context graph — dated (CB-1), with what it replaced — plus the measured ontology and the approved metrics;
+*engagement* = investigations, decisions, accepted recommendations with their baselines and outcomes (CB-2), the audit;
+*working memory* = the quarter's priorities (CB-6), the north-star metrics, the business profile. Each wave lands its
+count on the map: facts dated · claims checked · owners reachable · outcomes measured · sends held for a missing
+definition. **Built as the arc's own surface once CB-1..CB-3 give it numbers to show; until then it is this paragraph.**
+
+**What each wave must show before the next starts:** a live receipt on theLook or LuxExperience, a mutation test on
+every new guard, and the §3 line updated the same day (a prose claim in §3 rots silently — §7).
+
+**Refused with the set:** crawling Slack history or email bodies · entering the EnterpriseRAG-Bench race (their graph
+adds ~4.5 points over plain agentic file search, by their own numbers).
+
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -8085,6 +8253,9 @@ the browser** · **measure the premise before building.**
 > arming. 24(f) email holds for the OAuth client; 24(g) §0's amendment adopted. 25(a) stamped as shipped, and (c),
 > (d), (e) offered and not chosen. 28 adopted — (a), (c), (f) — with JD-5 and JD-6 on hold. **The register is back
 > at zero open.**
+> **Amended 2026-09-22:** item 30 (Arc CB — the company brain, from the Codos idea set) arrived at the user's
+> *"consider & plan"* and was answered in the same turn, four clauses; §3.21 drafted on those answers. Zero open.
+> **Amended 2026-09-22, later:** item 30(a) REVISED by the user — foundations first (dated facts, the acceptance baseline, then owners), after the builder's "is this overdone?" reading was ruled to have measured the dev instance and not the design; CB-1 started.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -8641,6 +8812,17 @@ the browser** · **measure the premise before building.**
     production can no longer do) and was rewritten. Suite 11,293 passed, 0 failed, pytest exit 0.
     `web/lib/departures.ts` carries the guard in both maps, verified by INSPECTION and not by running —
     that worktree had no `node_modules`.
+
+30. ✅ **DRAFTED 2026-09-22 (the user: *"Once done, lets consider & plan for Codos roadmap items"*) — Arc CB, the
+    company brain (§3.21): four answers that shape it, given before the draft was written.** (a) **Order — finish what
+    exists first**, as recommended — **REVISED 2026-09-22, later, by the user: foundations first** (CB-1 dated facts, CB-2 the acceptance baseline and review, CB-3 owners), because those record what a running organisation cannot backfill; the original reading follows: CB-1/CB-2 (a rejected duplicate remembered; the coverage number and "fix this one")
+    ship in days with no model call; foundations next; the thesis last. (b) **Who is asked whether a recommendation
+    worked — the METRIC'S OWNER**, *not* as recommended (the recommendation was the accepting person, which needed no
+    owner resolution). Consequence: idea 22 (CB-4) moves behind owners (CB-3); the accepting person is asked only while
+    the owner is unresolved. (c) **The quarter's priorities live in organisation settings**, as recommended — people
+    write them, they already win over inference. (d) **The first "said" source is filed Slack thread replies**, as
+    recommended — they already arrive; uploaded documents (idea 7) follow. Nothing started; the register stays at zero
+    OPEN — every clause is answered.
 
 ---
 

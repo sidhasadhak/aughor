@@ -660,12 +660,14 @@ class UpdateTableRequest(BaseModel):
     description: Optional[str] = None
     grain: Optional[str] = None
     joins: Optional[list[str]] = None
+    owner: Optional[str] = None      # CB-3: who is responsible — free text, linkable to a principal
 
 
 class UpdateColumnRequest(BaseModel):
     description: Optional[str] = None
     values: Optional[str] = None
     caveats: Optional[str] = None
+    owner: Optional[str] = None      # CB-3
 
 
 # `schema` rides as a QUERY param, not a path segment: `/glossary/{table}` and
@@ -676,7 +678,7 @@ class UpdateColumnRequest(BaseModel):
 @router.put("/glossary/{table}")
 def put_table_glossary(table: str, req: UpdateTableRequest, schema: Optional[str] = None):
     update_table(table, description=req.description, grain=req.grain, joins=req.joins,
-                 schema=schema)
+                 schema=schema, owner=req.owner)
     return {"ok": True, "table": table, "schema": schema}
 
 
@@ -684,7 +686,7 @@ def put_table_glossary(table: str, req: UpdateTableRequest, schema: Optional[str
 def put_column_glossary(table: str, column: str, req: UpdateColumnRequest,
                         schema: Optional[str] = None):
     update_column(table, column, description=req.description, values=req.values,
-                  caveats=req.caveats, schema=schema)
+                  caveats=req.caveats, schema=schema, owner=req.owner)
     return {"ok": True, "table": table, "column": column, "schema": schema}
 
 

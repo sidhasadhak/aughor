@@ -161,7 +161,24 @@ function ActionRow({
       <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-[var(--r-pill)] bg-zinc-800 border border-zinc-600 aug-fs-xs font-mono text-zinc-400 mt-0.5">
         {index + 1}
       </span>
-      <p className="text-sm text-zinc-300 leading-snug flex-1">{text}</p>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-zinc-300 leading-snug">{text}</p>
+        {/* CB-2 — what acceptance decided: the baseline measured then, and the review date. */}
+        {outcome?.baseline_at && (
+          <p className="mt-1 aug-fs-xs text-zinc-500">
+            {outcome.baseline_value != null
+              ? `Baseline ${outcome.metric_name ?? "metric"} ${outcome.baseline_value} (${outcome.baseline_window})`
+              : `Baseline not measured${outcome.review_note ? `: ${outcome.review_note}` : ""}`}
+            {outcome.review_at ? ` · review on ${outcome.review_at.slice(0, 10)}` : ""}
+          </p>
+        )}
+        {/* CB-2 — the review ran: the question, answered by marking verified or rejected. */}
+        {outcome?.review_question && isPending && (
+          <p className="mt-1 aug-fs-xs text-zinc-200">
+            {outcome.review_question} Mark it verified or rejected.
+          </p>
+        )}
+      </div>
       <ExecuteButton invId={invId} index={index} text={text} />
       <div className="shrink-0 relative">
         {current ? (

@@ -308,6 +308,9 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
     checks = {g: found[g].summary for g in GUARDS}
     if held_lines:
         checks["held_lines"] = " · ".join(held_lines)
+    missing = list(found["definition"].detail.get("missing") or [])
+    if missing:
+        checks["definition_missing"] = " · ".join(missing)     # CB-5: what would clear the hold
     guards = {g: found[g].outcome for g in GUARDS}
     as_of = str(found["freshness"].detail.get("as_of") or "")
     cited = list(found["definition"].detail.get("cited") or [])
@@ -570,13 +573,14 @@ def _definition(text: str, conn_id: str, about: str, declared: str) -> _Check:
                             f"been measured")
         else:
             cited.append(f"{thing['label']} (declared, measured)")
+    unapproved: set[str] = set()
+    inferred: list[str] = []
     if conn_id:
         from aughor.explorer.metric_coherence import asserted_governed_metrics
         from aughor.semantic.enforcement import propose_undefined_metrics
         from aughor.semantic.metrics import list_metrics
         catalog = list_metrics(connection_id=conn_id)
         approved = [m for m in catalog if metric_is_approved(m)]
-        unapproved: set[str] = set()
         named = []
         if about.startswith("metric:"):
             # The metric the sender DECLARES it measured (a monitor's metric), judged from
@@ -594,7 +598,6 @@ def _definition(text: str, conn_id: str, about: str, declared: str) -> _Check:
                 status = str(getattr(m, "status", "") or "") or "unapproved"
                 problems.append(f"{name} is stated with a number and its definition is "
                                 f"{status}, not approved")
-        inferred: list[str] = []
         for clause in clauses:
             for undefined in propose_undefined_metrics(clause, approved):
                 phrase, slug = undefined["phrase"], undefined["slug"]
@@ -605,9 +608,12 @@ def _definition(text: str, conn_id: str, about: str, declared: str) -> _Check:
             problems.extend(f"'{p}' is stated with a number and no approved metric defines it "
                             f"on this connection" for p in inferred)
     if problems:
+        # CB-5: the definitions that would clear this hold, structurally — so "approve `revenue` and
+        # N sends unblock" is counted from the record, never parsed out of the sentence.
+        missing = sorted(unapproved) + [p for p in inferred if p not in unapproved]
         return _Check(HOLDS, "; ".join(problems),
                       "a number leaves only citing an approved definition, never an inferred "
-                      "one: " + "; ".join(problems), detail={"cited": cited})
+                      "one: " + "; ".join(problems), detail={"cited": cited, "missing": missing})
     if cited:
         return _Check(PASSED, "cites " + ", ".join(cited), detail={"cited": cited})
     return _Check(NOT_APPLICABLE, "no defined measure is named beside a number",

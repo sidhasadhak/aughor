@@ -193,7 +193,12 @@ export interface OrgSettings {
   chart_palette: string;
   /** CA-5 — land on the conversation instead of the workbench. */
   chat_first_home: boolean;
+  /** CB-6 — what the organisation is trying to do this quarter, written by people. */
+  priorities: Priority[];
 }
+
+/** CB-6 — one declared priority: the metric it names, the target, which way is good, by when. */
+export interface Priority { metric: string; target: string; direction: "" | "up" | "down"; by: string; note: string }
 
 export async function getOrgSettings(): Promise<OrgSettings> {
   const res = await fetch(`${getApiBase()}/org-settings`);
@@ -1637,7 +1642,48 @@ export async function getConnectionTour(connectionId: string, schemaName?: strin
 // ── Duplicate-entity detection + merge (Borrow 5) ─────────────────────────────
 
 export interface DuplicateEntityRef { id: string; display_name: string; source_tables: string[] }
-export interface DuplicateCluster { entities: DuplicateEntityRef[]; similarity: number }
+export interface DuplicateCluster {
+  entities: DuplicateEntityRef[];
+  similarity: number;
+  // CB-4 — pairs inside this cluster a person already said are different (the rest were never judged).
+  rejected_pairs?: { pair: [string, string]; reason: string }[];
+}
+// CB-4 — a rejected pair, remembered with its reason and who said so.
+export interface RejectedDuplicate { pair: [string, string]; reason: string; rejected_by: string; rejected_at: string }
+export interface DuplicateSuggestions { clusters: DuplicateCluster[]; hidden: number; rejected: RejectedDuplicate[] }
+
+export async function getDuplicateSuggestions(
+  connectionId: string, schemaName?: string, threshold?: number,
+): Promise<DuplicateSuggestions> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  if (threshold != null) q.set("threshold", String(threshold));
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities?${q}`);
+  if (!res.ok) throw new Error("Failed to load duplicate suggestions");
+  const body = await res.json();
+  return { clusters: body.clusters ?? [], hidden: body.hidden ?? 0, rejected: body.rejected ?? [] };
+}
+
+export async function rejectDuplicateEntities(
+  connectionId: string, entityIds: string[], reason: string, schemaName?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities/reject?${q}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entity_ids: entityIds, reason }),
+  });
+  if (!res.ok) throw new Error("Couldn't record the rejection");
+}
+
+export async function reconsiderDuplicatePair(
+  connectionId: string, a: string, b: string, schemaName?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId, a, b });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities/reject?${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Couldn't take the rejection back");
+}
 
 export async function getDuplicateEntities(
   connectionId: string, schemaName?: string, threshold?: number,
@@ -2466,6 +2512,71 @@ export async function getEntityLifecycleCounts(
 
 export type RecStatus = "accepted" | "rejected" | "implemented" | "verified" | "dismissed";
 
+// ── CB-5 — how much of the business the platform can see ───────────────────
+export interface VisibilityTables {
+  total: number; mapped: number; excluded: number; in_scope: number;
+  share: number | null; band: "green" | "orange" | "red" | "unknown";
+  basis: "profiler" | "unknown"; unmapped: string[];
+  exclusions: { table: string; reason: string; note: string; declared_by: string }[];
+  note: string;
+}
+export interface DefinitionHold { definition: string; holds: number; automations: string[]; latest: string }
+export interface Visibility {
+  tables: VisibilityTables;
+  joins: { total: number; measured: number; share: number } | null;
+  definitions: DefinitionHold[];
+  top_blocker: DefinitionHold | null;
+  line: string;
+  exclusion_reasons: string[];
+}
+
+export async function getVisibility(connectionId: string, schemaName?: string): Promise<Visibility> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/visibility?${q}`);
+  if (!res.ok) throw new Error(`getVisibility failed: ${res.status}`);
+  return res.json();
+}
+
+// ── CB-3 — owners the platform can reach ───────────────────────────────────
+export interface OwnerUse { kind: string; id: string; connection_id: string }
+export interface OwnerEntry {
+  owner_text: string;
+  owner_key: string;
+  uses: OwnerUse[];
+  principal: string | null;
+  resolved: boolean;
+  how: "principal" | "linked" | "unresolved";
+  linked_by: string;
+  linked_at: string;
+}
+export interface OwnerLink { owner_text: string; owner_key: string; principal: string; linked_by: string; linked_at: string }
+
+export async function listOwners(connectionId?: string): Promise<{ owners: OwnerEntry[]; links: OwnerLink[] }> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/owners${qs}`);
+  if (!res.ok) throw new Error(`listOwners failed: ${res.status}`);
+  return res.json();
+}
+
+export async function linkOwner(ownerText: string, principal: string): Promise<OwnerLink> {
+  const res = await fetch(`${getApiBase()}/owners/links`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner_text: ownerText, principal }),
+  });
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try { detail = (await res.json()).detail ?? detail; } catch { /* keep the status */ }
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export async function unlinkOwner(ownerText: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/owners/links?owner_text=${encodeURIComponent(ownerText)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`unlinkOwner failed: ${res.status}`);
+}
+
 export interface RecOutcome {
   id: string;
   inv_id: string;
@@ -2477,6 +2588,23 @@ export interface RecOutcome {
   metric_after: number | null;
   created_at: string;
   updated_at: string;
+  // CB-2 (2026-09-22) — the baseline recorded at acceptance and the scheduled review.
+  connection_id?: string;
+  accepted_by?: string;
+  spec?: { metric_label?: string; metric_sql?: string; metric_table?: string; date_column?: string;
+           window_days?: number } | null;
+  baseline_value?: number | null;
+  baseline_at?: string;
+  baseline_window?: string;
+  review_days?: number;
+  review_at?: string;
+  review_value?: number | null;
+  reviewed_at?: string;
+  review_window?: string;
+  review_question?: string;
+  review_asked_to?: string;
+  review_asked_at?: string;
+  review_note?: string;
 }
 
 export async function logOutcome(
@@ -5383,6 +5511,24 @@ export interface BriefingCitation {
   domain: string;
   angle: string;
   finding: string;
+  /** CB-6 — the declared goal this finding bears on, or "". */
+  priority?: string;
+  /** CB-7 — the one action beside this item, or null. */
+  action?: BriefAction | null;
+}
+
+/** CB-7 — the single best action beside a Briefing item: the first recommendation of the deep analysis the
+ * finding came from (executable through the inbox's gated door) or the playbook's best play (a suggestion). */
+export interface BriefAction {
+  kind: "recommendation" | "play";
+  text: string;
+  why: string;
+  executable: boolean;
+  inv_id?: string;
+  rec_index?: number;
+  id?: string;
+  when?: string;
+  success_rate?: number;
 }
 
 /** A candidate finding the trust gate kept out of the brief — surfaced as an audit trail.

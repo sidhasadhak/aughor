@@ -58,7 +58,7 @@ def effective_settings(workspace_id: Optional[str] = None) -> OrgSettings:
                      counter="orgsettings.override_read_failed")
             override = {}
         for k, v in override.items():
-            if k in base and v not in (None, ""):
+            if k in base and v not in (None, "", []):    # an empty list inherits too (CB-6 priorities)
                 base[k] = v
     return OrgSettings(**base)
 

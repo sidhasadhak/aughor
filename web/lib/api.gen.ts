@@ -871,6 +871,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/arrivals/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Arrival Claims
+         * @description CB-8 — what people said, by what the data made of it: counts per verification and every
+         *     contradiction with the question it raised and who it went to. The map's 'claims checked' count.
+         */
+        get: operations["arrival_claims_arrivals_claims_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/arrivals/notes": {
         parameters: {
             query?: never;
@@ -8610,6 +8631,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/duplicate-entities/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Duplicate Entities
+         * @description CB-4 — "these are different": record it, with the reason and who said so, so the pair is not
+         *     suggested again. Two or more ids; every pair among them is rejected.
+         */
+        post: operations["reject_duplicate_entities_ontology_duplicate_entities_reject_post"];
+        /**
+         * Reconsider Duplicate Entities
+         * @description CB-4 — take a rejection back; the pair may be suggested again.
+         */
+        delete: operations["reconsider_duplicate_entities_ontology_duplicate_entities_reject_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities": {
         parameters: {
             query?: never;
@@ -9895,6 +9941,45 @@ export interface paths {
          */
         post: operations["record_overview_drill_overview_drill_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/owners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Owners
+         * @description Every owner in use, resolved or not, with its uses. ``connection_id`` narrows the ontology
+         *     read to one connection (the catalog and the glossary are org-wide either way).
+         */
+        get: operations["list_owners_owners_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/owners/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Owner Link */
+        put: operations["put_owner_link_owners_links_put"];
+        post?: never;
+        /** Delete Owner Link */
+        delete: operations["delete_owner_link_owners_links_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -11623,6 +11708,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Visibility */
+        get: operations["get_visibility_visibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/visibility/exclusions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Exclusion */
+        put: operations["put_exclusion_visibility_exclusions_put"];
+        post?: never;
+        /** Delete Exclusion */
+        delete: operations["delete_exclusion_visibility_exclusions_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/viz-configs": {
         parameters: {
             query?: never;
@@ -12966,6 +13086,18 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** ExclusionRequest */
+        ExclusionRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Reason */
+            reason: string;
+            /** Table */
+            table: string;
+        };
         /** ExecuteRequest */
         ExecuteRequest: {
             /**
@@ -13767,6 +13899,11 @@ export interface components {
              */
             industry: string;
             /**
+             * Priorities
+             * @description What the organisation is trying to do this quarter — written by people, never inferred.
+             */
+            priorities?: components["schemas"]["Priority"][];
+            /**
              * Timezone
              * @description IANA timezone, e.g. 'Europe/London'. Empty = UTC.
              * @default
@@ -13789,6 +13926,8 @@ export interface components {
             metric_name?: string | null;
             /** Rec Text */
             rec_text: string;
+            /** Review Days */
+            review_days?: number | null;
             /** Status */
             status: string;
         };
@@ -13816,6 +13955,13 @@ export interface components {
              * @default
              */
             table: string;
+        };
+        /** OwnerLinkRequest */
+        OwnerLinkRequest: {
+            /** Owner Text */
+            owner_text: string;
+            /** Principal */
+            principal: string;
         };
         /** PauseRequest */
         PauseRequest: {
@@ -13955,6 +14101,44 @@ export interface components {
         PreferenceValue: {
             /** Value */
             value?: unknown;
+        };
+        /**
+         * Priority
+         * @description CB-6 — one thing the organisation is trying to do this quarter, written by a person: the
+         *     metric it names, the target, which way is good, by when. Triage counts a finding that bears
+         *     on one; the Briefing says so. Never inferred — people write these (§6 item 20's rule).
+         */
+        Priority: {
+            /**
+             * By
+             * @description By when, as written: 'Q4', '2026-12-31'
+             * @default
+             */
+            by: string;
+            /**
+             * Direction
+             * @description Which way is good
+             * @default
+             * @enum {string}
+             */
+            direction: "" | "up" | "down";
+            /**
+             * Metric
+             * @description The metric the goal names, as people say it: 'return rate', 'net revenue'
+             */
+            metric: string;
+            /**
+             * Note
+             * @description Why it matters, one line
+             * @default
+             */
+            note: string;
+            /**
+             * Target
+             * @description The target, as written: '< 8%', '£1.2M', 'down 10%'
+             * @default
+             */
+            target: string;
         };
         /** ProposeIn */
         ProposeIn: {
@@ -14666,6 +14850,8 @@ export interface components {
             caveats?: string | null;
             /** Description */
             description?: string | null;
+            /** Owner */
+            owner?: string | null;
             /** Values */
             values?: string | null;
         };
@@ -14717,6 +14903,8 @@ export interface components {
             grain?: string | null;
             /** Joins */
             joins?: string[] | null;
+            /** Owner */
+            owner?: string | null;
         };
         /** UpdateWorkspaceRequest */
         UpdateWorkspaceRequest: {
@@ -15720,6 +15908,16 @@ export interface components {
             error: string;
             /** Sql */
             sql: string;
+        };
+        /** _RejectDuplicates */
+        _RejectDuplicates: {
+            /** Entity Ids */
+            entity_ids: string[];
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** _RestoreVersionRequest */
         _RestoreVersionRequest: {
@@ -17629,6 +17827,37 @@ export interface operations {
                 "application/json": components["schemas"]["AllowRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arrival_claims_arrivals_claims_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -30690,6 +30919,76 @@ export interface operations {
             };
         };
     };
+    reject_duplicate_entities_ontology_duplicate_entities_reject_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_RejectDuplicates"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconsider_duplicate_entities_ontology_duplicate_entities_reject_delete: {
+        parameters: {
+            query: {
+                a: string;
+                b: string;
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_ontology_entities_ontology_entities_get: {
         parameters: {
             query?: {
@@ -32923,6 +33222,101 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_owners_owners_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_owner_link_owners_links_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_owner_link_owners_links_delete: {
+        parameters: {
+            query: {
+                owner_text: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -35966,6 +36360,107 @@ export interface operations {
         parameters: {
             query?: {
                 connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_visibility_visibility_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_exclusion_visibility_exclusions_put: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExclusionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_exclusion_visibility_exclusions_delete: {
+        parameters: {
+            query: {
+                table: string;
+                connection_id?: string;
+                schema_name?: string | null;
             };
             header?: never;
             path?: never;

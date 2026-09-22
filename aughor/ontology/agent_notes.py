@@ -226,6 +226,7 @@ def object_notes_for(connection_id: str, object_ref: str,
                         "note": str(rec.proposed_fields.get("note") or ""),
                         "status": rec.status,
                         "provenance": dict(rec.proposed_fields.get("provenance") or {}),
+                        "check": dict(rec.proposed_fields.get("check") or {}),   # CB-8: said vs measured
                         "first_seen": rec.first_seen, "last_seen": rec.last_seen})
     out.sort(key=lambda r: r["last_seen"])
     return out

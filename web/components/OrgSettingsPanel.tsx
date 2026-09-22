@@ -25,11 +25,12 @@ import { Button } from "@/components/ui/button";
 import { OrgByokSection } from "@/components/OrgByokSection";
 import { OrgIndustriesSection } from "@/components/OrgIndustriesSection";
 import { OrgPlaybookSection } from "@/components/OrgPlaybookSection";
+import { OrgPrioritiesSection } from "@/components/OrgPrioritiesSection";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
   currency_code: "", timezone: "", date_format: "", fiscal_year_start_month: 1,
-  chart_palette: "", chat_first_home: false,
+  chart_palette: "", chat_first_home: false, priorities: [],
 };
 
 const CURRENCIES = ["", "USD", "EUR", "GBP", "JPY", "CNY", "INR", "AUD", "CAD", "CHF", "SGD", "BRL", "ZAR"];
@@ -215,6 +216,10 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           worth it. The user's call, and the right one: this is org configuration, not a
           plane of the product. */}
       {scope === "app" && <OrgPlaybookSection />}
+      {/* CB-6 — the quarter's priorities, written by people; saved with the organisation settings. */}
+      {scope === "app" && (
+        <OrgPrioritiesSection value={s.priorities ?? []} onChange={(next) => setS((prev) => ({ ...prev, priorities: next }))} />
+      )}
 
       {/* Localization */}
       <div>

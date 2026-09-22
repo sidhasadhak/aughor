@@ -949,8 +949,47 @@ def get_duplicate_entities(
     graph = _get_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
-    from aughor.ontology.dedup import detect_duplicate_entities
-    return {"clusters": detect_duplicate_entities(graph, threshold=threshold)}
+    # CB-4 — a pair a person rejected is not offered again: the read applies the scope's decisions.
+    from aughor.ontology.dedup_decisions import detect_with_decisions
+    return detect_with_decisions(graph, connection_id, schema_name or "default", threshold=threshold)
+
+
+class _RejectDuplicates(BaseModel):
+    entity_ids: list[str]
+    reason: str = ""
+
+
+@router.post("/ontology/duplicate-entities/reject", status_code=201, dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def reject_duplicate_entities(
+    body: _RejectDuplicates,
+    request: Request,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """CB-4 — "these are different": record it, with the reason and who said so, so the pair is not
+    suggested again. Two or more ids; every pair among them is rejected."""
+    from aughor.ontology.dedup_decisions import reject
+    principal = getattr(request.state, "principal", None)
+    by = next((str(getattr(principal, a)) for a in ("user_id", "email", "id") if getattr(principal, a, "")), "")
+    try:
+        rows = reject(connection_id, schema_name or "default", body.entity_ids, reason=body.reason, rejected_by=by)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"rejected": rows}
+
+
+@router.delete("/ontology/duplicate-entities/reject", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def reconsider_duplicate_entities(
+    a: str = Query(...),
+    b: str = Query(...),
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """CB-4 — take a rejection back; the pair may be suggested again."""
+    from aughor.ontology.dedup_decisions import reconsider
+    if not reconsider(connection_id, schema_name or "default", a, b):
+        raise HTTPException(status_code=404, detail="no rejection for that pair")
+    return {"ok": True}
 
 
 @router.get("/ontology/actions")

@@ -24,11 +24,16 @@ def _file_a_note(conn="hb4conn"):
     return out
 
 
-def test_the_gate_holds_by_default_even_with_notes_present():
+def test_the_gate_holds_for_what_people_merely_said_even_with_notes_present():
+    """CB-8 (2026-09-23) amended the resting state: the ONE kind through the gate is a note whose
+    numbers the data confirmed (`conversation:measured`, `hub.claims`). A said, unchecked note —
+    this one — is still stored and shown, never injected; the `conversation` kind as a whole still
+    waits on measured lift."""
     _file_a_note()
     from aughor.hub.injection import INJECTABLE_SOURCE_KINDS, ranked_notes_block
-    assert INJECTABLE_SOURCE_KINDS == ()            # the falsifier's resting state
-    assert ranked_notes_block("hb4conn") == ""      # stored and shown, never injected
+    assert INJECTABLE_SOURCE_KINDS == ("conversation:measured",)
+    assert "conversation" not in INJECTABLE_SOURCE_KINDS
+    assert ranked_notes_block("hb4conn") == ""      # unchecked: stored and shown, never injected
 
 
 def test_the_grounding_producer_is_byte_inert_while_the_gate_holds():

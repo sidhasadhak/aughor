@@ -88,10 +88,55 @@ def slack_arrival(body: SlackArrival):
         provenance=provenance)
     if not outcome.ok:
         raise HTTPException(status_code=422, detail=outcome.reason)
+    # CB-8 — said versus measured: the numbers this reply states, checked against the measures the
+    # thread was filed with. Agreement raises the note to `measured`; disagreement writes the owner's
+    # question; no number or nothing measured stays `unchecked`. Recorded on the staged note.
+    check = None
+    try:
+        from aughor.hub.claims import check_claim
+        check = check_claim(text, str(link["object_ref"]), conn_id, measures=link.get("metrics_at_filing") or None)
+        provenance["verification"] = check.verification
+        if check.verification == "measured":
+            provenance["authority"] = "measured"
+        from aughor.ontology.recommendations import get_recommendation, save_recommendation
+        rec = get_recommendation(conn_id or "unknown", "arrivals", outcome.recommendation_id) if outcome.recommendation_id else None
+        if rec is not None:
+            fields = dict(rec.proposed_fields or {})
+            fields["check"] = check.to_dict()
+            fields["provenance"] = dict(provenance)
+            rec.proposed_fields = fields
+            save_recommendation(conn_id or "unknown", "arrivals", rec)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the claim check is best-effort; the note is staged unchecked", counter="claims.check")
     return {"action": outcome.action, "object_ref": link["object_ref"],
             "recommendation_id": outcome.recommendation_id,
             "note": text, "provenance": provenance,
+            "check": check.to_dict() if check is not None else None,
             "why": outcome.reason}
+
+
+@router.get("/arrivals/claims")
+def arrival_claims(connection_id: str = Query(default="")):
+    """CB-8 — what people said, by what the data made of it: counts per verification and every
+    contradiction with the question it raised and who it went to. The map's 'claims checked' count."""
+    from aughor.ontology.recommendations import load_recommendations, recommendation_schemas
+    conns = [connection_id] if connection_id else _known_note_connections()
+    counts = {"measured": 0, "contradicted": 0, "unchecked": 0}
+    contradictions = []
+    for conn in conns:
+        for schema in recommendation_schemas(conn):
+            for rec in load_recommendations(conn, schema):
+                if rec.kind != "object_note" or rec.status == "dismissed":
+                    continue
+                check = (rec.proposed_fields or {}).get("check") or {}
+                v = str(check.get("verification") or "unchecked")
+                counts[v if v in counts else "unchecked"] += 1
+                if v == "contradicted":
+                    contradictions.append({"connection_id": conn, "object_ref": rec.target_id, "note": (rec.proposed_fields or {}).get("note", ""),
+                                           "question": check.get("question", ""), "question_to": check.get("question_to", ""),
+                                           "why_unreached": check.get("note", "")})
+    return {"counts": counts, "contradictions": contradictions}
 
 
 @router.get("/arrivals/notes")

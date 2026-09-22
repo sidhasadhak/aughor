@@ -50,14 +50,26 @@ class Destination:
                 "group_id": self.group_id, "why": list(self.why)}
 
 
-def owner_principal(owner_text: str) -> Optional[str]:
+def owner_principal(owner_text: str, *, org_id: Optional[str] = None) -> Optional[str]:
     """The principal an ``owner`` field names, or None when it is display text.
-
-    Reads, never rewrites: ``"group:supply-chain"`` routes, ``"Ana (logistics)"``
-    stays the honest label it always was.
+    Reads, never rewrites: ``"group:supply-chain"`` routes; ``"Ana (logistics)"`` routes
+    once a person has LINKED it (CB-3, `rbac.owners`) and until then stays the honest
+    label it always was. Never by matching a name: the link is what someone wrote down.
+    ``org_id`` defaults to the current org; the link table is org-scoped.
     """
     text = (owner_text or "").strip()
-    return text if principal_kind(text) in ("user", "group", "agent") else None
+    if principal_kind(text) in ("user", "group", "agent"):
+        return text
+    if not text:
+        return None
+    try:
+        from aughor.org.context import current_org_id
+        from aughor.rbac.owners import linked_principal
+        return linked_principal(org_id or current_org_id(), text)
+    except Exception as exc:  # noqa: BLE001 — a link table that cannot be read routes nothing, as before
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "owner link lookup failed — the owner stays display text", counter="owners.lookup")
+        return None
 
 
 def route(securable: str, *, org_id: str, owner: str = "",
@@ -80,7 +92,7 @@ def route(securable: str, *, org_id: str, owner: str = "",
             channel = g.channel_trigger_id
         gathered.setdefault((principal, channel, group_id), []).append(why)
 
-    own = owner_principal(owner)
+    own = owner_principal(owner, org_id=org_id)
     if own:
         _add(own, f"owner of {securable}")
 

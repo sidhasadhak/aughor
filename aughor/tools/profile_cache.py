@@ -136,6 +136,21 @@ def load_profiles(
         return None
 
 
+def latest_profiled_tables(connection_id: str) -> list[str]:
+    """CB-5 — every table the profiler saw on this connection, from its most recent cache entry
+    (entries are keyed ``connection_id:fingerprint``; the last written wins). ``[]`` when the
+    connection was never profiled — a coverage number then has no honest denominator and says so."""
+    cache = _load()
+    prefix = f"{connection_id}:"
+    latest = None
+    for key, entry in cache.items():
+        if key.startswith(prefix) and isinstance(entry, dict):
+            latest = entry
+    if not latest:
+        return []
+    return sorted(str(t) for t in (latest.get("tables") or {}).keys())
+
+
 def load_value_samples(connection_id: str) -> dict[tuple[str, str], list[str]]:
     """Every persisted high-cardinality entity value sample for a connection, keyed
     (table, column), merged across all cached schema fingerprints. Read-only — never

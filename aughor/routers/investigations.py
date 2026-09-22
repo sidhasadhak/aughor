@@ -903,6 +903,7 @@ class OutcomeRequest(BaseModel):
     metric_name: Optional[str] = None
     metric_before: Optional[float] = None
     metric_after: Optional[float] = None
+    review_days: Optional[int] = None    # CB-2: when to measure again and ask (default 30)
 
 
 _ID_COL_RE = re.compile(r"(^|_)(id|key|sk|pk|code)$", re.IGNORECASE)
@@ -6199,10 +6200,45 @@ def get_chat_receipt(connection_id: str, turn_id: str):
     return rec
 
 
+def _record_acceptance(inv_id: str, outcome, req: "OutcomeRequest", principal):
+    """CB-2 — on accept, decide the review now: the baseline measured with the answer's own
+    definition (`report.spec`) and the date the platform asks whether it worked. Best-effort: a
+    connection that cannot be measured leaves a note on the record, never a failed acceptance."""
+    from aughor.playbook.outcomes import record_acceptance
+    inv = get_investigation(inv_id) or {}
+    report = inv.get("report") if isinstance(inv.get("report"), dict) else {}
+    spec = report.get("spec") if isinstance(report, dict) else None
+    connection_id = str(inv.get("connection_id") or "")
+    accepted_by = ""
+    for attr in ("user_id", "email", "id", "sub", "name"):
+        v = getattr(principal, attr, "") if principal is not None else ""
+        if v:
+            accepted_by = str(v)
+            break
+    try:
+        from aughor.db.measure import run_sql_for
+        run_sql = run_sql_for(connection_id) if (spec and connection_id) else (lambda sql: ([], [], "no connection"))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the acceptance baseline could not open the connection; recorded unmeasured",
+                 counter="outcomes.baseline_connection", conn_id=connection_id or None)
+        why = f"connection unavailable: {str(exc)[:120]}"
+        run_sql = lambda sql: ([], [], why)  # noqa: E731
+    return record_acceptance(outcome, spec=spec, connection_id=connection_id, accepted_by=accepted_by,
+                             run_sql=run_sql, review_days=req.review_days)
+
+
 @router.post("/investigations/{inv_id}/recommendations/{rec_index}/outcome", status_code=201)
-def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest):
+def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest, principal=Depends(get_principal)):
     from aughor.playbook.outcomes import log_outcome, update_playbook_success_rates
     outcome = log_outcome(inv_id=inv_id, rec_index=rec_index, rec_text=req.rec_text, status=req.status, metric_name=req.metric_name, metric_before=req.metric_before, metric_after=req.metric_after)  # type: ignore[arg-type]
+    if req.status == "accepted":
+        try:
+            outcome = _record_acceptance(inv_id, outcome, req, principal)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "recording the acceptance baseline is best-effort; the acceptance itself is logged",
+                     counter="outcomes.baseline")
     if req.status in ("verified", "implemented", "rejected"):
         update_playbook_success_rates()
         try:

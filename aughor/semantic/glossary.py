@@ -590,11 +590,14 @@ def save_glossary(data: dict, path: Path | None = None) -> None:
 
 def update_table(table: str, description: str | None = None, grain: str | None = None,
                  joins: list[str] | None = None, path: Path | None = None,
-                 schema: str | None = None) -> None:
-    """Upsert table-level glossary entry, keyed per schema when one is known."""
+                 schema: str | None = None, owner: str | None = None) -> None:
+    """Upsert table-level glossary entry, keyed per schema when one is known. ``owner`` (CB-3)
+    is the person or team responsible, free text a person may later link to a principal."""
     data = _load_raw(path)
     tables = data.setdefault("tables", {})
     entry = tables.setdefault(canonical_key(table, schema), {})
+    if owner is not None:
+        entry["owner"] = " ".join(owner.split())
     if description is not None:
         entry["description"] = description
     if grain is not None:
@@ -606,8 +609,10 @@ def update_table(table: str, description: str | None = None, grain: str | None =
 
 def update_column(table: str, column: str, description: str | None = None,
                   values: str | None = None, caveats: str | None = None,
-                  path: Path | None = None, schema: str | None = None) -> None:
-    """Upsert column-level glossary entry, keyed per schema when one is known."""
+                  path: Path | None = None, schema: str | None = None,
+                  owner: str | None = None) -> None:
+    """Upsert column-level glossary entry, keyed per schema when one is known. ``owner`` (CB-3) as
+    on a table."""
     data = _load_raw(path)
     col_entry = (
         data.setdefault("tables", {})
@@ -615,6 +620,8 @@ def update_column(table: str, column: str, description: str | None = None,
             .setdefault("columns", {})
             .setdefault(column, {})
     )
+    if owner is not None:
+        col_entry["owner"] = " ".join(owner.split())
     if description is not None:
         col_entry["description"] = description
     if values is not None:

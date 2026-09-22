@@ -382,6 +382,7 @@ def _clamp01(x) -> float:
 # a real swing, and an equal-magnitude RISK edges out a GAIN — but a much larger gain still
 # wins (the change term dominates the risk tilt).
 _W_CHANGE, _W_NORTHSTAR, _W_RISK, _W_CONF, _W_NOVELTY = 0.40, 0.30, 0.15, 0.20, 0.10
+_W_PRIORITY = 0.30   # CB-6: a declared priority weighs as a north-star does, on top of it
 
 # A "fire": a DECLINE in a metric where down-is-bad (margin, revenue, AOV, retention …).
 # Detected from the prose so it applies to both metric moves and explorer findings.
@@ -399,7 +400,28 @@ def _is_risk(finding: str) -> bool:
     return bool(_DOWN_IS_BAD.search(finding) and _DECLINE.search(finding))
 
 
-def impact_score(finding: str, novelty, confidence, tokensets: list[frozenset]) -> float:
+def priority_tokensets(priorities) -> list[frozenset]:
+    """CB-6 — the declared priorities' metric names as token-sets, the way north-star names are."""
+    names = []
+    for p in priorities or []:
+        name = p.get("metric") if isinstance(p, dict) else getattr(p, "metric", "")
+        if name:
+            names.append(str(name))
+    return north_star_tokens(names)
+
+
+def priority_hit(finding: str, priorities) -> str:
+    """The metric of the first declared priority the finding clearly names, or "". Same word rule
+    as the north-star test, so a bare 'orders' does not read as an 'average order value' goal."""
+    for p in priorities or []:
+        name = p.get("metric") if isinstance(p, dict) else getattr(p, "metric", "")
+        if name and _hits_north_star(finding, north_star_tokens([str(name)])):
+            return str(name)
+    return ""
+
+
+def impact_score(finding: str, novelty, confidence, tokensets: list[frozenset],
+                 priority_tokensets: list[frozenset] = ()) -> float:
     """Business-impact score used to ORDER findings and pick the brief's lead. Replaces
     novelty-only ranking: a noise-level contrast (ROAS 4.42 vs 4.46) scores ~0 on the change
     term and falls below a real swing or a watched-metric finding; and a decline in a
@@ -407,10 +429,13 @@ def impact_score(finding: str, novelty, confidence, tokensets: list[frozenset]) 
     ch = extract_change(finding)
     change = min(ch.rel, 1.0) if ch else 0.0
     ns = 1.0 if _hits_north_star(finding, tokensets) else 0.0
+    # CB-6: a finding that bears on a goal leadership WROTE DOWN outranks one that merely touches an
+    # inferred north-star — the declared term weighs the same as the north-star term, on top of it.
+    pr = 1.0 if (priority_tokensets and _hits_north_star(finding, list(priority_tokensets))) else 0.0
     risk = 1.0 if _is_risk(finding) else 0.0
     conf = _clamp01(confidence)
     nov = _clamp01((novelty or 0) / 5.0)
-    return (_W_CHANGE * change + _W_NORTHSTAR * ns + _W_RISK * risk
+    return (_W_CHANGE * change + _W_NORTHSTAR * ns + _W_PRIORITY * pr + _W_RISK * risk
             + _W_CONF * conf + _W_NOVELTY * nov)
 
 

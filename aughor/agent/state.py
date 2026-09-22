@@ -440,6 +440,11 @@ class AnswerReport(TypedDict):
     # against the data (`aughor.playbook.rule_outs`). Absent when the report states no move or its metric
     # names no KB entry.
     rule_outs: NotRequired[Optional[dict]]
+    # CB-2 (2026-09-22) — the MEASURABLE definition this answer used: metric SQL, table, date column
+    # and the observation window's length, from the intake. What a later baseline and review are
+    # measured with, so an accepted recommendation can be asked "did it work?" against the same
+    # number. Absent on reports written before this and on runs whose intake carried no metric.
+    spec: NotRequired[Optional[dict]]
 
 
 class AgentState(TypedDict):

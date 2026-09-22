@@ -6,13 +6,14 @@ import { useCallback, useEffect, useState } from "react";
 import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
 import { domainScope } from "@/lib/objectTypes";
 import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
-import { Button }      from "@/components/ui/button";
 import {
   getOntology,
   getConnectionSettings,
   updateConnectionSettings,
   rebuildOntology,
-  getDuplicateEntities,
+  getDuplicateSuggestions,
+  reconsiderDuplicatePair,
+  rejectDuplicateEntities,
   mergeOntologyEntities,
   getLearnedSkills,
   activateLearnedSkill,
@@ -22,6 +23,7 @@ import {
   type QueryTemplate,
   type ConnectionSettings,
   type DuplicateCluster,
+  type RejectedDuplicate,
   type AutonomyLevel,
   getOntologyProposals, acceptOntologyProposal, dismissOntologyProposal,
   OntologyNotBuilt,
@@ -31,6 +33,8 @@ import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { cn } from "@/lib/utils";
 import { formatTimestamp, countNoun } from "@/lib/format";
 import { Icon } from "@/components/ui/icon";
+import { VisibilityLine } from "@/components/VisibilityLine";
+import { Button } from "@/components/ui/button";
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
@@ -190,18 +194,41 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
   connId: string; schema?: string; onClose: () => void; onMerged: () => void;
 }) {
   const [clusters, setClusters] = useState<DuplicateCluster[] | null>(null);
+  const [rejected, setRejected] = useState<RejectedDuplicate[]>([]);
+  const [hidden,   setHidden]   = useState(0);
   const [loading,  setLoading]  = useState(true);
   const [merging,  setMerging]  = useState<string | null>(null);
   const [error,    setError]    = useState<string | null>(null);
+  const [reasons,  setReasons]  = useState<Record<number, string>>({});
 
   const load = useCallback(() => {
     setLoading(true); setError(null);
-    getDuplicateEntities(connId, schema)
-      .then(setClusters)
+    getDuplicateSuggestions(connId, schema)
+      .then(d => { setClusters(d.clusters); setRejected(d.rejected); setHidden(d.hidden); })
       .catch(() => setError("Couldn't load duplicate suggestions."))
       .finally(() => setLoading(false));
   }, [connId, schema]);
   useEffect(() => { load(); }, [load]);
+
+  // CB-4 — "these are different": remembered with its reason; the pair is not suggested again.
+  const doReject = async (cluster: DuplicateCluster, i: number) => {
+    setError(null);
+    try {
+      await rejectDuplicateEntities(connId, cluster.entities.map(e => e.id), reasons[i] ?? "", schema);
+      load();
+    } catch (e) {
+      setError((e as Error).message || "Couldn't record the rejection");
+    }
+  };
+  const doReconsider = async (r: RejectedDuplicate) => {
+    setError(null);
+    try {
+      await reconsiderDuplicatePair(connId, r.pair[0], r.pair[1], schema);
+      load();
+    } catch (e) {
+      setError((e as Error).message || "Couldn't take the rejection back");
+    }
+  };
 
   const doMerge = async (cluster: DuplicateCluster, canonicalId: string) => {
     setMerging(canonicalId); setError(null);
@@ -229,7 +256,9 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
         {error && <p className="aug-fs-xs text-red-400">{error}</p>}
         {!loading && !error && clusters?.length === 0 && (
           <p className="aug-fs-xs text-zinc-500">
-            No likely duplicates found. (Detection uses embeddings; if none are configured it returns nothing.)
+            {hidden > 0
+              ? `No new duplicates: ${countNoun(hidden, "suggestion", "suggestions")} you rejected earlier stay hidden.`
+              : "No likely duplicates found. (Detection uses embeddings; if none are configured it returns nothing.)"}
           </p>
         )}
         {clusters?.map((c, i) => (
@@ -245,6 +274,11 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
                 </li>
               ))}
             </ul>
+            {c.rejected_pairs?.length ? (
+              <p className="aug-fs-xs text-zinc-500">
+                Already judged different: {c.rejected_pairs.map(rp => rp.pair.join(" ≠ ")).join(", ")}
+              </p>
+            ) : null}
             <div className="flex flex-col gap-1 pt-0.5">
               <span className="aug-fs-xs text-zinc-500">Merge all into (the others become its parts):</span>
               <div className="flex flex-wrap gap-1">
@@ -255,9 +289,34 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
                   </button>
                 ))}
               </div>
+            <div className="flex items-center gap-1 pt-1">
+              <input
+                aria-label={`Why entities ${i + 1} are different`}
+                value={reasons[i] ?? ""}
+                onChange={ev => setReasons(r => ({ ...r, [i]: ev.target.value }))}
+                placeholder="why they are different (optional)"
+                className="aug-fs-xs flex-1 bg-zinc-900 border border-zinc-600 rounded px-2 py-0.5 text-zinc-200"
+              />
+              <Button size="sm" variant="ghost" onClick={() => doReject(c, i)} disabled={merging !== null}>
+                Not duplicates
+              </Button>
+            </div>
             </div>
           </div>
         ))}
+        {rejected.length > 0 && (
+          <div className="pt-2 border-t border-zinc-700/40 space-y-1">
+            <p className="aug-fs-xs text-zinc-500">Judged different earlier</p>
+            {rejected.map(r => (
+              <div key={r.pair.join("|")} className="flex items-center gap-2">
+                <span className="aug-fs-xs text-zinc-300 flex-1 min-w-0 truncate">
+                  {r.pair.join(" ≠ ")}{r.reason ? ` — ${r.reason}` : ""}{r.rejected_by ? ` (${r.rejected_by})` : ""}
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => doReconsider(r)}>Reconsider</Button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -538,6 +597,10 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         >
           {schema}
         </span>
+      )}
+      {/* CB-5 — how much of the business the platform can see here, and the one definition holding sends back. */}
+      {!orgMode && !domainMode && selectedConnId && (
+        <VisibilityLine connectionId={selectedConnId} schema={schema} />
       )}
 
       {/* Org ⟷ Domain ⟷ Connection view toggle. ON-8 — Domain is the organisation's ontology: types declared on any

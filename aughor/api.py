@@ -955,6 +955,8 @@ from aughor.routers import (
     intake as intake_router,
     roles as roles_router,
     groups as groups_router,
+    owners as owners_router,
+    visibility as visibility_router,
     departures as departures_router,
     links as links_router,
     arrivals as arrivals_router,
@@ -1020,6 +1022,8 @@ app.include_router(intake_router.router)
 app.include_router(packs_router.router)
 app.include_router(roles_router.router)
 app.include_router(groups_router.router)  # HB-1 — groups, level grants, explain + route (the routing half)
+app.include_router(owners_router.router)  # CB-3 — owners the platform can reach: inventory + links
+app.include_router(visibility_router.router)  # CB-5 — how much the platform can see + the definition holding sends
 app.include_router(departures_router.router)  # HB-2 — the departures ledger, verdicts, graduation
 app.include_router(links_router.router)  # HB-3 — the manifest: tickets/threads filed on objects, outcomes
 app.include_router(arrivals_router.router)  # HB-5 — arrivals: a Slack sentence becomes a staged note with provenance

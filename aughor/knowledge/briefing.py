@@ -384,6 +384,50 @@ def group_held_back(held_back: list[dict]) -> list[dict]:
     return sorted(groups.values(), key=lambda g: -g["count"])
 
 
+def best_action_for(ins: dict, *, industry=None) -> Optional[dict]:
+    """CB-7 — the single best action beside a Briefing item, chosen where the platform already
+    keeps its judgement: the cited investigation's own first recommendation when the item came
+    from one (executable through the inbox's gated door, `POST /investigations/{id}/recommendations/{i}/execute`),
+    else the playbook's best play for the finding's labels, ranked by its learned success rate
+    (`retriever.retrieve_for_metric_and_phases`) — a suggestion the reader takes to an investigation,
+    never fired on its own. None when neither exists: a brief item with no action is honest; one with
+    an invented action is not."""
+    inv_id = str(ins.get("investigation_id") or "")
+    if inv_id:
+        try:
+            from aughor.db.history import get_investigation
+            inv = get_investigation(inv_id) or {}
+            report = inv.get("report") if isinstance(inv.get("report"), dict) else {}
+            recs = list((report or {}).get("recommendations") or [])
+            if recs:
+                r0 = recs[0]
+                text = (next((str(r0[k]) for k in ("text", "action", "title", "recommendation") if isinstance(r0, dict) and r0.get(k)), "")
+                        if isinstance(r0, dict) else str(r0))
+                if text:
+                    return {"kind": "recommendation", "inv_id": inv_id, "rec_index": 0, "text": text,
+                            "executable": True, "why": "the first recommendation of the deep analysis it came from"}
+        except Exception as exc:  # noqa: BLE001 — an action is additive; the brief never fails for one
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the cited investigation could not be read for a brief action", counter="briefing.action")
+    labels = [str(x) for x in (ins.get("_priority"), ins.get("angle"), ins.get("domain")) if x]
+    if not labels:
+        return None
+    try:
+        from aughor.playbook.retriever import retrieve_for_metric_and_phases
+        plays = retrieve_for_metric_and_phases(labels, limit=1, learned_rates=True, industry=industry)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the playbook could not be read for a brief action", counter="briefing.action")
+        return None
+    if not plays:
+        return None
+    p = plays[0]
+    return {"kind": "play", "id": str(getattr(p, "id", "")), "text": str(getattr(p, "recommendation", "") or ""),
+            "when": " ".join(x for x in (str(getattr(p, "trigger_metric", "") or ""), str(getattr(p, "trigger_condition", "") or "")) if x),
+            "success_rate": float(getattr(p, "historical_success_rate", 0.0) or 0.0),
+            "executable": False, "why": "the playbook's best play for this finding, by learned success rate"}
+
+
 def generate_narrative(
     domain_data: dict[str, list[dict]],
     patterns: list[dict],
@@ -419,6 +463,18 @@ def generate_narrative(
     """
     from aughor.knowledge.triage import plausibility, impact_score
     ns_tokens, currency_sym = _profile_signals(profile, workspace_id)
+    # CB-6 — what the organisation is trying to do this quarter, written by people in organisation
+    # settings. A finding that bears on one ranks higher and the brief says which goal it bears on.
+    priorities: list = []
+    try:
+        from aughor.orgsettings import effective_settings
+        priorities = [p.model_dump() for p in (effective_settings(workspace_id).priorities or [])]
+    except Exception as _pe:  # noqa: BLE001 — priorities are additive; a brief never fails for want of them
+        from aughor.kernel.errors import tolerate
+        tolerate(_pe, "declared priorities unavailable to the brief; ranking goes on without them",
+                 counter="briefing.priorities")
+    from aughor.knowledge.triage import priority_hit, priority_tokensets
+    pr_tokens = priority_tokensets(priorities)
     from aughor.orgsettings import resolve_currency
     # Override-wins: a workspace-scoped (then app) org currency beats the inferred
     # currency_code (resolve_currency already falls back to the inferred value, then "USD").
@@ -463,8 +519,10 @@ def generate_narrative(
             })
             continue
         ins["_impact"] = impact_score(
-            finding, ins.get("novelty", 0), ins.get("confidence", 0), ns_tokens
+            finding, ins.get("novelty", 0), ins.get("confidence", 0), ns_tokens,
+            priority_tokensets=pr_tokens,
         )
+        ins["_priority"] = priority_hit(finding, priorities)
         trusted.append(ins)
 
     # Impact-ranked (was novelty): the lead [1] is the single biggest business move.
@@ -548,6 +606,23 @@ def generate_narrative(
         import logging as _l
         _l.getLogger(__name__).debug("briefing: org_context unavailable: %s", _e)
 
+    # CB-6 — the declared priorities, in the narrator's context: when a cited finding bears on one,
+    # the sentence says which goal. Deterministic block; absent when nothing is declared.
+    if priorities:
+        _lines = []
+        for _p in priorities:
+            _bits = [str(_p.get("metric") or "")]
+            if _p.get("target"):
+                _bits.append(f"target {_p['target']}")
+            if _p.get("direction"):
+                _bits.append(f"{_p['direction']} is good")
+            if _p.get("by"):
+                _bits.append(f"by {_p['by']}")
+            _lines.append("  - " + ", ".join(x for x in _bits if x))
+        user_prompt = ("DECLARED PRIORITIES THIS QUARTER (written by the organisation's people — when a cited "
+                       "finding bears on one, say which goal it bears on, in the same sentence):\n"
+                       + "\n".join(_lines) + "\n\n" + user_prompt)
+
     _system = _SYSTEM_MULTI if multi_schema else _SYSTEM
     try:
         result: BriefingNarrative = provider.complete(
@@ -598,6 +673,24 @@ def generate_narrative(
 
     # Map citation refs back to actual insight IDs
     ref_to_insight: dict[str, dict] = {str(i + 1): ins for i, ins in enumerate(top[:8])}
+    # CB-7 — the playbook is read for this brief's industry only (a play from another industry is
+    # a plausible-sounding recipe for a business the reader is not in).
+    _pb_industry = None
+    try:
+        from aughor.business_profile.metric_kb import industry_scope
+        _ind = (profile.get("industry") if isinstance(profile, dict) else getattr(profile, "industry", "")) or ""
+        _pb_industry = industry_scope(connection_id, None, industry=_ind)
+    except Exception as _ie:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(_ie, "industry scope unavailable for brief actions; plays are read unscoped", counter="briefing.action")
+
+    def _brief_action(source: dict):
+        try:
+            return best_action_for(source, industry=_pb_industry) if source else None
+        except Exception as _ae:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(_ae, "a brief item's action could not be chosen", counter="briefing.action")
+            return None
     citations_out = []
     for cit in result.citations:
         source = ref_to_insight.get(cit.ref, {})
@@ -607,6 +700,8 @@ def generate_narrative(
             "domain":     source.get("domain", cit.domain),
             "angle":      source.get("angle", cit.angle),
             "finding":    _cur(source.get("finding", cit.finding)),
+            "priority":   source.get("_priority", ""),      # CB-6: the declared goal this bears on, or ""
+            "action":     _brief_action(source),            # CB-7: the one action beside this item, or None
         })
 
     # P5 — attribute each cited sentence back to its finding and persist it as that
