@@ -7200,7 +7200,13 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   glossary, with its uses and its resolution (*as written* · *linked by whom* · *unresolved*), the unresolved first —
   the map's "owners reachable: N of M". Where a question would have gone to an unresolved owner, the record now says
   so ("owner 'Ana (logistics)' of late dispatch is not linked to a person; asked the accepter instead"). Receipts:
-  `tests/unit/test_owner_links.py` (13) + `OwnersPanel.test.tsx` (3); tsc, six lints, vitest green.
+  `tests/unit/test_owner_links.py` (13) + `OwnersPanel.test.tsx` (3); tsc, six lints, vitest green. ✅ **LIVE RECEIPT
+  2026-09-22 21:5xZ** (scratch pair on a copy of the data): `GET /owners` found **7 owners in use, 7 unresolved** — `finance`
+  (3 rules), `customer_care` (a process and a rule), `Revenue team` (2 metrics), `crm`, `merchandising`, `operations`,
+  `risk` — every one a display word no question could reach. Linking `finance` to a principal made `GET /access/route`
+  for `rule:completed_orders` answer that principal ("owner of rule:completed_orders"); a bare name was refused (422);
+  unlinking emptied the route again. The map's first count: owners reachable 0 of 7 on this deployment, until people link
+  them. ⏳ Screenshot of the panel owed — the browser pane is hidden in this session.
 - **CB-4 · Remember a rejected duplicate** (idea 19). `GET /ontology/duplicate-entities` recomputes the same
   pairs on every read; a "no, these are different" is recorded with its reason and the pair is not offered again —
   the pattern the explorer's withdrawn proposals (`explorer._withdrawn`) and dismissed recommendations already use.
