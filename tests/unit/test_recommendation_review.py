@@ -23,7 +23,7 @@ from aughor.agent.investigate import _measurable_spec
 from aughor.playbook import outcomes as O
 
 SPEC = {"metric_label": "total sales", "metric_sql": "SUM(sale_price)", "metric_table": "thelook.order_items",
-        "date_column": "thelook.order_items.created_at", "window_days": 14}
+        "date_column": "thelook.order_items.created_at", "window_days": 14, "window_basis": "observation"}
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
 
 
@@ -48,6 +48,15 @@ class TestTheReportCarriesItsDefinition:
                                  "metric_table": "thelook.order_items", "date_column": "thelook.order_items.created_at",
                                  "observation_start": "2026-09-08", "observation_end": "2026-09-21"})
         assert spec == SPEC
+
+    def test_a_coverage_wide_window_is_not_a_period_so_the_default_stands_in(self):
+        """The live receipt (theLook, 2026-09-22): a cross-sectional run observed 2,808 days — the whole
+        data coverage. A baseline over all history answers nothing; four weeks does, and says so."""
+        spec = _measurable_spec({"metric_sql": "SUM(sale_price)", "metric_table": "order_items",
+                                 "observation_start": "2019-01-14", "observation_end": "2026-09-21"})
+        assert spec["window_days"] == 28 and spec["window_basis"] == "default"
+        undated = _measurable_spec({"metric_sql": "SUM(x)", "metric_table": "t"})
+        assert undated["window_days"] == 28 and undated["window_basis"] == "default"
 
     def test_no_metric_means_no_spec_not_a_guess(self):
         assert _measurable_spec({"metric_label": "x"}) is None
@@ -129,8 +138,8 @@ class TestTheReviewRunsOnceOnItsDate:
         assert o.review_value == 1200.0 and o.metric_after == 1200.0 and o.reviewed_at
         assert o.review_window == "2026-10-08 → 2026-10-21 (14 days)"
         assert o.review_asked_to == "user:ana" and o.review_asked_at
-        assert o.review_question == ('You accepted "Pause the other pilots" on 2026-09-22. total sales was 1000 then '
-                                     '(2026-09-08 → 2026-09-21 (14 days)); it is 1200 now (2026-10-08 → 2026-10-21 (14 days)). Did it work?')
+        assert o.review_question == ('You accepted "Pause the other pilots" on 2026-09-22. total sales was 1,000 then '
+                                     '(2026-09-08 → 2026-09-21 (14 days)); it is 1,200 now (2026-10-08 → 2026-10-21 (14 days)). Did it work?')
         again = O.run_due_reviews(NOW + timedelta(days=31), run_sql_for=lambda c: _run_sql_returning(1300.0), path=path)
         assert again == []                                              # asked once
         assert O.load_all_outcomes(path)[0].review_value == 1200.0

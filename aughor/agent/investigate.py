@@ -4209,17 +4209,26 @@ def _measurable_spec(intake_data: dict) -> Optional[dict]:
     table = str(d.get("metric_table") or "").strip()
     if not metric_sql or not table:
         return None
-    window_days = 1
+    window_days, basis = _SPEC_DEFAULT_WINDOW_DAYS, "default"
     try:
         from datetime import date as _date
         start = _date.fromisoformat(str(d.get("observation_start") or "")[:10])
         end = _date.fromisoformat(str(d.get("observation_end") or "")[:10])
-        window_days = max(1, (end - start).days + 1)
-    except Exception:  # noqa: BLE001 — a window the intake did not date measures one day
-        window_days = 1
+        days = (end - start).days + 1
+        # A cross-sectional run "observes" the whole data coverage (the live receipt: 2,808 days on
+        # theLook) — that is not a period a baseline can be compared over. A window longer than a
+        # year is the coverage, not the question's period; the default stands in and says so.
+        if 1 <= days <= _SPEC_MAX_WINDOW_DAYS:
+            window_days, basis = days, "observation"
+    except Exception:  # noqa: BLE001 — a window the intake did not date takes the default
+        pass
     return {"metric_label": str(d.get("metric_label") or ""), "metric_sql": metric_sql,
             "metric_table": table, "date_column": str(d.get("date_column") or ""),
-            "window_days": window_days}
+            "window_days": window_days, "window_basis": basis}
+
+
+_SPEC_DEFAULT_WINDOW_DAYS = 28      # four weeks: the cadence a baseline is compared over when the intake named none
+_SPEC_MAX_WINDOW_DAYS = 366
 
 
 def _metric_definition_receipt(intake_data: dict) -> str:

@@ -237,14 +237,21 @@ def due_reviews(now: Optional[datetime] = None, path: Path | None = None) -> lis
     return out
 
 
+def _fmt(value: float) -> str:
+    """A number a person reads: 10,710,477.39 not 1.07105e+07; 0.0425 stays 0.0425."""
+    if abs(value) >= 1000:
+        return f"{value:,.2f}".rstrip("0").rstrip(".")
+    return f"{value:.4g}"
+
+
 def review_question(o: RecOutcome, review_value: Optional[float], review_window: str) -> str:
     label = (o.spec or {}).get("metric_label") or o.metric_name or "the metric"
     when = (o.baseline_at or o.created_at)[:10]
     if o.baseline_value is not None and review_value is not None:
-        return (f"You accepted \"{o.rec_text}\" on {when}. {label} was {o.baseline_value:g} then "
-                f"({o.baseline_window}); it is {review_value:g} now ({review_window}). Did it work?")
+        return (f"You accepted \"{o.rec_text}\" on {when}. {label} was {_fmt(o.baseline_value)} then "
+                f"({o.baseline_window}); it is {_fmt(review_value)} now ({review_window}). Did it work?")
     if o.baseline_value is not None:
-        return (f"You accepted \"{o.rec_text}\" on {when}. {label} was {o.baseline_value:g} then "
+        return (f"You accepted \"{o.rec_text}\" on {when}. {label} was {_fmt(o.baseline_value)} then "
                 f"({o.baseline_window}); it could not be measured now. Did it work?")
     return f"You accepted \"{o.rec_text}\" on {when}. Did it work?"
 
