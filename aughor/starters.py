@@ -25,6 +25,7 @@ Surfaced through ``GET /suggestions`` behind the ``starters.library`` flag
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,66 @@ def curated_questions(connection_id: str, schema: str = "", *, tree=None,
         from aughor.kernel.errors import tolerate
         tolerate(exc, "curated starter questions are best-effort",
                  counter="starters.library", conn_id=connection_id or None)
+        return []
+
+
+PACKAGE_SUGGESTIONS_CAP = 4
+
+
+def connection_industry(connection_id: str, schema: str = "") -> str:
+    """The industry a connection resolves to, the way the explorer resolves it: the workspace's
+    declared industry wins, else the stored business profile's inferred one. "" when neither."""
+    profile_industry = ""
+    try:
+        from aughor.business_profile import store as _pstore
+        bp = _pstore.load(connection_id, schema or None)
+        profile_industry = (getattr(bp, "industry", "") or "").strip() if bp is not None else ""
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the stored business profile is best-effort for the industry",
+                 counter="starters.package", conn_id=connection_id or None)
+    try:
+        from aughor.orgsettings import resolve_industry
+        from aughor.workspace.store import workspace_for_connection
+        return resolve_industry(profile_industry, workspace_for_connection(connection_id))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "workspace industry resolution is best-effort; the profile's industry stands",
+                 counter="starters.package", conn_id=connection_id or None)
+        return profile_industry
+
+
+def package_suggestions(connection_id: str, schema: str = "", *, industry: Optional[str] = None,
+                        cap: int = PACKAGE_SUGGESTIONS_CAP) -> list[dict]:
+    """IP (2026-09-22) — the questions the connection's ACTIVE industry package declares, as
+    suggestion chips: canonical questions route as ``ask``, diagnostic ones as ``investigate``,
+    canonical first, ``cap`` in all. Each carries ``source: "package"``, the pack ids and the
+    purpose tag, so a route receipt can say where the question came from. Deterministic, no model.
+    ``[]`` — the common case — when the connection resolves to no industry with an active package,
+    so a deployment without one gets a byte-identical payload. ``industry`` is injectable for tests."""
+    try:
+        eff = industry if industry is not None else connection_industry(connection_id, schema)
+        if not eff:
+            return []
+        from aughor.business_profile.metric_kb import package_questions
+        pq = package_questions(eff)
+        if not pq["packs"]:
+            return []
+        packs = ",".join(pq["packs"])
+        out: list[dict] = []
+        for mode, questions in (("ask", pq["canonical"]), ("investigate", pq["diagnostic"])):
+            for q in questions:
+                if len(out) >= cap:
+                    break
+                if any(o["text"] == q for o in out):
+                    continue
+                out.append({"text": q, "mode": mode, "source": "package", "pack": packs,
+                            "purpose": "package_question"})
+        return out
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "package question suggestions are best-effort",
+                 counter="starters.package", conn_id=connection_id or None)
         return []
 
 

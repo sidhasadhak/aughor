@@ -6163,7 +6163,18 @@ belongs in any read of this document that a decision hangs on.
     by construction: banking, `draft`, contributes nothing). Its typed metric recipes reach the explorer's prompt
     ahead of `industry.json`'s prose, and `resolve_recipes` and `metric_vocabulary` read the same merged view —
     which stopped `match_metric` answering "completion factor" with the **Cancellation Rate** recipe on airline.
-    ⏳ A package's **questions** are not named by #534 and were not re-measured here. Banking still carries no
+    ✅ **A package's questions are named by the runtime — BUILT 2026-09-22** (`claude/ip-package-questions`): one seam,
+    `metric_kb.package_questions` (gated like the recipes — `knowledge_index()` carries only active packages, reached by
+    the curated industry id), read by three doors: the explorer's QUESTIONS THAT MATTER block (the package's canonical then
+    diagnostic questions first, marked *declared by the industry package*, the profile's inferred ones after), the explorer's
+    angle checklist (`explorer_angles` lead it), and `GET /suggestions` (up to four declared questions lead the model's six,
+    canonical → `ask`, diagnostic → `investigate`, `source: package`, never cached; a connection with no active package gets
+    a byte-identical payload). Measured first: `questions.yaml` had three readers and none was an industry package's runtime —
+    the steering router excludes the knowledge layer, the injection field had no renderer, the agent template projects into
+    suggested goldens. `intent_tags` stay where they were (routing over the steering pool). Re-measurement was not needed:
+    both gate-4 receipts are FRESH against today's package fingerprints (airline `abd68d95…`, banking `24f6ccfd…`; the
+    package files did not change in #534). Receipts: `tests/unit/test_pack_anatomy_reaches_the_questions.py` (15).
+    ⏳ Banking still carries no
     `industry.json` or `kb/`, but it has `metrics/` and `playbooks/` — so activating it now changes what an agent
     reads, through the seam above, where before #534 it would have changed nothing.
   - **Industry matching.** `_UNCURATED_INDUSTRY_TERMS` lists banking's words; they come out at activation, and a
