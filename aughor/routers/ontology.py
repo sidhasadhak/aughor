@@ -1392,7 +1392,29 @@ def unbind_ontology_entity(
     existing = find_override(connection_id, effective, "entity", entity_id)
     specs = dict((existing.fields.get("bindings") if existing else None) or {})
     if existing is None or name not in specs:
-        raise HTTPException(status_code=404, detail=f"{entity_id} has no binding '{name}'")
+        # 2026-09-22 — a binding no override declared is the BUILDER's (or the data's): withdrawing it is recorded
+        # on the type's override, so the next read leaves it out and the UI can restore it.
+        from aughor.ontology.bindings import primary_name
+        if domain is not None:
+            from aughor.ontology.domains import domain_graph
+            graph = domain_graph(_domain_scope(domain))
+        else:
+            graph = _get_ontology_graph(connection_id, effective)
+        ent = graph.entities.get(entity_id) if graph is not None else None
+        found = next((b for b in (ent.bindings or []) if b.name == name), None) if ent is not None else None
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"{entity_id} has no binding '{name}'")
+        if name == primary_name(ent):
+            raise HTTPException(status_code=400, detail=(
+                f"'{name}' is {entity_id}'s backing — its objects; DELETE /ontology/entities/{entity_id}/backing "
+                "withdraws a backing a person set"))
+        fields = dict(existing.fields) if existing is not None else {}
+        gone = sorted({*(fields.get("withdrawn_bindings") or []), name})
+        ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields={**fields, "withdrawn_bindings": gone},
+                              source=(existing.source if existing is not None else "human"),
+                              binding=dict(existing.binding) if existing is not None else {})
+        save(connection_id, effective, ov)
+        return {"removed": True, "entity": entity_id, "binding": name, "withdrawn": True}
     specs.pop(name)
     fields = {k: v for k, v in existing.fields.items() if k != "bindings"}
     binding = {k: v for k, v in existing.binding.items() if k != "bindings"}
@@ -1407,6 +1429,40 @@ def unbind_ontology_entity(
     else:
         remove(connection_id, effective, "entity", entity_id)
     return {"removed": True, "entity": entity_id, "binding": name}
+
+
+@router.post("/ontology/entities/{entity_id}/bindings/{name}/restore", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def restore_ontology_binding(
+    entity_id: str,
+    name: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
+):
+    """2026-09-22 — put back a builder-found binding a person withdrew: the name leaves `withdrawn_bindings`, and
+    the next read carries the binding again. 404 when nothing of that name was withdrawn."""
+    if domain is not None:
+        connection_id, schema_name = _domain_scope(domain).tree
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.overrides import (delete_organisation_override, delete_override, find_override,
+                                           save_organisation_override, save_override)
+    save, remove = ((save_organisation_override, delete_organisation_override) if domain is not None
+                    else (save_override, delete_override))
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    gone = list((existing.fields.get("withdrawn_bindings") if existing else None) or [])
+    if name not in gone:
+        raise HTTPException(status_code=404, detail=f"{entity_id} has no withdrawn binding '{name}'")
+    fields = {k: v for k, v in existing.fields.items() if k != "withdrawn_bindings"}
+    kept = [n for n in gone if n != name]
+    if kept:
+        fields["withdrawn_bindings"] = kept
+    if fields:
+        save(connection_id, effective, existing.model_copy(update={"fields": fields}))
+    else:
+        remove(connection_id, effective, "entity", entity_id)
+    return {"restored": True, "entity": entity_id, "binding": name}
 
 
 @router.post("/ontology/entities", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -1581,11 +1637,44 @@ def delete_declared_link(
     effective = _resolve_schema(connection_id, schema_name)
     existing = find_override(connection_id, effective, "link", relationship_id)
     if existing is None or not existing.fields.get("declared"):
-        raise HTTPException(status_code=404, detail=(
-            f"no declared link '{relationship_id}'" + (" — a found link is named, never deleted"
-                                                       if existing is not None else "")))
+        # 2026-09-22 — a FOUND link is withdrawn by a recorded override (it used to be "named, never deleted",
+        # and a person had no way to delink a join the builder guessed wrong). The relationship leaves the
+        # served graph on the next read; POST /ontology/links/{id}/restore puts it back.
+        from aughor.ontology.overrides import OntologyOverride, save_override
+        graph = None if domain is not None else _get_ontology_graph(connection_id, effective)
+        rel = graph.relationships.get(relationship_id) if graph is not None else None
+        if rel is None:
+            raise HTTPException(status_code=404, detail=f"no link '{relationship_id}'")
+        fields = {**(existing.fields if existing is not None else {}), "withdrawn": True,
+                  "from_entity": rel.from_entity, "to_entity": rel.to_entity}
+        ov = OntologyOverride(target_kind="link", target_id=relationship_id, fields=fields,
+                              source=(existing.source if existing is not None else "human"))
+        save_override(connection_id, effective, ov)
+        return {"removed": True, "link": relationship_id, "withdrawn": True}
     remove(connection_id, effective, "link", relationship_id)
     return {"removed": True, "link": relationship_id}
+
+
+@router.post("/ontology/links/{relationship_id}/restore", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def restore_ontology_link(
+    relationship_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """2026-09-22 — put back a found link a person withdrew. 404 when it was not withdrawn."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.overrides import delete_override, find_override, save_override
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "link", relationship_id)
+    if existing is None or not existing.fields.get("withdrawn"):
+        raise HTTPException(status_code=404, detail=f"link '{relationship_id}' was not withdrawn")
+    fields = {k: v for k, v in existing.fields.items() if k not in ("withdrawn", "from_entity", "to_entity")}
+    if fields:
+        save_override(connection_id, effective, existing.model_copy(update={"fields": fields}))
+    else:
+        delete_override(connection_id, effective, "link", relationship_id)
+    return {"restored": True, "link": relationship_id}
 
 
 # ── ON-8: one ontology, many sources ────────────────────────────────────────────────────────

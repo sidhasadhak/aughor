@@ -148,6 +148,10 @@ _EDITABLE: dict[str, set[str]] = {
         # ON-7b — who said a declared type exists when a model did (`model:<id>@<version>`), kept when a person confirms
         # the proposal and `origin` becomes human.
         "provenance",
+        # 2026-09-22 — the names of BUILDER-found bindings a person withdrew (DELETE …/bindings/{name} on a binding no
+        # override declared). A withdrawal has to be representable: deleting a key only worked for what a person had
+        # written, so a found binding could never be unbound from the UI. Restored by POST …/bindings/{name}/restore.
+        "withdrawn_bindings",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -165,7 +169,11 @@ _EDITABLE: dict[str, set[str]] = {
     # ON-7: a DECLARED link (POST /ontology/links) carries its whole spec — the two types, the columns each side
     # joins on, the expected cardinality, a reverse name, and who declared it.
     "link": {"name", "declared", "from_entity", "to_entity", "from_column", "to_column", "cardinality",
-             "reverse_name", "origin", "provenance", "name_origin", "name_provenance"},
+             "reverse_name", "origin", "provenance", "name_origin", "name_provenance",
+             # 2026-09-22 — a FOUND link a person withdrew: the relationship leaves the served graph (the compiler stops
+             # following it, the map stops drawing it) and the builder's next find is withdrawn again. `from_entity` /
+             # `to_entity` ride along so the type panel can list and restore it.
+             "withdrawn"},
     # ON-9: a DECLARED process (POST /ontology/processes) — the type that goes through it and its stages in order, each
     # anchored to a moment or a state, with the promise about reaching it — and a DECLARED rule (POST /ontology/rules):
     # a value set or named conditions over one type. Both are the target's whole existence; what their measurement
@@ -497,6 +505,9 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
                 ent.display_property = shown
                 touched.append(field)
             continue
+        if field == "withdrawn_bindings":
+            touched.append(field)            # applied after the loop, over whatever the other fields built
+            continue
         setattr(ent, field, value)
         touched.append(field)
         # active_filter is the fast-path WHERE used directly by the investigation
@@ -515,6 +526,10 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
                 ov.binding.get("active_filter", {}).get("note", "") or "unbound"
             )
             ent.segments[default_id] = seg
+    gone = {str(n).lower() for n in (ov.fields.get("withdrawn_bindings") or [])}
+    if gone:
+        ent.bindings = [b for b in ent.bindings or [] if b.name.lower() not in gone]
+        ent.proposed_bindings = [b for b in ent.proposed_bindings or [] if b.name.lower() not in gone]
     return touched
 
 
@@ -608,6 +623,10 @@ def _apply_link(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
     from aughor.ontology.models import LINK_NAME_PATTERN
     rel = graph.relationships.get(ov.target_id)
     touched: list[str] = []
+    if ov.fields.get("withdrawn"):
+        # 2026-09-22 — a person withdrew this found link: it leaves the served graph.
+        graph.relationships.pop(ov.target_id, None)
+        return ["withdrawn"]
     if rel is None and ov.fields.get("declared"):
         # ON-7 — a declared link is the relationship's whole existence, rebuilt from its measurement.
         from aughor.ontology.declared import declared_relationship, register_relationship

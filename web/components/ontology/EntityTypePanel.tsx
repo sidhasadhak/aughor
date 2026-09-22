@@ -35,7 +35,7 @@ import {
   measureOntology,
   nameLink,
   previewBacking,
-  removeBinding,
+  removeBinding, restoreBinding, restoreLink,
   scopeDomain,
   setPartOf,
   setQueryBacking,
@@ -197,6 +197,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
       <PartsSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
       <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged}
         inDomain={inDomain} />
+      <WithdrawnSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} />}
       <MetricsSection detail={detail} />
       <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
@@ -1100,7 +1101,7 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
     <Section title="Bindings" aside="where its properties are read from">
       {detail.bindings.map((b, i) => (
         <BindingRow key={b.name} binding={b} first={i === 0} busy={busy === b.name} source={sourceOf(b)}
-          onRemove={b.source === "human" || b.source === "model"
+          onRemove={!b.primary
             ? () => act(b.name, () => removeBinding(connectionId, detail.id, b.name, schema)) : undefined}
           confirm={b.source === "model" && !sources ? (
             <ConfirmProposal target={{ kind: "binding", entity: detail.id, binding: b.name }} connectionId={connectionId}
@@ -1508,7 +1509,62 @@ function AddRelationship({ detail, types, connectionId, schema, onChanged }: {
   );
 }
 
-/** ON-7 — withdraw a link a person declared. A found link is named, never deleted. */
+/** 2026-09-22 — what a person withdrew on this type, and the door back: a builder-found binding or a found link
+ *  the builder guessed wrong leaves the served graph on withdrawal (the compiler stops following it) and returns on
+ *  Restore. Rendered only when something was withdrawn, so an untouched type's panel is unchanged. */
+function WithdrawnSection({ detail, connectionId, schema, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState("");
+  const [problem, setProblem] = useState("");
+  const gone = detail.withdrawn;
+  if (!gone || (gone.bindings.length === 0 && gone.links.length === 0)) return null;
+  const act = async (key: string, write: () => Promise<void>) => {
+    setBusy(key);
+    setProblem("");
+    try {
+      await write();
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <Section title="Withdrawn" aside="left out of the served ontology by a person">
+      {gone.bindings.map((name) => (
+        <div key={`b:${name}`} className="aug-fs-xs" data-testid="entity-withdrawn"
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+          <span style={{ ...MONO, color: "var(--t2)" }}>{name}</span>
+          <span style={{ color: "var(--t3)" }}>binding</span>
+          <Button variant="ghost" size="xs" disabled={busy === `b:${name}`} style={{ marginLeft: "auto" }}
+            onClick={() => act(`b:${name}`, () => restoreBinding(connectionId, detail.id, name, schema))}>
+            Restore
+          </Button>
+        </div>
+      ))}
+      {gone.links.map((l) => (
+        <div key={`l:${l.relationship}`} className="aug-fs-xs" data-testid="entity-withdrawn"
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+          <span style={{ ...MONO, color: "var(--t2)" }}>{l.relationship}</span>
+          <span style={{ color: "var(--t3)" }}>link · {l.from_entity} → {l.to_entity}</span>
+          <Button variant="ghost" size="xs" disabled={busy === `l:${l.relationship}`} style={{ marginLeft: "auto" }}
+            onClick={() => act(`l:${l.relationship}`, () => restoreLink(connectionId, l.relationship, schema))}>
+            Restore
+          </Button>
+        </div>
+      ))}
+      {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
+    </Section>
+  );
+}
+
+/** ON-7 — withdraw a link a person declared; since 2026-09-22 a FOUND link too (the join the builder guessed wrong
+ *  leaves the served graph, and comes back from the Withdrawn section). */
 function WithdrawLink({ link, connectionId, schema, onChanged }: {
   link: TypeLink;
   connectionId: string;
@@ -1584,7 +1640,7 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
               </>
             )}
             <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-            {(link.origin === "human" || link.origin === "model") && (
+            {(link.origin === "human" || link.origin === "model" || !inDomain) && (
               <WithdrawLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
             )}
           </div>

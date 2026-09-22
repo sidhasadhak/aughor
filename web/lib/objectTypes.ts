@@ -267,6 +267,8 @@ export interface TypeMetric {
 }
 
 export interface ObjectTypeDetail {
+  /** 2026-09-22 — what a person withdrew on this type: builder-found bindings and found links, restorable. */
+  withdrawn?: { bindings: string[]; links: { relationship: string; from_entity: string; to_entity: string }[] };
   path: "object_type";
   connection_id: string;
   schema_name: string;
@@ -536,6 +538,20 @@ export async function declareLink(connectionId: string, spec: DeclaredLinkSpec, 
 }
 
 /** ON-7 — withdraw a DECLARED link. A found link is named, never deleted. */
+/** 2026-09-22 — put back a builder-found binding a person withdrew. */
+export async function restoreBinding(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
+  const res = await fetch(`${bindingUrl(connectionId, entityId, name, schemaName).replace(/\?/, "/restore?")}`, { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** 2026-09-22 — put back a found link a person withdrew. */
+export async function restoreLink(connectionId: string, relationshipId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}/restore?${scope(connectionId, schemaName)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
 export async function deleteLink(connectionId: string, relationshipId: string, schemaName?: string): Promise<void> {
   const res = await fetch(
     `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}?${scope(connectionId, schemaName)}`,

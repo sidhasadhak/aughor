@@ -298,7 +298,28 @@ def get_object_type(object_type: str, connection_id: str = BUILTIN_ID,
     except ObjectQueryRefused as exc:
         return {"path": "refused", "refused": exc.reason, "available": exc.available,
                 "connection_id": connection_id, "schema_name": graph.schema_name}
-    return {"path": "object_type", "connection_id": connection_id, "schema_name": graph.schema_name, **body}
+    return {"path": "object_type", "connection_id": connection_id, "schema_name": graph.schema_name, **body,
+            "withdrawn": _withdrawn_of(connection_id, graph.schema_name or "", str(body.get("id") or ""))}
+
+
+def _withdrawn_of(connection_id: str, schema: str, entity_id: str) -> dict:
+    """2026-09-22 — what a person withdrew on this type, read from the overrides: the builder-found bindings
+    (`withdrawn_bindings`) and the found links (`withdrawn`) on either side of it — so the panel can restore them.
+    Best-effort: an unreadable tree lists nothing rather than failing the page."""
+    out: dict = {"bindings": [], "links": []}
+    try:
+        from aughor.ontology.overrides import load_overrides
+        for ov in load_overrides(connection_id, schema):
+            if ov.target_kind == "entity" and ov.target_id == entity_id:
+                out["bindings"] = sorted(str(n) for n in (ov.fields.get("withdrawn_bindings") or []))
+            elif ov.target_kind == "link" and ov.fields.get("withdrawn") and entity_id in (
+                    ov.fields.get("from_entity"), ov.fields.get("to_entity")):
+                out["links"].append({"relationship": ov.target_id, "from_entity": ov.fields.get("from_entity") or "",
+                                     "to_entity": ov.fields.get("to_entity") or ""})
+    except Exception as exc:  # noqa: BLE001 — a page that cannot list withdrawals still shows the type
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "withdrawn overrides unreadable; the type page lists none", counter="objects.withdrawn")
+    return out
 
 
 @router.get("/object-paths")

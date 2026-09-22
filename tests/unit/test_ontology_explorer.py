@@ -517,3 +517,46 @@ def test_two_model_links_between_one_pair_of_types_no_longer_collide_on_the_reve
     reverse = {r["id"]: r["reverse_api_name"] for r in rels.values() if r.get("origin") == "model"}
     assert reverse["Review_reviews_Order"] == "order_to_review"
     assert reverse["Review_written_by_buyer_of_Order"] == "order_to_review_by_customer_id"
+
+
+# ── 2026-09-22 — a person can delink from the UI: a found link and a builder-found binding are WITHDRAWABLE ──────
+# A found link was "named, never deleted" and a builder binding could only be unbound if a person had bound it — so a
+# join the builder guessed wrong, or a table it read under the wrong type, could not be undone from the panel. Both
+# withdrawals are now recorded on the overrides (representable, restorable), the served graph leaves them out, and the
+# type detail lists them with a door back.
+
+def test_a_found_link_is_withdrawn_and_restored_over_http(door, client):
+    rel_id = _order_customer_link()
+    assert rel_id in client.get("/ontology/relationships", params=PARAMS).json()
+    gone = client.delete(f"/ontology/links/{rel_id}", params=PARAMS)
+    assert gone.status_code == 200 and gone.json()["withdrawn"] is True
+    assert rel_id not in client.get("/ontology/relationships", params=PARAMS).json()      # the compiler cannot follow it
+    order = client.get("/object-types/order", params=PARAMS).json()
+    assert rel_id not in [l["relationship"] for l in order["links"]]
+    assert [w["relationship"] for w in order["withdrawn"]["links"]] == [rel_id]
+    assert client.post(f"/ontology/links/{rel_id}/restore", params=PARAMS).status_code == 200
+    assert rel_id in client.get("/ontology/relationships", params=PARAMS).json()
+    assert client.get("/object-types/order", params=PARAMS).json()["withdrawn"] == {"bindings": [], "links": []}
+    assert client.post(f"/ontology/links/{rel_id}/restore", params=PARAMS).status_code == 404
+    assert client.delete("/ontology/links/no_such_link", params=PARAMS).status_code == 404
+
+
+def test_a_builder_found_binding_is_withdrawn_and_restored_over_http(door, client):
+    from aughor.ontology import store as ST
+    from aughor.ontology.models import Binding
+    graph = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
+    graph.entities["Order"].bindings.append(Binding(name="lines", kind="detail", table="order_items", key="order_id",
+                                                     source="proposed", verified=True))   # the data's, not a person's
+    ST.save_ontology(CONN, "ecommerce", "fp", graph)
+    names = lambda: [b["name"] for b in client.get("/object-types/order", params=PARAMS).json()["bindings"]]
+    assert "lines" in names()
+    backing = client.delete("/ontology/entities/Order/bindings/orders", params=PARAMS)
+    assert backing.status_code in (400, 404)                                 # the backing is not a binding to withdraw
+    gone = client.delete("/ontology/entities/Order/bindings/lines", params=PARAMS)
+    assert gone.status_code == 200 and gone.json()["withdrawn"] is True
+    assert "lines" not in names()
+    assert client.get("/object-types/order", params=PARAMS).json()["withdrawn"]["bindings"] == ["lines"]
+    assert client.post("/ontology/entities/Order/bindings/lines/restore", params=PARAMS).status_code == 200
+    assert "lines" in names()
+    assert client.post("/ontology/entities/Order/bindings/lines/restore", params=PARAMS).status_code == 404
+    assert client.delete("/ontology/entities/Order/bindings/nothing", params=PARAMS).status_code == 404

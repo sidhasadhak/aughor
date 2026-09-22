@@ -17,6 +17,8 @@ import userEvent from "@testing-library/user-event";
 import type { BackingPreview, ObjectTypeDetail } from "@/lib/objectTypes";
 
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
+const deleteLink = vi.fn(async (..._args: unknown[]) => undefined);
+const restoreLink = vi.fn(async (..._args: unknown[]) => undefined);
 const nameLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareProcess = vi.fn(async (..._args: unknown[]) => ({ id: "order_fulfilment" }));
@@ -40,6 +42,8 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   previewBacking: (...a: unknown[]) => previewBacking(...a),
   setQueryBacking: (...a: unknown[]) => setQueryBacking(...a),
   withdrawBacking: (...a: unknown[]) => withdrawBacking(...a),
+  deleteLink: (...a: unknown[]) => deleteLink(...a),
+  restoreLink: (...a: unknown[]) => restoreLink(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -499,5 +503,28 @@ describe("EntityTypePanel — reading a type from a keyed SELECT", () => {
     await user.click(screen.getByRole("button", { name: "Set as backing" }));
     expect(previewBacking).toHaveBeenLastCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
     expect(setQueryBacking).toHaveBeenCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
+  });
+});
+
+describe("withdrawing what the builder found (2026-09-22)", () => {
+  it("offers Withdraw on a found link and lists a withdrawal with its door back", async () => {
+    const user = userEvent.setup();
+    deleteLink.mockClear();
+    restoreLink.mockClear();
+    shown.detail = {
+      ...detail,
+      withdrawn: { bindings: ["lines"], links: [{ relationship: "product_to_supplier", from_entity: "Product", to_entity: "Supplier" }] },
+    };
+    render(<EntityTypePanel connectionId="c1" objectType="product" types={rows} version={0} onOpen={() => {}} onChanged={() => {}} />);
+    const link = await screen.findByTestId("entity-link");
+    await user.click(within(link).getByRole("button", { name: "Withdraw" }));
+    await user.click(within(link).getByRole("button", { name: /Withdraw/ }));
+    await waitFor(() => expect(deleteLink).toHaveBeenCalled());
+    const rows_ = screen.getAllByTestId("entity-withdrawn");
+    expect(rows_).toHaveLength(2);
+    expect(rows_[1]).toHaveTextContent("product_to_supplier");
+    await user.click(within(rows_[1]).getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(restoreLink).toHaveBeenCalledWith("c1", "product_to_supplier", undefined));
+    shown.detail = undefined;
   });
 });
