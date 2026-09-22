@@ -16,6 +16,7 @@ import { installAuthFetch } from "@/lib/auth";
 import { installWorkspaceHeader, setActiveWorkspace } from "@/lib/workspace";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
+import { OwnersPanel } from "@/components/OwnersPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
 import { runDisplayTitle } from "@/lib/runTitle";
 import { formatCount } from "@/lib/format";
@@ -897,7 +898,11 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
 
         {sub === "organization" && (
-          <OrgSettingsPanel workspaceId={workspaceId} workspaceName={workspaceName} />
+          <>
+            <OrgSettingsPanel workspaceId={workspaceId} workspaceName={workspaceName} />
+            {/* CB-3 — owners the platform can reach: link a display name to a principal, once. */}
+            <OwnersPanel />
+          </>
         )}
 
         {sub === "appearance" && (

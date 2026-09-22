@@ -256,11 +256,13 @@ def review_question(o: RecOutcome, review_value: Optional[float], review_window:
     return f"You accepted \"{o.rec_text}\" on {when}. Did it work?"
 
 
-def resolve_asked_to(o: RecOutcome) -> str:
-    """The metric's OWNER when the catalog names one the platform can route to (the user's call,
-    2026-09-22), else the person who accepted. Until CB-3 links owners, the catalog's free text
-    routes only when it already reads as a principal (``user:…`` / ``group:…``)."""
+def resolve_asked_to(o: RecOutcome) -> tuple[str, str]:
+    """``(principal, note)`` — the metric's OWNER when the catalog names one the platform can reach
+    (the user's call, 2026-09-22; CB-3 makes a linked display name reach), else the person who
+    accepted. The note says when an owner exists but is unresolved, so the record shows why the
+    accepter was asked instead of nobody being asked silently."""
     label = (o.spec or {}).get("metric_label") or o.metric_name or ""
+    note = ""
     if label:
         try:
             from aughor.rbac.routing import owner_principal
@@ -269,12 +271,14 @@ def resolve_asked_to(o: RecOutcome) -> str:
             owner = getattr(m, "owner", None) if m is not None else None
             principal = owner_principal(owner or "") if owner else None
             if principal:
-                return principal
+                return principal, ""
+            if owner:
+                note = f"owner '{owner}' of {label} is not linked to a person; asked the accepter instead"
         except Exception as exc:  # noqa: BLE001 — an owner lookup that fails falls back to the accepter
             from aughor.kernel.errors import tolerate
             tolerate(exc, "metric owner lookup for a review is best-effort; the accepter is asked",
                      counter="outcomes.review_owner")
-    return o.accepted_by or ""
+    return (o.accepted_by or ""), note
 
 
 def run_due_reviews(now: Optional[datetime] = None, *, run_sql_for, path: Path | None = None) -> list[RecOutcome]:
@@ -293,10 +297,11 @@ def run_due_reviews(now: Optional[datetime] = None, *, run_sql_for, path: Path |
                 note = f"review measurement failed: {str(exc)[:160]}"
         else:
             note = o.review_note or "no measurable definition"
-        asked_to = resolve_asked_to(o)
+        asked_to, owner_note = resolve_asked_to(o)
+        notes = "; ".join(x for x in (note or o.review_note, owner_note) if x)
         fields = {"review_value": value, "reviewed_at": now.isoformat(), "review_window": label,
                   "review_question": review_question(o, value, label), "review_asked_to": asked_to,
-                  "review_asked_at": now.isoformat(), "review_note": note or o.review_note}
+                  "review_asked_at": now.isoformat(), "review_note": notes}
         if value is not None and o.metric_after is None:
             fields["metric_after"] = value
         reviewed.append(_update(o.id, fields, path))

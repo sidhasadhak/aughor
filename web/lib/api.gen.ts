@@ -9829,6 +9829,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/owners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Owners
+         * @description Every owner in use, resolved or not, with its uses. ``connection_id`` narrows the ontology
+         *     read to one connection (the catalog and the glossary are org-wide either way).
+         */
+        get: operations["list_owners_owners_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/owners/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Owner Link */
+        put: operations["put_owner_link_owners_links_put"];
+        post?: never;
+        /** Delete Owner Link */
+        delete: operations["delete_owner_link_owners_links_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs": {
         parameters: {
             query?: never;
@@ -13718,6 +13757,8 @@ export interface components {
             metric_name?: string | null;
             /** Rec Text */
             rec_text: string;
+            /** Review Days */
+            review_days?: number | null;
             /** Status */
             status: string;
         };
@@ -13745,6 +13786,13 @@ export interface components {
              * @default
              */
             table: string;
+        };
+        /** OwnerLinkRequest */
+        OwnerLinkRequest: {
+            /** Owner Text */
+            owner_text: string;
+            /** Principal */
+            principal: string;
         };
         /** PauseRequest */
         PauseRequest: {
@@ -14595,6 +14643,8 @@ export interface components {
             caveats?: string | null;
             /** Description */
             description?: string | null;
+            /** Owner */
+            owner?: string | null;
             /** Values */
             values?: string | null;
         };
@@ -14646,6 +14696,8 @@ export interface components {
             grain?: string | null;
             /** Joins */
             joins?: string[] | null;
+            /** Owner */
+            owner?: string | null;
         };
         /** UpdateWorkspaceRequest */
         UpdateWorkspaceRequest: {
@@ -32681,6 +32733,101 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_owners_owners_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_owner_link_owners_links_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_owner_link_owners_links_delete: {
+        parameters: {
+            query: {
+                owner_text: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

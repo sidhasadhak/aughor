@@ -2466,6 +2466,45 @@ export async function getEntityLifecycleCounts(
 
 export type RecStatus = "accepted" | "rejected" | "implemented" | "verified" | "dismissed";
 
+// ── CB-3 — owners the platform can reach ───────────────────────────────────
+export interface OwnerUse { kind: string; id: string; connection_id: string }
+export interface OwnerEntry {
+  owner_text: string;
+  owner_key: string;
+  uses: OwnerUse[];
+  principal: string | null;
+  resolved: boolean;
+  how: "principal" | "linked" | "unresolved";
+  linked_by: string;
+  linked_at: string;
+}
+export interface OwnerLink { owner_text: string; owner_key: string; principal: string; linked_by: string; linked_at: string }
+
+export async function listOwners(connectionId?: string): Promise<{ owners: OwnerEntry[]; links: OwnerLink[] }> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/owners${qs}`);
+  if (!res.ok) throw new Error(`listOwners failed: ${res.status}`);
+  return res.json();
+}
+
+export async function linkOwner(ownerText: string, principal: string): Promise<OwnerLink> {
+  const res = await fetch(`${getApiBase()}/owners/links`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner_text: ownerText, principal }),
+  });
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try { detail = (await res.json()).detail ?? detail; } catch { /* keep the status */ }
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export async function unlinkOwner(ownerText: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/owners/links?owner_text=${encodeURIComponent(ownerText)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`unlinkOwner failed: ${res.status}`);
+}
+
 export interface RecOutcome {
   id: string;
   inv_id: string;

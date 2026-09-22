@@ -7189,9 +7189,18 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   have (this report carried 0 recommendations; the receipt accepted "{}"); and on an identity-off instance `accepted_by`
   is empty, so the question reaches nobody — CB-3's owners are what makes it reach someone. This closes the open call *"when is a person asked
   whether a recommendation WORKED?"* — at the moment it is accepted.
-- **CB-3 · Owners the platform can reach** (idea 18). An owner string on a metric, a process or a rule is linked
-  to a principal ONCE, by a person, in the UI; the glossary gets an owner field; `owner_principal` resolves the link;
-  an unresolved owner is shown as unresolved wherever a question would have gone. Never by name matching.
+- ✅ **CB-3 · Owners the platform can reach** (idea 18) — **BUILT 2026-09-22**. An owner text ("Ana (logistics)",
+  "Revenue team") is linked to a principal ONCE, by a person, in Settings ▸ Organization ▸ *Owners the platform can reach*
+  (`rbac/owners.py`, rows in `rbac.db` keyed by the casefolded text; doors `GET /owners`, `PUT`/`DELETE /owners/links`).
+  `owner_principal` reads the link after the principal spelling, so every owner field carrying that text routes —
+  departures (`route`), the review's question (CB-2) — with no YAML rewritten. **Never by matching a name**: a link
+  resolves exactly the text it was written for (not "Ana", not the address inside the principal, not a looser
+  spelling), and nothing searches users. The glossary takes an `owner` on a table and a column (`PUT /glossary/…`).
+  The inventory names every owner in use across the metrics catalog, each connection's processes and rules, and the
+  glossary, with its uses and its resolution (*as written* · *linked by whom* · *unresolved*), the unresolved first —
+  the map's "owners reachable: N of M". Where a question would have gone to an unresolved owner, the record now says
+  so ("owner 'Ana (logistics)' of late dispatch is not linked to a person; asked the accepter instead"). Receipts:
+  `tests/unit/test_owner_links.py` (13) + `OwnersPanel.test.tsx` (3); tsc, six lints, vitest green.
 - **CB-4 · Remember a rejected duplicate** (idea 19). `GET /ontology/duplicate-entities` recomputes the same
   pairs on every read; a "no, these are different" is recorded with its reason and the pair is not offered again —
   the pattern the explorer's withdrawn proposals (`explorer._withdrawn`) and dismissed recommendations already use.
