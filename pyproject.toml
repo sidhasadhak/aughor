@@ -28,6 +28,13 @@ dependencies = [
     # even though it is absent from the API's boot closure.
     "scipy>=1.13.0",
     "numpy>=1.26.0",
+    # RC-2 — rasterizes the chart SVG for surfaces that cannot embed vectors: a
+    # scheduled Slack post's PNG, and the PPTX export that had been dropping its chart
+    # slides in silence. Core rather than an extra (1.2 MB, prebuilt wheels, links no
+    # system library) because the scheduled chart is DEFAULT-ON: a rasterizer that lived
+    # in an optional extra would make the feature quietly absent on every install that
+    # skipped it, which is how the last few capabilities stalled at "tested".
+    "resvg-py>=0.5.0",
     "sqlglot>=25.0.0",
     "rich>=13.0.0",
     "click>=8.1.0",
@@ -89,8 +96,10 @@ export = [
     "reportlab>=4.5.1",
     "python-pptx>=1.0.2",
     # CA-4 one-renderer: charts come from the web's own ECharts resolver via a
-    # node subprocess (chart_ssr.bundle.mjs, §5-3a) as SVG; svglib + reportlab's
-    # renderPM rasterize that SVG for embedding. matplotlib's parallel port is gone.
+    # node subprocess (chart_ssr.bundle.mjs, §5-3a) as SVG; svglib turns that SVG
+    # into a reportlab drawing the PDF embeds as VECTOR (`export/pdf.py`).
+    # Rasterization moved to resvg in the core deps — renderPM needed an rlPyCairo
+    # backend that was absent far more often than present. matplotlib's port is gone.
     "svglib>=1.5.1",
 ]
 # Document ingestion. `firecrawl-anydoc` is the converter for every binary format
