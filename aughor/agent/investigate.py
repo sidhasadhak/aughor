@@ -3722,6 +3722,7 @@ def _degraded_report(question: str, phases: list, intake_data: dict, *,
         observation_period=(intake_data.get("data_coverage_label", "") if _xsec
                             else intake_data.get("observation_label", "")),
         metric_definition=_metric_definition_receipt(intake_data),
+        spec=_measurable_spec(intake_data),
         comparison_basis=_comparison_basis(intake_data),
         total_change_label="",
         phases=phases,
@@ -4195,6 +4196,30 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake probe connection close failed; probe result already "
                                "returned", counter="deep_analysis.intake_probe_close")
+
+
+def _measurable_spec(intake_data: dict) -> Optional[dict]:
+    """CB-2 — the measurable definition the intake settled on, as a small dict the report carries:
+    the metric's SQL and table, the date column and how many days the observation window spanned.
+    A baseline at acceptance and a review on its date are measured with exactly this, over a window
+    of the same length ending on the most recent complete day. None when the intake carried no
+    metric SQL or table — a report without one records an acceptance as unmeasured, honestly."""
+    d = intake_data or {}
+    metric_sql = str(d.get("metric_sql") or "").strip()
+    table = str(d.get("metric_table") or "").strip()
+    if not metric_sql or not table:
+        return None
+    window_days = 1
+    try:
+        from datetime import date as _date
+        start = _date.fromisoformat(str(d.get("observation_start") or "")[:10])
+        end = _date.fromisoformat(str(d.get("observation_end") or "")[:10])
+        window_days = max(1, (end - start).days + 1)
+    except Exception:  # noqa: BLE001 — a window the intake did not date measures one day
+        window_days = 1
+    return {"metric_label": str(d.get("metric_label") or ""), "metric_sql": metric_sql,
+            "metric_table": table, "date_column": str(d.get("date_column") or ""),
+            "window_days": window_days}
 
 
 def _metric_definition_receipt(intake_data: dict) -> str:
@@ -10214,6 +10239,7 @@ def ada_synthesize(state: AgentState) -> dict:
             metric=intake_data.get("metric_label", ""),
             observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
             metric_definition=_metric_definition_receipt(intake_data),
+            spec=_measurable_spec(intake_data),
             comparison_basis=_comparison_basis(intake_data),
             total_change_label="" if _xsec else synth.total_change_label,
             phases=phases,

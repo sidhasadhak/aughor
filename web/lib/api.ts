@@ -2477,6 +2477,23 @@ export interface RecOutcome {
   metric_after: number | null;
   created_at: string;
   updated_at: string;
+  // CB-2 (2026-09-22) — the baseline recorded at acceptance and the scheduled review.
+  connection_id?: string;
+  accepted_by?: string;
+  spec?: { metric_label?: string; metric_sql?: string; metric_table?: string; date_column?: string;
+           window_days?: number } | null;
+  baseline_value?: number | null;
+  baseline_at?: string;
+  baseline_window?: string;
+  review_days?: number;
+  review_at?: string;
+  review_value?: number | null;
+  reviewed_at?: string;
+  review_window?: string;
+  review_question?: string;
+  review_asked_to?: string;
+  review_asked_at?: string;
+  review_note?: string;
 }
 
 export async function logOutcome(
