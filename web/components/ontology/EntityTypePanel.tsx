@@ -1408,10 +1408,18 @@ function NameLink({ link, connectionId, schema, onChanged }: {
   };
   if (!open) {
     return (
-      <Button variant="ghost" size="xs" onClick={() => setOpen(true)}
-        title="Name this link the way the business says it — the mechanical name keeps working beside it">
-        {link.business_name_source === "human" ? "Rename" : "Name it"}
-      </Button>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        {link.business_name_source === "model" && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}
+            title="The explorer proposed this name — confirm it in the draft rail, or rename it here">
+            proposed by the explorer
+          </span>
+        )}
+        <Button variant="ghost" size="xs" onClick={() => setOpen(true)}
+          title="Name this link the way the business says it — the mechanical name keeps working beside it">
+          {link.business_name_source === "human" || link.business_name_source === "model" ? "Rename" : "Name it"}
+        </Button>
+      </span>
     );
   }
   return (

@@ -1910,8 +1910,44 @@ def delete_declared_rule(
 
 
 class _LinkName(BaseModel):
-    """ON-3b — a link's business-verb name (`shipment_ships_order`)."""
+    """ON-3b — a link's business-verb name (`shipment_ships_order`). An empty name CLEARS the business name
+    (2026-09-22): the withdrawal of a name, a person's or the explorer's."""
     name: str
+
+
+def _name_link_core(connection_id: str, effective: str, relationship_id: str, name: str, *,
+                    origin: str = "human", provenance: str = "") -> dict:
+    """The naming door's one body (2026-09-22), shared by the person's PUT and the explorer's proposal.
+
+    It MERGES into the link's override. A declared link's whole spec lives in that file, and the door used
+    to replace the file with `{name}` — naming a declared link erased its declaration. `origin` says whose
+    name it is (`human` from the PUT, `model` from the explorer, tiered PROPOSED until confirmed). An empty
+    name clears the name and its origin; a file left with no fields is deleted."""
+    from aughor.ontology.overrides import OntologyOverride, delete_override, find_override, save_override
+    from aughor.semantic.object_types import link_name_problem
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None or relationship_id not in graph.relationships:
+        raise HTTPException(status_code=404, detail=f"Link '{relationship_id}' not found")
+    wanted = (name or "").strip()
+    existing = find_override(connection_id, effective, "link", relationship_id)
+    fields = dict(existing.fields) if existing is not None else {}
+    if not wanted:
+        for k in ("name", "name_origin", "name_provenance"):
+            fields.pop(k, None)
+        if not fields:
+            delete_override(connection_id, effective, "link", relationship_id)
+            return {"target_kind": "link", "target_id": relationship_id, "fields": {}, "bound": True, "warnings": []}
+    else:
+        problem = link_name_problem(graph, relationship_id, wanted)
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
+        fields.update({"name": wanted, "name_origin": "model" if origin == "model" else "human",
+                       "name_provenance": provenance if origin == "model" else ""})
+    ov = OntologyOverride(target_kind="link", target_id=relationship_id, fields=fields)
+    if existing is not None:
+        ov.binding = dict(existing.binding or {})
+    save_override(connection_id, effective, ov)
+    return _override_result(ov)
 
 
 @router.put("/ontology/links/{relationship_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -1923,22 +1959,12 @@ def name_ontology_link(
 ):
     """Name a link by its business verb (ON-3b). Its mechanical names stay — every query and page still accepts
     them — and this one is accepted beside them. Refused when it is not snake_case, or already names another
-    link or a property on either type the link joins: a path segment must name exactly one thing."""
+    link or a property on either type the link joins: a path segment must name exactly one thing. An empty
+    name clears it. Merges into the link's override, so a declared link keeps its declaration."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
-    from aughor.ontology.overrides import OntologyOverride, save_override
-    from aughor.semantic.object_types import link_name_problem
     effective = _resolve_schema(connection_id, schema_name)
-    graph = _get_ontology_graph(connection_id, effective)
-    if graph is None or relationship_id not in graph.relationships:
-        raise HTTPException(status_code=404, detail=f"Link '{relationship_id}' not found")
-    name = body.name.strip()
-    problem = link_name_problem(graph, relationship_id, name)
-    if problem:
-        raise HTTPException(status_code=400, detail=problem)
-    ov = OntologyOverride(target_kind="link", target_id=relationship_id, fields={"name": name})
-    save_override(connection_id, effective, ov)
-    return _override_result(ov)
+    return _name_link_core(connection_id, effective, relationship_id, body.name, origin="human")
 
 
 # ── ON-7b: the explorer maps the business first ────────────────────────────────────────────────
@@ -1947,7 +1973,7 @@ def name_ontology_link(
 class _ConfirmTarget(BaseModel):
     """One declaration a person makes theirs: a declared entity, a declared link, the binding a part is read through,
     or a declared process or rule (ON-9)."""
-    kind: Literal["entity", "binding", "link", "process", "rule"]
+    kind: Literal["entity", "binding", "link", "link_name", "process", "rule"]
     entity: Optional[str] = None
     binding: Optional[str] = None
     relationship: Optional[str] = None
@@ -2030,6 +2056,8 @@ def explore_ontology(
             entity_id, name, {**spec, "absorb": absorb}, connection_id, effective,
             origin="model", provenance=answerer.provenance)),
         declare_link=lambda spec: _through_door(lambda: _declare_link_core(spec, connection_id, effective)),
+        name_link=lambda rel_id, name: _through_door(lambda: _name_link_core(
+            connection_id, effective, rel_id, name, origin="model", provenance=answerer.provenance)),
         served=lambda: _get_ontology_graph(connection_id, effective),
         declare_process=lambda spec: _through_door(lambda: _declare_process_core(spec, connection_id, effective)),
         declare_rule=lambda spec: _through_door(lambda: _declare_rule_core(spec, connection_id, effective)))
@@ -2136,6 +2164,20 @@ def _confirm_proposal(connection_id: str, schema: str, target: dict, actor: str)
         ov.source, ov.edited_at = "human", now
         ov.edited_by = actor or ov.edited_by
         ov.note = f"confirmed by {who}; proposed by {ov.fields.get('provenance') or 'a model'}"
+        save_override(connection_id, schema, ov)
+        return ""
+    if kind == "link_name":
+        # 2026-09-22 — the explorer's name for a found link becomes the person's.
+        ident = str(target.get("relationship") or "")
+        ov = find_override(connection_id, schema, "link", ident)
+        if ov is None or not ov.fields.get("name"):
+            return f"link '{ident}' carries no business name"
+        if ov.fields.get("name_origin") != "model":
+            return f"link '{ident}' was named by a person — there is no proposal to confirm"
+        ov.fields["name_origin"] = "human"
+        ov.source, ov.edited_at = "human", now
+        ov.edited_by = actor or ov.edited_by
+        ov.note = f"name confirmed by {who}; proposed by {ov.fields.get('name_provenance') or 'a model'}"
         save_override(connection_id, schema, ov)
         return ""
     if kind == "binding":

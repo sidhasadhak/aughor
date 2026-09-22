@@ -165,7 +165,7 @@ _EDITABLE: dict[str, set[str]] = {
     # ON-7: a DECLARED link (POST /ontology/links) carries its whole spec — the two types, the columns each side
     # joins on, the expected cardinality, a reverse name, and who declared it.
     "link": {"name", "declared", "from_entity", "to_entity", "from_column", "to_column", "cardinality",
-             "reverse_name", "origin", "provenance"},
+             "reverse_name", "origin", "provenance", "name_origin", "name_provenance"},
     # ON-9: a DECLARED process (POST /ontology/processes) — the type that goes through it and its stages in order, each
     # anchored to a moment or a state, with the promise about reaching it — and a DECLARED rule (POST /ontology/rules):
     # a value set or named conditions over one type. Both are the target's whole existence; what their measurement
@@ -620,6 +620,11 @@ def _apply_link(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
     if rel is None or not LINK_NAME_PATTERN.match(name):
         return touched
     rel.name = name
+    # 2026-09-22 — who named it: the recorded origin, else the declaration's own (a model-declared link's
+    # verb is the model's until confirmed), else a person's (only the person's door wrote names before).
+    origin = ov.fields.get("name_origin") or ov.fields.get("origin") or "human"
+    rel.name_origin = "model" if origin == "model" else "human"
+    rel.name_provenance = str(ov.fields.get("name_provenance") or "")
     return [*touched, "name"]
 
 

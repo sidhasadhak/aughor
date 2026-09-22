@@ -226,7 +226,8 @@ export interface ProposedBinding {
 export interface TypeLink {
   name: string;
   business_name: string;
-  business_name_source: "human" | "proposed" | "";
+  /** `model` (2026-09-22): the explorer proposed the name; a person confirms it in the draft rail. */
+  business_name_source: "human" | "model" | "proposed" | "";
   verb: string;
   relationship: string;
   direction: "out" | "in";
@@ -606,7 +607,7 @@ export type ProposalTier = "proposed" | "confirmed" | "released" | "withdrawn" |
 /** ON-7b — one thing an explorer proposed: an entity, a part (a table read under an entity), or a link. */
 export interface DraftProposal {
   key: string;
-  kind: "entity" | "part" | "link" | "process" | "rule";
+  kind: "entity" | "part" | "link" | "link_name" | "process" | "rule";
   tier: ProposalTier;
   sentence: string;
   /** What the measurement said — the counts it rests on, or why it was refused. */
@@ -652,7 +653,7 @@ export interface OntologyDraft {
 
 /** ON-7b — a declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read through. */
 export interface ConfirmTarget {
-  kind: "entity" | "binding" | "link" | "process" | "rule";
+  kind: "entity" | "binding" | "link" | "link_name" | "process" | "rule";
   entity?: string;
   binding?: string;
   relationship?: string;

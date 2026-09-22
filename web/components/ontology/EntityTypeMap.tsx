@@ -407,6 +407,7 @@ const TIER_TAG: Record<ProposalTier, string> = {
 function targetOf(p: DraftProposal): ConfirmTarget {
   if (p.kind === "entity") return { kind: "entity", entity: p.target.entity };
   if (p.kind === "link") return { kind: "link", relationship: p.target.relationship };
+  if (p.kind === "link_name") return { kind: "link_name", relationship: p.target.relationship };
   if (p.kind === "process") return { kind: "process", process: p.target.process };
   if (p.kind === "rule") return { kind: "rule", rule: p.target.rule };
   return { kind: "binding", entity: p.target.entity, binding: p.target.binding };

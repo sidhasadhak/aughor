@@ -42,7 +42,7 @@ class DraftProposal(BaseModel):
     """One proposal, keyed by its SUBSTANCE (`explorer.part_key`, `link_key`, `entity_key`) — so the model spelling a
     binding differently on a second run is the same proposal, not a new one."""
     key: str
-    kind: Literal["entity", "part", "link", "process", "rule"]
+    kind: Literal["entity", "part", "link", "link_name", "process", "rule"]
     #: What the data said when it was proposed: `proposed` (measured, and written through a door) or `refused`.
     status: Literal["proposed", "refused"]
     sentence: str

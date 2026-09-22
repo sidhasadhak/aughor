@@ -477,6 +477,11 @@ class OntologyRelationship(BaseModel):
     origin: Literal["join_map", "human", "model"] = "join_map"
     #: ON-7b — who said a declared link exists, when a model did: `model:<id>@<version>`, kept after a person confirms.
     provenance: str = ""
+    #: 2026-09-22 — who set `name`: `human` (a person, through PUT /ontology/links/{id}), `model` (the explorer's
+    #: proposal, PROPOSED until a person confirms it), "" (no business name set). A name recorded before this field
+    #: existed was a person's — only the person's door wrote names then — and reads `human` through the overrides.
+    name_origin: Literal["", "human", "model"] = ""
+    name_provenance: str = ""
     #: ON-8 — `join` when both types are read from one connection, so one statement joins them; `cross-source` when
     #: they live on two, and the compiler reads the far side by key through the batched-foreach engine instead. Stamped
     #: from the two types' connections (`aughor.ontology.domains.stamp_traversals`) by the law the compiler follows,
@@ -502,8 +507,11 @@ class OntologyRelationship(BaseModel):
         return f"{snake_name(self.from_entity)}_{verb}_{snake_name(self.to_entity)}"
 
     def business_name_source(self) -> str:
-        """``human`` when a person named the link, ``proposed`` when its verb did, "" when nothing names it."""
-        return "human" if self.name else ("proposed" if self.business_name() else "")
+        """``human`` when a person named the link, ``model`` when the explorer proposed the name and no person has
+        confirmed it yet, ``proposed`` when its verb names it at read time, "" when nothing names it."""
+        if self.name:
+            return "model" if self.name_origin == "model" else "human"
+        return "proposed" if self.business_name() else ""
 
 
 #: ON-3b — the verb the builder writes before enrichment names nothing, so no link name is proposed from it.
