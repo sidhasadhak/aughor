@@ -7207,10 +7207,16 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   for `rule:completed_orders` answer that principal ("owner of rule:completed_orders"); a bare name was refused (422);
   unlinking emptied the route again. The map's first count: owners reachable 0 of 7 on this deployment, until people link
   them. ⏳ Screenshot of the panel owed — the browser pane is hidden in this session.
-- **CB-4 · Remember a rejected duplicate** (idea 19). `GET /ontology/duplicate-entities` recomputes the same
-  pairs on every read; a "no, these are different" is recorded with its reason and the pair is not offered again —
-  the pattern the explorer's withdrawn proposals (`explorer._withdrawn`) and dismissed recommendations already use.
-  Receipt: reject a pair, read again, it is gone; the reason is on the record.
+- ✅ **CB-4 · Remember a rejected duplicate** (idea 19) — **BUILT 2026-09-23**. `GET /ontology/duplicate-entities` recomputed the
+  same clusters on every read and nothing recorded a "no, these are different". Now `POST …/duplicate-entities/reject`
+  records it — the unordered pair, the reason, who said so — in the people's-decisions tree beside dismissed
+  recommendations (`ontology/dedup_decisions.py`, `{conn}/{schema}/rejected_duplicates.yaml`), and the read applies it: a
+  cluster whose every pair was rejected is hidden and counted, a larger cluster with one pair rejected stays annotated
+  (its other pairs were never judged), `DELETE` reconsiders. Detection stays pure. The drawer has *Not duplicates* with a
+  reason, shows "already judged different" inside a surviving cluster, and lists what was judged earlier with *Reconsider*
+  (both `<Button>` — the raw-element ratchet holds at 55). Receipts: `tests/unit/test_dedup_rejections.py` (9); tsc, six
+  lints, vitest green. No live receipt is possible on this deployment: theLook and LuxExperience suggest 0 clusters today
+  (measured 2026-09-22), so the door tests are the receipt.
 - **CB-5 · Show how much of the business the platform can see** (idea 15). `declarations.Coverage` (imported only
   by its test) reaches a screen: the share of tables mapped to business objects, exclusions out of the denominator,
   banded; beside it *the one missing definition holding the most back*, counted from departure holds per unapproved

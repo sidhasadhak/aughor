@@ -8610,6 +8610,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/duplicate-entities/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Duplicate Entities
+         * @description CB-4 — "these are different": record it, with the reason and who said so, so the pair is not
+         *     suggested again. Two or more ids; every pair among them is rejected.
+         */
+        post: operations["reject_duplicate_entities_ontology_duplicate_entities_reject_post"];
+        /**
+         * Reconsider Duplicate Entities
+         * @description CB-4 — take a rejection back; the pair may be suggested again.
+         */
+        delete: operations["reconsider_duplicate_entities_ontology_duplicate_entities_reject_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities": {
         parameters: {
             query?: never;
@@ -15676,6 +15701,16 @@ export interface components {
             error: string;
             /** Sql */
             sql: string;
+        };
+        /** _RejectDuplicates */
+        _RejectDuplicates: {
+            /** Entity Ids */
+            entity_ids: string[];
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** _RestoreVersionRequest */
         _RestoreVersionRequest: {
@@ -30619,6 +30654,76 @@ export interface operations {
                 connection_id?: string;
                 schema_name?: string | null;
                 threshold?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_duplicate_entities_ontology_duplicate_entities_reject_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_RejectDuplicates"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconsider_duplicate_entities_ontology_duplicate_entities_reject_delete: {
+        parameters: {
+            query: {
+                a: string;
+                b: string;
+                connection_id?: string | null;
+                schema_name?: string | null;
             };
             header?: never;
             path?: never;

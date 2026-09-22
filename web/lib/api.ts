@@ -1637,7 +1637,48 @@ export async function getConnectionTour(connectionId: string, schemaName?: strin
 // ── Duplicate-entity detection + merge (Borrow 5) ─────────────────────────────
 
 export interface DuplicateEntityRef { id: string; display_name: string; source_tables: string[] }
-export interface DuplicateCluster { entities: DuplicateEntityRef[]; similarity: number }
+export interface DuplicateCluster {
+  entities: DuplicateEntityRef[];
+  similarity: number;
+  // CB-4 — pairs inside this cluster a person already said are different (the rest were never judged).
+  rejected_pairs?: { pair: [string, string]; reason: string }[];
+}
+// CB-4 — a rejected pair, remembered with its reason and who said so.
+export interface RejectedDuplicate { pair: [string, string]; reason: string; rejected_by: string; rejected_at: string }
+export interface DuplicateSuggestions { clusters: DuplicateCluster[]; hidden: number; rejected: RejectedDuplicate[] }
+
+export async function getDuplicateSuggestions(
+  connectionId: string, schemaName?: string, threshold?: number,
+): Promise<DuplicateSuggestions> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  if (threshold != null) q.set("threshold", String(threshold));
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities?${q}`);
+  if (!res.ok) throw new Error("Failed to load duplicate suggestions");
+  const body = await res.json();
+  return { clusters: body.clusters ?? [], hidden: body.hidden ?? 0, rejected: body.rejected ?? [] };
+}
+
+export async function rejectDuplicateEntities(
+  connectionId: string, entityIds: string[], reason: string, schemaName?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities/reject?${q}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entity_ids: entityIds, reason }),
+  });
+  if (!res.ok) throw new Error("Couldn't record the rejection");
+}
+
+export async function reconsiderDuplicatePair(
+  connectionId: string, a: string, b: string, schemaName?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId, a, b });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities/reject?${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Couldn't take the rejection back");
+}
 
 export async function getDuplicateEntities(
   connectionId: string, schemaName?: string, threshold?: number,
