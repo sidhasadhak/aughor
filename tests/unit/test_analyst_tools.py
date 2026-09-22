@@ -449,3 +449,38 @@ def test_a_query_with_no_scope_keeps_the_bare_title():
     assert _adhoc_title(["a", "b"], "q", "SELECT a, SUM(b) FROM t GROUP BY 1") == "b by a"
     assert _adhoc_title(["a", "b"], "q", "") == "b by a"
     assert _adhoc_title([], "the question", "") == "the question"
+
+
+# ── ON-10 (2026-09-22): the analyst's scan tool runs the frame's declared breakdowns first ──────────────────────
+# The graph route got a `frame_breakdowns` node before the scan; the analyst body reaches the scan as a TOOL and the
+# live receipt (a deep run on LuxExperience) never met the node. So the tool runs the node's function once per turn
+# on its first scan — pinned by `dimension` or not: the second live run pinned the scan to the carrier the question
+# named, and a first draft that skipped pinned scans never ran them at all.
+
+def test_the_scan_tool_runs_the_declared_breakdowns_once_before_the_first_scan(traffic_db, monkeypatch):
+    from aughor.agent import investigate as I
+    calls: list[str] = []
+
+    def fake_frame_breakdowns(state, conn):
+        calls.append("frame_breakdowns")
+        return {"investigation_phases": list(state.get("investigation_phases") or []) + [
+            I._phase_result("frame_breakdowns", "Declared breakdowns", "📐", "complete", "1 declared", [])]}
+
+    def fake_scan(state, conn, **kwargs):
+        calls.append("cross_section")
+        return {"investigation_phases": list(state.get("investigation_phases") or []) + [
+            I._phase_result("cross_section", "Cross-Sectional Scan", "🧭", "complete", "scan", [])]}
+    monkeypatch.setattr(I, "frame_breakdowns", fake_frame_breakdowns)
+    monkeypatch.setattr(an, "_scan", fake_scan)
+    emitted: list[str] = []
+    turn = _turn(traffic_db, emit=lambda t, p: emitted.append(p["phase"]["phase_id"]) if t == "phase_complete" else None)
+
+    out = an.cross_section(turn, {})
+    assert calls == ["frame_breakdowns", "cross_section"]
+    assert emitted == ["frame_breakdowns", "cross_section"]                  # streamed in order, as the graph would
+    assert [p["phase_id"] for p in out["phases"]] == ["frame_breakdowns", "cross_section"]   # both reach the model
+
+    an.cross_section(turn, {"dimension": "channel_lvl0"})                     # a later pinned scan: no repeat
+    assert calls == ["frame_breakdowns", "cross_section", "cross_section"]
+    an.cross_section(_turn(traffic_db), {"dimension": "channel_lvl0"})        # a fresh turn whose FIRST scan is pinned: runs
+    assert calls[-2:] == ["frame_breakdowns", "cross_section"]
