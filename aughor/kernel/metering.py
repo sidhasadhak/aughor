@@ -332,7 +332,10 @@ def current_budget() -> Optional[tuple]:
 
 def check_budget() -> None:
     """Raise BudgetExceeded if the active run is over its in-context budget. No-op
-    when no budget is armed (job paths enforce via the kernel heartbeat instead)."""
+    when no budget is armed. Armed by the ask stream (the Responder's budget) and by
+    `JobKernel._run` (the job's own governance — the same numbers its heartbeat
+    enforces from outside), so it fires in any thread that carries the run's context,
+    including the executor threads a cancel cannot reach."""
     b = _budget.get()
     if b is None:
         return

@@ -342,3 +342,28 @@ def test_the_new_tools_ride_every_transport_through_the_one_roster():
     from aughor.agent.spotlight_roster import spotlight_roster
     names = {t.name for t in spotlight_roster("conn-r")}
     assert {"platform_limits", "set_agent_limit"} <= names
+
+
+# ── the budget fires mid-loop: what was annotated is kept, the abort still reaches the kernel ──
+
+def test_autoseed_keeps_what_it_wrote_when_the_budget_fires_mid_loop(seed_env):
+    """`BudgetExceeded` is a BaseException so the loop's fail-open branch cannot swallow
+    it — but the glossary was only saved AFTER the loop, so an abort lost every table
+    annotated before it. Now the loop stops, saves, then re-raises."""
+    from aughor.kernel.metering import BudgetExceeded
+    from aughor.semantic import autoseed
+    from aughor.semantic.glossary import CONNECTIONS_KEY, load_glossary
+
+    real = seed_env.complete
+    def complete(**kw):
+        if len(seed_env.seen) == 2:
+            raise BudgetExceeded("token budget (200,000 tokens)")
+        return real(**kw)
+    seed_env.complete = complete
+    set_governance(CURATOR, limits={AUTOSEED: 100})
+
+    with pytest.raises(BudgetExceeded):
+        autoseed._seed(_blocks(7), schema=None, connection_id="conn-budget", conn=None)
+    assert sorted(seed_env.seen) == ["t6", "t7"]                 # the 3rd call never landed
+    saved = (load_glossary().get(CONNECTIONS_KEY) or {}).get("conn-budget", {}).get("tables") or {}
+    assert len(saved) == 2 and all(k.endswith(("t6", "t7")) for k in saved)

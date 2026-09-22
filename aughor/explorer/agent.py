@@ -29,6 +29,7 @@ from weakref import WeakKeyDictionary
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
 
+from aughor.kernel.metering import BudgetExceeded as _BudgetExceeded
 from aughor.explorer.models import (
     DistributionShape,
     ExplorationPhase,
@@ -1154,14 +1155,21 @@ class SchemaExplorer:
                 f"{self._status.insights_found} insights"
             )
 
-        except asyncio.CancelledError:
-            # A cancel (budget breach / user stop / owner deletion) unwinds here BEFORE the
-            # COMPLETE transition, so the in-memory status was left at whatever phase it was in
-            # (e.g. domain_intel). Mark it terminal so a later start/spawn doesn't see a stale
-            # "still running" explorer and refuse — the budget-cancel WEDGE (Tier-0 #1).
+        except (asyncio.CancelledError, _BudgetExceeded) as _stop:
+            # A cancel (budget breach / user stop / owner deletion) — or the run's own
+            # in-context budget firing on the call that crossed it (the kernel arms the
+            # same numbers its heartbeat enforces; BudgetExceeded is a BaseException, so
+            # it passes every fail-open `except Exception` above to land here) — unwinds
+            # here BEFORE the COMPLETE transition, so the in-memory status was left at
+            # whatever phase it was in (e.g. domain_intel). Mark it terminal so a later
+            # start/spawn doesn't see a stale "still running" explorer and refuse — the
+            # budget-cancel WEDGE (Tier-0 #1). Both paths save progress the same way.
             self._status.phase = ExplorationPhase.FAILED
             if not self._status.error:
-                self._status.error = "cancelled (budget exceeded or stopped) — progress saved"
+                self._status.error = (
+                    f"cancelled ({_stop.reason} exceeded) — progress saved"
+                    if isinstance(_stop, _BudgetExceeded)
+                    else "cancelled (budget exceeded or stopped) — progress saved")
             self._journal("exploration.phase", {"phase": "failed", "reason": "cancelled"})
             self._save_state()
             logger.info(f"[explorer:{self.connection_id}] Cancelled, progress saved")
