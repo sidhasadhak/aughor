@@ -69,6 +69,10 @@ class AnalystTurn:
     emit: Emit = _noop_emit
     #: Phases already streamed (so a tool that appends two streams two).
     emitted_phases: int = 0
+    #: ON-10 — the frame's declared breakdowns ran this turn (the scan tool runs them once). A field
+    #: on the turn, not a private state channel: the CA-0 law requires every `state["_…"]` read to
+    #: be declared on AgentState, and this flag belongs to the analyst's turn alone.
+    frame_breakdowns_ran: bool = False
     #: Tools that produced at least one phase — the "did any evidence land" signal.
     phase_tools_run: list[str] = field(default_factory=list)
     #: Rows returned by tools that do NOT build a phase — `run_sql` above all. The
@@ -575,7 +579,7 @@ def cross_section(turn: AnalystTurn, args: dict) -> dict:
         matched = [d for d in dims if dim.lower() in d.lower()]
         kwargs["dims_override"] = matched or [dim]
     fresh: list[dict] = []
-    if not turn.state.get("_frame_breakdowns_ran"):
+    if not turn.frame_breakdowns_ran:
         # ON-10 (2026-09-22) — the frame's declared breakdowns run BEFORE the scan here too. The analyst
         # body reaches the scan as a tool, not through the graph's `frame_breakdowns` node (the live
         # receipt on LuxExperience took this body and never met the node), so the node's function runs
@@ -583,7 +587,7 @@ def cross_section(turn: AnalystTurn, args: dict) -> dict:
         # the question named, and the declared breakdown by that driver is the definition's own "by",
         # not the scan's cut. Deterministic, no model call, nothing without a usable frame. The scan
         # itself still owns no breakdown.
-        turn.state["_frame_breakdowns_ran"] = True
+        turn.frame_breakdowns_ran = True
         fresh += turn.merge(frame_breakdowns(state, turn.conn), tool="frame_breakdowns")
         state = dict(turn.state)
         state["_ada_intake"] = _spec_overrides(turn.intake, args)
