@@ -219,6 +219,7 @@ def consolidate(
         s_key = semantic_key(str(survivor.get("sql") or ""))
         s_nums = _asserted_numbers(survivor)
         superseded_ids: list[str] = []
+        superseded: list[dict] = []
         variants: list[dict] = []
         for other in rest:
             o_nums = _asserted_numbers(other)
@@ -235,10 +236,13 @@ def consolidate(
                 })
             else:
                 superseded_ids.append(str(other.get("id") or ""))
+                superseded.append({"id": str(other.get("id") or ""), "text": str(other.get("text") or ""),
+                                   "generated_at": str(other.get("generated_at") or "")})
 
         if superseded_ids:
             survivor["supersedes"] = len(superseded_ids)
             survivor["superseded_ids"] = superseded_ids
+            survivor["superseded"] = superseded      # CB-1: the replaced readings, kept
             report.superseded += len(superseded_ids)
         if variants:
             # The node's text is still the newest reading, but the node SAYS it is unsettled

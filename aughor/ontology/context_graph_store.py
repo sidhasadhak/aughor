@@ -78,6 +78,10 @@ def save_graph(graph: ContextGraph) -> Path:
     prior = load_graph(graph.org_id, graph.connection_id, graph.schema_name)
     if prior is not None:
         graph.version = int(prior.version) + 1
+    # CB-1 — the history rides across the rebuild: what each node said before, when it was
+    # first seen, and the nodes that went. Before this a rebuild overwrote all of it.
+    from aughor.ontology.context_graph import carry_history
+    carry_history(graph, prior, now=graph.generated_at)
     path.parent.mkdir(parents=True, exist_ok=True)
     # Pretty-printed and key-sorted so a rebuild produces a MINIMAL git diff — only
     # the nodes/edges that actually changed move.

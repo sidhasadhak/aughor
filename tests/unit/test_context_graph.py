@@ -280,11 +280,17 @@ def test_note_finding_matches_what_a_full_rebuild_would_project(_graph_store):
     which is why both go through `_project_findings` rather than each building a node.
     """
     from aughor.ontology import context_graph_build as build_mod
-    build_mod.note_finding("c1", _L1_FINDING, org_id="org1")
+    dated = dict(_L1_FINDING, generated_at="2026-09-01T00:00:00+00:00")   # CB-1: a dated receipt
+    build_mod.note_finding("c1", dated, org_id="org1")
     incremental = _graph_store.load_graph("org1", "c1", "main").nodes["finding:rcpt1"]
 
-    rebuilt = _build(findings=[_L1_FINDING]).nodes["finding:rcpt1"]
-    assert incremental.model_dump() == rebuilt.model_dump()
+    rebuilt = _build(findings=[dated]).nodes["finding:rcpt1"]
+    # CB-1: `first_seen`/`last_changed`/`history` are carried by the STORE across saves, not
+    # emitted by the projector — the projection itself must still be one shape.
+    carried = {"first_seen", "last_changed", "history"}
+    assert incremental.model_dump(exclude=carried) == rebuilt.model_dump(exclude=carried)
+    assert incremental.provenance.observed_at == "2026-09-01T00:00:00+00:00"
+    assert incremental.first_seen == "2026-09-01T00:00:00+00:00"
 
 
 def test_note_finding_declines_rather_than_guessing_the_schema(tmp_path, monkeypatch):

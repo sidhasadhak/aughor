@@ -7144,9 +7144,20 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
 (`context_graph.py:40`) · a question is asked once and the answer remembered (`departure.answer_owner_question`).
 
 **Waves — in the user's order (2026-09-22, revised the same day): the foundations first — a date on every fact and the baseline at acceptance record what a running organisation cannot backfill, so they must exist BEFORE real traffic; owners next, because every later wave ends in a question to someone; then the finishes; the thesis last.** The earlier reading — "nobody has opened the Briefing, nobody has accepted a recommendation" — measured a one-person dev instance, not the design; the user's ruling is that the arc is judged by what it does for an organisation with real traffic, and by that bar it is the layer the platform lacks: who owns a number, what leadership is trying to do, what people claimed, what was decided, and whether it worked — with the one property Codos cannot have, that a claim is checked against the data.
-- **CB-1 · A date on every fact, and what it replaced** (idea 16). The graph's `Provenance` takes the hub envelope's
-  `observed_at`/`valid_until`/`author`; `save_graph` keeps the replaced text of a superseded finding, not only its id.
-  An old fact imported today keeps its date; "the date was wrong" and "the date moved" are two different records.
+- ✅ **CB-1 · A date on every fact, and what it replaced** (idea 16) — **BUILT 2026-09-22** (`claude/arc-cb-foundation`).
+  The graph's `Provenance` carries the hub envelope's names — `observed_at`, `valid_until`, `author` — plus `observed_basis`,
+  which says whether the date is the SOURCE's own stamp (a finding's `generated_at`, the ontology build that profiled a
+  table) or the build's, stated because the source carries none. An old finding re-projected today keeps its own date; an
+  edge is as old as the fact that asserts it. `carry_history` (pure; the store calls it before every write) brings each
+  node's `first_seen`, `last_changed` and `history` across a rebuild: a changed fact keeps its old reading as a
+  `FactRevision` whose `reason` is *changed* when the observation moved and *corrected* when the same observation now
+  reads differently (Codos's two events, made deterministic; a build-stamped fact can only ever read *changed*); what IS
+  the fact per kind is `FACT_FIELDS` (a table's columns, a metric's formula, a finding's text and SQL — never an insight
+  list or a staleness mark, which would write history on every rebuild). A node a rebuild no longer emits is `retired`
+  with its last state (cap 200, newest kept) and takes its history back when it returns. Consolidation keeps a superseded
+  finding's text, not only its id. Receipts: `tests/unit/test_context_graph_dated_facts.py` (16) + the parity test
+  updated (the projector is still one shape; the store carries the history). ⏳ Owed: the dates and history on a
+  screen — they land with the map below.
 - **CB-2 · Decide when to ask whether a recommendation worked, when it is accepted** (idea 22). Accepting records
   the metric, its value now and a review date; on that date the platform measures again and asks **the metric's
   owner** (the user's call, 2026-09-22 — not the accepting person, who is asked only while the owner is unresolved);
@@ -7174,6 +7185,22 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   states a number is checked with `verify.verify_numeric_claims` against the warehouse; agreement → `measured`,
   disagreement → a question to the owner (CB-3), uncheckable → `unknown`, shown. A CHECKED note is the first kind let
   through `hub/injection.INJECTABLE_SOURCE_KINDS` (empty today, by design). Uploaded documents (idea 7) come after.
+
+**The map — what Aughor offers in place of Codos's "Deploy the company brain" diagram (the user, 2026-09-22: *"lets keep this
+diagram in mind and build one that aughor would offer.. a real, provable one"*).** Theirs: sources → raw data → four
+observers (people, product, operations, market) → a merge-judge (dedup, resolve, write plan) → three vaults (company:
+stable facts · engagement: operational record · working memory: synthesis and priorities). Ours has the same four layers
+and one rule: **every box is a store that exists, with a door and a live count, and every arrow is a measurement** — so
+the map is a screen, never a picture. **Sources:** the warehouse connections, dbt and the glossary, the metrics catalog,
+the industry packages, what people declared (the organisation ontology), filed Slack threads and uploaded documents.
+**Observers:** the profiler, the explorer, the join guard, the investigation engine, the departure gate, the prose mapper.
+**The judge** (theirs merges; ours measures): the authority ladder `measured > approved > declared > said > inferred`,
+`verify_numeric_claims`, finding consolidation (dedup, supersede, contested), ambiguity resolution, gate 4. **Vaults:**
+*company* = the context graph — dated (CB-1), with what it replaced — plus the measured ontology and the approved metrics;
+*engagement* = investigations, decisions, accepted recommendations with their baselines and outcomes (CB-2), the audit;
+*working memory* = the quarter's priorities (CB-6), the north-star metrics, the business profile. Each wave lands its
+count on the map: facts dated · claims checked · owners reachable · outcomes measured · sends held for a missing
+definition. **Built as the arc's own surface once CB-1..CB-3 give it numbers to show; until then it is this paragraph.**
 
 **What each wave must show before the next starts:** a live receipt on theLook or LuxExperience, a mutation test on
 every new guard, and the §3 line updated the same day (a prose claim in §3 rots silently — §7).
