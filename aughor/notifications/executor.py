@@ -259,11 +259,14 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
     fired_at  = datetime.now(timezone.utc).isoformat()
 
     if not trigger.enabled:
+        # Nothing is sent, so this is a SKIP, not a failure — measured 2026-09-22: every
+        # one of the live install's 336 "failed" rows was this branch (332) or a blackhole
+        # test target (4); no real send had ever failed. The reason stays on the row.
         log = ActionLog(
             id=log_id, trigger_id=trigger.id, trigger_name=trigger.name,
             investigation_id=payload.investigation_id, rec_index=payload.rec_index,
             recommendation=payload.recommendation,
-            status="failed", http_status=None, error="Trigger is disabled", fired_at=fired_at,
+            status="skipped", http_status=None, error="Trigger is disabled", fired_at=fired_at,
         )
         log_action(log)
         return log

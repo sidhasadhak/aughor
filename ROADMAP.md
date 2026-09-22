@@ -2272,8 +2272,13 @@ at 6 · the proposal inbox at 5 · `audit.db` at 3).
   episode detail, not configuration"*. That reading is what hid the problem: it is the record of
   **every outbound send the platform has ever made**, a security surface rather than episode detail,
   and nobody queries a file. Opened on the live install 2026-09-20: **336 rows, 336 of them
-  `status: failed`.** Every outbound delivery on that install had failed, unnoticed for as long as the
-  file had existed, next to a properly indexed **61,696-row `audit_log`** that anyone would have seen.
+  `status: failed`.** ✅ **READ 2026-09-22, and the sentence that stood here was wrong:** the reasons
+  were **332 × "Trigger is disabled"** for the one `slack-ops` trigger over six days of July, plus
+  **4 sends to the DS-7 blackhole test target** (port 9) on 2026-08-31 — no real send had ever
+  failed; the executor had recorded a skip as a failure, and the log has been dormant since
+  2026-08-31 with zero triggers defined. A disabled trigger now logs `skipped` (the reason kept on
+  the row). The storage point stands: a file next to a properly indexed **61,696-row `audit_log`**
+  is where a real failure would have hidden, and now it cannot.
   It is also the shape a file store serves worst — append-only and growing, read in full by
   `list_logs` and sliced in Python, no index, no time range. `LedgerListStore` gains an `append` that
   is **one INSERT**: the inherited one is `all()` + `save_all()`, i.e. `kv_replace_all`, a DELETE of
@@ -2303,11 +2308,13 @@ list method, the reason naming the file being served, the file contents still re
 one row without rewriting the store, insertion order preserved, and an item without an id staying
 append-only).
 
-⏳ **Not done, and this is the honest half.** ① None of it is on `main`: `3b642c2a`, built 2026-09-20,
-merged into `claude/jev-align-and-traces-storage` at `9298316e`, **no PR opened** — this line must be
-re-measured when it merges, per IP-4's lesson. ② **The 336 failed deliveries are a live defect this
-commit made VISIBLE and did not fix** — nobody has yet asked why every outbound send on that install
-failed, and the answer is worth more than the storage change that surfaced it. ③ The three env knobs
+✅ **RE-MEASURED 2026-09-22 — both open halves closed, and ① had rotted:** ① It IS on `main`: the
+storage work merged in #532 (`d91fb9be`, 2026-09-20 — §5's MI-2b line already said so while this one
+said the opposite; the live `system.db` reads `user_version` 12), and the follow-up `a45ad258` is
+byte-identical to main's `json_store.py`. A session re-derived "open the PR" from this sentence before
+checking the tree — a prose claim inside §3 rots silently, and this one cost an hour. ② **The 336 were
+not deliveries that failed** — see the corrected paragraph above: a skip recorded as a failure, fixed
+the same day. ③ The three env knobs
 (`AUGHOR_EVENTS_PRUNE_KINDS` · `AUGHOR_EVENTS_OPS_KEEP_DAYS` · `AUGHOR_EVENTS_OPS_MAX_ROWS`) are
 tuning, not store paths, so MI's store-hygiene law does not bind them — verified by precedent rather
 than assumed: `AUGHOR_SESSION_LOG_KEEP_DAYS` appears in neither `tests/conftest.py` nor
@@ -11340,7 +11347,9 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
              aughor_ops's 100k snapshot; scoped retention (named chatter only, 2-day window +
              50k cap, bounded at 20k/sweep, driven by emit) · Migration 12's trace and
              retention indexes · the store facade's silent fallback made loud · the outbound
-             delivery log moved to the Ledger, where it showed 336 rows, 336 failed
+             delivery log moved to the Ledger, where it showed 336 rows, 336 failed — read
+             2026-09-22: 332 refusals of one disabled trigger + 4 blackhole tests, no real
+             send ever failed; a disabled trigger now logs `skipped`
         MI-3 dataset plane (learning store; Tangle's schema per §4.5)
         MI-4 NL2SQL adapter — starts ONLY at measured gates (≥1,000 SFT · ≥150 DPO ·
              golden ≥150 · verdicts flowing ≥30 days); rented training; ratchet-gated
