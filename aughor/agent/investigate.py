@@ -4220,8 +4220,10 @@ def _measurable_spec(intake_data: dict) -> Optional[dict]:
         # year is the coverage, not the question's period; the default stands in and says so.
         if 1 <= days <= _SPEC_MAX_WINDOW_DAYS:
             window_days, basis = days, "observation"
-    except Exception:  # noqa: BLE001 — a window the intake did not date takes the default
-        pass
+    except Exception as exc:  # noqa: BLE001 — a window the intake did not date takes the default
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the intake's observation window did not read as dates; the baseline window defaults",
+                 counter="deep_analysis.spec_window")
     return {"metric_label": str(d.get("metric_label") or ""), "metric_sql": metric_sql,
             "metric_table": table, "date_column": str(d.get("date_column") or ""),
             "window_days": window_days, "window_basis": basis}
