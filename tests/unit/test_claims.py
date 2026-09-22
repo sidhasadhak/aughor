@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
 from aughor.hub import claims as C
 from aughor.hub.claims import CONTRADICTED, MEASURED, UNCHECKED, check_claim
