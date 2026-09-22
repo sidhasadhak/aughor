@@ -7217,10 +7217,19 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   (both `<Button>` — the raw-element ratchet holds at 55). Receipts: `tests/unit/test_dedup_rejections.py` (9); tsc, six
   lints, vitest green. No live receipt is possible on this deployment: theLook and LuxExperience suggest 0 clusters today
   (measured 2026-09-22), so the door tests are the receipt.
-- **CB-5 · Show how much of the business the platform can see** (idea 15). `declarations.Coverage` (imported only
-  by its test) reaches a screen: the share of tables mapped to business objects, exclusions out of the denominator,
-  banded; beside it *the one missing definition holding the most back*, counted from departure holds per unapproved
-  metric ("approve `revenue` and 3 sends unblock" — the theLook case of 2026-09-18). Deterministic, no model.
+- ✅ **CB-5 · Show how much of the business the platform can see** (idea 15) — **BUILT 2026-09-23**. `GET /visibility`
+  (`ontology/visibility.py`) is the number and the gap for one connection: the share of tables the ontology maps against the
+  PROFILER's universe (`profile_cache.latest_profiled_tables`; a never-profiled connection says its denominator is unknown
+  rather than reporting 100%), declared exclusions out of the denominator (`PUT`/`DELETE /visibility/exclusions`, one of the
+  honest reasons, kept in the people's-decisions tree), the joins measured rather than name-matched (`graph_warrant.audit`),
+  and the held sends grouped by the definition that would clear them — the departure gate now records the missing
+  definitions structurally (`checks.definition_missing`; older rows are read back from the guard's own sentence). The
+  ontology header says it in one line (`VisibilityLine`). Receipts: `tests/unit/test_visibility.py` (9); tsc, six lints,
+  vitest 1,137 green. ✅ **LIVE RECEIPT 2026-09-23** (scratch pair on a copy of the data): theLook — *joins measured 4 of 9
+  · approve `revenue` and 2 held sends unblock* (the 2026-09-18 case, read from its rows; `aov` and `units_sold` hold one
+  each); LuxExperience — joins measured 13 of 13, nothing held. ⚠️ Adjacent, not fixed: the profiler's cache holds no entry
+  for either BigQuery connection (it has only the uploads), so the table share reads *denominator unknown* on the two
+  connections that matter most — the honest answer, and the next thing to fix before the map shows a table share.
 - **CB-6 · What the company is trying to do this quarter** (idea 21). A short list of priorities, written by
   people in **organisation settings** (the user's call — already people-written, already winning over inference),
   each naming a metric and a target; `triage.impact_score` counts a finding that bears on one, and the Briefing says so.
