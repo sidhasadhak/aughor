@@ -7230,17 +7230,39 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   each); LuxExperience — joins measured 13 of 13, nothing held. ⚠️ Adjacent, not fixed: the profiler's cache holds no entry
   for either BigQuery connection (it has only the uploads), so the table share reads *denominator unknown* on the two
   connections that matter most — the honest answer, and the next thing to fix before the map shows a table share.
-- **CB-6 · What the company is trying to do this quarter** (idea 21). A short list of priorities, written by
-  people in **organisation settings** (the user's call — already people-written, already winning over inference),
-  each naming a metric and a target; `triage.impact_score` counts a finding that bears on one, and the Briefing says so.
-- **CB-7 · One action beside each Briefing item** (idea 20). The single best action under each item, chosen by the
-  retriever's learned success rate, sent through the SAME gated path the Recommendation Inbox uses
-  (`routers/actions.py` execute door, departure gate untouched). The action goes where the reader already is.
-- **CB-8 · Said versus measured** (idea 17). First source: **filed Slack thread replies** (the user's call) — they
-  already arrive as staged notes (`routers/arrivals.py`) and become context pieces (`hub/adapters.py`). A reply that
-  states a number is checked with `verify.verify_numeric_claims` against the warehouse; agreement → `measured`,
-  disagreement → a question to the owner (CB-3), uncheckable → `unknown`, shown. A CHECKED note is the first kind let
-  through `hub/injection.INJECTABLE_SOURCE_KINDS` (empty today, by design). Uploaded documents (idea 7) come after.
+- ✅ **CB-6 · What the company is trying to do this quarter** (idea 21) — **BUILT 2026-09-23**. `OrgSettings.priorities`
+  (metric, target, which way is good, by when, note) — written by people in Settings ▸ Organization ▸ *This quarter's
+  priorities* (`OrgPrioritiesSection`), never inferred; a workspace with none inherits the organisation's. `triage.impact_score`
+  weighs a finding that clearly names a declared priority as it weighs a north-star hit, on top of it (`_W_PRIORITY`, the
+  north-star word rule, so a bare 'orders' is no 'average order value' goal); the narrator's context carries DECLARED
+  PRIORITIES THIS QUARTER and each citation says the goal it bears on (`priority`), which the brief shows. Receipts:
+  `tests/unit/test_priorities.py` (6). ✅ Live: the settings door on the scratch pair saved *total sales, up 10% vs last
+  quarter, up is good, by Q4*. ⏳ The brief line needs a brief, and neither live connection on the copy has exploration
+  findings to brief from (`available: false`) — an explorer run (minutes of model calls) would earn that receipt.
+- ✅ **CB-7 · One action beside each Briefing item** (idea 20) — **BUILT 2026-09-23**. `briefing.best_action_for`: the cited
+  investigation's own first recommendation when the item came from one (executable through the inbox's gated door —
+  the brief links to it), else the playbook's best play for the finding's labels by learned success rate, read for the
+  brief's industry only (`industry_scope`) — a suggestion, never fired on its own; an item with neither carries none.
+  Each citation carries `action`; `BriefActions` renders the line under the synthesis. Receipts: `tests/unit/
+  test_brief_actions.py` (5) + `BriefActions.test.tsx` (3). ⚠️ Honest limit: today's exploration insights carry no
+  investigation id, so the executable branch is rare and most items get a play; "the same gated path" therefore means
+  the brief points AT the inbox's door rather than firing through it. ⏳ Live receipt owed with CB-6's, for the same reason.
+- ✅ **CB-8 · Said versus measured** (idea 17) — **BUILT 2026-09-23**, first source **filed Slack thread replies** (the user's
+  call). `hub/claims.check_claim`: the numbers a reply states, checked against the measures its thread was filed with
+  (`links.metrics_at_filing` — the promise's breached/reached/breach rate; a rate said as a percentage matches its
+  fraction). Agreement raises the note to **measured** (authority `measured`, verification `measured`); disagreement makes
+  it **contradicted** and writes the owner's question (*"You said 412 about promise:…; the platform measured 0 (breached)
+  when the thread was filed. Which is right?"*), resolved the CB-3 way and saying when it has nowhere to go; no number or
+  nothing measured stays **unchecked**. The check rides the staged note (`check` on the row; `GET /arrivals/notes`
+  shows it; `GET /arrivals/claims` counts per verification and lists every contradiction). `hub/injection`: the first kind
+  through the gate is `conversation:measured` — a note the data confirmed reaches a prompt ("CONTEXT FROM PEOPLE, CHECKED
+  AGAINST THE DATA"); a said, unchecked or contradicted note still never does, and the `conversation` kind as a whole still
+  waits on measured lift (HB-4's law amended, its test rewritten to say so). Receipts: `tests/unit/test_claims.py` (9).
+  ✅ **LIVE RECEIPT 2026-09-23** (scratch pair, LuxExperience): a thread filed on `promise:order_to_shipment.shipping` (0
+  breached of 107,903 at filing); a reply saying *"we breached on 0 orders, breach rate 0.0%"* read **measured**; a reply
+  saying *412* read **contradicted** with the question above — to nobody, because the promise's owner `operations` is not
+  linked (CB-3's inventory already said so). ⚠️ Adjacent, not fixed: a note is ONE record per object (`_stage` keys by
+  target), so the latest reply's check overwrites the earlier one's — the claims count is per object, not per reply.
 
 **The map — what Aughor offers in place of Codos's "Deploy the company brain" diagram (the user, 2026-09-22: *"lets keep this
 diagram in mind and build one that aughor would offer.. a real, provable one"*).** Theirs: sources → raw data → four
