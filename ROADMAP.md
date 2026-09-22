@@ -7156,8 +7156,16 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   list or a staleness mark, which would write history on every rebuild). A node a rebuild no longer emits is `retired`
   with its last state (cap 200, newest kept) and takes its history back when it returns. Consolidation keeps a superseded
   finding's text, not only its id. Receipts: `tests/unit/test_context_graph_dated_facts.py` (16) + the parity test
-  updated (the projector is still one shape; the store carries the history). ⏳ Owed: the dates and history on a
-  screen — they land with the map below.
+  updated (the projector is still one shape; the store carries the history). ✅ **LIVE RECEIPT 2026-09-22 21:21Z** (a
+  forced refresh of theLook's graph on the scratch copy, API stopped, one writer): version 108 → 109; **93 of 93 nodes and 27
+  of 27 edges dated** (27 from their source's own stamp — tables and domains from the ontology build of 2026-09-18, findings
+  from their `generated_at` back to 2026-08-27 — 66 from the build, stated); **41 revisions kept**, every one a glossary
+  definition the rebuild reworded (the old text survives on the node, reason *changed*); **200 nodes retired with their
+  last state** — the cap, because the rebuild emitted 93 nodes where the prior graph held 275. ⚠️ Adjacent, not fixed: a
+  full rebuild does not re-emit findings that were NOTED incrementally (`note_finding`) — 180-odd of them went from the
+  live graph on this rebuild; before CB-1 they vanished without a trace, now they sit in `retired`. `first_seen` reads
+  2026-09-22 for every node because the graph it replaced carried no dates — the first dated build starts the clock.
+  ⏳ Owed: the dates and history on a screen — they land with the map below.
 - ✅ **CB-2 · Decide when to ask whether a recommendation worked, when it is accepted** (idea 22) — **BUILT 2026-09-22**.
   The report now carries `spec`, the intake's MEASURABLE definition (metric SQL, table, date column, window length) — what
   a baseline and a review are measured with, recorded from day one because it cannot be backfilled. Accepting through the
@@ -7170,7 +7178,16 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   principal) — each once. The inbox shows the baseline, the review date and the question; marking *verified* or
   *rejected* is the answer, and it keeps everything acceptance recorded (`log_outcome` merges; before/after default to
   the two measurements, so idea 13 has its numbers). Receipts: `tests/unit/test_recommendation_review.py` (20) · tsc, six
-  lints, vitest 1,132 green. ⏳ Live receipt on theLook in flight. This closes the open call *"when is a person asked
+  lints, vitest 1,132 green. ✅ **LIVE RECEIPT 2026-09-22 21:19Z** (scratch pair on a copy of the data, theLook, BigQuery): a
+  fresh deep run (`0b0575f9`, 13 min) wrote `spec` on its report (`SUM(sale_price)` on `order_items` by `created_at`); accepting
+  through the door measured the baseline on BigQuery — **10,710,477.39** — and set the review date; the review date moved
+  into the past and one `GET /cron/tick` ran the review: measured again on BigQuery, wrote the question (*"You accepted …
+  total sales was … then; it is … now. Did it work?"*), before/after filled, asked once. Two defects the receipt found,
+  fixed the same hour (`033899c8`): the cross-sectional run's observation window was the whole coverage (**2,808 days**) —
+  a baseline over all history answers nothing, so a window past a year takes four weeks and says `window_basis: default`;
+  and the question printed `1.07105e+07`. ⚠️ Adjacent, not fixed: the outcome door accepts a `rec_index` the report does not
+  have (this report carried 0 recommendations; the receipt accepted "{}"); and on an identity-off instance `accepted_by`
+  is empty, so the question reaches nobody — CB-3's owners are what makes it reach someone. This closes the open call *"when is a person asked
   whether a recommendation WORKED?"* — at the moment it is accepted.
 - **CB-3 · Owners the platform can reach** (idea 18). An owner string on a metric, a process or a rule is linked
   to a principal ONCE, by a person, in the UI; the glossary gets an owner field; `owner_principal` resolves the link;
