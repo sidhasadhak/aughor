@@ -30,16 +30,18 @@ def conversation_note_pieces(connection_id: str) -> list[ContextPiece]:
         for ref in refs:
             for row in object_notes_for(connection_id, ref):
                 prov_d = row.get("provenance") or {}
+                check = row.get("check") or {}
+                checked = str(check.get("verification") or "")     # CB-8: measured | contradicted | unchecked
                 prov = Provenance(
                     source_kind="conversation",
-                    authority="said",
+                    authority="measured" if checked == "measured" else "said",
                     author=str(prov_d.get("author") or ""),
                     author_kind=str(prov_d.get("author_kind") or "person"),
                     scope_kind="object",
                     scope_key=ref,
                     observed_at=str(prov_d.get("observed_at") or row.get("last_seen") or ""),
-                    verification=("accepted" if row.get("status") == "accepted"
-                                  else "unverified"),
+                    verification=(checked if checked in ("measured", "contradicted")
+                                  else "accepted" if row.get("status") == "accepted" else "unverified"),
                     where=str(prov_d.get("where") or ""),
                 )
                 out.append(ContextPiece(text=row.get("note", ""), provenance=prov,

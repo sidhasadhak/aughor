@@ -871,6 +871,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/arrivals/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Arrival Claims
+         * @description CB-8 — what people said, by what the data made of it: counts per verification and every
+         *     contradiction with the question it raised and who it went to. The map's 'claims checked' count.
+         */
+        get: operations["arrival_claims_arrivals_claims_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/arrivals/notes": {
         parameters: {
             query?: never;
@@ -13807,6 +13828,11 @@ export interface components {
              */
             industry: string;
             /**
+             * Priorities
+             * @description What the organisation is trying to do this quarter — written by people, never inferred.
+             */
+            priorities?: components["schemas"]["Priority"][];
+            /**
              * Timezone
              * @description IANA timezone, e.g. 'Europe/London'. Empty = UTC.
              * @default
@@ -14004,6 +14030,44 @@ export interface components {
         PreferenceValue: {
             /** Value */
             value?: unknown;
+        };
+        /**
+         * Priority
+         * @description CB-6 — one thing the organisation is trying to do this quarter, written by a person: the
+         *     metric it names, the target, which way is good, by when. Triage counts a finding that bears
+         *     on one; the Briefing says so. Never inferred — people write these (§6 item 20's rule).
+         */
+        Priority: {
+            /**
+             * By
+             * @description By when, as written: 'Q4', '2026-12-31'
+             * @default
+             */
+            by: string;
+            /**
+             * Direction
+             * @description Which way is good
+             * @default
+             * @enum {string}
+             */
+            direction: "" | "up" | "down";
+            /**
+             * Metric
+             * @description The metric the goal names, as people say it: 'return rate', 'net revenue'
+             */
+            metric: string;
+            /**
+             * Note
+             * @description Why it matters, one line
+             * @default
+             */
+            note: string;
+            /**
+             * Target
+             * @description The target, as written: '< 8%', '£1.2M', 'down 10%'
+             * @default
+             */
+            target: string;
         };
         /** ProposeIn */
         ProposeIn: {
@@ -17667,6 +17731,37 @@ export interface operations {
                 "application/json": components["schemas"]["AllowRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arrival_claims_arrivals_claims_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

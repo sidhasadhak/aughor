@@ -193,7 +193,12 @@ export interface OrgSettings {
   chart_palette: string;
   /** CA-5 — land on the conversation instead of the workbench. */
   chat_first_home: boolean;
+  /** CB-6 — what the organisation is trying to do this quarter, written by people. */
+  priorities: Priority[];
 }
+
+/** CB-6 — one declared priority: the metric it names, the target, which way is good, by when. */
+export interface Priority { metric: string; target: string; direction: "" | "up" | "down"; by: string; note: string }
 
 export async function getOrgSettings(): Promise<OrgSettings> {
   const res = await fetch(`${getApiBase()}/org-settings`);
@@ -5506,6 +5511,24 @@ export interface BriefingCitation {
   domain: string;
   angle: string;
   finding: string;
+  /** CB-6 — the declared goal this finding bears on, or "". */
+  priority?: string;
+  /** CB-7 — the one action beside this item, or null. */
+  action?: BriefAction | null;
+}
+
+/** CB-7 — the single best action beside a Briefing item: the cited investigation's own recommendation
+ * (executable through the inbox's gated door) or the playbook's best play (a suggestion). */
+export interface BriefAction {
+  kind: "recommendation" | "play";
+  text: string;
+  why: string;
+  executable: boolean;
+  inv_id?: string;
+  rec_index?: number;
+  id?: string;
+  when?: string;
+  success_rate?: number;
 }
 
 /** A candidate finding the trust gate kept out of the brief — surfaced as an audit trail.

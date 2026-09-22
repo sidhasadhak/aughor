@@ -1,4 +1,6 @@
 "use client";
+
+import { BriefActions } from "@/components/brief/BriefActions";
 import { ErrorState } from "@/components/ui/states";
 import { GuardChip } from "@/components/ui/trust";
 
@@ -328,6 +330,8 @@ function NarrativeCard({
             connectionId={ctx.connectionId}
             schema={ctx.schema}
           />
+          {/* CB-6 / CB-7 — the goal each cited finding bears on, and the one action beside it. */}
+          <BriefActions citations={narrative.citations} />
         </div>
         {clamped && (
           <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 54, background: "linear-gradient(180deg, rgba(0,0,0,0), var(--bg-2))", pointerEvents: "none" }} />
