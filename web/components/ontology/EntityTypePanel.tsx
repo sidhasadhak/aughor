@@ -180,9 +180,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         {detail.description && (
           <p className="aug-fs-sm" style={{ margin: "8px 0 0", color: "var(--t2)", lineHeight: 1.5 }}>{detail.description}</p>
         )}
-        {!inDomain && (
-          <PartOfLine detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
-        )}
+        <PartOfLine detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
         {detail.origin === "model" && !inDomain && (
           <div className="aug-fs-xs" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{ ...MONO, color: "var(--t3)" }}>{detail.provenance || "proposed by a model"}</span>
@@ -1548,7 +1546,8 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
   schema?: string;
   onOpen: (objectType: string) => void;
   onChanged: () => void;
-  /** ON-8 — in an organisation's ontology a link is not named, and an explorer's proposal not confirmed, from here. */
+  /** ON-8 — in an organisation's ontology an explorer's proposal is not confirmed from here (the explorer stays
+   *  home-only); naming a link is declarative and opens there (2026-09-22). */
   inDomain?: boolean;
 }) {
   return (
@@ -1584,7 +1583,7 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
                   schema={schema} onChanged={onChanged} />
               </>
             )}
-            {!inDomain && <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
+            <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
             {(link.origin === "human" || link.origin === "model") && (
               <WithdrawLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
             )}

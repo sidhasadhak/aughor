@@ -66,12 +66,24 @@ def backing_table(entity: OntologyEntity) -> str:
     return bare(table)
 
 
-def part_binding(parent: OntologyEntity, entity: OntologyEntity) -> Optional[Binding]:
-    """The parent's binding that reads ``entity``'s own table — the binding under which the entity is a part."""
+def part_binding(parent: OntologyEntity, entity: OntologyEntity,
+                 graph: Optional["OntologyGraph"] = None) -> Optional[Binding]:
+    """The parent's binding that reads ``entity``'s own table — the binding under which the entity is a part.
+    With ``graph`` (ON-8, 2026-09-22) the binding must also read from the connection the entity lives on: the same
+    table name on another connection is another table, and a part mark held by it would join rows that never meet."""
     table = backing_table(entity).lower()
     if not table:
         return None
-    return next((b for b in parent.bindings or [] if bare(b.table or "").lower() == table), None)
+    for b in parent.bindings or []:
+        if bare(b.table or "").lower() != table:
+            continue
+        if graph is not None:
+            from aughor.ontology.sources import binding_source, entity_source
+            # the parent, its binding and the part's own table live on ONE connection
+            if not (entity_source(graph, parent) == binding_source(graph, parent, b) == entity_source(graph, entity)):
+                continue
+        return b
+    return None
 
 
 def absorb_problem(graph: OntologyGraph, parent_id: str, entity: OntologyEntity) -> str:
@@ -87,10 +99,10 @@ def absorb_problem(graph: OntologyGraph, parent_id: str, entity: OntologyEntity)
                 "the map draws; absorb into the top-level type instead")
     if not backing_table(entity):
         return f"{entity.id} is read through a keyed SELECT, so no binding of {parent.id}'s can name its table"
-    if part_binding(parent, entity) is None:
-        return (f"{parent.id} has no binding over {backing_table(entity)} — bind it first (a detail binding for "
-                f"many rows per {parent.id}, a static one for one row each); the mark holds only while that "
-                "binding does")
+    if part_binding(parent, entity, graph) is None:
+        return (f"{parent.id} has no binding over {backing_table(entity)} on {entity.id}'s own connection — bind it "
+                f"first (a detail binding for many rows per {parent.id}, a static one for one row each); the mark "
+                "holds only while that binding does")
     return ""
 
 

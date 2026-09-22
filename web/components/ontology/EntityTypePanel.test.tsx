@@ -349,7 +349,8 @@ describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () =
     expect(await screen.findByTestId("entity-connection")).toHaveTextContent("read from Shop");
     expect(screen.getAllByTestId("entity-binding-connection").map((n) => n.textContent)).toEqual(["Shop", "CRM"]);
     expect(screen.getByTestId("entity-link-cross-source")).toHaveTextContent("cross-source");
-    expect(screen.queryByRole("button", { name: "Name it" })).toBeNull();
+    // 2026-09-22 — naming is declarative and opens on a far link; the explorer's confirm and the SQL-bound doors do not.
+    expect(screen.getByRole("button", { name: /Name it|Rename/ })).toBeInTheDocument();
     expect(screen.queryByLabelText("Declare")).toBeNull();
     expect(screen.getByRole("button", { name: "Measure" })).toBeInTheDocument();
   });

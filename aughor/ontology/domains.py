@@ -202,14 +202,18 @@ def bind_source(domain: Domain, entity_id: str, name: str, spec: dict, open_sour
     if entity is None:
         raise DomainRefused(404, f"no object type '{entity_id}' in {domain.key}")
     spec = dict(spec)
-    if spec.pop("absorb", None):
-        raise DomainRefused(400, "a part is absorbed in the ontology of the connection that holds both tables, not "
-                                 "across an organisation's")
+    # `absorb` is a mark, not a bind: the router marks the part AFTER this binding lands (`absorb_part`), under the
+    # law that the parent, its binding and the part's own table live on ONE connection (2026-09-22). So a source on
+    # another connection than the type is bound, never absorbed — the refusal below keeps that sentence true.
+    absorb = bool(spec.pop("absorb", None))
     schema = str(spec.pop("schema_name", "") or "").strip()
     if schema and spec.get("table") and "." not in str(spec["table"]):
         spec["table"] = f"{schema}.{spec['table']}"
     home = entity_source(graph, entity)
     where = str(spec.get("connection_id") or "").strip() or home
+    if absorb and where != home:
+        raise DomainRefused(400, "a part is absorbed in the ontology of the connection that holds both tables, not "
+                                 "across an organisation's — this source lives on another connection than the type")
     if where == home:
         spec.pop("connection_id", None)
     else:
@@ -242,6 +246,63 @@ def bind_source(domain: Domain, entity_id: str, name: str, spec: dict, open_sour
         if rows is not objects:
             rows.close()
     return ov
+
+
+#: The edits of a type that read no warehouse — they open on a type of an organisation's ontology whatever connection
+#: it lives on (ON-8's declarative doors, 2026-09-22). What SQL binds (`active_filter`, a backing) stays with the
+#: type's own connection.
+DECLARATIVE_FIELDS = frozenset({"description", "display_name", "default_filters", "exclude_when", "lifecycle_states",
+                                "terminal_states", "use_instead", "absorbed_into"})
+
+
+def edit_type(domain: Domain, entity_id: str, fields: dict):
+    """The declarative edits of a type in the domain — description, filters as words, lifecycle states, routing
+    guidance and the part mark — merged into the organisation's own override. A part mark is held to the same law as
+    at home, with the connection added: the parent binds the type's table on the type's own connection; "" releases
+    it. Returns the saved override."""
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_organisation_override
+    from aughor.ontology.parts import absorb_problem
+    graph = domain_graph(domain)
+    entity = graph.entities.get(entity_id)
+    if entity is None:
+        raise DomainRefused(404, f"no object type '{entity_id}' in {domain.key}")
+    unknown = sorted(set(fields) - DECLARATIVE_FIELDS)
+    if unknown:
+        raise DomainRefused(400, f"{', '.join(unknown)}: not a declarative field of a type — it is bound by SQL on the "
+                                 "type's own connection, in that connection's ontology")
+    fields = dict(fields)
+    if "absorbed_into" in fields:
+        parent = str(fields["absorbed_into"] or "").strip()
+        if parent:
+            problem = absorb_problem(graph, parent, entity)
+            if problem:
+                raise DomainRefused(400, problem)
+        fields["absorbed_into"] = parent
+    existing = find_override(*domain.tree, "entity", entity_id)
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id,
+                          fields={**(existing.fields if existing else {}), **fields},
+                          source=(existing.source if existing else "human"),
+                          binding=dict(existing.binding) if existing else {})
+    save_organisation_override(*domain.tree, ov)
+    return ov
+
+
+def absorb_part(domain: Domain, parent_id: str, table: Optional[str]) -> tuple[Optional[str], str]:
+    """``(absorbed type id, why not)`` after a bind in the domain — the type whose own rows are ``table``'s is marked
+    a part of ``parent_id`` when the mark holds on the served domain graph (same table, same connection)."""
+    from aughor.ontology.declared import backs_existing_type
+    from aughor.ontology.parts import absorb_problem
+    graph = domain_graph(domain)
+    if not table:
+        return None, "absorb: a keyed SELECT names no table whose type could be absorbed"
+    other = backs_existing_type(graph, table)
+    if other is None or other.id == parent_id:
+        return None, f"absorb: no other object type is read from {table}"
+    problem = absorb_problem(graph, parent_id, other)
+    if problem:
+        return None, f"absorb: {problem}"
+    edit_type(domain, other.id, {"absorbed_into": parent_id})
+    return other.id, ""
 
 
 def declare_link(domain: Domain, spec: dict, open_source: Opener):

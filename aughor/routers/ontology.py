@@ -1171,20 +1171,31 @@ def override_ontology_entity(
 
 
 def _domain_edit_entity(entity_id: str, body: _EntityOverride, domain: str) -> dict:
+    """ON-8 — the DECLARATIVE edits of a type in an organisation's ontology (2026-09-22): its display property
+    (measured where it is read), and its description, filters as words, lifecycle states, routing guidance and the
+    part mark — none reads a warehouse, so they open on a type whatever connection it lives on. What SQL binds
+    (`active_filter`, a backing) stays with the type's own connection and is refused here, saying so."""
     from aughor import govern
-    from aughor.ontology.domains import domain_graph, set_display_property
+    from aughor.ontology.domains import DECLARATIVE_FIELDS, domain_graph, edit_type, set_display_property
     from aughor.semantic.object_types import describe_object_type
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
-    other = sorted(set(fields) - {"display_property"})
-    if other or not fields:
+    sql_bound = sorted(set(fields) - DECLARATIVE_FIELDS - {"display_property"})
+    if sql_bound or not fields:
         raise HTTPException(status_code=400, detail=(
-            "a type of an organisation's ontology takes its display property through this door"
-            + (f", not {', '.join(other)}" if other else ", and none was given")
-            + " — the type is declared with POST /ontology/entities?domain= and its sources bound with "
+            "a type of an organisation's ontology takes its declarative fields through this door — its display "
+            "property, description, filters as words, lifecycle states, routing guidance and part mark"
+            + (f" — not {', '.join(sql_bound)}, which SQL binds on the type's own connection" if sql_bound
+               else ", and none was given")
+            + "; the type is declared with POST /ontology/entities?domain= and its sources bound with "
               "PUT /ontology/entities/{id}/bindings/{name}?domain="))
     scope = _domain_scope(domain)
     govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
-    ov = _domain_door(lambda: set_display_property(scope, entity_id, fields["display_property"], _open_source))
+    display = fields.pop("display_property", None)
+    ov = None
+    if fields:
+        ov = _domain_door(lambda: edit_type(scope, entity_id, fields))
+    if display is not None:
+        ov = _domain_door(lambda: set_display_property(scope, entity_id, display, _open_source))
     served = domain_graph(scope)
     return {**_override_result(ov), "entity": describe_object_type(served, entity_id), "domain": scope.key}
 
@@ -1612,15 +1623,19 @@ def _domain_declare_entity(spec: dict, domain: str) -> dict:
 
 def _domain_bind(entity_id: str, name: str, spec: dict, domain: str) -> dict:
     from aughor import govern
-    from aughor.ontology.domains import bind_source, domain_graph
+    from aughor.ontology.domains import absorb_part, bind_source, domain_graph
     from aughor.semantic.object_types import describe_object_type
     scope = _domain_scope(domain)
     govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
     ov = _domain_door(lambda: bind_source(scope, entity_id, name, spec, _open_source))
+    # 2026-09-22 — `absorb` marks the bound table's own type a part of this one, when the mark holds on the served
+    # domain graph: same table, same connection (`parts.part_binding` with the graph).
+    absorbed, absorb_note = (absorb_part(scope, entity_id, str(spec.get("table") or "")) if spec.get("absorb")
+                             else (None, ""))
     served = domain_graph(scope)
     described = describe_object_type(served, entity_id) if entity_id in served.entities else {}
     row = next((b for b in described.get("bindings", []) if b["name"] == name), None)
-    return {**_override_result(ov), "binding": row, "domain": scope.key}
+    return {"absorbed": absorbed, **({"warnings": [absorb_note]} if absorb_note else {}), **_override_result(ov), "binding": row, "domain": scope.key}
 
 
 def _domain_declare_link(spec: dict, domain: str) -> dict:
@@ -1932,6 +1947,11 @@ def _name_link_core(connection_id: str, effective: str, relationship_id: str, na
     existing = find_override(connection_id, effective, "link", relationship_id)
     fields = dict(existing.fields) if existing is not None else {}
     if not wanted:
+        if fields.get("declared"):
+            # A declared link's `name` IS its verb — the declaration itself. Clearing it would erase the link.
+            raise HTTPException(status_code=400, detail=(
+                f"'{relationship_id}' is a declared link, named by its verb: rename it, or withdraw the link with "
+                "DELETE /ontology/links/{id}"))
         for k in ("name", "name_origin", "name_provenance"):
             fields.pop(k, None)
         if not fields:
@@ -1956,15 +1976,60 @@ def name_ontology_link(
     body: _LinkName,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None, description="ON-8 — name a link of an organisation's ontology"),
 ):
     """Name a link by its business verb (ON-3b). Its mechanical names stay — every query and page still accepts
     them — and this one is accepted beside them. Refused when it is not snake_case, or already names another
     link or a property on either type the link joins: a path segment must name exactly one thing. An empty
-    name clears it. Merges into the link's override, so a declared link keeps its declaration."""
+    name clears it. Merges into the link's override, so a declared link keeps its declaration. ON-8 — with
+    ``domain``, a link of the organisation's ontology, whatever connections its types live on: a name reads no
+    warehouse, so the door is open there."""
     from aughor import govern
+    if domain is not None:
+        return _domain_name_link(relationship_id, body.name, domain)
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     effective = _resolve_schema(connection_id, schema_name)
     return _name_link_core(connection_id, effective, relationship_id, body.name, origin="human")
+
+
+def _domain_name_link(relationship_id: str, name: str, domain: str) -> dict:
+    """ON-8 (2026-09-22) — a link's business name in an organisation's ontology: declarative, so it opens on a
+    cross-source link too. Merged into the organisation's own override and written by its own writer."""
+    from aughor import govern
+    from aughor.ontology.domains import domain_graph
+    from aughor.ontology.overrides import (OntologyOverride, delete_organisation_override, find_override,
+                                           save_organisation_override)
+    from aughor.semantic.object_types import link_name_problem
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    graph = domain_graph(scope)
+    if relationship_id not in graph.relationships:
+        raise HTTPException(status_code=404, detail=f"Link '{relationship_id}' not found in {scope.key}")
+    wanted = (name or "").strip()
+    existing = find_override(*scope.tree, "link", relationship_id)
+    fields = dict(existing.fields) if existing is not None else {}
+    if not wanted:
+        if fields.get("declared"):
+            raise HTTPException(status_code=400, detail=(
+                f"'{relationship_id}' is a declared link, named by its verb: rename it, or withdraw the link with "
+                "DELETE /ontology/links/{id}?domain="))
+        for k in ("name", "name_origin", "name_provenance"):
+            fields.pop(k, None)
+        if not fields:
+            delete_organisation_override(*scope.tree, "link", relationship_id)
+            return {"target_kind": "link", "target_id": relationship_id, "fields": {}, "bound": True, "warnings": [],
+                    "domain": scope.key}
+    else:
+        problem = link_name_problem(graph, relationship_id, wanted)
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
+        fields.update({"name": wanted, "name_origin": "human", "name_provenance": ""})
+    ov = OntologyOverride(target_kind="link", target_id=relationship_id, fields=fields,
+                          source=(existing.source if existing is not None else "human"))
+    if existing is not None:
+        ov.binding = dict(existing.binding or {})
+    save_organisation_override(*scope.tree, ov)
+    return {**_override_result(ov), "domain": scope.key}
 
 
 # ── ON-7b: the explorer maps the business first ────────────────────────────────────────────────
