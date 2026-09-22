@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from aughor.org.context import current_org_id
 from aughor.rbac.owners import link_owner, list_owner_links, owner_inventory, unlink_owner
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["owners"])
+# DATA-06: a door that names a connection asks whose it is — router-level, so every door here is covered.
+router = APIRouter(tags=["owners"], dependencies=[Depends(connection_owner_guard)])
 
 
 class OwnerLinkRequest(BaseModel):
