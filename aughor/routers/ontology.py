@@ -1431,6 +1431,94 @@ def unbind_ontology_entity(
     return {"removed": True, "entity": entity_id, "binding": name}
 
 
+class _ExpressionSpec(BaseModel):
+    """2026-09-22 — a property mapped to a SQL expression over the type's own row."""
+    expression: str
+    semantic_type: Literal["measure", "dimension"] = "measure"
+    unit: str = ""
+    description: str = ""
+
+
+@router.put("/ontology/entities/{entity_id}/expressions/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_ontology_expression(
+    entity_id: str,
+    name: str,
+    body: _ExpressionSpec,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """2026-09-22 — map a typed property to an expression over the type's own row (ON-1b's deferred half). The
+    name must be free on the type, the expression must parse flat (no subquery, aggregate or window) over the
+    backing's own columns, and it is VERIFIED by running it on one row before anything is written — a refusal
+    says why and writes nothing. The compiler, the framing and the pages then read it like any column."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.expressions import expression_problem, normalized_expression, probe_expression
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
+    from aughor.semantic.object_types import describe_object_type
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    spec = normalized_expression(body.model_dump())
+    problem = expression_problem(entity, name, spec, graph)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        verdict = probe_expression(db, graph, entity, spec["expression"])
+    finally:
+        db.close()
+    if not verdict.get("bound"):
+        raise HTTPException(status_code=400, detail=f"'{name}' did not bind on {entity_id}: {verdict.get('note')}")
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    fields = dict(existing.fields) if existing is not None else {}
+    fields["expressions"] = {**(fields.get("expressions") or {}), name: spec}
+    binding = dict(existing.binding) if existing is not None else {}
+    binding["expressions"] = {**(binding.get("expressions") or {}), name: verdict}
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields,
+                          source=(existing.source if existing is not None else "human"), binding=binding)
+    save_override(connection_id, effective, ov)
+    _invalidate_schema_cache(connection_id)
+    served = _get_ontology_graph(connection_id, effective)
+    return {**_override_result(ov), "expression": {"name": name, **spec, "verified": True, "sample": verdict.get("sample")},
+            "entity": describe_object_type(served, entity_id)}
+
+
+@router.delete("/ontology/entities/{entity_id}/expressions/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def withdraw_ontology_expression(
+    entity_id: str,
+    name: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """2026-09-22 — remove an expression property a person declared. 404 when the type has none of that name."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override, save_override
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    specs = dict((existing.fields.get("expressions") if existing else None) or {})
+    if existing is None or name not in specs:
+        raise HTTPException(status_code=404, detail=f"{entity_id} has no expression property '{name}'")
+    specs.pop(name)
+    fields = {k: v for k, v in existing.fields.items() if k != "expressions"}
+    binding = {k: v for k, v in existing.binding.items() if k != "expressions"}
+    if specs:
+        fields["expressions"] = specs
+        verdicts = dict(existing.binding.get("expressions") or {})
+        verdicts.pop(name, None)
+        binding["expressions"] = verdicts
+    if fields:
+        save_override(connection_id, effective, existing.model_copy(update={"fields": fields, "binding": binding}))
+    else:
+        delete_override(connection_id, effective, "entity", entity_id)
+    _invalidate_schema_cache(connection_id)
+    return {"removed": True, "entity": entity_id, "expression": name}
+
+
 @router.post("/ontology/entities/{entity_id}/bindings/{name}/restore", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def restore_ontology_binding(
     entity_id: str,

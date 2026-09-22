@@ -631,3 +631,54 @@ def test_a_binding_is_bound_counted_compiled_proposed_and_removed_over_http(door
     assert len(after["bindings"]) == 1 and "payments" in {p["name"] for p in after["proposed_bindings"]}
     assert client.post("/objects/query", params=PARAMS, json=query).json()["path"] == "refused"
     assert client.delete("/ontology/entities/Order/bindings/payments", params=PARAMS).status_code == 404
+
+
+# ── 2026-09-22 — ON-1b's deferred half: a typed property mapped to an EXPRESSION over the type's own row ──────────
+# Declared through a door, checked for shape (a free name; flat SQL over the backing's own columns; no subquery,
+# aggregate or window), VERIFIED by running it on one row, then read by the object door, the type page and the compiler
+# like any column — and removed the same way.
+
+def test_an_expression_property_is_declared_verified_read_compiled_and_removed_over_http(door, client):
+    url = "/ontology/entities/Order/expressions/days_to_ship"
+    spec = {"expression": "date_diff('day', order_date, shipped_at)", "semantic_type": "measure", "unit": "days"}
+    bad = client.put(url, params=PARAMS, json={"expression": "SUM(total_amount)"})
+    assert bad.status_code == 400 and "aggregate" in bad.json()["detail"]
+    unknown = client.put(url, params=PARAMS, json={"expression": "date_diff('day', order_date, no_such_col)"})
+    assert unknown.status_code == 400 and "no_such_col" in unknown.json()["detail"]
+    taken = client.put("/ontology/entities/Order/expressions/status", params=PARAMS, json=spec)
+    assert taken.status_code == 400 and "already" in taken.json()["detail"]
+    broken = client.put(url, params=PARAMS, json={"expression": "CAST(status AS INTEGER)"})
+    assert broken.status_code == 400 and "did not bind" in broken.json()["detail"]        # parses, does not run
+
+    ok = client.put(url, params=PARAMS, json=spec)
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["expression"]["verified"] is True
+    page = client.get("/object-types/order", params=PARAMS).json()
+    prop = next(p for p in page["properties"] if p["name"] == "days_to_ship")
+    assert (prop["role"], prop["unit"], prop["source"]["expression"]) == ("measure", "days", spec["expression"])
+    assert [(e["name"], e["verified"]) for e in page["expressions"]] == [("days_to_ship", True)]
+
+    query = {"object_type": "order", "measures": [{"name": "avg_days_to_ship", "agg": "avg", "path": "days_to_ship"}]}
+    planned = client.post("/objects/query", params={**PARAMS, "execute": "false"}, json=query).json()
+    assert planned["path"] == "compiled", planned
+    assert "date_diff" in planned["sql"].lower() and "no_such" not in planned["sql"]
+    ran = client.post("/objects/query", params=PARAMS, json=query).json()
+    assert ran["error"] is None and ran["rows"] and ran["rows"][0][0] is not None
+
+    gone = client.delete(url, params=PARAMS)
+    assert gone.status_code == 200 and gone.json()["removed"] is True
+    assert "days_to_ship" not in [p["name"] for p in client.get("/object-types/order", params=PARAMS).json()["properties"]]
+    assert client.delete(url, params=PARAMS).status_code == 404
+
+
+def test_an_expression_that_did_not_bind_is_listed_but_never_compiled():
+    """The overlay's law, without a database: a recorded refusal keeps the property off every reader."""
+    from aughor.ontology.expressions import declared_expressions
+    from aughor.ontology.models import OntologyEntity
+    ent = OntologyEntity(id="Order", display_name="Order", source_tables=["orders"], identity_key="order_id",
+                         grain_verified=True)
+    specs = {"ok": {"expression": "1 + 1"}, "bad": {"expression": "no_such()"}, "unknown": {"expression": "2"}}
+    verdicts = {"ok": {"bound": True, "note": ""}, "bad": {"bound": False, "note": "did not execute: boom"}}
+    out = declared_expressions(ent, specs, verdicts)
+    assert (out["ok"].verified, out["bad"].verified, out["unknown"].verified) == (True, False, None)
+    assert "boom" in out["bad"].note and "not yet verified" in out["unknown"].note

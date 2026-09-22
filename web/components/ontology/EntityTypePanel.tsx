@@ -35,7 +35,7 @@ import {
   measureOntology,
   nameLink,
   previewBacking,
-  removeBinding, restoreBinding, restoreLink,
+  removeBinding, restoreBinding, restoreLink, declareExpression, removeExpression,
   scopeDomain,
   setPartOf,
   setQueryBacking,
@@ -193,6 +193,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
       <KeySection detail={detail} />
       <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} readOnly={inDomain} />
       <PropertiesSection detail={detail} />
+      {!inDomain && <ExpressionsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
       <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} sources={sources} />
       <PartsSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
       <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged}
@@ -748,6 +749,7 @@ function DisplaySection({ detail, connectionId, schema, onChanged, readOnly }: {
 
 /** Where a property is read from: `table.column` (the binding's full name on hover), or the overlay of edits. */
 function sourceText(source: PropertySource): { short: string; full: string } {
+  if (source.expression) return { short: `= ${source.expression}`, full: `an expression over the row: ${source.expression}` };
   if (source.binding === "overlay") {
     const text = `overlay · ${countNoun(source.edits ?? 0, "accepted edit")}`;
     return { short: text, full: text };
@@ -769,6 +771,83 @@ function sourceText(source: PropertySource): { short: string; full: string } {
          : source.kind === "detail" ? ", rolled up" : "")
     : "";
   return { short: `${bare}.${column}`, full: `${table}.${column}${how}` };
+}
+
+/** 2026-09-22 — typed properties a person mapped to an expression over the type's own row (ON-1b's deferred half).
+ *  Declared here, checked and run on one row by the server, listed with its verdict, and removed here. */
+function ExpressionsSection({ detail, connectionId, schema, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [expression, setExpression] = useState("");
+  const [role, setRole] = useState<"measure" | "dimension">("measure");
+  const [unit, setUnit] = useState("");
+  const [busy, setBusy] = useState("");
+  const [problem, setProblem] = useState("");
+  const rows = detail.expressions ?? [];
+  const act = async (key: string, write: () => Promise<void>) => {
+    setBusy(key);
+    setProblem("");
+    try {
+      await write();
+      onChanged();
+      setOpen(false);
+      setName(""); setExpression(""); setUnit("");
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <Section title="Expressions" aside="properties computed from the row, in SQL a person wrote">
+      {rows.map((e) => (
+        <div key={e.name} className="aug-fs-xs" data-testid="entity-expression"
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", flexWrap: "wrap" }}>
+          <span style={{ ...MONO, color: "var(--t1)" }}>{e.name}</span>
+          <span style={{ ...MONO, color: "var(--t3)" }}>= {e.expression}</span>
+          <span className="aug-tag aug-tag-gray">{e.role}{e.unit ? ` · ${e.unit}` : ""}</span>
+          {e.verified === true
+            ? <span className="aug-tag aug-tag-green">runs</span>
+            : <span className="aug-tag aug-tag-amber" title={e.note}>did not bind</span>}
+          <Button variant="minimal" size="xs" disabled={busy === e.name} style={{ marginLeft: "auto" }}
+            onClick={() => act(e.name, () => removeExpression(connectionId, detail.id, e.name, schema))}>
+            Remove
+          </Button>
+        </div>
+      ))}
+      {!open ? (
+        <Button variant="ghost" size="xs" onClick={() => setOpen(true)} style={{ marginTop: 4 }}>Declare an expression</Button>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }} data-testid="declare-expression">
+          <input className="aug-fs-xs" style={FIELD} value={name} placeholder="days_to_ship" aria-label="Expression name"
+            onChange={(e) => setName(e.target.value)} />
+          <input className="aug-fs-xs" style={{ ...FIELD, ...MONO }} value={expression} aria-label="Expression SQL"
+            placeholder="date_diff('day', order_date, shipped_at)" onChange={(e) => setExpression(e.target.value)} />
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <select className="aug-fs-xs" style={SELECT} value={role} aria-label="Expression role"
+              onChange={(e) => setRole(e.target.value as "measure" | "dimension")}>
+              <option value="measure">measure</option>
+              <option value="dimension">dimension</option>
+            </select>
+            <input className="aug-fs-xs" style={{ ...FIELD, width: 90 }} value={unit} placeholder="unit" aria-label="Expression unit"
+              onChange={(e) => setUnit(e.target.value)} />
+            <Button variant="outline" size="xs" disabled={!!busy || !name.trim() || !expression.trim()}
+              onClick={() => act("declare", () => declareExpression(connectionId, detail.id, name.trim(),
+                { expression: expression.trim(), semantic_type: role, unit: unit.trim() }, schema))}>
+              {busy === "declare" ? "Checking…" : "Declare"}
+            </Button>
+            <Button variant="ghost" size="xs" disabled={!!busy} onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+      {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
+    </Section>
+  );
 }
 
 function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {

@@ -19,6 +19,7 @@ import type { BackingPreview, ObjectTypeDetail } from "@/lib/objectTypes";
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
 const deleteLink = vi.fn(async (..._args: unknown[]) => undefined);
 const restoreLink = vi.fn(async (..._args: unknown[]) => undefined);
+const declareExpression = vi.fn(async (..._args: unknown[]) => undefined);
 const nameLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareProcess = vi.fn(async (..._args: unknown[]) => ({ id: "order_fulfilment" }));
@@ -44,6 +45,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   withdrawBacking: (...a: unknown[]) => withdrawBacking(...a),
   deleteLink: (...a: unknown[]) => deleteLink(...a),
   restoreLink: (...a: unknown[]) => restoreLink(...a),
+  declareExpression: (...a: unknown[]) => declareExpression(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -526,5 +528,22 @@ describe("withdrawing what the builder found (2026-09-22)", () => {
     await user.click(within(rows_[1]).getByRole("button", { name: "Restore" }));
     await waitFor(() => expect(restoreLink).toHaveBeenCalledWith("c1", "product_to_supplier", undefined));
     shown.detail = undefined;
+  });
+});
+
+
+describe("expression properties (2026-09-22)", () => {
+  it("declares an expression through the door with its role and unit", async () => {
+    const user = userEvent.setup();
+    declareExpression.mockClear();
+    render(<EntityTypePanel connectionId="c1" objectType="product" types={rows} version={0} onOpen={() => {}} onChanged={() => {}} />);
+    await user.click(await screen.findByRole("button", { name: "Declare an expression" }));
+    await user.type(screen.getByLabelText("Expression name"), "days_listed");
+    await user.type(screen.getByLabelText("Expression SQL"), "date_diff('day', listed_at, now())");
+    await user.selectOptions(screen.getByLabelText("Expression role"), "dimension");
+    await user.type(screen.getByLabelText("Expression unit"), "days");
+    await user.click(screen.getByRole("button", { name: "Declare" }));
+    await waitFor(() => expect(declareExpression).toHaveBeenCalledWith("c1", detail.id, "days_listed",
+      { expression: "date_diff('day', listed_at, now())", semantic_type: "dimension", unit: "days" }, undefined));
   });
 });

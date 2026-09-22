@@ -158,6 +158,12 @@ REACH_BASELINE: dict[str, set[str]] = {
     "entities.*.bindings[].properties.*.name": {'question_frame'},
     "entities.*.bindings[].frames": {'question_frame'},
     "entities.*.bindings[].connection_id": {'question_frame'},
+    # 2026-09-22 — ON-7b: the explorer's catalogue lists each found link by [id] with its business name, so the model
+    # can propose a name for an unnamed one.
+    "relationships.*.id": {'explorer_catalogue'},
+    # 2026-09-22 — ON-7b: the explorer's catalogue lists each found link by [id] with its business name, so the model
+    # can propose a name for an unnamed one.
+    "relationships.*.name": {'explorer_catalogue'},
     "entities.*.bindings[].kind": {'explorer_catalogue', 'question_frame'},
     "entities.*.bindings[].name": {'explorer_catalogue'},
     "entities.*.bindings[].table": {'explorer_catalogue'},

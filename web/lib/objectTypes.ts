@@ -116,6 +116,9 @@ export interface PropertySource {
   frame?: string;
   /** ON-7 — set when the property is a ROLLUP over a detail binding's rows rather than a column of the source. */
   rollup?: string;
+  /** 2026-09-22 — set when the property is an EXPRESSION a person mapped over the type's own row. */
+  expression?: string;
+  verified?: boolean | null;
 }
 
 export interface TypeProperty {
@@ -266,7 +269,20 @@ export interface TypeMetric {
   formula_sql: string;
 }
 
+/** 2026-09-22 — a typed property mapped to a SQL expression over the type's own row. */
+export interface TypeExpression {
+  name: string;
+  expression: string;
+  role: "measure" | "dimension";
+  unit: string;
+  description: string;
+  verified: boolean | null;
+  note: string;
+}
+
 export interface ObjectTypeDetail {
+  /** 2026-09-22 — the expression properties a person declared on this type, verified or not. */
+  expressions?: TypeExpression[];
   /** 2026-09-22 — what a person withdrew on this type: builder-found bindings and found links, restorable. */
   withdrawn?: { bindings: string[]; links: { relationship: string; from_entity: string; to_entity: string }[] };
   path: "object_type";
@@ -538,6 +554,26 @@ export async function declareLink(connectionId: string, spec: DeclaredLinkSpec, 
 }
 
 /** ON-7 — withdraw a DECLARED link. A found link is named, never deleted. */
+/** 2026-09-22 — map a typed property to a SQL expression over the type's own row. The server checks the shape, runs
+ *  it on one row, and refuses with the reason when it does not bind; nothing is written on a refusal. */
+export async function declareExpression(
+  connectionId: string, entityId: string, name: string,
+  spec: { expression: string; semantic_type?: "measure" | "dimension"; unit?: string; description?: string },
+  schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/expressions/${encodeURIComponent(name)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+export async function removeExpression(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/expressions/${encodeURIComponent(name)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
 /** 2026-09-22 — put back a builder-found binding a person withdrew. */
 export async function restoreBinding(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
   const res = await fetch(`${bindingUrl(connectionId, entityId, name, schemaName).replace(/\?/, "/restore?")}`, { method: "POST" });

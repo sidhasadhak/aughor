@@ -33,6 +33,28 @@ class ComputedProperty(BaseModel):
     verification_note: str = ""   # why it failed, when not verified
 
 
+class ExpressionProperty(BaseModel):
+    """2026-09-22 (ON-1b's deferred half) — a typed property a person mapped to a SQL EXPRESSION over the type's own
+    row (`days_to_ship = date_diff('day', order_date, shipped_at)`), declared through
+    PUT /ontology/entities/{id}/expressions/{name}. Verified against the data at declaration (the expression runs on
+    one row), and read by the object door, the framing and the pages like any column: each verified one is minted
+    into the type's `properties` as a derived property so every reader finds it by name. Not a metric — an
+    expression is per row and carries no aggregate; and not a rollup — it reads the backing's own columns only."""
+    expression: str
+    semantic_type: Literal["measure", "dimension"] = "measure"
+    data_type: str = ""
+    unit: str = ""
+    description: str = ""
+    verified: Optional[bool] = None
+    note: str = ""
+    source: str = "human"
+
+    def as_property(self, name: str) -> "EntityProperty":
+        return EntityProperty(name=name, display_name=name.replace("_", " "), data_type=self.data_type,
+                              semantic_type=self.semantic_type, description=self.description or f"= {self.expression}",
+                              is_derived=True, unit=self.unit)
+
+
 class Segment(BaseModel):
     """A saved, named filter over one entity's rows.
 
@@ -400,6 +422,9 @@ class OntologyEntity(BaseModel):
 
     # Per-entity derived KPIs (LLM-generated, one SELECT-clause expression each)
     computed_properties: list[ComputedProperty] = Field(default_factory=list)
+    # 2026-09-22 — typed properties a PERSON mapped to an expression over the type's own row (see ExpressionProperty),
+    # keyed by property name; each verified one is also minted into `properties`.
+    expressions: dict[str, ExpressionProperty] = Field(default_factory=dict)
 
     # Interfaces this entity implements — set by the builder's interface detector.
     # e.g. ["HasTimestamp", "HasMonetaryValue", "HasLifecycle"]
