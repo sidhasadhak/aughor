@@ -33,6 +33,7 @@ import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { cn } from "@/lib/utils";
 import { formatTimestamp, countNoun } from "@/lib/format";
 import { Icon } from "@/components/ui/icon";
+import { VisibilityLine } from "@/components/VisibilityLine";
 import { Button } from "@/components/ui/button";
 
 // ── Main panel ────────────────────────────────────────────────────────────────
@@ -596,6 +597,10 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         >
           {schema}
         </span>
+      )}
+      {/* CB-5 — how much of the business the platform can see here, and the one definition holding sends back. */}
+      {!orgMode && !domainMode && selectedConnId && (
+        <VisibilityLine connectionId={selectedConnId} schema={schema} />
       )}
 
       {/* Org ⟷ Domain ⟷ Connection view toggle. ON-8 — Domain is the organisation's ontology: types declared on any

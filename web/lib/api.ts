@@ -2507,6 +2507,32 @@ export async function getEntityLifecycleCounts(
 
 export type RecStatus = "accepted" | "rejected" | "implemented" | "verified" | "dismissed";
 
+// ── CB-5 — how much of the business the platform can see ───────────────────
+export interface VisibilityTables {
+  total: number; mapped: number; excluded: number; in_scope: number;
+  share: number | null; band: "green" | "orange" | "red" | "unknown";
+  basis: "profiler" | "unknown"; unmapped: string[];
+  exclusions: { table: string; reason: string; note: string; declared_by: string }[];
+  note: string;
+}
+export interface DefinitionHold { definition: string; holds: number; automations: string[]; latest: string }
+export interface Visibility {
+  tables: VisibilityTables;
+  joins: { total: number; measured: number; share: number } | null;
+  definitions: DefinitionHold[];
+  top_blocker: DefinitionHold | null;
+  line: string;
+  exclusion_reasons: string[];
+}
+
+export async function getVisibility(connectionId: string, schemaName?: string): Promise<Visibility> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/visibility?${q}`);
+  if (!res.ok) throw new Error(`getVisibility failed: ${res.status}`);
+  return res.json();
+}
+
 // ── CB-3 — owners the platform can reach ───────────────────────────────────
 export interface OwnerUse { kind: string; id: string; connection_id: string }
 export interface OwnerEntry {
