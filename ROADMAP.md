@@ -7158,11 +7158,20 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   finding's text, not only its id. Receipts: `tests/unit/test_context_graph_dated_facts.py` (16) + the parity test
   updated (the projector is still one shape; the store carries the history). ⏳ Owed: the dates and history on a
   screen — they land with the map below.
-- **CB-2 · Decide when to ask whether a recommendation worked, when it is accepted** (idea 22). Accepting records
-  the metric, its value now and a review date; on that date the platform measures again and asks **the metric's
-  owner** (the user's call, 2026-09-22 — not the accepting person, who is asked only while the owner is unresolved);
-  the answer lands in `playbook.outcomes` where it already updates success rates. Depends on CB-3. This closes the
-  open call *"when is a person asked whether a recommendation WORKED?"*.
+- ✅ **CB-2 · Decide when to ask whether a recommendation worked, when it is accepted** (idea 22) — **BUILT 2026-09-22**.
+  The report now carries `spec`, the intake's MEASURABLE definition (metric SQL, table, date column, window length) — what
+  a baseline and a review are measured with, recorded from day one because it cannot be backfilled. Accepting through the
+  inbox door measures the metric NOW over a same-length window ending yesterday (`outcomes.record_acceptance`; canonical
+  SQL rendered native through `db.dialects.native_sql`, one runner in `db.measure`), and sets `review_at` (default 30 days,
+  `review_days` on the request). A definition the answer cannot measure alone — a metric whose SQL or date column reaches
+  another table — is REFUSED with the reason on the record, never guessed. The heartbeat runs due reviews hourly
+  (`scheduler.run_due_reviews_hourly`): measures again, writes `review_value` and the question, and asks **the metric's
+  owner** when the catalog names one the router can reach, else the person who accepted (`accepted_by`, the request's
+  principal) — each once. The inbox shows the baseline, the review date and the question; marking *verified* or
+  *rejected* is the answer, and it keeps everything acceptance recorded (`log_outcome` merges; before/after default to
+  the two measurements, so idea 13 has its numbers). Receipts: `tests/unit/test_recommendation_review.py` (20) · tsc, six
+  lints, vitest 1,132 green. ⏳ Live receipt on theLook in flight. This closes the open call *"when is a person asked
+  whether a recommendation WORKED?"* — at the moment it is accepted.
 - **CB-3 · Owners the platform can reach** (idea 18). An owner string on a metric, a process or a rule is linked
   to a principal ONCE, by a person, in the UI; the glossary gets an owner field; `owner_principal` resolves the link;
   an unresolved owner is shown as unresolved wherever a question would have gone. Never by name matching.
