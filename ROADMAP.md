@@ -7129,6 +7129,59 @@ without an outbound grant; weights in the repo or installer; a second confidence
 `docs.typesafe.ai` and `typesafe.ai` were blocked by egress, and the study says which numbers are
 second-hand.
 
+### 3.21 · Arc CB — the company brain: what people SAY, checked against what the data SHOWS (drafted 2026-09-22 at the user's *"Once done, lets consider & plan for Codos roadmap items"* — §6 item 30, four answers, NOT STARTED; source: the **Codos idea set**, `IDEAS.md` 15–22, whose 36 cited starting points were re-verified on `1a8a3a88` the same day)
+
+**Thesis.** Codos builds a "company brain" from what employees write and say; Aughor's context graph is the same
+machinery over what the warehouse measures, and admits no model-inferred source. Aughor's company brain is therefore
+**said versus measured**: a claim a person makes comes in at the hub's `said` tier, the platform checks it against the
+data, agreement raises it to `measured`, disagreement becomes a question to its owner, and what cannot be checked stays
+visibly unknown. Everything else in the set is what that needs — owners a question can reach, a date on every fact, a
+place to put the action — plus two finishes of machinery that already exists and shows nothing.
+
+**Laws (standing, restated):** people edit the organisation's ontology and the platform never does (§6 item 20) · the
+hub owns meaning, not data (§3.18 law 1) — no crawling of Slack history or email bodies, judged not worth copying · a
+person is never linked by matching a display name (`identity/resolver.py`) · no model-inferred source enters the graph
+(`context_graph.py:40`) · a question is asked once and the answer remembered (`departure.answer_owner_question`).
+
+**Waves — in the user's order: finish what exists first, foundations next, the thesis last.**
+- **CB-1 · Remember a rejected duplicate** (idea 19). `GET /ontology/duplicate-entities` recomputes the same
+  pairs on every read; a "no, these are different" is recorded with its reason and the pair is not offered again —
+  the pattern the explorer's withdrawn proposals (`explorer._withdrawn`) and dismissed recommendations already use.
+  Receipt: reject a pair, read again, it is gone; the reason is on the record.
+- **CB-2 · Show how much of the business the platform can see** (idea 15). `declarations.Coverage` (imported only
+  by its test) reaches a screen: the share of tables mapped to business objects, exclusions out of the denominator,
+  banded; beside it *the one missing definition holding the most back*, counted from departure holds per unapproved
+  metric ("approve `revenue` and 3 sends unblock" — the theLook case of 2026-09-18). Deterministic, no model.
+- **CB-3 · Owners the platform can reach** (idea 18). An owner string on a metric, a process or a rule is linked
+  to a principal ONCE, by a person, in the UI; the glossary gets an owner field; `owner_principal` resolves the link;
+  an unresolved owner is shown as unresolved wherever a question would have gone. Never by name matching.
+- **CB-4 · Decide when to ask whether a recommendation worked, when it is accepted** (idea 22). Accepting records
+  the metric, its value now and a review date; on that date the platform measures again and asks **the metric's
+  owner** (the user's call, 2026-09-22 — not the accepting person, who is asked only while the owner is unresolved);
+  the answer lands in `playbook.outcomes` where it already updates success rates. Depends on CB-3. This closes the
+  open call *"when is a person asked whether a recommendation WORKED?"*.
+- **CB-5 · What the company is trying to do this quarter** (idea 21). A short list of priorities, written by
+  people in **organisation settings** (the user's call — already people-written, already winning over inference),
+  each naming a metric and a target; `triage.impact_score` counts a finding that bears on one, and the Briefing says so.
+- **CB-6 · One action beside each Briefing item** (idea 20). The single best action under each item, chosen by the
+  retriever's learned success rate, sent through the SAME gated path the Recommendation Inbox uses
+  (`routers/actions.py` execute door, departure gate untouched). The action goes where the reader already is.
+- **CB-7 · A date on every fact, and what it replaced** (idea 16). The graph's `Provenance` takes the hub envelope's
+  `observed_at`/`valid_until`/`author`; `save_graph` keeps the replaced text of a superseded finding, not only its id.
+  An old fact imported today keeps its date; "the date was wrong" and "the date moved" are two different records.
+- **CB-8 · Said versus measured** (idea 17). First source: **filed Slack thread replies** (the user's call) — they
+  already arrive as staged notes (`routers/arrivals.py`) and become context pieces (`hub/adapters.py`). A reply that
+  states a number is checked with `verify.verify_numeric_claims` against the warehouse; agreement → `measured`,
+  disagreement → a question to the owner (CB-3), uncheckable → `unknown`, shown. A CHECKED note is the first kind let
+  through `hub/injection.INJECTABLE_SOURCE_KINDS` (empty today, by design). Uploaded documents (idea 7) come after.
+
+**What each wave must show before the next starts:** a live receipt on theLook or LuxExperience, a mutation test on
+every new guard, and the §3 line updated the same day (a prose claim in §3 rots silently — §7).
+
+**Refused with the set:** crawling Slack history or email bodies · entering the EnterpriseRAG-Bench race (their graph
+adds ~4.5 points over plain agentic file search, by their own numbers).
+
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -8070,6 +8123,8 @@ the browser** · **measure the premise before building.**
 > arming. 24(f) email holds for the OAuth client; 24(g) §0's amendment adopted. 25(a) stamped as shipped, and (c),
 > (d), (e) offered and not chosen. 28 adopted — (a), (c), (f) — with JD-5 and JD-6 on hold. **The register is back
 > at zero open.**
+> **Amended 2026-09-22:** item 30 (Arc CB — the company brain, from the Codos idea set) arrived at the user's
+> *"consider & plan"* and was answered in the same turn, four clauses; §3.21 drafted on those answers. Zero open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -8626,6 +8681,17 @@ the browser** · **measure the premise before building.**
     production can no longer do) and was rewritten. Suite 11,293 passed, 0 failed, pytest exit 0.
     `web/lib/departures.ts` carries the guard in both maps, verified by INSPECTION and not by running —
     that worktree had no `node_modules`.
+
+30. ✅ **DRAFTED 2026-09-22 (the user: *"Once done, lets consider & plan for Codos roadmap items"*) — Arc CB, the
+    company brain (§3.21): four answers that shape it, given before the draft was written.** (a) **Order — finish what
+    exists first**, as recommended: CB-1/CB-2 (a rejected duplicate remembered; the coverage number and "fix this one")
+    ship in days with no model call; foundations next; the thesis last. (b) **Who is asked whether a recommendation
+    worked — the METRIC'S OWNER**, *not* as recommended (the recommendation was the accepting person, which needed no
+    owner resolution). Consequence: idea 22 (CB-4) moves behind owners (CB-3); the accepting person is asked only while
+    the owner is unresolved. (c) **The quarter's priorities live in organisation settings**, as recommended — people
+    write them, they already win over inference. (d) **The first "said" source is filed Slack thread replies**, as
+    recommended — they already arrive; uploaded documents (idea 7) follow. Nothing started; the register stays at zero
+    OPEN — every clause is answered.
 
 ---
 
