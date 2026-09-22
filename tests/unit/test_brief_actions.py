@@ -3,8 +3,8 @@
 Measured before this wave: the Briefing ranked findings by business impact and stopped; nothing in
 its code offered an action, and recommendations with an Execute button lived a screen away in the
 inbox. Now each cited item carries the single best action, chosen where the platform already keeps
-its judgement: the cited investigation's own first recommendation (executable through the inbox's
-gated door), else the playbook's best play by learned success rate (a suggestion, not fired). An
+its judgement: the first recommendation of the deep analysis the item came from (executable through the
+inbox's gated door), else the playbook's best play by learned success rate (a suggestion, not fired). An
 item with neither carries none — honest over invented.
 """
 from __future__ import annotations

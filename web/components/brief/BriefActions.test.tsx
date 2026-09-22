@@ -20,8 +20,8 @@ describe("BriefActions", () => {
 
   it("an executable recommendation opens the inbox through the caller", () => {
     const open = vi.fn();
-    render(<BriefActions onOpenInvestigation={open} citations={[
-      { ...base, ref: "1", action: { kind: "recommendation", text: "Move the cut-off", why: "the cited investigation's first recommendation", executable: true, inv_id: "inv9", rec_index: 0 } },
+    render(<BriefActions onOpenDeepAnalysis={open} citations={[
+      { ...base, ref: "1", action: { kind: "recommendation", text: "Move the cut-off", why: "the first recommendation of the deep analysis it came from", executable: true, inv_id: "inv9", rec_index: 0 } },
     ]} />);
     fireEvent.click(screen.getByText("execute in the inbox"));
     expect(open).toHaveBeenCalledWith("inv9");

@@ -405,7 +405,7 @@ def best_action_for(ins: dict, *, industry=None) -> Optional[dict]:
                         if isinstance(r0, dict) else str(r0))
                 if text:
                     return {"kind": "recommendation", "inv_id": inv_id, "rec_index": 0, "text": text,
-                            "executable": True, "why": "the cited investigation's first recommendation"}
+                            "executable": True, "why": "the first recommendation of the deep analysis it came from"}
         except Exception as exc:  # noqa: BLE001 — an action is additive; the brief never fails for one
             from aughor.kernel.errors import tolerate
             tolerate(exc, "the cited investigation could not be read for a brief action", counter="briefing.action")

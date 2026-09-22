@@ -3,16 +3,16 @@
 /**
  * BriefActions — under the synthesis (CB-6 / CB-7, 2026-09-23): for each cited finding that bears on a
  * declared goal or carries an action, one line. The goal is what people wrote in organisation
- * settings; the action is the cited investigation's own recommendation (executable in the inbox,
- * through the gated door) or the playbook's best play by learned success rate (a suggestion). A
+ * settings; the action is the recommendation of the deep analysis the finding came from (executable
+ * in the inbox, through the gated door) or the playbook's best play by learned success rate (a suggestion). A
  * finding with neither shows nothing — an invented action would be worse than none.
  */
 import type { BriefingCitation } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
-export function BriefActions({ citations, onOpenInvestigation }: {
+export function BriefActions({ citations, onOpenDeepAnalysis }: {
   citations: BriefingCitation[];
-  onOpenInvestigation?: (invId: string) => void;
+  onOpenDeepAnalysis?: (invId: string) => void;
 }) {
   const rows = (citations ?? []).filter(c => c.priority || c.action);
   if (rows.length === 0) return null;
@@ -28,8 +28,8 @@ export function BriefActions({ citations, onOpenInvestigation }: {
               {c.action.kind === "play" && typeof c.action.success_rate === "number" && c.action.success_rate > 0 && (
                 <span className="text-zinc-500"> · worked {Math.round(c.action.success_rate * 100)}% of the time</span>
               )}
-              {c.action.kind === "recommendation" && c.action.inv_id && onOpenInvestigation && (
-                <Button variant="ghost" size="xs" className="ml-1 underline text-zinc-300" onClick={() => onOpenInvestigation(c.action!.inv_id!)}>
+              {c.action.kind === "recommendation" && c.action.inv_id && onOpenDeepAnalysis && (
+                <Button variant="ghost" size="xs" className="ml-1 underline text-zinc-300" onClick={() => onOpenDeepAnalysis(c.action!.inv_id!)}>
                   execute in the inbox
                 </Button>
               )}

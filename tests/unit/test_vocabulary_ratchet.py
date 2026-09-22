@@ -104,7 +104,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # ON-0's prompt-reach audit builds a fixture graph with every renderer gate open;
          # its one hit is the model field `exploration_insights`, filled so the walk can
          # measure whether that field reaches a block. Its own output says 'findings'.
-         "aughor/ontology/prompt_reach.py"),
+         "aughor/ontology/prompt_reach.py",
+         # CB-7 (2026-09-23): its fixtures are BriefingCitation rows, and the type requires the wire
+         # field `insight_id` — the same ground as api.ts; renaming it in a fixture stops testing the wire.
+         "web/components/brief/BriefActions.test.tsx",),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),

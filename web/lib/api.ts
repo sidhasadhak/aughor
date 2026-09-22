@@ -5517,8 +5517,8 @@ export interface BriefingCitation {
   action?: BriefAction | null;
 }
 
-/** CB-7 — the single best action beside a Briefing item: the cited investigation's own recommendation
- * (executable through the inbox's gated door) or the playbook's best play (a suggestion). */
+/** CB-7 — the single best action beside a Briefing item: the first recommendation of the deep analysis the
+ * finding came from (executable through the inbox's gated door) or the playbook's best play (a suggestion). */
 export interface BriefAction {
   kind: "recommendation" | "play";
   text: string;
