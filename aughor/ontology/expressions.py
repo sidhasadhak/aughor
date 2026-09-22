@@ -58,14 +58,14 @@ def expression_problem(entity: OntologyEntity, name: str, spec: dict, graph: Opt
 
 def probe_expression(db: Any, graph: OntologyGraph, entity: OntologyEntity, expression: str) -> dict:
     """Run the expression on ONE row of the type's own table: ``{bound, note, sample}``."""
-    from aughor.ontology.validator import _check_value, _entity_table, _probe
-    table = _entity_table(graph, entity.id) if entity.source_tables or entity.backing is not None else ""
+    from aughor.ontology.validator import check_value, entity_table, probe_query
+    table = entity_table(graph, entity.id) if entity.source_tables or entity.backing is not None else ""
     if not table:
         return {"bound": False, "note": f"{entity.id} has no source table to read the expression on", "sample": None}
-    ok, err, val = _probe(db, f"SELECT ({expression}) AS v FROM {table} LIMIT 1")
+    ok, err, val = probe_query(db, f"SELECT ({expression}) AS v FROM {table} LIMIT 1")
     if not ok:
         return {"bound": False, "note": f"did not execute: {err}", "sample": None}
-    sane, note = _check_value(val)
+    sane, note = check_value(val)
     return {"bound": bool(sane), "note": "" if sane else note, "sample": None if val is None else str(val)[:80]}
 
 
