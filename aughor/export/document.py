@@ -89,8 +89,13 @@ def _round_cell(v):
     return v
 
 
-def _grid_fingerprint(columns, rows) -> str:
-    """A stable digest of a grid, for spotting an exhibit the document already drew.
+def _exhibit_key(columns, rows) -> str:
+    """A stable key for a grid, for spotting an exhibit the document already drew.
+
+    Deliberately NOT named `*fingerprint*`: this repo ratchets that word to freshness
+    checks registered in `kernel.freshness.FINGERPRINTS`, and this is not one. Nothing is
+    cached and nothing expires — the key lives for the length of a single export and
+    answers "has this already been drawn on this page", not "is this stale".
 
     Columns are included because the same numbers under different headers are a different
     exhibit; row ORDER is included because a re-sorted ranking reads differently even when
@@ -241,7 +246,7 @@ def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
         prose = _strip_planner_notes((a.get("insight") or a.get("answer") or "").strip())
         if prose:
             blocks.append(_p(prose))
-        fp = _grid_fingerprint(a.get("columns"), a.get("rows"))
+        fp = _exhibit_key(a.get("columns"), a.get("rows"))
         if fp and fp in _drawn:
             # Named, never silently dropped: a reader who scrolls looking for the picture
             # is told where it is, and the repetition is stated as the result it is.

@@ -10,30 +10,30 @@ does not report it; it just costs a page.
 """
 from __future__ import annotations
 
-from aughor.export.document import _grid_fingerprint
+from aughor.export.document import _exhibit_key
 
 COLS = ["product_category", "items"]
 ROWS = [["Intimates", 36294], ["Jeans", 34602], ["Dresses", 14568]]
 
 
-def test_the_same_grid_fingerprints_the_same():
-    assert _grid_fingerprint(COLS, ROWS) == _grid_fingerprint(list(COLS), [r[:] for r in ROWS])
+def test_the_same_exhibit_keys_the_same():
+    assert _exhibit_key(COLS, ROWS) == _exhibit_key(list(COLS), [r[:] for r in ROWS])
 
 
 def test_different_HEADERS_over_the_same_numbers_are_a_different_exhibit():
     """`revenue` and `items` over identical figures say different things, and the report
     that prompted this had exactly that: one column named for a metric, holding a count."""
-    assert _grid_fingerprint(COLS, ROWS) != _grid_fingerprint(["product_category", "revenue"], ROWS)
+    assert _exhibit_key(COLS, ROWS) != _exhibit_key(["product_category", "revenue"], ROWS)
 
 
 def test_a_RE_SORTED_ranking_is_a_different_exhibit():
     """A ranking reads by position. The same rows in another order is another chart."""
-    assert _grid_fingerprint(COLS, ROWS) != _grid_fingerprint(COLS, list(reversed(ROWS)))
+    assert _exhibit_key(COLS, ROWS) != _exhibit_key(COLS, list(reversed(ROWS)))
 
 
 def test_an_empty_grid_is_never_a_repeat():
     """Findings with no rows must not all collide onto one fingerprint and suppress each
     other's exhibits — the empty case is the one that would do it silently."""
-    assert _grid_fingerprint([], []) == ""
-    assert _grid_fingerprint(COLS, []) == ""
-    assert _grid_fingerprint([], ROWS) == ""
+    assert _exhibit_key([], []) == ""
+    assert _exhibit_key(COLS, []) == ""
+    assert _exhibit_key([], ROWS) == ""
