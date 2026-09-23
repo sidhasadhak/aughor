@@ -13870,7 +13870,7 @@ export interface components {
             company_name: string;
             /**
              * Currency Code
-             * @description ISO 4217 reporting currency, e.g. 'GBP'. When set, AUTHORITATIVE over the currency BusinessProfile infers from the data. Empty = use the inferred value.
+             * @description ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is stated as such (org_context: 'reports in GBP'). It does NOT relabel figures read from a warehouse — nothing converts, so the data's own currency wins there; see resolve_currency. Empty = unset.
              * @default
              */
             currency_code: string;
