@@ -5997,6 +5997,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/investigations/{inv_id}/envelope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Investigation Envelope
+         * @description CP-4 — the stored answer envelope: the fields a door selects from.
+         *
+         *     For a door that was not on the stream — a scheduled send, an export, a later reader.
+         *     404 when the turn predates the envelope or never settled into one.
+         */
+        get: operations["investigation_envelope_investigations__inv_id__envelope_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/investigations/{inv_id}/evidence": {
         parameters: {
             query?: never;
@@ -26348,6 +26371,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    investigation_envelope_investigations__inv_id__envelope_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

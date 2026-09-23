@@ -27,6 +27,21 @@ import type { StreamChunk } from "chat";
 
 import { createProgressCards } from "./progress.js";
 
+/** CP-4 — the answer, whole, as the platform folded it: what every door selects from. */
+export interface AnswerEnvelope {
+  version: number;
+  question: string;
+  headline: string;
+  body: string;
+  grid: { columns: string[]; rows: unknown[][]; caption?: string } | null;
+  chart: { chart_type: string; chart_config: Record<string, unknown> } | null;
+  caveats: string[];
+  follow_ups: string[];
+  provenance: Record<string, unknown>;
+  error: string;
+  lifted_tables: number;
+}
+
 /** What the turn produced besides prose — the visual half of the answer. */
 export interface TurnArtifacts {
   investigationId: string;
@@ -36,6 +51,9 @@ export interface TurnArtifacts {
   rows: unknown[][];
   chartType: string;
   chartConfig: Record<string, unknown>;
+  /** The folded answer — the LAST frame of a completed ask. Absent on an older
+   *  platform or an interrupted stream; the grid frames above are the fallback. */
+  envelope?: AnswerEnvelope | null;
 }
 
 export interface AskOptions {
@@ -255,18 +273,25 @@ export function createAskStream(
               // grid posted under a failure reads as a partial answer.
               return;
             }
+            case "envelope":
+              // CP-4 — the answer folded whole, emitted last. What `postExhibits`
+              // selects from: the grid once, the chart decision, the top caveats.
+              artifacts.envelope = (frame.envelope as AnswerEnvelope) ?? null;
+              break;
             case "done":
+              // Not the last frame: the quick path streams its narrative, its
+              // follow-ups and the envelope AFTER `done`. The stream's end is the
+              // turn's end; `settled` only records that the platform said so.
               settled = true;
-              onTurn?.(artifacts);
-              return;
+              break;
             default:
               break; // receipt/telemetry frames are web-surface concerns, not Slack text
           }
         }
       }
-      // The stream ended without a `done` — a settled answer that never got its
+      // The turn ends when the stream does. A settled answer that never got its
       // terminal frame still earned its exhibits.
-      if (!settled && sawText) onTurn?.(artifacts);
+      if (settled || sawText) onTurn?.(artifacts);
     } finally {
       reader.releaseLock();
       // Abandoned, not finished: the platform's stop button (or any abort)

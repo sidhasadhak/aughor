@@ -219,6 +219,11 @@ export const DECLARED_DATA_PARTS: ReadonlySet<string> = new Set(DECLARED);
 export const UNRENDERED_FRAMES: ReadonlySet<string> = new Set([
   "start", "learning", "activations",
   "compiled", "fanout", "trusted", "paused",
+  // CP-4 — the folded answer envelope, the LAST frame of a completed ask. The web has
+  // already rendered every part it folds (headline, narrative, grid, chart, receipts,
+  // follow-ups) from the frames themselves; headless doors (Slack, a scheduled send,
+  // the export) are the readers that select from it.
+  "envelope",
 ]);
 
 /**

@@ -7504,6 +7504,40 @@ selection; and the two CP-0 defects reproduced against the old path and absent o
 **Falsifier:** if a door still needs a model call to shorten what it was handed, the envelope
 is not structured enough and the wave is not done.
 
+✅ **BUILT 2026-09-23** (branch `claude/pending-top-nine`; PENDING.md item 1). The ask stream now
+ends with ONE `envelope` frame — `aughor/answer/envelope.py`, folded deterministically from the
+frames the run already emitted, no model call: `headline` · `body` (every prose table LIFTED into
+the grid field, so a duplicate is impossible rather than suppressed; `lifted_tables` counts how
+often the model tabulated anyway) · `grid` · `chart` (the decision; encodings stay at the door) ·
+`caveats` · `follow_ups` · `provenance` (SQL, tables, guard receipts, ids, confidence — a FIELD a
+door drops or shows). Persisted on the turn's row (`attach_envelope`), served by
+`GET /investigations/{id}/envelope`, published by the `investigate` step as `envelope`.
+**The doors select:** the mention bot (`bots/slack`) holds back any table the model types as it
+streams and posts the envelope's grid once with the top two caveats, never provenance; a
+`slack_post` bound to `envelope` renders the same selection through `answer.doors.slack_message`
+and the departure gate judges exactly that text; the export (`_build_envelope`) takes every field —
+evidence, caveats, follow-ups, the query and the checks. The `converse` prompt no longer asks the
+model to narrate receipts ("never report that none fired") or to write tables; `run_sql`'s
+description no longer describes receipts as something to report.
+**Live receipt, theLook `8233e4fd`, turn `47a130145460`:** 15 frames, the envelope last; the row
+filed with the session id; `GET …/envelope` 200 (10-row grid); PDF 28,083 bytes from the envelope
+builder (Summary · Evidence · Query); the engine's Slack text and the bot's exhibit rendered from the
+same JSON, differing only in selection; the model wrote a list, not a table (`lifted_tables` 0).
+**The two CP-0 defects:** pinned in `tests/unit/test_answer_envelope.py` — the 2026-09-23 shape
+reproduced on the old path (the same row twice) and absent on the envelope; receipts ride
+provenance and the Slack selection carries none.
+🔴 **What the receipt found, fixed the same session:** a converse turn that ran `run_sql` had NO
+history row at all — the tool mints a 12-character receipt id and files a receipt, and the converse
+body files a row only for a turn that called no tool — so the answer people read in Slack could not
+be exported or reloaded. `attach_envelope` now files the row under the receipt's own id. And the
+first fold said the sentence twice (the body carried the headline again); the body is now what
+FOLLOWS the sentence.
+⏳ **Left, named:** the quick path's `_guard_note` still asks the narrator for one sentence about a
+guard that CHANGED a number (a caveat about meaning, which the amended rule allows — kept); a
+scheduled post renders the model's `**bold**` literally (raw `chat.postMessage`, pre-existing); grid
+cells reach a reader unformatted (`54496.64009666443`) on every door — CP-5's formatter, not this
+wave's; the web reads the frames it always did and ignores the envelope by declaration.
+
 #### CP-5 · One reader-facing exhibit formatter, consumed by every door
 
 Retire the three table answers to one, and the two rasterizers to one. Not a rewrite of the

@@ -328,6 +328,7 @@ def save_chat_turn(
     overview_report: dict | None = None,
     purpose: str = "",
     status: InvStatus = "complete",
+    inv_id: str | None = None,
 ) -> str:
     """Persist a chat turn as a history row, linked to a session and
     (when run inside a Canvas) tagged with its canvas_id so Canvas history can
@@ -357,7 +358,9 @@ def save_chat_turn(
         agent_id = _a.id if _a is not None else ""
     except Exception:
         agent_id = ""
-    inv_id = uuid.uuid4().hex[:8]
+    # ``inv_id`` (CP-4) — the caller's id when the turn already has one elsewhere (the
+    # receipt a converse tool minted), so the row and the receipt share the key.
+    inv_id = inv_id or uuid.uuid4().hex[:8]
     sid = session_id or uuid.uuid4().hex[:12]
     now = _now()
     c = _conn()
@@ -388,6 +391,65 @@ def save_chat_turn(
     c.commit()
     c.close()
     return inv_id
+
+
+def attach_envelope(inv_id: str, envelope: dict | None) -> bool:
+    """CP-4 — merge the folded answer envelope into a turn's ``report_json``, any kind.
+
+    Written once, when the ask stream ends — the only moment every field exists (the
+    quick path's narrative and follow-ups stream in after ``done``). A door that was not
+    on the stream (an export, a scheduled send, a later reader) reads it back from here.
+
+    A turn with NO row yet gets one. Measured on the first live receipt (2026-09-23): a
+    converse turn that ran `run_sql` carried the id its receipt minted and no history row
+    at all — the tool files a receipt, not a turn, and the converse body files a row only
+    for a turn that called no tool. So the answer people were reading in Slack could not be
+    exported or reloaded. The row is written here from the envelope's own fields, under the
+    same id the receipt already carries, so the two share a key.
+    """
+    if not envelope or not inv_id:
+        return False
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    row = c.execute(
+        "SELECT report_json FROM investigations WHERE id = ?", (inv_id,),
+    ).fetchone()
+    if not row:
+        c.close()
+        prov = envelope.get("provenance") or {}
+        grid = envelope.get("grid") if isinstance(envelope.get("grid"), dict) else {}
+        chart = envelope.get("chart") if isinstance(envelope.get("chart"), dict) else {}
+        sql = [s for s in (prov.get("sql") or []) if s]
+        if not (prov.get("connection_id") and (envelope.get("headline") or envelope.get("body"))):
+            return False
+        save_chat_turn(
+            question=str(envelope.get("question") or ""),
+            connection_id=str(prov["connection_id"]),
+            headline=str(envelope.get("headline") or ""),
+            sql=str(sql[-1]) if sql else "",
+            session_id=str(prov.get("session_id") or ""),
+            columns=list(grid.get("columns") or []),
+            rows=list(grid.get("rows") or []),
+            chart_type=str(chart.get("chart_type") or "auto"),
+            tables_used=list(prov.get("tables_used") or []),
+            inv_id=inv_id,
+        )
+        c = _conn()
+        row = c.execute(
+            "SELECT report_json FROM investigations WHERE id = ?", (inv_id,),
+        ).fetchone()
+        if not row:
+            c.close()
+            return False
+    report = json.loads(row["report_json"] or "{}")
+    report["envelope"] = envelope
+    c.execute(
+        "UPDATE investigations SET report_json = ? WHERE id = ?",
+        (json.dumps(report), inv_id),
+    )
+    c.commit()
+    c.close()
+    return True
 
 
 def update_chat_turn_insight(inv_id: str, insight: dict | None) -> bool:

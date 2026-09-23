@@ -17,7 +17,7 @@
  */
 import { Chat, StreamingPlan, type Adapter, type FileUpload, type StateAdapter, type Thread } from "chat";
 
-import { answerHasTable, csvFilename, fitsInline, renderGrid, worthShowing } from "./artifacts.js";
+import { csvFilename, renderGrid, worthShowing, type Grid } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
 import type { ArrivalPoster, AskChunk, AskStream, TurnArtifacts } from "./aughor.js";
 
@@ -134,73 +134,139 @@ export function buildBot({
       onTurn: (a) => { turn = a; },
     });
 
-    // The exhibits need to know what the ANSWER already said, and a stream can only be
-    // consumed once — so the text is collected as it passes through on its way to Slack,
-    // rather than by asking the platform a second time.
-    const said = { text: "" };
     await thread.post(new StreamingPlan(
-      collectText(stream, said),
+      // CP-4 — the grid is ONE field of the answer, and this door renders it once, in
+      // the exhibits. A table the model typed into its prose is the same rows again, so
+      // it is held back as it streams: the platform's envelope carries the lifted copy.
+      withoutTables(stream),
       // One plan block beats a scatter of inline cards: a deep run's phases are
       // one piece of work with parts, and a thread reads better with a single
       // block that fills in than with eight cards interleaved through prose.
       { groupTasks: "plan" },
     ));
 
-    await postExhibits(thread, turn, renderChart, said.text);
+    await postExhibits(thread, turn, renderChart);
   });
 
   return bot;
 }
 
+/** A GFM delimiter row: pipes, dashes, colons, spaces — and at least one dash. */
+const isDelimiterRow = (line: string): boolean => {
+  const s = line.trim();
+  return s.includes("-") && s.includes("|") && /^\|?[\s:|-]+\|?$/.test(s);
+};
+
 /**
- * The turn's grid and chart, as a follow-up message.
+ * Drop every markdown table from the streamed prose, and nothing else — without
+ * holding the prose back.
+ *
+ * The stream arrives in arbitrary chunks. A line whose first character is not a pipe is
+ * prose, and it streams the moment that character is known — mid-line, so a paragraph
+ * still types itself out. A line that opens with a pipe (or is a delimiter row, or sits
+ * inside a run already being held) is held with its run until the run ends; the run is
+ * then dropped if a delimiter row sat under its first line (a table) and released whole
+ * otherwise. What remains at the stream's end is judged the same way.
+ *
+ * Content-blind: only the delimiter's SHAPE decides, as the platform's own `lift_tables`
+ * decides, so what this door drops is what the envelope carries as the grid. A table the
+ * model writes WITHOUT a leading pipe is the one shape this streaming filter lets through;
+ * the envelope still lifts it for every door that reads the fields.
+ */
+export async function* withoutTables(
+  stream: AsyncIterable<AskChunk>,
+): AsyncIterable<AskChunk> {
+  let held: string[] = [];    // the run of table-shaped lines being judged
+  let line = "";              // the current unterminated line, while still unjudged
+  let released = false;       // the current line was judged prose and is streaming
+
+  const flushHeld = (): string => {
+    if (held.length === 0) return "";
+    const isTable = held.length >= 2 && isDelimiterRow(held[1]);
+    const out = isTable ? "" : held.map((l) => `${l}\n`).join("");
+    held = [];
+    return out;
+  };
+  const joinsRun = (l: string): boolean =>
+    l.trimStart().startsWith("|") || isDelimiterRow(l) || (held.length > 0 && l.includes("|"));
+
+  for await (const chunk of stream) {
+    if (typeof chunk !== "string") {
+      yield chunk;
+      continue;
+    }
+    let out = "";
+    let rest = chunk;
+    while (rest.length) {
+      const nl = rest.indexOf("\n");
+      const piece = nl === -1 ? rest : rest.slice(0, nl);
+      rest = nl === -1 ? "" : rest.slice(nl + 1);
+      if (released) {
+        // Prose already streaming: straight through to the end of its line.
+        out += nl === -1 ? piece : `${piece}\n`;
+        if (nl !== -1) released = false;
+        continue;
+      }
+      line += piece;
+      if (nl === -1) {
+        // Unterminated. Judge it as soon as its first character is known.
+        const t = line.trimStart();
+        if (t.length && !t.startsWith("|") && held.length === 0) {
+          out += line;
+          line = "";
+          released = true;
+        }
+        continue;
+      }
+      if (joinsRun(line)) held.push(line);
+      else out += `${flushHeld()}${line}\n`;
+      line = "";
+    }
+    if (out) yield out;
+  }
+  if (line.length && joinsRun(line)) {
+    held.push(line);
+    line = "";
+  }
+  const tail = flushHeld() + line;
+  if (tail) yield tail;
+}
+
+/**
+ * The turn's grid, chart and caveats, as a follow-up message — selected from the
+ * envelope when the platform sent one, from the grid frames when it did not.
  *
  * Silent by design when there is nothing to add: an answer whose result is one
  * number does not get a one-cell table under it, and a grid with no honest
  * chart does not get a picture of nothing (the renderer's own 204 says so).
+ * Provenance is a field this door does not take (the user's 2026-09-22 rule:
+ * no receipts on Slack messages).
  */
-/** Pass every chunk through unchanged, keeping the prose for `postExhibits` to read. */
-async function* collectText(
-  stream: AsyncIterable<AskChunk>,
-  sink: { text: string },
-): AsyncIterable<AskChunk> {
-  for await (const chunk of stream) {
-    if (typeof chunk === "string") sink.text += chunk;
-    yield chunk;
-  }
-}
+const MAX_CAVEATS = 2;
 
 async function postExhibits(
   thread: Pick<Thread, "post">,
   turn: TurnArtifacts | null,
   renderChart?: ChartRenderer,
-  answer = "",
 ): Promise<void> {
-  if (!turn || !worthShowing(turn)) return;
+  if (!turn) return;
+  const env = turn.envelope ?? null;
+  const grid: Grid = env?.grid ?? { columns: turn.columns, rows: turn.rows };
+  const chartType = env?.chart?.chart_type || turn.chartType || "auto";
+  const chartConfig = env?.chart?.chart_config ?? turn.chartConfig;
+  const caveats = (env?.caveats ?? []).slice(0, MAX_CAVEATS).map((c) => `⚠️ ${c}`);
+  const showGrid = worthShowing(grid);
 
-  let { markdown, csv } = renderGrid(turn);
-  /**
-   * Don't say it twice. When the answer already tabulated and the grid is one that fits
-   * inline, the exhibit's table is the SAME rows in different column names — measured at
-   * roughly half the length of a real answer on 2026-09-23.
-   *
-   * Both conditions are required. `fitsInline` is what makes the answer's table complete:
-   * for a longer grid `renderGrid` returns a PREVIEW plus a CSV, and its caption ("Showing
-   * 20 of 300 rows") is the only thing telling the reader that more exists — dropping that
-   * because the model happened to tabulate its own excerpt would hide the rest.
-   *
-   * The chart and the CSV are never suppressed; a picture and a file are not a repetition
-   * of a table.
-   */
-  if (markdown && answer && fitsInline(turn) && answerHasTable(answer)) markdown = "";
+  const { markdown: table, csv } = showGrid ? renderGrid(grid) : { markdown: "", csv: null };
+  const markdown = [table, caveats.join("\n")].filter(Boolean).join("\n\n");
   const files: FileUpload[] = [];
 
-  const png = renderChart
+  const png = showGrid && renderChart
     ? await renderChart({
-        columns: turn.columns,
-        rows: turn.rows,
-        chart_type: turn.chartType || "auto",
-        chart_config: turn.chartConfig,
+        columns: grid.columns,
+        rows: grid.rows,
+        chart_type: chartType,
+        chart_config: chartConfig,
         title: turn.question,
       })
     : null;

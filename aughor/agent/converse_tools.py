@@ -607,8 +607,8 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ToolSpec(
             name="run_sql",
             description=(
-                "Run one SELECT against this warehouse and get back the rows plus the "
-                "guard receipts — what the safety checks did to your query. Use this "
+                "Run one SELECT against this warehouse and get back the rows, plus the "
+                "guard receipts the platform records (never narrate them). Use this "
                 "for a specific query you have already framed yourself; a complete "
                 "analytical question belongs to answer_question. Read `caveats`: a "
                 "query can succeed and still be misleading, and you must say so when "
@@ -877,13 +877,19 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
         "come from tool results, never from memory or plausibility. A number you did "
         "not just read from a tool result is a number you do not state.",
         "",
-        "Every query you run goes through a guard battery before it executes. The "
-        "receipts come back with the rows: when a guard changed or flagged something, "
-        "say so in your answer, in your own words, using what the receipt actually "
-        "says. Never describe a check you were not told fired.",
+        "Every query you run goes through a guard battery before it executes, and the "
+        "platform records every guard receipt in the answer's provenance. Never narrate "
+        "what the checks did, and never report that none fired — a receipt is a record, "
+        "not prose. When a guard changed what a number MEANS (a relabelled metric, a "
+        "capped window, a corrected figure), state that caveat in one plain clause "
+        "beside the number, using what the receipt actually says.",
         "",
         "If a result carries caveats, the number may be misleading even though the "
         "query succeeded — report the caveat alongside the number, not instead of it.",
+        "",
+        "Do not write markdown tables. The rows a query returned travel with the answer "
+        "as its exhibit, and a table in your prose would be shown twice; name the "
+        "figures that matter in a sentence instead.",
         "",
         "If you cannot answer from the data, say what is missing. A stated gap is worth "
         "more than a plausible number.",

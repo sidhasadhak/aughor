@@ -675,7 +675,9 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # summary — the trust warnings and the numbers. A briefing chain wants the second;
     # both keep the absent-when-empty rule, so binding to either on a run that produced
     # neither skips the dependent step with a reason instead of posting "".
-    "investigate":    ("investigation_id", "answer", "summary", "confidence"),
+    # CP-4 — `envelope` is the folded answer whole (headline, body, grid, chart decision,
+    # caveats, provenance): a send binds it and renders FIELDS instead of a sentence.
+    "investigate":    ("investigation_id", "answer", "summary", "confidence", "envelope"),
     "slack_post":     ("ts", "channel"),
     "kinetic_action": None,
     # HB-3 — a fired notify publishes the created resource's ref (a Jira ticket key)
@@ -754,7 +756,9 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     # MCP tool's text, an earlier investigation's answer. `context` binds too, so a
     # trigger's payload can say what to make of the data.
     "synthesize":     ("data", "context"),
-    "slack_post":     ("message", "thread_ts", "channel", "about"),
+    # CP-4 — `envelope` takes an investigate step's folded answer; the send then posts
+    # the Slack selection of it (headline, body, the grid once, the top caveats).
+    "slack_post":     ("message", "envelope", "thread_ts", "channel", "about"),
     # HB-3 — `about` (what the send is filed on) and `route_about` (what it routes by)
     # bind from the trigger's payload: `{"$from": "trigger.about"}` is the whole point.
     "notify":         ("message", "about", "route_about"),

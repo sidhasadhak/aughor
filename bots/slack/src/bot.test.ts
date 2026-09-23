@@ -12,8 +12,8 @@ import {
 import { describe, expect, it, type Mock } from "vitest";
 import type { Adapter } from "chat";
 
-import type { AskOptions, TurnArtifacts } from "./aughor.js";
-import { buildBot, stripMention } from "./bot.js";
+import type { AnswerEnvelope, AskOptions, TurnArtifacts } from "./aughor.js";
+import { buildBot, stripMention, withoutTables } from "./bot.js";
 
 const THREAD = "slack:C1:1712.001";
 
@@ -290,7 +290,38 @@ describe("the note verb", () => {
   });
 });
 
-describe("buildBot — the answer does not say it twice", () => {
+describe("withoutTables — a table the model typed never reaches the thread (CP-4)", () => {
+  async function* chunks(...parts: (string | { kind: string })[]) {
+    for (const p of parts) yield p as never;
+  }
+  const text = async (parts: (string | { kind: string })[]) => {
+    const out: string[] = [];
+    for await (const c of withoutTables(chunks(...parts))) if (typeof c === "string") out.push(c);
+    return out.join("");
+  };
+
+  it("drops a GFM table split across arbitrary chunks and keeps the prose around it", async () => {
+    const got = await text(["Top regions:\n\n| # | Reg", "ion |\n|---|---|\n| 1 | East |\n| 2 | We", "st |\n\nEast leads."]);
+    expect(got).toBe("Top regions:\n\n\nEast leads.");
+  });
+
+  it("releases a pipe run that has no delimiter under it — prose, not a table", async () => {
+    expect(await text(["We compared revenue | margin.\nThen a | b\nand stopped."]))
+      .toBe("We compared revenue | margin.\nThen a | b\nand stopped.");
+  });
+
+  it("judges a table with no trailing newline with the run it belongs to", async () => {
+    expect(await text(["Here:\n| a | b |\n|---|---|\n| 1 | 2 |"])).toBe("Here:\n");
+  });
+
+  it("releases the last unterminated line and passes non-text chunks through", async () => {
+    const out: unknown[] = [];
+    for await (const c of withoutTables(chunks("East is", { kind: "card" }, " flat."))) out.push(c);
+    expect(out).toEqual(["East is", { kind: "card" }, " flat."]);
+  });
+});
+
+describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
   const GRID = {
     columns: ["region", "revenue"],
     rows: [["East", 12], ["West", 9]] as unknown[][],
@@ -300,10 +331,13 @@ describe("buildBot — the answer does not say it twice", () => {
   const TABULATED =
     "Top regions:\n\n| # | Region | Revenue |\n|---|--------|---------|\n| 1 | East | 12 |\n| 2 | West | 9 |\n";
 
-  it("suppresses the exhibit table when the answer already tabulated the whole grid", async () => {
-    // Measured 2026-09-23: a real answer carried the same five rows twice — once as the
-    // model's own table, once as the transport's grid — and that duplication was about
-    // half the message. The chart and any CSV still ride along; a picture is not a repeat.
+  const editedText = (adapter: Adapter): string =>
+    (adapter.editMessage as unknown as Mock).mock.calls.map((c) => JSON.stringify(c[2])).join("\n");
+
+  it("the model's own table never reaches the thread; the grid posts once, as the exhibit", async () => {
+    // Measured 2026-09-23: a real answer carried the same five rows twice — the model's
+    // table in the prose, then the transport's grid. The prose table is held back as it
+    // streams; the grid is the one field that renders it.
     const adapter = mockAughorAdapter();
     const { ask } = askYielding([TABULATED], GRID);
     const bot = buildBot({
@@ -313,14 +347,49 @@ describe("buildBot — the answer does not say it twice", () => {
 
     await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
 
+    expect(adapter).toHaveEdited(THREAD, "msg-1", /Top regions:/);
+    expect(editedText(adapter)).not.toContain("| 1 | East |");
     const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
-    expect(post.markdown).toBe("");
+    expect(post.markdown).toContain("| East | 12 |");
+    expect(post.markdown.match(/East/g)).toHaveLength(1);
     expect(post.files.map((f) => f.filename)).toEqual(["chart.png"]);
   });
 
+  it("selects the envelope's grid, chart decision and top two caveats — never its provenance", async () => {
+    const adapter = mockAughorAdapter();
+    const rendered: Record<string, unknown>[] = [];
+    const envelope: AnswerEnvelope = {
+      version: 1, question: "why?", headline: "East leads.", body: "",
+      grid: { columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]] },
+      chart: { chart_type: "bar", chart_config: { exhibit: { kind: "ranked" } } },
+      caveats: ["returns counted at request", "March is still settling", "a third caveat"],
+      follow_ups: ["Which region next?"],
+      provenance: { guard_receipts: [{ guard: "numeric grounding", action: "rewrote the answer" }] },
+      error: "", lifted_tables: 0,
+    };
+    // The frame-level artifacts disagree with the envelope on purpose: the envelope wins.
+    const { ask } = askYielding(["East leads."], { columns: ["x"], rows: [[1]], chartType: "line", envelope });
+    const bot = buildBot({
+      ask, renderChart: async (req) => { rendered.push(req as unknown as Record<string, unknown>); return Buffer.from("PNG"); },
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(post.markdown).toContain("| East | 12 |");
+    expect(post.markdown).toContain("⚠️ returns counted at request");
+    expect(post.markdown).toContain("⚠️ March is still settling");
+    expect(post.markdown).not.toContain("a third caveat");
+    expect(post.markdown).not.toContain("numeric grounding");
+    expect(post.markdown).not.toContain("Which region next?");
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0].chart_type).toBe("bar");
+    expect(rendered[0].chart_config).toEqual({ exhibit: { kind: "ranked" } });
+    expect(rendered[0].columns).toEqual(["region", "revenue"]);
+  });
+
   it("keeps the exhibit table when the answer is prose", async () => {
-    // The mutation guard for the test above: if suppression ignored the answer's content
-    // it would pass there and fail here.
     const adapter = mockAughorAdapter();
     const { ask } = askYielding(["East leads, and it is not close."], GRID);
     const bot = buildBot({
@@ -333,7 +402,27 @@ describe("buildBot — the answer does not say it twice", () => {
     expect((lastPost(adapter) as { markdown: string }).markdown).toContain("| East | 12 |");
   });
 
-  it("keeps a PREVIEW even when the answer tabulated — its caption is the only thing naming the rest", async () => {
+  it("a one-number envelope with a caveat posts the caveat and no table", async () => {
+    const adapter = mockAughorAdapter();
+    const envelope: AnswerEnvelope = {
+      version: 1, question: "q", headline: "Revenue was $1.2M.", body: "",
+      grid: { columns: ["revenue"], rows: [[1.2e6]] }, chart: { chart_type: "auto", chart_config: {} },
+      caveats: ["excludes refunds"], follow_ups: [], provenance: {}, error: "", lifted_tables: 0,
+    };
+    const { ask } = askYielding(["Revenue was $1.2M."], { envelope });
+    const bot = buildBot({
+      ask, renderChart: async () => Buffer.from("PNG"),
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor q"));
+
+    const post = lastPost(adapter) as { markdown: string; files?: unknown[] };
+    expect(post.markdown).toBe("⚠️ excludes refunds");
+    expect(post.files).toBeUndefined();
+  });
+
+  it("keeps a PREVIEW for a long grid — its caption is the only thing naming the rest", async () => {
     // A long grid renders as first-rows + CSV, and "Showing N of M rows" is what tells the
     // reader more exists. The model's own table is an excerpt too, so dropping the caption
     // would hide the remainder rather than de-duplicate it.
