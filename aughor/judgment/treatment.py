@@ -167,6 +167,7 @@ def as_row(answers: Mapping[str, Answer]) -> dict:
 
 
 def shadow(question: str, *, ran: str, prior_turn: str = "", conn_id: str = "",
+           observed: Optional[Mapping[str, Any]] = None,
            provider=None, answers: Optional[Mapping[str, Answer]] = None) -> Optional[dict]:
     """Record what this ask WOULD have been routed to, beside what actually ran.
 
@@ -174,6 +175,14 @@ def shadow(question: str, *, ran: str, prior_turn: str = "", conn_id: str = "",
     Call it once a turn has SETTLED: the classification is a model call, and putting one in
     front of a user's answer to collect data for a future wave would be paying for the
     experiment in the one currency the experiment is meant to save.
+
+    ``observed`` is what the turn ACTUALLY did — the run's own facts, written into the same
+    row as the prediction. It is here rather than in the analysis because it cannot be
+    recovered afterwards: `grids` is counted off frames as they stream past and nothing
+    persists that count. Two levers become self-labelling because of it (`steps_implied` has
+    a real number to be wrong against, `from_last_result` a real "did any query run"), which
+    is the difference between a corpus that can be calibrated and one that can only be
+    described. See `judgment/calibration.py` for which levers that does and does not reach.
 
     Everything is swallowed. A shadow experiment that can fail a turn is not a shadow
     experiment, and the corpus is worth exactly nothing if collecting it breaks answers.
@@ -186,6 +195,8 @@ def shadow(question: str, *, ran: str, prior_turn: str = "", conn_id: str = "",
             question, prior_turn=prior_turn, provider=provider)
         row = as_row(got)
         row["ran"] = ran
+        for k, v in (observed or {}).items():
+            row[f"observed_{k}"] = v
         # The comparison this corpus exists for, computed once at write time so the falsifier
         # ("the shadow agrees with what ran on essentially every ask, so there is no decision
         # here to take") is one fold over one column rather than a join per read.
