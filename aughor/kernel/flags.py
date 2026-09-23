@@ -92,6 +92,7 @@ FLAG_ENV = {
     "semops.jev_cheap_tier": "AUGHOR_SEMOPS_JEV_CHEAP_TIER",
     "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
+    "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
@@ -287,6 +288,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "briefing.by_period": {
+        "label": "Briefings by period — daily, weekly, monthly and yearly",
+        "description": "Adds a Briefing for one period beside the standing one: the most recent complete day, week, month or (fiscal) year whose numbers have settled, each headline metric measured for that period against the one before, the alerts and findings recorded inside it, and a narrator told which version it is writing. A brief subscription can then send that briefing instead of the alert summary, and may run monthly or yearly. Off by default → the Briefing, its subscriptions and their alert summaries behave exactly as today, and a request for a period brief is refused with the reason.",
+    },
     "ask.converse": {
         "label": "Answer through a conversation, not a single compiled query",
         "description": "Add agent bodies behind /ask: a quick turn becomes a real conversation whose tools wrap the existing guarded pipelines, and a deep turn becomes the ANALYST loop (CA-3) — the phase library as tools, the model choosing each next slice after seeing the last, the narrator writing the report from the evidence. Guards are unchanged and stay INSIDE the tools; the deterministic quick body and the deep phase script survive as the fallback whenever this is off. Off by default → /ask behaves exactly as today.",
@@ -373,6 +378,15 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # Idea 3 / PENDING.md item 7 (ROADMAP §3.27). Off until a person reads a period brief on a
+    # real connection: the numbers are measured by code, but the narrator's framing is new.
+    "briefing.by_period": "does a brief written for one period tell a reader something the "
+                          "standing brief does not? Each headline metric is measured for the "
+                          "window by its own trend query cut to that window, and the narrator is "
+                          "told the period. Falsifier: if a reader, given the weekly brief and "
+                          "the standing brief for the same week, cannot name a move the weekly "
+                          "one carries that the standing one misses, the period doors add "
+                          "nothing and are deleted with the flag",
     # "semops.banded_cascade" GRADUATED to FLAG_DEFAULT 2026-09-21 (the user's flip): its
     # question was answered by measurement — fewer champion calls AND, after the seam slim,
     # fewer total tokens, at higher accuracy. Receipt on the FLAG_DEFAULT entry.

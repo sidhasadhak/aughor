@@ -390,18 +390,23 @@ def departure_link(departure_id: str) -> str:
     return f"{base}/?{urlencode({'tab': 'agentic-ops', 'layer': 'departures', 'departure': departure_id})}"
 
 
-def line_holds(text: str, *, conn_id: str, declared: bool = False) -> list[str]:
+def line_holds(text: str, *, conn_id: str, declared: bool = False,
+               measurement: Optional[Measurement] = None) -> list[str]:
     """The laws that judge ONE line of an assembled message on its own — trust, definition,
     claim type — so a briefing sends its sound lines instead of holding everything for one
     bad one. No ledger row per line: the message's own departure records what was cut
     (``held_lines``). ``declared`` marks a line whose numbers a person's declaration defines
-    (a monitor alert), which law 2 then reads as cited."""
+    (a monitor alert), which law 2 then reads as cited. ``measurement`` adds law 1 for the
+    line: every magnitude it states must be in that measurement (a period briefing's headline
+    metrics, re-run at the send) — omitted, the line is judged exactly as before."""
     checks = (
         ("trust", lambda: _trust(text)),
         ("definition", lambda: _definition(text, conn_id, "",
                                            "a declared monitor" if declared else "")),
         ("claims", lambda: _claims(text, "")),
     )
+    if measurement is not None:
+        checks += (("remeasure", lambda: _remeasure(text, measurement, False)),)
     return [c.reason for c in (_guarded(name, run) for name, run in checks)
             if c.outcome == HOLDS and c.reason]
 

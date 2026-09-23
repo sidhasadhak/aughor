@@ -31,7 +31,7 @@ Starting points in the code today:
 
 ## 3. Daily, weekly, monthly, yearly and historical briefings
 
-*Noted 2026-09-12*
+*Noted 2026-09-12* · **BUILT 2026-09-23 — ROADMAP §3.27** (behind the `briefing.by_period` flag, off; no live receipt on a real warehouse yet)
 
 Offer the briefing in several versions: daily, weekly, monthly, yearly and historical. Today there is only the historical briefing, which looks at the whole data set.
 

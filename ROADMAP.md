@@ -7725,6 +7725,87 @@ alert and writes it into history; a metric-condition chain queries the warehouse
 60-second heartbeat; the "guarded" flag is not checked; the Hub map lists automations and not
 monitors. No web buttons yet (the MonitorCard's action row and subtitle are the place).
 
+### 3.27 · Briefings by period — the Briefing written for one complete day, week, month or year (from `IDEAS.md` 3; **BUILT 2026-09-23**, PENDING.md item 7, branch `claude/determined-bohr-qh3b1p`; flag `briefing.by_period`, **off**)
+
+> **The fact it answers.** Measured before a line was written: the Briefing took no window at
+> all — `get_briefing` had no period parameter, read every stored finding (each measured inside
+> the explorer's own ≤12-month window, so not "the whole history" either), and led with
+> north-star moves taken first→last over whatever buckets a model-written chart happened to
+> have. The day/week *subscriptions* sent the alert summary (`monitors/alert_summary`), not a
+> briefing, and only its alert section honoured the period. The idea's own ask: "the agent that
+> delivers the briefing should know which version it is producing" — it could not.
+
+**What ships.** `aughor/knowledge/period_brief.py`, and the period threaded through the pieces
+that already existed rather than a second brief beside them:
+* **The window is computed, never inferred** — `automations/temporal.complete_period`: the most
+  recent COMPLETE period whose last day is settled for this source (idea 4's learned lag when
+  there is one, else one day), and its comparison — a day against the same weekday a week
+  earlier, a week, month or year against the one before, the year the FISCAL year when org
+  settings say so. The scheduled-run note now reads the same function.
+* **Each headline metric is MEASURED for the window** — `sql/trend_window.period_split` cuts the
+  metric's own trend query to the two windows: the bucket function's raw date column is read out
+  of it and the rows are labelled by window, so a monthly revenue chart yields a correct week and
+  a rate (`SUM(a)/SUM(b)`) is recomputed over the window at its own grain, never averaged across
+  buckets. A query it cannot prove is a single-series trend over a raw date (a breakdown, a window
+  function, a bucket computed in a sub-query, two series) is refused WITH the reason, and the
+  brief lists the metric as not measured and why. The split also returns the first and last day
+  each window's rows cover: a comparison the data only partly reaches states no change.
+* **Only the period's evidence** — the measured metrics, the alerts that fired inside the window
+  and the findings the platform RECORDED inside it. A standing finding is not this week's news.
+* **The narrator is told which version it writes** — a period system prompt (the standing one
+  is untouched, byte for byte) and a code-written `[Briefing period]` block: the dates, the
+  comparison, what was not measured, and — past a one-day lag — that the newest days are still
+  settling and the brief must say so.
+* **Cached per scope and period, rebuilt when the window moves** (`<scope>#<period>`, served only
+  while start, end and lag match) — yesterday's daily brief is never served as today's; and
+  deleting a connection or schema drops its period briefs with it (the delete cascade matched
+  only `<conn>` and `<conn>:<schema>`, and would have left `<conn>#week` behind).
+* **Doors:** `POST /exploration/{conn}/briefing?period=day|week|month|year` (absent or `history`
+  = the standing brief, unchanged; off → 404 with the reason, before any side effect); a brief
+  subscription gains `content: "briefing"` and the periods `month` / `year` (there is no monthly
+  alert summary — the router says so). The Briefing panel gets a Standing · Day · Week · Month ·
+  Year switch and a "Measured for …" table with every unmeasured metric and its reason; the
+  schedule form offers the month, the year and what to send. All of it only with the flag on.
+* **A scheduled period brief departs line by line** (`briefing/delivery.build_period_departure`):
+  the measured lines and the narrative's paragraphs are held unless every magnitude they state is
+  in the period queries RE-RUN at the send (`line_holds` gained an optional measurement — law 1
+  per line; without one a line is judged exactly as before), alerts as a monitor's declared
+  readings, every line for trust, definition and claim type.
+
+**Receipt (2026-09-23, this cloud session — no warehouse credentials, no model key).** The real
+route over HTTP on a DuckDB shop of two years of `order_items`, the profile store and its
+`recent_window` rewrite in the loop, only the narrator stubbed (it printed the prompt it got):
+flag off → **404** *"briefings by period are off on this install — the weekly briefing needs
+the 'briefing.by_period' flag"*; flag on, the week 2026-09-14..20 against 2026-09-07..13: GMV
+**33,000 vs 33,019** — equal, to the unit, to the same week written by hand in SQL; return rate
+0.1030 (hand: 0.10303); the day, month and year alongside; "Top statuses", a breakdown, *not
+measured — its first column is not a date*. `period=history` answered exactly as before, with no
+`period` key. 27 backend tests (`tests/unit/test_briefing_by_period.py`), 4 web tests, the seven
+web gates, the ratchets and 1,340 tests across every touched area green — the one red,
+`test_aughor_ops_snapshot.py`, fails the same way on the base commit (it needs the `aughor_ops`
+database this container does not have).
+**What the first run found, and fixed before this landed** (none of it visible in the unit tests,
+which all passed first time): (1) the profile store wraps every LIMITed chart in `recent_window`'s
+`SELECT * FROM (…) AS _recent`, whose outer query has no GROUP BY — GMV, the headline metric, was
+refused on the first real run; the split now cuts the trend inside the wrapper; (2) the year 2025
+against a 2024 the data only reaches from September read as **+200%** items sold — a data-start
+artifact that would have led the yearly brief; the coverage check now states the span and no
+change; (3) a plain count formatted `{:g}` prints 1,190,000 as "1.19e+06", which no reader parses
+and no grounding matches — period lines write plain magnitudes in full.
+**Found on the way, fixed:** a monthly scheduled investigation firing on 1 October was told to
+observe **August** — the month rule took "the month before the anchor's month" and skipped the
+month that had just ended (now `complete_period`'s rule, tested); every daily alert summary ever
+sent was headed **"Dayly"** (`period.capitalize() + "ly"`; only "Weekly" was tested).
+⏳ **Open:** no live receipt on a real warehouse — the operator's run: flag on, Briefing → Week on
+theLook, and one scheduled `content: "briefing"` send to a test trigger; the narrator has never
+written a period brief for real (stubbed here), so the period prompt is unmeasured — the flag's
+falsifier (§ `kernel/flags.py` EXPERIMENT) is read against a person comparing the weekly and the
+standing brief for the same week. By the departure laws, a scheduled period brief's revenue line
+leaves only where an approved metric defines revenue on the connection (law 2 held the stub's
+"Revenue reached $4,000" in the test, as it should). The coverage slack (week 2 days, month 7,
+year 31) is a judgement, not a measurement. The canvas brief has no period. The standing brief's
+own metric moves still anchor on a fixed yesterday (§3.23's note) — untouched here.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

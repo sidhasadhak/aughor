@@ -112,3 +112,123 @@ def recent_window(sql: str, dialect: str = "duckdb") -> str:
         return outer.sql(dialect=dialect)
     except Exception:
         return sql
+
+
+# ── period_split — the same trend, cut to one period and its comparison ─────────────────
+
+#: A projection that is a function of time but not a bucket of it would split on a
+#: meaningless boundary; a window function would compute across the removed rows.
+_SPLIT_LABEL = "period"
+#: The two coverage columns `period_split` appends after the metric's own.
+COVERAGE_FIRST, COVERAGE_LAST = "_period_first_day", "_period_last_day"
+
+
+def _unwrapped(tree):
+    """The trend inside `recent_window`'s wrapper (``SELECT * FROM (<trend>) AS _recent ORDER
+    BY …``) — the shape the profile store gives every LIMITed chart. Cutting the wrapper
+    instead found no GROUP BY and refused GMV on the first real run (2026-09-23). Anything
+    else is returned as it is."""
+    from sqlglot import exp
+    source = tree.args.get("from_") or tree.args.get("from")
+    inner = source.this if source is not None else None
+    if (isinstance(inner, exp.Subquery) and isinstance(inner.this, exp.Select)
+            and len(tree.expressions) == 1 and isinstance(tree.expressions[0], exp.Star)
+            and not any(tree.args.get(k) for k in ("where", "group", "having", "joins"))):
+        return inner.this
+    return tree
+#: A bare first column read as a date by its name (`created_at`, `order_date`, `ts`).
+_DATE_NAME = re.compile(r"date|time|(?:^|_)(?:at|on|ts|day|dt|ds)$", re.I)
+
+
+def period_split(sql: str, *, start, end, previous_start, previous_end,
+                 dialect: str = "duckdb") -> tuple:
+    """Rewrite a KPI's TIME-TREND ``chart_sql`` so it computes the SAME metric once for a
+    period and once for its comparison period: two rows, ``('current', v)`` and
+    ``('previous', v)``. Returns ``(sql, "")``, or ``(None, reason)`` when the query cannot
+    be proved to be a single-series trend over a raw date column.
+
+    The trend's own bucket (day, week or month) is REPLACED, not filtered: the bucket
+    function's raw date column is read out of it, cast to a date, and the rows are labelled
+    by which window they fall in, then grouped by that label. So a monthly revenue chart
+    yields a correct WEEK of revenue, and a rate (``SUM(a)/SUM(b)``) is recomputed over the
+    whole window at its own grain — never averaged across the chart's buckets, which for a
+    ratio is a different number. Windows are half-open (``start <= d < end``), dates in UTC
+    as the source stores them. Deterministic, DB-free; never raises."""
+    if not sql or not sql.strip():
+        return None, "the metric has no trend query"
+    try:
+        import sqlglot
+        from sqlglot import exp
+
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None, "its trend query does not parse"
+    if not isinstance(tree, exp.Select) or not tree.expressions:
+        return None, "its trend query is not a single SELECT"
+    tree = _unwrapped(tree)
+    first = tree.expressions[0]
+    first_alias = first.alias_or_name or ""
+    bucket = first.unalias()
+    if any(isinstance(e, exp.Window) for sel in tree.expressions for e in sel.find_all(exp.Window)):
+        return None, "its trend query uses a window function, which a period cut would change"
+    group = tree.args.get("group")
+    keys = list(group.expressions) if group is not None else []
+    if len(keys) != 1:
+        return None, ("its query is not grouped by time alone" if keys
+                      else "its query is not grouped by a time bucket")
+    key = keys[0]
+    refers_to_bucket = (
+        (isinstance(key, exp.Literal) and key.is_int and key.name == "1")
+        or (isinstance(key, exp.Column) and first_alias and key.name.lower() == first_alias.lower()
+            and not key.table)
+        or key == bucket)
+    if not refers_to_bucket:
+        return None, "its query is grouped by something other than its first column"
+    columns = {c.sql(dialect=dialect): c for c in bucket.find_all(exp.Column)}
+    if len(columns) != 1:
+        return None, "its time bucket does not read exactly one date column"
+    column = next(iter(columns.values()))
+    # sqlglot 30 spells these `with_` / `from_`; older releases `with` / `from`
+    source = tree.args.get("from_") or tree.args.get("from")
+    derived = bool(tree.args.get("with_") or tree.args.get("with")) or any(
+        isinstance(src, exp.Subquery)
+        for src in [source.this if source is not None else None]
+        + [j.this for j in tree.args.get("joins") or []])
+    if isinstance(bucket, exp.Column):
+        # a bare column is a date only by its name: `status` in "top statuses by revenue"
+        # is the first column of a breakdown, and casting it to a date fails at run time
+        if not (_first_is_date_bucket(first, first_alias, dialect) or _DATE_NAME.search(column.name)):
+            return None, "its first column is not a date"
+        if derived:
+            return None, ("its date column comes from a sub-query, where it may already be a "
+                          "bucket rather than a date")
+    elif not _first_is_date_bucket(first, first_alias, dialect):
+        return None, "its first column is not a date bucket"
+    try:
+        day = exp.DataType.build("date")
+
+        def on(d):
+            return exp.Cast(this=exp.Literal.string(d.isoformat()), to=day.copy())
+
+        def within(lo, hi):
+            d = exp.Cast(this=column.copy(), to=day.copy())
+            return exp.and_(exp.GTE(this=d, expression=on(lo)),
+                            exp.LT(this=d.copy(), expression=on(hi)))
+
+        label = (exp.Case().when(within(start, end), exp.Literal.string("current"))
+                 .else_(exp.Literal.string("previous")))
+        out = tree.copy()
+        out.expressions[0] = exp.alias_(label, _SPLIT_LABEL)
+        # the first and last day each window's rows actually cover: a comparison year the data
+        # only reaches in September is not a year, and "+200%" against it is not a move
+        as_day = exp.Cast(this=column.copy(), to=day.copy())
+        out.append("expressions", exp.alias_(exp.Min(this=as_day.copy()), COVERAGE_FIRST))
+        out.append("expressions", exp.alias_(exp.Max(this=as_day), COVERAGE_LAST))
+        out.set("group", exp.Group(expressions=[label.copy()]))
+        for arg in ("order", "limit", "offset"):
+            out.set(arg, None)
+        out = out.where(exp.or_(exp.paren(within(previous_start, previous_end)),
+                                exp.paren(within(start, end))), append=True, copy=False)
+        return out.sql(dialect=dialect), ""
+    except Exception as exc:  # noqa: BLE001 — a rewrite that fails is reported, never raised
+        return None, f"its trend query could not be cut to a period ({type(exc).__name__})"

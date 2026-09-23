@@ -4534,6 +4534,10 @@ export interface paths {
         /**
          * Generate Briefing
          * @description Generate (or return cached) an LLM synthesis narrative for the connection.
+         *
+         *     ``period`` = ``day`` | ``week`` | ``month`` | ``year`` asks for the Briefing written for
+         *     that period (idea 3, flag ``briefing.by_period``); absent or ``history`` is the standing
+         *     Briefing, exactly as before.
          */
         post: operations["generate_briefing_exploration__conn_id__briefing_post"];
         delete?: never;
@@ -16288,6 +16292,11 @@ export interface components {
             /** Conn Id */
             conn_id: string;
             /**
+             * Content
+             * @default digest
+             */
+            content: string;
+            /**
              * Enabled
              * @default true
              */
@@ -24182,6 +24191,7 @@ export interface operations {
                 refresh?: boolean;
                 schema?: string | null;
                 workspace_id?: string | null;
+                period?: string | null;
             };
             header?: never;
             path: {

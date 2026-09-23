@@ -35,14 +35,32 @@ class _SubscriptionBody(BaseModel):
     conn_id:    str
     name:       str
     trigger_id: str
-    period:     str = "week"        # "week" | "day"
+    period:     str = "week"        # "week" | "day" (+ "month" | "year" with briefing.by_period)
     send_cron:  str = ""            # optional explicit cron; derived from period if blank
     enabled:    bool = True
+    content:    str = "alert_summary"      # "alert_summary" | "briefing" (briefing.by_period)
 
 
-def _validate_period(period: str) -> None:
-    if period not in ("week", "day"):
-        raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
+def _validate_period(period: str, content: str = "alert_summary") -> None:
+    if content == "alert_summary" and period in ("week", "day"):
+        return
+    from aughor.briefing.models import CONTENTS
+    from aughor.knowledge import period_brief
+    if not period_brief.enabled():
+        if content == "alert_summary":
+            # Unchanged while the flag is off: the same refusal a client has always received.
+            raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
+        raise HTTPException(status_code=422, detail=(
+            "briefings by period are off on this install — a subscription that sends the "
+            f"Briefing needs the '{period_brief.FLAG}' flag"))
+    if period not in period_brief.PERIODS:
+        raise HTTPException(status_code=422, detail=period_brief.refusal(period))
+    if content not in CONTENTS:
+        raise HTTPException(status_code=422, detail="content must be 'alert_summary' or 'briefing'")
+    if content == "alert_summary":
+        raise HTTPException(status_code=422, detail=(
+            f"there is no {period}ly alert summary — only daily and weekly ones; a {period} "
+            "subscription sends the Briefing written for its period (content 'briefing')"))
 
 
 @router.get("/briefing/subscriptions")
@@ -76,13 +94,14 @@ def create_briefing_subscription(body: _SubscriptionBody, request: Request):
     from aughor.security.authz   import check_owner, get_principal
 
     check_owner("connection", body.conn_id, get_principal(request))  # DATA-06: no cross-org subscribe
-    _validate_period(body.period)
+    _validate_period(body.period, body.content)
     if not get_trigger(body.trigger_id):
         raise HTTPException(status_code=400, detail="Delivery trigger not found — create an Action Hub trigger first")
 
     sub = BriefSubscription(
         conn_id=body.conn_id, name=body.name, trigger_id=body.trigger_id,
         period=body.period, send_cron=body.send_cron, enabled=body.enabled,
+        content=body.content,
     )
     saved = save_subscription(sub)
     # No scheduler sync: the automation heartbeat reads the subscription store live
@@ -109,7 +128,7 @@ def create_brief_subscription(body: _SubscriptionBody, request: Request):
 def update_briefing_subscription(sub_id: str, body: _SubscriptionBody):
     from aughor.briefing.store     import get_subscription, save_subscription
 
-    _validate_period(body.period)
+    _validate_period(body.period, body.content)
     existing = get_subscription(sub_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Subscription not found")
@@ -120,6 +139,7 @@ def update_briefing_subscription(sub_id: str, body: _SubscriptionBody):
     existing.period     = body.period
     existing.send_cron  = body.send_cron
     existing.enabled    = body.enabled
+    existing.content    = body.content
     saved = save_subscription(existing)
     return saved.to_dict()
 

@@ -32,7 +32,8 @@ def build_brief_payload(sub: BriefSubscription):
 
 def brief_summary(sub: BriefSubscription, brief) -> str:
     """The one-line headline, counted off the briefing as it will actually leave."""
-    period_label = f"{sub.period.capitalize()}ly"
+    from aughor.monitors.alert_summary import period_adjective
+    period_label = period_adjective(sub.period)
     bits = []
     if brief.alert_count:
         bits.append(f"{brief.alert_count} alert(s)")
@@ -92,6 +93,77 @@ def hold_lines(brief, conn_id: str) -> tuple:
     return brief.model_copy(update={"sections": kept_sections}), reasons
 
 
+# ── idea 3: a subscription that sends the Briefing written for its period ───────────────────
+
+_SHEET_TITLES = {"measured": "Headline metrics", "unmeasured": "Not measured",
+                 "alerts": "Alerts in this {period}", "records": "Recorded in this {period}",
+                 "narrative": "The briefing"}
+
+
+def render_period_markdown(block: dict, sections: list, cut: int) -> str:
+    """A period briefing as it leaves: what it covers and against what, why it ends where it
+    does, then each surviving section. Same shape as the alert summary's markdown."""
+    period = block.get("period", "period")
+    lines = [f"# {block.get('label', '')} Briefing — {block.get('covers', '')}",
+             f"*Compared with {block.get('compared_with', '')}. All dates UTC.*"]
+    lag = int(block.get("lag_days") or 1)
+    if lag > 1:
+        lines.append(f"*This {period} ends {lag} days before today: newer days are still "
+                     "settling as late rows arrive"
+                     + (", a lag the platform measured" if block.get("lag_source") == "learned"
+                        else "") + ".*")
+    lines.append("")
+    for kind, items in sections:
+        lines.append(f"## {_SHEET_TITLES.get(kind, kind).format(period=period)}")
+        if kind == "narrative":
+            lines.extend(p + "\n" for p in items)
+        else:
+            lines.extend(f"- {item}" for item in items)
+            lines.append("")
+    if not sections:
+        lines.append(f"*Nothing was measured or recorded for this {period}.*")
+    if cut:
+        lines.append(f"*{cut} line{'s' if cut != 1 else ''} of this briefing did not leave the "
+                     "platform — the departures screen records why.*")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def build_period_departure(sub: BriefSubscription, *, runner=None) -> dict:
+    """The period briefing for *sub*, judged line by line before it leaves: the headline
+    metrics and the narrative against the period queries RE-RUN now (law 1), alerts as a
+    monitor's declared readings, every line for trust, definition and claim type. Returns
+    ``{"brief", "summary", "markdown", "held_lines"}``."""
+    from aughor.govern.departure import line_holds
+    from aughor.knowledge import period_brief
+
+    domain_data, profile = period_brief.connection_inputs(sub.conn_id)
+    brief = period_brief.build_period_briefing(
+        sub.conn_id, sub.period, scope_key=sub.conn_id, domain_data=domain_data,
+        profile=profile, workspace_id=sub.workspace_id or None, runner=runner)
+    block = brief.get("period") or {}
+    measurement = period_brief.fresh_measurement(sub.conn_id, brief, runner=runner)
+    kept: list = []
+    held: list[str] = []
+    for kind, lines in period_brief.sheet_lines(brief):
+        passing = []
+        for line in lines:
+            why = line_holds(line, conn_id=sub.conn_id, declared=kind == "alerts",
+                             measurement=measurement if kind in ("measured", "narrative") else None)
+            if why:
+                held.append(f"“{line[:80]}”: {why[0]}")
+            else:
+                passing.append(line)
+        if passing:
+            kept.append((kind, passing))
+    measured = next((len(items) for kind, items in kept if kind == "measured"), 0)
+    tail = " · ".join(bit for bit in (
+        f"{measured} headline metric{'s' if measured != 1 else ''} measured" if measured else "",
+        f"{len(held)} held at departure" if held else "") if bit) or "nothing measured"
+    return {"brief": brief, "held_lines": held,
+            "summary": f"{block.get('label', '')} Briefing — {block.get('covers', '')} — {tail}",
+            "markdown": render_period_markdown(block, kept, len(held))}
+
+
 def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dict:
     """Build + send the brief for *sub*. Records last_sent_at/status when persist.
 
@@ -110,6 +182,8 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
     trigger = get_trigger(sub.trigger_id)
     if trigger is None:
         result["error"] = "Delivery trigger not found"
+    elif sub.content == "briefing":
+        _deliver_period(sub, trigger, result)
     else:
         try:
             from aughor.govern.departure import gate_departure
@@ -178,3 +252,48 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
         logger.debug("brief.delivered emit failed", exc_info=True)
 
     return result
+
+
+def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
+    """Send the Briefing written for *sub*'s period through the same departure gate and
+    trigger as the alert summary. Refused — and said — while the flag is off: a subscription saved
+    as "briefing" never silently degrades into the alert summary. Fills *result* in place."""
+    import datetime as _dt
+    from aughor.govern.departure import gate_departure
+    from aughor.knowledge import period_brief
+    from aughor.notifications.executor import fire_action
+    from aughor.notifications.models import ActionPayload
+    from aughor.org.context import current_org_id
+
+    why = period_brief.refusal(sub.period)
+    if why:
+        result["error"] = f"not sent — {why}"
+        return
+    try:
+        built = build_period_departure(sub)
+        result["summary"], result["markdown"] = built["summary"], built["markdown"]
+        verdict = gate_departure(
+            kind="briefing", org_id=current_org_id(), conn_id=sub.conn_id,
+            text=built["markdown"], target=sub.trigger_id, actor=f"briefing:{sub.id}",
+            source_kind="briefing", source_id=sub.id, source_name=sub.name,
+            # law 1 ran per line on the measured lines and the narrative (above); the rest are
+            # dated records, as in the alert summary
+            dated_records=True,
+            declared_definition=("each headline metric's own trend query cut to the period; "
+                                 "dated monitor alerts and recorded findings"),
+            held_lines=built["held_lines"])
+        result["departure_id"] = verdict.record_id
+        if verdict.held:
+            result["status"] = "held"
+            result["error"] = f"held at departure — {verdict.reason_sentence()}"
+            return
+        log = fire_action(trigger, ActionPayload(
+            investigation_id=f"brief:{sub.id}", rec_index=0, recommendation=built["summary"],
+            metric_name=sub.conn_id, headline=built["markdown"][:_HEADLINE_CAP],
+            trigger_id=sub.trigger_id,
+            triggered_at=_dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+            context={"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()}))
+        result["status"], result["http_status"], result["error"] = log.status, log.http_status, log.error
+    except Exception as exc:  # the period build / delivery crash — non-fatal, as the alert summary's
+        logger.error("Period briefing delivery for sub %s crashed: %s", sub.id, exc)
+        result["error"] = str(exc)
