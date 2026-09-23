@@ -441,3 +441,47 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
     expect(post.files.map((f) => f.filename)).toEqual(["why.csv"]);
   });
 });
+
+describe("buildBot — the check verb (idea 7)", () => {
+  const ENVELOPE: AnswerEnvelope = {
+    version: 1, question: "fact-check (text): Revenue in August was $4.2M.",
+    headline: "1 numeric claim: 0 match the data, 1 contradicted, 0 could not be checked.",
+    body: '- CONTRADICTED — "Revenue in August was $4.2M": said $4.2M; the data shows 3,000,000.00 (40% off) for revenue, 2026-08-01 → 2026-08-31.',
+    grid: { columns: ["claim", "said", "measured", "verdict", "why"],
+            rows: [["Revenue in August was $4.2M", "$4.2M", 3000000, "contradicted", "said $4.2M; the data shows 3,000,000.00 (40% off)"]] },
+    chart: null, caveats: ["A contradicted claim is measured with the approved definition."],
+    follow_ups: [], provenance: { investigation_id: "fc-1", mode: "factcheck" }, error: "", lifted_tables: 0,
+  };
+
+  it("checks the memo through the door and posts the verdict as prose, then the grid", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["never"]);
+    const checked: string[] = [];
+    const bot = buildBot({
+      ask, adapters: { slack: adapter }, state: createMockState(),
+      factCheck: async (text) => { checked.push(text); return { ok: true, status: 200, detail: "", envelope: ENVELOPE }; },
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor check: Revenue in August was $4.2M."));
+
+    expect(checked).toEqual(["Revenue in August was $4.2M."]);
+    expect(calls).toHaveLength(0);                                   // the ask path was not spent
+    expect(adapter).toHavePosted(THREAD, /1 numeric claim: 0 match the data, 1 contradicted/);
+    const post = lastPost(adapter) as { markdown: string };
+    expect(post.markdown).toContain("| contradicted |");
+    expect(post.markdown).toContain("⚠️ A contradicted claim is measured with the approved definition.");
+  });
+
+  it("an empty check explains itself, and a refused check says why", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask } = fakeAsk(["never"]);
+    const bot = buildBot({
+      ask, adapters: { slack: adapter }, state: createMockState(),
+      factCheck: async () => ({ ok: false, status: 400, detail: "nothing to check: the text is empty", envelope: null }),
+    });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor check:"));
+    expect(adapter).toHavePosted(THREAD, /Paste the memo after `check:`/);
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor check: 3 regions"));
+    expect(adapter).toHavePosted(THREAD, /Not checked: nothing to check/);
+  });
+});

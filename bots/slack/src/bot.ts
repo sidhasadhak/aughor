@@ -19,7 +19,7 @@ import { Chat, StreamingPlan, type Adapter, type FileUpload, type StateAdapter, 
 
 import { csvFilename, renderGrid, worthShowing, type Grid } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
-import type { ArrivalPoster, AskChunk, AskStream, TurnArtifacts } from "./aughor.js";
+import type { ArrivalPoster, AskChunk, AskStream, FactChecker, TurnArtifacts } from "./aughor.js";
 
 export const BOT_USERNAME = "aughor";
 
@@ -32,6 +32,10 @@ const USAGE =
  *  filed), instead of asking a question. The COLON is the verb — "note that revenue
  *  dipped?" is prose and still asks. Deterministic; never a guess. */
 const NOTE_VERB = /^note:\s*/i;
+
+/** Idea 7 — the check verb: "@aughor check: <memo>" checks every number in the memo
+ *  against the data instead of asking a question. The COLON is the verb, as for `note:`. */
+const CHECK_VERB = /^check:\s*/i;
 
 /** A Slack thread id's (channel, root ts), for the arrivals door. The adapter's ids
  *  are colon-joined and prefixed ("slack:C123:1712.34"); the root ts is always the
@@ -61,6 +65,7 @@ export function buildBot({
   adapters,
   state,
   postArrival,
+  factCheck,
 }: {
   ask: AskStream;
   /** Absent in tests that only care about the text half. */
@@ -69,6 +74,8 @@ export function buildBot({
   state: StateAdapter;
   /** HB-5 — absent in tests that only exercise the ask half. */
   postArrival?: ArrivalPoster;
+  /** Idea 7 — absent in tests that only exercise the ask half. */
+  factCheck?: FactChecker;
 }): Chat {
   const bot = new Chat({
     userName: BOT_USERNAME,
@@ -107,6 +114,31 @@ export function buildBot({
           ? `Noted — staged for review. ${result.detail}`
           : `Not filed: ${result.detail}`,
       );
+      return;
+    }
+
+    // Idea 7 — the check verb takes the fact-check door, never the ask path: the door
+    // compiles each claim to grounded SQL and answers with an envelope, which this
+    // thread renders like any answer — prose first, the verdict grid as the exhibit.
+    if (factCheck && CHECK_VERB.test(question)) {
+      const text = question.replace(CHECK_VERB, "").trim();
+      if (!text) {
+        await thread.post("Paste the memo after `check:` and I'll check every number in it against the data.");
+        return;
+      }
+      const result = await factCheck(text);
+      if (!result.ok || !result.envelope) {
+        await thread.post(`Not checked: ${result.detail || "the door returned no result"}`);
+        return;
+      }
+      const env = result.envelope;
+      await thread.post([env.headline, env.body].filter(Boolean).join("\n\n"));
+      await postExhibits(thread, {
+        investigationId: String((env.provenance as { investigation_id?: unknown })?.investigation_id ?? ""),
+        question: env.question, sessionId: thread.id,
+        columns: env.grid?.columns ?? [], rows: env.grid?.rows ?? [],
+        chartType: "auto", chartConfig: {}, envelope: env,
+      });
       return;
     }
 

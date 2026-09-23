@@ -86,7 +86,7 @@ Starting points in the code today:
 
 ## 7. Fact-check a document against the data
 
-*Suggested by Claude, 2026-09-13*
+*Suggested by Claude, 2026-09-13 · **BUILT 2026-09-23 — ROADMAP §3.25**: `POST /factcheck`, `POST /factcheck/upload`, `@aughor check:`; every claim checked through the platform's own answer path*
 
 Paste a board memo or an email, or upload a PDF deck. The platform finds every number in it and checks each against the warehouse: it matches, it doesn't (and why: refunds excluded, a different date range), or it can't be checked. The platform stops being only something that writes reports and becomes something that checks everyone's.
 

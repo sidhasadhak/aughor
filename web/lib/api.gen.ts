@@ -5040,6 +5040,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/factcheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Factcheck Text
+         * @description Check every numeric claim in pasted text against the connection's data.
+         */
+        post: operations["factcheck_text_factcheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/factcheck/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Factcheck Upload
+         * @description Check every numeric claim in an uploaded document — converted the way the Documents
+         *     tab converts it, charts in a PDF read back as tables — against the connection's data.
+         */
+        post: operations["factcheck_upload_factcheck_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/glossary": {
         parameters: {
             query?: never;
@@ -12409,6 +12450,15 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_factcheck_upload_factcheck_upload_post */
+        Body_factcheck_upload_factcheck_upload_post: {
+            /** Connection Id */
+            connection_id: string;
+            /** File */
+            file: string;
+            /** Schema Name */
+            schema_name?: string | null;
+        };
         /** Body_preview_document_chunks_documents_preview_post */
         Body_preview_document_chunks_documents_preview_post: {
             /** Chunk Settings */
@@ -13195,6 +13245,18 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+        };
+        /** FactCheckRequest */
+        FactCheckRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
+            /**
+             * Text
+             * @description The document's text — a memo, an email, a pasted deck
+             */
+            text: string;
         };
         /** FeedbackRequest */
         FeedbackRequest: {
@@ -24870,6 +24932,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    factcheck_text_factcheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FactCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    factcheck_upload_factcheck_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_factcheck_upload_factcheck_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

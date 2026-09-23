@@ -20,7 +20,7 @@
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMemoryState } from "@chat-adapter/state-memory";
 
-import { createArrivalPoster, createAskStream } from "./aughor.js";
+import { createArrivalPoster, createAskStream, createFactChecker } from "./aughor.js";
 import { buildBot } from "./bot.js";
 import { createChartRenderer } from "./chart.js";
 import { createRegistry, type BotRecord } from "./registry.js";
@@ -51,6 +51,13 @@ async function makeBot(record: BotRecord) {
     postArrival: createArrivalPoster({
       AUGHOR_API_URL: apiUrl,
       AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
+    }),
+    // Idea 7 — the check verb's transport: "@bot check: <memo>" checks every number in
+    // the memo against this bot's connection, through the fact-check door.
+    factCheck: createFactChecker({
+      AUGHOR_API_URL: apiUrl,
+      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
+      AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
     }),
     adapters: {
       slack: createSlackAdapter({

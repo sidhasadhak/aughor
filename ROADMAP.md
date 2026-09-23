@@ -7644,6 +7644,42 @@ is an open choice (a `user:` destination has no channel — HB-1); package recip
 series (no time column on a recipe); the chain a breach fires posts `step.answer`, not the
 envelope (CP-4's `envelope` binding is one edit away).
 
+### 3.25 · Fact-check a document against the data (from `IDEAS.md` 7; **BUILT 2026-09-23**, PENDING.md item 5, branch `claude/pending-top-nine`)
+
+> **The fact it answers.** The platform checked the numbers in its OWN reports (`check_grounding`,
+> departure law 1, CB-8's said-versus-measured on filed Slack replies) and nobody else's. A board
+> memo with a wrong revenue figure in it went unchallenged unless someone happened to ask.
+
+**What ships.** `aughor/factcheck/`: the document is split into the clauses that assert a
+measurement (the departure gate's own `numeric_clauses`; a year, a date, "3 regions" are not
+claims), each clause is put to the platform's own quick answer path (`answer_core` — metric
+grounding, SQL, execution, the guard battery, a Trust Receipt) as "what is the actual figure for
+this claim?", and the number that comes back is matched AT THE PRECISION THE DOCUMENT WROTE IT
+(`numeral_matches_measure`, the same matcher the gate uses; a percentage is also tried against a
+ratio). Three verdicts, each with its why: **measured**, **contradicted** ("said $470K; the data
+shows 397,612.97 (18% off)"), **unchecked** (a table came back, no query, a failed query). The
+result is an answer envelope (§3.22) — headline, the contradicted claims as the body, the verdict
+grid, the SQL per claim in the provenance — filed as a turn (exportable, reloadable), and every
+claim's own check is a chat turn under the fact-check's session, receipt and all. Doors: `POST
+/factcheck` (pasted text), `POST /factcheck/upload` (a PDF, DOCX, PPTX, XLSX… through the
+Documents converter; charts in a PDF read back as tables), and the Slack verb **`@aughor check:
+<memo>`** (`bots/slack`), which posts the verdict as prose and the grid as the exhibit. Capped at
+25 claims per document, the rest named. **Cost, stated:** one quick-answer turn per claim (~10–40 s,
+a few model calls) — always on a person's ask, never scheduled.
+🔴 **What building it found.** The first design used the semantic compiler (typed intent → grounded
+SQL, one cheap call): on theLook it mapped NONE of four plain claims — nor a plain question — to an
+intent, so every claim came back "unchecked". A checker that cannot check is not honest either; the
+answer path is what the platform trusts for its own numbers, so it checks everyone else's.
+**Live receipt, theLook `8233e4fd`, turn `0dc46da31a6a`, 2:36 for 4 claims:** *"Revenue in August
+2026 was $470K"* → CONTRADICTED, the data shows 397,612.97 (18% off); *"We sold 8,200 items in
+August 2026"* → MEASURED (8,207); *"Jeans revenue in August 2026 was $54,497"* → CONTRADICTED,
+45,886.49 (19% off); *"Our return rate in August 2026 was 12%"* → MEASURED (0.12); *"3 new
+markets in 2026"* → not a claim. ⏳ Left, named: no web door yet (the Documents tab's uploader is
+the natural place); a claim about a breakdown ("Jeans revenue") is checked with the model's own
+join, so the definition used is the SQL in the provenance rather than an approved metric — the
+caveat says so; a memo's figure about a period the data restates is compared with today's reading
+(§3.23's lag is not yet applied to a check).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

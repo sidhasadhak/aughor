@@ -352,3 +352,41 @@ export function createArrivalPoster(
     }
   };
 }
+
+/** Idea 7 — "@bot check: <memo>": every number in the text checked against the data.
+ *  The door returns an answer envelope (Arc CP), so the thread renders it the way it
+ *  renders any answer: the headline and body as prose, the verdict grid as the exhibit. */
+export interface FactCheckResult {
+  ok: boolean;
+  status: number;
+  /** The door's refusal, or "" when it checked. */
+  detail: string;
+  envelope: AnswerEnvelope | null;
+}
+
+export type FactChecker = (text: string) => Promise<FactCheckResult>;
+
+export function createFactChecker(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): FactChecker {
+  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {};
+  return async function factCheck(text: string): Promise<FactCheckResult> {
+    try {
+      const res = await fetchImpl(`${base}/factcheck`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ text, connection_id: env.AUGHOR_CONNECTION_ID ?? "" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        return { ok: false, status: res.status, detail: asText(body.detail) || `HTTP ${res.status}`, envelope: null };
+      }
+      return { ok: true, status: res.status, detail: "", envelope: (body.envelope as AnswerEnvelope) ?? null };
+    } catch (err) {
+      return { ok: false, status: 0, detail: err instanceof Error ? err.message : String(err), envelope: null };
+    }
+  };
+}
