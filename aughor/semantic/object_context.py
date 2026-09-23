@@ -19,6 +19,8 @@ Each panel is MEASURED, never inferred:
 """
 from __future__ import annotations
 
+import re
+
 from typing import Any
 
 from aughor.ontology.models import OntologyEntity, OntologyGraph, snake_name
@@ -119,6 +121,9 @@ def object_findings(connection_id: str, schema_name: str, graph: OntologyGraph, 
         return ""
 
     cited: list[dict] = []
+    wider: list[dict] = []          # PENDING item 13 — its segment's findings, then its type's
+    segment = segment_values(entity, instance)
+    tables = _entity_tables(entity)
     try:
         from aughor.explorer.store import get_findings
         seen: set = set()
@@ -131,6 +136,15 @@ def object_findings(connection_id: str, schema_name: str, graph: OntologyGraph, 
                 if matched:
                     cited.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
                                   "domain": finding.get("domain", ""), "matched": matched})
+                    continue
+                about = about_segment(finding, segment, tables)
+                if about:
+                    wider.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
+                                  "domain": finding.get("domain", ""), "scope": "segment", **about})
+                elif reads_tables(finding.get("sql"), tables) and not pins_another(finding.get("sql"), identity):
+                    wider.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
+                                  "domain": finding.get("domain", ""), "scope": "type",
+                                  "matched": f"reads {', '.join(sorted(tables))}"})
     except Exception as exc:  # noqa: BLE001
         tolerate(exc, "object page: exploration findings are best-effort", counter="objects.findings_scan")
     try:
@@ -147,7 +161,107 @@ def object_findings(connection_id: str, schema_name: str, graph: OntologyGraph, 
                               "matched": matched})
     except Exception as exc:  # noqa: BLE001
         tolerate(exc, "object page: answer receipts are best-effort", counter="objects.receipts_scan")
-    return cited[:_MAX_FINDINGS]
+    # The exact citations come first and keep their shape; the wider ones fill what is left,
+    # segment before type, each marked with its `scope` so the page never presents a finding
+    # about Italian customers as one about THIS customer.
+    segment_rows = [w for w in wider if w["scope"] == "segment"][:_MAX_SEGMENT]
+    type_rows = [w for w in wider if w["scope"] == "type"][:_MAX_TYPE]
+    return (cited + segment_rows + type_rows)[:_MAX_FINDINGS]
+
+
+#: How many findings about the object's segment, and about its type, fill the panel after the
+#: exact citations (which always come first).
+_MAX_SEGMENT = 5
+_MAX_TYPE = 3
+#: A property value that could segment: a short label, not a free-text note or a number.
+_SEGMENT_VALUE = re.compile(r"^[^\n]{1,60}$")
+
+
+def segment_values(entity: OntologyEntity, instance: ObjectInstance) -> dict[str, tuple[str, str]]:
+    """column → (the value, how it reads) for the object's own LABEL properties — its country,
+    tier, status, channel. Its key, numbers, dates and empty values do not segment anything."""
+    out: dict[str, tuple[str, str]] = {}
+    for prop in instance.properties:
+        column, value = str(prop.get("name") or "").lower(), prop.get("value")
+        if not column or column == instance.key.lower() or prop.get("binding"):
+            continue
+        if value is None or isinstance(value, (bool, int, float)) or not isinstance(value, str):
+            continue
+        text = value.strip()
+        if not text or not _SEGMENT_VALUE.match(text) or re.match(r"^\d{4}-\d{2}-\d{2}", text):
+            continue
+        # a number that arrives as text ("46" lifetime orders, "1585.00" spend) is a measure,
+        # not a label — measured on the samples customer, whose numbers all arrive as strings
+        if re.fullmatch(r"[-+]?[\d,]*\.?\d+", text):
+            continue
+        out[column] = (text, str(prop.get("display_name") or column))
+    return out
+
+
+def _group_columns(sql: str) -> set[str]:
+    """The bare column names a query groups by (ordinals and aliases resolved). Never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql)
+    except Exception:  # noqa: BLE001 — an unparsable finding simply groups by nothing we can see
+        return set()
+    names: set[str] = set()
+    for select in tree.find_all(exp.Select):
+        group = select.args.get("group")
+        if group is None:
+            continue
+        by_alias = {e.alias.lower(): e.unalias() for e in select.expressions if e.alias}
+        for key in group.expressions:
+            if isinstance(key, exp.Literal) and key.is_int and 0 < int(key.name) <= len(select.expressions):
+                key = select.expressions[int(key.name) - 1].unalias()
+            elif isinstance(key, exp.Column) and not key.table and key.name.lower() in by_alias:
+                key = by_alias[key.name.lower()]
+            if isinstance(key, exp.Column):
+                names.add(key.name.lower())
+    return names
+
+
+def about_segment(finding: dict, segment: dict[str, tuple[str, str]], tables: set[str]) -> dict:
+    """``{"matched", "segment"}`` when a finding is about the object's SEGMENT — it filters one of
+    the object's label columns to the object's own value, or groups by that column and names the
+    value in its text — else ``{}``. Read off the finding's SQL, never its wording alone."""
+    sql = str(finding.get("sql") or "")
+    if not sql or not segment:
+        return {}
+    from aughor.sql.join_guard import extract_filter_literals
+    for table, column, literal, op in extract_filter_literals(sql):
+        mine = segment.get(column.lower())
+        if mine and _bare(table) in tables and op in ("=", "IN") and str(literal).lower() == mine[0].lower():
+            return {"matched": f"{_bare(table)}.{column} {op} '{literal}'", "segment": f"{mine[1]} {mine[0]}"}
+    text = str(finding.get("finding") or "")
+    for column in _group_columns(sql):
+        mine = segment.get(column)
+        if mine and re.search(rf"(?<!\w){re.escape(mine[0])}(?!\w)", text, re.I):
+            return {"matched": f"grouped by {column}; names '{mine[0]}'", "segment": f"{mine[1]} {mine[0]}"}
+    return {}
+
+
+def pins_another(sql: Any, identity: dict) -> bool:
+    """Whether a finding's SQL filters this type's key (or a column joined to it) to ANOTHER
+    object — `order_id = 'O000999'` is about that order, not about orders in general."""
+    from aughor.sql.join_guard import extract_filter_literals
+    for table, column, literal, op in extract_filter_literals(str(sql or "")):
+        want = identity.get((_bare(table), column.lower()))
+        if want is not None and op in ("=", "IN") and str(literal) != str(want):
+            return True
+    return False
+
+
+def reads_tables(sql: Any, tables: set[str]) -> bool:
+    """Whether a finding's SQL reads one of the type's tables — a finding about the type."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(str(sql or ""))
+    except Exception:  # noqa: BLE001
+        return False
+    return any(_bare(t.name) in tables for t in tree.find_all(exp.Table))
 
 
 def object_notes(connection_id: str, entity: OntologyEntity, instance: ObjectInstance) -> list[dict]:

@@ -74,6 +74,10 @@ export interface ObjectCitation {
   id: string;
   text: string;
   matched: string;
+  /** PENDING item 13 — absent: the SQL names THIS object. "segment": a finding about the object's
+   *  own label value (its country, tier…), named in `segment`. "type": about its type in general. */
+  scope?: "segment" | "type";
+  segment?: string;
   domain?: string;
   question?: string;
   at?: string | null;

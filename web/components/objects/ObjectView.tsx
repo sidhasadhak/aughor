@@ -476,14 +476,19 @@ function LinkedObjects({ page, link, scope }: { page: ObjectPage; link: ObjectLi
 
 function CitationsCard({ page, citations }: { page: ObjectPage; citations: ObjectCitation[] }) {
   return (
-    <Section title="Findings and answers that name it"
-      description={<>Cited only where the SQL filters <span style={MONO}>{page.key}</span>, or a column joined to it, by this exact value.</>}>
+    <Section title="Findings and answers about it"
+      description={<>First what names this exact {page.type_name.toLowerCase()} (its <span style={MONO}>{page.key}</span>, or a column joined to it); then findings about its segment — one of its own values, like its country — and about {page.type_name.toLowerCase()}s in general, each marked.</>}>
       {citations.length === 0 ? (
-        <EmptyState variant="inline" title={`No finding or answer names this ${page.type_name.toLowerCase()} yet.`} />
+        <EmptyState variant="inline" title={`No finding or answer is about this ${page.type_name.toLowerCase()}, its segment or its type yet.`} />
       ) : citations.map((c, i) => (
         <div key={`${c.kind}:${c.id}`} style={{ padding: "8px 0", borderTop: i ? ROW_RULE : undefined }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <span className={`aug-tag ${c.kind === "answer" ? "aug-tag-blue" : "aug-tag-violet"}`}>{c.kind}</span>
+            <span className="aug-fs-xs" style={{ color: "var(--t2)", whiteSpace: "nowrap" }}>
+              {c.scope === "segment" ? `its segment: ${c.segment}`
+                : c.scope === "type" ? `${page.type_name.toLowerCase()}s in general`
+                : `this ${page.type_name.toLowerCase()}`}
+            </span>
             {typeof c.at === "string" && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{relTime(c.at)}</span>}
             <div style={{ flex: 1 }} />
             <span className="aug-fs-xs"

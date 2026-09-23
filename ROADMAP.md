@@ -7867,6 +7867,35 @@ original Slack mention answer is not gated while its correction is (the TypeScri
 by law 2 a KPI word no approved metric defines holds the correction (recorded, not sent). Only
 chat answers are re-checked — a deep report's many queries are not.
 
+### 3.29 · Object pages say what is known about the object, its segment and its type (PENDING.md item 13, Arc ON leftover; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a read-only panel, every row marked)
+
+> **The fact it answers.** Measured 2026-09-23: the object page's findings panel was empty on
+> EVERY object page of every connection, not only LuxExperience. It listed only findings whose
+> SQL filters that exact object's key (`semantic/object_context.object_findings`), and the
+> explorer writes aggregates — by country, tier, status — so none ever named one object.
+
+**What ships.** The exact tier is unchanged and still comes first. After it, two marked tiers:
+* **its segment** — a finding that filters one of the object's own LABEL properties (country,
+  tier, status, channel — never its key, a number, a date or a number that arrives as text) to
+  the object's value, or groups by that column AND names the value in its text
+  (`about_segment`, read off the finding's SQL, never its wording alone) — up to 5;
+* **its type in general** — a finding that reads the type's tables — up to 3; one pinned to
+  ANOTHER object (`customer_id = 'C00077'`) is about that object and is not shown at all.
+The web marks each row "this customer" · "its segment: Country FR" · "customers in general".
+
+**Receipt.** The real `object_context` over the seeded samples warehouse and its measured
+ontology, customer C00042 (Paris, FR), five findings in the explorer's shape: before, the panel
+held **0**; after, **3** — "Customers in FR placed 12% more repeat orders" as its segment
+(`customers.country = 'FR'`), the AOV-by-country breakdown (which names GB, JP, IN — not FR) and
+customer growth as customers in general; the Monday-peak finding reads only `orders` and the
+C00077 finding is about another customer, so neither is shown. The run found that the samples'
+numbers arrive as strings ("46" lifetime orders) and would have segmented on them — excluded.
+363 object tests green.
+⏳ **Open (unchanged, measured):** LuxExperience's metrics panel is empty because the shipped
+revenue and AOV are scoped to the samples and name a column LuxExperience lacks — a declared
+LuxExperience metric fixes it, and only survives a fresh clone once item 14 lands. Object pages
+still read only the home connection's findings.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
