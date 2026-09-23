@@ -114,23 +114,12 @@ function askYielding(chunks: string[], artifacts?: Partial<TurnArtifacts>) {
 }
 
 describe("buildBot — RC-2", () => {
-  it("every answer carries the way back to the platform", async () => {
-    const adapter = mockAughorAdapter();
-    const { ask } = askYielding(["East leads."]);
-    const bot = buildBot({
-      ask, adapters: { slack: adapter }, state: createMockState(),
-      webUrl: "https://aughor.example.com",
-    });
-
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
-
-    expect(adapter).toHaveEdited(
-      THREAD, "msg-1",
-      /East leads\.\n\n<https:\/\/aughor\.example\.com\/chat\?chat=slack%3AC1%3A1712\.001\|Open in Aughor →>/,
-    );
-  });
-
-  it("no web url, no link — a wrong host is worse than none", async () => {
+  it("an answer is the answer — no link back to the platform", async () => {
+    // The user's call, 2026-09-23: "dont keep deeplink". Every answer used to end with
+    // "<…|Open in Aughor →>". It reads as the same decision that took receipts off Slack
+    // messages a day earlier — the message is for the people in the channel, and a trail
+    // back into the platform is not what they are there for. The record still exists in
+    // Aughor; the Slack message just stops advertising it.
     const adapter = mockAughorAdapter();
     const { ask } = askYielding(["East leads."]);
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });

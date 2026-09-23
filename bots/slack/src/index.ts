@@ -52,9 +52,6 @@ async function makeBot(record: BotRecord) {
       AUGHOR_API_URL: apiUrl,
       AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
     }),
-    // Where "Open in Aughor →" points. Absent, answers simply carry no link —
-    // a wrong host is worse than none, so this is never guessed.
-    webUrl: process.env.AUGHOR_WEB_URL,
     adapters: {
       slack: createSlackAdapter({
         mode: "socket",
@@ -118,9 +115,7 @@ if (first.running === 0) {
   );
 } else {
   console.log(
-    `aughor-slack-bot: ${first.running} bot(s) connected (socket mode) → ${apiUrl}` +
-    `${process.env.AUGHOR_WEB_URL ? ` · links → ${process.env.AUGHOR_WEB_URL}`
-                                  : " · no AUGHOR_WEB_URL, answers carry no link"}`,
+    `aughor-slack-bot: ${first.running} bot(s) connected (socket mode) → ${apiUrl}`,
   );
 }
 for (const f of first.failed) console.error(`  bot ${f.id} did not start: ${f.error}`);

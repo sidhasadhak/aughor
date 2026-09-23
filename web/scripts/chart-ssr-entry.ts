@@ -18,7 +18,8 @@
 import * as vega from "vega";
 import * as vl from "vega-lite";
 import { resolveVegaSpec } from "../components/charts/vega/resolveSpec";
-import { resolveTier3Spec } from "../components/charts/vega/tier3";
+import { resolveTier3Spec, TIER3_TYPES } from "../components/charts/vega/tier3";
+import { inferChartType } from "../components/charts/chartTypeInference";
 import { buildVegaConfig, buildVegaRuntimeConfig, printVegaTokens } from "../components/charts/vega/config";
 import { setOrgSettingsCache } from "../lib/orgSettings";
 import type { OrgSettings } from "../lib/api";
@@ -43,8 +44,34 @@ const VEGA_CONFIG = buildVegaRuntimeConfig(TOKENS);
 async function renderOne(req: ChartRequest): Promise<string | null> {
   const columns = req.columns ?? [];
   const rows = req.rows ?? [];
-  const chartType = String(req.chart_type ?? "auto");
+  let chartType = String(req.chart_type ?? "auto");
   const width = req.width && req.width > 0 ? req.width : 760;
+
+  /**
+   * `auto` is resolved HERE, before tier 3 is asked — the one line that decides whether a
+   * whole class of chart exists headlessly.
+   *
+   * Tier 1 defers `auto` to `inferChartType` inside `resolveVegaSpec`, which is fine for
+   * the types tier 1 draws. But tier 3 matches on the CONCRETE type, so asking it about
+   * the literal string "auto" never matched anything. `auto` sends a category plus an
+   * ADDITIVE measure at 7-24 unique values to a `treemap` (chartTypeInference.ts) — the
+   * commonest business grid there is, "top sellers by revenue" — and tier 3 has drawn
+   * treemaps all along. Nothing ever asked it. Measured: 7, 12, 20 and 24 categories all
+   * returned null while 6 and 25 rendered, on EVERY headless surface at once — the PDF,
+   * the PPTX deck, `POST /charts/svg` and the Slack bot that relays it.
+   *
+   * The browser never had this hole because it resolves the type before it picks an
+   * engine (`ResultChartCard.tsx`). This is that same step, in the same order.
+   *
+   * Only a TIER 3 type is substituted. Everything else stays `auto` on purpose: tier 1's
+   * inference returns the chosen xCol/yCols along with the type, and a pre-resolved hint
+   * would throw that away and let the resolver re-pick columns — changing charts that
+   * render correctly today to fix ones that do not render at all.
+   */
+  if (chartType === "auto") {
+    const inferred = inferChartType(columns, rows);
+    if (inferred && TIER3_TYPES.has(inferred.type)) chartType = inferred.type;
+  }
 
   /**
    * Geo is refused in print, as it was under ECharts — but for a reason worth stating,

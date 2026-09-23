@@ -154,3 +154,58 @@ def test_no_connection_means_no_lookup(monkeypatch):
 
     client.post("/charts/svg", json=_GRID)
     assert seen[0]["money_symbol"] == ""
+
+
+# ── the band that rendered nothing ───────────────────────────────────────────────
+
+#: A category plus an ADDITIVE measure. `chartTypeInference` sends 7-24 unique categories
+#: here to a `treemap`; at 6 or fewer it is a bar, at 25+ a bar again. The middle is the
+#: band that returned 204 on every headless surface at once.
+_BAND = {
+    "columns": ["product", "revenue"],
+    "rows": [[f"Item {i}", 1000 * (40 - i)] for i in range(10)],
+}
+
+
+@_ssr
+def test_the_commonest_business_grid_renders_a_chart():
+    """"Top sellers by revenue" — and for a long time, no chart at all.
+
+    `resolveVegaSpec` resolves `auto` INSIDE tier 1, but `chart-ssr-entry` asks
+    `resolveTier3Spec` first, and tier 3 matches on the concrete type. Asked about the
+    literal string "auto" it never matched, so the treemap it has drawn all along was
+    never offered the data — tier 1 then inferred `treemap`, found it outside its own
+    supported set, and returned null. PDF, PPTX, this door and the Slack bot that relays
+    it all dropped the chart in silence and fell back to a table.
+
+    This runs the REAL bundle, so it is also a staleness guard: edit
+    `web/scripts/chart-ssr-entry.ts` without `npm run build:chart-ssr` and the shipped
+    artifact is what answers here.
+    """
+    r = client.post("/charts/svg", json={**_BAND, "chart_type": "auto", "title": "Top sellers"})
+    assert r.status_code == 200, "a category and an additive measure must draw something"
+    assert r.text.lstrip().startswith("<svg"), r.text[:200]
+
+
+@_ssr
+@pytest.mark.parametrize("n", [7, 12, 24])
+def test_every_row_count_in_the_band_renders(n):
+    """7, 12 and 24 all returned 204 before; 6 and 25 never did. Parametrised because a
+    single row count would not show that it is a BAND, and a future threshold change
+    would slip through a one-sample guard."""
+    grid = {"columns": ["product", "revenue"],
+            "rows": [[f"Item {i}", 1000 * (n + 5 - i)] for i in range(n)]}
+    assert client.post("/charts/svg", json={**grid, "chart_type": "auto"}).status_code == 200
+
+
+@_ssr
+@pytest.mark.parametrize("columns,rows", [
+    # The shapes that already worked. The fix substitutes a type ONLY when the inference
+    # names a tier-3 one, precisely so these keep tier 1's own column choice.
+    (["product", "score"], [[f"Item {i}", 90 - i] for i in range(8)]),
+    (["day", "revenue"], [[f"2026-09-{d:02d}", 100 + d * 7] for d in range(1, 15)]),
+    (["region", "revenue"], [["East", 120], ["West", 98], ["North", 143]]),
+])
+def test_the_shapes_that_already_rendered_still_do(columns, rows):
+    r = client.post("/charts/svg", json={"columns": columns, "rows": rows, "chart_type": "auto"})
+    assert r.status_code == 200
