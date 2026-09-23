@@ -70,7 +70,16 @@ export function createChartRenderer(
 
     try {
       return Buffer.from(
-        new Resvg(svg, { fitTo: { mode: "width", value: PNG_WIDTH } }).render().asPng(),
+        new Resvg(svg, {
+          fitTo: { mode: "width", value: PNG_WIDTH },
+          // Drawn on white, and it is not cosmetic. The SSR renders with the LIGHT print
+          // token set, so its ink is dark; a transparent PNG lets Slack composite that
+          // against whichever theme the READER chose, and on a dark theme the axis text
+          // and the value labels at the bar ends disappear into the background. Seen in a
+          // real thread, 2026-09-23. The Python rasterizer pins the same white for the
+          // same reason (`export.echarts._RASTER_BACKGROUND`).
+          background: "#ffffff",
+        }).render().asPng(),
       );
     } catch {
       return null;
