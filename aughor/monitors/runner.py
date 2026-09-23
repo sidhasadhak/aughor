@@ -195,27 +195,19 @@ def run_threshold_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     previous = _last_alert_value(monitor.id)
     direction = monitor.threshold_direction  # "below" or "above"
 
-    def _crossed(value: float, threshold: float) -> bool:
-        return value < threshold if direction == "below" else value > threshold
-
-    # Critical takes precedence
-    if monitor.critical_threshold is not None and _crossed(current, monitor.critical_threshold):
-        return _make_alert(
-            monitor, "critical",
-            f"{monitor.name}: {current:.4g} {'below' if direction == 'below' else 'above'} "
-            f"critical threshold {monitor.critical_threshold:.4g}",
-            current_value=current, previous_value=previous,
-            threshold=monitor.critical_threshold,
-        )
-    if monitor.warning_threshold is not None and _crossed(current, monitor.warning_threshold):
-        return _make_alert(
-            monitor, "warning",
-            f"{monitor.name}: {current:.4g} {'below' if direction == 'below' else 'above'} "
-            f"warning threshold {monitor.warning_threshold:.4g}",
-            current_value=current, previous_value=previous,
-            threshold=monitor.warning_threshold,
-        )
-    return None
+    # ONE rule, shared with the backtest (`monitors/rules.py`): critical first, then warning.
+    from aughor.monitors.rules import threshold_verdict
+    verdict = threshold_verdict(current, direction=direction, warning=monitor.warning_threshold,
+                                critical=monitor.critical_threshold)
+    if not verdict.fired or verdict.threshold is None:
+        return None
+    return _make_alert(
+        monitor, verdict.severity,
+        f"{monitor.name}: {current:.4g} {'below' if direction == 'below' else 'above'} "
+        f"{verdict.severity} threshold {verdict.threshold:.4g}",
+        current_value=current, previous_value=previous,
+        threshold=verdict.threshold,
+    )
 
 
 def run_any_change_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
@@ -323,12 +315,6 @@ def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     Requires a time-series SQL: the monitor's SQL must return rows with columns
     (date, value).  Falls back to scalar z-score using stored alert history.
     """
-    try:
-        import numpy as np
-    except ImportError:
-        logger.warning("numpy not available — anomaly monitor skipped")
-        return None
-
     sql = _resolve_sql(monitor, db)
     if not sql:
         return None
@@ -383,22 +369,18 @@ def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
             )
         return None
 
-    arr = np.array(history_values, dtype=float)
-    mean, std = float(arr.mean()), float(arr.std())
-
-    if std < 1e-9:
+    # ONE rule, shared with the backtest and the Watcher's replay (`monitors/rules.py`):
+    # a replay that scored days differently from this line would promise nothing.
+    from aughor.monitors.rules import anomaly_verdict
+    verdict = anomaly_verdict(history_values, current, monitor.sigma_threshold)
+    if verdict.std < 1e-9:
         return None  # No variance — nothing to detect
-
-    z = abs(current - mean) / std
-
-    if z >= monitor.sigma_threshold:
-        direction = "above" if current > mean else "below"
-        severity = "critical" if z >= monitor.sigma_threshold * 1.5 else "warning"
+    if verdict.fired:
         return _make_alert(
-            monitor, severity,
-            f"{monitor.name}: anomaly detected — {current:.4g} is {z:.1f}σ {direction} "
-            f"rolling mean ({mean:.4g})",
-            current_value=current, previous_value=mean,
+            monitor, verdict.severity,
+            f"{monitor.name}: anomaly detected — {current:.4g} is {verdict.z:.1f}σ "
+            f"{verdict.direction} rolling mean ({verdict.mean:.4g})",
+            current_value=current, previous_value=verdict.mean,
         )
     return None
 

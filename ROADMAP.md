@@ -7680,6 +7680,51 @@ join, so the definition used is the SQL in the provenance rather than an approve
 caveat says so; a memo's figure about a period the data restates is compared with today's reading
 (§3.23's lag is not yet applied to a check).
 
+### 3.26 · Alerts that prove they work — one rule, a backtest before, a fire drill after (from `IDEAS.md` 6; **BUILT 2026-09-23**, PENDING.md item 6, branch `claude/pending-top-nine`)
+
+> **The fact it answers.** An alert that never fires looks exactly like a broken one. An
+> instruction added to the scheduled briefings on 2026-09-05 never ran until it was found on
+> 2026-09-08, and its test passed the whole time. And the platform held TWO definitions of
+> "anomaly": the runner scored a day against every prior row, the Watcher's replay (§3.24)
+> against a rolling 30-day window — a watch could be proposed on one and fire on the other.
+
+**What ships.** `aughor/monitors/rules.py` — the anomaly and threshold rules as pure functions,
+read by the runner that fires, the backtest that replays and the Watcher that proposes; a
+replay is now a promise about the rule that will actually run. `monitors/backtest.py` —
+**`POST /monitors/{id}/backtest`** replays an EXISTING monitor over the last year of its own
+series (its SQL when it returns a (day, value) series; an approved metric's expression per
+day when it names a metric on a time table), under its own σ, dropping the days the
+connection's settling lag calls unfinished, and says how often it would have fired and on
+which days — *"would have fired 4 times in the last 365 days, 3 of them Mondays"* — with a
+quieter σ from the ladder when it is noisy. A check that returns one number as of now has no
+history, and the backtest says so. `monitors/drill.py` — **`POST /monitors/{id}/drill`** feeds
+the monitor thirty quiet days and a ten-σ outlier through the runner it runs with, from a
+stand-in connection (every write refused, no warehouse query), and delivers the alert it
+produced through the real channel marked **[DRILL]**; it never files the alert (a fake value in
+the alert history would feed anti-flap and the baselines); `deliver: false` proves the rule and
+stops before the transport. **`GET /monitors/{id}/proof`** is "last proven working": the last
+drill, the last real delivery, one sentence. A drill proves the rule and the path, never the
+SQL; the backtest proves the SQL — the two together are the alert's proof.
+**Live receipt, theLook `8233e4fd`, monitor `b53e8323`, 2026-09-23:** the backtest answered
+honestly — *"the monitor's own SQL returned no (day, value) series — a check that returns one
+number as of now has no history"*; the drill fired the rule (*"140 is 24.5σ above rolling mean
+(100)"*, critical, `[DRILL]`-prefixed) and stopped before the transport because the monitor
+alerts in-app; the proof reads *"the rule fired in a drill on 2026-09-23T21:16Z; delivery not
+attempted"*. No message left the platform — a real delivery is a send on the operator's behalf
+and waits for their word.
+🔴 **What the receipt found, NOT fixed:** theLook's one anomaly monitor watches a CATEGORY
+BREAKDOWN (a CTE ranking categories by revenue), and the anomaly runner reads any two-column
+result as a (date, value) series — the first column is a category name, `_as_day` yields
+None, the settling filter keeps undated points, and the categories' revenues are z-scored
+as if they were days. It can never fire meaningfully. The runner should refuse a series whose
+first column is not a date — one edit, adjacent, named here. ⏳ Also left: the seven defects
+the map turned up — `grace_period_hours` is never saved; the Monitors UI offers "slack"/"email"
+as channels, which are not trigger ids, so `dispatch_alert` warns and sends nothing;
+`metric_name` monitors run a bare aggregate as SQL and stay silent; "Run now" sends a real
+alert and writes it into history; a metric-condition chain queries the warehouse every
+60-second heartbeat; the "guarded" flag is not checked; the Hub map lists automations and not
+monitors. No web buttons yet (the MonitorCard's action row and subtitle are the place).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

@@ -11,9 +11,9 @@ approver fills (SP-7's law).
 Two things make a proposal worth a person's minute rather than noise:
 
 * **the threshold is tuned before it interrupts anyone** — the last 90 settled days are
-  replayed against a rolling 30-day baseline and the smallest σ on the ladder that would
-  have fired at most three times is the one proposed; the count rides the reasoning, so
-  the reader sees "would have fired twice" and not a σ they have to trust;
+  replayed under the runner's own rule (`monitors/rules.py`) and the smallest σ on the
+  ladder that would have fired at most three times is the one proposed; the count rides the
+  reasoning, so the reader sees "would have fired twice" and not a σ they have to trust;
 * **still-settling days are not scored** — the connection's learned settling lag
   (`settling.learned_lag_days`) drops the youngest days from the distribution, and the
   monitor the proposal creates drops them at check time the same way.
@@ -40,10 +40,10 @@ JOB_KIND = "alert_proposals"
 #: platform no longer stands behind. (v2: the series is bounded to the recent window in
 #: SQL; v1 replayed whatever rows the executor's cap happened to keep. v3: a watch the
 #: ladder cannot quieten — more than MAX_FIRINGS even at its top σ — is not proposed.)
-METHOD_VERSION = "v3"
+EVIDENCE_METHOD = "v3"
 #: A series whose newest settled day is older than this is stale or truncated, not a watch.
 MAX_SERIES_AGE_DAYS = 365
-#: Replay window and the baseline each day is scored against.
+#: Replay window, and the run-in of history read before it so the first replayed day has a baseline.
 HISTORY_DAYS = 90
 BASELINE_DAYS = 30
 #: Three settled weeks: below that a standard deviation is a guess, and no alert is staged.
@@ -145,15 +145,11 @@ def read_series(run_sql: RunSql, sql: str) -> list[tuple[date, float]]:
 
 
 def _fired(values: list[float], sigma: float) -> list[int]:
-    """Indices that would have fired: each day against the mean and σ of the days before
-    it (a rolling `BASELINE_DAYS` window, at least a week)."""
-    fired: list[int] = []
-    for i in range(7, len(values)):
-        base = values[max(0, i - BASELINE_DAYS):i]
-        mu, sd = mean(base), pstdev(base)
-        if sd > 0 and abs(values[i] - mu) > sigma * sd:
-            fired.append(i)
-    return fired
+    """Indices that would have fired under the runner's OWN rule (`monitors/rules.py`): each
+    day against the mean and σ of every day before it. The same function the monitor runs
+    with, so the replay that justifies a watch is the rule that will fire it."""
+    from aughor.monitors.rules import anomaly_verdict
+    return [i for i in range(len(values)) if anomaly_verdict(values[:i], values[i], sigma).fired]
 
 
 def choose_sigma(values: list[float]) -> tuple[float, list[int]]:
@@ -256,7 +252,7 @@ def _reason(cand: Candidate, dist: Distribution, settle_days: int) -> str:
 
 
 def run_id_for(connection_id: str) -> str:
-    return f"sentinel:{METHOD_VERSION}:{connection_id}"
+    return f"sentinel:{EVIDENCE_METHOD}:{connection_id}"
 
 
 def supersede_older_methods(connection_id: str) -> list[str]:
@@ -271,7 +267,7 @@ def supersede_older_methods(connection_id: str) -> list[str]:
         if (getattr(p, "proposer", "") == "watcher" and run_id.startswith("sentinel:")
                 and run_id != current):
             if supersede_proposal(p.id, actor="watcher:method",
-                                  note=f"re-proposed under evidence method {METHOD_VERSION}"):
+                                  note=f"re-proposed under evidence method {EVIDENCE_METHOD}"):
                 superseded.append(p.id)
     return superseded
 

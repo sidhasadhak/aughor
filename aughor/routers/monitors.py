@@ -279,3 +279,45 @@ def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:
         return {**result.model_dump(), "markdown": result.to_markdown()}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── Idea 6 · alerts that prove they work ───────────────────────────────────────
+
+@router.post("/monitors/{monitor_id}/backtest", dependencies=[gate(Capability.MONITORS)])
+def backtest_monitor_route(monitor_id: str) -> dict:
+    """Replay the monitor over the last year of its own series under the rule it runs with:
+    how often it would have fired, on which days, and a quieter σ when it is noisy."""
+    monitor = get_monitor(monitor_id)
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    from dataclasses import asdict
+    from aughor.monitors.backtest import backtest_monitor
+    return asdict(backtest_monitor(monitor))
+
+
+class DrillRequest(BaseModel):
+    #: False proves the rule and stops before the transport — no message leaves.
+    deliver: bool = True
+
+
+@router.post("/monitors/{monitor_id}/drill", dependencies=[gate(Capability.MONITORS)])
+def drill_monitor_route(monitor_id: str, req: DrillRequest | None = None) -> dict:
+    """Feed the monitor a synthetic outlier — no warehouse query — and deliver the alert it
+    produces through its real channel, marked [DRILL]. Proves the rule and the path, never
+    the SQL (the backtest does); records "last proven working"."""
+    monitor = get_monitor(monitor_id)
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    from dataclasses import asdict
+    from aughor.monitors.drill import drill_monitor
+    return asdict(drill_monitor(monitor, deliver=(req.deliver if req is not None else True)))
+
+
+@router.get("/monitors/{monitor_id}/proof")
+def monitor_proof(monitor_id: str) -> dict:
+    """"Last proven working": the last drill and the last real delivery, with the sentence."""
+    monitor = get_monitor(monitor_id)
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    from aughor.monitors.drill import proof
+    return proof(monitor)

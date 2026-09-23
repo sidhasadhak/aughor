@@ -195,12 +195,12 @@ def test_a_new_evidence_method_supersedes_what_the_old_one_left_pending(two_metr
     from aughor.actions.inbox import get_proposal
 
     today = D0 + timedelta(days=100)
-    monkeypatch.setattr(sentinel, "METHOD_VERSION", "v2")
+    monkeypatch.setattr(sentinel, "EVIDENCE_METHOD", "v2")
     old = propose_for_connection("c-method", run_sql=two_metrics, today=today)
     old_id = old["staged"][0]["proposal_id"]
     assert get_proposal(old_id).run_id == "sentinel:v2:c-method"
 
-    monkeypatch.setattr(sentinel, "METHOD_VERSION", "v3")
+    monkeypatch.setattr(sentinel, "EVIDENCE_METHOD", "v3")
     new = propose_for_connection("c-method", run_sql=two_metrics, today=today)
     assert new["superseded"] == [old_id]
     assert [s["metric"] for s in new["staged"]] == ["Revenue"]

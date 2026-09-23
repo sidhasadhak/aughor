@@ -69,7 +69,7 @@ Starting points in the code today:
 
 ## 6. Alerts that prove they work
 
-*Suggested by Claude, 2026-09-13*
+*Suggested by Claude, 2026-09-13 · **BUILT 2026-09-23 — ROADMAP §3.26**: `POST /monitors/{id}/backtest`, `POST /monitors/{id}/drill`, `GET /monitors/{id}/proof`; the runner, the backtest and the Watcher share one rule*
 
 Two halves:
 

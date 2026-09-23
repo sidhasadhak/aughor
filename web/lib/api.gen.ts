@@ -7933,6 +7933,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/monitors/{monitor_id}/backtest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backtest Monitor Route
+         * @description Replay the monitor over the last year of its own series under the rule it runs with:
+         *     how often it would have fired, on which days, and a quieter σ when it is noisy.
+         */
+        post: operations["backtest_monitor_route_monitors__monitor_id__backtest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/monitors/{monitor_id}/disable": {
         parameters: {
             query?: never;
@@ -7950,6 +7971,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/monitors/{monitor_id}/drill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Drill Monitor Route
+         * @description Feed the monitor a synthetic outlier — no warehouse query — and deliver the alert it
+         *     produces through its real channel, marked [DRILL]. Proves the rule and the path, never
+         *     the SQL (the backtest does); records "last proven working".
+         */
+        post: operations["drill_monitor_route_monitors__monitor_id__drill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/monitors/{monitor_id}/enable": {
         parameters: {
             query?: never;
@@ -7961,6 +8004,26 @@ export interface paths {
         put?: never;
         /** Enable Monitor */
         post: operations["enable_monitor_monitors__monitor_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/monitors/{monitor_id}/proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Monitor Proof
+         * @description "Last proven working": the last drill and the last real delivery, with the sentence.
+         */
+        get: operations["monitor_proof_monitors__monitor_id__proof_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -13145,6 +13208,14 @@ export interface components {
             type: "document";
         } & {
             [key: string]: unknown;
+        };
+        /** DrillRequest */
+        DrillRequest: {
+            /**
+             * Deliver
+             * @default true
+             */
+            deliver: boolean;
         };
         /**
          * Effect
@@ -29943,6 +30014,41 @@ export interface operations {
             };
         };
     };
+    backtest_monitor_route_monitors__monitor_id__backtest_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     disable_monitor_monitors__monitor_id__disable_post: {
         parameters: {
             query?: never;
@@ -29976,7 +30082,79 @@ export interface operations {
             };
         };
     };
+    drill_monitor_route_monitors__monitor_id__drill_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DrillRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     enable_monitor_monitors__monitor_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    monitor_proof_monitors__monitor_id__proof_get: {
         parameters: {
             query?: never;
             header?: never;
