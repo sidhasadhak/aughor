@@ -5,7 +5,9 @@ The app-level ``OrgSettings`` is a singleton persisted as JSON in
 live on the Workspace row (``settings_override``). ``effective_settings(workspace_id)``
 merges them with precedence: **workspace override > app default > model default**.
 
-``resolve_currency`` / ``resolve_industry`` implement override-wins over the
+``resolve_industry`` implements override-wins over the inference; ``resolve_currency``
+deliberately does NOT — a currency is a property of the figure, not of the reader, and
+nothing here converts. See its docstring. Otherwise, override-wins over the
 per-connection ``BusinessProfile``: an explicitly-set org/workspace value is
 authoritative; otherwise the inferred value stands.
 """
@@ -64,10 +66,37 @@ def effective_settings(workspace_id: Optional[str] = None) -> OrgSettings:
 
 
 def resolve_currency(profile_currency: str = "", workspace_id: Optional[str] = None) -> str:
-    """Effective reporting currency: an explicitly-set org/workspace currency is
-    authoritative; else the per-connection inferred value; else USD."""
-    eff = effective_settings(workspace_id).currency_code
-    return eff or (profile_currency or "").strip().upper() or "USD"
+    """The currency a FIGURE from this data is denominated in — the data's own, else the
+    org's declared reporting currency, else USD.
+
+    This order is the reverse of `resolve_industry` below, and deliberately so.
+
+    A currency symbol in front of a number is not a preference. It is a claim about what
+    that number IS, and it is only true if the number is in that currency. **Nothing in
+    this tree converts anything** — `grep` for an exchange rate finds two comments in the
+    profiler about column NAMING and no converter at all. So applying a declared reporting
+    currency to a warehouse value does not report it in that currency; it relabels it, and
+    the figure is then wrong by whatever the rate happens to be.
+
+    Measured 2026-09-23: theLook, a USD dataset, rendered revenue axes and prose in EUR
+    because the workspace declares EUR — a real chart went to a real Slack channel reading
+    "€20.0K" over dollars. The answer beside it even said it had applied no conversion.
+
+    The org setting keeps every meaning it was given that does not require converting
+    anything: `org_context` still says "reports in EUR", because that is a true statement
+    about the ORGANISATION, and it is read straight from the settings rather than through
+    here. What changes is only this — the unit printed against a number the platform read
+    out of a warehouse and did not touch. When a converter exists, the org preference can
+    win again, because then it will be true.
+
+    ``profile_currency`` is itself inferred and can be wrong (see `BusinessProfile`), which
+    is a separate defect with a separate fix; this function's job is to prefer the claim
+    that is ABOUT the data over the one that is about the reader.
+    """
+    data_currency = (profile_currency or "").strip().upper()
+    if data_currency:
+        return data_currency
+    return effective_settings(workspace_id).currency_code or "USD"
 
 
 def resolve_industry(profile_industry: str = "", workspace_id: Optional[str] = None) -> str:
