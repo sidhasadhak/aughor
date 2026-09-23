@@ -94,6 +94,7 @@ FLAG_ENV = {
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
+    "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
@@ -289,6 +290,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "ontology.explore_on_connect": {
+        "label": "Propose a new connection's business terms when it is added",
+        "description": "When a connection's ontology is first built, run the business explorer once — the one model call that proposes its entities, links, processes and rules (the same as Ontology ▸ Explore). Every proposal is measured before it lands and stays PROPOSED until a person confirms it. A scope already explored is skipped, so a restart spends nothing. Off by default → a new connection gets no business terms until a person presses Explore.",
+    },
     "answers.recheck": {
         "label": "Tell people when an answer they were given changes",
         "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. Off by default → nothing is re-run, recorded or sent.",
@@ -383,6 +388,14 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # PENDING.md item 11 (ROADMAP §3.31). The declared business terms are what lift answers
+    # (LuxExperience 5/16 → 16/16, Olist 7/15 → 14/15, §3.15); a new connection gets none.
+    "ontology.explore_on_connect": "does proposing a connection's business terms on arrival give "
+                                   "its answers the lift declared terms give? Gate before default-on: "
+                                   "the explorer's quality check (`ships_default_on`, no fusions) — its "
+                                   "one live run fused two groups, and re-running it is a paid model "
+                                   "run. Falsifier: if people withdraw most proposals it lands on a "
+                                   "new connection, it is not a starting point and stays manual",
     # Idea 5 / PENDING.md item 8 (ROADMAP §3.28). Off until a person has read the first
     # corrections on a real connection: each one is a message sent unasked.
     "answers.recheck": "do people want to hear that an answer changed? Every correction is "

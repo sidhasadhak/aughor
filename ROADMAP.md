@@ -7933,6 +7933,35 @@ and the box says so); the visibility share stays unknown until the profiler has 
 connection; not yet the Sources → Observers → Judge lanes §3.21 sketches — the vaults are the
 stores, the lanes would be the processes between them.
 
+### 3.31 · A new connection's business terms, proposed when it arrives (PENDING.md item 11, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `ontology.explore_on_connect`, **off** ⚑)
+
+> **The fact it answers.** The ontology lifts answers only where a question's business terms are
+> declared (§3.15's re-runs: LuxExperience 5/16 → 16/16, Olist 7/15 → 14/15, plain SQL's misses
+> silent). Measured 2026-09-23: adding a connection runs the data explorer and the table-level
+> build, but the BUSINESS explorer (`ontology/explorer.py`, `POST /ontology/explore`) ran only
+> from a button — so every new connection started with no terms to frame a question on.
+
+**What ships.** The birth rite gains one step after the ontology build it reads,
+`routers/_shared.run_business_terms`: with the flag on, a plan that includes ontology edits, an
+ontology actually built and a scope never explored, it runs the same explorer the button runs —
+one model call; every proposal measured before it lands and PROPOSED until a person confirms it.
+A scope already explored is skipped, so a restart (the rite re-runs at startup) spends nothing;
+each outcome is a `birth.step` (`skipped` with its reason · `started` · `done` · `failed`). Off,
+the rite emits exactly the steps it always did.
+
+**Receipt — the real birth rite on the seeded samples warehouse (2026-09-23).** Flag off: the six
+steps it always emitted, nothing more. Flag on, before any ontology was built here: *"skipped — no
+ontology is built on this scope yet, so there is nothing for the explorer to read"*. The first
+version recorded that as a FAILURE — the intelligence step reports `done` on a build that was a
+skip, and the explorer refused with a 404; the run found it and it is now a stated skip. Flag on
+with the measured ontology saved: `started`, then `failed — NoModelConfigured: No model
+configured for the 'coder' role` — the step reached the explorer and stopped only where this
+session has no model; the rite stood. 6 tests, the ratchets and the flag dispositions green.
+⚑ **Open — the operator's:** default-on waits on the explorer's quality gate (`ships_default_on`:
+no fusions); its one live run fused two groups that should stay apart, and re-checking it is a
+paid model run. A failed explorer call is retried by the next rite, since only a finished run is
+recorded.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
