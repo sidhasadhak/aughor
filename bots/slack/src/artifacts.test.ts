@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  cell, csvFilename, fitsInline, gfmTable, renderGrid, toCsv, worthShowing,
+  answerHasTable, cell, csvFilename, fitsInline, gfmTable, renderGrid, toCsv, worthShowing,
 } from "./artifacts.js";
 
 describe("cell", () => {
@@ -104,5 +104,29 @@ describe("csvFilename", () => {
     expect(csvFilename("Why did revenue dip in Q3?")).toBe("why-did-revenue-dip-in-q3.csv");
     expect(csvFilename("???")).toBe("result.csv");
     expect(csvFilename("x".repeat(200)).length).toBeLessThanOrEqual(44);
+  });
+});
+
+describe("answerHasTable", () => {
+  it("finds a GFM table", () => {
+    expect(answerHasTable("Here:\n\n| a | b |\n|---|---|\n| 1 | 2 |")).toBe(true);
+  });
+
+  it("tolerates alignment colons and a missing outer pipe", () => {
+    expect(answerHasTable("| a | b |\n:---|---:\n| 1 | 2 |")).toBe(true);
+  });
+
+  it("is not fooled by prose containing a pipe", () => {
+    // The reason the delimiter row is required at all: "revenue | margin" in a sentence
+    // is not a table, and suppressing a real grid because of it would lose the data.
+    expect(answerHasTable("We compared revenue | margin across regions.")).toBe(false);
+  });
+
+  it("is not fooled by a pipe row with no delimiter under it", () => {
+    expect(answerHasTable("| a | b |\n| 1 | 2 |")).toBe(false);
+  });
+
+  it("is false for empty text", () => {
+    expect(answerHasTable("")).toBe(false);
   });
 });
