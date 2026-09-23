@@ -99,6 +99,15 @@ def tick_once() -> dict[str, int]:
     except Exception as exc:
         logger.warning("automation heartbeat could not run due reviews: %s", exc)
         counts["reviews"] = 0
+    # Idea 4 — the daily reading of every table's recent days, so the platform LEARNS when a
+    # source's numbers stop changing instead of being told a lag by hand. Once a UTC day; a
+    # count per table, no model.
+    try:
+        from aughor.settling.sampler import run_settling_samples_daily
+        counts["settling"] = run_settling_samples_daily()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not take the settling reading: %s", exc)
+        counts["settling"] = 0
     return counts
 
 

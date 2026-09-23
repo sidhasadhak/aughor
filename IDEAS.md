@@ -46,7 +46,7 @@ Starting points in the code today:
 
 ## 4. Learn when each table's numbers stop changing
 
-*Suggested by Claude, 2026-09-13*
+*Suggested by Claude, 2026-09-13 · **BUILT 2026-09-23 — ROADMAP §3.23**; the first verdict on theLook needs three more days of readings*
 
 Many sources keep rewriting recent days: late rows arrive, backfills land. On theLook, yesterday's order count reads about eight times what the same day settles at a week later. Until the lag was set to 8 days by hand on 2026-09-08, the daily briefing reported that settling as a business spike every morning.
 

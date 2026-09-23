@@ -288,6 +288,35 @@ def run_trend_reversal_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
 # ── M20b: Anomaly monitor (z-score) ───────────────────────────────────────────
 
+def _as_day(value):
+    """A series row's first column as a date, or None when it is not one."""
+    from datetime import date as _date, datetime as _dt
+    if isinstance(value, _dt):
+        return value.date()
+    if isinstance(value, _date):
+        return value
+    try:
+        return _date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _drop_unsettled(points: list, conn_id: str, *, today=None) -> list:
+    """Idea 4 — the series without the days this source is still restating: every point
+    younger than the connection's learned settling lag. Undated points are kept (nothing
+    can say how old they are), and a connection with no learned lag keeps every point."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    try:
+        from aughor.settling import learned_lag_days
+        lag = learned_lag_days(conn_id or "")
+    except Exception:
+        lag = None
+    if not lag:
+        return points
+    cutoff = (today or _dt.now(_tz.utc).date()) - _td(days=lag)
+    return [(d, v) for d, v in points if d is None or d <= cutoff]
+
+
 def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     """Z-score anomaly detection on rolling history_days of daily metric values.
 
@@ -312,13 +341,18 @@ def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
         rows = _query(db, sql)
         if rows and len(rows[0]) == 2:
             # Two-column time series
-            pairs = []
+            points: list[tuple] = []
             for row in rows:
                 vals = list(row.values()) if isinstance(row, dict) else list(row)
                 try:
-                    pairs.append(float(vals[1]))
+                    points.append((_as_day(vals[0]), float(vals[1])))
                 except (TypeError, ValueError):
                     pass
+            # Idea 4 — score the newest SETTLED day. A source that restates its recent days
+            # (theLook: the youngest day reads ~8× what it settles at) would otherwise raise
+            # an anomaly every morning on a day that has not finished arriving. Points younger
+            # than the learned lag are dropped; with no learned lag the series reads as before.
+            pairs = [v for _, v in _drop_unsettled(points, monitor.conn_id)]
             if pairs:
                 history_values = pairs[:-1]
                 current = pairs[-1]

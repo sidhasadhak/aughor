@@ -7557,6 +7557,48 @@ not add it) · pricing the unpriced calls (a prerequisite for any dollar claim, 
 not stop the model writing it.
 
 
+### 3.23 · Settling — the platform learns when each table's numbers stop changing (from `IDEAS.md` 4; **BUILT 2026-09-23**, PENDING.md item 2, branch `claude/pending-top-nine`)
+
+> **The fact it answers.** Many sources keep rewriting recent days. On theLook a day's order
+> count reads about eight times what the same day settles at a week later (measured
+> 2026-09-05: a ramp by AGE, 1,745 → 991 → 791 → 594 → 450 → flat by day 7), and until
+> `observation_lag_days` was set to 8 BY HAND on 2026-09-08 the daily briefing reported that
+> settling as a business spike every morning. The lag was the only such number in the tree,
+> lived on one automation step, and nothing else — the anomaly monitor, a deep run's window,
+> the conversation — knew it.
+
+**What ships.** `aughor/settling/`: a daily reading (`sampler`) counts each of the last 14 days
+per profiled time table — one `GROUP BY day` on the timestamp column, literal dates, no model —
+and files the counts as observations taken today (`store`, a `KeyedJsonStore` — the kernel ledger,
+written only inside the API process); the learner (`learn`) compares tomorrow's reading of the same days with today's
+and names the age after which a day's count stops moving (1% tolerance, the SLOWEST qualifying
+day, at least 3 days read at 3+ ages) — or says exactly why it cannot yet ("insufficient
+evidence", "still moving at age N"). `learned_lag_days(connection)` is the largest learned lag
+among the connection's tables. The reading rides the ONE heartbeat (`tick_once`, once per UTC
+day) and the door is `GET /settling/{connection}` (every table, its evidence, the newest reading
+day by day, the verdict with its reason) + `POST /settling/{connection}/sample` for a reading now.
+
+**Who reads it.** A scheduled investigate observes at the learned lag when the step sets none —
+a person's `observation_lag_days` still wins (`temporal.resolve_lag`); a deep run's window ends
+at the last SETTLED day rather than merely yesterday, and its note names the source's habit
+(`_clamp_intake_to_coverage(settle_days=…)`, byte-identical at the default); the anomaly monitor
+scores the newest settled day, never one still arriving (`runner._drop_unsettled`); the
+conversation is told which days are provisional (`converse_system_prompt`). Nothing routes on
+a lag nobody has checked: every consumer reads the learned value only once the learner has one.
+
+**Live receipt, theLook `8233e4fd`, 2026-09-23 22:22Z:** the first reading filed 14 days on each
+of its 5 time tables (events · inventory_items · order_items · orders · users); the door reads
+*insufficient evidence: 0 days read at 3+ ages (needs 3)* and `learned_lag_days: null`, so the
+briefing keeps its hand-set 8 — the honest state on day one. The learner is pinned on the
+measured ramp (`tests/unit/test_settling.py`: the 2026-09-05 shape names 7). **The corpus cannot
+be backfilled** (CP-1's reason): the first verdict is possible on 2026-09-26 at the earliest.
+🔴 Found by the first tick: the reading quoted no identifiers, so a column with a space
+("Order Date", "shipping date (DateOrders)") failed on the DuckDB connections — fixed the same
+session. ⏳ Left, named: only the row COUNT is read (a measure that restates without new rows —
+a corrected price — is not seen); `playbook/outcomes` and the briefing's metric moves still
+anchor on a fixed yesterday; theLook's future-dated rows (data "runs to" 27 September) are
+recorded but never counted as an age.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

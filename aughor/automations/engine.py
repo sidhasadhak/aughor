@@ -1365,7 +1365,14 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     # any automation without a schedule condition — those prompts stay
     # byte-identical. The run history's `target` keeps the RAW question.
     from aughor.automations.temporal import scheduled_grounding
-    _grounding = scheduled_grounding(automation, effect.config)
+    # Idea 4 — the lag the platform learned for this connection (the age after which a
+    # day's numbers stop moving); a person's `observation_lag_days` on the step still wins.
+    try:
+        from aughor.settling import learned_lag_days
+        _learned_lag = learned_lag_days(getattr(automation, "conn_id", "") or "")
+    except Exception:
+        _learned_lag = None
+    _grounding = scheduled_grounding(automation, effect.config, learned_lag=_learned_lag)
     grounded_question = f"{_grounding}\n\n{question}" if _grounding else question
     # VA-13 — wait only when a later step binds to this one's answer (set by the chain
     # loop from `effect_refs`). An unconsumed investigate keeps submitting and returning,
