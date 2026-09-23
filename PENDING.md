@@ -28,7 +28,7 @@ Suggested build order: 2 → 3 → 6 (alerts done properly) and 1 → 10 (the st
 7. [ ] **Briefings by period** (idea 3) — daily, weekly, monthly and yearly briefings, each written for its window; today there is only the whole-history one, and the day/week subscriptions send an alert digest, not a briefing.
 8. [ ] **Tell people when an answer goes stale** (idea 5) — re-check past answers and tell the person when late data changes one ("we said 1,744; it is now 1,802"); CB-1 already keeps what each fact replaced, and item 2 tells a real change from late arrivals.
 9. [ ] **The company-brain map** (Arc CB, §3.21) — one screen where every store behind the "brain" is a box with a live count; eight built features with no screen are the built-and-never-used failure this project keeps repeating, and it is the demo the user asked for.
-10. [ ] ⚑ **Email in and out** (HB-5, §3.18) — the one major destination that does not exist at all; waits on the user's Google OAuth client, and is cheapest right after item 1.
+10. ~~[ ] ⚑ **Email in and out** (HB-5, §3.18) — the one major destination that does not exist at all; waits on the user's Google OAuth client, and is cheapest right after item 1.~~ *Taken off this list 2026-09-23, the user's call; still open under the hub arc below.*
 
 Just outside the ten: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
@@ -39,12 +39,12 @@ Just outside the ten: the next industry package (insurance has public data to te
 ### Central answer path — Arc CP (§3.22)
 - [ ] CP-1 shadow classification — built and live; every answered question gets a logged label (lookup · one query · several · investigation) that changes nothing yet, one model call per answer; needs about a week of rows before CP-2 can read them.
 - [ ] CP-2 calibration — built; measures how far the labels can be trusted, and can only run once the week of shadow data exists.
-- [ ] CP-3 route on the label — see top-10 item 4.
-- [x] CP-4 the structured answer — see top-10 item 1; merged 2026-09-23 · #545.
+- [ ] CP-3 route on the label — see top item 4.
+- [x] CP-4 the structured answer — see top item 1; merged 2026-09-23 · #545.
 - [ ] CP-5 one exhibit formatter — one shared table builder and one chart-image renderer for every destination; today there are three table builders and two renderers.
 
 ### Company brain — Arc CB (§3.21; all eight waves built)
-- [ ] The map — see top-10 item 9; it is also the only place fact dates and history would show.
+- [ ] The map — see top item 9; it is also the only place fact dates and history would show.
 - [ ] The "how much of the business we can see" share reads "unknown" for both BigQuery connections, because the profiler has nothing cached for them.
 - [ ] A second Slack reply on the same object overwrites the first reply's check — claims are counted per object, not per reply.
 - [ ] Screenshot of the owners panel still owed.
@@ -66,7 +66,7 @@ Just outside the ten: the next industry package (insurance has public data to te
 - [ ] "That's wrong" said in a Slack thread does not come back as a correction.
 - [ ] A deep report does not record whether its cause-and-effect claims survived their own checks.
 - [ ] The ranker needs more note kinds, and should ask once when two equally trusted sources disagree.
-- [ ] ⚑ Email in and out — see top-10 item 10.
+- [ ] ⚑ Email in and out (HB-5) — the one major destination that does not exist at all; waits on the user's Google OAuth client, and is cheapest now that the structured answer (top item 1) has merged. Was top item 10 until the user took it off the list on 2026-09-23.
 - [ ] Jira and Confluence through Atlassian's MCP server — built, never tried against a real Atlassian server.
 - [ ] Slack thread replies without an @mention are not picked up (needs `message.channels` + a reinstall).
 
@@ -169,12 +169,12 @@ Just outside the ten: the next industry package (insurance has public data to te
 Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23 shows no work on 1–14.
 
 - [ ] 1 · **Deleting a connection leaves nothing behind** — no data and no metadata about it in any store.
-- [x] 2 · **A built-in outlier-alert agent** — top-10 item 3; merged 2026-09-23 · #545.
-- [ ] 3 · **Briefings by period** — top-10 item 7.
-- [x] 4 · **Learn when numbers settle** — top-10 item 2; merged 2026-09-23 · #545.
-- [ ] 5 · **Tell people when an answer goes stale** — top-10 item 8.
-- [x] 6 · **Alerts that prove they work** — top-10 item 6; merged 2026-09-23 · #545.
-- [x] 7 · **Fact-check a document** — top-10 item 5; merged 2026-09-23 · #545.
+- [x] 2 · **A built-in outlier-alert agent** — top item 3; merged 2026-09-23 · #545.
+- [ ] 3 · **Briefings by period** — top item 7.
+- [x] 4 · **Learn when numbers settle** — top item 2; merged 2026-09-23 · #545.
+- [ ] 5 · **Tell people when an answer goes stale** — top item 8.
+- [x] 6 · **Alerts that prove they work** — top item 6; merged 2026-09-23 · #545.
+- [x] 7 · **Fact-check a document** — top item 5; merged 2026-09-23 · #545.
 - [ ] 8 · **Reviews of what was missed** — when someone finds a big move nothing flagged, the platform works out why (no alert? window too short? triage held it?) and proposes the fix.
 - [ ] 9 · **An attention budget per person** — a weekly cap on interruptions, with alerts, briefings and inbox items competing for the slots on expected value.
 - [ ] 10 · **A data shopping list** — show which usual industry questions the connected data cannot answer, and what to connect to answer them.
