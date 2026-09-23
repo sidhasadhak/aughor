@@ -2402,7 +2402,10 @@ export function BriefingPanel({
     try {
       const result = canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
-        : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId, period);
+        : period === "history"
+          // the standing brief is requested exactly as it always was
+          ? await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId)
+          : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId, period);
       if (myReq !== reqSeq.current) return;   // superseded → don't paint a stale brief (the flip guard)
       // Scope guard: the server stamps the scope it generated FOR. A brief that doesn't
       // claim THIS scope is never painted — that makes a cross-scope leak structurally

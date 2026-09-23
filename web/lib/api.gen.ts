@@ -6210,6 +6210,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/investigations/{inv_id}/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recheck Investigation
+         * @description Idea 5 — re-run a chat answer's own query NOW and compare it with what was said: the
+         *     numbers that moved by 5% or more, and whether they are late rows or a restatement. The
+         *     re-check is recorded on the answer. Nothing is sent: the person asking is looking at it.
+         *     404 while `answers.recheck` is off, with the reason.
+         */
+        post: operations["recheck_investigation_investigations__inv_id__recheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/investigations/{inv_id}/rechecks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Investigation Rechecks
+         * @description Idea 5 — every re-check of a chat answer, oldest first: what its query returned each
+         *     time it was re-run, and whether the person was told. Empty until one ran.
+         */
+        get: operations["investigation_rechecks_investigations__inv_id__rechecks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/investigations/{inv_id}/recommendations/{rec_index}/execute": {
         parameters: {
             query?: never;
@@ -16293,7 +16337,7 @@ export interface components {
             conn_id: string;
             /**
              * Content
-             * @default digest
+             * @default alert_summary
              */
             content: string;
             /**
@@ -26911,6 +26955,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recheck_investigation_investigations__inv_id__recheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    investigation_rechecks_investigations__inv_id__rechecks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

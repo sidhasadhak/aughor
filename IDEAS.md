@@ -58,7 +58,7 @@ Starting points in the code today:
 
 ## 5. Tell people when an answer they were given is no longer true
 
-*Suggested by Claude, 2026-09-13*
+*Suggested by Claude, 2026-09-13* · **BUILT 2026-09-23 — ROADMAP §3.28** (behind the `answers.recheck` flag, off)
 
 When the data behind a past answer changes enough to change the answer (late rows, a backfill, a corrected metric definition), the platform re-checks it and tells whoever received it: "On Tuesday we told you 1,744. With the rows that arrived since, it is now 1,802." A product recall, for numbers.
 

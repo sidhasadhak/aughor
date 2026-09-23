@@ -5567,6 +5567,28 @@ export interface BriefingNarrativeResponse {
   period?: BriefingPeriodBlock;
 }
 
+/** Idea 5 — one re-check of a chat answer: its own query re-run and compared with what was said. */
+export interface AnswerRecheckChange {
+  label: Record<string, unknown>;
+  column: string;
+  old: number;
+  new: number;
+  rel: number;
+  day: string | null;
+  cause?: "late_rows" | "restated" | "unknown";
+}
+
+export interface AnswerRecheck {
+  checked_at: string;
+  status: "changed" | "unchanged" | "unchecked";
+  reason?: string;
+  changes: AnswerRecheckChange[];
+  changed?: number;
+  cause: "late_rows" | "restated" | "unknown" | "none";
+  lag_days: number | null;
+  told?: { door?: string; status?: string; note?: string };
+}
+
 /** "history" is the standing Briefing; the rest are written for one complete period. */
 export type BriefingPeriod = "history" | "day" | "week" | "month" | "year";
 

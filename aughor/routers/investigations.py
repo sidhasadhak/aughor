@@ -5995,6 +5995,43 @@ def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
     }
 
 
+@router.post("/investigations/{inv_id}/recheck")
+def recheck_investigation(inv_id: str, principal=Depends(get_principal)) -> dict:
+    """Idea 5 — re-run a chat answer's own query NOW and compare it with what was said: the
+    numbers that moved by 5% or more, and whether they are late rows or a restatement. The
+    re-check is recorded on the answer. Nothing is sent: the person asking is looking at it.
+    404 while `answers.recheck` is off, with the reason."""
+    from aughor.answer import recheck
+    from aughor.db.history import get_chat_answer
+    from aughor.security.authz import check_owner
+
+    if not recheck.enabled():
+        raise HTTPException(status_code=404, detail=(
+            f"re-checking answers is off on this install — it needs the '{recheck.FLAG}' flag"))
+    check_owner("investigation", inv_id, principal)
+    answer = get_chat_answer(inv_id)
+    if answer is None:
+        raise HTTPException(status_code=404, detail="No chat answer with this id")
+    entry = recheck.recheck_and_tell(answer, notify=False)
+    return {**entry, "text": recheck.correction_text(answer, entry)
+            if entry.get("status") == "changed" else ""}
+
+
+@router.get("/investigations/{inv_id}/rechecks")
+def investigation_rechecks(inv_id: str, principal=Depends(get_principal)) -> dict:
+    """Idea 5 — every re-check of a chat answer, oldest first: what its query returned each
+    time it was re-run, and whether the person was told. Empty until one ran."""
+    from aughor.db.history import get_chat_answer
+    from aughor.security.authz import check_owner
+
+    check_owner("investigation", inv_id, principal)
+    answer = get_chat_answer(inv_id)
+    if answer is None:
+        raise HTTPException(status_code=404, detail="No chat answer with this id")
+    return {"investigation_id": inv_id,
+            "rechecks": list((answer.get("report") or {}).get("rechecks") or [])}
+
+
 @router.get("/investigations/{inv_id}/envelope")
 def investigation_envelope(inv_id: str, principal=Depends(get_principal)) -> dict:
     """CP-4 — the stored answer envelope: the fields a door selects from.
@@ -6222,6 +6259,10 @@ def _turn_to_ui_messages(t: dict) -> list[dict]:
         parts.append({"type": "data-chart_type", "data": {"chart_type": t["chart_type"]}})
     if t.get("tables_used"):
         parts.append({"type": "data-tables_used", "data": {"tables": t["tables_used"]}})
+    if t.get("latest_recheck"):
+        # Idea 5 — the answer was re-checked and a number it gave has moved since. Only a
+        # re-checked turn carries the part; every other turn restores exactly as before.
+        parts.append({"type": "data-recheck", "data": t["latest_recheck"]})
     if t.get("intent") or t.get("approach"):
         parts.append({"type": "data-analysis", "data": {
             "intent": t.get("intent") or "", "steps": t.get("approach") or [],

@@ -108,6 +108,14 @@ def tick_once() -> dict[str, int]:
     except Exception as exc:
         logger.warning("automation heartbeat could not take the settling reading: %s", exc)
         counts["settling"] = 0
+    # Idea 5 — re-check the answers people were given, once a UTC day, AFTER the settling
+    # reading so a change is judged against today's lag. Off by default (`answers.recheck`).
+    try:
+        from aughor.answer.recheck import run_rechecks_daily
+        counts["rechecks"] = run_rechecks_daily()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not re-check past answers: %s", exc)
+        counts["rechecks"] = 0
     return counts
 
 

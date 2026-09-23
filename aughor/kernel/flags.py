@@ -93,6 +93,7 @@ FLAG_ENV = {
     "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
+    "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
@@ -288,6 +289,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "answers.recheck": {
+        "label": "Tell people when an answer they were given changes",
+        "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. Off by default → nothing is re-run, recorded or sent.",
+    },
     "briefing.by_period": {
         "label": "Briefings by period — daily, weekly, monthly and yearly",
         "description": "Adds a Briefing for one period beside the standing one: the most recent complete day, week, month or (fiscal) year whose numbers have settled, each headline metric measured for that period against the one before, the alerts and findings recorded inside it, and a narrator told which version it is writing. A brief subscription can then send that briefing instead of the alert summary, and may run monthly or yearly. Off by default → the Briefing, its subscriptions and their alert summaries behave exactly as today, and a request for a period brief is refused with the reason.",
@@ -378,6 +383,14 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # Idea 5 / PENDING.md item 8 (ROADMAP §3.28). Off until a person has read the first
+    # corrections on a real connection: each one is a message sent unasked.
+    "answers.recheck": "do people want to hear that an answer changed? Every correction is "
+                       "code-written from two measurements of the answer's own query and gated "
+                       "like any outbound message. Falsifier: if, over the first month on a "
+                       "real connection, no correction is acted on (a follow-up ask in its "
+                       "thread, or a reply) and people mute them, the daily re-check is "
+                       "deleted with the flag and the on-demand re-check alone stays",
     # Idea 3 / PENDING.md item 7 (ROADMAP §3.27). Off until a person reads a period brief on a
     # real connection: the numbers are measured by code, but the narrator's framing is new.
     "briefing.by_period": "does a brief written for one period tell a reader something the "

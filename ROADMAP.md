@@ -7806,6 +7806,67 @@ leaves only where an approved metric defines revenue on the connection (law 2 he
 year 31) is a judgement, not a measurement. The canvas brief has no period. The standing brief's
 own metric moves still anchor on a fixed yesterday (§3.23's note) — untouched here.
 
+### 3.28 · Answers that say when they have changed — a recall, for numbers (from `IDEAS.md` 5; **BUILT 2026-09-23**, PENDING.md item 8, branch `claude/determined-bohr-qh3b1p`; flag `answers.recheck`, **off**)
+
+> **The fact it answers.** Measured before building: nothing re-checked a chat answer, ever.
+> Yet each answer's history row already kept the query that produced it and the rows it
+> returned (`report.sql` / `columns` / `rows` — a conversational turn too, filed from its
+> envelope, §3.22), and a Slack answer's thread is its `session_id` (`slack:<channel>:<ts>`).
+> What nothing kept: WHO asked (the asker rides a 14-day session log only). So the recall
+> needed no new store and no model — only the loop.
+
+**What ships.** `aughor/answer/recheck.py`:
+* **Re-run and compare** — the answer's own query, read-only on its own connection, compared
+  with what the person was given row by row on the answer's own labels (its non-numeric
+  columns), number by number, at the departure gate's noise band (`NOISE_REL`, 5%: a smaller
+  move is not news). A stored table that is not that query's result — its columns differ, as a
+  table lifted from the model's prose does — is NOT compared, and the re-check says so.
+* **Why it moved, only when it can be known** — with idea 4's learned lag and a date column in
+  the answer, a changed day still inside the lag when the answer was given is LATE ROWS, one
+  already settled is a RESTATEMENT (the platform's own rule, `day <= today - lag`); no learned
+  lag, or no date → it says it cannot tell. Never a guess.
+* **Recorded on the answer, appended** (`report.rechecks`, the last 30): what the answer said
+  stays as it was said, each re-check a dated reading beside it. No new store.
+* **Told where they were answered** — a Slack answer gets a reply in its own thread, as the bot
+  bound to the answering agent (or the only bot; two and no binding → not sent, and it says
+  why), through `gate_departure` like every message that leaves (`kind="answer_correction"`,
+  law 1 grounded in the old and new values, the receipt line on the post, the departure
+  recorded); a web answer shows it under the restored answer (`data-recheck` part →
+  `components/AnswerRecheck.tsx`). The same change is never told twice.
+* **Daily, from the heartbeat, after the settling reading** — answers from the last 14 days, at
+  most 40 a day, each at most once per 20 hours. **`POST /investigations/{id}/recheck`**
+  re-checks one now (nothing sent — the person asking is looking) and
+  **`GET /investigations/{id}/rechecks`** lists them.
+
+**Receipt (2026-09-23, this cloud session).** The real app over HTTP, a registered DuckDB
+connection, a chat answer filed as the chat path files it (7 days × 1,744 orders): flag off →
+**404** *"re-checking answers is off on this install — it needs the 'answers.recheck' flag"*;
+flag on, nothing moved → `unchanged`, 14 numbers compared. Then 158 late orders landed on
+2026-09-20 and the 14th's amounts were restated (+20%): `changed`, three numbers past the band —
+revenue 2026-09-14 135,955 → 163,146, orders 2026-09-20 1,744 → 1,902, revenue 2026-09-20
+135,943 → 144,633 — each named, with its day. The message it wrote:
+*"We told you orders for 2026-09-20 was 1,744; it is now 1,902 (+9.1%) … The days 2026-09-14 and
+2026-09-20 had already settled when we answered, so the source has restated its history there —
+not late rows."* (lag 3, answered the same day: both days were settled by the platform's rule).
+The heartbeat's `tick_once()` then re-checked the second, never-checked answer — a weekly total
+that had moved 3.8%, inside the band, so `unchanged`, nothing told — and skipped the first,
+re-checked minutes before. 16 backend tests (`tests/unit/test_answer_recheck.py`, the Slack
+thread reply through the real gate among them), 4 web tests, the seven web gates, all 1,151 web
+tests and the ratchets green.
+**Found by the run, fixed:** a question ending in "?" was quoted as `“…?”.`; a mixed recall
+(some days late, some restated) said only "restatement" — it now names each day's cause.
+**Found by the full web suite, fixed:** item 7's panel asked for the standing brief with a fifth
+argument, breaking the "asks once" workspace test — the standing request is sent exactly as
+before again.
+⏳ **Open:** no receipt against a real warehouse or a real Slack workspace (no credentials here)
+— the operator's run: flag on, answer a question in a Slack thread, change the data, run
+`POST /investigations/{id}/recheck`, then let the heartbeat post. The asker is still not
+recorded on the answer, so a web answer cannot be pushed to anyone — it waits to be opened. The
+original Slack mention answer is not gated while its correction is (the TypeScript bot streams
+`/ask` straight to Slack), so a correction faces a stricter gate than the answer it corrects:
+by law 2 a KPI word no approved metric defines holds the correction (recorded, not sent). Only
+chat answers are re-checked — a deep report's many queries are not.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
