@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from aughor.monitors.models import Monitor, MonitorAlert
+from aughor.monitors.models import Monitor
 
 #: The quiet run-in before the outlier, and how far the outlier stands from it.
 QUIET_DAYS = 30
