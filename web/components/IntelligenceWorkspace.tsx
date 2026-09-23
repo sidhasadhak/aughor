@@ -1,4 +1,5 @@
 "use client";
+import { BrainMapPanel } from "@/components/BrainMapPanel";
 import { SkeletonRows } from "@/components/ui/motion";
 
 import { useEffect, useState } from "react";
@@ -55,7 +56,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type IntelLayer = "briefing" | "hub" | "ontology" | "graph" | "evidence" | "memory" | "kinetic" | "org";
+export type IntelLayer = "briefing" | "hub" | "ontology" | "graph" | "evidence" | "memory" | "kinetic" | "org" | "brain";
 
 const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
@@ -65,6 +66,7 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "memory",   icon: "memory",  label: "Memory",   blurb: "What the closed loop has learned" },
   { id: "kinetic",  icon: "spark",   label: "Actions",  blurb: "Declared actions & overlay edits" },
   { id: "org",      icon: "spark",   label: "Org",      blurb: "Organizational knowledge" },
+  { id: "brain",    icon: "compass", label: "Brain map", blurb: "Every store behind what Aughor knows, with live counts" },
 ];
 
 // Wave C4 — the connection knowledge graph layer, inserted after Ontology (which it
@@ -245,6 +247,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "memory")   return <MemoryPanel />;
         if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;
+        if (id === "brain")    return <BrainMapPanel connectionId={connectionId} workspaceId={workspaceId} />;
         return <OrgIntelPanel />; // "org"
       }}
     />

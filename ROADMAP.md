@@ -7896,6 +7896,43 @@ revenue and AOV are scoped to the samples and name a column LuxExperience lacks 
 LuxExperience metric fixes it, and only survives a fresh clone once item 14 lands. Object pages
 still read only the home connection's findings.
 
+### 3.30 · The company-brain map — every store a box with a live count, every arrow a measurement (PENDING.md item 9, Arc CB's closing ask, §3.21; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a read-only screen)
+
+> **The fact it answers.** Eight Arc CB waves were built with no screen between them, and two —
+> CB-1's fact dates and history, CB-8's claims — had no screen at all (§3.21: "⏳ Owed: the
+> dates and history on a screen — they land with the map below"). There was no single "brain"
+> read; each count lived behind its own door, and the Hub map is a table of automations.
+
+**What ships.** `aughor/hub/brain_map.py` and **`GET /brain/map?connection_id=`** — a READ,
+never a build (the hub map's rule): nine boxes in the three vaults §3.21 and IDEAS 21 name —
+*what it knows* (dated facts from the per-schema context graphs, approved metrics, what the
+platform can see), *what it did with people* (findings, recommendations and their CB-2
+outcomes, CB-8 claims checked, messages judged at the gate), *what people told it* (CB-6
+priorities, CB-3 owners reachable). Each box carries its live count, a line in words and the
+door that serves it; a store that cannot be read, or is not built, is `count: null` with the
+reason — never a zero. The arrows are counts only: findings landed in the graph, metrics in the
+graph, Briefing citations, reviews asked of an owner, contradicted claims raised. The facts box
+carries the recently changed facts with what each replaced — CB-1's owed screen. The CB-8 claims
+fold moved out of the arrivals route into `hub/claims.claims_summary`, so the route and the map
+read one fold. Web: Intelligence ▸ **Brain map** (a layer, not a new tab —
+`components/BrainMapPanel.tsx`, pure layout in `lib/brainMap.ts`).
+
+**Receipt (2026-09-23, this cloud session).** The seeded samples warehouse registered as a
+connection, its measured ontology saved, three findings filed, the REAL context graph built
+(5 tables, 3 domains, 2 metrics, 4 glossary terms, 3 findings, 9 edges); then a person's change
+to `aov`'s formula and a rebuild. Over HTTP, `GET /brain/map` answered: dated facts **17** ("17 of
+17 dated · 1 changed since first seen · 0 retired, kept"), findings **3** ("3 across 3 domains ·
+newest 2026-09-22"), owners "0 of 1 named owners reachable", and what the platform can see **—**:
+*"maps 5 tables; the profiler has not seen this connection, so the denominator is unknown"* —
+the same unknown PENDING's CB line records for both BigQuery connections, now on a screen; the
+arrows "findings → facts: 3", "metrics → facts: 2"; and under the facts box *"metric:aov changed
+2026-09-23 — it replaced AVG(total_amount) (corrected)"*. 4 backend and 3 web tests, the seven
+web gates, all 1,154 web tests and the ratchets green.
+⏳ **Open:** the departures box counts every connection (the ledger has no organisation filter,
+and the box says so); the visibility share stays unknown until the profiler has seen the
+connection; not yet the Sources → Observers → Judge lanes §3.21 sketches — the vaults are the
+stores, the lanes would be the processes between them.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

@@ -1581,6 +1581,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/brain/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Brain Map
+         * @description The map for one connection. A box whose store cannot be read carries ``count: null`` and
+         *     the reason in ``line`` — never a zero that means "could not read".
+         */
+        get: operations["get_brain_map_brain_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/briefing/subscriptions": {
         parameters: {
             query?: never;
@@ -19180,6 +19201,38 @@ export interface operations {
             path: {
                 automation_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_brain_map_brain_map_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                workspace_id?: string;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

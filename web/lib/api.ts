@@ -5567,6 +5567,48 @@ export interface BriefingNarrativeResponse {
   period?: BriefingPeriodBlock;
 }
 
+/** PENDING item 9 — the company-brain map: every store behind what Aughor knows, as a box with a
+ *  live count and its door; `count: null` means the store could not be read or is not built,
+ *  and `line` says which — never a zero that means "unknown". */
+export interface BrainBox {
+  id: string;
+  vault: "company" | "engagement" | "working_memory";
+  title: string;
+  door: string;
+  count: number | null;
+  unit: string;
+  line: string;
+  detail: Record<string, unknown>;
+}
+
+export interface BrainEdge { from: string; to: string; count: number; label: string }
+
+export interface BrainFact {
+  id: string;
+  kind: string;
+  label: string;
+  first_seen: string;
+  last_changed: string;
+  observed_at: string;
+  observed_basis: string;
+  history: { replaced_at: string; reason: string; label?: string; summary?: string; facts?: Record<string, unknown> }[];
+}
+
+export interface BrainMap {
+  connection_id: string;
+  boxes: BrainBox[];
+  edges: BrainEdge[];
+  vaults: { id: BrainBox["vault"]; title: string }[];
+}
+
+export async function getBrainMap(connectionId: string, workspaceId?: string): Promise<BrainMap> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/brain/map?${q.toString()}`);
+  if (!res.ok) throw new Error("Failed to load the brain map");
+  return res.json();
+}
+
 /** Idea 5 — one re-check of a chat answer: its own query re-run and compared with what was said. */
 export interface AnswerRecheckChange {
   label: Record<string, unknown>;
