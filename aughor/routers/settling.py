@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from aughor.security.authz import get_principal
+from aughor.security.authz import connection_owner_guard, get_principal
 
-router = APIRouter(tags=["settling"])
+# DATA-06 — a door that names a connection asks whose it is, on every route.
+router = APIRouter(tags=["settling"], dependencies=[Depends(connection_owner_guard)])
 
 
 @router.get("/settling/{connection_id}")

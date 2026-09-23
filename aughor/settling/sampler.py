@@ -60,15 +60,12 @@ def time_tables(connection_id: str) -> list[tuple[str, str, int]]:
     """(table, primary timestamp, row count) for every profiled table that has a
     timestamp, largest first, capped. From the profiler's most recent cache entry."""
     try:
-        from aughor.tools.profile_cache import _load
-        cache = _load()
-    except Exception:
+        from aughor.tools.profile_cache import latest_profile_entry
+        latest = latest_profile_entry(connection_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "no profile cache means no time tables to read", counter="settling.profile_cache")
         return []
-    prefix = f"{connection_id}:"
-    latest = None
-    for key, entry in cache.items():
-        if key.startswith(prefix) and isinstance(entry, dict):
-            latest = entry
     out: list[tuple[str, str, int]] = []
     for name, tp in ((latest or {}).get("tables") or {}).items():
         if not isinstance(tp, dict):
@@ -122,7 +119,10 @@ def sample_connection(connection_id: str, run_sql: RunSql, *, today: Optional[da
                 continue
             try:
                 counts[day.isoformat()] = float(vals[1] or 0)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "a count that is not a number is not a reading; the day is left out",
+                         counter="settling.unreadable_count")
                 continue
         # A day with no rows is a reading too — zero is a value, and a day that later
         # gains rows is exactly a day that was still settling.

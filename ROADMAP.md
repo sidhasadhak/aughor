@@ -7599,6 +7599,51 @@ a corrected price — is not seen); `playbook/outcomes` and the briefing's metri
 anchor on a fixed yesterday; theLook's future-dated rows (data "runs to" 27 September) are
 recorded but never counted as an age.
 
+### 3.24 · The Watcher proposes the alerts worth having (from `IDEAS.md` 2; **BUILT 2026-09-23**, PENDING.md item 3, branch `claude/pending-top-nine`)
+
+> **The fact it answers.** A new connection is explored and then waits for someone to think
+> of an alert. The Watcher's charter said "watch metrics" and claimed the `monitor` job kind,
+> which nothing in production submits (monitor ticks run as `automation`) — a sentinel that
+> had never proposed a watch. Spotlight's `draft_monitor` already stages the right shape by
+> hand: ONE `monitor_bundle` proposal, the anomaly monitor plus the chain its breach fires.
+
+**What ships.** `aughor/monitors/sentinel.py`, the Watcher's `alert_proposals` job: after an
+exploration completes (`explorer/agent.py`, keyed on the schema fingerprint so an unchanged
+schema re-explored proposes nothing twice) it reads every metric with a daily series on the
+connection — the profile's north-star trends (`chart_sql`) and every APPROVED definition on a
+table with a timestamp, wrapped per day the way `value_query` wraps it — learns each one's
+distribution over the last 90 SETTLED days (the connection's learned lag, §3.23, drops the
+youngest days), **replays the alert before proposing it** (a rolling 30-day baseline; the
+smallest σ on the ladder 2.5 · 3 · 3.5 · 4 that would have fired at most three times is the one
+proposed, and the count rides the reasoning: "would have fired twice (2026-07-09, 2026-08-23)"),
+and stages the watch as the inbox's own `monitor_bundle` — daily check, SQL only, the deep
+analysis runs only when it fires, the destination an open choice the approver fills (SP-7).
+Idempotent by `(sentinel:<connection>, alert:<metric>)`, so a re-run never duplicates a
+proposal and never resurrects one a person resolved (the inbox's own rule, reused). Model-free.
+`POST /alerts/propose/{connection}` runs the same work now and reports staged · already staged
+· skipped-with-reason. Fewer than 21 settled days, or a series that is a breakdown rather than
+a trend, stages nothing and says so — and so does a watch the ladder cannot quieten: more than
+three firings even at 4σ is noise, not a proposal.
+
+**Live receipt, theLook `8233e4fd`, 2026-09-23 22:5xZ (evidence method v3):** 4 candidates — the
+profile's two north-star trends are breakdowns (no daily series, skipped with the reason), the two
+approved definitions have one; **`units_sold` STAGED** as proposal `6beebe8f` (last 90 settled days
+2026-06-25 → 2026-09-22, mean 252.79, σ 73.83, a 3.0σ watch would have fired 3 times: 2026-07-24,
+07-27, 07-28; check daily; destination open) and **`revenue` REFUSED** as too noisy — even 4σ
+would have fired 5 times, all of them the youngest days, because no settling lag is learned yet
+and theLook's youngest days read ~8× high (§3.23; the refusal names that). The idea's own order
+holds: item 2 before item 3, or the alerts fire on days still arriving.
+🔴 **What the receipt found, fixed the same session:** the first run replayed **2024** — an
+unbounded per-day series is cut by the executor's row cap, and "the last 90 days" of the cut
+series ended in August 2024, staged with confidence. The window is now asked for IN the SQL, a
+series whose newest day is older than a year is refused as stale-or-truncated, and the run id
+carries an **evidence-method version**: bumping it supersedes every pending proposal an older
+method staged (the two v1 and two v2 rows on theLook were superseded live) so a person never
+decides on a replay the platform no longer stands behind. ⏳ Left, named: the watch's destination
+is an open choice (a `user:` destination has no channel — HB-1); package recipes are not yet
+series (no time column on a recipe); the chain a breach fires posts `step.answer`, not the
+envelope (CP-4's `envelope` binding is one edit away).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

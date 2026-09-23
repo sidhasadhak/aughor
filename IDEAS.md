@@ -12,7 +12,7 @@ When a user removes a connection, the platform should really wipe it clean. Afte
 
 ## 2. A default agent recommends outlier alerts on industry metrics
 
-*Noted 2026-09-12*
+*Noted 2026-09-12 · **BUILT 2026-09-23 — ROADMAP §3.24**: the Watcher's `alert_proposals` job, model-free, every proposal replayed before it is staged*
 
 When an exploration finishes, whether for a newly created connection or on a daily run, an automation agent should:
 

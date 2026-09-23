@@ -65,7 +65,10 @@ def observations(connection_id: str, table: str) -> list[Observation]:
             out.append(Observation(day=date.fromisoformat(str(o["day"])[:10]),
                                    measured_on=date.fromisoformat(str(o["measured_on"])[:10]),
                                    value=float(o["value"])))
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError) as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a malformed observation is skipped, never read as a value",
+                     counter="settling.malformed_observation")
             continue
     return out
 

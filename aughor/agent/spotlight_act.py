@@ -147,10 +147,11 @@ def draft_agent(connection_id: str, args: dict, *, emit=None) -> dict:
     }
 
 
-def _open_choice_fields(draft: dict) -> list[dict]:
+def open_choice_fields(draft: dict) -> list[dict]:
     """SP-9 — the draft's open choices as FIELDS the card can offer: [{"action", "key"}].
     Read back through the same holes door the accept gates on, so the card's fields and
-    the accept's refusals can never name different choices."""
+    the accept's refusals can never name different choices. Public: the Watcher's alert
+    proposals (`monitors/sentinel.py`) stage the same bundle shape and read it too."""
     from aughor.runners import automation_payload_holes
     from aughor.runners.automation_save import parse_hole
     fields = []
@@ -159,6 +160,9 @@ def _open_choice_fields(draft: dict) -> list[dict]:
         if parsed is not None:
             fields.append({"action": parsed[0], "key": parsed[1]})
     return fields
+
+
+_open_choice_fields = open_choice_fields
 
 
 def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *,

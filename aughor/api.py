@@ -922,6 +922,7 @@ from aughor.routers import (
     components,
     cron,
     settling,
+    alerts,
     preferences,
     spotlight,
     system,
@@ -983,6 +984,7 @@ from aughor.routers import (
 app.include_router(consistency.router)
 app.include_router(cron.router)
 app.include_router(settling.router)
+app.include_router(alerts.router)
 app.include_router(system.router)
 app.include_router(components.router)
 app.include_router(investigations.router)

@@ -136,6 +136,21 @@ def load_profiles(
         return None
 
 
+def latest_profile_entry(connection_id: str) -> dict:
+    """The profiler's most recent cache entry for this connection — ``{"tables": {name:
+    table profile dict}, "columns": …}`` — or ``{}`` when it was never profiled. Entries are
+    keyed ``connection_id:fingerprint`` and the last written wins, exactly as
+    `latest_profiled_tables` reads them; public so the settling reader can pick each table's
+    primary timestamp without reaching into the cache's internals."""
+    cache = _load()
+    prefix = f"{connection_id}:"
+    latest: dict = {}
+    for key, entry in cache.items():
+        if key.startswith(prefix) and isinstance(entry, dict):
+            latest = entry
+    return latest
+
+
 def latest_profiled_tables(connection_id: str) -> list[str]:
     """CB-5 — every table the profiler saw on this connection, from its most recent cache entry
     (entries are keyed ``connection_id:fingerprint``; the last written wins). ``[]`` when the
