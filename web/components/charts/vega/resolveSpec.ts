@@ -14,7 +14,7 @@
  * which is precisely why a resolved chart cannot be persisted.
  */
 
-import { cleanLabel } from "@/lib/format";
+import { chartDateFormat, cleanLabel, detectGranularity } from "@/lib/format";
 import { currencySymbol, effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
 import { classifyColumns, isIdLike, isUngraphableGrid, HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
 import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
@@ -341,11 +341,27 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
    * "34.7M" while the app beside it reads "CHF 34.7M".
    */
   const moneyPrefix = (col: string): string => {
-    const unit = String(columnUnits?.[col] ?? "");
+    const unit = String(columnUnits?.[col] ?? "").trim();
     if (unit.toLowerCase().startsWith("currency:")) {
       const code = unit.slice("currency:".length).trim();
       return code ? `${currencySymbol(code) || code} ` : "";
     }
+    /**
+     * A DECLARED unit that is not a currency settles it: this column is not money,
+     * whatever its name reads like.
+     *
+     * `isMoneyColumn` is a guess from the NAME, and the name is routinely the metric's
+     * name rather than the aggregate's. Measured on a real report (2026-09-23): a scan
+     * whose own headline was "the metric is an item count, not a COGS amount" drew every
+     * axis as "$36.3K" — because the column was called `total_cost_of_goods_sold_cogs`
+     * while holding COUNT(id). The charts contradicted the finding they illustrated, and
+     * declaring `unit: "count"` changed nothing, because only `currency:` was ever read.
+     *
+     * Same rule as `orgsettings.resolve_currency`, one layer up: a symbol in front of a
+     * number is a claim about what the number IS, so a declaration outranks an inference
+     * — and nothing here converts, so a wrong symbol is a wrong figure.
+     */
+    if (unit) return "";
     return isMoneyColumn(col) ? effectiveCurrencySymbol() : "";
   };
 
@@ -465,13 +481,32 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     const xIsDate = x === dateCol;
     // A series column (multi-line) or a single measure (line).
     const seriesCol = inferredSeries ?? (type.startsWith("multi") ? catCols.find((c) => c !== x) : undefined);
+    const xValues = rows.map((r) => r[columns.indexOf(x)]);
+    // A series that crosses a year boundary keeps its year, whatever the grain.
+    const xMultiYear = new Set(xValues.map((v) => String(v ?? "").slice(0, 4))).size > 1;
     const enc: Record<string, unknown> = {
       x: {
         field: x,
         type: xIsDate ? "temporal" : "ordinal",
         // A month label without its year is ambiguous the moment a series crosses a year
         // boundary. Vega-Lite's temporal default drops the year; ECharts keeps it.
-        axis: { ...bandAxis(axisTitle(xTitle, x)), ...(xIsDate ? { format: "%b %Y" } : {}) },
+        /**
+         * The label format follows the series' GRAIN, which `detectGranularity` already
+         * derives (column name first, then median spacing) and `chartDateFormat` already
+         * maps — both used by the other engine. This axis hardcoded "%b %Y", so every
+         * daily and weekly series was labelled by month: a real 14-week report rendered
+         * 13 ticks carrying 3 distinct labels — "Oct 2023" x4, "Nov 2023" x4, "Dec 2023"
+         * x5 — and no point on it could be identified.
+         *
+         * The year is still kept when the series crosses one (`multiYear`), which is what
+         * the old constant was protecting: a bare month is ambiguous across a boundary.
+         * That was the right instinct applied at the wrong altitude — it fixed the
+         * ambiguous case by making every case ambiguous.
+         */
+        axis: {
+          ...bandAxis(axisTitle(xTitle, x)),
+          ...(xIsDate ? { format: chartDateFormat(detectGranularity(x, xValues), xMultiYear) } : {}),
+        },
       },
       y: { field: measure, type: "quantitative", axis: valueAxis(axisTitle(yTitle, measure), format) },
     };

@@ -229,7 +229,11 @@ export function formatVariance(ratio: number | null | undefined, digits = 1): st
 // ── Labels ───────────────────────────────────────────────────────────────────
 
 // Acronyms that should stay fully upper-cased rather than title-cased.
-const ABBREVS = /^(usd|id|uk|us|eu|vat|sku|url|api|crm|gmv|mrr|arr|ltv|cac|ctr|aov|roi|pnl|gp|kpi)$/i;
+// Whole-word only, and deliberately conservative: an entry that is ALSO an English word
+// (mom, wow, asp) would upper-case ordinary prose, so those are left out however common
+// they are as metric shorthand. `cogs` was the omission that rendered a real report's
+// axis as "Total Cost Of Goods Sold Cogs" (2026-09-23).
+const ABBREVS = /^(usd|id|uk|us|eu|vat|sku|url|api|crm|gmv|mrr|arr|ltv|cac|ctr|aov|roi|pnl|gp|kpi|cogs|nps|arpu|cpa|cpc|cpm|sla|sql|etl|csv|upc|ean|gtin|ytd|mtd|qtd|yoy)$/i;
 
 /**
  * Humanize a raw column / field name for a header, axis title, or legend:

@@ -89,6 +89,26 @@ def _round_cell(v):
     return v
 
 
+def _exhibit_key(columns, rows) -> str:
+    """A stable key for a grid, for spotting an exhibit the document already drew.
+
+    Deliberately NOT named `*fingerprint*`: this repo ratchets that word to freshness
+    checks registered in `kernel.freshness.FINGERPRINTS`, and this is not one. Nothing is
+    cached and nothing expires — the key lives for the length of a single export and
+    answers "has this already been drawn on this page", not "is this stale".
+
+    Columns are included because the same numbers under different headers are a different
+    exhibit; row ORDER is included because a re-sorted ranking reads differently even when
+    the set matches. Empty in, empty out — a finding with no grid is never "a repeat".
+    """
+    import hashlib
+    cols, rws = list(columns or []), list(rows or [])
+    if not cols or not rws:
+        return ""
+    payload = repr([[str(c) for c in cols], [[str(v) for v in r] for r in rws]])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _chart_block(columns, rows, chart_type, title, *, units=None,
                  exhibit=None, money_symbol: str = "") -> Optional[Block]:
     """CA-4 one-renderer: the chart comes from the web's own resolver (ECharts
@@ -212,6 +232,12 @@ def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
     if rep.get("narrative"):
         blocks.append(_h("What the exploration found"))
         blocks.append(_p(_strip_planner_notes(rep["narrative"])))
+    # An exhibit is drawn ONCE. Two phases reaching the same grid is itself a finding —
+    # "the join adds no new signal" — and that finding belongs in the PROSE, which is kept
+    # in full. Drawing the identical chart a second time does not report the agreement, it
+    # just costs a page: a real report (2026-09-23) carried the category chart twice and
+    # the department chart three times, all byte-identical, on a five-page document.
+    _drawn: dict[str, str] = {}
     for a in answers:
         if a.get("error"):
             continue
@@ -220,6 +246,15 @@ def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
         prose = _strip_planner_notes((a.get("insight") or a.get("answer") or "").strip())
         if prose:
             blocks.append(_p(prose))
+        fp = _exhibit_key(a.get("columns"), a.get("rows"))
+        if fp and fp in _drawn:
+            # Named, never silently dropped: a reader who scrolls looking for the picture
+            # is told where it is, and the repetition is stated as the result it is.
+            blocks.append(_p(f"Same figures as \u201c{_drawn[fp]}\u201d above \u2014 "
+                             f"shown once."))
+            continue
+        if fp:
+            _drawn[fp] = title
         blocks.extend(_exhibits(a.get("columns"), a.get("rows"), a.get("chart_type") or "auto",
                                 title, units=a.get("column_units"), exhibit=a.get("exhibit"),
                                 money_symbol=_money_sym))
