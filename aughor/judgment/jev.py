@@ -44,7 +44,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable, Mapping, Optional, Sequence
 
-from aughor.judgment.seam import NOUL, Answer, Noul, judge as seam_judge
+from aughor.judgment.seam import (CHOICE, NOUL, SCORE, Answer, Choice, Noul, Score,
+                                  judge as seam_judge, weighted_score)
 
 logger = logging.getLogger(__name__)
 
@@ -94,12 +95,104 @@ def configured_judge(*, post: Optional[Callable[[str, dict, dict], dict]] = None
     return JevJudge(key, model, url=url, post=post), ""
 
 
+
+# ── the wire, per primitive ───────────────────────────────────────────────────────────────
+
+def _kind_of(q: Any) -> str:
+    return CHOICE if isinstance(q, Choice) else SCORE if isinstance(q, Score) else NOUL
+
+
+def _wire(q: Any) -> dict:
+    """One question in the vendor's shape. `criteria` is a MAP for a choice and an ORDERED
+    LIST for a score — the two are not interchangeable, and a list sent for a choice loses
+    the keys the answer comes back under."""
+    if isinstance(q, Noul):
+        return {"type": "noul", "instructions": q.proposition}
+    if isinstance(q, Choice):
+        # name → name: see the class docstring. A description only this backend could read
+        # would make one question mean two things.
+        return {"type": "choice", "instructions": q.question,
+                "criteria": {o: o for o in q.options}}
+    return {"type": "score", "instructions": q.question, "criteria": list(q.levels)}
+
+
+def _probabilities(a: Mapping[str, Any], names: Sequence[str]) -> dict[str, float]:
+    """The per-name distribution, normalised, keeping ONLY names we declared. A weight
+    against a name outside the closed set is dropped rather than renormalised into it."""
+    raw = a.get("probabilities")
+    if not isinstance(raw, Mapping):
+        return {}
+    kept = {n: max(0.0, float(raw[n])) for n in names
+            if isinstance(raw.get(n), (int, float))}
+    total = sum(kept.values())
+    return {k: v / total for k, v in kept.items()} if total > 0 else {}
+
+
+def _read_noul(q: Noul, a: Mapping[str, Any]) -> Answer:
+    p = a.get("noul")
+    if not isinstance(p, (int, float)) or not 0.0 <= float(p) <= 1.0:
+        return Answer(q.id, NOUL, False, reason=f"Jev returned no noul for {q.id}: {a!r}"[:200])
+    p = float(p)
+    return Answer(q.id, NOUL, True, value=p >= 0.5, probability=p if p >= 0.5 else 1 - p,
+                  distribution={"true": p, "false": 1 - p})
+
+
+def _read_choice(q: Choice, a: Mapping[str, Any]) -> Answer:
+    """The winning key must be ONE WE DECLARED.
+
+    Schema-constrained output is the vendor's claim, not our guarantee, and this is the one
+    place a violation would be silent: an unrecognised key assigned into `value` travels on
+    as though a caller's `match` had a branch for it. Refusing it costs an answer; accepting
+    it costs a decision made on an option that does not exist.
+    """
+    won = a.get("choice")
+    if not isinstance(won, str) or won not in q.options:
+        return Answer(q.id, CHOICE, False,
+                      reason=f"Jev chose {won!r}, which is not one of {list(q.options)}"[:200])
+    dist = _probabilities(a, q.options)
+    return Answer(q.id, CHOICE, True, value=won,
+                  probability=dist.get(won, float(a.get("confidence") or 0.0)),
+                  distribution=dist)
+
+
+def _read_score(q: Score, a: Mapping[str, Any]) -> Answer:
+    """`value` is the highest-probability LEVEL and `score` the continuous position.
+
+    `value` is read from the distribution rather than from rounding the vendor's score, so
+    it is derived exactly as the house backend derives it and the two cannot disagree about
+    what "the level" is. The vendor's own float is kept as `score` — its guidance is to
+    threshold that and never round it — and falls back to a weighting of the distribution
+    when the field is missing, which is the same number the house backend would compute.
+    """
+    dist = _probabilities(a, q.levels)
+    if not dist:
+        return Answer(q.id, SCORE, False,
+                      reason=f"Jev returned no usable level probabilities for {q.id}: {a!r}"[:200])
+    best = max(q.levels, key=lambda n: dist.get(n, 0.0))
+    raw = a.get("score")
+    pos = float(raw) if isinstance(raw, (int, float)) else None
+    if pos is None or not 0.0 <= pos <= len(q.levels) - 1:
+        pos = weighted_score(q.levels, dist)
+    return Answer(q.id, SCORE, True, value=best, probability=dist[best],
+                  distribution=dist, score=pos)
+
+
 class JevJudge:
     """The seam-shaped Jev backend: ``judge(state, questions) -> {id: Answer}``, never raises.
 
-    Only noul bundles are accepted — the banded cascade asks nothing else, and a wider
-    surface would be capability nobody measured. ``post`` is injectable so the hermetic
-    tests never touch the network.
+    All three primitives are accepted (CP-1). Noul shipped first because the banded cascade
+    asked nothing else; Choice and Score land here because Arc CP's treatment judgement needs
+    them and the seam has typed them since JD-1.
+
+    **A Choice sends its option NAMES as their own criteria.** The vendor's `criteria` is a
+    map of option → description, and `Choice` carries no descriptions — deliberately, because
+    the house backend has nowhere to put one: its schema keys probabilities `p0..pN` with the
+    names on the sub-fields. A criterion only one backend could read would make the same
+    question mean two different things depending on who answered it, which is the exact drift
+    the seam exists to prevent. If descriptions are wanted they belong on `Choice`, reaching
+    both backends in the same commit.
+
+    ``post`` is injectable so the hermetic tests never touch the network.
     """
 
     def __init__(self, api_key: str, model: str, *, url: str = DEFAULT_URL,
@@ -112,18 +205,18 @@ class JevJudge:
         qs = list(questions)
         if not qs:
             return {}
-        if not all(isinstance(q, Noul) for q in qs):
+        unknown = [q for q in qs if not isinstance(q, (Noul, Choice, Score))]
+        if unknown:
             # Misuse by a caller, but this backend still keeps the seam's promise: an
             # answer, carrying the reason, never a raise into the query path.
-            return self._unavailable(qs, "the Jev backend answers noul bundles only")
+            return self._unavailable(qs, "the Jev backend answers noul, choice and score only")
 
         withheld = self._pii_reason(state)
         if withheld:
             return self._unavailable(qs, withheld)
 
         body = {"model": self.model, "state": state,
-                "questions": {q.id: {"type": "noul", "instructions": q.proposition}
-                              for q in qs}}
+                "questions": {q.id: _wire(q) for q in qs}}
         try:
             from aughor.govern.outbound import OutboundBlocked, external_call
             try:
@@ -164,25 +257,22 @@ class JevJudge:
                 delay *= 2
         raise RuntimeError("unreachable")
 
-    def _read(self, qs: Sequence[Noul], got: Mapping[str, Any]) -> dict[str, Answer]:
+    def _read(self, qs: Sequence[Any], got: Mapping[str, Any]) -> dict[str, Answer]:
         answers = got.get("answers") or {}
         out: dict[str, Answer] = {}
         for q in qs:
             a = answers.get(q.id) or {}
-            p = a.get("noul")
-            if not isinstance(p, (int, float)) or not 0.0 <= float(p) <= 1.0:
-                out[q.id] = Answer(q.id, NOUL, False,
-                                   reason=f"Jev returned no noul for {q.id}: {a!r}"[:200])
-                continue
-            p = float(p)
-            out[q.id] = Answer(q.id, NOUL, True, value=p >= 0.5,
-                               probability=p if p >= 0.5 else 1 - p,
-                               distribution={"true": p, "false": 1 - p})
+            if isinstance(q, Noul):
+                out[q.id] = _read_noul(q, a)
+            elif isinstance(q, Choice):
+                out[q.id] = _read_choice(q, a)
+            else:
+                out[q.id] = _read_score(q, a)
         return out
 
     @staticmethod
     def _unavailable(qs: Sequence[Any], reason: str) -> dict[str, Answer]:
-        return {q.id: Answer(q.id, NOUL, False, reason=reason) for q in qs}
+        return {q.id: Answer(q.id, _kind_of(q), False, reason=reason) for q in qs}
 
 
 class FallbackJudge:

@@ -6,11 +6,17 @@ Workspace may override a subset (workspace override > app default > model defaul
 The same model shape is used for the singleton AND for the resolved *effective*
 settings of a workspace.
 
-Override-wins over inference: ``currency_code`` and ``industry`` here, WHEN SET,
-are authoritative over the per-connection values ``BusinessProfile`` infers from
-the data (the user's "org setting is authoritative" choice). They default to ``""``
-( = "not set — use the inferred value") so merely having a settings object never
-silently clobbers good inference; only an explicit choice does.
+Override-wins over inference: ``industry`` here, WHEN SET, is authoritative over the
+per-connection value ``BusinessProfile`` infers from the data (the user's "org setting
+is authoritative" choice). It defaults to ``""`` ( = "not set — use the inferred value")
+so merely having a settings object never silently clobbers good inference.
+
+``currency_code`` is the ONE exception, narrowed 2026-09-23. It stays authoritative for
+everything that DESCRIBES the organisation — ``org_context`` still says "reports in EUR" —
+but it no longer decides the symbol printed against a figure read out of a warehouse.
+Nothing in this tree converts currency, so a reporting preference applied to an
+unconverted number is a relabel, and a EUR workspace put euro signs on theLook's dollars.
+``resolve_currency`` has the full reasoning; when a converter exists this can be revisited.
 """
 from __future__ import annotations
 
@@ -50,8 +56,10 @@ class OrgSettings(BaseModel):
     currency_code: str = Field(
         default="",
         description=(
-            "ISO 4217 reporting currency, e.g. 'GBP'. When set, AUTHORITATIVE over the "
-            "currency BusinessProfile infers from the data. Empty = use the inferred value."
+            "ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is "
+            "stated as such (org_context: 'reports in GBP'). It does NOT relabel figures "
+            "read from a warehouse — nothing converts, so the data's own currency wins "
+            "there; see resolve_currency. Empty = unset."
         ),
     )
     timezone: str = Field(default="", description="IANA timezone, e.g. 'Europe/London'. Empty = UTC.")

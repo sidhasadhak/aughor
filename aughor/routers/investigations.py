@@ -5653,6 +5653,7 @@ async def stream_with_session_log(
     failed: str | None = None
     headline: str = ""
     receipt_id: str | None = None
+    grids: int = 0
     t0 = _t.monotonic()
     with _tel.bind_trace(run_id):
         session_log.emit(
@@ -5677,6 +5678,11 @@ async def stream_with_session_log(
                         headline = str(frame.get("headline") or "")[:2000]
                     elif kind == "receipt_id":
                         receipt_id = frame.get("receipt_id")
+                    elif kind == "columns":
+                        # CP-2 — one result set reaching the caller. Counted HERE because
+                        # nothing persists it: this is the only moment the number exists,
+                        # and it is the ground truth `steps_implied` is scored against.
+                        grids += 1
                     elif kind == "error":
                         failed = str(frame.get("message") or "")[:2000]
                         session_log.emit(
@@ -5708,6 +5714,21 @@ async def stream_with_session_log(
                          **({"receipt_id": receipt_id} if receipt_id else {}),
                          **({"error": failed} if failed else {})},
             )
+            # CP-1 — the treatment shadow, AFTER the answer and after its own final
+            # record. The classification is a model call, so it runs where it cannot
+            # delay a word the user is waiting for; `shadow` is a no-op unless
+            # `judgment.shadow_treatment` is on, which is the operator's spending switch
+            # and is off by default. It swallows everything, so a dead judge or a dead
+            # ledger cannot turn a delivered answer into a failed request.
+            #
+            # `ran` is what this turn actually did, in the vocabulary the door already
+            # has: its declared depth when it has one, else whether the deep path minted
+            # an investigation. That is the column CP-2 compares the judged treatment
+            # against — and the arc's falsifier reads.
+            from aughor.judgment.treatment import shadow as _shadow
+            _shadow(question, ran=(depth or ("deep" if inv_id else "quick")),
+                    conn_id=conn_id,
+                    observed={"grids": grids, "ok": failed is None})
 
 
 async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None],

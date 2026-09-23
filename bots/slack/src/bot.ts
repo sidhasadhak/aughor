@@ -17,7 +17,7 @@
  */
 import { Chat, StreamingPlan, type Adapter, type FileUpload, type StateAdapter, type Thread } from "chat";
 
-import { csvFilename, renderGrid, worthShowing } from "./artifacts.js";
+import { answerHasTable, csvFilename, fitsInline, renderGrid, worthShowing } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
 import type { ArrivalPoster, AskChunk, AskStream, TurnArtifacts } from "./aughor.js";
 
@@ -134,15 +134,19 @@ export function buildBot({
       onTurn: (a) => { turn = a; },
     });
 
+    // The exhibits need to know what the ANSWER already said, and a stream can only be
+    // consumed once — so the text is collected as it passes through on its way to Slack,
+    // rather than by asking the platform a second time.
+    const said = { text: "" };
     await thread.post(new StreamingPlan(
-      stream,
+      collectText(stream, said),
       // One plan block beats a scatter of inline cards: a deep run's phases are
       // one piece of work with parts, and a thread reads better with a single
       // block that fills in than with eight cards interleaved through prose.
       { groupTasks: "plan" },
     ));
 
-    await postExhibits(thread, turn, renderChart);
+    await postExhibits(thread, turn, renderChart, said.text);
   });
 
   return bot;
@@ -155,14 +159,40 @@ export function buildBot({
  * number does not get a one-cell table under it, and a grid with no honest
  * chart does not get a picture of nothing (the renderer's own 204 says so).
  */
+/** Pass every chunk through unchanged, keeping the prose for `postExhibits` to read. */
+async function* collectText(
+  stream: AsyncIterable<AskChunk>,
+  sink: { text: string },
+): AsyncIterable<AskChunk> {
+  for await (const chunk of stream) {
+    if (typeof chunk === "string") sink.text += chunk;
+    yield chunk;
+  }
+}
+
 async function postExhibits(
   thread: Pick<Thread, "post">,
   turn: TurnArtifacts | null,
   renderChart?: ChartRenderer,
+  answer = "",
 ): Promise<void> {
   if (!turn || !worthShowing(turn)) return;
 
-  const { markdown, csv } = renderGrid(turn);
+  let { markdown, csv } = renderGrid(turn);
+  /**
+   * Don't say it twice. When the answer already tabulated and the grid is one that fits
+   * inline, the exhibit's table is the SAME rows in different column names — measured at
+   * roughly half the length of a real answer on 2026-09-23.
+   *
+   * Both conditions are required. `fitsInline` is what makes the answer's table complete:
+   * for a longer grid `renderGrid` returns a PREVIEW plus a CSV, and its caption ("Showing
+   * 20 of 300 rows") is the only thing telling the reader that more exists — dropping that
+   * because the model happened to tabulate its own excerpt would hide the rest.
+   *
+   * The chart and the CSV are never suppressed; a picture and a file are not a repetition
+   * of a table.
+   */
+  if (markdown && answer && fitsInline(turn) && answerHasTable(answer)) markdown = "";
   const files: FileUpload[] = [];
 
   const png = renderChart

@@ -90,6 +90,7 @@ FLAG_ENV = {
     "framing.choice_confidence": "AUGHOR_FRAMING_CHOICE_CONFIDENCE",
     "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
     "semops.jev_cheap_tier": "AUGHOR_SEMOPS_JEV_CHEAP_TIER",
+    "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
@@ -382,6 +383,21 @@ EXPERIMENT: dict = {
     # tier (aughor/judgment/jev.py). Needs TYPESAFE_API_KEY and AUGHOR_JEV_MODEL — no model
     # id ships in the product, the operator names it. Group D on the cheap tier only; the
     # champion and every non-banded path are untouched.
+    # CP-1 (ROADMAP §3.22). ON classifies every SETTLED ask through the judgment seam and
+    # writes the treatment it WOULD have chosen beside what actually ran, as a
+    # `treatment_shadow` session event. It routes NOTHING — CP-3 is the first wave in which
+    # a treatment changes what runs, and only after CP-2 has weighed these probabilities on
+    # the battery. OFF by default and deliberately so: a classification is a MODEL CALL per
+    # settled turn, so this spends on every ask from the moment it is switched on. The
+    # corpus cannot be backfilled, which is the argument FOR switching it on early; it is
+    # the operator's money, which is why it is not on already.
+    "judgment.shadow_treatment": "does a typed judgement pick a different treatment from "
+                                 "the one the model's tool choice picked? Measured 2026-09-23: "
+                                 "`deep_analysis` was chosen 0 times in 60 tool uses, so the "
+                                 "interactive quick/deep split is not being made at all. "
+                                 "Falsifier: if the shadow treatment agrees with what ran on "
+                                 "essentially every ask, there is no decision here to take — "
+                                 "record that in §3.22 and stop the arc's second movement.",
     "semops.jev_cheap_tier": "on the LIVE deployment's filters, does Jev as the cheap tier "
                              "hold the live receipt's numbers (jev-solo +2.6 over sampled, "
                              "parity with the LLM cascade, ~2.6x cheaper) at its measured "

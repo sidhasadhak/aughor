@@ -113,19 +113,22 @@ def test_currency_is_eur_in_prompt(monkeypatch):
     assert "€" in _StubProvider.last_user
 
 
-def test_org_currency_overrides_profile_in_brief(monkeypatch):
-    # A set org currency (GBP) is AUTHORITATIVE over the profile's inferred EUR — the
-    # brief reports GBP and the narrator is instructed in £, not the inferred €.
+def test_the_brief_reports_the_DATAS_currency_not_the_orgs(monkeypatch):
+    """INVERTED 2026-09-23. This asserted a set org currency (GBP) overrode the profile's
+    EUR, which is what a EUR workspace did to theLook's dollars in a live Slack channel.
+    Nothing converts, so an org preference cannot restate a figure's unit — the brief now
+    reports what the DATA is in, and the narrator is instructed in that."""
     _orgstore.save_org_settings(OrgSettings(currency_code="GBP"))
     out = _run(monkeypatch)
-    assert out["currency_code"] == "GBP"
-    assert "£" in _StubProvider.last_user
-    assert "€" not in _StubProvider.last_user
+    assert out["currency_code"] == "EUR"
+    assert "€" in _StubProvider.last_user
+    assert "£" not in _StubProvider.last_user
 
 
 def test_org_currency_rewrites_dollar_figures_in_narrative(monkeypatch):
-    # The post-synthesis $→symbol rewrite uses the resolved org currency, so a narrator
-    # that emits "$1.2M" is normalised to "£1.2M" in the served brief.
+    # The post-synthesis $→symbol rewrite uses the RESOLVED currency, which since
+    # 2026-09-23 is the data's own (EUR here) rather than the org's declared GBP — the
+    # rewrite still happens, it just normalises to the unit the numbers are actually in.
     _orgstore.save_org_settings(OrgSettings(currency_code="GBP"))
 
     class _DollarNarrator:
@@ -139,7 +142,7 @@ def test_org_currency_rewrites_dollar_figures_in_narrative(monkeypatch):
 
     monkeypatch.setattr(provider_mod, "get_provider", lambda *_a, **_k: _DollarNarrator())
     out = generate_narrative(MISSIMI, patterns=[], connection_id="missimi", profile=PROFILE)
-    assert "£1.2M" in out["narrative"]
+    assert "€1.2M" in out["narrative"]
     assert "$" not in out["narrative"]
 
 

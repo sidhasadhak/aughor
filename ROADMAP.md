@@ -7442,10 +7442,37 @@ literature is consistent that thresholds set by intuition are miscalibrated and 
 calibration is where the savings actually are; it is equally consistent that an escalation rate
 of a few percent can erase a cascade's savings entirely.
 
-**Receipt:** a stated ECE on the treatment Choice and the three Scores, and a threshold table
-FITTED to the corpus rather than chosen. **Falsifier:** if calibration cannot be brought to a
-usable band, the arc stops here with the shadow log kept as an observability feature — and says
-so in this section rather than leaving CP-3 reading as merely unstarted.
+🔴 **AMENDED 2026-09-23, the day it was drafted, by building it.** The clause above asked for
+"a stated ECE on the treatment Choice and the three Scores". **That is not obtainable, and the
+obvious way to obtain it is a trap.** Expected calibration error needs to know which predictions
+were RIGHT, and *how much work an ask deserved* is a judgement no run records. `ran` is sitting in
+every row and would produce a confident-looking number — measuring fidelity to a baseline this
+arc's own census proved broken, the path that picks `deep_analysis` 0 times in 60 tool uses. A
+judge scoring 100% against it would be worthless and one scoring 40% might be right. So `agreed`
+is the arc's FALSIFIER and never its accuracy, and `judgment/calibration.py` refuses to emit an
+ECE for `treatment` at all — a test asserts that a corpus engineered to look perfect against `ran`
+still yields no number.
+
+**What IS calibratable, free, with no model call and no human:** two levers the run labels
+itself. `steps_implied` predicts how many queries a careful analyst would run and the turn then
+runs some — `observed_grids`, counted off the frames as they stream, because nothing persists
+that count afterwards. `from_last_result` predicts no new query is needed, and a turn that ran
+none has confirmed it. Both are scored against BANDS rather than exact counts, or the number
+measures the scale's granularity instead of the judge.
+
+The other seven carry an honest UNAVAILABLE **with a reason each**, JD-4's own posture: *a number
+emitted here would be a number somebody schedules work against*. The reasons differ and that
+matters — `intent`, `specificity`, `causal` and `treatment` are one cheap labelling session away
+(the ask text is right there); `governed_metric` becomes labellable the day a turn records which
+metric it grounded on; `stakes` is counterfactual and cannot be labelled after the fact at all,
+so it would have to be DECLARED per destination instead.
+
+**Receipt (revised):** a stated ECE on `steps_implied` and `from_last_result` from the shadow
+corpus, the falsifier's agreement rate beside it, and the seven reasons standing where a number
+is not available. Thresholds are FITTED to the corpus, never chosen. **Falsifier:** if calibration
+cannot be brought to a usable band, the arc stops here with the shadow log kept as an
+observability feature — and says so in this section rather than leaving CP-3 reading as merely
+unstarted.
 
 #### CP-3 · Route on it, behind a flag
 

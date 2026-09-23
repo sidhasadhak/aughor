@@ -289,3 +289,66 @@ describe("the note verb", () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe("buildBot — the answer does not say it twice", () => {
+  const GRID = {
+    columns: ["region", "revenue"],
+    rows: [["East", 12], ["West", 9]] as unknown[][],
+    chartType: "bar",
+  };
+  /** What a model writes when it tabulates in prose — different headers, same rows. */
+  const TABULATED =
+    "Top regions:\n\n| # | Region | Revenue |\n|---|--------|---------|\n| 1 | East | 12 |\n| 2 | West | 9 |\n";
+
+  it("suppresses the exhibit table when the answer already tabulated the whole grid", async () => {
+    // Measured 2026-09-23: a real answer carried the same five rows twice — once as the
+    // model's own table, once as the transport's grid — and that duplication was about
+    // half the message. The chart and any CSV still ride along; a picture is not a repeat.
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding([TABULATED], GRID);
+    const bot = buildBot({
+      ask, renderChart: async () => Buffer.from("PNGBYTES"),
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(post.markdown).toBe("");
+    expect(post.files.map((f) => f.filename)).toEqual(["chart.png"]);
+  });
+
+  it("keeps the exhibit table when the answer is prose", async () => {
+    // The mutation guard for the test above: if suppression ignored the answer's content
+    // it would pass there and fail here.
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding(["East leads, and it is not close."], GRID);
+    const bot = buildBot({
+      ask, renderChart: async () => null,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    expect((lastPost(adapter) as { markdown: string }).markdown).toContain("| East | 12 |");
+  });
+
+  it("keeps a PREVIEW even when the answer tabulated — its caption is the only thing naming the rest", async () => {
+    // A long grid renders as first-rows + CSV, and "Showing N of M rows" is what tells the
+    // reader more exists. The model's own table is an excerpt too, so dropping the caption
+    // would hide the remainder rather than de-duplicate it.
+    const adapter = mockAughorAdapter();
+    const rows = Array.from({ length: 60 }, (_, i) => [`r${i}`, i]) as unknown[][];
+    const { ask } = askYielding([TABULATED], { columns: ["region", "revenue"], rows });
+    const bot = buildBot({
+      ask, renderChart: async () => null,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(post.markdown).toContain("of 60 rows");
+    expect(post.files.map((f) => f.filename)).toEqual(["why.csv"]);
+  });
+});

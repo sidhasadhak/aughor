@@ -70,10 +70,16 @@ class BusinessProfile(BaseModel):
     currency_code: str = Field(
         default="USD",
         description=(
-            "ISO 4217 currency this business reports in (e.g. 'EUR', 'GBP', 'USD'), inferred "
-            "from the data — locale/country columns, currency columns, language, or price "
-            "magnitudes. Drives currency-correct figures in the brief (a €-business must never "
-            "render '$'). Default 'USD' only when there is genuinely no signal."
+            "ISO 4217 currency the MONEY COLUMNS in this data are denominated in (e.g. 'EUR', "
+            "'GBP', 'USD'). Infer it ONLY from a DIRECT signal: an explicit currency or "
+            "currency_code column, an ISO code stored beside the prices, or a stated unit on "
+            "the money column itself. Customer country, locale, language, shipping destination "
+            "and price magnitude are NOT currency evidence — a US retailer selling into twenty "
+            "countries still books USD, which is exactly theLook, where inferring from "
+            "users.country produced 'EUR' and put a euro sign on a dollar chart (2026-09-23). "
+            "This value LABELS figures nobody converted, so a wrong code makes every number "
+            "wrong by the rate. Absent a direct signal return 'USD', which here means "
+            "UNDECLARED and not 'dollars are certain'."
         ),
     )
     confidence: float = Field(description="0-1 confidence in the industry classification")
