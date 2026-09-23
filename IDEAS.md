@@ -321,7 +321,7 @@ Starting points in the code today:
 
 ## 23. One central path for every ask, and the destination decides only the delivery
 
-*Noted 2026-09-23 · STUDIED and drafted into the roadmap the same day as **Arc CP**, §3.22, awaiting §6 item 31 — the measurements there supersede any estimate here*
+*Noted 2026-09-23 · STUDIED and drafted into the roadmap the same day as **Arc CP**, §3.22, **ADOPTED** — §6 item 31, all four clauses YES — the measurements there supersede any estimate here*
 
 Query processing, formatting and the safeguards should happen once, centrally, whatever the ask is and wherever the answer is going — a quick question, a deep investigation, a Slack thread, an email, a scheduled automation. Where the answer is going then decides its length, breadth and format, and nothing else.
 
@@ -345,7 +345,7 @@ Two boundaries worth keeping:
 
 ## 24. Collapse quick and deep, and let a typed judgement pick the treatment
 
-*Noted 2026-09-23 · STUDIED and drafted into the roadmap the same day as **Arc CP**, §3.22, awaiting §6 item 31. The study REFRAMED this idea: `deep_analysis` is chosen 0 times in 60 tool uses, so on the interactive path the quick/deep choice is not being made badly — it is not being made at all*
+*Noted 2026-09-23 · STUDIED and drafted into the roadmap the same day as **Arc CP**, §3.22, **ADOPTED** — §6 item 31, all four clauses YES. The study REFRAMED this idea: `deep_analysis` is chosen 0 times in 60 tool uses, so on the interactive path the quick/deep choice is not being made badly — it is not being made at all*
 
 Today the split between a quick answer and a deep investigation is a tool the model picks: `deep_analysis` at [aughor/agent/converse_tools.py:353](aughor/agent/converse_tools.py:353), declared at [line 640](aughor/agent/converse_tools.py:640), against the ordinary answering path, with [aughor/runners/investigation.py:234](aughor/runners/investigation.py:234) behind it. Collapse the two and let a judgement bundle decide the treatment from the question itself, on criteria we name and can measure.
 

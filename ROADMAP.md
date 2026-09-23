@@ -7307,7 +7307,7 @@ every new guard, and the §3 line updated the same day (a prose claim in §3 rot
 adds ~4.5 points over plain agentic file search, by their own numbers).
 
 
-### 3.22 · Arc CP — the central path: one answer, many doors (DRAFTED 2026-09-23 at the user's direction; **awaiting §6 item 31**; source: `IDEAS.md` 23 and 24, whose claims were MEASURED before this arc was written, not after)
+### 3.22 · Arc CP — the central path: one answer, many doors (DRAFTED **and ADOPTED** 2026-09-23 at the user's direction — §6 item 31, **all four clauses YES the same day**; source: `IDEAS.md` 23 and 24, whose claims were MEASURED before this arc was written, not after)
 
 > **Origin.** The user, 2026-09-23, in the parts that bind: *"the query processing formatting
 > the safeguard and other core operations should happen centrally irrespective of where the
@@ -8445,11 +8445,11 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-22:** item 30 (Arc CB — the company brain, from the Codos idea set) arrived at the user's
 > *"consider & plan"* and was answered in the same turn, four clauses; §3.21 drafted on those answers. Zero open.
 > **Amended 2026-09-22, later:** item 30(a) REVISED by the user — foundations first (dated facts, the acceptance baseline, then owners), after the builder's "is this overdone?" reading was ruled to have measured the dev instance and not the design; CB-1 started.
-> 🔴 **Amended 2026-09-23 — the register is NO LONGER at zero.** Item 31 (Arc CP, the central path) is **OPEN**,
-> four clauses, none answered. It was drafted at the user's direction and its study (CP-0) was taken first; the
-> arc does not start until the clauses are stamped. This line exists because every sentence above it asserting
-> "zero open" would otherwise read as current — the §7 prose-rot lesson, which this register has already learned
-> twice.
+> **Amended 2026-09-23:** item 31 (Arc CP, the central path) arrived at the user's *"lets first study the idea
+> and come up with a proper roadmap"*, was drafted with its study (CP-0) taken FIRST, and was answered in the
+> same session — *"yes to all four"*. (a) adopt, (b) the shadow wave runs first, (c) a low-confidence treatment
+> may ask ONE clarifying question, (d) a model-scored `stakes` may TIGHTEN the departure gate and never loosen
+> it. **Back to zero open.**
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -9020,10 +9020,10 @@ the browser** · **measure the premise before building.**
 
 ---
 
-31. ⏳ **DRAFTED 2026-09-23 (the user, after the treemap session: "I strongly feel that the query processing
+31. ✅ **DRAFTED AND ADOPTED 2026-09-23 (the user, after the treemap session: "I strongly feel that the query processing
     formatting the safeguard and other core operations should happen centrally irrespective of where the question
     is coming from", then "lets first study the idea and come up with a proper roadmap") — Arc CP, the central
-    path (§3.22): four clauses. The study is CP-0 and was taken BEFORE the arc was written; three of its rows
+    path (§3.22): four clauses, **all four answered YES by the user the same day** (*"yes to all four"*). The study is CP-0 and was taken BEFORE the arc was written; three of its rows
     contradict what the drafter assumed, and one of them reframes the second half of the arc.**
     **(a) Adopt the arc?** *Recommended: yes, and note the timing argument rather than the elegance one — there
     are eight delivery doors today and NO email door anywhere in the tree. Every door added to a per-door
