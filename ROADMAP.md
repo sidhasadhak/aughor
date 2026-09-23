@@ -7504,6 +7504,40 @@ selection; and the two CP-0 defects reproduced against the old path and absent o
 **Falsifier:** if a door still needs a model call to shorten what it was handed, the envelope
 is not structured enough and the wave is not done.
 
+✅ **BUILT 2026-09-23** (branch `claude/pending-top-nine`; PENDING.md item 1). The ask stream now
+ends with ONE `envelope` frame — `aughor/answer/envelope.py`, folded deterministically from the
+frames the run already emitted, no model call: `headline` · `body` (every prose table LIFTED into
+the grid field, so a duplicate is impossible rather than suppressed; `lifted_tables` counts how
+often the model tabulated anyway) · `grid` · `chart` (the decision; encodings stay at the door) ·
+`caveats` · `follow_ups` · `provenance` (SQL, tables, guard receipts, ids, confidence — a FIELD a
+door drops or shows). Persisted on the turn's row (`attach_envelope`), served by
+`GET /investigations/{id}/envelope`, published by the `investigate` step as `envelope`.
+**The doors select:** the mention bot (`bots/slack`) holds back any table the model types as it
+streams and posts the envelope's grid once with the top two caveats, never provenance; a
+`slack_post` bound to `envelope` renders the same selection through `answer.doors.slack_message`
+and the departure gate judges exactly that text; the export (`_build_envelope`) takes every field —
+evidence, caveats, follow-ups, the query and the checks. The `converse` prompt no longer asks the
+model to narrate receipts ("never report that none fired") or to write tables; `run_sql`'s
+description no longer describes receipts as something to report.
+**Live receipt, theLook `8233e4fd`, turn `47a130145460`:** 15 frames, the envelope last; the row
+filed with the session id; `GET …/envelope` 200 (10-row grid); PDF 28,083 bytes from the envelope
+builder (Summary · Evidence · Query); the engine's Slack text and the bot's exhibit rendered from the
+same JSON, differing only in selection; the model wrote a list, not a table (`lifted_tables` 0).
+**The two CP-0 defects:** pinned in `tests/unit/test_answer_envelope.py` — the 2026-09-23 shape
+reproduced on the old path (the same row twice) and absent on the envelope; receipts ride
+provenance and the Slack selection carries none.
+🔴 **What the receipt found, fixed the same session:** a converse turn that ran `run_sql` had NO
+history row at all — the tool mints a 12-character receipt id and files a receipt, and the converse
+body files a row only for a turn that called no tool — so the answer people read in Slack could not
+be exported or reloaded. `attach_envelope` now files the row under the receipt's own id. And the
+first fold said the sentence twice (the body carried the headline again); the body is now what
+FOLLOWS the sentence.
+⏳ **Left, named:** the quick path's `_guard_note` still asks the narrator for one sentence about a
+guard that CHANGED a number (a caveat about meaning, which the amended rule allows — kept); a
+scheduled post renders the model's `**bold**` literally (raw `chat.postMessage`, pre-existing); grid
+cells reach a reader unformatted (`54496.64009666443`) on every door — CP-5's formatter, not this
+wave's; the web reads the frames it always did and ignores the envelope by declaration.
+
 #### CP-5 · One reader-facing exhibit formatter, consumed by every door
 
 Retire the three table answers to one, and the two rasterizers to one. Not a rewrite of the
@@ -7522,6 +7556,174 @@ not add it) · pricing the unpriced calls (a prerequisite for any dollar claim, 
 · replacing the model's own prose with templates — the envelope carries prose as a FIELD, it does
 not stop the model writing it.
 
+
+### 3.23 · Settling — the platform learns when each table's numbers stop changing (from `IDEAS.md` 4; **BUILT 2026-09-23**, PENDING.md item 2, branch `claude/pending-top-nine`)
+
+> **The fact it answers.** Many sources keep rewriting recent days. On theLook a day's order
+> count reads about eight times what the same day settles at a week later (measured
+> 2026-09-05: a ramp by AGE, 1,745 → 991 → 791 → 594 → 450 → flat by day 7), and until
+> `observation_lag_days` was set to 8 BY HAND on 2026-09-08 the daily briefing reported that
+> settling as a business spike every morning. The lag was the only such number in the tree,
+> lived on one automation step, and nothing else — the anomaly monitor, a deep run's window,
+> the conversation — knew it.
+
+**What ships.** `aughor/settling/`: a daily reading (`sampler`) counts each of the last 14 days
+per profiled time table — one `GROUP BY day` on the timestamp column, literal dates, no model —
+and files the counts as observations taken today (`store`, a `KeyedJsonStore` — the kernel ledger,
+written only inside the API process); the learner (`learn`) compares tomorrow's reading of the same days with today's
+and names the age after which a day's count stops moving (1% tolerance, the SLOWEST qualifying
+day, at least 3 days read at 3+ ages) — or says exactly why it cannot yet ("insufficient
+evidence", "still moving at age N"). `learned_lag_days(connection)` is the largest learned lag
+among the connection's tables. The reading rides the ONE heartbeat (`tick_once`, once per UTC
+day) and the door is `GET /settling/{connection}` (every table, its evidence, the newest reading
+day by day, the verdict with its reason) + `POST /settling/{connection}/sample` for a reading now.
+
+**Who reads it.** A scheduled investigate observes at the learned lag when the step sets none —
+a person's `observation_lag_days` still wins (`temporal.resolve_lag`); a deep run's window ends
+at the last SETTLED day rather than merely yesterday, and its note names the source's habit
+(`_clamp_intake_to_coverage(settle_days=…)`, byte-identical at the default); the anomaly monitor
+scores the newest settled day, never one still arriving (`runner._drop_unsettled`); the
+conversation is told which days are provisional (`converse_system_prompt`). Nothing routes on
+a lag nobody has checked: every consumer reads the learned value only once the learner has one.
+
+**Live receipt, theLook `8233e4fd`, 2026-09-23 22:22Z:** the first reading filed 14 days on each
+of its 5 time tables (events · inventory_items · order_items · orders · users); the door reads
+*insufficient evidence: 0 days read at 3+ ages (needs 3)* and `learned_lag_days: null`, so the
+briefing keeps its hand-set 8 — the honest state on day one. The learner is pinned on the
+measured ramp (`tests/unit/test_settling.py`: the 2026-09-05 shape names 7). **The corpus cannot
+be backfilled** (CP-1's reason): the first verdict is possible on 2026-09-26 at the earliest.
+🔴 Found by the first tick: the reading quoted no identifiers, so a column with a space
+("Order Date", "shipping date (DateOrders)") failed on the DuckDB connections — fixed the same
+session. ⏳ Left, named: only the row COUNT is read (a measure that restates without new rows —
+a corrected price — is not seen); `playbook/outcomes` and the briefing's metric moves still
+anchor on a fixed yesterday; theLook's future-dated rows (data "runs to" 27 September) are
+recorded but never counted as an age.
+
+### 3.24 · The Watcher proposes the alerts worth having (from `IDEAS.md` 2; **BUILT 2026-09-23**, PENDING.md item 3, branch `claude/pending-top-nine`)
+
+> **The fact it answers.** A new connection is explored and then waits for someone to think
+> of an alert. The Watcher's charter said "watch metrics" and claimed the `monitor` job kind,
+> which nothing in production submits (monitor ticks run as `automation`) — a sentinel that
+> had never proposed a watch. Spotlight's `draft_monitor` already stages the right shape by
+> hand: ONE `monitor_bundle` proposal, the anomaly monitor plus the chain its breach fires.
+
+**What ships.** `aughor/monitors/sentinel.py`, the Watcher's `alert_proposals` job: after an
+exploration completes (`explorer/agent.py`, keyed on the schema fingerprint so an unchanged
+schema re-explored proposes nothing twice) it reads every metric with a daily series on the
+connection — the profile's north-star trends (`chart_sql`) and every APPROVED definition on a
+table with a timestamp, wrapped per day the way `value_query` wraps it — learns each one's
+distribution over the last 90 SETTLED days (the connection's learned lag, §3.23, drops the
+youngest days), **replays the alert before proposing it** (a rolling 30-day baseline; the
+smallest σ on the ladder 2.5 · 3 · 3.5 · 4 that would have fired at most three times is the one
+proposed, and the count rides the reasoning: "would have fired twice (2026-07-09, 2026-08-23)"),
+and stages the watch as the inbox's own `monitor_bundle` — daily check, SQL only, the deep
+analysis runs only when it fires, the destination an open choice the approver fills (SP-7).
+Idempotent by `(sentinel:<connection>, alert:<metric>)`, so a re-run never duplicates a
+proposal and never resurrects one a person resolved (the inbox's own rule, reused). Model-free.
+`POST /alerts/propose/{connection}` runs the same work now and reports staged · already staged
+· skipped-with-reason. Fewer than 21 settled days, or a series that is a breakdown rather than
+a trend, stages nothing and says so — and so does a watch the ladder cannot quieten: more than
+three firings even at 4σ is noise, not a proposal.
+
+**Live receipt, theLook `8233e4fd`, 2026-09-23 22:5xZ (evidence method v3):** 4 candidates — the
+profile's two north-star trends are breakdowns (no daily series, skipped with the reason), the two
+approved definitions have one; **`units_sold` STAGED** as proposal `6beebe8f` (last 90 settled days
+2026-06-25 → 2026-09-22, mean 252.79, σ 73.83, a 3.0σ watch would have fired 3 times: 2026-07-24,
+07-27, 07-28; check daily; destination open) and **`revenue` REFUSED** as too noisy — even 4σ
+would have fired 5 times, all of them the youngest days, because no settling lag is learned yet
+and theLook's youngest days read ~8× high (§3.23; the refusal names that). The idea's own order
+holds: item 2 before item 3, or the alerts fire on days still arriving.
+🔴 **What the receipt found, fixed the same session:** the first run replayed **2024** — an
+unbounded per-day series is cut by the executor's row cap, and "the last 90 days" of the cut
+series ended in August 2024, staged with confidence. The window is now asked for IN the SQL, a
+series whose newest day is older than a year is refused as stale-or-truncated, and the run id
+carries an **evidence-method version**: bumping it supersedes every pending proposal an older
+method staged (the two v1 and two v2 rows on theLook were superseded live) so a person never
+decides on a replay the platform no longer stands behind. ⏳ Left, named: the watch's destination
+is an open choice (a `user:` destination has no channel — HB-1); package recipes are not yet
+series (no time column on a recipe); the chain a breach fires posts `step.answer`, not the
+envelope (CP-4's `envelope` binding is one edit away).
+
+### 3.25 · Fact-check a document against the data (from `IDEAS.md` 7; **BUILT 2026-09-23**, PENDING.md item 5, branch `claude/pending-top-nine`)
+
+> **The fact it answers.** The platform checked the numbers in its OWN reports (`check_grounding`,
+> departure law 1, CB-8's said-versus-measured on filed Slack replies) and nobody else's. A board
+> memo with a wrong revenue figure in it went unchallenged unless someone happened to ask.
+
+**What ships.** `aughor/factcheck/`: the document is split into the clauses that assert a
+measurement (the departure gate's own `numeric_clauses`; a year, a date, "3 regions" are not
+claims), each clause is put to the platform's own quick answer path (`answer_core` — metric
+grounding, SQL, execution, the guard battery, a Trust Receipt) as "what is the actual figure for
+this claim?", and the number that comes back is matched AT THE PRECISION THE DOCUMENT WROTE IT
+(`numeral_matches_measure`, the same matcher the gate uses; a percentage is also tried against a
+ratio). Three verdicts, each with its why: **measured**, **contradicted** ("said $470K; the data
+shows 397,612.97 (18% off)"), **unchecked** (a table came back, no query, a failed query). The
+result is an answer envelope (§3.22) — headline, the contradicted claims as the body, the verdict
+grid, the SQL per claim in the provenance — filed as a turn (exportable, reloadable), and every
+claim's own check is a chat turn under the fact-check's session, receipt and all. Doors: `POST
+/factcheck` (pasted text), `POST /factcheck/upload` (a PDF, DOCX, PPTX, XLSX… through the
+Documents converter; charts in a PDF read back as tables), and the Slack verb **`@aughor check:
+<memo>`** (`bots/slack`), which posts the verdict as prose and the grid as the exhibit. Capped at
+25 claims per document, the rest named. **Cost, stated:** one quick-answer turn per claim (~10–40 s,
+a few model calls) — always on a person's ask, never scheduled.
+🔴 **What building it found.** The first design used the semantic compiler (typed intent → grounded
+SQL, one cheap call): on theLook it mapped NONE of four plain claims — nor a plain question — to an
+intent, so every claim came back "unchecked". A checker that cannot check is not honest either; the
+answer path is what the platform trusts for its own numbers, so it checks everyone else's.
+**Live receipt, theLook `8233e4fd`, turn `0dc46da31a6a`, 2:36 for 4 claims:** *"Revenue in August
+2026 was $470K"* → CONTRADICTED, the data shows 397,612.97 (18% off); *"We sold 8,200 items in
+August 2026"* → MEASURED (8,207); *"Jeans revenue in August 2026 was $54,497"* → CONTRADICTED,
+45,886.49 (19% off); *"Our return rate in August 2026 was 12%"* → MEASURED (0.12); *"3 new
+markets in 2026"* → not a claim. ⏳ Left, named: no web door yet (the Documents tab's uploader is
+the natural place); a claim about a breakdown ("Jeans revenue") is checked with the model's own
+join, so the definition used is the SQL in the provenance rather than an approved metric — the
+caveat says so; a memo's figure about a period the data restates is compared with today's reading
+(§3.23's lag is not yet applied to a check).
+
+### 3.26 · Alerts that prove they work — one rule, a backtest before, a fire drill after (from `IDEAS.md` 6; **BUILT 2026-09-23**, PENDING.md item 6, branch `claude/pending-top-nine`)
+
+> **The fact it answers.** An alert that never fires looks exactly like a broken one. An
+> instruction added to the scheduled briefings on 2026-09-05 never ran until it was found on
+> 2026-09-08, and its test passed the whole time. And the platform held TWO definitions of
+> "anomaly": the runner scored a day against every prior row, the Watcher's replay (§3.24)
+> against a rolling 30-day window — a watch could be proposed on one and fire on the other.
+
+**What ships.** `aughor/monitors/rules.py` — the anomaly and threshold rules as pure functions,
+read by the runner that fires, the backtest that replays and the Watcher that proposes; a
+replay is now a promise about the rule that will actually run. `monitors/backtest.py` —
+**`POST /monitors/{id}/backtest`** replays an EXISTING monitor over the last year of its own
+series (its SQL when it returns a (day, value) series; an approved metric's expression per
+day when it names a metric on a time table), under its own σ, dropping the days the
+connection's settling lag calls unfinished, and says how often it would have fired and on
+which days — *"would have fired 4 times in the last 365 days, 3 of them Mondays"* — with a
+quieter σ from the ladder when it is noisy. A check that returns one number as of now has no
+history, and the backtest says so. `monitors/drill.py` — **`POST /monitors/{id}/drill`** feeds
+the monitor thirty quiet days and a ten-σ outlier through the runner it runs with, from a
+stand-in connection (every write refused, no warehouse query), and delivers the alert it
+produced through the real channel marked **[DRILL]**; it never files the alert (a fake value in
+the alert history would feed anti-flap and the baselines); `deliver: false` proves the rule and
+stops before the transport. **`GET /monitors/{id}/proof`** is "last proven working": the last
+drill, the last real delivery, one sentence. A drill proves the rule and the path, never the
+SQL; the backtest proves the SQL — the two together are the alert's proof.
+**Live receipt, theLook `8233e4fd`, monitor `b53e8323`, 2026-09-23:** the backtest answered
+honestly — *"the monitor's own SQL returned no (day, value) series — a check that returns one
+number as of now has no history"*; the drill fired the rule (*"140 is 24.5σ above rolling mean
+(100)"*, critical, `[DRILL]`-prefixed) and stopped before the transport because the monitor
+alerts in-app; the proof reads *"the rule fired in a drill on 2026-09-23T21:16Z; delivery not
+attempted"*. No message left the platform — a real delivery is a send on the operator's behalf
+and waits for their word.
+🔴 **What the receipt found, NOT fixed:** theLook's one anomaly monitor watches a CATEGORY
+BREAKDOWN (a CTE ranking categories by revenue), and the anomaly runner reads any two-column
+result as a (date, value) series — the first column is a category name, `_as_day` yields
+None, the settling filter keeps undated points, and the categories' revenues are z-scored
+as if they were days. It can never fire meaningfully. The runner should refuse a series whose
+first column is not a date — one edit, adjacent, named here. ⏳ Also left: the seven defects
+the map turned up — `grace_period_hours` is never saved; the Monitors UI offers "slack"/"email"
+as channels, which are not trigger ids, so `dispatch_alert` warns and sends nothing;
+`metric_name` monitors run a bare aggregate as SQL and stay silent; "Run now" sends a real
+alert and writes it into history; a metric-condition chain queries the warehouse every
+60-second heartbeat; the "guarded" flag is not checked; the Hub map lists automations and not
+monitors. No web buttons yet (the MonitorCard's action row and subtitle are the place).
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

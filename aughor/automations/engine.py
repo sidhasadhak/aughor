@@ -672,6 +672,21 @@ def chart_grid(effect: Effect, context: dict) -> dict:
         entry = context.get(alias) or {}
         if not isinstance(entry, dict):
             continue
+        # CP-4 — a published envelope carries the grid AND the chart decision: the core
+        # decided which picture the rows want, so the send does not re-decide from shape.
+        env = entry.get("envelope")
+        if isinstance(env, dict) and isinstance(env.get("grid"), dict):
+            g = env["grid"]
+            cols = [str(c) for c in (g.get("columns") or [])]
+            raw_rows = g.get("rows")
+            if cols and isinstance(raw_rows, list) and raw_rows:
+                chart = env.get("chart") if isinstance(env.get("chart"), dict) else {}
+                return {"columns": cols,
+                        "rows": [list(r) if isinstance(r, (list, tuple))
+                                 else [r.get(c) for c in cols] for r in raw_rows
+                                 if isinstance(r, (list, tuple, dict))],
+                        "chart_type": str(chart.get("chart_type") or "auto"),
+                        "chart_config": dict(chart.get("chart_config") or {})}
         columns = [str(c) for c in (entry.get("columns") or [])]
         raw = entry.get("rows")
         if not columns or not isinstance(raw, list) or not raw:
@@ -921,7 +936,12 @@ def _attach_chart(effect: Effect, automation: Automation, bot, info: dict,
             from aughor.routers.investigations import resolve_currency_symbol
             money = resolve_currency_symbol(automation.conn_id, None) or ""
         capped = rows[:_CHART_MAX_ROWS]
-        svg = render_chart_svg(columns, capped, "auto", automation.name or "",
+        # CP-4 — the decision is the core's when the grid came with one (an envelope);
+        # `auto` is what a bare grid always meant. The encoding below stays this door's.
+        decided = str(grid.get("chart_type") or "auto")
+        exhibit = (grid.get("chart_config") or {}).get("exhibit")
+        svg = render_chart_svg(columns, capped, decided, automation.name or "",
+                               exhibit=exhibit if isinstance(exhibit, dict) else None,
                                money_symbol=money)
         if not svg and _ranked_magnitudes(columns, capped):
             # The headless renderer is Vega ONLY, and Vega draws six types; the browser
@@ -951,6 +971,31 @@ def _attach_chart(effect: Effect, automation: Automation, bot, info: dict,
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a scheduled post's chart is best-effort; the message already landed",
                  counter="automations.slack_chart")
+
+
+def _slack_message_text(effect: Effect, automation: Automation) -> str:
+    """CP-4 — the text this send posts, judged by the gate exactly as it will post.
+
+    A bound ``envelope`` (an upstream investigate step's folded answer) is rendered by the
+    ONE Slack selection in `answer.doors` — headline, body, the grid once, the top caveats,
+    no provenance — so a scheduled post shows the same fields a mention-bot answer does.
+    It wins over ``message`` when both are bound: the envelope's headline IS the answer a
+    chain used to bind as `step.answer`, and posting both would say it twice. ``message``
+    alone stays the bound sentence it always was.
+    """
+    raw = effect.config.get("envelope")
+    if isinstance(raw, dict) and raw:
+        try:
+            from aughor.answer.doors import slack_message
+            from aughor.answer.envelope import AnswerEnvelope
+            text = slack_message(AnswerEnvelope.model_validate(raw))
+            if text:
+                return text
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a bound envelope that does not validate is not posted as itself",
+                     counter="automations.envelope_render")
+    return str(effect.config.get("message") or f"Automation '{automation.name}' fired")
 
 
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
@@ -991,7 +1036,7 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
     # message holds identically next attempt — so it maps to the terminal "held", never
     # retried. The inbox's accepted-proposal send is deliberately ungated: a person
     # reviewed that text and pressed send, and the person is the gate there.
-    message_text = str(effect.config.get("message") or f"Automation '{automation.name}' fired")
+    message_text = _slack_message_text(effect, automation)
     verdict = _gate_departure(effect, automation, kind="slack_post",
                               text=message_text, target=f"{bot_id}:{channel}")
     if verdict is not None and verdict.held:
@@ -1320,7 +1365,14 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     # any automation without a schedule condition — those prompts stay
     # byte-identical. The run history's `target` keeps the RAW question.
     from aughor.automations.temporal import scheduled_grounding
-    _grounding = scheduled_grounding(automation, effect.config)
+    # Idea 4 — the lag the platform learned for this connection (the age after which a
+    # day's numbers stop moving); a person's `observation_lag_days` on the step still wins.
+    try:
+        from aughor.settling import learned_lag_days
+        _learned_lag = learned_lag_days(getattr(automation, "conn_id", "") or "")
+    except Exception:
+        _learned_lag = None
+    _grounding = scheduled_grounding(automation, effect.config, learned_lag=_learned_lag)
     grounded_question = f"{_grounding}\n\n{question}" if _grounding else question
     # VA-13 — wait only when a later step binds to this one's answer (set by the chain
     # loop from `effect_refs`). An unconsumed investigate keeps submitting and returning,
@@ -1390,6 +1442,9 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
                                                  # can record it; absent-when-empty like
                                                  # its siblings.
                                                  ("confidence", getattr(run, "confidence", "")),
+                                                 # CP-4 — the folded answer, whole, so a
+                                                 # send renders fields, not a sentence.
+                                                 ("envelope", getattr(run, "envelope", None) or {}),
                                                  (DISAGREEMENT_KEY,
                                                   {**_clarify, "investigation_id": _inv}
                                                   if _clarify else {})) if v})

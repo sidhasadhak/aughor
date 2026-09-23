@@ -37,6 +37,9 @@ PLATFORM_DIRS = {
     "db", "kernel", "connectors", "metastore", "org", "control_plane", "security",
     "llm", "licensing", "workspace", "orgsettings", "files", "canvas",
     "export", "savedquery", "notifications",
+    # CP-4 — the answer envelope: the structure every door selects from. Platform by
+    # construction (pydantic + stdlib), and it must stay so — export renders it.
+    "answer",
 }
 PLATFORM_TOP_MODULES = {"secretvault.py", "stats.py", "telemetry.py"}
 # sql/ is split: the safety inspectors are platform; the LLM SQL generator (`writer.py`),

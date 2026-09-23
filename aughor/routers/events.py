@@ -38,7 +38,10 @@ _HEARTBEAT_SECONDS = 25.0    # SSE comment keep-alive
 #:
 #: `while True` with `is_disconnected()` as the only exit assumes a server that can
 #: hold a socket indefinitely. On serverless it cannot: the platform kills the
-#: invocation at `maxDuration` (300s in vercel.json) and logs a Runtime Timeout —
+#: invocation at its `maxDuration` (300s on the Vercel deployment this was measured on,
+#: whose config was removed 2026-09-23 when that deployment was deleted — the BOUND stays,
+#: because it is about serverless in general and the code still detects it) and logs a
+#: Runtime Timeout —
 #: 19 of them in one measured 30-minute window, each burning a full 300s slot and
 #: ~300 journal reads. Closing FIRST turns a platform error into an ordinary
 #: reconnect, which EventSource does on its own.

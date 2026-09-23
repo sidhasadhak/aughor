@@ -261,3 +261,46 @@ describe("createAskStream — RC-2", () => {
     expect(urls).toEqual(["http://api.test/ask"]);
   });
 });
+
+describe("createAskStream — the envelope (CP-4)", () => {
+  it("rides onTurn, and the frames after `done` still stream", async () => {
+    // The quick path emits its narrative, follow-ups and the envelope AFTER `done`; a
+    // reader that stopped at `done` would post exhibits from half an answer.
+    const ask = createAskStream({}, async () =>
+      sseResponse([
+        { type: "headline", headline: "East is flat." },
+        { type: "done", inv_id: "chat-1" },
+        { type: "narrative_delta", narrative: "Volume held." },
+        { type: "envelope", envelope: {
+          version: 1, question: "q", headline: "East is flat.", body: "Volume held.",
+          grid: { columns: ["region", "revenue"], rows: [["East", 12]] },
+          chart: { chart_type: "bar", chart_config: {} },
+          caveats: ["one caveat"], follow_ups: [], provenance: { guard_receipts: [{ guard: "x" }] },
+          error: "", lifted_tables: 0,
+        } },
+      ]),
+    );
+    const seen: { envelope?: unknown }[] = [];
+    const chunks = await drain(ask("q", { sessionId: "s", onTurn: (a) => seen.push(a) }));
+    expect(chunks.join("")).toBe("East is flat.\n\nVolume held.");
+    expect(seen).toHaveLength(1);
+    expect((seen[0].envelope as { headline: string }).headline).toBe("East is flat.");
+    expect((seen[0].envelope as { caveats: string[] }).caveats).toEqual(["one caveat"]);
+  });
+
+  it("a turn without an envelope still settles its artifacts from the frames", async () => {
+    const ask = createAskStream({}, async () =>
+      sseResponse([
+        { type: "columns", columns: ["a"] },
+        { type: "rows", rows: [[1], [2]] },
+        { type: "headline", headline: "Two rows." },
+        { type: "done" },
+      ]),
+    );
+    const seen: { envelope?: unknown; rows: unknown[][] }[] = [];
+    await drain(ask("q", { sessionId: "s", onTurn: (a) => seen.push(a) }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0].envelope).toBeUndefined();
+    expect(seen[0].rows).toEqual([[1], [2]]);
+  });
+});

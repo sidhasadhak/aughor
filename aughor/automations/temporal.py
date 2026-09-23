@@ -154,15 +154,31 @@ def previous_report_note(automation_id: str) -> str:
         return ""
 
 
+def resolve_lag(effect_config: dict, learned_lag: Optional[int] = None) -> int:
+    """The lag this dispatch observes at: a person's ``observation_lag_days`` on the step
+    wins; otherwise the lag the platform LEARNED for the connection (idea 4 — the age after
+    which a day's numbers stop moving, read off successive daily counts); otherwise the
+    one-day default. theLook's 8 was set by hand on 2026-09-08 after a week of fake
+    morning spikes; the learned value is what makes the next source not need a hand."""
+    explicit = (effect_config or {}).get("observation_lag_days")
+    if explicit is not None:
+        return clamp_lag(explicit)
+    if learned_lag:
+        return clamp_lag(learned_lag)
+    return clamp_lag(DEFAULT_LAG_DAYS)
+
+
 def scheduled_grounding(automation, effect_config: dict,
-                        now: Optional[datetime] = None) -> str:
+                        now: Optional[datetime] = None,
+                        learned_lag: Optional[int] = None) -> str:
     """The full grounding block for one scheduled investigate dispatch, or ''.
 
     '' whenever the automation carries no ``schedule`` condition — a webhook-, a
     monitor- or a manually-shaped automation keeps a byte-identical prompt. A
     manual "Run now" of a SCHEDULED automation still grounds: the person is
     rehearsing the scheduled behaviour, and the partial-day trap does not care who
-    pressed the button."""
+    pressed the button. ``learned_lag`` is the connection's learned settling lag
+    (`settling.learned_lag_days`), read only when the step sets no lag of its own."""
     cron = ""
     for cond in getattr(automation, "conditions", None) or []:
         if getattr(cond, "kind", "") == "schedule":
@@ -171,8 +187,7 @@ def scheduled_grounding(automation, effect_config: dict,
     else:
         return ""
     now = now or datetime.now(timezone.utc)
-    lag = clamp_lag((effect_config or {}).get("observation_lag_days",
-                                              DEFAULT_LAG_DAYS))
+    lag = resolve_lag(effect_config, learned_lag)
     parts = [observation_note(now, cron, lag)]
     prev = previous_report_note(getattr(automation, "id", ""))
     if prev:

@@ -5382,6 +5382,55 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             yield sse
 
 
+async def stream_with_envelope(
+    stream: AsyncGenerator[str, None], *, question: str, conn_id: str, session_id: str = "",
+) -> AsyncGenerator[str, None]:
+    """CP-4 — fold the ask stream into ONE ``envelope`` frame, emitted last, and file it.
+
+    The core emits structure and a door renders it: the headline, the body (with every
+    prose table lifted into the grid field, so a duplicate table is impossible rather
+    than suppressed), the grid, the chart decision, the caveats, the follow-ups and the
+    provenance — guard receipts included, as a FIELD a door may drop. Folded from the
+    frames the run already emitted, deterministically, with no model call; the fold is
+    `aughor.answer.envelope.EnvelopeFolder`, the single implementation.
+
+    Emitted AFTER the last frame of the body, because that is the only moment every field
+    exists — on the quick path the narrative and the follow-ups stream in after ``done``.
+    Persisted onto the turn's row (`attach_envelope`) so a door that was not on the stream
+    — a scheduled send, the export, a later reader — selects from the same structure.
+    A stream that ends with nothing to say (no headline, body or error) emits nothing.
+    """
+    import asyncio as _asyncio
+    import json as _json
+
+    from aughor.answer.envelope import EnvelopeFolder
+
+    folder = EnvelopeFolder(question=question, connection_id=conn_id, session_id=session_id)
+    async for event in stream:
+        if event.startswith("data: "):
+            try:
+                frame = _json.loads(event[6:])
+            except Exception:
+                frame = None
+            if isinstance(frame, dict) and frame.get("type"):
+                folder.feed(str(frame["type"]), frame)
+        yield event
+    env = folder.finish()
+    if not env.has_answer:
+        return
+    payload = env.model_dump()
+    yield _sse("envelope", {"envelope": payload})
+    inv_id = env.provenance.investigation_id
+    if inv_id:
+        try:
+            from aughor.db.history import attach_envelope
+            await _asyncio.to_thread(attach_envelope, inv_id, payload)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "envelope persistence is best-effort; it was already streamed",
+                     counter="ask.envelope_persist")
+
+
 def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGenerator[str, None]:
     """The composed `/ask` event generator — the ONE source of the ask stream, shared by the
     legacy `ask_endpoint` and the AG-UI `/agui/run` translator so both stay byte-identical.
@@ -5396,7 +5445,12 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
     if agent is not None:
         conn_id = _apply_agent_bindings(req, agent, conn_id)
     stream = _stream_ask(req, request, conn_id)
-    # Innermost: binds the run's trace id (so the quick path is correlated at all)
+    # CP-4 — innermost of all: fold every frame the body emits into the one answer
+    # envelope and END the stream with it, so the session log and every door above see
+    # the finished structure as a frame like any other.
+    stream = stream_with_envelope(stream, question=req.question, conn_id=conn_id,
+                                  session_id=req.session_id or "")
+    # Binds the run's trace id (so the quick path is correlated at all)
     # and records request/response, seeing the identity the outer wrappers pin.
     stream = stream_with_session_log(
         stream, question=req.question, conn_id=conn_id, door="ask", depth=req.depth,
@@ -5939,6 +5993,25 @@ def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
                        "last_writers": cp.get("last_writers", [])},
         "resume": {"feedback": f"/investigations/{inv_id}/feedback"} if paused else None,
     }
+
+
+@router.get("/investigations/{inv_id}/envelope")
+def investigation_envelope(inv_id: str, principal=Depends(get_principal)) -> dict:
+    """CP-4 — the stored answer envelope: the fields a door selects from.
+
+    For a door that was not on the stream — a scheduled send, an export, a later reader.
+    404 when the turn predates the envelope or never settled into one.
+    """
+    from aughor.security.authz import check_owner
+
+    check_owner("investigation", inv_id, principal)
+    inv = get_investigation(inv_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    env = (inv.get("report") or {}).get("envelope")
+    if not isinstance(env, dict):
+        raise HTTPException(status_code=404, detail="This answer carries no envelope")
+    return env
 
 
 @router.get("/investigations/{inv_id}/export")

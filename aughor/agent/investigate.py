@@ -4564,7 +4564,8 @@ def _preceding_window(obs_start: str, obs_end: str, dmin: str):
     return prev_start.isoformat(), prev_end.isoformat()
 
 
-def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str = ""):
+def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str = "",
+                              settle_days: int = 1):
     """Deterministically fit the intake's windows to the data that actually exists.
     The LLM-retry path merely *asks* for a correction; this enforces it. Returns a
     coverage note (str) when anything was adjusted, else None.
@@ -4627,32 +4628,60 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
     # instead: the reader asked about today knowing it is today.
     _today = (today or "")[:10] or datetime.now(timezone.utc).date().isoformat()
     _partial_anchor_max = dmax[:10]
+    # Idea 4 — a source that keeps restating its recent days is "in progress" for longer
+    # than one day: the last SETTLED day is `settle_days` back (learned from successive
+    # daily counts, `settling.learned_lag_days`). With the default of 1, every line below
+    # reads exactly as it did — "unsettled from" is today, the last settled day yesterday.
+    _settle = max(1, int(settle_days or 1))
     try:
-        if dmax[:10] >= _today and dmin[:10] < _today:
+        _unsettled_from = (datetime.fromisoformat(_today)
+                           - timedelta(days=_settle - 1)).date().isoformat()
+    except (ValueError, TypeError):
+        _unsettled_from = _today
+    try:
+        if dmax[:10] >= _unsettled_from and dmin[:10] < _unsettled_from:
             _last_complete = (datetime.fromisoformat(_today)
-                              - timedelta(days=1)).date().isoformat()
+                              - timedelta(days=_settle)).date().isoformat()
             _partial_anchor_max = min(dmax[:10], _last_complete)
             _oe_p = (intake.observation_end or "")[:10]
             _os_p = (intake.observation_start or "")[:10]
-            if _oe_p >= _today:
+            if _oe_p >= _unsettled_from:
                 if _question_pins_period(question, _os_p, _oe_p):
-                    notes.append(
-                        f"the observation window ends on {_today}, a day still in progress — "
-                        f"kept because the question names it explicitly, but totals for that "
-                        f"day are PARTIAL and must not be read as a decline against complete days"
-                    )
+                    if _settle > 1:
+                        notes.append(
+                            f"the observation window ends on {_oe_p}, a day this source is "
+                            f"still restating (its numbers keep moving for {_settle} days after "
+                            f"a day ends, learned from observation) — kept because the question "
+                            f"names it explicitly, but totals for that day are PROVISIONAL and "
+                            f"must not be read as a decline against settled days"
+                        )
+                    else:
+                        notes.append(
+                            f"the observation window ends on {_today}, a day still in progress — "
+                            f"kept because the question names it explicitly, but totals for that "
+                            f"day are PARTIAL and must not be read as a decline against complete days"
+                        )
                 else:
                     intake.observation_end = _last_complete
                     if _os_p > _last_complete:
                         intake.observation_start = _last_complete
                     intake.observation_label = _window_label(
                         intake.observation_start[:10], _last_complete)
-                    notes.append(
-                        f"the observation window ended on {_today}, a day still in progress "
-                        f"({dmax[:10]} is the data's latest point) — it now ends at the last "
-                        f"complete day {_last_complete}: totals over a partial day read as a "
-                        f"false collapse against complete days"
-                    )
+                    if _settle > 1:
+                        notes.append(
+                            f"the observation window reached into days this source is still "
+                            f"restating ({dmax[:10]} is the data's latest point; its numbers keep "
+                            f"moving for {_settle} days after a day ends, learned from observation) "
+                            f"— it now ends at the last settled day {_last_complete}: totals over a "
+                            f"still-settling day read as a false collapse against settled days"
+                        )
+                    else:
+                        notes.append(
+                            f"the observation window ended on {_today}, a day still in progress "
+                            f"({dmax[:10]} is the data's latest point) — it now ends at the last "
+                            f"complete day {_last_complete}: totals over a partial day read as a "
+                            f"false collapse against complete days"
+                        )
     except (ValueError, TypeError) as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "the partial-day trim is best-effort on malformed dates; the window "
@@ -6159,7 +6188,15 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         _smin, _smax = _extract_data_date_range(scan, intake.metric_table or "")
         _cmin = min([d for d in (_smin, _cov_min) if d], default="")
         _cmax = max([d for d in (_smax, _cov_max) if d], default="")
-        _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""))
+        # Idea 4 — the last SETTLED day, not merely the last complete one, when the platform
+        # has learned how long this source keeps restating its recent days.
+        try:
+            from aughor.settling import learned_lag_days
+            _settle_days = learned_lag_days(state.get("connection_id") or "") or 1
+        except Exception:
+            _settle_days = 1
+        _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""),
+                                              settle_days=_settle_days)
         # Density guard: a comparison window whose date-SPAN survived the clamp but is sparsely
         # populated (internal gap / slow ramp) is still a thin PoP baseline — probe it. Skipped when
         # the span guard already flagged the same window (no double-flag).

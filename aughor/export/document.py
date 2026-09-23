@@ -190,6 +190,59 @@ def _build_chat(inv: dict) -> ExportDoc:
     return ExportDoc(title=headline, subtitle=inv.get("question") or "", meta=meta, kind="chat", blocks=blocks)
 
 
+def _receipt_line(receipt: dict) -> str:
+    """One guard receipt as a line: what ran, what it did, what it found."""
+    parts = [str(receipt.get(k)) for k in ("guard", "action", "detail") if receipt.get(k)]
+    if parts:
+        return " — ".join(parts)
+    return ", ".join(f"{k}: {v}" for k, v in receipt.items() if k not in ("before", "after"))[:200]
+
+
+def _build_envelope(inv: dict) -> ExportDoc:
+    """CP-4 — an answer that carries its envelope: the document takes ALL of it.
+
+    The Slack door takes the headline, the body, the grid once and two caveats; this door
+    takes every field — the exhibit, every caveat, the follow-ups, and the provenance
+    (query and checks) the thread drops. Same envelope, different selection: nothing here
+    re-derives a sentence, and nothing here needs a model.
+    """
+    rep = inv.get("report") or {}
+    env = rep.get("envelope") or {}
+    prov = env.get("provenance") or {}
+    headline = env.get("headline") or rep.get("headline") or inv.get("question") or "Answer"
+    meta = [m for m in (
+        inv.get("connection_id") or "",
+        _date(inv.get("completed_at") or inv.get("started_at")),
+        f"confidence: {prov['confidence']}" if prov.get("confidence") else "",
+    ) if m]
+
+    # The body is what follows the headline, never the headline again — so the summary
+    # opens with the sentence and continues with the rest.
+    body = str(env.get("body") or "").strip()
+    blocks: list[Block] = [_h("Summary"), _p(f"{headline}\n\n{body}" if body else headline)]
+    grid = env.get("grid") if isinstance(env.get("grid"), dict) else {}
+    chart = env.get("chart") if isinstance(env.get("chart"), dict) else {}
+    if grid.get("columns") and grid.get("rows"):
+        blocks.append(_h("Evidence"))
+        blocks.extend(_chart_or_table(grid["columns"], grid["rows"],
+                                      chart.get("chart_type") or "auto", headline))
+    if env.get("caveats"):
+        blocks.append(_h("Caveats"))
+        blocks.append(_bul([str(c) for c in env["caveats"]]))
+    if env.get("follow_ups"):
+        blocks.append(_h("Questions to ask next"))
+        blocks.append(_bul([str(q) for q in env["follow_ups"]]))
+    if prov.get("sql"):
+        blocks.append(_h("Query"))
+        for sql in prov["sql"]:
+            blocks.append(_code(str(sql), "The SQL behind this answer"))
+    if prov.get("guard_receipts"):
+        blocks.append(_h("Checks"))
+        blocks.append(_bul([_receipt_line(r) for r in prov["guard_receipts"] if isinstance(r, dict)]))
+    return ExportDoc(title=headline, subtitle=env.get("question") or inv.get("question") or "",
+                     meta=meta, kind="chat", blocks=blocks)
+
+
 def _strip_planner_notes(text: str) -> str:
     """Strip the explore wave's internal planner directives from reader-facing prose:
     paragraphs/lines beginning with "→" are forward-chaining notes to the NEXT question
@@ -511,6 +564,11 @@ def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = ""
         builder = _build_explore
     elif "verdict" in rep or "key_findings" in rep:
         builder = _build_analysis
+    elif isinstance(rep.get("envelope"), dict) and (
+            rep["envelope"].get("headline") or rep["envelope"].get("body")):
+        # CP-4 — a turn that carries its envelope exports EVERY field of it; the deep and
+        # explore shapes above keep their richer builders (phases, waterfalls, sub-questions).
+        builder = _build_envelope
     elif (inv.get("kind") or "chat") == "chat":
         builder = _build_chat
     else:

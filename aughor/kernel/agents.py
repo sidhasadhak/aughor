@@ -132,8 +132,13 @@ AGENTS: tuple[AgentCharter, ...] = (
     ),
     AgentCharter(
         id="watcher", name="Watcher", role="KPI sentinel",
-        goal="Watch metrics and start a deep analysis when something moves.",
-        lane="background", job_kinds=("monitor",), tools=("thresholds", "anomaly checks"),
+        goal="Watch metrics, start a deep analysis when something moves, and propose the "
+             "alerts worth having once a connection is mapped.",
+        # Idea 2 — `alert_proposals`: after an exploration the Watcher reads every metric's
+        # daily series, learns its distribution and stages an anomaly watch in the inbox
+        # (`monitors/sentinel.py`). SQL only; a person arms it.
+        lane="background", job_kinds=("monitor", "alert_proposals"),
+        tools=("thresholds", "anomaly checks", "alert proposals"),
         icon="radar",
         # WP-7: a tick is a scalar/threshold SQL check (rarely any LLM) — a small token
         # ceiling + generous time for a slow warehouse query. Governable per-agent.

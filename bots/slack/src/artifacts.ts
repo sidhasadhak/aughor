@@ -113,30 +113,6 @@ export function renderGrid(grid: Grid): GridRendering {
   };
 }
 
-/**
- * Does this answer already carry a markdown table?
- *
- * The model writes its own table into the prose, and `postExhibits` separately attaches
- * the grid — neither can see the other, so a measured answer on 2026-09-23 posted the
- * same five rows twice, once as "| # | Category | Revenue |" and once as
- * "| product_category | revenue |". Roughly half that message was the duplicate.
- *
- * A GFM table is a row of pipes followed by a delimiter row of dashes; that second line
- * is what distinguishes a table from prose that merely contains a pipe, so both are
- * required and they must be ADJACENT. Only the delimiter's shape is checked, never the
- * content — the caller decides whether the duplication matters.
- */
-export function answerHasTable(text: string): boolean {
-  const lines = (text || "").split("\n");
-  for (let i = 0; i < lines.length - 1; i++) {
-    if (!lines[i].includes("|")) continue;
-    // A delimiter row is pipes, dashes, colons and spaces — and at least one dash.
-    const next = lines[i + 1].trim();
-    if (next.includes("-") && /^\|?[\s:|-]+\|?$/.test(next)) return true;
-  }
-  return false;
-}
-
 /** A filename that sorts and survives Slack — no colons, no spaces. */
 export function csvFilename(question: string): string {
   const stem = question.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);

@@ -113,6 +113,10 @@ class InvestigationRun:
     #: pause (the request posture stays `allow_clarify`): the departure gate asks the
     #: metric's OWNER instead of the run silently choosing a reading nobody picked.
     clarify: dict = field(default_factory=dict)
+    #: CP-4 — the folded answer envelope (headline, body, grid, chart decision, caveats,
+    #: follow-ups, provenance), when the run was WAITED for. Published whole so a send
+    #: downstream renders from fields rather than from a bound sentence.
+    envelope: dict = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -259,6 +263,10 @@ def run_investigation(
                     seen["headline"] = str(payload["headline"])
                     if kind == "headline":
                         seen["headline_is_final"] = "1"
+                elif kind == "envelope" and isinstance(payload.get("envelope"), dict):
+                    # CP-4 — the answer, whole, folded by the door from every frame it
+                    # emitted. The last frame of a completed stream.
+                    seen["envelope"] = payload["envelope"]
                 elif kind == "clarify_pending":
                     # HB-2 law 6 — the run paused on divergent readings. Sniffed off the
                     # stream like the ids: the frame carries every reading with its SQL, so
@@ -331,6 +339,7 @@ def run_investigation(
                                 headline=seen.get("headline", ""),
                                 summary=seen.get("summary", ""),
                                 confidence=seen.get("confidence", ""),
+                                envelope=seen.get("envelope") or {},
                                 clarify=seen.get("clarify") or {})
 
     # VA-13 — a caller that needs the ANSWER has to wait for it. Checked BEFORE the

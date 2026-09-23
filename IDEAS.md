@@ -12,7 +12,7 @@ When a user removes a connection, the platform should really wipe it clean. Afte
 
 ## 2. A default agent recommends outlier alerts on industry metrics
 
-*Noted 2026-09-12*
+*Noted 2026-09-12 · **BUILT 2026-09-23 — ROADMAP §3.24**: the Watcher's `alert_proposals` job, model-free, every proposal replayed before it is staged*
 
 When an exploration finishes, whether for a newly created connection or on a daily run, an automation agent should:
 
@@ -46,7 +46,7 @@ Starting points in the code today:
 
 ## 4. Learn when each table's numbers stop changing
 
-*Suggested by Claude, 2026-09-13*
+*Suggested by Claude, 2026-09-13 · **BUILT 2026-09-23 — ROADMAP §3.23**; the first verdict on theLook needs three more days of readings*
 
 Many sources keep rewriting recent days: late rows arrive, backfills land. On theLook, yesterday's order count reads about eight times what the same day settles at a week later. Until the lag was set to 8 days by hand on 2026-09-08, the daily briefing reported that settling as a business spike every morning.
 
@@ -69,7 +69,7 @@ Starting points in the code today:
 
 ## 6. Alerts that prove they work
 
-*Suggested by Claude, 2026-09-13*
+*Suggested by Claude, 2026-09-13 · **BUILT 2026-09-23 — ROADMAP §3.26**: `POST /monitors/{id}/backtest`, `POST /monitors/{id}/drill`, `GET /monitors/{id}/proof`; the runner, the backtest and the Watcher share one rule*
 
 Two halves:
 
@@ -86,7 +86,7 @@ Starting points in the code today:
 
 ## 7. Fact-check a document against the data
 
-*Suggested by Claude, 2026-09-13*
+*Suggested by Claude, 2026-09-13 · **BUILT 2026-09-23 — ROADMAP §3.25**: `POST /factcheck`, `POST /factcheck/upload`, `@aughor check:`; every claim checked through the platform's own answer path*
 
 Paste a board memo or an email, or upload a PDF deck. The platform finds every number in it and checks each against the warehouse: it matches, it doesn't (and why: refunds excluded, a different date range), or it can't be checked. The platform stops being only something that writes reports and becomes something that checks everyone's.
 

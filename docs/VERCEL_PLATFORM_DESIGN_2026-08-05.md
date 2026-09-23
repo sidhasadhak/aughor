@@ -1,14 +1,26 @@
 # Running Aughor on Vercel at full capacity — design note
 
-> 🗃️ **HISTORICAL, 2026-09-23.** The `aughor-platform` Vercel project this document
-> describes was deleted by the operator; Aughor is served from the self-hosted API,
-> whose clock is its own apscheduler heartbeat (every 60s) and never depended on
-> Vercel Cron. `.github/workflows/cron-tick.yml` — the fine-grained half of the
-> tiered clock described below — was removed in the same change, because the
-> deployment it ticked no longer exists. The root `vercel.json` and the
-> `aughor_intelligence` project it is linked to are UNTOUCHED, and `/cron/tick`
-> (`aughor/routers/cron.py`) still serves them. Everything below records what was
-> built and measured at the time; none of it describes how Aughor runs today.
+> 🗃️ **HISTORICAL, 2026-09-23.** BOTH Vercel projects this document describes —
+> `aughor-platform` and `aughor_intelligence` — were deleted by the operator. Aughor is
+> served from the self-hosted API, whose clock is its own apscheduler heartbeat (every
+> 60s) and never depended on Vercel Cron.
+>
+> Removed with them, in two changes the same day: `.github/workflows/cron-tick.yml` (the
+> fine-grained half of the tiered clock described below), then the root `vercel.json` and
+> `api/index.py` — the latter orphaned by the former, since its only stated purpose was
+> to be the target of that rewrite. `.vercel/` is gitignored and was deleted locally.
+>
+> ⚠️ An earlier version of THIS banner, written hours before, said `vercel.json` was
+> "UNTOUCHED". It was true when written and false by the end of the day. It is corrected
+> here rather than left, which is §7's prose-rot lesson arriving inside a single session.
+>
+> What REMAINS on purpose: `/cron/tick` (`aughor/routers/cron.py`) is still a route, and
+> the ~12 modules that branch on `os.environ.get("VERCEL")` are untouched. That variable
+> is set by the platform at runtime and is now never set, so those branches are inert
+> rather than wrong — removing them is a refactor, not a cleanup.
+>
+> Everything below records what was built and measured at the time; none of it describes
+> how Aughor runs today.
 
 
 **Status:** proposal; §1's trim is IMPLEMENTED · **Date:** 2026-08-05

@@ -27,6 +27,21 @@ import type { StreamChunk } from "chat";
 
 import { createProgressCards } from "./progress.js";
 
+/** CP-4 — the answer, whole, as the platform folded it: what every door selects from. */
+export interface AnswerEnvelope {
+  version: number;
+  question: string;
+  headline: string;
+  body: string;
+  grid: { columns: string[]; rows: unknown[][]; caption?: string } | null;
+  chart: { chart_type: string; chart_config: Record<string, unknown> } | null;
+  caveats: string[];
+  follow_ups: string[];
+  provenance: Record<string, unknown>;
+  error: string;
+  lifted_tables: number;
+}
+
 /** What the turn produced besides prose — the visual half of the answer. */
 export interface TurnArtifacts {
   investigationId: string;
@@ -36,6 +51,9 @@ export interface TurnArtifacts {
   rows: unknown[][];
   chartType: string;
   chartConfig: Record<string, unknown>;
+  /** The folded answer — the LAST frame of a completed ask. Absent on an older
+   *  platform or an interrupted stream; the grid frames above are the fallback. */
+  envelope?: AnswerEnvelope | null;
 }
 
 export interface AskOptions {
@@ -255,18 +273,25 @@ export function createAskStream(
               // grid posted under a failure reads as a partial answer.
               return;
             }
+            case "envelope":
+              // CP-4 — the answer folded whole, emitted last. What `postExhibits`
+              // selects from: the grid once, the chart decision, the top caveats.
+              artifacts.envelope = (frame.envelope as AnswerEnvelope) ?? null;
+              break;
             case "done":
+              // Not the last frame: the quick path streams its narrative, its
+              // follow-ups and the envelope AFTER `done`. The stream's end is the
+              // turn's end; `settled` only records that the platform said so.
               settled = true;
-              onTurn?.(artifacts);
-              return;
+              break;
             default:
               break; // receipt/telemetry frames are web-surface concerns, not Slack text
           }
         }
       }
-      // The stream ended without a `done` — a settled answer that never got its
+      // The turn ends when the stream does. A settled answer that never got its
       // terminal frame still earned its exhibits.
-      if (!settled && sawText) onTurn?.(artifacts);
+      if (settled || sawText) onTurn?.(artifacts);
     } finally {
       reader.releaseLock();
       // Abandoned, not finished: the platform's stop button (or any abort)
@@ -324,6 +349,44 @@ export function createArrivalPoster(
       return { ok: res.ok, status: res.status, detail };
     } catch (err) {
       return { ok: false, status: 0, detail: `could not reach the arrivals door: ${String(err)}` };
+    }
+  };
+}
+
+/** Idea 7 — "@bot check: <memo>": every number in the text checked against the data.
+ *  The door returns an answer envelope (Arc CP), so the thread renders it the way it
+ *  renders any answer: the headline and body as prose, the verdict grid as the exhibit. */
+export interface FactCheckResult {
+  ok: boolean;
+  status: number;
+  /** The door's refusal, or "" when it checked. */
+  detail: string;
+  envelope: AnswerEnvelope | null;
+}
+
+export type FactChecker = (text: string) => Promise<FactCheckResult>;
+
+export function createFactChecker(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): FactChecker {
+  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {};
+  return async function factCheck(text: string): Promise<FactCheckResult> {
+    try {
+      const res = await fetchImpl(`${base}/factcheck`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ text, connection_id: env.AUGHOR_CONNECTION_ID ?? "" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        return { ok: false, status: res.status, detail: asText(body.detail) || `HTTP ${res.status}`, envelope: null };
+      }
+      return { ok: true, status: res.status, detail: "", envelope: (body.envelope as AnswerEnvelope) ?? null };
+    } catch (err) {
+      return { ok: false, status: 0, detail: err instanceof Error ? err.message : String(err), envelope: null };
     }
   };
 }

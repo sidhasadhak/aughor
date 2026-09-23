@@ -1148,6 +1148,19 @@ class SchemaExplorer:
                          counter="explorer.fingerprint_stamp")
             self._save_state()
             self._rebuild_context_graph()
+            # Idea 2 — the alerts worth having, proposed the moment the map is fresh: the
+            # Watcher's job, keyed on the schema fingerprint so an unchanged schema
+            # re-explored proposes nothing twice. Best-effort — a proposal is not the
+            # exploration, and a refusal to submit must not fail a finished run.
+            try:
+                from aughor.monitors.sentinel import submit_alert_proposals
+                await submit_alert_proposals(
+                    self.connection_id,
+                    fingerprint=str(self._state.get("schema_fingerprint") or ""))
+            except Exception as _alert_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_alert_exc, "alert proposals are best-effort after an exploration",
+                         counter="explorer.alert_proposals")
             logger.info(
                 f"[explorer:{self.connection_id}] Complete — "
                 f"{self._status.queries_executed}q, "

@@ -1,8 +1,9 @@
 """An SSE stream that outlives the invocation serving it.
 
 `while True` with `is_disconnected()` as the only exit assumes a server that can
-hold a socket indefinitely. Serverless cannot: the platform kills the invocation at
-`maxDuration` (300s in vercel.json) and logs a Runtime Timeout. Measured over one
+hold a socket indefinitely. Serverless cannot: the platform kills the invocation at its
+`maxDuration` — 300s on the Vercel deployment these numbers were measured on, whose config
+was deleted 2026-09-23 — and logs a Runtime Timeout. Measured over one
 30-minute window in production: **19 of them**, each burning a full 300s slot and
 ~300 journal reads, on a deployment already cold-starting 43 times in that window.
 
@@ -71,8 +72,9 @@ def test_the_bound_is_off_by_default_for_a_long_lived_server(events_mod, monkeyp
 def test_serverless_gets_a_bound_below_the_platform_limit(events_mod):
     m = events_mod(VERCEL="1")
     assert 0 < m._MAX_STREAM_SECONDS < 300, (
-        "the stream must close BEFORE vercel.json's maxDuration, or the platform "
-        "kills it and the close is not graceful")
+        "the stream must close BEFORE the platform's maxDuration, or it is killed and "
+        "the close is not graceful. 300 was Vercel's; the bound guards any serverless "
+        "host, which `events_mod(VERCEL=...)` is still simulating")
 
 
 def test_an_explicit_override_wins(events_mod):

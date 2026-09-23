@@ -649,6 +649,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/alerts/propose/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Alerts Now
+         * @description Stage an anomaly watch for every metric on this connection that has a daily series
+         *     and enough settled history; each lands in the inbox with its evidence, unarmed.
+         */
+        post: operations["propose_alerts_now_alerts_propose__connection_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alerts/{alert_id}/acknowledge": {
         parameters: {
             query?: never;
@@ -5019,6 +5040,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/factcheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Factcheck Text
+         * @description Check every numeric claim in pasted text against the connection's data.
+         */
+        post: operations["factcheck_text_factcheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/factcheck/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Factcheck Upload
+         * @description Check every numeric claim in an uploaded document — converted the way the Documents
+         *     tab converts it, charts in a PDF read back as tables — against the connection's data.
+         */
+        post: operations["factcheck_upload_factcheck_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/glossary": {
         parameters: {
             query?: never;
@@ -5991,6 +6053,29 @@ export interface paths {
          *     'running' row to failed); the kernel records the job CANCELLED.
          */
         post: operations["cancel_investigation_route_investigations__inv_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/investigations/{inv_id}/envelope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Investigation Envelope
+         * @description CP-4 — the stored answer envelope: the fields a door selects from.
+         *
+         *     For a door that was not on the stream — a scheduled send, an export, a later reader.
+         *     404 when the turn predates the envelope or never settled into one.
+         */
+        get: operations["investigation_envelope_investigations__inv_id__envelope_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7848,6 +7933,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/monitors/{monitor_id}/backtest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backtest Monitor Route
+         * @description Replay the monitor over the last year of its own series under the rule it runs with:
+         *     how often it would have fired, on which days, and a quieter σ when it is noisy.
+         */
+        post: operations["backtest_monitor_route_monitors__monitor_id__backtest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/monitors/{monitor_id}/disable": {
         parameters: {
             query?: never;
@@ -7865,6 +7971,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/monitors/{monitor_id}/drill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Drill Monitor Route
+         * @description Feed the monitor a synthetic outlier — no warehouse query — and deliver the alert it
+         *     produces through its real channel, marked [DRILL]. Proves the rule and the path, never
+         *     the SQL (the backtest does); records "last proven working".
+         */
+        post: operations["drill_monitor_route_monitors__monitor_id__drill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/monitors/{monitor_id}/enable": {
         parameters: {
             query?: never;
@@ -7876,6 +8004,26 @@ export interface paths {
         put?: never;
         /** Enable Monitor */
         post: operations["enable_monitor_monitors__monitor_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/monitors/{monitor_id}/proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Monitor Proof
+         * @description "Last proven working": the last drill and the last real delivery, with the sentence.
+         */
+        get: operations["monitor_proof_monitors__monitor_id__proof_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -11179,6 +11327,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settling/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Settling Summary
+         * @description Each sampled table with its observations, its verdict (the lag, or why there is
+         *     none yet) and the connection's learned lag — ``null`` until a table has earned one.
+         */
+        get: operations["settling_summary_settling__connection_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settling/{connection_id}/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Settling Sample Now
+         * @description Take today's reading now: count each recent day on every profiled time table and
+         *     file the counts. Idempotent within a day — a second reading replaces the first.
+         */
+        post: operations["settling_sample_now_settling__connection_id__sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/slack-bots": {
         parameters: {
             query?: never;
@@ -12323,6 +12513,15 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_factcheck_upload_factcheck_upload_post */
+        Body_factcheck_upload_factcheck_upload_post: {
+            /** Connection Id */
+            connection_id: string;
+            /** File */
+            file: string;
+            /** Schema Name */
+            schema_name?: string | null;
+        };
         /** Body_preview_document_chunks_documents_preview_post */
         Body_preview_document_chunks_documents_preview_post: {
             /** Chunk Settings */
@@ -13010,6 +13209,14 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DrillRequest */
+        DrillRequest: {
+            /**
+             * Deliver
+             * @default true
+             */
+            deliver: boolean;
+        };
         /**
          * Effect
          * @description What to do when the conditions hold — a reference to an existing primitive.
@@ -13109,6 +13316,18 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+        };
+        /** FactCheckRequest */
+        FactCheckRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
+            /**
+             * Text
+             * @description The document's text — a memo, an email, a pasted deck
+             */
+            text: string;
         };
         /** FeedbackRequest */
         FeedbackRequest: {
@@ -17465,6 +17684,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_alerts_now_alerts_propose__connection_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -24764,6 +25016,76 @@ export interface operations {
             };
         };
     };
+    factcheck_text_factcheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FactCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    factcheck_upload_factcheck_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_factcheck_upload_factcheck_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_glossary_glossary_get: {
         parameters: {
             query?: never;
@@ -26348,6 +26670,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    investigation_envelope_investigations__inv_id__envelope_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -29659,6 +30014,41 @@ export interface operations {
             };
         };
     };
+    backtest_monitor_route_monitors__monitor_id__backtest_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     disable_monitor_monitors__monitor_id__disable_post: {
         parameters: {
             query?: never;
@@ -29692,7 +30082,79 @@ export interface operations {
             };
         };
     };
+    drill_monitor_route_monitors__monitor_id__drill_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DrillRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     enable_monitor_monitors__monitor_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    monitor_proof_monitors__monitor_id__proof_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -35588,6 +36050,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settling_summary_settling__connection_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settling_sample_now_settling__connection_id__sample_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
