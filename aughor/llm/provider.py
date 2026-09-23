@@ -239,6 +239,43 @@ def _reasoning_extra_body(backend: str) -> dict:
     return {"reasoning": {"effort": effort}}
 
 
+def _retry_at_low_reasoning(exc: Exception, kwargs: dict, call) -> Optional[tuple]:
+    """One more attempt with reasoning cut to `low`, when THINKING filled the ceiling.
+
+    `reliability.TRUNCATED` is deliberately not "repairable": re-sending the same prompt
+    under the same budget truncates the same way. This is not that retry. On a reasoning
+    model `max_tokens` bounds reasoning AND content together, so the budget has a second
+    dial — and turning it is a different call, not the identical one that rule refuses.
+
+    Measured on this deployment (2026-09-23): the same business-profile inference that
+    succeeded under `gemini-3.1-flash-lite` fails under `deepseek/deepseek-v4.1-flash`,
+    which averages 1,286 completion tokens per call against gemini's 259 — 5x, and 27s
+    against 3.7s. A complete profile is ~2,072 tokens of CONTENT, so ~6,120 of the 8,192
+    ceiling is available to think in, and medium effort spends it.
+
+    Only fires when there is a dial to turn: the extras must already be going out and the
+    effort must be above `low`. Already-low keeps the original error rather than paying a
+    request to prove the ceiling is where it was — the exact waste `TRUNCATED` was
+    classified first to avoid. Raising `max_tokens` instead was rejected: it gives
+    reasoning more room to expand into, and costs it on every call rather than on the
+    rare one that truncates (19 failures in 725 calls here).
+    """
+    from aughor.llm.reliability import TRUNCATED, StructuredOutputError
+    if not isinstance(exc, StructuredOutputError) or exc.diagnosis.failure != TRUNCATED:
+        return None
+    extra = kwargs.get("extra_body") or {}
+    effort = ((extra.get("reasoning") or {}).get("effort") or "").lower()
+    if effort not in ("medium", "high"):
+        return None
+    logger.warning("llm: output ceiling hit with reasoning=%s; one retry at reasoning=low", effort)
+    retry_kwargs = {**kwargs, "extra_body": {**extra, "reasoning": {"effort": "low"}}}
+    try:
+        return call(retry_kwargs)
+    except Exception as second:            # noqa: BLE001 — the caller raises the FIRST error
+        logger.warning("llm: the low-reasoning retry also failed (%s)", str(second)[:120])
+        return None
+
+
 def _fallback_model() -> str:
     """Anthropic model used when the primary backend fails. Defaults to the
     latest Opus; override with AUGHOR_FALLBACK_MODEL (e.g. claude-opus-4-6)."""
@@ -2382,7 +2419,14 @@ class LLMProvider:
                 # all has misreported itself, and that is a configuration fault the
                 # operator must see by name.
                 _raise_if_tools_declaration_false(client, backend, model, exc)
-                raise _typed_structured_error(exc, response_model)
+                typed = _typed_structured_error(exc, response_model)
+                # The ceiling was filled by THINKING, not by the answer — turn the one
+                # dial that exists and try once more. Returns None when there is no dial,
+                # and then the original diagnosis stands unchanged.
+                again = _retry_at_low_reasoning(typed, kwargs, _call)
+                if again is None:
+                    raise typed
+                out, raw = again
         pt, ct = _extract_usage(raw)
         _ms = (time.monotonic() - _t0) * 1000.0
         metering.record_llm(pt, ct, _ms)
