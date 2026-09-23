@@ -5708,6 +5708,20 @@ async def stream_with_session_log(
                          **({"receipt_id": receipt_id} if receipt_id else {}),
                          **({"error": failed} if failed else {})},
             )
+            # CP-1 — the treatment shadow, AFTER the answer and after its own final
+            # record. The classification is a model call, so it runs where it cannot
+            # delay a word the user is waiting for; `shadow` is a no-op unless
+            # `judgment.shadow_treatment` is on, which is the operator's spending switch
+            # and is off by default. It swallows everything, so a dead judge or a dead
+            # ledger cannot turn a delivered answer into a failed request.
+            #
+            # `ran` is what this turn actually did, in the vocabulary the door already
+            # has: its declared depth when it has one, else whether the deep path minted
+            # an investigation. That is the column CP-2 compares the judged treatment
+            # against — and the arc's falsifier reads.
+            from aughor.judgment.treatment import shadow as _shadow
+            _shadow(question, ran=(depth or ("deep" if inv_id else "quick")),
+                    conn_id=conn_id)
 
 
 async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None],
