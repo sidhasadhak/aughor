@@ -59,6 +59,11 @@ const base = (title?: string | null) => ({
 });
 
 // ── treemap ──────────────────────────────────────────────────────────────────
+//: Is this tile big enough for a name AND a number? Named once because two marks read it —
+//: the name's vertical offset and the value's visibility — and a treemap where the name has
+//: shifted up for a value that is not drawn reads as a label nudged off-centre for no reason.
+const SHOW_VALUE = "(datum.y1 - datum.y0) > 38 && (datum.x1 - datum.x0) > 46";
+
 function treemap(columns: string[], rows: unknown[][], title?: string | null): Tier3Spec | null {
   const cols = pickCols(columns, rows);
   if (!cols) return null;
@@ -93,7 +98,29 @@ function treemap(columns: string[], rows: unknown[][], title?: string | null): T
         {
           type: "rect", from: { data: "leaves" },
           encode: {
-            enter: { fill: { scale: "color", field: "name" } },
+            enter: {
+              fill: { scale: "color", field: "name" },
+              /**
+               * Tinted, and that is what makes the labels readable.
+               *
+               * A treemap is the one form here that puts TEXT ON A FILL. `config.text.fill`
+               * is `t1`, the themed primary ink, so at full saturation the darker half of
+               * the categorical range — the reds, the browns, the deep greens — carried
+               * near-black labels on a near-black tile. The fix cannot be a white label:
+               * this file's rule is that no colour is written into a spec, so that an
+               * ejected chart still follows the token layer and still flips with the theme.
+               *
+               * Compositing the token hue against the themed surface keeps both. The tile
+               * lightens in light mode and darkens in dark mode, always TOWARD the surface
+               * and therefore always away from the ink sitting on it. `sankey` already
+               * tints its ribbons this way for the same reason.
+               *
+               * Nothing is lost by muting: in a treemap the encoding is AREA. Colour only
+               * separates neighbours, and the 2px `paddingInner` gap plus a direct label on
+               * every tile carry that — identity is never colour alone here.
+               */
+              fillOpacity: { value: 0.55 },
+            },
             update: { x: { field: "x0" }, y: { field: "y0" }, x2: { field: "x1" }, y2: { field: "y1" } },
           },
         },
@@ -102,11 +129,42 @@ function treemap(columns: string[], rows: unknown[][], title?: string | null): T
           encode: {
             update: {
               x: { signal: "(datum.x0 + datum.x1) / 2" },
-              y: { signal: "(datum.y0 + datum.y1) / 2" },
+              // Rides up when the value sits under it, centred when it does not.
+              y: { signal: `(datum.y0 + datum.y1) / 2 + (${SHOW_VALUE} ? -7 : 0)` },
               align: { value: "center" }, baseline: { value: "middle" },
               text: { field: "name" },
-              // A label wider than its own tile is noise; hide it rather than clip it.
-              opacity: { signal: "(datum.x1 - datum.x0) > 54 && (datum.y1 - datum.y0) > 18 ? 1 : 0" },
+              /**
+               * `limit` truncates to the tile with an ellipsis. The old gate compared the
+               * tile against a CONSTANT 54px, so a long name on a merely-wide tile passed
+               * it and then drew straight out over its neighbours — "Dr Martens 1460" spilled
+               * off the chart entirely. A width the label actually has to fit is the check,
+               * and a clipped "Patagonia Nan…" still names the tile, where hiding it names
+               * nothing at all.
+               */
+              limit: { signal: "datum.x1 - datum.x0 - 10" },
+              opacity: { signal: "(datum.x1 - datum.x0) > 34 && (datum.y1 - datum.y0) > 18 ? 1 : 0" },
+            },
+          },
+        },
+        {
+          // The magnitude, on tiles with room for it. A treemap encodes area, which reads as
+          // a RANKING but not as a quantity — the reference this was measured against put the
+          // number beside every bar, and a viewer asked "how much is Nike" got no answer here.
+          type: "text", from: { data: "leaves" },
+          encode: {
+            update: {
+              x: { signal: "(datum.x0 + datum.x1) / 2" },
+              y: { signal: "(datum.y0 + datum.y1) / 2 + 9" },
+              align: { value: "center" }, baseline: { value: "middle" },
+              // `.3~s`, not `~s`: bare `~s` keeps every significant digit it is given, so a
+              // tile read "26.405k" beside another reading "17.4k" — a ragged column of
+              // different precisions where the eye wants one. Three figures is what a
+              // treemap label can carry and all a reader compares at this size.
+              text: { signal: "format(datum.value, '.3~s')" },
+              fontSize: { value: 10 },
+              // Secondary to the name it sits under, without reaching for a second ink token.
+              fillOpacity: { value: 0.75 },
+              opacity: { signal: `${SHOW_VALUE} ? 1 : 0` },
             },
           },
         },

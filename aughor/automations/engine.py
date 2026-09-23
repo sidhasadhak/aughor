@@ -642,6 +642,50 @@ DISAGREEMENT_KEY = "_readings_disagree"
 #: The step kinds that leave the platform through the engine's departure gate.
 DEPARTURE_SENDS = frozenset({"slack_post", "notify"})
 
+#: RC-2 on the unattended path — the grid an outward Slack post should draw a picture of.
+#: Engine→dispatcher plumbing on the `DEPARTURE_BASIS_KEY` precedent: by dispatch time the
+#: message is a bound string and the rows behind it are gone, so the chart would have
+#: nothing to draw. Not in `PUBLISHED_KEYS` and not bindable — a bag of raw rows on the
+#: canvas reads as something to send, and it is not.
+CHART_GRID_KEY = "_chart_grid"
+
+
+def chart_grid(effect: Effect, context: dict) -> dict:
+    """The first upstream grid this send reads, as `{columns, rows}` — or `{}`.
+
+    Walks the SAME `effect_refs` the data edges and `departure_basis` walk, so "the canvas
+    drew an arrow here" and "the chart drew this step's rows" cannot disagree. FIRST match
+    wins, for `departure_basis`'s reason: a message binding two grids has two pictures and
+    no answer to which one it is OF.
+
+    `trusted_query` publishes rows as DICTS keyed by column (engine `_dispatch_trusted_query`),
+    while the chart resolver takes positional lists — so the conversion happens here, in
+    column order, rather than leaving the renderer to guess a key order from the first row.
+    """
+    from aughor.automations.dataflow import TRIGGER_ALIAS
+    seen: set[str] = set()
+    for ref in effect_refs(effect):
+        alias = parse_ref(ref)[0]
+        if not alias or alias in seen or alias == TRIGGER_ALIAS:
+            continue
+        seen.add(alias)
+        entry = context.get(alias) or {}
+        if not isinstance(entry, dict):
+            continue
+        columns = [str(c) for c in (entry.get("columns") or [])]
+        raw = entry.get("rows")
+        if not columns or not isinstance(raw, list) or not raw:
+            continue
+        rows: list[list] = []
+        for r in raw:
+            if isinstance(r, dict):
+                rows.append([r.get(c) for c in columns])
+            elif isinstance(r, (list, tuple)):
+                rows.append(list(r))
+        if rows:
+            return {"columns": columns, "rows": rows}
+    return {}
+
 
 def departure_basis(effect: Effect, context: dict) -> dict:
     """HB-2 — where one outward send's words come from, read off the chain context: the
@@ -801,6 +845,114 @@ def _receipt_context(verdict) -> dict:
     return {"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()}
 
 
+#: The same bound `routers/charts.py` puts on its door, for its reason: a chart is a
+#: picture of a shape, not a rendering of a result set, and past a few hundred rows the
+#: marks stop being separable while the SSR subprocess still pays for the pixels.
+_CHART_MAX_ROWS = 500
+
+
+def _ranked_magnitudes(columns: list, rows: list) -> bool:
+    """Is this grid one label against one magnitude — the shape a ranked bar tells the
+    truth about? Two columns, the second numeric in every row that has a value, the
+    first not. Deliberately strict: it gates a fallback whose whole safety argument is
+    that bar cannot misrepresent THIS shape."""
+    if len(columns) != 2 or not rows:
+        return False
+    labels = [r[0] for r in rows if len(r) == 2]
+    values = [r[1] for r in rows if len(r) == 2]
+    if len(values) != len(rows):
+        return False
+
+    def magnitude(v) -> bool:
+        """Permissive on purpose: BigQuery hands counts back as `'75'`, and a measure
+        that arrived as a string is still a measure."""
+        if isinstance(v, bool) or v is None:
+            return False
+        if isinstance(v, (int, float)):
+            return True
+        try:
+            float(str(v))
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    def continuous(v) -> bool:
+        """Strict on purpose, and asymmetric with `magnitude` above for a reason worth
+        stating: `'1000112'` is a CUSTOMER ID, not a position on an axis. Warehouses
+        hand ids back as strings and magnitudes as numbers, so the Python type is the
+        signal — and getting it wrong in the permissive direction is what would let a
+        genuine two-measure scatter retry as a bar, the one lie this gate prevents."""
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+    return all(magnitude(v) for v in values) and not any(continuous(x) for x in labels)
+
+
+def _attach_chart(effect: Effect, automation: Automation, bot, info: dict,
+                  channel: str) -> None:
+    """RC-2 — draw the send's grid and put it in the thread the send just opened.
+
+    Best-effort at every seam, and deliberately so. `render_charts_svg` already fails
+    open to None for a missing node, a dead bundle, a timeout OR a grid with no honest
+    chart in it — and the last of those is a VERDICT, not a fault: the same 204 the
+    browser reaches for the same rows. A scheduled post whose numbers do not make a
+    picture simply stays the message it already was.
+
+    Threaded rather than merged into the message because `post_as_bot` owns the `ts`
+    that becomes the Aughor session id, the departure link's ref and the root a reply
+    composes on. Uploading with `initial_comment` instead would move the text onto a
+    file message and take that `ts` with it.
+    """
+    grid = effect.config.get(CHART_GRID_KEY) or {}
+    columns, rows = grid.get("columns") or [], grid.get("rows") or []
+    if not columns or not rows:
+        return
+    # Slack's own resolved id — `completeUploadExternal` will not take `#name`, and a
+    # channel configured as a name would otherwise fail on the third hop every time.
+    channel_id = str(info.get("channel") or "")
+    thread_ts = str(info.get("ts") or "")
+    if not channel_id:
+        return
+    try:
+        from aughor.export.echarts import render_chart_svg, svg_to_png
+        from aughor.slackbots.post import upload_file
+
+        money = ""
+        if automation.conn_id:
+            from aughor.routers.investigations import resolve_currency_symbol
+            money = resolve_currency_symbol(automation.conn_id, None) or ""
+        capped = rows[:_CHART_MAX_ROWS]
+        svg = render_chart_svg(columns, capped, "auto", automation.name or "",
+                               money_symbol=money)
+        if not svg and _ranked_magnitudes(columns, capped):
+            # The headless renderer is Vega ONLY, and Vega draws six types; the browser
+            # falls back to ECharts for the rest. `auto` sends a category plus an ADDITIVE
+            # measure at 7-24 rows to a treemap (`chartTypeInference.ts`), which Vega
+            # refuses — so the most ordinary business grid there is, "top sellers by
+            # revenue", renders nothing at all on every headless surface.
+            #
+            # The retry is deliberately NOT a blanket "try bar". Tier 1's refusal exists
+            # because falling through to bar drew a `scatter` as a bar chart: well-formed,
+            # correctly themed and entirely wrong. Bar is only honest here because the
+            # shape is already one label against one magnitude — the same ranked bar the
+            # inference comment says "reads the magnitudes directly". Anything else keeps
+            # the null and posts no picture.
+            svg = render_chart_svg(columns, capped, "bar", automation.name or "",
+                                   money_symbol=money)
+        png = svg_to_png(svg) if svg else None
+        if not png:
+            return
+        ok, up = upload_file(bot.bot_token, channel_id, data=png,
+                             filename="chart.png", title=automation.name or "chart",
+                             thread_ts=thread_ts or None)
+        if not ok:
+            logger.warning("slack chart upload failed for %s: %s",
+                           automation.id, up.get("error"))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a scheduled post's chart is best-effort; the message already landed",
+                 counter="automations.slack_chart")
+
+
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
     """RC-5.4 — post into a channel AS the bot, so the message can be replied to.
 
@@ -864,6 +1016,10 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
         thread_ts=str(effect.config.get("thread_ts") or "") or None,
     )
     if ok:
+        # RC-2 — the picture, into the thread the message just opened. After the post and
+        # never instead of it: the numbers are the answer, and a renderer that is slow,
+        # absent or honestly out of chartable material must not cost the send.
+        _attach_chart(effect, automation, bot, info, channel)
         # HB-3 — a post that declares what it is `about` is filed on that object as a
         # thread the moment it exists (everything lands on the map).
         _thread_ref = f"{info.get('channel', '') or channel}:{info.get('ts', '')}"
@@ -2090,6 +2246,11 @@ def _walk_automation(
             # gate, the same way: on the bound config, so the dispatchers keep one signature.
             if effect.kind in DEPARTURE_SENDS and not dry_run:
                 bound = {**bound, DEPARTURE_BASIS_KEY: departure_basis(effect, step_context)}
+            # RC-2 — only `slack_post`: `notify` fires an incoming webhook, which cannot
+            # carry a file at all, so binding a grid there would cost the walk every run
+            # and produce a chart nothing could ever post.
+            if effect.kind == "slack_post" and not dry_run:
+                bound = {**bound, CHART_GRID_KEY: chart_grid(effect, step_context)}
             if effect.kind == "synthesize":
                 # Read off the AUTHORED config, which still holds the reference.
                 ref = (effect.config or {}).get("data")

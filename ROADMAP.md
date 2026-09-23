@@ -7307,6 +7307,195 @@ every new guard, and the §3 line updated the same day (a prose claim in §3 rot
 adds ~4.5 points over plain agentic file search, by their own numbers).
 
 
+### 3.22 · Arc CP — the central path: one answer, many doors (DRAFTED **and ADOPTED** 2026-09-23 at the user's direction — §6 item 31, **all four clauses YES the same day**; source: `IDEAS.md` 23 and 24, whose claims were MEASURED before this arc was written, not after)
+
+> **Origin.** The user, 2026-09-23, in the parts that bind: *"the query processing formatting
+> the safeguard and other core operations should happen centrally irrespective of where the
+> question is coming from — it doesn't matter whether it's a quick ask, or a Deep
+> investigation, or it is supposed to be delivered to Slack or email or you're running an
+> automation… then depending on where this output is going that should define the length
+> breath and the format in which it is getting delivered."* And, the same session: *"collapse
+> quick and deep investigation and let our classify framework take the judgement based on
+> redefining criterias that each question or ask or an input from the user will go through."*
+>
+> **The thesis.** These are one arc, not two, because they are the two ends of the same path.
+> A typed judgement at the HEAD decides how much work an ask earns; a typed envelope at the
+> TAIL decides how much of the result each door shows. The work in between happens once. The
+> arc's falsifier is the same at both ends: if a door still re-implements a core operation
+> after its wave, the wave did not land.
+
+**Laws that bind every CP wave (standing, not per-wave):**
+
+- **Decisions central, encodings local.** Which chart a grid wants, whether an ask needs a
+  second query, whether a claim is licensed — decisions, and they belong to the core. PNG
+  width, raster background, Slack's 40 KB cap, "attach as CSV past N rows" — encodings, and
+  they belong to the door. CP-0 records what happens when a decision drifts into an
+  encoding's place: it cost every headless surface a whole class of chart.
+- **The core emits structure; a door renders it.** No wave may close by handing a door prose
+  and asking it to shorten it. Prose has no fields, so a door cannot select from it, and
+  shortening it needs a second model call — which spends back the efficiency this arc is for.
+- **One gate, told who is answering for this exit.** Centralising the safeguard is not the
+  same as one code path. The inbox's accepted send is deliberately ungated because a person
+  read the text and pressed send; that exception is correct and must survive the arc.
+- **Nothing routes on a number nobody has checked.** Every probability this platform produces
+  today is STATED by a model, not measured from token probabilities (`judgment/seam.py`, in
+  its own words). Until the battery says what those numbers are worth, they may be recorded
+  and compared, never obeyed.
+
+#### CP-0 · The census — ✅ MEASURED 2026-09-23 (this is the study; the numbers below are its receipts)
+
+Taken live on `9186257d` + this branch, against the serving instance. Three of these rows
+contradict what the arc's own author assumed before measuring, which is why the wave exists.
+
+**What is already central, and works.** Chart rendering has ONE implementation —
+`render_charts_svg` in [aughor/export/echarts.py](aughor/export/echarts.py) — with three
+consumers ([export/document.py](aughor/export/document.py),
+[routers/charts.py](aughor/routers/charts.py), [automations/engine.py](aughor/automations/engine.py)).
+This is the arc's existence proof: where the principle has been applied it holds.
+
+**What is duplicated.**
+
+| core operation | implementations | evidence |
+|---|---|---|
+| chart → SVG | **1** | `export/echarts.py`, 3 consumers |
+| SVG → PNG | **2** | [export/echarts.py](aughor/export/echarts.py) and [bots/slack/src/chart.ts](bots/slack/src/chart.ts) — the SAME transparent-background defect existed in both and had to be fixed twice on 2026-09-23, the second time only because a screenshot showed it still live |
+| a table for a READER | **3, none shared** | the model writes one in prose for chat; `gfmTable` in [bots/slack/src/artifacts.ts](bots/slack/src/artifacts.ts); `Block("table")` in [export/document.py](aughor/export/document.py) |
+| text into Slack | **3** | [slackbots/post.py:43](aughor/slackbots/post.py:43) · [notifications/executor.py:167](aughor/notifications/executor.py:167) · [integrations/operations.py:213](aughor/integrations/operations.py:213), each with its own truncation |
+| attach the exhibits | **2** | [bots/slack/src/bot.ts:158](bots/slack/src/bot.ts:158) and `_attach_chart` in [automations/engine.py](aughor/automations/engine.py) |
+
+**Python has no reader-facing table builder at all.** Its only pipe-table emitter,
+[tools/data_catalog.py:158](aughor/tools/data_catalog.py:158), formats for the MODEL'S PROMPT.
+So "show a table" has three different answers and no shared one — which is exactly why a
+measured Slack answer on 2026-09-23 carried the same five rows twice, once as prose the model
+wrote and once as the grid the transport attached, neither able to see the other.
+
+**Eight delivery surfaces, and no email yet** — `bot.ts` · `notifications/executor.py` ·
+`automations/engine.py` · `integrations/operations.py` · `briefing/delivery.py` ·
+`export/pdf.py` · `export/slides.py` · `export/document.py`. No SMTP client exists anywhere in
+the tree. **This is a scheduling argument, not a detail:** adding a ninth door to a per-door
+architecture multiplies the duplication above, so the arc is cheaper now than after email.
+
+**The treatment decision is already being made — and one half of it is never chosen.**
+Live `/obs/route-mix`: **74 ask turns, 25 converse (33.8%), 49 fast path (66.2%)**, converse
+mean 2.4 steps, and **2 of 25 stopped on `budget`** rather than on an answer. But:
+
+- `fast_path_turns` is **a residual, not a decision** — literally `total - converse`
+  ([obs/session_log.py:617](aughor/obs/session_log.py:617)). Nothing judges it.
+- **`deep_analysis` was chosen 0 times out of 60 tool uses.** It is defined at
+  [agent/converse_tools.py:353](aughor/agent/converse_tools.py:353) and declared to the model
+  at [line 640](aughor/agent/converse_tools.py:640). In 25 agentic turns the model never once
+  picked it. This is the house's own *features stall at TESTED, not LEVERAGED* shape (§7), and
+  it reframes the whole of `IDEAS.md` 24: the quick/deep split is not being made badly, **on
+  the interactive path it is not being made at all.**
+- Deep analysis does run — 41 traces at **80,752 tok/run** against CONVERSE's **20,242**
+  (measured 2026-09-18, 449 traces) — but via the SCHEDULED path, never by a chat choice. So
+  the cost of getting a treatment wrong is ~**4×**, in both directions: pay 4× for a lookup,
+  or answer a diagnosis with a lookup.
+
+**The number this arc would route on cannot be priced today.** `/obs/usage-summary` over 24 h:
+111 calls, 731,363 tokens, `cache_hit_rate 0.551`, and **`cost_is_complete: false` with 107 of
+111 calls unpriced**. Savings from this arc are statable in TOKENS and not in dollars until
+pricing lands. No wave may claim a dollar figure.
+
+**The judgement primitives are half-bound.** [judgment/seam.py](aughor/judgment/seam.py) types
+all three — `Noul`, `Choice`, `Score` over 2–10 ordered levels. The hosted binding accepts
+**noul bundles only** ([judgment/jev.py:118](aughor/judgment/jev.py:118)). And the seam states
+its own limit: *"The probability is STATED, not measured"* — no provider here exposes logprobs,
+so [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) is the instrument that would
+say whether the numbers mean anything, **and it has never been run against a model.**
+
+#### CP-1 · Choice and Score reach the binding, and every ask is classified in SHADOW
+
+**First, because its corpus cannot be backfilled** — the same reasoning that reordered Arc CB.
+Every day without shadow logging is a day of calibration data that cannot be recovered.
+
+Extend [judgment/jev.py](aughor/judgment/jev.py) past its noul-only gate to the `Choice` and
+`Score` the seam already types. Then classify every incoming ask and **record the treatment it
+would have chosen beside what actually ran** — no routing, no risk to any answer. Jev evaluates
+a mixed bundle in parallel and its latency scales with tokens rather than question count, so
+the full lever set below costs about what one question does.
+
+The first levers, to be revised by what CP-2 measures, not by taste:
+
+- **Choice** — treatment: `lookup · single_query · multi_query · investigation`; intent:
+  `describe · compare · diagnose · forecast · act` (`diagnose` is what earns depth; `act`
+  belongs to the approval gate, not to the answer path).
+- **Score** — specificity 0–3 (does the ask name metric, grain, window, filter?); steps implied
+  0–4, which IS the budget; stakes 0–3, from a private thread up to a scheduled post.
+- **Noul** — is the ask causal? does it name a governed metric with an approved definition? is
+  it answerable from the last result without new SQL? is it a follow-up composing on prior state?
+
+**Classify only what is uncertain.** Where the answer is going, who asked and which connection
+is in play are KNOWN. Inferring a fact already held adds a way to be wrong and buys nothing.
+
+**Receipt:** a week of shadow rows in which every ask carries a treatment, a confidence and the
+treatment that actually ran; plus a mutation test on the binding showing a Choice bundle whose
+option is absent from the closed set cannot be answered. **Falsifier:** if the shadow treatment
+agrees with what ran on essentially every ask, there is no decision here to take and the arc's
+second movement is ceremony — record that and stop at CP-2.
+
+#### CP-2 · Calibrate before anything obeys it
+
+Run [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) for real against the
+shadow corpus — ECE plus its shuffled-context control — and publish the number. The routing
+literature is consistent that thresholds set by intuition are miscalibrated and that fixing
+calibration is where the savings actually are; it is equally consistent that an escalation rate
+of a few percent can erase a cascade's savings entirely.
+
+**Receipt:** a stated ECE on the treatment Choice and the three Scores, and a threshold table
+FITTED to the corpus rather than chosen. **Falsifier:** if calibration cannot be brought to a
+usable band, the arc stops here with the shadow log kept as an observability feature — and says
+so in this section rather than leaving CP-3 reading as merely unstarted.
+
+#### CP-3 · Route on it, behind a flag
+
+Only now does a treatment decide anything. Flag-gated exactly as `semops.jev_cheap_tier` is
+([kernel/flags.py:92](aughor/kernel/flags.py:92)), default OFF, graduating only on a live
+receipt. Low confidence escalates UP a tier or asks one clarifying question — never down. A flat
+distribution over `treatment` is a taxonomy fault, not an input fault, and is surfaced as one.
+
+**Receipt:** a live receipt on theLook comparing tokens and answer quality against the
+unrouted path, on the same asks. **Falsifier:** if realised token cost does not fall, or
+quality drops on any treatment class, the flag stays off.
+
+#### CP-4 · The answer envelope — the core emits structure, not prose
+
+The tail of the path. The core returns a typed envelope — headline, grid, caveats, provenance,
+follow-ups — and a door SELECTS from it. Slack takes headline + grid + the top caveats; a PDF
+takes all of it plus exhibits; a scheduled post takes what its stakes score allows. The
+`/ask` stream's frames (`chart_type`, `chart_config`, the grid frames) are already a partial
+envelope that the Slack bot consumes; **the gap is that the prose is not in it.**
+
+Two defects measured in CP-0 are the acceptance test: the duplicate table must become
+impossible (the grid is one field, and a door decides inline-or-attached), and
+[agent/converse_tools.py:611](aughor/agent/converse_tools.py:611) — which instructs the model to
+narrate guard receipts to the READER, against the standing decision that Slack messages carry
+no receipts — must become a provenance field a door drops.
+
+**Receipt:** the same answer delivered to three doors from one envelope, differing only in
+selection; and the two CP-0 defects reproduced against the old path and absent on the new.
+**Falsifier:** if a door still needs a model call to shorten what it was handed, the envelope
+is not structured enough and the wave is not done.
+
+#### CP-5 · One reader-facing exhibit formatter, consumed by every door
+
+Retire the three table answers to one, and the two rasterizers to one. Not a rewrite of the
+doors — the formatter is a core function each door calls, with the door supplying only its
+encodings (width, cap, inline-or-attach).
+
+**Receipt:** the CP-0 table above re-measured, with `a table for a READER` at 1 and `SVG → PNG`
+at 1. **Falsifier:** the catalogue-timestamp law — if re-measuring shows a door has grown its
+own formatter back, the seam was in the wrong place.
+
+**What each wave must show before the next starts:** a live receipt, a mutation test on every
+new guard, and this section updated the same day — a prose claim in §3 rots silently (§7).
+
+**Not in this arc:** an email door (it does not exist; this arc makes adding it cheaper, it does
+not add it) · pricing the unpriced calls (a prerequisite for any dollar claim, tracked elsewhere)
+· replacing the model's own prose with templates — the envelope carries prose as a FIELD, it does
+not stop the model writing it.
+
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -8256,6 +8445,11 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-22:** item 30 (Arc CB — the company brain, from the Codos idea set) arrived at the user's
 > *"consider & plan"* and was answered in the same turn, four clauses; §3.21 drafted on those answers. Zero open.
 > **Amended 2026-09-22, later:** item 30(a) REVISED by the user — foundations first (dated facts, the acceptance baseline, then owners), after the builder's "is this overdone?" reading was ruled to have measured the dev instance and not the design; CB-1 started.
+> **Amended 2026-09-23:** item 31 (Arc CP, the central path) arrived at the user's *"lets first study the idea
+> and come up with a proper roadmap"*, was drafted with its study (CP-0) taken FIRST, and was answered in the
+> same session — *"yes to all four"*. (a) adopt, (b) the shadow wave runs first, (c) a low-confidence treatment
+> may ask ONE clarifying question, (d) a model-scored `stakes` may TIGHTEN the departure gate and never loosen
+> it. **Back to zero open.**
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -8823,6 +9017,37 @@ the browser** · **measure the premise before building.**
     write them, they already win over inference. (d) **The first "said" source is filed Slack thread replies**, as
     recommended — they already arrive; uploaded documents (idea 7) follow. Nothing started; the register stays at zero
     OPEN — every clause is answered.
+
+---
+
+31. ✅ **DRAFTED AND ADOPTED 2026-09-23 (the user, after the treemap session: "I strongly feel that the query processing
+    formatting the safeguard and other core operations should happen centrally irrespective of where the question
+    is coming from", then "lets first study the idea and come up with a proper roadmap") — Arc CP, the central
+    path (§3.22): four clauses, **all four answered YES by the user the same day** (*"yes to all four"*). The study is CP-0 and was taken BEFORE the arc was written; three of its rows
+    contradict what the drafter assumed, and one of them reframes the second half of the arc.**
+    **(a) Adopt the arc?** *Recommended: yes, and note the timing argument rather than the elegance one — there
+    are eight delivery doors today and NO email door anywhere in the tree. Every door added to a per-door
+    architecture multiplies the duplication CP-0 measured (2 rasterizers with the same defect fixed twice in one
+    day, 3 unshared answers to "show a table", 3 ways to put text in Slack). The arc is strictly cheaper before a
+    ninth door than after.*
+    **(b) Which movement runs first — the head (judgement) or the tail (envelope)?** *Recommended: the head's
+    SHADOW wave first (CP-1), for Arc CB's own reason — its corpus cannot be backfilled, and every day without it
+    is calibration data permanently lost. The envelope is the larger prize and the user named it first, so this
+    is a real reordering and not the builder's to assume. Note that CP-1 is shadow-only: it changes no answer, and
+    the envelope can proceed beside it.*
+    **(c) May the treatment ask a clarifying question instead of answering?** *Recommended: yes, but only on LOW
+    confidence and only once per ask. CP-0 measured 2 of 25 converse turns stopping on `budget` rather than on an
+    answer — that is the shape of an under-specified ask being answered anyway. The alternative, escalating
+    silently to a deeper treatment, spends ~4× (80,752 vs 20,242 tok/run) to guess at what one question would
+    have settled. This is a user-visible behaviour change, which is why it is here and not in the arc.*
+    **(d) May a model-scored `stakes` change how strict the departure gate is?** *Recommended: it may TIGHTEN and
+    never loosen. A score that can relax a safeguard puts the gate under the judgement of the thing it exists to
+    check, and every probability this platform produces is STATED by a model rather than measured (`judgment/seam.py`).
+    Tightening on high stakes is free of that objection; loosening on low stakes is not, and should be refused
+    outright rather than gated.*
+    Not part of this item: pricing the unpriced calls. CP-0 found `cost_is_complete: false` with 107 of 111 calls
+    unpriced over 24 h, so this arc may state savings in TOKENS only. That is a limit on the claim, not a clause
+    to decide.
 
 ---
 

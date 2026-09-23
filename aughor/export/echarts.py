@@ -70,26 +70,35 @@ def render_chart_svg(columns: list, rows: list, chart_type: str, title: str, *,
     }], money_symbol=money_symbol)[0]
 
 
-def svg_to_png(svg: str, *, scale: float = 2.0) -> Optional[bytes]:
-    """Rasterize an SVG for surfaces that cannot embed vectors (PPTX).
-    Needs a reportlab renderPM backend (rlPyCairo); absent one, returns None
-    and the caller degrades to its table/prose."""
-    try:
-        import io
+#: Rasterized charts are drawn on white rather than the page's own surface. Slack
+#: composites a PNG against whichever theme the READER chose, so a transparent
+#: background puts our dark-mode axis labels on a dark canvas for half the channel
+#: and an invisible chart is worse than a table. PDF and PPTX embed on white pages
+#: anyway, so nothing else notices.
+_RASTER_BACKGROUND = "#ffffff"
 
-        from reportlab.graphics import renderPM
-        from svglib.svglib import svg2rlg
-        drawing = svg2rlg(io.StringIO(svg))
-        if drawing is None:
-            return None
-        drawing.scale(scale, scale)
-        drawing.width *= scale
-        drawing.height *= scale
-        buf = io.BytesIO()
-        renderPM.drawToFile(drawing, buf, fmt="PNG")
-        return buf.getvalue()
+
+def svg_to_png(svg: str, *, scale: float = 2.0) -> Optional[bytes]:
+    """Rasterize an SVG for surfaces that cannot embed vectors (Slack, PPTX).
+
+    resvg ships prebuilt wheels and links no system library, which is the whole
+    reason it replaced svglib + reportlab's renderPM here: renderPM needs an
+    rlPyCairo backend that was absent far more often than present — it was dead on
+    the machine this was written on, which is why PPTX chart images degraded in
+    silence and why `routers/charts.py` refused to serve PNG at all.
+
+    Still best-effort, and still the same contract: any failure returns None and
+    the caller falls back to its table or prose. A chart is the nice-to-have half
+    of an answer; the numbers are the answer.
+    """
+    if not (svg or "").strip():
+        return None
+    try:
+        import resvg_py
+        return bytes(resvg_py.svg_to_bytes(svg_string=svg, zoom=scale,
+                                           background=_RASTER_BACKGROUND))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
-        tolerate(exc, "SVG rasterization is best-effort (needs a renderPM backend); "
-                      "vector surfaces are unaffected", counter="export.chart_raster")
+        tolerate(exc, "SVG rasterization is best-effort; vector surfaces are unaffected",
+                 counter="export.chart_raster")
         return None

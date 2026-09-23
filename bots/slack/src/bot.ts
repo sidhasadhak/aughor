@@ -17,7 +17,7 @@
  */
 import { Chat, StreamingPlan, type Adapter, type FileUpload, type StateAdapter, type Thread } from "chat";
 
-import { csvFilename, deepLink, renderGrid, worthShowing } from "./artifacts.js";
+import { csvFilename, renderGrid, worthShowing } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
 import type { ArrivalPoster, AskChunk, AskStream, TurnArtifacts } from "./aughor.js";
 
@@ -55,29 +55,11 @@ export function stripMention(text: string, userName: string = BOT_USERNAME): str
     .trim();
 }
 
-/**
- * The answer, then the way back to it. Slack is the doorway — the interactive
- * chart, the whole result, the SQL and the Trust Receipt live in Aughor — so
- * every answered turn ends with the link that reaches them.
- */
-async function* withDeepLink(
-  stream: AsyncIterable<AskChunk>,
-  link: string,
-): AsyncIterable<AskChunk> {
-  let sawText = false;
-  for await (const chunk of stream) {
-    if (typeof chunk === "string" || chunk.type === "markdown_text") sawText = true;
-    yield chunk;
-  }
-  if (sawText) yield `\n\n<${link}|Open in Aughor →>`;
-}
-
 export function buildBot({
   ask,
   renderChart,
   adapters,
   state,
-  webUrl,
   postArrival,
 }: {
   ask: AskStream;
@@ -85,7 +67,6 @@ export function buildBot({
   renderChart?: ChartRenderer;
   adapters: Record<string, Adapter>;
   state: StateAdapter;
-  webUrl?: string;
   /** HB-5 — absent in tests that only exercise the ask half. */
   postArrival?: ArrivalPoster;
 }): Chat {
@@ -153,9 +134,8 @@ export function buildBot({
       onTurn: (a) => { turn = a; },
     });
 
-    const link = webUrl ? deepLink(webUrl, thread.id) : "";
     await thread.post(new StreamingPlan(
-      link ? withDeepLink(stream, link) : stream,
+      stream,
       // One plan block beats a scatter of inline cards: a deep run's phases are
       // one piece of work with parts, and a thread reads better with a single
       // block that fills in than with eight cards interleaved through prose.

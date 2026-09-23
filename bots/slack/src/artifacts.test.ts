@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  cell, csvFilename, deepLink, fitsInline, gfmTable, renderGrid, toCsv, worthShowing,
+  cell, csvFilename, fitsInline, gfmTable, renderGrid, toCsv, worthShowing,
 } from "./artifacts.js";
 
 describe("cell", () => {
@@ -96,19 +96,6 @@ describe("renderGrid", () => {
     expect(fitsInline({ columns: cols(6), rows: rows(10, 6) })).toBe(true);
     expect(fitsInline({ columns: cols(7), rows: rows(10, 7) })).toBe(false);
     expect(fitsInline({ columns: cols(6), rows: rows(11, 6) })).toBe(false);
-  });
-});
-
-describe("deepLink", () => {
-  it("points at the conversation, with the thread id encoded", () => {
-    // A Slack thread id carries colons; unencoded they survive, but encoding is
-    // what makes the link independent of how a future id is shaped.
-    expect(deepLink("https://aughor.example.com", "slack:C0BT:1788011380.135369"))
-      .toBe("https://aughor.example.com/chat?chat=slack%3AC0BT%3A1788011380.135369");
-  });
-
-  it("tolerates a trailing slash on the host", () => {
-    expect(deepLink("http://localhost:3000/", "s")).toBe("http://localhost:3000/chat?chat=s");
   });
 });
 

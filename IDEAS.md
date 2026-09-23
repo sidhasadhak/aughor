@@ -318,3 +318,51 @@ Starting points in the code today:
 - The outcome record, with `metric_before` and `metric_after` ([aughor/playbook/outcomes.py:20](aughor/playbook/outcomes.py:20)), written by `log_outcome` ([line 56](aughor/playbook/outcomes.py:56)) from a single caller ([aughor/routers/investigations.py:6205](aughor/routers/investigations.py:6205)).
 - No review date exists anywhere in [aughor/playbook/](aughor/playbook/).
 - Verified and rejected outcomes already update each playbook entry's success rate ([aughor/playbook/outcomes.py:108](aughor/playbook/outcomes.py:108)), so an outcome that gets asked for does get used.
+
+## 23. One central path for every ask, and the destination decides only the delivery
+
+*Noted 2026-09-23 · STUDIED and drafted into the roadmap the same day as **Arc CP**, §3.22, **ADOPTED** — §6 item 31, all four clauses YES — the measurements there supersede any estimate here*
+
+Query processing, formatting and the safeguards should happen once, centrally, whatever the ask is and wherever the answer is going — a quick question, a deep investigation, a Slack thread, an email, a scheduled automation. Where the answer is going then decides its length, breadth and format, and nothing else.
+
+The pattern this repo already believes in for charts. `POST /charts/svg` exists so that "a chart posted into Slack is the chart the platform itself would have drawn", running the same resolver as the browser and the PDF. The idea is that principle applied to the whole answer rather than to one exhibit.
+
+The cost of not having it, all found in one session on 2026-09-23:
+
+- **The same operation, implemented twice.** Rasterizing an SVG lives in [aughor/export/echarts.py](aughor/export/echarts.py) for Python callers and again in [bots/slack/src/chart.ts](bots/slack/src/chart.ts) for the bot. Both had the same defect — a transparent background that made dark ink vanish on a dark Slack theme — and the fix had to be made twice, the second time only because a screenshot showed it still live.
+- **A decision that drifted to the edge.** The browser resolved a chart's type before choosing an engine; the headless path resolved it one layer later. The result was that a category plus an additive measure at 7–24 rows drew nothing at all on every headless surface.
+- **Three ways to put text in Slack**, each with its own truncation: [aughor/slackbots/post.py:43](aughor/slackbots/post.py:43), [aughor/notifications/executor.py:167](aughor/notifications/executor.py:167), and the `slack.chat.postMessage` chain operation at [aughor/integrations/operations.py:213](aughor/integrations/operations.py:213).
+- **Two implementations of "attach the exhibits"**: [bots/slack/src/bot.ts:158](bots/slack/src/bot.ts:158) for the interactive path and `_attach_chart` in [aughor/automations/engine.py](aughor/automations/engine.py) for the scheduled one.
+
+The sharper half of the idea: **the core has to emit structure, not prose.** A real Slack answer measured on 2026-09-23 carried a markdown table, then the transport attached the same five rows again as the exhibit grid — neither knew the other had it. The same answer narrated "No guard receipts fired on this query", because the tool description at [aughor/agent/converse_tools.py:611](aughor/agent/converse_tools.py:611) asks the model to report guard receipts to the reader, which is the opposite of the decision that took receipts off Slack messages. Both are the same fault: prose has no fields, so a destination cannot select from it, and shortening it needs a second model call — which spends back the efficiency the centralising was for.
+
+If the core emitted a typed envelope instead — headline, grid, caveats, provenance, follow-ups — Slack takes the headline, the grid and the top caveats; email takes all of it; a PDF adds the exhibits. Selection is free. The `/ask` stream's frames (`chart_type`, `chart_config`, the grid frames) are already a partial envelope that the Slack bot consumes; the gap is that the prose is not in it.
+
+Two boundaries worth keeping:
+
+- **Decisions central, encodings local.** Which chart a grid wants is a decision and belongs in the core. PNG width, raster background, Slack's 40 KB cap, "attach as CSV past N rows" are encodings and belong at the edge. The treemap defect above was a decision that had drifted into an encoding's place.
+- **A central safeguard still needs to know who is accountable at each exit.** The engine gates every unattended send at the departure gate, and the inbox's accepted send is deliberately ungated because a person read the text and pressed send. That exception is right, so "one code path" is not quite the rule — "one gate, told who is answering for this exit" is.
+
+## 24. Collapse quick and deep, and let a typed judgement pick the treatment
+
+*Noted 2026-09-23 · STUDIED and drafted into the roadmap the same day as **Arc CP**, §3.22, **ADOPTED** — §6 item 31, all four clauses YES. The study REFRAMED this idea: `deep_analysis` is chosen 0 times in 60 tool uses, so on the interactive path the quick/deep choice is not being made badly — it is not being made at all*
+
+Today the split between a quick answer and a deep investigation is a tool the model picks: `deep_analysis` at [aughor/agent/converse_tools.py:353](aughor/agent/converse_tools.py:353), declared at [line 640](aughor/agent/converse_tools.py:640), against the ordinary answering path, with [aughor/runners/investigation.py:234](aughor/runners/investigation.py:234) behind it. Collapse the two and let a judgement bundle decide the treatment from the question itself, on criteria we name and can measure.
+
+The precedent is Adaptive-RAG (NAACL 2024), which routes a question to no-retrieval, single-step or multi-step by predicted complexity and reaches 1.03 average steps where a fixed multi-step pipeline pays for every one.
+
+The primitives are already typed in [aughor/judgment/seam.py](aughor/judgment/seam.py) — `Noul`, `Choice` and `Score` over 2–10 ordered levels, after TypeSafe's Jev. The hosted binding accepts **noul bundles only** ([aughor/judgment/jev.py:118](aughor/judgment/jev.py:118)), because the banded cascade never asked for anything else, so Choice and Score are a binding to fill in rather than a design to invent. Jev evaluates a mixed bundle in parallel and its latency scales with tokens rather than question count, so a ten-question bundle costs about what one does — ask speculatively.
+
+A first set of levers:
+
+- **Choice** — treatment: `lookup · single_query · multi_query · investigation`; intent: `describe · compare · diagnose · forecast · act`, where `diagnose` is what earns depth and `act` belongs to the approval gate.
+- **Score** — specificity 0–3 (does the ask name metric, grain, window and filter?); steps implied 0–4, which is the budget; stakes 0–3, from a private thread up to a scheduled post, which sets both verbosity and how strict the gate should be.
+- **Noul** — is the ask causal? does it name a governed metric with an approved definition? is it answerable from the last result without new SQL? is it a follow-up composing on prior state?
+
+**Classify only what is uncertain.** Where the answer is going, who asked and which connection is in play are known facts; looking them up costs nothing and inferring them adds a way to be wrong. This is also the clean join with idea 23: the judgement infers the question's properties, the destination's policy is looked up, and the envelope combines the two.
+
+**The blocker is calibration, and it is the whole idea's load-bearing part.** The seam says it plainly: *"The probability is STATED, not measured."* No provider here exposes logprobs, so every probability is a number the model was asked to write into a schema — "not calibration, but the input calibration is measured ON". [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) is the instrument that would say whether those numbers mean anything, and it has never been run with real model calls. The routing literature is consistent that thresholds set by intuition are miscalibrated, that fixing calibration is where the savings actually come from, and that an escalation rate of only 1–3% can erase a cascade's savings entirely. Routing live answers on uncalibrated self-reported confidence would be building the decision on the one number nobody has checked.
+
+So the first step is **shadow mode**: extend the binding to Choice and Score, classify every incoming ask, and log the treatment it would have chosen beside what actually ran. No routing and no risk to an answer, and it produces the calibration corpus the battery needs as a by-product of ordinary use. Only once that says the numbers mean something does anything route on them, behind a flag, the way `semops.jev_cheap_tier` already is at [aughor/kernel/flags.py:92](aughor/kernel/flags.py:92).
+
+A useful built-in check comes free: a flat distribution over `treatment` means the categories overlap. The taxonomy is wrong, not the question.

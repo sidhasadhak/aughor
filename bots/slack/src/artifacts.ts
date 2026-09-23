@@ -113,16 +113,6 @@ export function renderGrid(grid: Grid): GridRendering {
   };
 }
 
-/**
- * The way back to the platform. Slack is the doorway; the interactive chart,
- * the full result, the SQL and the Trust Receipt live in Aughor, and every
- * answer carries the link that reaches them.
- */
-export function deepLink(webUrl: string, sessionId: string): string {
-  const base = (webUrl || "").replace(/\/+$/, "");
-  return `${base}/chat?chat=${encodeURIComponent(sessionId)}`;
-}
-
 /** A filename that sorts and survives Slack — no colons, no spaces. */
 export function csvFilename(question: string): string {
   const stem = question.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
