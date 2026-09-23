@@ -94,6 +94,15 @@ class Answer:
     probability: Optional[float] = None
     distribution: Mapping[str, float] = field(default_factory=dict)
     reason: str = ""
+    #: SCORE only — the probability-weighted position on the ordered levels, as a float index
+    #: (0 = the first level). A score of 1.4 means "between levels 1 and 2, nearer 1", which a
+    #: rounded level name cannot say: the vendor's own guidance is to threshold this value and
+    #: never to round it, and a budget derived from `steps_implied` wants 1.4 rather than "2".
+    #: Both backends produce it the same way — the hosted judge states it, the house backend
+    #: computes it from the same distribution it already returns — so a caller may threshold it
+    #: without knowing which answered. None for noul and choice, where levels have no order and
+    #: a weighted position would be arithmetic over names.
+    score: Optional[float] = None
 
     def __post_init__(self) -> None:
         if not self.available and not self.reason.strip():
@@ -156,6 +165,20 @@ def _normalise(raw: Mapping[str, float]) -> dict[str, float]:
     return {k: max(0.0, float(v)) / total for k, v in raw.items()}
 
 
+def weighted_score(levels: Sequence[str], distribution: Mapping[str, float]) -> Optional[float]:
+    """The probability-weighted position on ORDERED levels, as a float index from 0.
+
+    Shared so the two backends cannot drift: the hosted judge states its own score and the
+    house backend derives one here from the same distribution, and a caller thresholding the
+    value never has to ask which answered. Returns None when nothing sums — the same verdict
+    `_read` reaches, rather than a 0.0 that reads as "the lowest level".
+    """
+    total = sum(max(0.0, float(distribution.get(n, 0.0))) for n in levels)
+    if total <= 0:
+        return None
+    return sum(i * max(0.0, float(distribution.get(n, 0.0))) for i, n in enumerate(levels)) / total
+
+
 def _read(q: Question, got: Any) -> Answer:
     if isinstance(q, Noul):
         p = float(got)
@@ -167,8 +190,10 @@ def _read(q: Question, got: Any) -> Answer:
         return Answer(q.id, CHOICE if isinstance(q, Choice) else SCORE, False,
                       reason="every stated probability was zero, so there is no answer to read")
     best = max(names, key=lambda n: dist[n])  # ties break by declared order
-    return Answer(q.id, CHOICE if isinstance(q, Choice) else SCORE, True, value=best,
-                  probability=dist[best], distribution=dist)
+    is_choice = isinstance(q, Choice)
+    return Answer(q.id, CHOICE if is_choice else SCORE, True, value=best,
+                  probability=dist[best], distribution=dist,
+                  score=None if is_choice else weighted_score(q.levels, dist))
 
 
 def judge(state: str, questions: Sequence[Question], *, provider=None,
@@ -246,4 +271,5 @@ def agreement(today: Mapping[str, Any], seam: Mapping[str, Answer]) -> dict:
     }
 
 
-__all__ = ["Noul", "Choice", "Score", "Answer", "judge", "agreement", "NOUL", "CHOICE", "SCORE"]
+__all__ = ["Noul", "Choice", "Score", "Answer", "judge", "agreement", "weighted_score",
+           "NOUL", "CHOICE", "SCORE"]
