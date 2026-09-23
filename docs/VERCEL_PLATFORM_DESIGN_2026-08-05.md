@@ -1,5 +1,16 @@
 # Running Aughor on Vercel at full capacity — design note
 
+> 🗃️ **HISTORICAL, 2026-09-23.** The `aughor-platform` Vercel project this document
+> describes was deleted by the operator; Aughor is served from the self-hosted API,
+> whose clock is its own apscheduler heartbeat (every 60s) and never depended on
+> Vercel Cron. `.github/workflows/cron-tick.yml` — the fine-grained half of the
+> tiered clock described below — was removed in the same change, because the
+> deployment it ticked no longer exists. The root `vercel.json` and the
+> `aughor_intelligence` project it is linked to are UNTOUCHED, and `/cron/tick`
+> (`aughor/routers/cron.py`) still serves them. Everything below records what was
+> built and measured at the time; none of it describes how Aughor runs today.
+
+
 **Status:** proposal; §1's trim is IMPLEMENTED · **Date:** 2026-08-05
 
 This note answers one question: *can the whole platform — not a demo — run on Vercel, and
