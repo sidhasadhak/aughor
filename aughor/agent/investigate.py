@@ -8715,15 +8715,60 @@ def _fix_temporal_extreme_key_numbers(finding: dict, is_pct: bool = True) -> Non
            if m_idx < len(r) and p_idx < len(r) and _num(r[m_idx]) is not None]
     if len(pts) < 2:
         return
-    vals = [v for v, _ in pts]
+    # A TRAILING PARTIAL PERIOD IS NOT A DATA POINT ABOUT THE BUSINESS.
+    #
+    # Measured on a real report (2026-09-23): a 14-week series whose final bucket covered a
+    # single day (196 against a ~1,330 median, because the query ended mid-week) produced a
+    # "Full-week mean (Oct 1-Dec 24)" of 1253.00 — a figure BELOW the 1,278 minimum stated
+    # two lines above it, and 81 below the ~1,334 the same report's prose computed. The
+    # label said full weeks; the arithmetic used all of them.
+    #
+    # The rule is the house's own — `tools/profiler._period_density` flags a trailing
+    # partial at `< 0.5 * median` — applied here to the rows rather than to the warehouse,
+    # so the two cannot disagree about what "complete" means. The excluded period is NOT
+    # hidden: it keeps its own key number, and the delta against an uncontaminated baseline
+    # is the more honest number, not the less.
+    complete = pts
+    if len(pts) >= 3:
+        body = sorted(v for v, _ in pts[:-1])
+        median = body[len(body) // 2] if len(body) % 2 else (body[len(body) // 2 - 1]
+                                                             + body[len(body) // 2]) / 2
+        if median > 0 and pts[-1][0] < 0.5 * median:
+            complete = pts[:-1]
+
+    # PEAK, TROUGH AND RANGE STAY OVER EVERY ROW — this function exists so the key numbers
+    # cannot disagree with the chart, and the chart plots every point. In the very report
+    # that prompted this, the partial week IS the visible minimum (196); reporting a trough
+    # of 1,290 while the reader looks at 196 would recreate the exact contradiction the
+    # recompute was written to prevent. The artefact is named elsewhere, not hidden here.
+    #
+    # Only the MEAN changes, because a mean is a BASELINE rather than a description of the
+    # plot: an incomplete bucket is not a comparable period, and averaging it in dragged a
+    # "full-week mean" below the series' own minimum.
     peak = max(pts, key=lambda x: x[0])
     trough = min(pts, key=lambda x: x[0])
+    vals = [v for v, _ in complete]
     avg = sum(vals) / len(vals)
+    # The window the numbers were ACTUALLY computed over, so a model-written label saying
+    # "(Oct 1-Dec 24)" cannot keep its range while the value silently becomes a wider mean.
+    span = (complete[0][1], complete[-1][1])
     scale = 100 if max(abs(v) for v in vals) <= 1.5 else 1   # fraction (0.36) vs already-percent (36)
     fmt = (lambda v: _fmt_pct(v)) if is_pct else (lambda v: f"{v:.2f}")
 
     def _delta(d):
         return f"{d * scale:+.1f} pts vs avg"
+
+    def _set_span(kn, span):
+        """Restate a label's parenthetical as the window actually aggregated. Same
+        rewrite as `_set_period`, over two endpoints instead of one — an aggregate's
+        label names a RANGE, and leaving the model's guess there is how a mean over
+        fourteen weeks kept a label that said thirteen."""
+        lo, hi = _fmt_period(span[0]), _fmt_period(span[1])
+        for k in ("label", "context"):
+            t = kn.get(k)
+            if t and "(" in t:
+                kn[k] = re.sub(r"\([^)]*\)", f"({lo} – {hi})" if lo != hi else f"({lo})",
+                               t, count=1)
 
     def _set_period(kn, period):
         for k in ("label", "context"):
@@ -8739,6 +8784,7 @@ def _fix_temporal_extreme_key_numbers(finding: dict, is_pct: bool = True) -> Non
             kn["value"] = fmt(trough[0]); kn["delta"] = _delta(trough[0] - avg); _set_period(kn, trough[1])
         elif any(w in low for w in ("average", "mean", "overall")):
             kn["value"] = "~" + fmt(avg)
+            _set_span(kn, span)
         elif "range" in low or "spread" in low:
             kn["value"] = f"{fmt(trough[0])} – {fmt(peak[0])}"
             kn["delta"] = f"{(peak[0] - trough[0]) * scale:.1f} pts spread"
