@@ -3423,3 +3423,12 @@ def get_autonomy(connection_id: str = BUILTIN_ID):
     signals (aughor.memory.trust)."""
     from aughor.memory.trust import autonomy_level
     return autonomy_level(connection_id)
+
+
+@router.get("/framing/misses")
+def framing_misses(connection_id: str = BUILTIN_ID):
+    """PENDING item 12 — the questions on this connection that reached none of its declared business
+    terms: how many, when, and (while the session log keeps the run) what was asked. The record holds
+    each run's trace id, never the question's text; a person turns a miss into a synonym."""
+    from aughor.ontology.framing_misses import misses
+    return misses(connection_id)

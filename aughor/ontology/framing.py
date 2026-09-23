@@ -104,6 +104,9 @@ def _stem_set(*words: str) -> frozenset[str]:
 _STOP = _stem_set("the", "a", "an", "of", "to", "in", "on", "for", "by", "and", "or", "is", "are", "was", "were", "be",
                   "what", "which", "who", "how", "why", "when", "where", "do", "does", "did", "our", "my", "we", "us",
                   "per", "each", "every", "with", "from", "at", "as", "that", "this", "it", "its", "all", "any")
+#: The stop stems, public for the near-match finder (PENDING item 12) that reads questions the same way.
+STOP_STEMS = _STOP
+
 #: Words that ask whether a promise was kept.
 _LATE = _stem_set("late", "lateness", "overdue", "breach", "breached", "breaches", "broke", "broken", "break",
                   "breaking", "miss", "missed", "misses", "missing", "sla", "deadline", "tardy", "promise", "promised")
@@ -1161,3 +1164,10 @@ def _compiled_lines(frame: Frame, o: FrameOutcome) -> list[str]:
 
 __all__ = ["DEFAULT_HOPS", "Frame", "FrameDriver", "FrameMoment", "FrameOutcome", "FrameRule", "FrameTerm",
            "frame_question", "frame_reading", "render_frame_block", "stem", "words_of"]
+
+
+def instruction_verbs(question: str) -> set[int]:
+    """The indices (in ``words_of(question)``) of an answer instruction's verb — "Return the region",
+    "Order each category" — which name nothing the question asks about. Public for the near-match
+    finder (PENDING item 12), which must read a question exactly as the matcher does."""
+    return _clauses(question)[1]

@@ -5106,6 +5106,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/framing/misses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Framing Misses
+         * @description PENDING item 12 — the questions on this connection that reached none of its declared business
+         *     terms: how many, when, and (while the session log keeps the run) what was asked. The record holds
+         *     each run's trace id, never the question's text; a person turns a miss into a synonym.
+         */
+        get: operations["framing_misses_framing_misses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/glossary": {
         parameters: {
             query?: never;
@@ -25180,6 +25202,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    framing_misses_framing_misses_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

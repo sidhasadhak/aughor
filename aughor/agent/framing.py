@@ -147,6 +147,10 @@ def resolve_frame(question: str, connection_id: str, schema_name: Optional[str] 
     if choose and frame.ambiguous:
         frame = choose_definition(frame, graph, provider=provider, synonyms=synonyms, dialect=dialect,
                                   conn_id=connection_id, trace_id=trace_id, inv_id=inv_id)
+    # PENDING item 12 — a question on a scope that declares definitions and reached none of them is
+    # counted (the run's trace id, never the question's text), so how often wording misses is known.
+    from aughor.ontology.framing_misses import record as _record_miss
+    _record_miss(frame, graph, connection_id, schema_name, trace_id=trace_id, inv_id=inv_id)
     return frame
 
 

@@ -243,6 +243,10 @@ def test_unrendered_list_does_not_outlive_its_frames():
 #:                                    is defensive rather than dead
 _CASES_WITHOUT_PRODUCER = frozenset({
     "answer", "insight", "insight_delta", "figure", "status",
+    # PENDING item 8 (§3.28): `recheck` is produced by the RESTORE path only —
+    # `routers/investigations._turn_to_ui_messages` adds a `data-recheck` part to a turn whose
+    # answer a later re-check found changed. The live stream never carries it, by design.
+    "recheck",
 })
 
 

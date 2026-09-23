@@ -7962,6 +7962,38 @@ no fusions); its one live run fused two groups that should stay apart, and re-ch
 paid model run. A failed explorer call is retried by the next rite, since only a finished run is
 recorded.
 
+### 3.32 · Business terms however worded — the misses counted, the paraphrase set grown, near-matches measured (PENDING.md item 12, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; the near-match is NOT wired — ⚑ the user's call)
+
+> **The fact it answers.** The frame matcher reads only declared words and a person's synonyms,
+> by design; paraphrases scored 0/3, and a question that matched nothing lost the frame SILENTLY
+> — so how often wording misses on a real connection was unknown, and the lift the frame gives
+> (§3.15) is exactly what such a question loses.
+
+**What ships — the three steps PENDING named, the third as a measurement only.**
+1. **Misses are counted** (`ontology/framing_misses.py`, hooked into `agent.framing.resolve_frame`,
+   where every fresh framing passes): a question on a scope that DECLARES definitions and reaches
+   none is a `framing.miss` ledger event carrying the run's trace id — never the question's text,
+   because questions are already kept word for word elsewhere (PENDING's A5). **`GET
+   /framing/misses?connection_id=`** reads them, with the question only while the session log
+   still keeps its run. Free; no decision needed.
+2. **The paraphrase set grew from 3 to 17** (`evals/framing_matcher_set.jsonl`, 14 items written
+   and split dev/test before any near-match code). Measured: the exact matcher already frames **3
+   of 17** — "later than we promise", "later than promised", "how many days does delivery take"
+   reach the derived names (`late_*`, `*_breach_rate`, `*_lag_days`); the old "0/3" was a small
+   set. In-scope accuracy unchanged, 33/33 dev and 27/27 test.
+3. **Near-matches, measured, not wired** (`ontology/near_match.py`, `evals/framing_near_match_eval.py`):
+   each declared definition a small document — name words strong, description words weak — hit by
+   stem or by one word prefixing the other, weighted by rarity; a type's name alone never makes a
+   candidate, an instruction's verb is never a term. Tuned on dev: **6 of 8** missed paraphrases
+   put their meant definition among the candidates, **0 of 4** controls drew one. Test, measured
+   once: **4 of 5** recoverable, but **2 of 3** controls drew a wrong candidate
+   (`evals/framing_near_match_results_test.json`). What that decides is the user's: offering
+   near-matches to the chooser (one model call) would recover most reworded questions AND ask the
+   chooser about some that mean nothing declared — whether it then declines is unmeasured.
+⏳ Open: the chooser's behaviour on near-match candidates (a paid run); a screen for the misses
+(the door exists); "best customers" and "our own fault" share no word with their definitions —
+only a person's synonym, or a model, reaches them.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
