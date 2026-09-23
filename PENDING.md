@@ -14,10 +14,16 @@ claim rots silently. If measuring shows an item was already done, tick it and sa
 
 ---
 
-## The order of work — top 10 by impact (agreed 2026-09-23)
+## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON)
 
 Ranked by how many answers or people each one improves, and whether it unblocks others.
-Suggested build order: 2 → 3 → 6 (alerts done properly) and 1 → 10 (the structured answer, then email).
+Items 11–15 were drawn from the ontology arc at the user's direction ("an important part of the core engine") and are
+ranked among its leftovers, each re-measured against the code on 2026-09-23 before it was placed.
+
+First build order: 2 → 3 → 6 and 1 → 10 — all merged in #545 except 10, which the user took off.
+Build order now: 7, 8 and 9 (the user's focus); on the ontology, 11 → 12 (terms get proposed, then get recognised),
+with 14 first for any receipt that must reproduce on a fresh clone; 13 sits beside 9 — both are screens over stores
+nobody can see today.
 
 1. [x] **The structured answer** (CP-4, §3.22) — every answer, whether in chat, Slack, a PDF or a scheduled post, comes from one structured result and each destination takes only what it needs; it also stops the model narrating "guard receipts" to readers (`aughor/agent/converse_tools.py:611`) and makes every new destination cheap. *Built 2026-09-23 on `claude/pending-top-nine`, live receipt on theLook turn `47a130145460`; merged 2026-09-23 · #545.*
 2. [x] **Learn when numbers settle** (idea 4) — watch how a recent day's numbers keep changing as it ages, and speak only about days that have stopped moving; today theLook's lag is an 8-day number set by hand, and items 3 and 8 depend on this. *Built 2026-09-23 (ROADMAP §3.23) on `claude/pending-top-nine`; first reading taken on theLook, first verdict possible 2026-09-26; merged 2026-09-23 · #545.*
@@ -29,8 +35,13 @@ Suggested build order: 2 → 3 → 6 (alerts done properly) and 1 → 10 (the st
 8. [ ] **Tell people when an answer goes stale** (idea 5) — re-check past answers and tell the person when late data changes one ("we said 1,744; it is now 1,802"); CB-1 already keeps what each fact replaced, and item 2 tells a real change from late arrivals.
 9. [ ] **The company-brain map** (Arc CB, §3.21) — one screen where every store behind the "brain" is a box with a live count; eight built features with no screen are the built-and-never-used failure this project keeps repeating, and it is the demo the user asked for.
 10. ~~[ ] ⚑ **Email in and out** (HB-5, §3.18) — the one major destination that does not exist at all; waits on the user's Google OAuth client, and is cheapest right after item 1.~~ *Taken off this list 2026-09-23, the user's call; still open under the hub arc below.*
+11. [ ] ⚑ **Every new connection gets its business terms proposed** (Arc ON, §3.15) — the ontology lifts answers only where a question's business terms (processes, rules, promises) are declared: on the 2026-09-15 re-runs LuxExperience went from 5 of 16 right to 16 of 16 and Olist from 7 of 15 to 14 of 15, and plain SQL's misses were silent, not refused. A fresh connection has none, because the explorer that proposes them (`aughor/ontology/explorer.py`) runs only from the map's button; adding a connection runs the data explorer and the table-level build, not this. Wiring it is hours; the ⚑ is its quality gate — its one live check on LuxExperience fused two groups that should stay apart, it may run by default only with none, and re-checking is a paid model run.
+12. [ ] **Recognise a business term however it is worded** (Arc ON) — the frame matches only declared words and synonyms a person typed (`aughor/agent/framing.py:80`); reworded questions scored 0 of 3, and a question that matches nothing loses the frame silently with no counter, so how often it happens is unknown. First count the misses (free, no decision), then grow the 3-item paraphrase set, then offer near-matches to the chooser that already picks among candidates — that last step reverses a rule ROADMAP §3.15 calls "by design", so it is the user's call. Worth little until item 11 gives connections terms to match.
+13. [ ] **Object pages show what is known about each object** (Arc ON) — the findings panel is empty on every object page of every connection: it lists only findings whose SQL filters that exact object's key (`aughor/semantic/object_context.py:107`), exploration findings are aggregates by region, tier or status, and it reads only the home connection. LuxExperience's metrics panel is empty too: the shipped revenue and AOV are scoped to the samples and name a column LuxExperience lacks. Showing findings about the object's type or segment is the medium part; the rest is small.
+14. [ ] **Declared terms survive a fresh clone** (Arc ON) — the Olist, LuxExperience and cross-connection declarations behind item 11's numbers live only on the builder's machine, keyed by machine-local connection ids; their shipped home, `data/shipped/ontology_overrides/`, does not exist yet, and `AGENTS.md` still says `data/ontology_overrides/` is tracked while `tests/unit/test_seed_overlay_frozen.py` fails if anything new is tracked there. Needs stable connection ids first; until then no fresh checkout can re-prove item 11 or 12.
+15. [ ] ⚑ **The chat's main buttons reach the agent that holds the ontology's tools** (Arc ON) — Quick posts to `/chat` and the default Agent button to `/investigate`; only Edit, starters, clarify answers and re-runs reach the conversation agent, the one with the object tools. Both buttons still read the ontology through the shared answer core, so what they lose is the tools, and the gain is unmeasured. The switch is small; the ⚑ is cost — a conversation turn runs ~20k tokens — and it belongs in the same decision as item 4.
 
-Just outside the ten: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
+Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
 ---
 
@@ -87,17 +98,18 @@ Just outside the ten: the next industry package (insurance has public data to te
 - [ ] Moving `ontology_overrides/` into the data folder needs a safe top-up for installs that already migrated.
 
 ### Ontology — Arc ON (§3.15; finished, these are its leftovers)
-- [ ] Computed fields cannot be summed or averaged in object queries, and answers built by the compiler carry no badge.
-- [ ] Formula fields cannot use columns from a type's extra linked tables.
-- [ ] LuxExperience object pages show empty metrics and findings panels.
-- [ ] Model scores on objects (churn risk per customer) were never built — only the timeseries half of ON-5 was.
-- [ ] The explorer does not run automatically when a connection is added.
-- [ ] Across connections: a hop into a second connection inside a sub-query is refused, and object pages show only the home connection's findings.
-- [ ] A question worded differently from the declared names is not recognised until a person adds a synonym.
-- [ ] The Olist, LuxExperience and cross-connection declarations exist only as untracked local override files.
-- [ ] Actions can flag a record but can never correct a source value.
-- [ ] The chat's Quick button skips the agent — a filed defect.
-- [ ] The chat's object-query tool stays parked (§6 item 15) until there is a test set where plain SQL fails.
+*Every line below was re-measured against the code on 2026-09-23; the five with the most reach became top items 11–15.*
+- [ ] ~~Computed fields cannot be summed or averaged in object queries,~~ and answers built by the compiler carry no badge. *Measured: formula fields carry the `measure` role and a test averages one (`tests/unit/test_object_bindings.py:661`), so the first half is stale; the badge half stands — the web lists the `compiled` event as one it never shows.*
+- [ ] Formula fields cannot use columns from a type's extra linked tables. *Measured true; almost no one reaches it, since no tracked declaration has a formula field; about a day.*
+- [ ] LuxExperience object pages show empty metrics and findings panels — see top item 13. *Measured: the findings half is empty on every connection, not only LuxExperience.*
+- [ ] Model scores on objects (churn risk per customer) were never built — only the timeseries half of ON-5 was. *Measured true; no scoring code exists anywhere; a SQL-only stand-in such as days since the last order is possible now.*
+- [ ] ~~The explorer does not run automatically when a connection is added.~~ The business-term explorer does not run when a connection is added — see top item 11. *Measured: the data explorer and the table-level ontology build do run on connection add.*
+- [ ] Across connections: a hop into a second connection inside a sub-query is refused, and object pages show only the home connection's findings (the second half folds into top item 13). *Found by reading, not run: a formula field on a type in another connection is read as a real column (`aughor/semantic/object_query.py:695`), and the object page runs a cross-connection query's SQL directly though the compiler marks that SQL "not run" (`aughor/semantic/object_context.py:98`).*
+- [ ] A question worded differently from the declared names is not recognised until a person adds a synonym — see top item 12.
+- [ ] The Olist, LuxExperience and cross-connection declarations exist only as untracked local override files — see top item 14. *Measured: in a fresh clone they do not exist at all, and they cannot simply be committed, being keyed by machine-local connection ids.*
+- [ ] Actions can flag a record but can never correct a source value. *Measured: refused on purpose by the read-only law (ROADMAP §6 item 14), and even a stored correction only attaches a note, never swaps the value.*
+- [ ] The chat's Quick button skips the agent ~~— a filed defect~~ — see top item 15. *Measured: nothing was ever filed, and the default Agent button skips the conversation agent too.*
+- [ ] ⚑ ~~The chat's object-query tool stays parked (§6 item 15) until there is a test set where plain SQL fails.~~ Decide the parked object-query tool. *Measured: that set exists and was run on 2026-09-15, and the tool lost to the frame that already ships — LuxExperience 10 of 16 against 16 of 16, Olist 7 of 15 against 14 of 15. Delete the flag and the tool, or pay for a re-run on a stronger model.*
 
 ### Design system — Arc UI (§3.16)
 - [ ] ~30 components with hard-coded colours, ~46 bare "Loading…" lines and ~50 bare error lines to replace with proper states, plus the needs-human badge.
