@@ -19,12 +19,12 @@ claim rots silently. If measuring shows an item was already done, tick it and sa
 Ranked by how many answers or people each one improves, and whether it unblocks others.
 Suggested build order: 2 → 3 → 6 (alerts done properly) and 1 → 10 (the structured answer, then email).
 
-1. [ ] **The structured answer** (CP-4, §3.22) — every answer, whether in chat, Slack, a PDF or a scheduled post, comes from one structured result and each destination takes only what it needs; it also stops the model narrating "guard receipts" to readers (`aughor/agent/converse_tools.py:611`) and makes every new destination cheap. *Built 2026-09-23 on `claude/pending-top-nine`, live receipt on theLook turn `47a130145460`; unmerged.*
-2. [ ] **Learn when numbers settle** (idea 4) — watch how a recent day's numbers keep changing as it ages, and speak only about days that have stopped moving; today theLook's lag is an 8-day number set by hand, and items 3 and 8 depend on this. *Built 2026-09-23 (ROADMAP §3.23) on `claude/pending-top-nine`; first reading taken on theLook, first verdict possible 2026-09-26; unmerged.*
-3. [ ] **A built-in outlier-alert agent** (idea 2) — after each exploration, pick the industry metrics that fit, learn what is normal for each, and propose alerts; the anomaly check and the notify effect already exist. Needs item 2 first or it alerts on data that is still settling. *Built 2026-09-23 (ROADMAP §3.24) on `claude/pending-top-nine` as the Watcher's job; unmerged.*
+1. [x] **The structured answer** (CP-4, §3.22) — every answer, whether in chat, Slack, a PDF or a scheduled post, comes from one structured result and each destination takes only what it needs; it also stops the model narrating "guard receipts" to readers (`aughor/agent/converse_tools.py:611`) and makes every new destination cheap. *Built 2026-09-23 on `claude/pending-top-nine`, live receipt on theLook turn `47a130145460`; merged 2026-09-23 · #545.*
+2. [x] **Learn when numbers settle** (idea 4) — watch how a recent day's numbers keep changing as it ages, and speak only about days that have stopped moving; today theLook's lag is an 8-day number set by hand, and items 3 and 8 depend on this. *Built 2026-09-23 (ROADMAP §3.23) on `claude/pending-top-nine`; first reading taken on theLook, first verdict possible 2026-09-26; merged 2026-09-23 · #545.*
+3. [x] **A built-in outlier-alert agent** (idea 2) — after each exploration, pick the industry metrics that fit, learn what is normal for each, and propose alerts; the anomaly check and the notify effect already exist. Needs item 2 first or it alerts on data that is still settling. *Built 2026-09-23 (ROADMAP §3.24) on `claude/pending-top-nine` as the Watcher's job; merged 2026-09-23 · #545.*
 4. [ ] **Let a judgment pick quick or deep** (CP-3, §3.22) — in chat, deep analysis was chosen 0 times in 60 tool uses and a deep run costs ~4× a normal one, so routing fixes quality one way and cost the other; behind a flag, only after CP-2's week of shadow data says the labels can be trusted. *Blocked until ~2026-09-30: the shadow went live 2026-09-23 and CP-2's thresholds are fitted to that corpus, never chosen — skipped on 2026-09-23, to be taken once the week is in.*
-5. [ ] **Fact-check a document** (idea 7) — paste a memo or upload a deck and every number in it is checked against the warehouse; the report-number check, chart reading from PDFs and CB-8's said-versus-measured check are most of the machinery. *Built 2026-09-23 (ROADMAP §3.25) on `claude/pending-top-nine`: two API doors + the Slack `check:` verb, live receipt on theLook (2 measured, 2 contradicted); no web door yet; unmerged.*
-6. [ ] **Alerts that prove they work** (idea 6) — replay an alert over the past year before switching it on, and later feed it a fake outlier to prove the whole path still works, with "last proven working" on each; a broken alert once went unnoticed here for three days while its test passed. *Built 2026-09-23 (ROADMAP §3.26) on `claude/pending-top-nine`: backtest, drill and proof doors, one shared rule; no web buttons yet; unmerged.*
+5. [x] **Fact-check a document** (idea 7) — paste a memo or upload a deck and every number in it is checked against the warehouse; the report-number check, chart reading from PDFs and CB-8's said-versus-measured check are most of the machinery. *Built 2026-09-23 (ROADMAP §3.25) on `claude/pending-top-nine`: two API doors + the Slack `check:` verb, live receipt on theLook (2 measured, 2 contradicted); merged 2026-09-23 · #545. Still no web door.*
+6. [x] **Alerts that prove they work** (idea 6) — replay an alert over the past year before switching it on, and later feed it a fake outlier to prove the whole path still works, with "last proven working" on each; a broken alert once went unnoticed here for three days while its test passed. *Built 2026-09-23 (ROADMAP §3.26) on `claude/pending-top-nine`: backtest, drill and proof doors, one shared rule; merged 2026-09-23 · #545. Still no web buttons.*
 7. [ ] **Briefings by period** (idea 3) — daily, weekly, monthly and yearly briefings, each written for its window; today there is only the whole-history one, and the day/week subscriptions send an alert digest, not a briefing.
 8. [ ] **Tell people when an answer goes stale** (idea 5) — re-check past answers and tell the person when late data changes one ("we said 1,744; it is now 1,802"); CB-1 already keeps what each fact replaced, and item 2 tells a real change from late arrivals.
 9. [ ] **The company-brain map** (Arc CB, §3.21) — one screen where every store behind the "brain" is a box with a live count; eight built features with no screen are the built-and-never-used failure this project keeps repeating, and it is the demo the user asked for.
@@ -40,7 +40,7 @@ Just outside the ten: the next industry package (insurance has public data to te
 - [ ] CP-1 shadow classification — built and live; every answered question gets a logged label (lookup · one query · several · investigation) that changes nothing yet, one model call per answer; needs about a week of rows before CP-2 can read them.
 - [ ] CP-2 calibration — built; measures how far the labels can be trusted, and can only run once the week of shadow data exists.
 - [ ] CP-3 route on the label — see top-10 item 4.
-- [ ] CP-4 the structured answer — see top-10 item 1.
+- [x] CP-4 the structured answer — see top-10 item 1; merged 2026-09-23 · #545.
 - [ ] CP-5 one exhibit formatter — one shared table builder and one chart-image renderer for every destination; today there are three table builders and two renderers.
 
 ### Company brain — Arc CB (§3.21; all eight waves built)
@@ -169,12 +169,12 @@ Just outside the ten: the next industry package (insurance has public data to te
 Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23 shows no work on 1–14.
 
 - [ ] 1 · **Deleting a connection leaves nothing behind** — no data and no metadata about it in any store.
-- [ ] 2 · **A built-in outlier-alert agent** — top-10 item 3.
+- [x] 2 · **A built-in outlier-alert agent** — top-10 item 3; merged 2026-09-23 · #545.
 - [ ] 3 · **Briefings by period** — top-10 item 7.
-- [ ] 4 · **Learn when numbers settle** — top-10 item 2.
+- [x] 4 · **Learn when numbers settle** — top-10 item 2; merged 2026-09-23 · #545.
 - [ ] 5 · **Tell people when an answer goes stale** — top-10 item 8.
-- [ ] 6 · **Alerts that prove they work** — top-10 item 6.
-- [ ] 7 · **Fact-check a document** — top-10 item 5.
+- [x] 6 · **Alerts that prove they work** — top-10 item 6; merged 2026-09-23 · #545.
+- [x] 7 · **Fact-check a document** — top-10 item 5; merged 2026-09-23 · #545.
 - [ ] 8 · **Reviews of what was missed** — when someone finds a big move nothing flagged, the platform works out why (no alert? window too short? triage held it?) and proposes the fix.
 - [ ] 9 · **An attention budget per person** — a weekly cap on interruptions, with alerts, briefings and inbox items competing for the slots on expected value.
 - [ ] 10 · **A data shopping list** — show which usual industry questions the connected data cannot answer, and what to connect to answer them.
@@ -189,8 +189,8 @@ Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23
 
 - [ ] `claude/dark-theme-lift` — the dark-theme contrast lift the user approved live, PLUS the law-8 amendment (no receipts on Slack messages), the quoted-rows guard fix (a product name "6B" read as billions) and the killed-run drain fix; not pushed; identical uncommitted copies sit in the main checkout.
 - [ ] `claude/delivery-log-truth` — a disabled trigger now logs `skipped` instead of `failed`; not pushed.
-- [ ] `claude/remove-vercel-config` — `vercel.json`, `.vercel/` and the Vercel-only entrypoint removed; not pushed.
-- [ ] `claude/retire-vercel-platform-tick` — merged as #543; the local branch is redundant and can be deleted.
+- [x] `claude/remove-vercel-config` — `vercel.json`, `.vercel/` and the Vercel-only entrypoint removed; its commit rode into `claude/pending-top-nine` and merged 2026-09-23 · #545 (`vercel.json` and `api/index.py` are gone on main). The local branch is redundant.
+- [ ] `claude/retire-vercel-platform-tick` — merged as #543; the local branch is redundant and can be deleted. *Measured 2026-09-23: the branch is also still on origin, and its tree matches the #543 squash exactly, so nothing is lost by deleting it; `git push origin --delete` from a cloud session is refused (403, the push credential is scoped to one branch) — delete it from a local checkout or the GitHub branches page.*
 
 ---
 
