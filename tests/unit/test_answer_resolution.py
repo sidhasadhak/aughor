@@ -469,3 +469,55 @@ def test_a_genuinely_absent_entity_still_abstains_beside_a_named_table():
     r = R.resolve("number of flights for Mytheresa", schema=_AIRLINE, db=db)
     assert r.not_found == ["Mytheresa"]
     assert r.feasibility == "not_answerable"
+
+
+# ── the two misses ROADMAP §3.38 left open (PENDING item 19, 2026-09-24) ──────
+# "the candidate extractor still misses lowercase values ('delivered') and names with an
+# ampersand ('Home & Garden')". Both dropped the question's ONLY real filter, so the
+# answer silently covered every row.
+
+_STATUS = """\
+TABLE: shop.orders  (5000 rows)
+  order_id  BIGINT
+  amount  DOUBLE
+  status  VARCHAR  -- [delivered, pending, cancelled]
+  category  VARCHAR  -- [Home & Garden, Electronics, Toys]
+  order_date  DATE
+"""
+
+
+def test_a_lowercase_status_binds_from_the_data():
+    r = R.resolve("how many orders were delivered", schema=_STATUS)
+    assert [(b.column, b.value) for b in r.entity_bindings] == [("status", "delivered")]
+
+
+def test_an_ampersand_name_binds_whole_not_as_two_halves():
+    # "Home" and "Garden" are each absent; only the joined name is a value any row holds.
+    r = R.resolve("revenue for Home & Garden", schema=_STATUS)
+    assert [b.value for b in r.entity_bindings] == ["Home & Garden"]
+
+
+def test_an_ampersand_name_binds_with_no_preposition_before_it():
+    # The preposition rule ("for Home & Garden") and the proper-noun rule are SEPARATE
+    # paths and the ampersand has to join in both: a comparison introduces the name with
+    # no preposition at all, and only the proper-noun rule sees it there.
+    r = R.resolve("compare Home & Garden with Electronics", schema=_STATUS)
+    assert sorted(b.value for b in r.entity_bindings) == ["Electronics", "Home & Garden"]
+
+
+def test_a_status_word_the_data_does_not_hold_never_abstains():
+    # "orders were PLACED" is true of every order — it is a verb of record, not a filter.
+    # Grammar cannot tell it from "delivered", so a miss must be silent: the alternative is
+    # `'placed' is not present in this data.` on a perfectly answerable question.
+    r = R.resolve("How many orders were placed in the last 30 days?", schema=_STATUS)
+    assert r.not_found == []
+    assert [b.value for b in r.entity_bindings] == []
+
+
+def test_a_status_word_costs_no_warehouse_round_trip():
+    # The status class binds OFFLINE or not at all — it must never reach the live sweep,
+    # which is a billed scan on BigQuery.
+    db = _FakeDB(hits={})
+    r = R.resolve("How many orders were placed in the last 30 days?", schema=_STATUS, db=db)
+    assert r.not_found == []
+    assert db.seen == [], f"status word issued a live probe: {db.seen}"

@@ -111,6 +111,9 @@ _STOP = {
     "day", "daily", "quarter", "quarterly", "date", "sales", "revenue", "numbers", "number", "data",
     "total", "amount", "trend", "over", "time", "breakdown", "across", "how", "many", "much", "what",
     "is", "are", "all", "top", "list", "count", "value", "gmv", "orders", "order",
+    # existential glue the copula rule would otherwise hand the prober: "how many orders
+    # are there" is not a question about a value called "there".
+    "there", "here",
 }
 
 # A deictic reference back to the PRIOR result — the signal that a follow-up continues the
@@ -214,6 +217,37 @@ def entity_candidates(question: str) -> list:
     """Public: the filter-entity nouns a question names (``[]`` if none) — the
     entity-presence signal reused by the overview router."""
     return _entity_candidates(question)
+
+
+# A copula + lowercase participle is how a question names a STATUS: "orders were
+# delivered", "shipments that are cancelled", "claims that are pending". Neither rule in
+# `_entity_candidates` sees it — no preposition introduces it and it is not capitalised —
+# so §3.38 left the miss open, and the carry-forward comment in `resolve` names the same
+# blindness ("the extractor misses the lowercase noun").
+#
+# These are deliberately a WEAKER class, kept out of `_entity_candidates`, because grammar
+# alone cannot tell a status from a verb of record: "orders were DELIVERED" filters, while
+# "orders were PLACED" describes every order there is. Put through the entity path, "placed"
+# probes, finds nothing and abstains — `'placed' is not present in this data.` — which is
+# the bug this module already paid for twice ("Class", "flights"). So a status candidate is
+# resolved OFFLINE ONLY, against annotations and the warmed value samples, and never
+# reaches `not_found`: it binds when the data really holds that value and is otherwise
+# dropped in silence. That also means it costs no warehouse round trip, billed or not.
+_STATUS_RX = re.compile(r"\b(?:was|were|is|are|been|being|gets?|got)\s+([a-z]{4,})\b")
+
+
+def _status_candidates(question: str) -> list[str]:
+    """Lowercase status words a question predicates of its subject ("were delivered").
+
+    Weaker than `_entity_candidates`: bind offline or drop, never abstain (see above)."""
+    out, seen = [], set()
+    for m in _STATUS_RX.finditer(question or ""):
+        w = m.group(1).lower()
+        if w in _STOP or w in _COMPUTE_WORDS or w in seen:
+            continue
+        seen.add(w)
+        out.append(w)
+    return out
 
 
 def _col_grain(col: str) -> Optional[str]:
@@ -322,14 +356,27 @@ def _entity_candidates(question: str) -> list[str]:
     q = question or ""
     cands: list[str] = []
     # after a preposition ("… for mytheresa", "of Nike")
-    for m in re.finditer(r"\b(?:for|of|in|at|from)\s+([A-Za-z][\w'&.-]*(?:\s+[A-Za-z][\w'&.-]*)?)", q):
+    # The ampersand joins here too, and it MUST: this rule runs first, so on "revenue for
+    # Home & Garden" it claimed "Home" and the dedupe below (keyed on the head word) then
+    # dropped the full "Home & Garden" the proper-noun rule found. The shorter candidate
+    # silently won, which is the miss itself.
+    for m in re.finditer(
+            r"\b(?:for|of|in|at|from)\s+([A-Za-z][\w'&.-]*(?:\s+(?:&\s+)?[A-Za-z][\w'&.-]*)?)", q):
         cands.append(m.group(1).strip())
     # Capitalised proper-noun PHRASES, not tokens: "First Class", "Same Day", "New York"
     # are one value each. The old per-token rule yielded "Class" from "First Class" and
     # the DB probe found no such value ⇒ "'Class' is not present in this data" on a
     # question about a real ship_mode (Superstore 2026-08-15). Not at sentence start.
-    for m in re.finditer(r"(?<!^)(?<![.?!]\s)\b([A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]{2,})*)\b", q):
+    #
+    # An AMPERSAND joins one name: a category literally stored as "Home & Garden" was read
+    # as two candidates, "Home" and "Garden", and neither is a value any row holds — the
+    # same shape as the "Class" bug above, and the miss §3.38 left open. Joining them is
+    # also strictly cheaper: one candidate to resolve where there were two.
+    for m in re.finditer(
+            r"(?<!^)(?<![.?!]\s)\b([A-Z][a-zA-Z]{2,}(?:\s+(?:&\s+)?[A-Z][a-zA-Z]{2,})*)\b", q):
         cands.append(m.group(1))
+    # Lowercase STATUS words are NOT collected here — see `_status_candidates`. They cannot
+    # join this list because everything in it may end as `not_found`, an abstention.
     out, seen = [], set()
     for c in cands:
         raw_words = [w.lower().strip(".'&-") for w in c.split()]
@@ -742,6 +789,25 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
                 r.entity_bindings.append(EntityBinding(token, probe[0], probe[1], probe[2], 0.95))
             elif probe == "absent" and not inherited:
                 r.not_found.append(token)
+        # STATUS words ("orders were delivered") — the weaker class. Offline only: `db=None`
+        # takes `_db_find_value`'s annotation and warmed-sample reads and stops before its
+        # live sweep, so a status word costs no warehouse round trip. A miss is dropped in
+        # silence and never reaches `not_found`, because grammar cannot tell "delivered"
+        # (a real status) from "placed" (true of every order) and an abstention on the
+        # latter is the `'flights' is not present in this data` bug again.
+        _bound = {b.noun.lower() for b in r.entity_bindings} | {t.lower() for t in r.not_found}
+        for token in _status_candidates(question):
+            if token.lower() in _bound or _norm_name(token) in schema_names:
+                continue
+            matches = _annotation_matches(token, domains)
+            if matches:
+                t, c, v, conf = _pick(matches, mtables)
+                r.entity_bindings.append(EntityBinding(token, t, c, v, conf))
+                continue
+            hit = _db_find_value(None, schema, token, prefer_tables=mtables,
+                                 value_samples=value_samples, question=question)
+            if isinstance(hit, tuple):
+                r.entity_bindings.append(EntityBinding(token, hit[0], hit[1], hit[2], 0.95))
         if r.not_found:
             # name a couple of real values from the probed dimension so the answer
             # can say "here's what IS present" instead of a bare "not found".

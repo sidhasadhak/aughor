@@ -1,0 +1,81 @@
+{
+  "what": "PENDING item 19 / ROADMAP 3.38 \u2014 with-vs-without A/B for the DATA PROFILE block",
+  "flag": "grounding.data_profiles",
+  "measured_on": "2026-09-24",
+  "connection": "samples (local DuckDB, 5 ecommerce tables)",
+  "mode": "--full-pipeline",
+  "coder_model": "deepseek/deepseek-v4.1-flash",
+  "temperature": 0.0,
+  "runs_per_question": 1,
+  "block_size_chars": 1770,
+  "prep_required_first": [
+    "evals/run_golden.py never built the block (catalog_profiles was called from routers/investigations.py only) \u2014 wired in behind its enabled() gate",
+    "the samples profile cache was empty \u2014 profiled 5 tables / 35 columns (local DuckDB, no billed scan)"
+  ],
+  "arms": {
+    "off": {
+      "golden": {
+        "n": 53,
+        "mean_overall": 0.5951,
+        "execution_success": 0.9245,
+        "perfect": 14,
+        "passed_80": 24,
+        "empty_generations": 4
+      },
+      "ablation": {
+        "n": 12,
+        "mean_overall": 0.6717,
+        "execution_success": 0.8333,
+        "perfect": 1,
+        "passed_80": 6,
+        "empty_generations": 2
+      },
+      "combined": {
+        "n": 65,
+        "mean_overall": 0.6092,
+        "execution_success": 0.9077,
+        "perfect": 15,
+        "passed_80": 30,
+        "empty_generations": 6
+      }
+    },
+    "on": {
+      "golden": {
+        "n": 53,
+        "mean_overall": 0.6516,
+        "execution_success": 0.9811,
+        "perfect": 14,
+        "passed_80": 27,
+        "empty_generations": 1
+      },
+      "ablation": {
+        "n": 12,
+        "mean_overall": 0.5992,
+        "execution_success": 0.75,
+        "perfect": 1,
+        "passed_80": 5,
+        "empty_generations": 3
+      },
+      "combined": {
+        "n": 65,
+        "mean_overall": 0.6419,
+        "execution_success": 0.9385,
+        "perfect": 15,
+        "passed_80": 32,
+        "empty_generations": 4
+      }
+    }
+  },
+  "confound_removed": {
+    "note": "an empty generation scores 0, and the arms differ in how many they produced, so the headline delta mixes structured-output reliability with accuracy. These are the questions where BOTH arms generated SQL.",
+    "n": 58,
+    "mean_off": 0.6681,
+    "mean_on": 0.7058,
+    "delta": 0.0378,
+    "better": 13,
+    "worse": 7,
+    "unchanged": 38,
+    "paired_t": 1.49
+  },
+  "verdict": "NOT REFUTED, NOT GRADUATED. Direction is positive on every cut (combined +0.033 mean, +0.031 execution success; confound-free subset +0.038, 13 better vs 7 worse) so the falsifier's 'no gain => delete the block' does NOT fire. But paired t=1.49 over n=58 is inside noise, and the 12-question ablation set REGRESSED (-0.073), so the evidence does not support graduating to default-on either. The flag stays OFF pending a larger or repeated run."
+}

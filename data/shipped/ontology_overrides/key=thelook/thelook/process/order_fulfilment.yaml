@@ -1,0 +1,110 @@
+target_kind: process
+target_id: order_fulfilment
+fields:
+  declared: true
+  entity: Order
+  origin: human
+  stages:
+  - name: placed
+    timestamp: created_at
+  - name: shipped
+    timestamp: shipped_at
+  - name: delivered
+    timestamp: delivered_at
+  - name: returned
+    timestamp: returned_at
+  display_name: Order Fulfilment
+  provenance: model:deepseek/deepseek-v4.1-flash@2
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: shipped from evals/ablation_thelook_business_ontology.json (the served, measured
+  form, 2026-09-24) — PENDING item 26
+binding:
+  process:
+    bound: true
+    note: 124,778 Order objects; 4 of 4 stages reached
+    substance:
+      entity: Order
+      stages:
+      - name: placed
+        timestamp: created_at
+      - name: shipped
+        timestamp: shipped_at
+      - name: delivered
+        timestamp: delivered_at
+      - name: returned
+        timestamp: returned_at
+    measured:
+      id: order_fulfilment
+      display_name: Order Fulfilment
+      description: ''
+      entity: Order
+      stages:
+      - name: placed
+        display_name: ''
+        timestamp: created_at
+        state: []
+        property: ''
+        promise: null
+        reached: 124778
+        verified: true
+        note: 124,778 of 124,778 Order objects reached placed (created_at)
+        both: null
+        skipped: null
+        out_of_order: null
+        p50_days: null
+        p90_days: null
+        p95_days: null
+      - name: shipped
+        display_name: ''
+        timestamp: shipped_at
+        state: []
+        property: ''
+        promise: null
+        reached: 80963
+        verified: true
+        note: 80,963 of 124,778 Order objects reached shipped (shipped_at)
+        both: 80963
+        skipped: 0
+        out_of_order: 0
+        p50_days: 1.0
+        p90_days: 3.0
+        p95_days: 3.0
+      - name: delivered
+        display_name: ''
+        timestamp: delivered_at
+        state: []
+        property: ''
+        promise: null
+        reached: 43599
+        verified: true
+        note: 43,599 of 124,778 Order objects reached delivered (delivered_at)
+        both: 43599
+        skipped: 0
+        out_of_order: 0
+        p50_days: 3.0
+        p90_days: 5.0
+        p95_days: 5.0
+      - name: returned
+        display_name: ''
+        timestamp: returned_at
+        state: []
+        property: ''
+        promise: null
+        reached: 12518
+        verified: true
+        note: 12,518 of 124,778 Order objects reached returned (returned_at)
+        both: 12518
+        skipped: 0
+        out_of_order: 0
+        p50_days: 2.0
+        p90_days: 3.0
+        p95_days: 3.0
+      owner: ''
+      origin: human
+      provenance: model:deepseek/deepseek-v4.1-flash@2
+      objects: 124778
+      verified: true
+      note: 124,778 Order objects; 4 of 4 stages reached
+      measured_at: '2026-09-24T21:07:05+00:00'
