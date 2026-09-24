@@ -3298,7 +3298,7 @@ async def _stream_converse(
     agent_id: str = "",
     surface: str = "",
 ) -> AsyncGenerator[str, None]:
-    """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, EXPERIMENT, default off).
+    """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, default on since SP-14).
 
     Same shape as :func:`_stream_chat` — the shared bridge, a different body — and
     deliberately so: one copy of the concurrency design, two bodies riding it.
@@ -3410,11 +3410,30 @@ async def _stream_converse(
         # verdict can ever close.
         import uuid as _uuid
         _decision_trace = _uuid.uuid4().hex
-        result = converse(connection_id, question,
-                          extra_context=_memory,
-                          on_step=_on_step, tool_emit=_forward,
-                          session_id=session_id, canvas_id=canvas_id, agent=_agent_rec,
-                          trace_id=_decision_trace)
+        try:
+            result = converse(connection_id, question,
+                              extra_context=_memory,
+                              on_step=_on_step, tool_emit=_forward,
+                              session_id=session_id, canvas_id=canvas_id, agent=_agent_rec,
+                              trace_id=_decision_trace)
+        except _CoreCancelled:
+            raise
+        except Exception as _exc:
+            from aughor.agent.converse_tools import remember_tools_refused, tools_unsupported
+            if turn["steps"] or not tools_unsupported(_exc):
+                raise
+            # PENDING item 17 — the binding cannot make a tool call, and said so on the turn's
+            # first request: nothing has been answered yet, so the quick body answers instead,
+            # and the step trail says why. Remembered, so the next turn routes there at once.
+            remember_tools_refused()
+            emit("converse_step", {
+                "index": 1, "tool": "(none)", "arguments": {}, "ok": False,
+                "detail": ("this model cannot call tools, so the conversation could not run — "
+                           f"answered by the quick pipeline instead ({str(_exc)[:160]})"),
+                "result_chars": 0,
+            })
+            return _answer_core(question, connection_id, history, emit=emit, cancelled=cancelled,
+                                session_id=session_id, canvas_id=canvas_id, surface=surface)
 
         answer = (result.answer or "").strip()
         if not answer:

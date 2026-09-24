@@ -21,6 +21,12 @@ dependencies = [
     "langgraph>=0.2.0",
     "langchain-core>=0.3.0",
     "openai>=1.50.0",
+    # PENDING item 17: the `anthropic` backend is offered in every install's Settings, and its
+    # client (`instructor.from_anthropic`) needs this SDK — undeclared, choosing it failed at
+    # the first model call with `No module named 'anthropic'`. Core for the reason resvg-py is.
+    # Below 1.0: the 1.x SDK moves to a second HTTP stack (httpx2) that instructor's
+    # `from_anthropic` was not built against; 0.x rides the httpx this tree already has.
+    "anthropic>=0.40.0,<1",
     "instructor>=1.4.0",
     "duckdb>=1.1.0",
     # scipy stays: `tools/stats.py` imports it at module level and is imported at module

@@ -8103,6 +8103,40 @@ and search-tool suites pass with their doubles taking the new keyword.
 organisation's user can trigger them for everyone); the organisation half was checked through `tenant_scope()` and
 `authorize_resource`, not through a live sign-in.
 
+### 3.36 · The default answer works on every model backend (PENDING.md item 17, found by the 2026-09-24 re-survey; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a transport fix)
+
+> **The fact it answers.** Measured, then run: the conversation and the analyst — the bodies `ask.converse` routes
+> every quick and deep `/ask` turn to — are tool loops, and `complete_with_tools` raised `NotImplementedError` for the
+> `anthropic` binding before any fallback (uncaught at `tool_loop.py:178`). Every quick `/ask` turn on that backend
+> ended in an error: the Slack bot's, and since `chat.buttons_reach_agent` went default-on on 2026-09-24 the web's
+> Quick and Agent buttons, which had been served by `/chat` and `/investigate` until then. Deeper: the backend's SDK
+> was never declared, so on a stock install choosing it failed at the first model call with `No module named
+> 'anthropic'` — `test_every_backend_builds_a_client` swallows SDK failures by design, so nothing saw it.
+
+**What exists.** `_tools_on` speaks Anthropic's `messages` surface (`aughor/llm/provider.py`): OpenAI-shaped tool
+specs become `input_schema` tools; the loop's transcript becomes alternating turns — a call as a `tool_use` block, its
+answer as a `tool_result` inside a user turn, adjacent same-role messages merged, since Anthropic refuses two in a
+row; the reply is read as the same `ToolTurn` (a `tool_use` block before any text, `max_tokens` with nothing usable as
+`truncated`, non-object arguments as `malformed`). Metering, the call record and the budget check are the code every
+binding runs, and anthropic re-enters the tool-fallback chain it was filtered out of. `anthropic>=0.40,<1` is a core
+dependency (0.x rides the `httpx` already in the tree; 1.x moves to a second HTTP stack `instructor.from_anthropic` was
+not built against). For a binding that cannot call tools at all: `converse_available()` routes a model whose catalogue
+declares no tool calling — never a merely unknown one — or one that refused a tool call earlier in the process, to
+the quick body and the phase script, exactly as with the flag off; a turn refused on its very first request is
+answered by the quick body with a `converse_step` saying *"this model cannot call tools… answered by the quick
+pipeline instead"*. A refusal after a step has run stays the turn's error (something was already answered).
+
+**Receipt (2026-09-24, this cloud session).** The real anthropic SDK (0.125.0) and the real provider over HTTP,
+against a local server speaking the Messages API; the tool a real DuckDB query. On `main`: `TURN FAILED:
+NotImplementedError … needs its own translation`. On the branch: two requests — `[user]` then `[user, assistant,
+user]` with blocks `[text] · [tool_use] · [tool_result]` — and the answer *"The query returned {"rows": [[1744]]}"*,
+the warehouse's number round-tripped through `tool_result`. Tests: `test_provider_tool_calls.py` (the two that pinned
+the refusal replaced by five on the translation, a full two-step loop among them) and `test_every_backend_answers.py`
+(routing, the first-request fallback, and what is still an error).
+
+⏳ **Open:** no call against Anthropic's real API (no key here); the first-request fallback was driven through the
+real `_stream_converse` with stubbed bodies, not a live model that refuses tools.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

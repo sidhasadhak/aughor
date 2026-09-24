@@ -139,15 +139,113 @@ def test_the_turn_is_metered(provider, monkeypatch):
     assert recorded[0][0] > 0 and recorded[0][1] > 0
 
 
-def test_anthropic_binding_refuses_loudly(monkeypatch):
-    """It speaks a different surface (`client.messages`). Silently answering without
-    the tools would look like a model that ignores them."""
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    p = LLMProvider.__new__(LLMProvider)
-    p.backend = "anthropic"
+class _AnthropicMessages:
+    """The raw Anthropic SDK's `messages.create`, scripted: records each request and answers
+    with the next reply. Behind `.client`, where instructor keeps the client it wraps."""
 
-    with pytest.raises(NotImplementedError, match="client.messages"):
-        p.complete_with_tools("sys", "q", _TOOLS)
+    def __init__(self, replies):
+        self.replies, self.requests = list(replies), []
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        return self.replies.pop(0)
+
+
+def _anthropic_reply(*blocks, stop_reason="end_turn"):
+    from types import SimpleNamespace
+    return SimpleNamespace(content=list(blocks), stop_reason=stop_reason,
+                           usage=SimpleNamespace(input_tokens=120, output_tokens=30))
+
+
+def _anthropic(provider, replies):
+    """Point the real provider at the anthropic binding, with a scripted raw client."""
+    from types import SimpleNamespace
+    messages = _AnthropicMessages(replies)
+    provider.backend = "anthropic"
+    provider._client = SimpleNamespace(client=SimpleNamespace(messages=messages))
+    return messages
+
+
+def test_anthropic_binding_speaks_tools_through_messages(provider):
+    """PENDING item 17. This binding used to raise before any fallback, and every quick `/ask`
+    turn on it ended in an error; it now speaks `client.messages` with the same result shape."""
+    from types import SimpleNamespace
+    sent = _anthropic(provider, [_anthropic_reply(
+        SimpleNamespace(type="text", text="Let me count them."),
+        SimpleNamespace(type="tool_use", id="toolu_1", name="run_sql", input={"sql": "SELECT 1"}),
+        stop_reason="tool_use")])
+
+    turn = provider.complete_with_tools("sys", "how many orders?", _TOOLS)
+
+    assert turn.chose_tool and turn.tool_call.name == "run_sql"
+    assert turn.tool_call.arguments == {"sql": "SELECT 1"} and turn.tool_call.id == "toolu_1"
+    request = sent.requests[0]
+    assert request["system"] == "sys"
+    assert request["messages"] == [{"role": "user",
+                                    "content": [{"type": "text", "text": "how many orders?"}]}]
+    assert request["tools"] == [{"name": "run_sql", "description": "Execute a guarded SQL query.",
+                                 "input_schema": _TOOLS[0]["function"]["parameters"]}]
+    assert request["tool_choice"] == {"type": "auto"}
+    assert "temperature" not in request            # as on this binding's structured path
+    assert request["max_tokens"] > 0
+
+
+def test_anthropic_prose_truncation_and_bad_arguments_read_like_every_binding(provider):
+    from types import SimpleNamespace
+    _anthropic(provider, [
+        _anthropic_reply(SimpleNamespace(type="text", text="There were 412 orders.")),
+        _anthropic_reply(stop_reason="max_tokens"),
+        _anthropic_reply(SimpleNamespace(type="tool_use", id="t", name="run_sql", input="SELECT")),
+    ])
+
+    assert provider.complete_with_tools("s", "q", _TOOLS) == ToolTurn(text="There were 412 orders.")
+    assert provider.complete_with_tools("s", "q", _TOOLS).truncated is True
+    assert "not an object" in provider.complete_with_tools("s", "q", _TOOLS).malformed
+
+
+def test_a_loop_runs_to_an_answer_on_the_anthropic_binding(provider):
+    """Two requests: the second carries the call as a `tool_use` block and its answer as a
+    `tool_result` inside a USER turn — Anthropic refuses a `role="tool"` message."""
+    from types import SimpleNamespace
+
+    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
+    sent = _anthropic(provider, [
+        _anthropic_reply(SimpleNamespace(type="tool_use", id="toolu_7", name="run_sql",
+                                         input={"sql": "SELECT COUNT(*) FROM orders"}),
+                         stop_reason="tool_use"),
+        _anthropic_reply(SimpleNamespace(type="text", text="There were 412 orders.")),
+    ])
+    tool = ToolSpec(name="run_sql", description="Execute a guarded SQL query.",
+                    parameters=_TOOLS[0]["function"]["parameters"],
+                    run=lambda args: {"rows": [[412]]})
+
+    result = run_tool_loop(provider, "sys", "how many orders?", [tool], max_steps=4)
+
+    assert result.answer == "There were 412 orders." and result.stop_reason == "answered"
+    second = sent.requests[1]["messages"]
+    assert [m["role"] for m in second] == ["user", "assistant", "user"]
+    assert second[1]["content"] == [{"type": "tool_use", "id": "toolu_7", "name": "run_sql",
+                                     "input": {"sql": "SELECT COUNT(*) FROM orders"}}]
+    assert second[2]["content"][0]["type"] == "tool_result"
+    assert second[2]["content"][0]["tool_use_id"] == "toolu_7"
+    assert "412" in second[2]["content"][0]["content"]
+
+
+def test_adjacent_user_turns_merge_for_anthropic():
+    """A nudge after a tool result is a second user message in a row; Anthropic refuses that."""
+    from aughor.llm.provider import _anthropic_messages
+    history = [
+        {"role": "assistant", "content": None,
+         "tool_calls": [{"id": "c1", "type": "function",
+                         "function": {"name": "run_sql", "arguments": "{\"sql\": \"x\"}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "error: no such table"},
+        {"role": "user", "content": "Try again with valid JSON."},
+    ]
+
+    turns = _anthropic_messages("q", history)
+
+    assert [t["role"] for t in turns] == ["user", "assistant", "user"]
+    assert [b["type"] for b in turns[2]["content"]] == ["tool_result", "text"]
 
 
 def test_empty_turn_is_still_a_turn():
@@ -234,13 +332,12 @@ def test_quota_cooldown_skips_the_primary_without_probing_it(provider, monkeypat
     assert probed == ["openrouter"], f"spent primary was probed anyway: {probed}"
 
 
-def test_anthropic_is_never_offered_as_a_tool_fallback(provider, monkeypatch):
-    """It speaks `client.messages`, so walking to it would raise NotImplementedError on
-    every link and bury the real outage under a second, confusing error."""
+def test_anthropic_can_serve_a_tool_turn_as_a_fallback(provider, monkeypatch):
+    """It was filtered out of the chain while it could only raise; it now speaks tools."""
     monkeypatch.setattr(provider, "_fallback_candidates",
                         lambda: ["anthropic", "openrouter"])
 
-    assert provider._tools_fallbacks() == ["openrouter"]
+    assert provider._tools_fallbacks() == ["anthropic", "openrouter"]
 
 
 def test_every_link_failing_surfaces_the_original_cause(provider, monkeypatch):
