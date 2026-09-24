@@ -123,6 +123,35 @@ Rules:
   evidence, never from filler, restatement, or speculation beyond what the findings show.
 """
 
+# Idea 3 — a briefing written for ONE period. The standing brief above juxtaposes everything the
+# platform knows; this one is told which period it covers, what it is compared with, and that a
+# standing pattern is not this period's news. Only a period brief uses it: the standing prompt is
+# untouched, byte for byte.
+_PERIOD_WORDS = {"day": "80-150", "week": "120-220", "month": "150-280", "year": "200-350"}
+_SYSTEM_PERIOD = """\
+You are an intelligence analyst writing the {label} executive briefing for a business data team.
+It covers ONE {period}, named with its dates in the [Briefing period] block, and compares it with
+the one period named there.
+
+Structure:
+- Open with a LEDE of 1-2 sentences carrying the single biggest move in this {period}, with its size
+  against the comparison period. A reader who stops after the lede must still have the headline.
+- Then 1-3 short paragraphs: what else moved, what the alerts and newly recorded findings add, and
+  what deserves attention first.
+- Separate paragraphs with a blank line. Aim for {words} words in total.
+
+Rules:
+- Every statement is about this {period}. Never present a standing pattern as news of this {period}.
+- Name the {period} with its dates once, near the start.
+- A metric that held steady earns one clause, not a paragraph.
+- Use business language a CFO would understand: no SQL, no technical jargon.
+- Embed citation markers like [1], [2], [3] inline at the exact point each finding is referenced.
+- Every citation marker you use MUST appear in the citations list.
+- Never pad. A quiet {period} gets a short brief — length must come from evidence, never from
+  filler, restatement, or speculation beyond what the findings show.
+"""
+
+
 # Used for the "All schemas" aggregate brief, where findings come from SEPARATE businesses.
 # Drawing cross-domain connections (the single-business rule above) would invent links
 # between unrelated companies — so this variant forbids it and summarizes per business.
@@ -436,9 +465,15 @@ def generate_narrative(
     profile: Any = None,
     workspace_id: Optional[str] = None,
     col_types: Optional[dict[str, str]] = None,
+    period: Optional[dict] = None,
+    period_note_today: Any = None,
 ) -> dict[str, Any]:
     """
     Call the LLM narrator and return a serialisable briefing dict.
+
+    ``period`` (idea 3) is a period brief's block (``knowledge.period_brief.window_block``,
+    measured): the narrator is told which version it is writing and gets the period prompt,
+    and the block rides the result. ``None`` — the standing brief — changes nothing.
 
     A daily executive brief leads with the biggest business move and never prints an
     impossible number or an anti-causal correlation as fact. So before synthesis we run
@@ -550,7 +585,7 @@ def generate_narrative(
             top.append(ins)
 
     if not top:
-        return {
+        empty = {
             "narrative":      "",
             "headline_theme": "",
             "citations":      [],
@@ -558,6 +593,9 @@ def generate_narrative(
             "currency_code":  currency_code,
             "generated_at":   _now_iso(),
         }
+        if period is not None:
+            empty["period"] = period
+        return empty
 
     # Full-coverage digest: when trusted findings were dropped from the top-8, fold them (per
     # domain, tree-reduced) so the narrative reflects the whole TRUSTED picture. Built from the
@@ -624,6 +662,15 @@ def generate_narrative(
                        + "\n".join(_lines) + "\n\n" + user_prompt)
 
     _system = _SYSTEM_MULTI if multi_schema else _SYSTEM
+    if period is not None:
+        from aughor.knowledge.period_brief import period_note
+        _system = _SYSTEM_PERIOD.format(label=str(period.get("label", "")).lower(),
+                                        period=period.get("period", "period"),
+                                        words=_PERIOD_WORDS.get(period.get("period"), "120-250"))
+        if multi_schema:
+            _system += ("- The findings come from SEPARATE, UNRELATED businesses (see the Business tag): "
+                        "never connect findings across businesses; say what moved in each on its own.\n")
+        user_prompt = period_note(period, period_note_today) + "\n\n" + user_prompt
     try:
         result: BriefingNarrative = provider.complete(
             system=_system, user=user_prompt,
@@ -734,7 +781,7 @@ def generate_narrative(
         import logging
         logging.getLogger(__name__).debug("per-finding narrative attribution failed", exc_info=True)
 
-    return {
+    out = {
         "narrative":      narrative_text,
         "headline_theme": result.headline_theme,
         "citations":      citations_out,
@@ -742,6 +789,9 @@ def generate_narrative(
         "currency_code":  currency_code,
         "generated_at":   _now_iso(),
     }
+    if period is not None:
+        out["period"] = period
+    return out
 
 
 # ── Cache layer ───────────────────────────────────────────────────────────────
@@ -798,8 +848,17 @@ def get_briefing(
     workspace_id: Optional[str] = None,
     col_types: Optional[dict[str, str]] = None,
     promise_chains: "Optional[Any]" = None,
+    period: Optional[dict] = None,
+    period_measure: "Optional[Any]" = None,
+    period_note_today: Any = None,
 ) -> dict[str, Any]:
     """Return cached briefing narrative if fresh, otherwise generate and cache.
+
+    ``period`` (idea 3) makes this a PERIOD brief: cached under ``<scope>#<period>`` and served
+    from the cache only while its window is the same one (a new day is a new daily brief).
+    ``period_measure`` is a zero-arg callable returning ``{"findings", "measured",
+    "unmeasured"}`` — the headline metrics measured for the window — called only on a miss,
+    like ``metric_moves``. Both ``None`` → the standing brief, unchanged.
 
     `scope_key` is the cache key (defaults to `connection_id` for backward compatibility).
     A Canvas passes e.g. ``f"canvas:{canvas_id}"`` so a canvas-scoped briefing — built from
@@ -818,16 +877,37 @@ def get_briefing(
     no-ops. Only consulted on a cache miss (where generate_narrative runs).
     """
     key = scope_key or connection_id
+    if period is not None:
+        key = f"{key}#{period.get('period')}"
     pre_decision = None
     if not force_refresh:
         try:
             entry = _store().get(key)
-            if entry:
+            same_window = period is None or (
+                isinstance(entry, dict)
+                and all((entry.get("period") or {}).get(k) == period.get(k)
+                        for k in ("start", "end", "lag_days")))
+            if entry and same_window:
                 needs, pre_decision = _brief_rebuild_decision(key, connection_id, entry)
                 if not needs:
                     return entry
         except Exception:
             pass
+
+    if period is not None and period_measure is not None:
+        try:
+            measured = period_measure() or {}
+        except Exception as _pe:  # noqa: BLE001 — an unmeasured period is said, never a failed brief
+            from aughor.kernel.errors import tolerate
+            tolerate(_pe, "the period measurement failed; the brief says nothing was measured",
+                     counter="briefing.period.measure")
+            measured = {"unmeasured": [{"name": "headline metrics",
+                                        "reason": f"the measurement failed ({type(_pe).__name__})"}]}
+        period = {**period, "measured": list(measured.get("measured") or []),
+                  "unmeasured": list(measured.get("unmeasured") or [])}
+        if measured.get("findings"):
+            domain_data = {**domain_data, "Key Metrics": list(measured["findings"])
+                           + list(domain_data.get("Key Metrics", []))}
 
     # Cache miss → fold in north-star metric moves (the biggest KPI swings) as candidates.
     if metric_moves is not None:
@@ -849,9 +929,15 @@ def get_briefing(
         if chains:
             domain_data = {**domain_data, "Promises": list(chains) + list(domain_data.get("Promises", []))}
 
-    briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
-                                  profile=profile, workspace_id=workspace_id,
-                                  col_types=col_types)
+    if period is None:
+        briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
+                                      profile=profile, workspace_id=workspace_id,
+                                      col_types=col_types)
+    else:
+        briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
+                                      profile=profile, workspace_id=workspace_id,
+                                      col_types=col_types, period=period,
+                                      period_note_today=period_note_today)
 
     try:
         # Per-key upsert: a concurrent generation for ANOTHER scope can no longer be
@@ -938,11 +1024,13 @@ def invalidate(connection_id: str, schema: str | None = None) -> int:
         store = _store()
         if schema:
             # the schema's own briefing AND the now-stale 'All schemas' aggregate; siblings stay
-            drop = [f"{connection_id}:{schema}", connection_id]
+            scopes = (f"{connection_id}:{schema}", connection_id)
+            drop = [k for k in store.load() if k in scopes or k.split("#", 1)[0] in scopes]
         else:
             prefix = f"{connection_id}:"
+            # a period brief is keyed `<scope>#<period>` (idea 3): it goes with its scope
             drop = [k for k in store.load()
-                    if k == connection_id or k.startswith(prefix)]
+                    if k.split("#", 1)[0] == connection_id or k.startswith(prefix)]
         # Per-key deletes, collecting what was actually removed: a brief cached by a
         # CONCURRENT generation between the list and the deletes survives — correctly,
         # it is a new artifact, not the one being invalidated.

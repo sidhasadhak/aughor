@@ -72,6 +72,7 @@ import {
 } from "@/components/charts/columnRoles";
 import { isAdditiveMeasure } from "@/lib/measureKind";
 import { Icon } from "@/components/ui/icon";
+import { AnswerRecheck } from "@/components/AnswerRecheck";
 
 // Format a wall-clock duration for the "Completed in …" line.
 function formatElapsed(ms: number): string {
@@ -1730,6 +1731,8 @@ export function ChatMessage({
       {/* ── Overview — the "interesting facts" tour. A dedicated branch (the registry
            is investigate-only, and the overview route stays in "ask" mode) so it wins
            whenever overviewReport is set, regardless of turn.mode. ── */}
+      {/* Idea 5 — a later re-check found a number in this answer has moved. */}
+      {!collapsed && turn.recheck && <AnswerRecheck recheck={turn.recheck} />}
       {!collapsed && turn.overviewReport && (
         <OverviewReportView report={turn.overviewReport} onShowSource={onShowSource} onExploreFact={onExploreFact} />
       )}

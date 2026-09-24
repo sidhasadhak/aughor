@@ -1,0 +1,162 @@
+{
+ "tally": {
+  "test": {
+   "recoverable": 4,
+   "not_found": 1,
+   "false_candidate": 2,
+   "quiet": 1
+  }
+ },
+ "items": [
+  {
+   "id": "lux_control_02",
+   "split": "test",
+   "gap": "control",
+   "gold": null,
+   "verdict": "false_candidate",
+   "candidates": [
+    {
+     "name": "eu_markets",
+     "kind": "rule",
+     "label": "EU markets",
+     "score": 1.333,
+     "words": [
+      "order",
+      "unit"
+     ]
+    },
+    {
+     "name": "vip_customers",
+     "kind": "rule",
+     "label": "VIP customers",
+     "score": 1.0,
+     "words": [
+      "tier"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "lux_control_04",
+   "split": "test",
+   "gap": "control",
+   "gold": null,
+   "verdict": "false_candidate",
+   "candidates": [
+    {
+     "name": "high_risk_payments",
+     "kind": "rule",
+     "label": "High-risk payments",
+     "score": 1.0,
+     "words": [
+      "scor"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "lux_paraphrase_02",
+   "split": "test",
+   "gap": "paraphrase",
+   "gold": "high_risk_payments",
+   "verdict": "recoverable",
+   "candidates": [
+    {
+     "name": "high_risk_payments",
+     "kind": "rule",
+     "label": "High-risk payments",
+     "score": 4.0,
+     "words": [
+      "pay",
+      "risk"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "olist_control_02",
+   "split": "test",
+   "gap": "control",
+   "gold": null,
+   "verdict": "quiet",
+   "candidates": []
+  },
+  {
+   "id": "lux_paraphrase_04",
+   "split": "test",
+   "gap": "paraphrase",
+   "gold": "completed_orders",
+   "verdict": "not_found",
+   "candidates": []
+  },
+  {
+   "id": "lux_paraphrase_08",
+   "split": "test",
+   "gap": "paraphrase",
+   "gold": "vip_customers",
+   "verdict": "recoverable",
+   "candidates": [
+    {
+     "name": "vip_customers",
+     "kind": "rule",
+     "label": "VIP customers",
+     "score": 2.0,
+     "words": [
+      "tier",
+      "top"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "olist_paraphrase_02",
+   "split": "test",
+   "gap": "paraphrase",
+   "gold": "fulfilled_orders",
+   "verdict": "recoverable",
+   "candidates": [
+    {
+     "name": "fulfilled_orders",
+     "kind": "rule",
+     "label": "Fulfilled orders",
+     "score": 2.0,
+     "words": [
+      "cancel",
+      "order"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "olist_paraphrase_04",
+   "split": "test",
+   "gap": "paraphrase",
+   "gold": "delivery_breach_rate",
+   "verdict": "recoverable",
+   "candidates": [
+    {
+     "name": "delivery_breach_rate",
+     "kind": "promise",
+     "label": "the delivery promise",
+     "score": 1.5,
+     "words": [
+      "after",
+      "dat",
+      "estimat"
+     ]
+    },
+    {
+     "name": "dispatch_breach_rate",
+     "kind": "promise",
+     "label": "the dispatch promise",
+     "score": 1.5,
+     "words": [
+      "after",
+      "dat",
+      "estimat"
+     ]
+    }
+   ]
+  }
+ ]
+}

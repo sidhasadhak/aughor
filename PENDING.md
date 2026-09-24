@@ -14,23 +14,34 @@ claim rots silently. If measuring shows an item was already done, tick it and sa
 
 ---
 
-## The order of work — top 10 by impact (agreed 2026-09-23)
+## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON)
 
 Ranked by how many answers or people each one improves, and whether it unblocks others.
-Suggested build order: 2 → 3 → 6 (alerts done properly) and 1 → 10 (the structured answer, then email).
+Items 11–15 were drawn from the ontology arc at the user's direction ("an important part of the core engine") and are
+ranked among its leftovers, each re-measured against the code on 2026-09-23 before it was placed.
 
-1. [ ] **The structured answer** (CP-4, §3.22) — every answer, whether in chat, Slack, a PDF or a scheduled post, comes from one structured result and each destination takes only what it needs; it also stops the model narrating "guard receipts" to readers (`aughor/agent/converse_tools.py:611`) and makes every new destination cheap. *Built 2026-09-23 on `claude/pending-top-nine`, live receipt on theLook turn `47a130145460`; unmerged.*
-2. [ ] **Learn when numbers settle** (idea 4) — watch how a recent day's numbers keep changing as it ages, and speak only about days that have stopped moving; today theLook's lag is an 8-day number set by hand, and items 3 and 8 depend on this. *Built 2026-09-23 (ROADMAP §3.23) on `claude/pending-top-nine`; first reading taken on theLook, first verdict possible 2026-09-26; unmerged.*
-3. [ ] **A built-in outlier-alert agent** (idea 2) — after each exploration, pick the industry metrics that fit, learn what is normal for each, and propose alerts; the anomaly check and the notify effect already exist. Needs item 2 first or it alerts on data that is still settling. *Built 2026-09-23 (ROADMAP §3.24) on `claude/pending-top-nine` as the Watcher's job; unmerged.*
+First build order: 2 → 3 → 6 and 1 → 10 — all merged in #545 except 10, which the user took off.
+Build order now: 7, 8 and 9 (the user's focus); on the ontology, 11 → 12 (terms get proposed, then get recognised),
+with 14 first for any receipt that must reproduce on a fresh clone; 13 sits beside 9 — both are screens over stores
+nobody can see today.
+
+1. [x] **The structured answer** (CP-4, §3.22) — every answer, whether in chat, Slack, a PDF or a scheduled post, comes from one structured result and each destination takes only what it needs; it also stops the model narrating "guard receipts" to readers (`aughor/agent/converse_tools.py:611`) and makes every new destination cheap. *Built 2026-09-23 on `claude/pending-top-nine`, live receipt on theLook turn `47a130145460`; merged 2026-09-23 · #545.*
+2. [x] **Learn when numbers settle** (idea 4) — watch how a recent day's numbers keep changing as it ages, and speak only about days that have stopped moving; today theLook's lag is an 8-day number set by hand, and items 3 and 8 depend on this. *Built 2026-09-23 (ROADMAP §3.23) on `claude/pending-top-nine`; first reading taken on theLook, first verdict possible 2026-09-26; merged 2026-09-23 · #545.*
+3. [x] **A built-in outlier-alert agent** (idea 2) — after each exploration, pick the industry metrics that fit, learn what is normal for each, and propose alerts; the anomaly check and the notify effect already exist. Needs item 2 first or it alerts on data that is still settling. *Built 2026-09-23 (ROADMAP §3.24) on `claude/pending-top-nine` as the Watcher's job; merged 2026-09-23 · #545.*
 4. [ ] **Let a judgment pick quick or deep** (CP-3, §3.22) — in chat, deep analysis was chosen 0 times in 60 tool uses and a deep run costs ~4× a normal one, so routing fixes quality one way and cost the other; behind a flag, only after CP-2's week of shadow data says the labels can be trusted. *Blocked until ~2026-09-30: the shadow went live 2026-09-23 and CP-2's thresholds are fitted to that corpus, never chosen — skipped on 2026-09-23, to be taken once the week is in.*
-5. [ ] **Fact-check a document** (idea 7) — paste a memo or upload a deck and every number in it is checked against the warehouse; the report-number check, chart reading from PDFs and CB-8's said-versus-measured check are most of the machinery. *Built 2026-09-23 (ROADMAP §3.25) on `claude/pending-top-nine`: two API doors + the Slack `check:` verb, live receipt on theLook (2 measured, 2 contradicted); no web door yet; unmerged.*
-6. [ ] **Alerts that prove they work** (idea 6) — replay an alert over the past year before switching it on, and later feed it a fake outlier to prove the whole path still works, with "last proven working" on each; a broken alert once went unnoticed here for three days while its test passed. *Built 2026-09-23 (ROADMAP §3.26) on `claude/pending-top-nine`: backtest, drill and proof doors, one shared rule; no web buttons yet; unmerged.*
-7. [ ] **Briefings by period** (idea 3) — daily, weekly, monthly and yearly briefings, each written for its window; today there is only the whole-history one, and the day/week subscriptions send an alert digest, not a briefing.
-8. [ ] **Tell people when an answer goes stale** (idea 5) — re-check past answers and tell the person when late data changes one ("we said 1,744; it is now 1,802"); CB-1 already keeps what each fact replaced, and item 2 tells a real change from late arrivals.
-9. [ ] **The company-brain map** (Arc CB, §3.21) — one screen where every store behind the "brain" is a box with a live count; eight built features with no screen are the built-and-never-used failure this project keeps repeating, and it is the demo the user asked for.
-10. [ ] ⚑ **Email in and out** (HB-5, §3.18) — the one major destination that does not exist at all; waits on the user's Google OAuth client, and is cheapest right after item 1.
+5. [x] **Fact-check a document** (idea 7) — paste a memo or upload a deck and every number in it is checked against the warehouse; the report-number check, chart reading from PDFs and CB-8's said-versus-measured check are most of the machinery. *Built 2026-09-23 (ROADMAP §3.25) on `claude/pending-top-nine`: two API doors + the Slack `check:` verb, live receipt on theLook (2 measured, 2 contradicted); merged 2026-09-23 · #545. Still no web door.*
+6. [x] **Alerts that prove they work** (idea 6) — replay an alert over the past year before switching it on, and later feed it a fake outlier to prove the whole path still works, with "last proven working" on each; a broken alert once went unnoticed here for three days while its test passed. *Built 2026-09-23 (ROADMAP §3.26) on `claude/pending-top-nine`: backtest, drill and proof doors, one shared rule; merged 2026-09-23 · #545. Still no web buttons.*
+7. [ ] **Briefings by period** (idea 3) — daily, weekly, monthly and yearly briefings, each written for its window; today there is only the whole-history one, and the day/week subscriptions send an alert digest, not a briefing. *Built 2026-09-23 (ROADMAP §3.27) on `claude/determined-bohr-qh3b1p` behind the `briefing.by_period` flag — **on by default since 2026-09-24, the user's call** (kill switch `AUGHOR_BRIEFING_BY_PERIOD=0`): each headline metric measured for the window by its own trend query cut to it, the period's alerts and recorded findings, a narrator told its version, a scheduled send re-measured line by line; receipt over HTTP on a DuckDB shop (the week's GMV equal to hand SQL), not yet on a real warehouse; unmerged.*
+8. [ ] **Tell people when an answer goes stale** (idea 5) — re-check past answers and tell the person when late data changes one ("we said 1,744; it is now 1,802"); CB-1 already keeps what each fact replaced, and item 2 tells a real change from late arrivals. *Built 2026-09-23 (ROADMAP §3.28) on `claude/determined-bohr-qh3b1p` behind the `answers.recheck` flag — **on by default since 2026-09-24, the user's call** (kill switch `AUGHOR_ANSWERS_RECHECK=0`): each chat answer's own query re-run daily and compared on its own labels at the 5% noise band, late rows told from a restatement by the learned lag, recorded on the answer, told in its Slack thread through the departure gate or shown under the web answer; receipt over HTTP on a DuckDB shop, not yet on a real warehouse or Slack; unmerged.*
+9. [ ] **The company-brain map** (Arc CB, §3.21) — one screen where every store behind the "brain" is a box with a live count; eight built features with no screen are the built-and-never-used failure this project keeps repeating, and it is the demo the user asked for. *Built 2026-09-23 (ROADMAP §3.30) on `claude/determined-bohr-qh3b1p`: `GET /brain/map` and Intelligence ▸ Brain map — nine stores as boxes with live counts and doors, measured arrows, and the facts that changed with what they replaced (CB-1's owed screen); receipt over HTTP on a real built context graph; unmerged.*
+10. ~~[ ] ⚑ **Email in and out** (HB-5, §3.18) — the one major destination that does not exist at all; waits on the user's Google OAuth client, and is cheapest right after item 1.~~ *Taken off this list 2026-09-23, the user's call; still open under the hub arc below.*
+11. [ ] ⚑ **Every new connection gets its business terms proposed** (Arc ON, §3.15) — the ontology lifts answers only where a question's business terms (processes, rules, promises) are declared: on the 2026-09-15 re-runs LuxExperience went from 5 of 16 right to 16 of 16 and Olist from 7 of 15 to 14 of 15, and plain SQL's misses were silent, not refused. A fresh connection has none, because the explorer that proposes them (`aughor/ontology/explorer.py`) runs only from the map's button; adding a connection runs the data explorer and the table-level build, not this. Wiring it is hours; the ⚑ is its quality gate — its one live check on LuxExperience fused two groups that should stay apart, it may run by default only with none, and re-checking is a paid model run. *Wired 2026-09-23 (ROADMAP §3.31) on `claude/determined-bohr-qh3b1p` behind `ontology.explore_on_connect`: the birth rite runs the explorer once per never-explored scope after the ontology build; the real rite on the samples warehouse reached the explorer and stopped only for want of a model here. **Default-on since 2026-09-24, the user's call, taken over the unrun paid quality re-check** — the ⚑ is decided, not measured: its one live check still stands at two groups fused, every proposal stays PROPOSED until a person confirms it, and `AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT=0` turns it off; unmerged.*
+12. [ ] **Recognise a business term however it is worded** (Arc ON) — the frame matches only declared words and synonyms a person typed (`aughor/agent/framing.py:80`); reworded questions scored 0 of 3, and a question that matches nothing loses the frame silently with no counter, so how often it happens is unknown. First count the misses (free, no decision), then grow the 3-item paraphrase set, then offer near-matches to the chooser that already picks among candidates — that last step reverses a rule ROADMAP §3.15 calls "by design", so it is the user's call. Worth little until item 11 gives connections terms to match. *Done 2026-09-23 (ROADMAP §3.32) on `claude/determined-bohr-qh3b1p`, steps 1–2 shipped and step 3 measured: misses now counted (`GET /framing/misses`, no question text stored); paraphrase set 3 → 17 items, the exact matcher already frames 3; near-matches NOT wired — held-out test: 4 of 5 missed paraphrases recoverable, but 2 of 3 control questions drew a wrong candidate; wiring them is ⚑ the user's call; unmerged.*
+13. [ ] **Object pages show what is known about each object** (Arc ON) — the findings panel is empty on every object page of every connection: it lists only findings whose SQL filters that exact object's key (`aughor/semantic/object_context.py:107`), exploration findings are aggregates by region, tier or status, and it reads only the home connection. LuxExperience's metrics panel is empty too: the shipped revenue and AOV are scoped to the samples and name a column LuxExperience lacks. Showing findings about the object's type or segment is the medium part; the rest is small. *Built 2026-09-23 (ROADMAP §3.29) on `claude/determined-bohr-qh3b1p`: the findings panel now lists, after the exact ones, findings about the object's segment and its type, each marked; on the samples customer C00042 the panel went from 0 to 3; the LuxExperience metrics half is still open; unmerged.*
+14. [ ] **Declared terms survive a fresh clone** (Arc ON) — the Olist, LuxExperience and cross-connection declarations behind item 11's numbers live only on the builder's machine, keyed by machine-local connection ids; their shipped home, `data/shipped/ontology_overrides/`, does not exist yet, and `AGENTS.md` still says `data/ontology_overrides/` is tracked while `tests/unit/test_seed_overlay_frozen.py` fails if anything new is tracked there. Needs stable connection ids first; until then no fresh checkout can re-prove item 11 or 12. *Built 2026-09-23 (ROADMAP §3.34) on `claude/determined-bohr-qh3b1p`: a connection scope key (`PUT /connections/{id}/settings`) and a keyed seed layer; the 13 Olist and LuxExperience declarations now ship under `data/shipped/ontology_overrides/key=…/`, rebuilt exactly on a random-id connection; AGENTS.md corrected; the datasets and the cross-connection declarations are still not in a clone; unmerged.*
+15. [ ] ⚑ **The chat's main buttons reach the agent that holds the ontology's tools** (Arc ON) — Quick posts to `/chat` and the default Agent button to `/investigate`; only Edit, starters, clarify answers and re-runs reach the conversation agent, the one with the object tools. Both buttons still read the ontology through the shared answer core, so what they lose is the tools, and the gain is unmeasured. The switch is small; the ⚑ is cost — a conversation turn runs ~20k tokens — and it belongs in the same decision as item 4. *Built 2026-09-23 (ROADMAP §3.33) on `claude/determined-bohr-qh3b1p` behind `chat.buttons_reach_agent`: with it on, Quick goes through `/ask` at quick depth and Agent at deep depth; off, every turn is sent exactly as before; not run live (no model here). **On by default since 2026-09-24, the user's call on the ~20k-token turn** — the ⚑ is decided; `AUGHOR_CHAT_BUTTONS_REACH_AGENT=0` turns it off; unmerged.*
 
-Just outside the ten: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
+Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
 ---
 
@@ -39,12 +50,12 @@ Just outside the ten: the next industry package (insurance has public data to te
 ### Central answer path — Arc CP (§3.22)
 - [ ] CP-1 shadow classification — built and live; every answered question gets a logged label (lookup · one query · several · investigation) that changes nothing yet, one model call per answer; needs about a week of rows before CP-2 can read them.
 - [ ] CP-2 calibration — built; measures how far the labels can be trusted, and can only run once the week of shadow data exists.
-- [ ] CP-3 route on the label — see top-10 item 4.
-- [ ] CP-4 the structured answer — see top-10 item 1.
+- [ ] CP-3 route on the label — see top item 4.
+- [x] CP-4 the structured answer — see top item 1; merged 2026-09-23 · #545.
 - [ ] CP-5 one exhibit formatter — one shared table builder and one chart-image renderer for every destination; today there are three table builders and two renderers.
 
 ### Company brain — Arc CB (§3.21; all eight waves built)
-- [ ] The map — see top-10 item 9; it is also the only place fact dates and history would show.
+- [ ] The map — see top item 9; it is also the only place fact dates and history would show. *Built 2026-09-23, ROADMAP §3.30 — the facts box shows each changed fact with what it replaced; unmerged.*
 - [ ] The "how much of the business we can see" share reads "unknown" for both BigQuery connections, because the profiler has nothing cached for them.
 - [ ] A second Slack reply on the same object overwrites the first reply's check — claims are counted per object, not per reply.
 - [ ] Screenshot of the owners panel still owed.
@@ -66,7 +77,7 @@ Just outside the ten: the next industry package (insurance has public data to te
 - [ ] "That's wrong" said in a Slack thread does not come back as a correction.
 - [ ] A deep report does not record whether its cause-and-effect claims survived their own checks.
 - [ ] The ranker needs more note kinds, and should ask once when two equally trusted sources disagree.
-- [ ] ⚑ Email in and out — see top-10 item 10.
+- [ ] ⚑ Email in and out (HB-5) — the one major destination that does not exist at all; waits on the user's Google OAuth client, and is cheapest now that the structured answer (top item 1) has merged. Was top item 10 until the user took it off the list on 2026-09-23.
 - [ ] Jira and Confluence through Atlassian's MCP server — built, never tried against a real Atlassian server.
 - [ ] Slack thread replies without an @mention are not picked up (needs `message.channels` + a reinstall).
 
@@ -87,17 +98,18 @@ Just outside the ten: the next industry package (insurance has public data to te
 - [ ] Moving `ontology_overrides/` into the data folder needs a safe top-up for installs that already migrated.
 
 ### Ontology — Arc ON (§3.15; finished, these are its leftovers)
-- [ ] Computed fields cannot be summed or averaged in object queries, and answers built by the compiler carry no badge.
-- [ ] Formula fields cannot use columns from a type's extra linked tables.
-- [ ] LuxExperience object pages show empty metrics and findings panels.
-- [ ] Model scores on objects (churn risk per customer) were never built — only the timeseries half of ON-5 was.
-- [ ] The explorer does not run automatically when a connection is added.
-- [ ] Across connections: a hop into a second connection inside a sub-query is refused, and object pages show only the home connection's findings.
-- [ ] A question worded differently from the declared names is not recognised until a person adds a synonym.
-- [ ] The Olist, LuxExperience and cross-connection declarations exist only as untracked local override files.
-- [ ] Actions can flag a record but can never correct a source value.
-- [ ] The chat's Quick button skips the agent — a filed defect.
-- [ ] The chat's object-query tool stays parked (§6 item 15) until there is a test set where plain SQL fails.
+*Every line below was re-measured against the code on 2026-09-23; the five with the most reach became top items 11–15.*
+- [ ] ~~Computed fields cannot be summed or averaged in object queries,~~ and answers built by the compiler carry no badge. *Measured: formula fields carry the `measure` role and a test averages one (`tests/unit/test_object_bindings.py:661`), so the first half is stale; the badge half stands — the web lists the `compiled` event as one it never shows.*
+- [ ] Formula fields cannot use columns from a type's extra linked tables. *Measured true; almost no one reaches it, since no tracked declaration has a formula field; about a day.*
+- [ ] LuxExperience object pages show empty metrics and findings panels — see top item 13. *Measured: the findings half is empty on every connection, not only LuxExperience.*
+- [ ] Model scores on objects (churn risk per customer) were never built — only the timeseries half of ON-5 was. *Measured true; no scoring code exists anywhere; a SQL-only stand-in such as days since the last order is possible now.*
+- [ ] ~~The explorer does not run automatically when a connection is added.~~ The business-term explorer does not run when a connection is added — see top item 11. *Measured: the data explorer and the table-level ontology build do run on connection add.*
+- [ ] Across connections: a hop into a second connection inside a sub-query is refused, and object pages show only the home connection's findings (the second half folds into top item 13). *Found by reading, not run: a formula field on a type in another connection is read as a real column (`aughor/semantic/object_query.py:695`), and the object page runs a cross-connection query's SQL directly though the compiler marks that SQL "not run" (`aughor/semantic/object_context.py:98`).*
+- [ ] A question worded differently from the declared names is not recognised until a person adds a synonym — see top item 12.
+- [ ] The Olist, LuxExperience and cross-connection declarations exist only as untracked local override files — see top item 14. *Measured: in a fresh clone they do not exist at all, and they cannot simply be committed, being keyed by machine-local connection ids.*
+- [ ] Actions can flag a record but can never correct a source value. *Measured: refused on purpose by the read-only law (ROADMAP §6 item 14), and even a stored correction only attaches a note, never swaps the value.*
+- [ ] The chat's Quick button skips the agent ~~— a filed defect~~ — see top item 15. *Measured: nothing was ever filed, and the default Agent button skips the conversation agent too.*
+- [ ] ⚑ ~~The chat's object-query tool stays parked (§6 item 15) until there is a test set where plain SQL fails.~~ Decide the parked object-query tool. *Measured: that set exists and was run on 2026-09-15, and the tool lost to the frame that already ships — LuxExperience 10 of 16 against 16 of 16, Olist 7 of 15 against 14 of 15. Delete the flag and the tool, or pay for a re-run on a stronger model.*
 
 ### Design system — Arc UI (§3.16)
 - [ ] ~30 components with hard-coded colours, ~46 bare "Loading…" lines and ~50 bare error lines to replace with proper states, plus the needs-human badge.
@@ -169,12 +181,12 @@ Just outside the ten: the next industry package (insurance has public data to te
 Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23 shows no work on 1–14.
 
 - [ ] 1 · **Deleting a connection leaves nothing behind** — no data and no metadata about it in any store.
-- [ ] 2 · **A built-in outlier-alert agent** — top-10 item 3.
-- [ ] 3 · **Briefings by period** — top-10 item 7.
-- [ ] 4 · **Learn when numbers settle** — top-10 item 2.
-- [ ] 5 · **Tell people when an answer goes stale** — top-10 item 8.
-- [ ] 6 · **Alerts that prove they work** — top-10 item 6.
-- [ ] 7 · **Fact-check a document** — top-10 item 5.
+- [x] 2 · **A built-in outlier-alert agent** — top item 3; merged 2026-09-23 · #545.
+- [ ] 3 · **Briefings by period** — top item 7; built 2026-09-23 (ROADMAP §3.27), unmerged.
+- [x] 4 · **Learn when numbers settle** — top item 2; merged 2026-09-23 · #545.
+- [ ] 5 · **Tell people when an answer goes stale** — top item 8; built 2026-09-23 (ROADMAP §3.28), unmerged.
+- [x] 6 · **Alerts that prove they work** — top item 6; merged 2026-09-23 · #545.
+- [x] 7 · **Fact-check a document** — top item 5; merged 2026-09-23 · #545.
 - [ ] 8 · **Reviews of what was missed** — when someone finds a big move nothing flagged, the platform works out why (no alert? window too short? triage held it?) and proposes the fix.
 - [ ] 9 · **An attention budget per person** — a weekly cap on interruptions, with alerts, briefings and inbox items competing for the slots on expected value.
 - [ ] 10 · **A data shopping list** — show which usual industry questions the connected data cannot answer, and what to connect to answer them.
@@ -189,8 +201,8 @@ Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23
 
 - [ ] `claude/dark-theme-lift` — the dark-theme contrast lift the user approved live, PLUS the law-8 amendment (no receipts on Slack messages), the quoted-rows guard fix (a product name "6B" read as billions) and the killed-run drain fix; not pushed; identical uncommitted copies sit in the main checkout.
 - [ ] `claude/delivery-log-truth` — a disabled trigger now logs `skipped` instead of `failed`; not pushed.
-- [ ] `claude/remove-vercel-config` — `vercel.json`, `.vercel/` and the Vercel-only entrypoint removed; not pushed.
-- [ ] `claude/retire-vercel-platform-tick` — merged as #543; the local branch is redundant and can be deleted.
+- [x] `claude/remove-vercel-config` — `vercel.json`, `.vercel/` and the Vercel-only entrypoint removed; its commit rode into `claude/pending-top-nine` and merged 2026-09-23 · #545 (`vercel.json` and `api/index.py` are gone on main). The local branch is redundant.
+- [ ] `claude/retire-vercel-platform-tick` — merged as #543; the local branch is redundant and can be deleted. *Measured 2026-09-23: the branch is also still on origin, and its tree matches the #543 squash exactly, so nothing is lost by deleting it; `git push origin --delete` from a cloud session is refused (403, the push credential is scoped to one branch) — delete it from a local checkout or the GitHub branches page.*
 
 ---
 

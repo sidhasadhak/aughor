@@ -92,6 +92,10 @@ FLAG_ENV = {
     "semops.jev_cheap_tier": "AUGHOR_SEMOPS_JEV_CHEAP_TIER",
     "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
+    "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
+    "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
+    "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
+    "chat.buttons_reach_agent": "AUGHOR_CHAT_BUTTONS_REACH_AGENT",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
@@ -271,6 +275,30 @@ FLAG_DEFAULT: dict = {
                              "the seam slim ~0.92x sampled's total prompt tokens "
                              "(docs/JEV_LIVE_RECEIPT_2026-09-21.md; "
                              "evals/semops_band_decision.json).",
+    # The four below entered 2026-09-24 on the user's call ("Four flags - turn them on..
+    # Explorer default-on") with NO eval receipt: each was built and checked on the samples
+    # warehouse without a model, and none has been measured live. Every off-path is ALIVE,
+    # so each is a graduation with a kill switch (its env var = 0), not a deletion; the
+    # falsifier each carried as an EXPERIMENT is still the condition that turns it off.
+    "briefing.by_period": "The user's call (2026-09-24), no eval receipt: period briefs, and "
+                          "subscriptions that send them monthly or yearly, are on for every "
+                          "install. Kill: a reader given the weekly brief and the standing "
+                          "brief for the same week cannot name a move only the weekly one "
+                          "carries (ROADMAP §3.27).",
+    "answers.recheck": "The user's call (2026-09-24), no eval receipt: the daily re-check of "
+                       "chat answers from the last 14 days runs, and a 5%+ move is sent "
+                       "through the departure gate. Kill: a month on a real connection with "
+                       "no correction acted on and the corrections muted (ROADMAP §3.28).",
+    "ontology.explore_on_connect": "The user's call (2026-09-24), taken over the explorer's "
+                                   "unrun paid quality re-check (its one live run fused two "
+                                   "groups): a new scope runs the business explorer once. "
+                                   "Proposals stay PROPOSED until a person confirms. Kill: "
+                                   "people withdraw most of what it proposes (ROADMAP §3.31).",
+    "chat.buttons_reach_agent": "The user's call (2026-09-24), no eval receipt: Quick and "
+                                "Agent reach /ask at quick and deep depth, ~20k tokens a "
+                                "turn. Kill: shadow-labelled turns (CP-1) judge the agent's "
+                                "answers no better than /chat's and /investigate's "
+                                "(ROADMAP §3.33).",
     #   trust/obs/LLM group — hardwired by Wave 2 group 1 (2c981ea1);
     #   graph/ontology group — group 2 (f2dfa99f); govern/automations — group 3 (cbbf6927);
     #   the final 14 (this wave): snapshot_receipts 2dee7a36c03f · specialist_packs
@@ -287,6 +315,22 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "chat.buttons_reach_agent": {
+        "label": "Send the chat's Quick and Agent buttons to the conversation agent",
+        "description": "Without it Quick posts /chat and the Agent button /investigate; only Edit, starters, clarify answers and re-runs reach /ask, where the conversation agent holds the ontology's tools (look up an object, describe a type). On, Quick goes through /ask at quick depth and Agent at deep depth. A conversation turn costs about 20k tokens. On by default since 2026-09-24 (the user's call); off → every turn is sent exactly as before.",
+    },
+    "ontology.explore_on_connect": {
+        "label": "Propose a new connection's business terms when it is added",
+        "description": "When a connection's ontology is first built, run the business explorer once — the one model call that proposes its entities, links, processes and rules (the same as Ontology ▸ Explore). Every proposal is measured before it lands and stays PROPOSED until a person confirms it. A scope already explored is skipped, so a restart spends nothing. On by default since 2026-09-24 (the user's call); off → a new connection gets no business terms until a person presses Explore.",
+    },
+    "answers.recheck": {
+        "label": "Tell people when an answer they were given changes",
+        "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. On by default since 2026-09-24 (the user's call); off → nothing is re-run, recorded or sent.",
+    },
+    "briefing.by_period": {
+        "label": "Briefings by period — daily, weekly, monthly and yearly",
+        "description": "Adds a Briefing for one period beside the standing one: the most recent complete day, week, month or (fiscal) year whose numbers have settled, each headline metric measured for that period against the one before, the alerts and findings recorded inside it, and a narrator told which version it is writing. A brief subscription can then send that briefing instead of the alert summary, and may run monthly or yearly. On by default since 2026-09-24 (the user's call); off → the Briefing, its subscriptions and their alert summaries behave exactly as before, and a request for a period brief is refused with the reason.",
+    },
     "ask.converse": {
         "label": "Answer through a conversation, not a single compiled query",
         "description": "Add agent bodies behind /ask: a quick turn becomes a real conversation whose tools wrap the existing guarded pipelines, and a deep turn becomes the ANALYST loop (CA-3) — the phase library as tools, the model choosing each next slice after seeing the last, the narrator writing the report from the evidence. Guards are unchanged and stay INSIDE the tools; the deterministic quick body and the deep phase script survive as the fallback whenever this is off. Off by default → /ask behaves exactly as today.",
@@ -373,6 +417,9 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # "briefing.by_period", "answers.recheck", "ontology.explore_on_connect" and
+    # "chat.buttons_reach_agent" GRADUATED to FLAG_DEFAULT 2026-09-24 (the user's call,
+    # no eval receipt): their falsifiers moved with them onto the FLAG_DEFAULT entries.
     # "semops.banded_cascade" GRADUATED to FLAG_DEFAULT 2026-09-21 (the user's flip): its
     # question was answered by measurement — fewer champion calls AND, after the seam slim,
     # fewer total tokens, at higher accuracy. Receipt on the FLAG_DEFAULT entry.

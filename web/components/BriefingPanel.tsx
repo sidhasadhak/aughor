@@ -29,6 +29,8 @@ import {
   getOrgIntelligence,
   generateBriefingNarrative,
   generateCanvasBriefingNarrative,
+  getSystemFlags,
+  type BriefingPeriod,
   getExplorerStatus,
   startExplorer,
   stopExplorer,
@@ -67,6 +69,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { Pending } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
+import { PeriodMeasures, PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { claimBriefingEntrance } from "@/components/brief/firstOpen";
@@ -2298,6 +2301,18 @@ export function BriefingPanel({
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  // Idea 3 — which version of the Briefing is on screen: the standing one, or the one written
+  // for the last complete day / week / month / year. Offered only when the install has the
+  // `briefing.by_period` flag on, and never on a canvas (its endpoint has no period).
+  const [period, setPeriod]                 = useState<BriefingPeriod>("history");
+  const [periodsOn, setPeriodsOn]           = useState(false);
+  // A period with nothing to brief on is a statement about the period, not a failure.
+  const [periodNote, setPeriodNote]         = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getSystemFlags().then(f => { if (alive) setPeriodsOn(!!f["briefing.by_period"]?.value); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   // The scope this panel is currently rendering. Mirrors the server's `scope_key` EXACTLY
   // (`canvas:<id>` | `<conn>:<schema>` | `<conn>`) so a returned brief can be checked
   // against it — see the scope guard in `generateNarrative`.
@@ -2378,6 +2393,7 @@ export function BriefingPanel({
     const forScope = narrativeScope;
     setNarrativeLoading(true);
     setNarrativeError(null);
+    setPeriodNote(null);
     // Drop the OUTGOING brief up front. It belongs to whatever scope was current when it
     // was fetched; from here on the only correct thing to paint is this call's result or
     // an error. Leaving it up is how a previous schema's synthesis ended up rendered under
@@ -2386,7 +2402,10 @@ export function BriefingPanel({
     try {
       const result = canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
-        : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId);
+        : period === "history"
+          // the standing brief is requested exactly as it always was
+          ? await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId)
+          : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId, period);
       if (myReq !== reqSeq.current) return;   // superseded → don't paint a stale brief (the flip guard)
       // Scope guard: the server stamps the scope it generated FOR. A brief that doesn't
       // claim THIS scope is never painted — that makes a cross-scope leak structurally
@@ -2397,13 +2416,14 @@ export function BriefingPanel({
         return;
       }
       if (result.available) setNarrative(result);
+      else if (result.period) setPeriodNote(periodUnavailable(result.period));
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
       if (myReq === reqSeq.current) setNarrativeError(e instanceof Error ? e.message : "Failed to generate narrative");
     } finally {
       if (myReq === reqSeq.current) setNarrativeLoading(false);
     }
-  }, [connectionId, canvasId, schema, workspaceId, narrativeScope]);
+  }, [connectionId, canvasId, schema, workspaceId, narrativeScope, period]);
 
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
   // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to
@@ -2560,11 +2580,13 @@ export function BriefingPanel({
     // WP-5 — wait for the shared schema selector to settle before the first connection-scoped
     // fetch, so we never issue an unscoped briefing request that then races the scoped one.
     if (!canvasId && !schemaReady) return;
-    if (narrativeScope === fetchedScope.current) return;
-    fetchedScope.current = narrativeScope;
+    // the version on screen is part of what was fetched: switching period re-fetches
+    const fetchKey = `${narrativeScope}#${period}`;
+    if (fetchKey === fetchedScope.current) return;
+    fetchedScope.current = fetchKey;
     generateNarrative(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, canvasId, schema, schemaReady, narrativeScope]);
+  }, [connectionId, canvasId, schema, schemaReady, narrativeScope, period]);
 
   // Poll explorer status — canvas-scoped when a canvasId is set (#7), so the control
   // bar + empty-state reflect the *canvas* explorer's phase, not the connection's.
@@ -2865,6 +2887,9 @@ export function BriefingPanel({
               >{explorerPending === "Refreshing…" ? "Refreshing…" : "Restart"}</Button>
             </>
           )}
+          {periodsOn && !canvasId && (
+            <PeriodSwitch value={period} onChange={setPeriod} disabled={narrativeLoading} />
+          )}
           {/* PX-6 — the scheduled-delivery door (five wrappers, zero callers until now). */}
           <Button variant={showSchedule ? "secondary" : "ghost"} size="xs"
             onClick={() => setShowSchedule(s => !s)}>Schedule</Button>
@@ -2961,13 +2986,19 @@ export function BriefingPanel({
 
       {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
           The hero above already carries the conclusion, so this card hides its header. */}
-      {(hasNarrative || narrativeLoading || narrativeError) && (
+      {(hasNarrative || narrativeLoading || narrativeError || periodNote) && (
         <div>
           <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
           {narrativeLoading && <SynthesisSkeleton />}
           {!narrativeLoading && narrativeError && (
             <ErrorState kind="Synthesis failed" what={narrativeError}
               means="The findings below are unaffected; only the written synthesis is missing." />
+          )}
+          {!narrativeLoading && periodNote && (
+            <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{periodNote}</div>
+          )}
+          {!narrativeLoading && hasNarrative && narrative?.period && (
+            <PeriodMeasures block={narrative.period} />
           )}
           {!narrativeLoading && hasNarrative && narrative && (
             <NarrativeCard

@@ -13,7 +13,14 @@ from aughor.util.time import now_iso_z as _now
 DEFAULT_CRON = {
     "week": "0 8 * * 1",   # Monday 08:00 UTC
     "day":  "0 8 * * *",   # Every day 08:00 UTC
+    # idea 3 — reachable only with `briefing.by_period` on (the router refuses them otherwise)
+    "month": "0 8 1 * *",  # the 1st of each month 08:00 UTC
+    "year":  "0 8 1 1 *",  # 1 January 08:00 UTC
 }
+
+#: What a subscription sends. "alert_summary" is what every subscription has always sent;
+#: "briefing" (idea 3, flag `briefing.by_period`) is the Briefing written for its period.
+CONTENTS = ("alert_summary", "briefing")
 
 
 class BriefSubscription(BaseModel):
@@ -25,8 +32,9 @@ class BriefSubscription(BaseModel):
     id:           str = ""
     conn_id:      str
     name:         str
-    period:       str = "week"                  # "week" | "day"
+    period:       str = "week"                  # "week" | "day" (+ "month" | "year" with idea 3)
     send_cron:    str = ""                       # cron expr; derived from period if blank
+    content:      str = "alert_summary"             # "alert_summary" | "briefing" — see CONTENTS
     trigger_id:   str                            # Action Hub trigger that delivers it
     #: Owning workspace; "" = UNOWNED, visible wherever its connection is.
     workspace_id: str = ""
@@ -50,4 +58,9 @@ class BriefSubscription(BaseModel):
         return DEFAULT_CRON.get(self.period, DEFAULT_CRON["week"])
 
     def to_dict(self) -> dict:
-        return self.model_dump()
+        row = self.model_dump()
+        # An alert-summary subscription is written exactly as it was before `content` existed, so
+        # every stored row and every API payload stays byte-identical until someone picks "briefing".
+        if row.get("content") == "alert_summary":
+            row.pop("content")
+        return row

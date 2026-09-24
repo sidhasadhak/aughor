@@ -120,23 +120,8 @@ def slack_arrival(body: SlackArrival):
 def arrival_claims(connection_id: str = Query(default="")):
     """CB-8 — what people said, by what the data made of it: counts per verification and every
     contradiction with the question it raised and who it went to. The map's 'claims checked' count."""
-    from aughor.ontology.recommendations import load_recommendations, recommendation_schemas
-    conns = [connection_id] if connection_id else _known_note_connections()
-    counts = {"measured": 0, "contradicted": 0, "unchecked": 0}
-    contradictions = []
-    for conn in conns:
-        for schema in recommendation_schemas(conn):
-            for rec in load_recommendations(conn, schema):
-                if rec.kind != "object_note" or rec.status == "dismissed":
-                    continue
-                check = (rec.proposed_fields or {}).get("check") or {}
-                v = str(check.get("verification") or "unchecked")
-                counts[v if v in counts else "unchecked"] += 1
-                if v == "contradicted":
-                    contradictions.append({"connection_id": conn, "object_ref": rec.target_id, "note": (rec.proposed_fields or {}).get("note", ""),
-                                           "question": check.get("question", ""), "question_to": check.get("question_to", ""),
-                                           "why_unreached": check.get("note", "")})
-    return {"counts": counts, "contradictions": contradictions}
+    from aughor.hub.claims import claims_summary
+    return claims_summary(connection_id)
 
 
 @router.get("/arrivals/notes")
@@ -164,12 +149,5 @@ def arrival_notes(object_ref: str = Query(...),
 
 
 def _known_note_connections() -> list[str]:
-    from pathlib import Path
-
-    from aughor.db.sqlite_util import resolve_db_path
-    root = resolve_db_path("AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR",
-                           Path(__file__).parent.parent.parent / "data" / "ontology_recommendations")
-    try:
-        return sorted(p.name for p in Path(root).iterdir() if p.is_dir())
-    except FileNotFoundError:
-        return []
+    from aughor.hub.claims import known_note_connections
+    return known_note_connections()

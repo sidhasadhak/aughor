@@ -33,7 +33,7 @@
 
 import type { UIMessage } from "ai";
 
-import type { PlaybookRef, FindingDossier } from "@/lib/api";
+import type { AnswerRecheck, PlaybookRef, FindingDossier } from "@/lib/api";
 import type {
   AnswerReport,
   ExplorationReport,
@@ -273,6 +273,8 @@ export interface ChatTurn {
 
   // Overview (interesting-facts tour)
   overviewReport?: OverviewReport | null;
+  /** Idea 5 — the latest re-check that found a number in this answer has moved since. */
+  recheck?: AnswerRecheck | null;
 
   // Real-time investigation progress
   queriesExecuted: { sql: string; row_count: number; error: string | null }[];
@@ -338,6 +340,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   frame: null,
   dossierReport: null, dossierInsightId: null,
   overviewReport: null,
+  recheck: null,
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null, receiptId: null, publicReceiptId: null,
   tablesUsed: [], contextManifest: null, planPending: null, clarifyPending: null, followups: [], analysis: null, error: null, errorDetail: null,
@@ -565,6 +568,9 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
     t.dossierInsightId = (d.insight_id as string) ?? null;
     t.queryMode = "dossier";
     t.statusText = null;
+  },
+  recheck: (t, d) => {
+    t.recheck = d as unknown as AnswerRecheck;
   },
   overview_report: (t, d) => {
     // Leave `mode` untouched (route set it to "ask" for an overview depth) so the

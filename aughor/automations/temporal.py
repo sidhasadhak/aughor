@@ -30,6 +30,7 @@ byte-identical.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -69,6 +70,93 @@ def clamp_lag(raw) -> int:
     return max(1, min(MAX_LAG_DAYS, lag))
 
 
+#: The periods a window can be cut for — the vocabulary brief subscriptions already speak
+#: ("day" | "week"), extended by idea 3 (briefings by period) to the month and the year.
+PERIODS: tuple[str, ...] = ("day", "week", "month", "year")
+
+_CADENCE_PERIOD = {"daily": "day", "weekly": "week", "monthly": "month"}
+
+
+@dataclass(frozen=True)
+class PeriodWindow:
+    """One complete period and the period it is compared with. ``end`` and
+    ``previous_end`` are EXCLUSIVE (the day after the last day), so a window filters as
+    ``start <= d < end`` on every dialect without a timezone-sensitive ``<=``.
+
+    The comparison is chosen per period, not mechanically "the one before": a day is
+    compared with the same weekday a week earlier, because most businesses run a weekly
+    rhythm and a Monday against a Sunday is a calendar fact, not a business move."""
+    period: str
+    start: date
+    end: date
+    previous_start: date
+    previous_end: date
+    lag_days: int
+
+    @property
+    def last_day(self) -> date:
+        return self.end - timedelta(days=1)
+
+    def to_dict(self) -> dict:
+        return {"period": self.period, "start": self.start.isoformat(),
+                "last_day": self.last_day.isoformat(), "end": self.end.isoformat(),
+                "previous_start": self.previous_start.isoformat(),
+                "previous_last_day": (self.previous_end - timedelta(days=1)).isoformat(),
+                "previous_end": self.previous_end.isoformat(), "lag_days": self.lag_days}
+
+
+def _add_years(d: date, years: int) -> date:
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:            # 29 Feb into a non-leap year
+        return d.replace(year=d.year + years, day=28)
+
+
+def complete_period(period: str, today: date, lag_days: int = DEFAULT_LAG_DAYS,
+                    fiscal_start_month: int = 1) -> PeriodWindow:
+    """The most recent COMPLETE ``period`` whose last day is no later than the anchor
+    (``today - lag``: the newest day whose numbers are settled), and its comparison.
+
+    A period is complete when its last day is on or before the anchor — so a monthly run
+    on 1 October (lag 1, anchor 30 September) observes September. The rule this replaced
+    took "the month before the anchor's month" and told that run to observe August,
+    skipping the month that had just ended (measured 2026-09-23). The year is the FISCAL
+    year when ``fiscal_start_month`` says so (org settings), otherwise the calendar year.
+    Pure: no clock, no store."""
+    if period not in PERIODS:
+        raise ValueError(f"period must be one of {', '.join(PERIODS)}; got {period!r}")
+    lag = clamp_lag(lag_days)
+    anchor = today - timedelta(days=lag)
+    if period == "day":
+        start = anchor
+        end = anchor + timedelta(days=1)
+        return PeriodWindow(period, start, end, start - timedelta(days=7),
+                            end - timedelta(days=7), lag)
+    if period == "week":
+        start = anchor - timedelta(days=anchor.weekday())
+        if start + timedelta(days=6) > anchor:
+            start -= timedelta(days=7)
+        return PeriodWindow(period, start, start + timedelta(days=7),
+                            start - timedelta(days=7), start, lag)
+    if period == "month":
+        next_day = anchor + timedelta(days=1)
+        # the anchor's month is complete only when the anchor is its last day
+        end = next_day.replace(day=1) if next_day.day == 1 else anchor.replace(day=1)
+        start = (end - timedelta(days=1)).replace(day=1)
+        previous_start = (start - timedelta(days=1)).replace(day=1)
+        return PeriodWindow(period, start, end, previous_start, start, lag)
+    raw = int(fiscal_start_month or 1)
+    month = raw if 1 <= raw <= 12 else 1
+    # the fiscal year containing the anchor starts on the most recent 1st of `month`
+    year_start = date(anchor.year, month, 1)
+    if year_start > anchor:
+        year_start = date(anchor.year - 1, month, 1)
+    next_year_start = _add_years(year_start, 1)
+    end = next_year_start if anchor + timedelta(days=1) == next_year_start else year_start
+    start = _add_years(end, -1)
+    return PeriodWindow(period, start, end, _add_years(start, -1), start, lag)
+
+
 def observation_note(now: datetime, cron: str, lag_days: int = DEFAULT_LAG_DAYS) -> str:
     """The code-written sentence naming what a scheduled run should observe."""
     now = now.astimezone(timezone.utc)
@@ -82,18 +170,15 @@ def observation_note(now: datetime, cron: str, lag_days: int = DEFAULT_LAG_DAYS)
         f"This is a scheduled {cadence} run at {now.strftime('%Y-%m-%dT%H:%M')}Z.",
     ]
     if cadence == "weekly":
-        # the last complete Mon–Sun week strictly before the anchor's week
-        week_start = anchor - timedelta(days=anchor.weekday())
-        if week_start + timedelta(days=6) > anchor:
-            week_start -= timedelta(days=7)
+        week = complete_period(_CADENCE_PERIOD[cadence], today, lag)
         lines.append(
-            f"Observe the most recent COMPLETE week: {week_start.isoformat()} to "
-            f"{(week_start + timedelta(days=6)).isoformat()} (UTC).")
+            f"Observe the most recent COMPLETE week: {week.start.isoformat()} to "
+            f"{week.last_day.isoformat()} (UTC).")
     elif cadence == "monthly":
-        month_end = anchor.replace(day=1) - timedelta(days=1)
+        month = complete_period(_CADENCE_PERIOD[cadence], today, lag)
         lines.append(
             f"Observe the most recent COMPLETE month: "
-            f"{month_end.strftime('%Y-%m')} (UTC).")
+            f"{month.start.strftime('%Y-%m')} (UTC).")
     else:
         lines.append(
             f"Observe {anchor.isoformat()} (UTC), the most recent complete day"

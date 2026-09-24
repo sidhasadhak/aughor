@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   createBriefSubscription, deleteBriefSubscription, getActionTriggers,
-  getBriefSubscriptions, testBriefSubscription, updateBriefSubscription,
+  getBriefSubscriptions, getSystemFlags, testBriefSubscription, updateBriefSubscription,
   type ActionTrigger, type BriefSubscription,
 } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
@@ -26,6 +26,21 @@ const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Daily 8:00 UTC", cron: "0 8 * * *" },
   { label: "Mondays 8:00 UTC", cron: "0 8 * * 1" },
 ];
+
+// Idea 3 (`briefing.by_period`) — the month and the year, offered only with the flag on.
+const PERIOD_CRON: Record<"month" | "year", { label: string; cron: string }> = {
+  month: { label: "1st of the month 8:00 UTC", cron: "0 8 1 * *" },
+  year: { label: "1 January 8:00 UTC", cron: "0 8 1 1 *" },
+};
+const ADJECTIVE: Record<BriefSubscription["period"], string> = {
+  day: "daily", week: "weekly", month: "monthly", year: "yearly",
+};
+
+/** A row's description. An alert-summary row reads exactly as it always has. */
+function describe(s: BriefSubscription): string {
+  if (s.content === "briefing") return `${ADJECTIVE[s.period]} briefing`;
+  return s.period === "week" ? "weekly brief" : "daily brief";
+}
 
 const field: React.CSSProperties = {
   background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
@@ -39,8 +54,16 @@ export function BriefSchedule({ connId }: { connId: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
-  const [form, setForm] = useState({ name: "", period: "week" as "week" | "day",
-    send_cron: CRON_PRESETS[0].cron, trigger_id: "" });
+  const [form, setForm] = useState({ name: "", period: "week" as BriefSubscription["period"],
+    content: "alert_summary" as "alert_summary" | "briefing", send_cron: CRON_PRESETS[0].cron, trigger_id: "" });
+  const [periodsOn, setPeriodsOn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getSystemFlags().then(f => { if (alive) setPeriodsOn(!!f["briefing.by_period"]?.value); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const presets = periodsOn && (form.period === "month" || form.period === "year")
+    ? [PERIOD_CRON[form.period]] : CRON_PRESETS;
 
   const load = useCallback(async () => {
     try {
@@ -87,7 +110,7 @@ export function BriefSchedule({ connId }: { connId: string }) {
           background: "var(--bg-1)", marginBottom: 6 }}>
           <span style={{ color: "var(--t1)", fontWeight: 500 }}>{s.name}</span>
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            {s.period === "week" ? "weekly brief" : "daily brief"} ·{" "}
+            {describe(s)} ·{" "}
             <span style={{ fontFamily: "var(--font-mono)" }}>{s.send_cron}</span>
           </span>
           <span className="aug-fs-xs" style={{ color: s.last_status === "ok" ? "var(--grn4)"
@@ -106,6 +129,8 @@ export function BriefSchedule({ connId }: { connId: string }) {
             onClick={() => run(() => updateBriefSubscription(s.id, {
               conn_id: s.conn_id, name: s.name, trigger_id: s.trigger_id,
               period: s.period, send_cron: s.send_cron, enabled: !s.enabled,
+              // re-sent as it is: omitting it would save a briefing row back as an alert summary
+              ...(s.content ? { content: s.content } : {}),
             }), s.enabled ? "Paused." : "Resumed.")}>
             {s.enabled ? "Pause" : "Resume"}
           </Button>
@@ -127,13 +152,28 @@ export function BriefSchedule({ connId }: { connId: string }) {
           <input style={{ ...field, width: 180 }} placeholder="Name this delivery"
             value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           <select style={field} value={form.period}
-            onChange={e => setForm(f => ({ ...f, period: e.target.value as "week" | "day" }))}>
-            <option value="week">weekly brief</option>
-            <option value="day">daily brief</option>
+            onChange={e => {
+              const period = e.target.value as BriefSubscription["period"];
+              // there is no monthly or yearly alert summary: those periods send the briefing
+              setForm(f => (period === "month" || period === "year")
+                ? { ...f, period, content: "briefing", send_cron: PERIOD_CRON[period].cron }
+                : { ...f, period, send_cron: CRON_PRESETS.some(p => p.cron === f.send_cron) ? f.send_cron : CRON_PRESETS[0].cron });
+            }}>
+            <option value="week">{periodsOn ? "weekly" : "weekly brief"}</option>
+            <option value="day">{periodsOn ? "daily" : "daily brief"}</option>
+            {periodsOn && <option value="month">monthly</option>}
+            {periodsOn && <option value="year">yearly</option>}
           </select>
+          {periodsOn && (
+            <select style={field} value={form.content} aria-label="What to send"
+              onChange={e => setForm(f => ({ ...f, content: e.target.value as "alert_summary" | "briefing" }))}>
+              {(form.period === "week" || form.period === "day") && <option value="alert_summary">alert summary</option>}
+              <option value="briefing">briefing for the period</option>
+            </select>
+          )}
           <select style={field} value={form.send_cron}
             onChange={e => setForm(f => ({ ...f, send_cron: e.target.value }))}>
-            {CRON_PRESETS.map(p => <option key={p.cron} value={p.cron}>{p.label}</option>)}
+            {presets.map(p => <option key={p.cron} value={p.cron}>{p.label}</option>)}
           </select>
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>to</span>
           <select style={field} value={form.trigger_id}
@@ -144,6 +184,7 @@ export function BriefSchedule({ connId }: { connId: string }) {
             onClick={() => run(() => createBriefSubscription({
               conn_id: connId, name: form.name.trim(), trigger_id: form.trigger_id,
               period: form.period, send_cron: form.send_cron, enabled: true,
+              ...(form.content === "briefing" ? { content: "briefing" as const } : {}),
             }), "Scheduled — the first delivery follows the cron.")}>
             Schedule it
           </Button>

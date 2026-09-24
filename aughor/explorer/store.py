@@ -97,7 +97,7 @@ def get_findings(connection_id: str, include_invalid: bool = False) -> list[dict
 get_insights = get_findings
 
 
-def get_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
+def get_domain_findings(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
     """Findings grouped by domain. Quarantined (invalid-flagged) ones
     are excluded by default — kept in the store for inspection, hidden from intel."""
     grouped: dict[str, list[dict]] = {}
@@ -105,6 +105,10 @@ def get_domain_insights(connection_id: str, include_invalid: bool = False) -> di
         d = ins.get("domain", "General")
         grouped.setdefault(d, []).append(ins)
     return grouped
+
+
+#: The name before the glossary settled on 'finding'; existing callers still read it.
+get_domain_insights = get_domain_findings
 
 
 # ── 'All schemas' aggregate ───────────────────────────────────────────────────
@@ -178,19 +182,23 @@ def load_aggregate(connection_id: str) -> dict:
     return agg
 
 
-def get_aggregate_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
+def get_aggregate_domain_findings(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
     """by_domain findings merged across all per-schema runs of a connection. Each one is
     tagged with its `source_schema` so the briefing can keep UNRELATED businesses apart
     (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story)."""
     grouped: dict[str, list[dict]] = {}
     for k in schema_run_keys(connection_id):
         sch = k.split("__", 1)[1] if "__" in k else ""
-        for d, ins in get_domain_insights(k, include_invalid=include_invalid).items():
+        for d, ins in get_domain_findings(k, include_invalid=include_invalid).items():
             for i in ins:
                 if sch:
                     i.setdefault("source_schema", sch)
             grouped.setdefault(d, []).extend(ins)
     return grouped
+
+
+#: The name before the glossary settled on 'finding'; existing callers still read it.
+get_aggregate_domain_insights = get_aggregate_domain_findings
 
 
 def extend_domain_budget(connection_id: str, domain: str, extra: int = 5) -> int:

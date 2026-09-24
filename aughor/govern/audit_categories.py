@@ -96,6 +96,9 @@ NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
     "investigation.dispatched", "investigations.swept", "job.foreign", "job.orphaned",
     "job.state", "monitor.alert", "node.span", "pack.status_changed", "phase_complete",
     "playbook.use", "store.wal_drift", "eval.graduation", "ontology.build",
+    # PENDING items 8 and 12: a re-check's verdict and a question that framed on nothing are
+    # operational readings — a correction a re-check SENDS is judged and journaled as a departure.
+    "answer.rechecked", "framing.miss",
     # ON-0a: a measurement pass over a built ontology (cardinality, lifecycles, pack
     # claims) — operational, like the build it follows; the gated edit is journaled by RBAC.
     "ontology.measure",

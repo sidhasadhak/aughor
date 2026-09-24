@@ -1,0 +1,175 @@
+target_kind: process
+target_id: order_to_delivery
+fields:
+  declared: true
+  entity: Order
+  origin: human
+  stages:
+  - name: placed
+    timestamp: order_purchase_timestamp
+  - name: approved
+    timestamp: order_approved_at
+  - name: dispatched
+    timestamp: order_delivered_carrier_date
+    promise:
+      name: dispatch
+      deadline: shipping_limit_date
+      grain: OrderItem
+      via: order_item_to_order
+  - name: delivered
+    timestamp: order_delivered_customer_date
+    promise:
+      name: delivery
+      deadline: order_estimated_delivery_date
+  display_name: Order to delivery
+  description: 'An Olist order from purchase to the customer''s door: approved, handed
+    to the carrier by each line''s seller by that line''s shipping limit, delivered
+    by the estimate the customer was given.'
+  owner: operations
+source: human
+edited_by: ''
+edited_at: '2026-09-15T00:00:00+00:00'
+note: shipped from evals/ablation_olist_business_ontology.json (the served, measured
+  form, 2026-09-15) — PENDING item 14
+binding:
+  process:
+    bound: true
+    note: 99,441 Order objects; 4 of 4 stages reached; 2 promises measured
+    substance:
+      entity: Order
+      stages:
+      - name: placed
+        timestamp: order_purchase_timestamp
+      - name: approved
+        timestamp: order_approved_at
+      - name: dispatched
+        timestamp: order_delivered_carrier_date
+        promise:
+          name: dispatch
+          deadline: shipping_limit_date
+          grain: OrderItem
+          via: order_item_to_order
+      - name: delivered
+        timestamp: order_delivered_customer_date
+        promise:
+          name: delivery
+          deadline: order_estimated_delivery_date
+    measured:
+      id: order_to_delivery
+      display_name: Order to delivery
+      description: 'An Olist order from purchase to the customer''s door: approved,
+        handed to the carrier by each line''s seller by that line''s shipping limit,
+        delivered by the estimate the customer was given.'
+      entity: Order
+      stages:
+      - name: placed
+        display_name: ''
+        timestamp: order_purchase_timestamp
+        state: []
+        property: ''
+        promise: null
+        reached: 99441
+        verified: true
+        note: 99,441 of 99,441 Order objects reached placed (order_purchase_timestamp)
+        both: null
+        skipped: null
+        out_of_order: null
+        p50_days: null
+        p90_days: null
+        p95_days: null
+      - name: approved
+        display_name: ''
+        timestamp: order_approved_at
+        state: []
+        property: ''
+        promise: null
+        reached: 99281
+        verified: true
+        note: 99,281 of 99,441 Order objects reached approved (order_approved_at)
+        both: 99281
+        skipped: 0
+        out_of_order: 0
+        p50_days: 0.0
+        p90_days: 2.0
+        p95_days: 2.0
+      - name: dispatched
+        display_name: ''
+        timestamp: order_delivered_carrier_date
+        state: []
+        property: ''
+        promise:
+          name: dispatch
+          within_days: null
+          within_hours: null
+          deadline: shipping_limit_date
+          grain: OrderItem
+          via: order_item_to_order
+          target: null
+          objects: 112650
+          reached: 111456
+          breached: 10423
+          kept: 101033
+          open: 1194
+          open_overdue: 1193
+          breach_rate: 0.093517
+          as_of: '2018-09-11 19:48:28'
+          verified: true
+          flags: []
+          note: 10,423 of the 111,456 OrderItem objects that reached dispatched broke
+            the dispatch promise (9.35%); 1,194 have not reached it, 1,193 of them
+            already past it as of 2018-09-11 19:48:28
+        reached: 97658
+        verified: true
+        note: 97,658 of 99,441 Order objects reached dispatched (order_delivered_carrier_date);
+          1,359 reached dispatched BEFORE approved; 14 reached dispatched with no
+          moment for approved
+        both: 97644
+        skipped: 14
+        out_of_order: 1359
+        p50_days: 2.0
+        p90_days: 6.0
+        p95_days: 8.0
+      - name: delivered
+        display_name: ''
+        timestamp: order_delivered_customer_date
+        state: []
+        property: ''
+        promise:
+          name: delivery
+          within_days: null
+          within_hours: null
+          deadline: order_estimated_delivery_date
+          grain: ''
+          via: ''
+          target: null
+          objects: 99441
+          reached: 96476
+          breached: 7827
+          kept: 88649
+          open: 2965
+          open_overdue: 2961
+          breach_rate: 0.081129
+          as_of: '2018-10-17 13:22:46'
+          verified: true
+          flags: []
+          note: 7,827 of the 96,476 Order objects that reached delivered broke the
+            delivery promise (8.11%); 2,965 have not reached it, 2,961 of them already
+            past it as of 2018-10-17 13:22:46
+        reached: 96476
+        verified: true
+        note: 96,476 of 99,441 Order objects reached delivered (order_delivered_customer_date);
+          23 reached delivered BEFORE dispatched; 1 reached delivered with no moment
+          for dispatched
+        both: 96475
+        skipped: 1
+        out_of_order: 23
+        p50_days: 7.0
+        p90_days: 19.0
+        p95_days: 24.0
+      owner: operations
+      origin: human
+      provenance: ''
+      objects: 99441
+      verified: true
+      note: 99,441 Order objects; 4 of 4 stages reached; 2 promises measured
+      measured_at: '2026-09-13T00:05:20+00:00'

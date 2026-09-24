@@ -1,0 +1,58 @@
+target_kind: rule
+target_id: vip_customers
+fields:
+  declared: true
+  entity: Customer
+  kind: value_set
+  origin: human
+  property: tier
+  values:
+  - VIP
+  - Top Customer
+  display_name: VIP customers
+  description: VIP customers are the VIP and Top Customer tiers.
+  owner: crm
+source: human
+edited_by: ''
+edited_at: '2026-09-15T00:00:00+00:00'
+note: shipped from evals/ablation_luxexperience_business_ontology.json (the served,
+  measured form, 2026-09-15) — PENDING item 14
+binding:
+  rule:
+    bound: true
+    note: admits 4,576 of 35,136 Customer objects
+    substance:
+      entity: Customer
+      kind: value_set
+      property: tier
+      values:
+      - VIP
+      - Top Customer
+      conditions: null
+      scopes: null
+    measured:
+      id: vip_customers
+      display_name: VIP customers
+      description: VIP customers are the VIP and Top Customer tiers.
+      owner: crm
+      entity: Customer
+      kind: value_set
+      property: tier
+      values:
+      - VIP
+      - Top Customer
+      conditions: []
+      scopes: []
+      origin: human
+      provenance: ''
+      objects: 35136
+      admitted: 4576
+      observed:
+        VIP: 3343
+        Top Customer: 1233
+      missing: []
+      scoped: {}
+      verified: true
+      flags: []
+      note: admits 4,576 of 35,136 Customer objects
+    measured_at: '2026-09-15T00:00:00+00:00'

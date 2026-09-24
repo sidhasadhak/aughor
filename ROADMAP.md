@@ -7725,6 +7725,350 @@ alert and writes it into history; a metric-condition chain queries the warehouse
 60-second heartbeat; the "guarded" flag is not checked; the Hub map lists automations and not
 monitors. No web buttons yet (the MonitorCard's action row and subtitle are the place).
 
+### 3.27 · Briefings by period — the Briefing written for one complete day, week, month or year (from `IDEAS.md` 3; **BUILT 2026-09-23**, PENDING.md item 7, branch `claude/determined-bohr-qh3b1p`; flag `briefing.by_period`, **on by default since 2026-09-24**, the user's call)
+
+> **The fact it answers.** Measured before a line was written: the Briefing took no window at
+> all — `get_briefing` had no period parameter, read every stored finding (each measured inside
+> the explorer's own ≤12-month window, so not "the whole history" either), and led with
+> north-star moves taken first→last over whatever buckets a model-written chart happened to
+> have. The day/week *subscriptions* sent the alert summary (`monitors/alert_summary`), not a
+> briefing, and only its alert section honoured the period. The idea's own ask: "the agent that
+> delivers the briefing should know which version it is producing" — it could not.
+
+**What ships.** `aughor/knowledge/period_brief.py`, and the period threaded through the pieces
+that already existed rather than a second brief beside them:
+* **The window is computed, never inferred** — `automations/temporal.complete_period`: the most
+  recent COMPLETE period whose last day is settled for this source (idea 4's learned lag when
+  there is one, else one day), and its comparison — a day against the same weekday a week
+  earlier, a week, month or year against the one before, the year the FISCAL year when org
+  settings say so. The scheduled-run note now reads the same function.
+* **Each headline metric is MEASURED for the window** — `sql/trend_window.period_split` cuts the
+  metric's own trend query to the two windows: the bucket function's raw date column is read out
+  of it and the rows are labelled by window, so a monthly revenue chart yields a correct week and
+  a rate (`SUM(a)/SUM(b)`) is recomputed over the window at its own grain, never averaged across
+  buckets. A query it cannot prove is a single-series trend over a raw date (a breakdown, a window
+  function, a bucket computed in a sub-query, two series) is refused WITH the reason, and the
+  brief lists the metric as not measured and why. The split also returns the first and last day
+  each window's rows cover: a comparison the data only partly reaches states no change.
+* **Only the period's evidence** — the measured metrics, the alerts that fired inside the window
+  and the findings the platform RECORDED inside it. A standing finding is not this week's news.
+* **The narrator is told which version it writes** — a period system prompt (the standing one
+  is untouched, byte for byte) and a code-written `[Briefing period]` block: the dates, the
+  comparison, what was not measured, and — past a one-day lag — that the newest days are still
+  settling and the brief must say so.
+* **Cached per scope and period, rebuilt when the window moves** (`<scope>#<period>`, served only
+  while start, end and lag match) — yesterday's daily brief is never served as today's; and
+  deleting a connection or schema drops its period briefs with it (the delete cascade matched
+  only `<conn>` and `<conn>:<schema>`, and would have left `<conn>#week` behind).
+* **Doors:** `POST /exploration/{conn}/briefing?period=day|week|month|year` (absent or `history`
+  = the standing brief, unchanged; off → 404 with the reason, before any side effect); a brief
+  subscription gains `content: "briefing"` and the periods `month` / `year` (there is no monthly
+  alert summary — the router says so). The Briefing panel gets a Standing · Day · Week · Month ·
+  Year switch and a "Measured for …" table with every unmeasured metric and its reason; the
+  schedule form offers the month, the year and what to send. All of it only with the flag on.
+* **A scheduled period brief departs line by line** (`briefing/delivery.build_period_departure`):
+  the measured lines and the narrative's paragraphs are held unless every magnitude they state is
+  in the period queries RE-RUN at the send (`line_holds` gained an optional measurement — law 1
+  per line; without one a line is judged exactly as before), alerts as a monitor's declared
+  readings, every line for trust, definition and claim type.
+
+**Receipt (2026-09-23, this cloud session — no warehouse credentials, no model key).** The real
+route over HTTP on a DuckDB shop of two years of `order_items`, the profile store and its
+`recent_window` rewrite in the loop, only the narrator stubbed (it printed the prompt it got):
+flag off → **404** *"briefings by period are off on this install — the weekly briefing needs
+the 'briefing.by_period' flag"*; flag on, the week 2026-09-14..20 against 2026-09-07..13: GMV
+**33,000 vs 33,019** — equal, to the unit, to the same week written by hand in SQL; return rate
+0.1030 (hand: 0.10303); the day, month and year alongside; "Top statuses", a breakdown, *not
+measured — its first column is not a date*. `period=history` answered exactly as before, with no
+`period` key. 27 backend tests (`tests/unit/test_briefing_by_period.py`), 4 web tests, the seven
+web gates, the ratchets and 1,340 tests across every touched area green — the one red,
+`test_aughor_ops_snapshot.py`, fails the same way on the base commit (it needs the `aughor_ops`
+database this container does not have).
+**What the first run found, and fixed before this landed** (none of it visible in the unit tests,
+which all passed first time): (1) the profile store wraps every LIMITed chart in `recent_window`'s
+`SELECT * FROM (…) AS _recent`, whose outer query has no GROUP BY — GMV, the headline metric, was
+refused on the first real run; the split now cuts the trend inside the wrapper; (2) the year 2025
+against a 2024 the data only reaches from September read as **+200%** items sold — a data-start
+artifact that would have led the yearly brief; the coverage check now states the span and no
+change; (3) a plain count formatted `{:g}` prints 1,190,000 as "1.19e+06", which no reader parses
+and no grounding matches — period lines write plain magnitudes in full.
+**Found on the way, fixed:** a monthly scheduled investigation firing on 1 October was told to
+observe **August** — the month rule took "the month before the anchor's month" and skipped the
+month that had just ended (now `complete_period`'s rule, tested); every daily alert summary ever
+sent was headed **"Dayly"** (`period.capitalize() + "ly"`; only "Weekly" was tested).
+⏳ **Open:** no live receipt on a real warehouse — the operator's run: flag on, Briefing → Week on
+theLook, and one scheduled `content: "briefing"` send to a test trigger; the narrator has never
+written a period brief for real (stubbed here), so the period prompt is unmeasured — the flag's
+falsifier (now the flag's `kernel/flags.py` FLAG_DEFAULT entry) is read against a person comparing the weekly and the
+standing brief for the same week. By the departure laws, a scheduled period brief's revenue line
+leaves only where an approved metric defines revenue on the connection (law 2 held the stub's
+"Revenue reached $4,000" in the test, as it should). The coverage slack (week 2 days, month 7,
+year 31) is a judgement, not a measurement. The canvas brief has no period. The standing brief's
+own metric moves still anchor on a fixed yesterday (§3.23's note) — untouched here.
+**Fixed after an independent review of the branch (2026-09-24):** the send-time re-measurement read the result cache the brief had just filled, so law 1 checked the brief against itself for up to an hour — it now reads the warehouse (`connection_runner(cached=False)`); a briefing subscription saved while the flag was on could not be paused after it was turned off — a period or content is now validated only when it changes; an empty fiscal month crashed the year window — it reads as the calendar year.
+
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_BRIEFING_BY_PERIOD=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the weekly brief answers 200 for *the week 2026-09-14 to 2026-09-20*, then 404 with the refusal quoted above. The narrator's period prompt is still unmeasured on a real reader.
+
+### 3.28 · Answers that say when they have changed — a recall, for numbers (from `IDEAS.md` 5; **BUILT 2026-09-23**, PENDING.md item 8, branch `claude/determined-bohr-qh3b1p`; flag `answers.recheck`, **on by default since 2026-09-24**, the user's call)
+
+> **The fact it answers.** Measured before building: nothing re-checked a chat answer, ever.
+> Yet each answer's history row already kept the query that produced it and the rows it
+> returned (`report.sql` / `columns` / `rows` — a conversational turn too, filed from its
+> envelope, §3.22), and a Slack answer's thread is its `session_id` (`slack:<channel>:<ts>`).
+> What nothing kept: WHO asked (the asker rides a 14-day session log only). So the recall
+> needed no new store and no model — only the loop.
+
+**What ships.** `aughor/answer/recheck.py`:
+* **Re-run and compare** — the answer's own query, read-only on its own connection, compared
+  with what the person was given row by row on the answer's own labels (its non-numeric
+  columns), number by number, at the departure gate's noise band (`NOISE_REL`, 5%: a smaller
+  move is not news). A stored table that is not that query's result — its columns differ, as a
+  table lifted from the model's prose does — is NOT compared, and the re-check says so.
+* **Why it moved, only when it can be known** — with idea 4's learned lag and a date column in
+  the answer, a changed day still inside the lag when the answer was given is LATE ROWS, one
+  already settled is a RESTATEMENT (the platform's own rule, `day <= today - lag`); no learned
+  lag, or no date → it says it cannot tell. Never a guess.
+* **Recorded on the answer, appended** (`report.rechecks`, the last 30): what the answer said
+  stays as it was said, each re-check a dated reading beside it. No new store.
+* **Told where they were answered** — a Slack answer gets a reply in its own thread, as the bot
+  bound to the answering agent (or the only bot; two and no binding → not sent, and it says
+  why), through `gate_departure` like every message that leaves (`kind="answer_correction"`,
+  law 1 grounded in the old and new values, the receipt line on the post, the departure
+  recorded); a web answer shows it under the restored answer (`data-recheck` part →
+  `components/AnswerRecheck.tsx`). The same change is never told twice.
+* **Daily, from the heartbeat, after the settling reading** — answers from the last 14 days, at
+  most 40 a day, each at most once per 20 hours. **`POST /investigations/{id}/recheck`**
+  re-checks one now (nothing sent — the person asking is looking) and
+  **`GET /investigations/{id}/rechecks`** lists them.
+
+**Receipt (2026-09-23, this cloud session).** The real app over HTTP, a registered DuckDB
+connection, a chat answer filed as the chat path files it (7 days × 1,744 orders): flag off →
+**404** *"re-checking answers is off on this install — it needs the 'answers.recheck' flag"*;
+flag on, nothing moved → `unchanged`, 14 numbers compared. Then 158 late orders landed on
+2026-09-20 and the 14th's amounts were restated (+20%): `changed`, three numbers past the band —
+revenue 2026-09-14 135,955 → 163,146, orders 2026-09-20 1,744 → 1,902, revenue 2026-09-20
+135,943 → 144,633 — each named, with its day. The message it wrote:
+*"We told you orders for 2026-09-20 was 1,744; it is now 1,902 (+9.1%) … The days 2026-09-14 and
+2026-09-20 had already settled when we answered, so the source has restated its history there —
+not late rows."* (lag 3, answered the same day: both days were settled by the platform's rule).
+The heartbeat's `tick_once()` then re-checked the second, never-checked answer — a weekly total
+that had moved 3.8%, inside the band, so `unchanged`, nothing told — and skipped the first,
+re-checked minutes before. 16 backend tests (`tests/unit/test_answer_recheck.py`, the Slack
+thread reply through the real gate among them), 4 web tests, the seven web gates, all 1,151 web
+tests and the ratchets green.
+**Found by the run, fixed:** a question ending in "?" was quoted as `“…?”.`; a mixed recall
+(some days late, some restated) said only "restatement" — it now names each day's cause.
+**Found by the full web suite, fixed:** item 7's panel asked for the standing brief with a fifth
+argument, breaking the "asks once" workspace test — the standing request is sent exactly as
+before again.
+⏳ **Open:** no receipt against a real warehouse or a real Slack workspace (no credentials here)
+— the operator's run: flag on, answer a question in a Slack thread, change the data, run
+`POST /investigations/{id}/recheck`, then let the heartbeat post. The asker is still not
+recorded on the answer, so a web answer cannot be pushed to anyone — it waits to be opened. The
+original Slack mention answer is not gated while its correction is (the TypeScript bot streams
+`/ask` straight to Slack), so a correction faces a stricter gate than the answer it corrects:
+by law 2 a KPI word no approved metric defines holds the correction (recorded, not sent). Only
+chat answers are re-checked — a deep report's many queries are not.
+**Fixed after an independent review of the branch (2026-09-24), each with a test:** a query that reads the clock ("yesterday", "this month so far") is no longer re-checked — re-run tomorrow it measures another window, and the difference would have been told as a correction; a monthly or weekly result is labelled by its bucket's FIRST day, so late rows on the 22nd were called a restatement — the bucket's span is read off its labels and its LAST day decides; a row that vanished read as "unchanged" — it is a change, and said; a move from zero no longer states "+100%"; the daily pass took the newest forty answers forever — the longest-unchecked go first; a later re-check that found the numbers back as said now takes the web banner down; the append is a locked read-modify-write; each re-check releases its connection.
+
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_ANSWERS_RECHECK=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the re-check door reaches the answer lookup (404 *No chat answer with this id* for an unknown id), then 404 with the refusal quoted above. On, the scheduler heartbeat re-runs each chat answer's query from the last 14 days once a day — warehouse queries the operator now pays by default.
+
+### 3.29 · Object pages say what is known about the object, its segment and its type (PENDING.md item 13, Arc ON leftover; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a read-only panel, every row marked)
+
+> **The fact it answers.** Measured 2026-09-23: the object page's findings panel was empty on
+> EVERY object page of every connection, not only LuxExperience. It listed only findings whose
+> SQL filters that exact object's key (`semantic/object_context.object_findings`), and the
+> explorer writes aggregates — by country, tier, status — so none ever named one object.
+
+**What ships.** The exact tier is unchanged and still comes first. After it, two marked tiers:
+* **its segment** — a finding that filters one of the object's own LABEL properties (country,
+  tier, status, channel — never its key, a number, a date or a number that arrives as text) to
+  the object's value, or groups by that column AND names the value in its text
+  (`about_segment`, read off the finding's SQL, never its wording alone) — up to 5;
+* **its type in general** — a finding that reads the type's tables — up to 3; one pinned to
+  ANOTHER object (`customer_id = 'C00077'`) is about that object and is not shown at all.
+The web marks each row "this customer" · "its segment: Country FR" · "customers in general".
+
+**Receipt.** The real `object_context` over the seeded samples warehouse and its measured
+ontology, customer C00042 (Paris, FR), five findings in the explorer's shape: before, the panel
+held **0**; after, **3** — "Customers in FR placed 12% more repeat orders" as its segment
+(`customers.country = 'FR'`), the AOV-by-country breakdown (which names GB, JP, IN — not FR) and
+customer growth as customers in general; the Monday-peak finding reads only `orders` and the
+C00077 finding is about another customer, so neither is shown. The run found that the samples'
+numbers arrive as strings ("46" lifetime orders) and would have segmented on them — excluded.
+363 object tests green.
+⏳ **Open (unchanged, measured):** LuxExperience's metrics panel is empty because the shipped
+revenue and AOV are scoped to the samples and name a column LuxExperience lacks — a declared
+LuxExperience metric fixes it, and only survives a fresh clone once item 14 lands. Object pages
+still read only the home connection's findings.
+**Fixed after an independent review of the branch (2026-09-24):** a finding pinned to ANOTHER customer who shares this one's country was shown as "about its segment" — a finding pinned to another object is skipped before either wider tier; BigQuery's backticked tables failed the neutral parse, so theLook's findings never reached the wider tiers — the SQL is tried in the warehouse dialects in turn.
+
+### 3.30 · The company-brain map — every store a box with a live count, every arrow a measurement (PENDING.md item 9, Arc CB's closing ask, §3.21; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a read-only screen)
+
+> **The fact it answers.** Eight Arc CB waves were built with no screen between them, and two —
+> CB-1's fact dates and history, CB-8's claims — had no screen at all (§3.21: "⏳ Owed: the
+> dates and history on a screen — they land with the map below"). There was no single "brain"
+> read; each count lived behind its own door, and the Hub map is a table of automations.
+
+**What ships.** `aughor/hub/brain_map.py` and **`GET /brain/map?connection_id=`** — a READ,
+never a build (the hub map's rule): nine boxes in the three vaults §3.21 and IDEAS 21 name —
+*what it knows* (dated facts from the per-schema context graphs, approved metrics, what the
+platform can see), *what it did with people* (findings, recommendations and their CB-2
+outcomes, CB-8 claims checked, messages judged at the gate), *what people told it* (CB-6
+priorities, CB-3 owners reachable). Each box carries its live count, a line in words and the
+door that serves it; a store that cannot be read, or is not built, is `count: null` with the
+reason — never a zero. The arrows are counts only: findings landed in the graph, metrics in the
+graph, Briefing citations, reviews asked of an owner, contradicted claims raised. The facts box
+carries the recently changed facts with what each replaced — CB-1's owed screen. The CB-8 claims
+fold moved out of the arrivals route into `hub/claims.claims_summary`, so the route and the map
+read one fold. Web: Intelligence ▸ **Brain map** (a layer, not a new tab —
+`components/BrainMapPanel.tsx`, pure layout in `lib/brainMap.ts`).
+
+**Receipt (2026-09-23, this cloud session).** The seeded samples warehouse registered as a
+connection, its measured ontology saved, three findings filed, the REAL context graph built
+(5 tables, 3 domains, 2 metrics, 4 glossary terms, 3 findings, 9 edges); then a person's change
+to `aov`'s formula and a rebuild. Over HTTP, `GET /brain/map` answered: dated facts **17** ("17 of
+17 dated · 1 changed since first seen · 0 retired, kept"), findings **3** ("3 across 3 domains ·
+newest 2026-09-22"), owners "0 of 1 named owners reachable", and what the platform can see **—**:
+*"maps 5 tables; the profiler has not seen this connection, so the denominator is unknown"* —
+the same unknown PENDING's CB line records for both BigQuery connections, now on a screen; the
+arrows "findings → facts: 3", "metrics → facts: 2"; and under the facts box *"metric:aov changed
+2026-09-23 — it replaced AVG(total_amount) (corrected)"*. 4 backend and 3 web tests, the seven
+web gates, all 1,154 web tests and the ratchets green.
+⏳ **Open:** the departures box counts every connection (the ledger has no organisation filter,
+and the box says so); the visibility share stays unknown until the profiler has seen the
+connection; not yet the Sources → Observers → Judge lanes §3.21 sketches — the vaults are the
+stores, the lanes would be the processes between them.
+**Fixed after an independent review of the branch (2026-09-24):** the departures box counted every organisation's departures — `summary_counts(org_id=)` now scopes it to the caller's.
+
+### 3.31 · A new connection's business terms, proposed when it arrives (PENDING.md item 11, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `ontology.explore_on_connect`, **on by default since 2026-09-24**, the user's call over the ⚑)
+
+> **The fact it answers.** The ontology lifts answers only where a question's business terms are
+> declared (§3.15's re-runs: LuxExperience 5/16 → 16/16, Olist 7/15 → 14/15, plain SQL's misses
+> silent). Measured 2026-09-23: adding a connection runs the data explorer and the table-level
+> build, but the BUSINESS explorer (`ontology/explorer.py`, `POST /ontology/explore`) ran only
+> from a button — so every new connection started with no terms to frame a question on.
+
+**What ships.** The birth rite gains one step after the ontology build it reads,
+`routers/_shared.run_business_terms`: with the flag on, a plan that includes ontology edits, an
+ontology actually built and a scope never explored, it runs the same explorer the button runs —
+one model call; every proposal measured before it lands and PROPOSED until a person confirms it.
+A scope already explored is skipped, so a restart (the rite re-runs at startup) spends nothing;
+each outcome is a `birth.step` (`skipped` with its reason · `started` · `done` · `failed`). Off,
+the rite emits exactly the steps it always did.
+
+**Receipt — the real birth rite on the seeded samples warehouse (2026-09-23).** Flag off: the six
+steps it always emitted, nothing more. Flag on, before any ontology was built here: *"skipped — no
+ontology is built on this scope yet, so there is nothing for the explorer to read"*. The first
+version recorded that as a FAILURE — the intelligence step reports `done` on a build that was a
+skip, and the explorer refused with a 404; the run found it and it is now a stated skip. Flag on
+with the measured ontology saved: `started`, then `failed — NoModelConfigured: No model
+configured for the 'coder' role` — the step reached the explorer and stopped only where this
+session has no model; the rite stood. 6 tests, the ratchets and the flag dispositions green.
+⚑ **Open — the operator's:** default-on waits on the explorer's quality gate (`ships_default_on`:
+no fusions); its one live run fused two groups that should stay apart, and re-checking it is a
+paid model run. A failed explorer call is retried by the next rite, since only a finished run is
+recorded.
+**Fixed after an independent review of the branch (2026-09-24):** the "already explored" skip read the run record under "default" while the explorer files it under the connection's own schema — on such a connection every restart would have paid for the model call again; it now reads the explorer's own scope (`resolve_effective_schema`), and the step runs in a copy of the rite's context so its `birth.step` events carry the job's id.
+
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the birth rite's business-terms step reaches the explorer's preconditions (skipped: *no ontology is built on this scope yet*), then `off` with no step emitted. Taken over the quality gate this section names: the explorer's one live check still stands at two groups fused and the paid re-check has not run, so a new connection's proposals may fuse groups — each stays PROPOSED until a person confirms it. One model call per new scope.
+
+### 3.32 · Business terms however worded — the misses counted, the paraphrase set grown, near-matches measured (PENDING.md item 12, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; the near-match is NOT wired — ⚑ the user's call)
+
+> **The fact it answers.** The frame matcher reads only declared words and a person's synonyms,
+> by design; paraphrases scored 0/3, and a question that matched nothing lost the frame SILENTLY
+> — so how often wording misses on a real connection was unknown, and the lift the frame gives
+> (§3.15) is exactly what such a question loses.
+
+**What ships — the three steps PENDING named, the third as a measurement only.**
+1. **Misses are counted** (`ontology/framing_misses.py`, hooked into `agent.framing.resolve_frame`,
+   where every fresh framing passes): a question on a scope that DECLARES definitions and reaches
+   none is a `framing.miss` ledger event carrying the run's trace id — never the question's text,
+   because questions are already kept word for word elsewhere (PENDING's A5). **`GET
+   /framing/misses?connection_id=`** reads them, with the question only while the session log
+   still keeps its run. Free; no decision needed.
+2. **The paraphrase set grew from 3 to 17** (`evals/framing_matcher_set.jsonl`, 14 items written
+   and split dev/test before any near-match code). Measured: the exact matcher already frames **3
+   of 17** — "later than we promise", "later than promised", "how many days does delivery take"
+   reach the derived names (`late_*`, `*_breach_rate`, `*_lag_days`); the old "0/3" was a small
+   set. In-scope accuracy unchanged, 33/33 dev and 27/27 test.
+3. **Near-matches, measured, not wired** (`ontology/near_match.py`, `evals/framing_near_match_eval.py`):
+   each declared definition a small document — name words strong, description words weak — hit by
+   stem or by one word prefixing the other, weighted by rarity; a type's name alone never makes a
+   candidate, an instruction's verb is never a term. Tuned on dev: **6 of 8** missed paraphrases
+   put their meant definition among the candidates, **0 of 4** controls drew one. Test, measured
+   once: **4 of 5** recoverable, but **2 of 3** controls drew a wrong candidate
+   (`evals/framing_near_match_results_test.json`). What that decides is the user's: offering
+   near-matches to the chooser (one model call) would recover most reworded questions AND ask the
+   chooser about some that mean nothing declared — whether it then declines is unmeasured.
+⏳ Open: the chooser's behaviour on near-match candidates (a paid run); a screen for the misses
+(the door exists); "best customers" and "our own fault" share no word with their definitions —
+only a person's synonym, or a model, reaches them.
+**Fixed after an independent review of the branch (2026-09-24):** a deep run frames its question twice (the door, then the graph's first node), so each miss was counted twice — the door now passes the run's id and a run is one miss.
+
+### 3.33 · The chat's two main buttons can reach the conversation agent (PENDING.md item 15, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `chat.buttons_reach_agent`, **on by default since 2026-09-24**, the user's call over the ⚑)
+
+> **The fact it answers.** Measured: Quick posts `/chat` and the default Agent button posts the
+> deep-analysis door; only Edit, starters, clarify answers and re-runs reach `/ask`, where the
+> conversation agent holds the ontology's tools. Both buttons still read the ontology through the
+> shared answer core — what they lose is the tools — and the "filed defect" PENDING cited was never
+> filed.
+
+**What ships.** `web/lib/chatDoors.doorFor` decides a button's door: with the flag on, Quick goes
+through `/ask` at quick depth and Agent at deep depth (a depth the person chose is kept); off, the
+turn's body is byte-identical — the chat panel reads the flag once and a failed read is "off".
+**Not run live:** the conversation agent needs a model, and this session has none; 3 door tests,
+all 1,157 web tests (the chat panel's own among them, unchanged with the flag off), the seven web
+gates and the flag dispositions green.
+⚑ **Open — the operator's, with item 4 (CP-3):** the gain is unmeasured and the cost is known
+(~20k tokens a conversation turn, §3.22); the flag's falsifier reads a week of CP-1's shadow labels
+against the answers each door gave.
+**Fixed after an independent review of the branch (2026-09-24):** the flag rewrote EVERY deep-analysis send, and `/ask` does not forward seed SQL, seed context or a cache skip — "Explore this fact" would have lost its seed and "Run fresh" been served from cache; only a plain question (nothing but a depth or a schema) changes door now.
+
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_CHAT_BUTTONS_REACH_AGENT=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the web reads the flag from that endpoint, so Quick and Agent now go through `/ask` on a fresh clone. Taken knowing a conversation turn runs ~20k tokens; the gain is still unmeasured, and CP-1's shadow labels are what would measure it.
+
+### 3.34 · Declared business terms survive a fresh clone — shipped under a connection's scope key (PENDING.md item 14, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a new seed layer an install opts into by naming a key)
+
+> **The fact it answers.** The Olist and LuxExperience declarations behind §3.15's numbers (1
+> process and 2 rules; 2 processes, 7 rules and an action) lived only on the builder's machine, in
+> untracked override files keyed by that machine's random connection ids (`add_connection` mints
+> `uuid4()[:8]`). Their shipped home, `data/shipped/ontology_overrides/`, did not exist, and
+> AGENTS.md still called `data/ontology_overrides/` tracked while `test_seed_overlay_frozen`
+> fails if anything new is tracked there. No fresh checkout could re-prove items 11 or 12.
+
+**What ships.**
+* **A connection SCOPE KEY** (`db/registry.scope_key_of`; set with `PUT /connections/{id}/settings
+  {"scope_key": "olist"}`, validated: lowercase, digits, `_`, `-`, never `=`). Builtin connections
+  need none — their ids are already the same everywhere.
+* **A keyed seed layer** in the overrides tree: after this install's files and the seed filed under
+  the connection's id, the seed filed under `key=<scope key>/<schema>/…` — resolved to the local id
+  at read time. Everything the seed already did holds: an install's own file shadows a shipped one
+  whole, withdrawing a shipped declaration leaves a `.hidden` marker and never deletes it, and the
+  overlay never writes into the seed. Like `org=`, the `key=` segment holds `=`, which no
+  connection id can.
+* **The declarations themselves**, 13 files under `data/shipped/ontology_overrides/key=olist/` and
+  `key=luxexperience/`, re-materialised by `scripts/ship_business_declarations.py` from the TRACKED
+  eval snapshots with the declare doors' own field and binding helpers, each carrying the
+  measurement it was served with; a re-run writes the same bytes.
+* AGENTS.md and `.gitignore` corrected: the instance tree is an install's own; what the repo ships
+  goes in `data/shipped/ontology_overrides/`.
+
+**Receipt.** Hermetic, no database and no model: a connection minted `c0ffee42` with scope key
+`luxexperience` (then `olist`), over a graph stripped of its declarations, gets every process, rule
+and the action back — equal, measurement included, to the snapshot — and the frame matcher scores
+all 80 items on the rebuilt graphs exactly as on the snapshots (items 11 and 12 re-provable on a
+fresh clone). Over HTTP: a fresh install minted `ac81ab89`; `GET /ontology` served no process and
+no rule; `PUT …/settings {"scope_key": "Olist Shop!"}` → 422 with the rule; `{"scope_key":
+"olist"}` → 200; `GET /ontology` then served `order_to_delivery`, `fulfilled_orders` and
+`southeast` — "admits 2,287 of 3,095 Seller objects". `git status data/` showed only the new
+shipped files. 11 tests, the frozen-tree test and the ratchets green.
+⏳ **Open:** the §3.15 accuracy numbers still need the two DuckDB datasets, which no clone has (a
+gate-4-style dataset descriptor — URL and sha256 — is the precedent for fetching them); the
+cross-connection declarations are not shipped (their YAML stores connection ids inside — a
+`key=` reference there is the next slice); a measure pass copies a shipped process or rule into the
+install's own tree on first use, by the seed layer's existing rule, after which it no longer
+follows the seed.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

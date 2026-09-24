@@ -1,0 +1,64 @@
+target_kind: rule
+target_id: controllable_returns
+fields:
+  declared: true
+  entity: Return
+  kind: value_set
+  origin: human
+  property: reason
+  values:
+  - quality
+  - not_as_expected
+  - late_delivery
+  display_name: Controllable returns
+  description: 'Returns the business caused: quality, not as expected and late delivery.
+    Size and a change of mind are the customer''s.'
+  owner: customer_care
+source: human
+edited_by: ''
+edited_at: '2026-09-15T00:00:00+00:00'
+note: shipped from evals/ablation_luxexperience_business_ontology.json (the served,
+  measured form, 2026-09-15) — PENDING item 14
+binding:
+  rule:
+    bound: true
+    note: admits 19,005 of 50,048 Return objects
+    substance:
+      entity: Return
+      kind: value_set
+      property: reason
+      values:
+      - quality
+      - not_as_expected
+      - late_delivery
+      conditions: null
+      scopes: null
+    measured:
+      id: controllable_returns
+      display_name: Controllable returns
+      description: 'Returns the business caused: quality, not as expected and late
+        delivery. Size and a change of mind are the customer''s.'
+      owner: customer_care
+      entity: Return
+      kind: value_set
+      property: reason
+      values:
+      - quality
+      - not_as_expected
+      - late_delivery
+      conditions: []
+      scopes: []
+      origin: human
+      provenance: ''
+      objects: 50048
+      admitted: 19005
+      observed:
+        not_as_expected: 10965
+        quality: 5060
+        late_delivery: 2980
+      missing: []
+      scoped: {}
+      verified: true
+      flags: []
+      note: admits 19,005 of 50,048 Return objects
+    measured_at: '2026-09-15T00:00:00+00:00'

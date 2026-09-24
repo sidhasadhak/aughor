@@ -30,8 +30,9 @@ data/exploration_*.json
 data/episodes_*.jsonl
 # Ontology docs are REBUILT per run (the yaml carries a `built_at` stamp and a
 # per-run checksum), so a dev server writing them is not a change anyone wants to
-# review. The governed ontology artifacts a reviewer SHOULD see are
-# data/ontology_overrides/ and data/context_graph/, which stay tracked.
+# review. The governed ontology artifacts a reviewer SHOULD see are data/context_graph/
+# and the SHIPPED overrides, data/shipped/ontology_overrides/ (data/ontology_overrides/ is an
+# install's own tree now — nothing new is tracked there; test_seed_overlay_frozen).
 data/ontology_docs/
 # Those two stay tracked for the connections a reviewer can NAME — workspace, samples,
 # aughor_ops — which is exactly what is committed today. What is not reviewable is the
@@ -130,7 +131,9 @@ data/finding_dismissals.jsonl
 data/ontology_recommendations/
 # NOTE: FOUR data/ paths are deliberately NOT ignored, because each store's own
 # docstring declares it a version-controllable artifact rather than runtime state:
-#   data/ontology_overrides/     the human override overlay        (overrides.py)
+#   data/ontology_overrides/     the human override overlay        (overrides.py) — an install's
+#                                own tree since the seed split: frozen, nothing new tracked;
+#                                what the repo ships is data/shipped/ontology_overrides/
 #   data/context_graph/          the Wave-C knowledge graph        (context_graph_store.py)
 #   data/ontology_docs/          the R8 Merkle doc tree            (doctree.py: "git-reviewable")
 #   data/ontology_column_config/ the R11 per-column config         (column_config.py)

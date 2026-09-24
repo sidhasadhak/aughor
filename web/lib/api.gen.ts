@@ -1581,6 +1581,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/brain/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Brain Map
+         * @description The map for one connection. A box whose store cannot be read carries ``count: null`` and
+         *     the reason in ``line`` — never a zero that means "could not read".
+         */
+        get: operations["get_brain_map_brain_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/briefing/subscriptions": {
         parameters: {
             query?: never;
@@ -4534,6 +4555,10 @@ export interface paths {
         /**
          * Generate Briefing
          * @description Generate (or return cached) an LLM synthesis narrative for the connection.
+         *
+         *     ``period`` = ``day`` | ``week`` | ``month`` | ``year`` asks for the Briefing written for
+         *     that period (idea 3, flag ``briefing.by_period``); absent or ``history`` is the standing
+         *     Briefing, exactly as before.
          */
         post: operations["generate_briefing_exploration__conn_id__briefing_post"];
         delete?: never;
@@ -5075,6 +5100,28 @@ export interface paths {
          *     tab converts it, charts in a PDF read back as tables — against the connection's data.
          */
         post: operations["factcheck_upload_factcheck_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/framing/misses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Framing Misses
+         * @description PENDING item 12 — the questions on this connection that reached none of its declared business
+         *     terms: how many, when, and (while the session log keeps the run) what was asked. The record holds
+         *     each run's trace id, never the question's text; a person turns a miss into a synonym.
+         */
+        get: operations["framing_misses_framing_misses_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6198,6 +6245,50 @@ export interface paths {
         };
         /** Get Investigation Outcomes */
         get: operations["get_investigation_outcomes_investigations__inv_id__outcomes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/investigations/{inv_id}/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recheck Investigation
+         * @description Idea 5 — re-run a chat answer's own query NOW and compare it with what was said: the
+         *     numbers that moved by 5% or more, and whether they are late rows or a restatement. The
+         *     re-check is recorded on the answer. Nothing is sent: the person asking is looking at it.
+         *     404 while `answers.recheck` is off, with the reason.
+         */
+        post: operations["recheck_investigation_investigations__inv_id__recheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/investigations/{inv_id}/rechecks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Investigation Rechecks
+         * @description Idea 5 — every re-check of a chat answer, oldest first: what its query returned each
+         *     time it was re-run, and whether the person was told. Empty until one ran.
+         */
+        get: operations["investigation_rechecks_investigations__inv_id__rechecks_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -15587,6 +15678,8 @@ export interface components {
             briefings_enabled?: boolean | null;
             /** Ontology Refresh Hours */
             ontology_refresh_hours?: number | null;
+            /** Scope Key */
+            scope_key?: string | null;
         };
         /** _CrossSourceJoinRequest */
         _CrossSourceJoinRequest: {
@@ -16287,6 +16380,11 @@ export interface components {
         _SubscriptionBody: {
             /** Conn Id */
             conn_id: string;
+            /**
+             * Content
+             * @default alert_summary
+             */
+            content: string;
             /**
              * Enabled
              * @default true
@@ -19127,6 +19225,38 @@ export interface operations {
             path: {
                 automation_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_brain_map_brain_map_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                workspace_id?: string;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -24182,6 +24312,7 @@ export interface operations {
                 refresh?: boolean;
                 schema?: string | null;
                 workspace_id?: string | null;
+                period?: string | null;
             };
             header?: never;
             path: {
@@ -25073,6 +25204,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    framing_misses_framing_misses_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -26901,6 +27063,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recheck_investigation_investigations__inv_id__recheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    investigation_rechecks_investigations__inv_id__rechecks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

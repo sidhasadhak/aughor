@@ -1,0 +1,44 @@
+target_kind: action
+target_id: flag_order_for_review
+fields:
+  display_name: Flag order for review
+  description: Mark an order for human review. Sets review_flag on the order, kept
+    beside the data with who accepted it; the source is never written.
+  entity: Order
+  kind: annotate
+  params:
+  - name: order
+    display_name: Order
+    data_type: VARCHAR
+    required: true
+    description: The order to review
+    default_value: null
+    kind: object
+    object_type: order
+  - name: reason
+    display_name: Reason
+    data_type: VARCHAR
+    required: true
+    description: Why this order needs review
+    default_value: null
+    kind: value
+    object_type: ''
+  rule: ''
+  submission_criteria:
+  - expr: order.status != 'cancelled'
+    message: A cancelled order never shipped — there is nothing to review.
+  side_effects: []
+  risk: low
+  origin: manual
+  object_type: order
+  edits:
+  - object: order
+    property: review_flag
+    value: 'true'
+    note: '{reason}'
+source: human
+edited_by: ''
+edited_at: '2026-09-15T00:00:00+00:00'
+note: shipped from evals/ablation_luxexperience_business_ontology.json (the served,
+  measured form, 2026-09-15) — PENDING item 14
+binding: {}

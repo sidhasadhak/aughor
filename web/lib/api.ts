@@ -5309,8 +5309,12 @@ export interface BriefSubscription {
   id: string;
   conn_id: string;
   name: string;
-  period: "week" | "day";
+  /** "month" | "year" exist only with the `briefing.by_period` flag on (idea 3). */
+  period: "week" | "day" | "month" | "year";
   send_cron: string;
+  /** What it sends: the alert summary (absent = "alert_summary", every row saved before idea 3) or
+   *  the Briefing written for its period. */
+  content?: "alert_summary" | "briefing";
   trigger_id: string;
   enabled: boolean;
   created_at: string;
@@ -5329,7 +5333,7 @@ export async function getBriefSubscriptions(connId?: string): Promise<BriefSubsc
 }
 
 export async function createBriefSubscription(
-  body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
+  body: { conn_id: string; name: string; trigger_id: string; period?: BriefSubscription["period"]; send_cron?: string; enabled?: boolean; content?: "alert_summary" | "briefing" },
 ): Promise<BriefSubscription> {
   const res = await fetch(`${getApiBase()}/briefing/subscriptions`, {
     method: "POST",
@@ -5342,7 +5346,7 @@ export async function createBriefSubscription(
 
 export async function updateBriefSubscription(
   id: string,
-  body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
+  body: { conn_id: string; name: string; trigger_id: string; period?: BriefSubscription["period"]; send_cron?: string; enabled?: boolean; content?: "alert_summary" | "briefing" },
 ): Promise<BriefSubscription> {
   const res = await fetch(`${getApiBase()}/briefing/subscriptions/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -5559,6 +5563,106 @@ export interface BriefingNarrativeResponse {
    *  otherwise a retained brief from a previous schema is undetectable. Absent on briefs
    *  cached before this field existed → the client falls back to not trusting them. */
   scope_key?: string;
+  /** Present only on a period brief (idea 3): the window it covers and what it measured. */
+  period?: BriefingPeriodBlock;
+}
+
+/** PENDING item 9 — the company-brain map: every store behind what Aughor knows, as a box with a
+ *  live count and its door; `count: null` means the store could not be read or is not built,
+ *  and `line` says which — never a zero that means "unknown". */
+export interface BrainBox {
+  id: string;
+  vault: "company" | "engagement" | "working_memory";
+  title: string;
+  door: string;
+  count: number | null;
+  unit: string;
+  line: string;
+  detail: Record<string, unknown>;
+}
+
+export interface BrainEdge { from: string; to: string; count: number; label: string }
+
+export interface BrainFact {
+  id: string;
+  kind: string;
+  label: string;
+  first_seen: string;
+  last_changed: string;
+  observed_at: string;
+  observed_basis: string;
+  history: { replaced_at: string; reason: string; label?: string; summary?: string; facts?: Record<string, unknown> }[];
+}
+
+export interface BrainMap {
+  connection_id: string;
+  boxes: BrainBox[];
+  edges: BrainEdge[];
+  vaults: { id: BrainBox["vault"]; title: string }[];
+}
+
+export async function getBrainMap(connectionId: string, workspaceId?: string): Promise<BrainMap> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/brain/map?${q.toString()}`);
+  if (!res.ok) throw new Error("Failed to load the brain map");
+  return res.json();
+}
+
+/** Idea 5 — one re-check of a chat answer: its own query re-run and compared with what was said. */
+export interface AnswerRecheckChange {
+  label: Record<string, unknown>;
+  column: string;
+  old: number;
+  new: number;
+  /** null when the number moved from zero — a move from nothing has no percentage. */
+  rel: number | null;
+  day: string | null;
+  cause?: "late_rows" | "restated" | "unknown";
+}
+
+export interface AnswerRecheck {
+  checked_at: string;
+  status: "changed" | "unchanged" | "unchecked";
+  reason?: string;
+  changes: AnswerRecheckChange[];
+  changed?: number;
+  /** Rows the answer gave that the query no longer returns, and the first few of their labels. */
+  missing_rows?: number;
+  missing?: Record<string, unknown>[];
+  cause: "late_rows" | "restated" | "unknown" | "none";
+  lag_days: number | null;
+  told?: { door?: string; status?: string; note?: string };
+}
+
+/** "history" is the standing Briefing; the rest are written for one complete period. */
+export type BriefingPeriod = "history" | "day" | "week" | "month" | "year";
+
+export interface BriefingPeriodMeasure {
+  name: string;
+  unit: string;
+  current: number;
+  previous: number | null;
+  /** null when no change is stated: no comparison rows, a zero base, or partial coverage. */
+  rel: number | null;
+  current_partial?: string | null;
+  previous_partial?: string | null;
+  /** Formatted by the server with the same rule the brief's own sentences use. */
+  current_text?: string;
+  previous_text?: string;
+}
+
+export interface BriefingPeriodBlock {
+  period: Exclude<BriefingPeriod, "history">;
+  label: string;
+  covers: string;
+  compared_with: string;
+  start: string;
+  last_day: string;
+  lag_days: number;
+  lag_source: "learned" | "default";
+  measured: BriefingPeriodMeasure[];
+  unmeasured: { name: string; reason: string }[];
 }
 
 export async function generateBriefingNarrative(
@@ -5566,15 +5670,23 @@ export async function generateBriefingNarrative(
   refresh = false,
   schema?: string,
   workspaceId?: string,
+  period?: BriefingPeriod,
 ): Promise<BriefingNarrativeResponse> {
   const q = new URLSearchParams();
   if (refresh) q.set("refresh", "true");
   if (schema) q.set("schema", schema);
   if (workspaceId) q.set("workspace_id", workspaceId);
+  if (period && period !== "history") q.set("period", period);
   const qs = q.toString() ? `?${q.toString()}` : "";
   const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to generate briefing narrative");
+  if (!res.ok) {
+    // A period brief the install has switched off says so; the reason is the server's words.
+    const detail = period && period !== "history"
+      ? await res.json().then((b) => (typeof b?.detail === "string" ? b.detail : null)).catch(() => null)
+      : null;
+    throw new Error(detail ?? "Failed to generate briefing narrative");
+  }
   return res.json();
 }
 

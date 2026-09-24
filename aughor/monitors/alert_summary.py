@@ -17,6 +17,14 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+_ADJECTIVE = {"day": "Daily", "week": "Weekly", "month": "Monthly", "year": "Yearly"}
+
+
+def period_adjective(period: str) -> str:
+    """"Daily" for "day". The header was ``period.capitalize() + "ly"``, which every daily
+    alert summary ever sent printed as "Dayly" (measured 2026-09-23; only "Weekly" had a test)."""
+    return _ADJECTIVE.get(period, f"{str(period).capitalize()}ly")
+
 
 class AlertSummarySection(BaseModel):
     title: str
@@ -37,7 +45,7 @@ class AlertSummary(BaseModel):
 
     def to_markdown(self) -> str:
         lines = [
-            f"# Aughor Intelligence Digest — {self.period.capitalize()}ly",
+            f"# Aughor Intelligence Digest — {period_adjective(self.period)}",
             f"*Generated {self.generated_at[:16].replace('T', ' ')} UTC*",
             "",
         ]

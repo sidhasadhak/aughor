@@ -8,6 +8,7 @@ to the database, or from AUGHOR_SECRET_KEY env var.
 from __future__ import annotations
 
 import json
+import re
 import os
 import sqlite3
 import uuid
@@ -38,6 +39,8 @@ POSTGRES_BUILTIN_ID = "mydb"
 SAMPLES_ID = "samples"
 WORKSPACE_ID = "workspace"  # default DuckDB-backed scratch space for file uploads
 AUGHOR_OPS_ID = "aughor_ops"  # Aughor-on-Aughor: the platform's own task_history/jobs/events
+#: The builtin connections: their ids are the same on every install.
+_BUILTIN_IDS = frozenset({BUILTIN_ID, POSTGRES_BUILTIN_ID, SAMPLES_ID, WORKSPACE_ID, AUGHOR_OPS_ID})
 
 
 def _aughor_ops_available() -> bool:
@@ -331,6 +334,23 @@ def _save_settings(s: dict) -> None:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "connection-settings write is non-fatal; retried on next update",
                  counter="registry.settings.write")
+
+
+#: PENDING item 14 — a connection's SCOPE KEY: a stable, readable name ("luxexperience", "olist")
+#: that shipped declarations are filed under, so they reach the connection whatever random id this
+#: install minted for it. Lowercase letters, digits, "_" and "-"; never "=" (the overrides tree's
+#: `org=` / `key=` segments are how a non-connection scope can never collide with one).
+SCOPE_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def scope_key_of(conn_id: str) -> str:
+    """The connection's scope key, or "" when it has none. A person sets it in the connection's
+    settings (`PUT /connections/{id}/settings`); a builtin connection's id already is stable, so it
+    needs none."""
+    if not conn_id or conn_id in _BUILTIN_IDS:
+        return ""
+    key = str(get_connection_settings(conn_id).get("scope_key") or "").strip().lower()
+    return key if SCOPE_KEY_PATTERN.match(key) else ""
 
 
 def get_connection_settings(conn_id: str) -> dict:

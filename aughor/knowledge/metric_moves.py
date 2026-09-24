@@ -44,7 +44,7 @@ class Move:
     points: int
 
 
-def _num(cell) -> Optional[float]:
+def parse_number(cell) -> Optional[float]:
     if isinstance(cell, bool):
         return None
     if isinstance(cell, (int, float)):
@@ -84,13 +84,13 @@ def series_move(columns, rows, min_points: int = 3) -> Optional[Move]:
     ncols = max((len(r) for r in norm), default=0)
     val_idx = None
     for i in range(1, ncols):
-        col = [_num(r[i]) for r in norm if i < len(r)]
+        col = [parse_number(r[i]) for r in norm if i < len(r)]
         if col and sum(1 for v in col if v is not None) >= max(min_points, len(col) // 2):
             val_idx = i
             break
     if val_idx is None:
         return None
-    vals = [_num(r[val_idx]) if val_idx < len(r) else None for r in norm]
+    vals = [parse_number(r[val_idx]) if val_idx < len(r) else None for r in norm]
     vals = [v for v in vals if v is not None]
     if len(vals) < min_points:
         return None
@@ -122,7 +122,7 @@ def _unit_head(unit: str) -> str:
     return _UNIT_HEAD.split(unit or "", maxsplit=1)[0]
 
 
-def _fmt_value(value: float, name: str, unit: str, sym: str) -> str:
+def format_value(value: float, name: str, unit: str, sym: str) -> str:
     """Format a metric value for prose AT THE SCALE ITS TEXT STATES: a percent only for a stated 0..1 or
     0..100 rate (`stated_range`'s ratio01 / pct100), currency with the business's symbol, everything else as
     a plain number.
@@ -149,7 +149,7 @@ def _fmt_value(value: float, name: str, unit: str, sym: str) -> str:
 def _fmt_numeric(value: float, name: str, unit: str, sym: str) -> float:
     """The numeric magnitude a value would DISPLAY as (after unit formatting/rounding) —
     so a 0.004 ratio shown as '0%' reads back as 0.0."""
-    disp = _fmt_value(value, name, unit, sym)
+    disp = format_value(value, name, unit, sym)
     cleaned = re.sub(r"[^0-9.eE-]", "", disp) or "0"
     try:
         return abs(float(cleaned))
@@ -174,8 +174,8 @@ def build_move_finding(name: str, unit: str, move: Move, currency_code: Optional
     phrasing is what ``triage.extract_change`` reads to score the move's magnitude."""
     sym = currency_symbol(currency_code)
     verb = "risen" if move.direction == "up" else "fallen"
-    start = _fmt_value(move.start, name, unit, sym)
-    end = _fmt_value(move.end, name, unit, sym)
+    start = format_value(move.start, name, unit, sym)
+    end = format_value(move.end, name, unit, sym)
     slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:40]
     return {
         "id": f"metric-move::{slug}",

@@ -68,6 +68,8 @@ export type AughorEvidenceData = {
   "queries_executed": unknown;
   "figure": unknown;
   "receipt_id": unknown;
+  // Idea 5 — a later re-check found a number in this answer has moved (a restored turn only).
+  "recheck": unknown;
   "context_assembled": unknown;
   "guard_receipt": unknown;
   "chain_state": unknown;
@@ -176,7 +178,7 @@ const DECLARED = [
   "explore_report",
   "route", "headline", "narrative", "answer", "sql", "columns", "rows", "chart_type",
   "chart_config", "tables_used",
-  "queries_executed", "figure", "receipt_id", "context_assembled", "guard_receipt",
+  "queries_executed", "figure", "receipt_id", "recheck", "context_assembled", "guard_receipt",
   "playbook_refs", "frame", "hypotheses", "score", "analysis",
   "clarify", "clarify_pending", "clarifying_questions", "plan_pending", "escalate",
   "followups",

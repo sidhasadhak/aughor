@@ -77,19 +77,46 @@ def overrides_root() -> Path:
     return _ROOT
 
 
+#: PENDING item 14 — the seed segment a connection's SCOPE KEY files shipped declarations under
+#: (`key=luxexperience/<schema>/…`). Like `org=`, it holds "=", which no connection id can.
+_KEY_PREFIX = "key="
+
+
+def _keyed_dir(conn_segment: str) -> Optional[Path]:
+    """The seed directory shipped under this connection's scope key, or None when it has none."""
+    try:
+        from aughor.db.registry import scope_key_of
+        key = scope_key_of(conn_segment)
+    except Exception:  # noqa: BLE001 — an unreadable registry reads as no key, never as a broken overlay
+        return None
+    return _SEED_ROOT / f"{_KEY_PREFIX}{key}" if key else None
+
+
+def _layers(rel_dir: Path) -> list[Path]:
+    """Where a reader looks for ``rel_dir``, in order: this install's tree, the seed filed under the
+    connection's id, then the seed filed under its scope key — each mapped back to ``rel_dir``."""
+    out = [_ROOT / rel_dir, _SEED_ROOT / rel_dir]
+    parts = rel_dir.parts
+    if parts and parts[0] not in (".",):
+        keyed = _keyed_dir(parts[0])
+        if keyed is not None:
+            out.append(keyed.joinpath(*parts[1:]))
+    return out
+
+
 def _visible(rel_dir: Path, pattern: str, *, recursive: bool) -> list[Path]:
     """The files a reader sees under ``rel_dir``: this install's, then every seed file it neither
-    shadows nor hid — sorted by relative path, the order `sorted(rglob)` gave before the seed."""
+    shadows nor hid — by the connection's id, then by its scope key — sorted by relative path, the
+    order `sorted(rglob)` gave before the seed."""
     found: dict[Path, Path] = {}
-    for root in (_ROOT, _SEED_ROOT):
-        base = root / rel_dir
+    for i, base in enumerate(_layers(rel_dir)):
         if not base.is_dir():
             continue
         for f in (base.rglob(pattern) if recursive else base.glob(pattern)):
-            rel = f.relative_to(root)
+            rel = rel_dir / f.relative_to(base)
             if rel in found:
                 continue                                  # the instance's copy wins, even unparseable
-            if root == _SEED_ROOT and (_ROOT / rel).with_name(rel.name + _HIDDEN).exists():
+            if i and (_ROOT / rel).with_name(rel.name + _HIDDEN).exists():
                 continue
             found[rel] = f
     return [found[rel] for rel in sorted(found)]
@@ -162,7 +189,7 @@ _EDITABLE: dict[str, set[str]] = {
     "computed_property": {"label", "formula_sql", "unit"},
     "metric": {"display_name", "description", "formula_sql", "grain", "unit"},
     # Wave K: a declared action AUTHORS a whole new object (like a brand-new metric), so its
-    # "editable" set is the KineticAction's own spec fields (id comes from target_id).
+    # "editable" set is the action's own spec fields (id comes from target_id).
     "action": {
         "display_name", "description", "entity", "kind", "params", "rule",
         "submission_criteria", "side_effects", "risk", "origin",
@@ -312,10 +339,14 @@ def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
     try:
         p = _path(conn, schema, kind, target_id)
         hidden = p.with_name(p.name + _HIDDEN)
-        seed = _seed_twin(p)
-        visible = p.exists() or (seed.exists() and not hidden.exists())
+        seeds = [_seed_twin(p)]
+        keyed = _keyed_dir(_safe(conn))
+        if keyed is not None:
+            seeds.append(keyed / p.relative_to(_ROOT / _safe(conn)))
+        shipped = any(t.exists() for t in seeds)
+        visible = p.exists() or (shipped and not hidden.exists())
         p.unlink(missing_ok=True)
-        if seed.exists():
+        if shipped:
             hidden.parent.mkdir(parents=True, exist_ok=True)
             hidden.write_text("withdrawn on this install; the shipped declaration stays hidden\n")
         return visible
@@ -418,9 +449,8 @@ def override_scopes(conn: str) -> list[str]:
     """
     try:
         scopes: set[str] = set()
-        for root in (_ROOT, _SEED_ROOT):
-            base = root / _safe(conn)
-            if base.is_dir():
+        for base in [root / _safe(conn) for root in (_ROOT, _SEED_ROOT)] + [_keyed_dir(_safe(conn))]:
+            if base is not None and base.is_dir():
                 scopes |= {p.name for p in base.iterdir() if p.is_dir()}
         return sorted(scopes)
     except Exception:

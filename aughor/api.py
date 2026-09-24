@@ -964,6 +964,7 @@ from aughor.routers import (
     links as links_router,
     arrivals as arrivals_router,
     hub as hub_router,
+    brain as brain_router,
     packs as packs_router,
     receipt as receipt_router,
     agui,
@@ -1034,6 +1035,7 @@ app.include_router(departures_router.router)  # HB-2 — the departures ledger, 
 app.include_router(links_router.router)  # HB-3 — the manifest: tickets/threads filed on objects, outcomes
 app.include_router(arrivals_router.router)  # HB-5 — arrivals: a Slack sentence becomes a staged note with provenance
 app.include_router(hub_router.router)  # HB-6 — the hub-wide map: every automation on one screen
+app.include_router(brain_router.router)  # PENDING item 9 — the company-brain map
 app.include_router(receipt_router.router)
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)

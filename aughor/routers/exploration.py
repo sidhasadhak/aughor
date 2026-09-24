@@ -654,10 +654,43 @@ def _metric_moves_provider(conn_id: str, profile):
     return _provider
 
 
+def _refuse_unless_period_allowed(period: str) -> None:
+    """A period brief the install has off (404) or a period that does not exist (422) is
+    refused FIRST — before the refresh re-validation runs a single live query for it."""
+    from aughor.automations.temporal import PERIODS
+    from aughor.knowledge import period_brief
+
+    why = period_brief.refusal(period)
+    if why:
+        raise HTTPException(status_code=404 if period in PERIODS else 422, detail=why)
+
+
+def _period_briefing(conn_id: str, period: str, *, schema: str | None,
+                     requested_schema: str | None, refresh: bool,
+                     workspace_id: str | None, by_domain: dict) -> dict:
+    """Idea 3 — the Briefing for ONE period (`knowledge.period_brief`). Same scope as the
+    standing brief — ``by_domain`` is the scope's findings exactly as that path read, filtered
+    and cleaned them — different evidence: the headline metrics measured for the window, and
+    only the alerts and findings recorded inside it. Refused, with the reason, while off."""
+    from aughor.knowledge import period_brief
+
+    _refuse_unless_period_allowed(period)
+    scope_key = f"{conn_id}:{requested_schema}" if requested_schema else conn_id
+    result = period_brief.build_period_briefing(
+        conn_id, period, scope_key=scope_key, domain_data=by_domain,
+        profile=_load_business_profile(conn_id, schema), workspace_id=workspace_id,
+        col_types=_connection_col_types(conn_id), force_refresh=refresh)
+    return {**result, "available": bool(result.get("narrative")), "scope_key": scope_key}
+
+
 @router.post("/exploration/{conn_id}/briefing")
 def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None,
-                      workspace_id: str | None = None):
-    """Generate (or return cached) an LLM synthesis narrative for the connection."""
+                      workspace_id: str | None = None, period: str | None = None):
+    """Generate (or return cached) an LLM synthesis narrative for the connection.
+
+    ``period`` = ``day`` | ``week`` | ``month`` | ``year`` asks for the Briefing written for
+    that period (idea 3, flag ``briefing.by_period``); absent or ``history`` is the standing
+    Briefing, exactly as before."""
     # ⚠ The REQUESTED schema owns `scope_key` (stamped below): it is the client's proof
     # that a narrative belongs to the scope it is about to paint it under. Canonicalization
     # applies to the DATA LOOKUPS only — collapsing it into the stamp answered "workspace"
@@ -672,6 +705,8 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     # stored content, then emptied itself one fetch later.
     from aughor.routers._shared import canonical_schema
     schema = canonical_schema(conn_id, schema)
+    if period and period != "history":
+        _refuse_unless_period_allowed(period)
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 
@@ -704,6 +739,11 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     # Clean numbers BEFORE the narrator sees them: findings are interpolated verbatim into its
     # prompt and echoed back into the synthesis, and they are returned as citation text.
     _normalize_insight_numbers(by_domain)
+    if period and period != "history":
+        # before the "no findings" return: a period brief measures its metrics even when the
+        # scope has no stored findings at all
+        return _period_briefing(conn_id, period, schema=schema, requested_schema=requested_schema,
+                                refresh=refresh, workspace_id=workspace_id, by_domain=by_domain)
     if not by_domain:
         return {
             "narrative": "",

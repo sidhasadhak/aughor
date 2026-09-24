@@ -102,3 +102,42 @@ def check_claim(text: str, object_ref: str, connection_id: str, *, measures: Opt
     note = ("" if principal else (f"owner '{owner_text}' is not linked to a person; the question has nowhere to go"
                                   if owner_text else "no owner is declared on this object; the question has nowhere to go"))
     return ClaimCheck(CONTRADICTED, said=said, against=numeric, question=question, question_to=principal, note=note)
+
+
+
+def claims_summary(connection_id: str = "") -> dict:
+    """CB-8 — what people said, by what the data made of it: counts per verification and every
+    contradiction with the question it raised and who it went to. One fold, read by the
+    arrivals door and by the company-brain map (its 'claims checked' box)."""
+    from aughor.ontology.recommendations import load_recommendations, recommendation_schemas
+    conns = [connection_id] if connection_id else known_note_connections()
+    counts = {"measured": 0, "contradicted": 0, "unchecked": 0}
+    contradictions = []
+    for conn in conns:
+        for schema in recommendation_schemas(conn):
+            for rec in load_recommendations(conn, schema):
+                if rec.kind != "object_note" or rec.status == "dismissed":
+                    continue
+                check = (rec.proposed_fields or {}).get("check") or {}
+                v = str(check.get("verification") or "unchecked")
+                counts[v if v in counts else "unchecked"] += 1
+                if v == "contradicted":
+                    contradictions.append({"connection_id": conn, "object_ref": rec.target_id,
+                                           "note": (rec.proposed_fields or {}).get("note", ""),
+                                           "question": check.get("question", ""),
+                                           "question_to": check.get("question_to", ""),
+                                           "why_unreached": check.get("note", "")})
+    return {"counts": counts, "contradictions": contradictions}
+
+
+def known_note_connections() -> list[str]:
+    """Every connection that has filed notes (the recommendations tree's connection folders)."""
+    from pathlib import Path
+
+    from aughor.db.sqlite_util import resolve_db_path
+    root = resolve_db_path("AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR",
+                           Path(__file__).parent.parent.parent / "data" / "ontology_recommendations")
+    try:
+        return sorted(p.name for p in Path(root).iterdir() if p.is_dir())
+    except FileNotFoundError:
+        return []

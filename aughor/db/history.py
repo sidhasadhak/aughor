@@ -475,6 +475,77 @@ def update_chat_turn_insight(inv_id: str, insight: dict | None) -> bool:
     c.close()
     return True
 
+#: Idea 5 — how many re-checks one answer keeps. Each is a dated record of what the answer's
+#: own query returned that day; older ones are superseded by the cap, never edited.
+RECHECKS_KEPT = 30
+
+
+def recent_chat_answers(since_iso: str, *, limit: int = 200) -> list[dict]:
+    """Completed chat answers given since ``since_iso`` that carry a query result — the
+    answers a re-check can re-run. Newest first; ``report`` is parsed."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    rows = c.execute(
+        """SELECT id, question, connection_id, completed_at, session_id, agent_id, org_id,
+                  report_json
+           FROM investigations
+           WHERE kind = 'chat' AND status = 'complete' AND completed_at >= ?
+           ORDER BY completed_at DESC LIMIT ?""", (since_iso, int(limit)),
+    ).fetchall()
+    c.close()
+    out = []
+    for r in rows:
+        report = json.loads(r["report_json"] or "{}")
+        if report.get("sql") and report.get("columns") and report.get("rows"):
+            out.append({**{k: r[k] for k in ("id", "question", "connection_id", "completed_at",
+                                              "session_id", "agent_id", "org_id")},
+                        "report": report})
+    return out
+
+
+def get_chat_answer(inv_id: str) -> Optional[dict]:
+    """One chat answer as ``recent_chat_answers`` shapes it, or None."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    r = c.execute(
+        """SELECT id, question, connection_id, completed_at, session_id, agent_id, org_id,
+                  report_json
+           FROM investigations WHERE id = ? AND kind = 'chat'""", (inv_id,),
+    ).fetchone()
+    c.close()
+    if not r:
+        return None
+    return {**{k: r[k] for k in ("id", "question", "connection_id", "completed_at",
+                                  "session_id", "agent_id", "org_id")},
+            "report": json.loads(r["report_json"] or "{}")}
+
+
+def append_recheck(inv_id: str, entry: dict) -> bool:
+    """Idea 5 — add one re-check to a chat answer's ``report_json["rechecks"]``. Appended,
+    never rewritten: what the answer said stays as it was said, and each re-check is its own
+    dated record beside it."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    try:
+        # read-modify-write under a write lock: a manual and a daily re-check of the same answer
+        # must both land, never one overwriting the other
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute(
+            "SELECT report_json FROM investigations WHERE id = ? AND kind = 'chat'", (inv_id,),
+        ).fetchone()
+        if not row:
+            c.rollback()
+            return False
+        report = json.loads(row["report_json"] or "{}")
+        report["rechecks"] = (list(report.get("rechecks") or []) + [entry])[-RECHECKS_KEPT:]
+        c.execute("UPDATE investigations SET report_json = ? WHERE id = ?",
+                  (json.dumps(report, default=str), inv_id))
+        c.commit()
+        return True
+    finally:
+        c.close()
+
+
 def last_activity_by_canvas() -> dict[str, str]:
     """Return {canvas_id: most-recent investigation started_at} for ranking
     Canvases by their latest activity."""
@@ -674,6 +745,13 @@ def get_session_turns(session_id: str) -> list[dict]:
             d["insight"]     = report.get("insight", None)
             d["overview_report"] = report.get("overview_report", None)
             d["deep_report"] = None
+            # Idea 5 — the latest re-check that found the answer changed. Absent (not null)
+            # when there is none, so a turn nobody re-checked projects exactly as before.
+            # the LATEST re-check, and only while it says the answer has changed — a later re-check
+            # that found the numbers back to what was said takes the banner down
+            rechecks = [r for r in report.get("rechecks") or [] if r.get("status") in ("changed", "unchanged")]
+            if rechecks and rechecks[-1].get("status") == "changed":
+                d["latest_recheck"] = rechecks[-1]
         else:
             # FL-6 — report_json IS the deep report here. Quick fields stay
             # present-and-empty so every existing consumer is type-stable.

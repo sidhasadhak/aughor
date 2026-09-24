@@ -187,6 +187,60 @@ async def spawn_explorer(
     return {"ok": True, "reason": None, "job_id": job_id}
 
 
+def run_business_terms(conn_id: str, schema_name: str | None, emit) -> str:
+    """PENDING item 11 — the birth rite's business-terms step: run the business explorer once on
+    a scope nobody has explored, when ``ontology.explore_on_connect`` is on. Returns what it did
+    (``off`` | ``skipped`` | ``done`` | ``failed``) and emits a ``birth.step`` for every outcome
+    but ``off`` — off, the rite is exactly what it was."""
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ontology.explore_on_connect"):
+        return "off"
+    from aughor.licensing.capabilities import Capability
+    from aughor.licensing.resolver import has_capability
+    if not has_capability(Capability.ONTOLOGY_EDIT, conn_id=conn_id):
+        emit("business_terms", "skipped", reason="this plan does not include ontology edits")
+        return "skipped"
+    try:
+        from aughor.ontology.drafts import load_draft
+        from aughor.routers.ontology import resolve_effective_schema
+        # the scope the explorer itself files its run under (meta's schema when none is named) —
+        # reading "default" instead never found the run, and every restart paid again (branch review)
+        if load_draft(conn_id, resolve_effective_schema(conn_id, schema_name)).runs:
+            # a restart re-runs the rite; the explorer ran here already, and a second run would
+            # spend a model call to write nothing twice
+            emit("business_terms", "skipped", reason="the business explorer already ran on this scope")
+            return "skipped"
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the explorer's run record is unreadable; it runs, and writes nothing twice",
+                 counter="birth.business_terms.record")
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        built = load_latest_ontology(conn_id, schema_name) is not None
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the ontology store is unreadable; the explorer will say so itself",
+                 counter="birth.business_terms.ontology")
+        built = True
+    if not built:
+        # measured on the first real run (2026-09-23): the intelligence step reports done when
+        # its build was a skip, and the explorer then refused with a 404 — a precondition not
+        # met, not a failure; the next rite after a build proposes the terms
+        emit("business_terms", "skipped",
+             reason="no ontology is built on this scope yet, so there is nothing for the explorer to read")
+        return "skipped"
+    emit("business_terms", "started")
+    try:
+        from aughor.routers.ontology import explore_ontology
+        out = explore_ontology(connection_id=conn_id, schema_name=schema_name)
+        emit("business_terms", "done", run_id=((out or {}).get("run") or {}).get("id", ""))
+        return "done"
+    except Exception as exc:  # noqa: BLE001 — the business layer is never a precondition
+        tolerate(exc, "birth business-terms step failed; the rite stands without it",
+                 counter="birth.business_terms")
+        emit("business_terms", "failed", error=f"{type(exc).__name__}: {str(exc)[:200]}")
+        return "failed"
+
+
 async def run_birth(
     conn_id: str,
     *,
@@ -282,6 +336,13 @@ async def run_birth(
                      counter="obs.popularity", conn_id=conn_id)
             _emit("popularity", "failed", error=str(exc)[:300])
 
+    async def _business_terms_step() -> None:
+        import contextvars
+        # a copy of this rite's context, so the step's `birth.step` events carry the birth job's id
+        ctx = contextvars.copy_context()
+        await asyncio.get_running_loop().run_in_executor(
+            None, ctx.run, lambda: run_business_terms(conn_id, schema_name, _emit))
+
     async def _exploration_step() -> bool:
         _emit("exploration", "started")
         try:
@@ -331,6 +392,16 @@ async def run_birth(
     # TaskGroup would cancel the sibling on the first raise, turning a best-effort mining
     # hiccup into a lost intelligence build.
     intelligence_ok, _ = await asyncio.gather(_intelligence_step(), _popularity_step())
+
+    # PENDING item 11 — the BUSINESS layer, once the build it reads exists: the explorer that
+    # proposes entities, links, processes and rules (`POST /ontology/explore`, one model call),
+    # run for a scope nobody has explored yet. On by default since 2026-09-24
+    # (`ontology.explore_on_connect`), the user's call taken over the explorer's unrun paid
+    # quality re-check — its one live check fused two groups that should stay apart, and every
+    # proposal stays PROPOSED until a person confirms it. Off → the rite is exactly what it
+    # was, no step emitted.
+    if intelligence_ok and not canvas_id:
+        await _business_terms_step()
 
     summary = {"connection_id": conn_id, "schema": schema_name,
                "canvas_id": canvas_id, "steps": steps}
