@@ -146,5 +146,5 @@ What does not:
 |---|---|
 | 1 — the path's own defects | 17 (every backend) · 18 (the checks see the tables) · 22 (no number before it is measured) |
 | 2 — labelled data | 23 (training data that means something) · 24 (the few-shot memory) |
-| 5 — the data in attention | 19 (the SQL writer sees the data); levels 2–3 follow its measurement |
+| 5 — the data in attention | 19 (the SQL writer sees the data) — level 1 built 2026-09-24 (ROADMAP §3.38): the inline-form fixes on by default, the DATA PROFILE block behind `grounding.data_profiles` until measured; levels 2–3 follow its measurement |
 | Found on the way | 16 (documents stay inside their connection and organisation) |

@@ -93,6 +93,7 @@ FLAG_ENV = {
     "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
+    "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
     "chat.buttons_reach_agent": "AUGHOR_CHAT_BUTTONS_REACH_AGENT",
@@ -315,6 +316,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "grounding.data_profiles": {
+        "label": "Show the SQL writer what the data holds, not only its schema",
+        "description": "Adds a DATA PROFILE block to the quick answer's prompt for the tables the question was linked to: each table's row count and date range, and per column the values a low-cardinality column takes, a measure's range and median, and null rates of 20% or more — read from the profiler's cache, so no question pays for profiling, and held under 2,400 characters with any table left out named. Off by default → the prompt is exactly as today.",
+    },
     "chat.buttons_reach_agent": {
         "label": "Send the chat's Quick and Agent buttons to the conversation agent",
         "description": "Without it Quick posts /chat and the Agent button /investigate; only Edit, starters, clarify answers and re-runs reach /ask, where the conversation agent holds the ontology's tools (look up an object, describe a type). On, Quick goes through /ask at quick depth and Agent at deep depth. A conversation turn costs about 20k tokens. On by default since 2026-09-24 (the user's call); off → every turn is sent exactly as before.",
@@ -417,6 +422,16 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # PENDING item 19 (ROADMAP §3.38) — the ML review's point 5, its first level: the warehouse's
+    # measured data in the SQL writer's context. The context it adds is measured model-free
+    # (evals/linker_recall_eval.py reports the recall it rides on; the block's size is pinned);
+    # whether answers improve is a paid A/B.
+    "grounding.data_profiles": "do answers get more right when the SQL writer is shown the profiler's "
+                               "measured values, ranges and null rates for the linked tables? The "
+                               "values a filter must match and the magnitude a sum should land in are "
+                               "exactly what five head rows cannot show. Falsifier: if a with/without "
+                               "run on the golden and ablation sets shows no gain in execution "
+                               "accuracy, the block is deleted with the flag",
     # "briefing.by_period", "answers.recheck", "ontology.explore_on_connect" and
     # "chat.buttons_reach_agent" GRADUATED to FLAG_DEFAULT 2026-09-24 (the user's call,
     # no eval receipt): their falsifiers moved with them onto the FLAG_DEFAULT entries.

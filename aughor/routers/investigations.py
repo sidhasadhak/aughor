@@ -1921,6 +1921,22 @@ def _answer_core(
                                 if semantic_layer_section else _rel_block)
                     except Exception:
                         logger.debug("relationship block injection skipped", exc_info=True)
+                    # PENDING item 19 (`grounding.data_profiles`, off) — what the data HOLDS for
+                    # the linked tables, from the profile cache: the catalog carries five head
+                    # rows, and the profiler's measured ranges, values and null rates reached no
+                    # SQL prompt. Rides the same section, prepended after the table cap.
+                    from aughor.tools import catalog_profiles as _catalog_profiles
+                    if _catalog_profiles.enabled():
+                        try:
+                            _prof_block = _catalog_profiles.render(connection_id, linked_tables)
+                            if _prof_block:
+                                semantic_layer_section = (
+                                    semantic_layer_section + "\n\n" + _prof_block
+                                    if semantic_layer_section else _prof_block)
+                        except Exception as _prof_exc:
+                            from aughor.kernel.errors import tolerate
+                            tolerate(_prof_exc, "the data profile block is advisory; the catalog "
+                                                "stands without it", counter="chat.data_profiles")
         except Exception:
             logger.warning("Data Catalog build failed; using linked schema text", exc_info=True)
 

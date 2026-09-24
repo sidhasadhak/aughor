@@ -191,6 +191,31 @@ def load_value_samples(connection_id: str) -> dict[tuple[str, str], list[str]]:
     return out
 
 
+def load_top_values(connection_id: str) -> dict[tuple[str, str], list[str]]:
+    """Every cached low-cardinality column's most frequent values for a connection, keyed
+    (table, column), merged across cached fingerprints — `load_value_samples`' shape for the
+    columns the profiler enumerates instead of sampling. Read-only; ``{}`` when none.
+
+    The house schema renders these as value annotations; the inline form five warehouse
+    connectors write renders none, so without this the offline binder had no values for a
+    low-cardinality column on those warehouses (PENDING item 19)."""
+    out: dict[tuple[str, str], list[str]] = {}
+    try:
+        cache = _load()
+    except Exception:
+        return out
+    prefix = f"{connection_id}:"
+    for k, entry in cache.items():
+        if not k.startswith(prefix):
+            continue
+        for d in (entry.get("columns") or {}).values():
+            tv = d.get("top_values")
+            tbl, col = d.get("table"), d.get("column")
+            if tv and tbl and col:
+                out.setdefault((tbl, col), [str(v) for v in tv])
+    return out
+
+
 def load_concepts(connection_id: str) -> dict[tuple[str, str], str]:
     """Every CONFIDENT concept for a connection, keyed (table, column). `{}` when none.
 

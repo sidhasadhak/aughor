@@ -280,14 +280,23 @@ def invalidate_hints(connection_id: str | None = None) -> None:
 # ── Schema parsing ────────────────────────────────────────────────────────────
 
 def _extract_schema_blocks(schema_str: str) -> list[dict]:
-    """Parse a schema context string into table blocks."""
+    """Parse a schema context string into table blocks.
+
+    Both `TABLE:` forms. BigQuery, Snowflake, MySQL, MotherDuck and Exasol render a table's
+    columns inline on its header (``TABLE: t [a INT, b TEXT]``); read only as indented lines,
+    those tables had no columns, and the column-aware score — this linker's main recall lever —
+    never fired on five connectors (PENDING item 19). Inline columns carry ``line=None``: the
+    header already prints them, so they score without being packed twice."""
+    from aughor.db.schema_render import parse_inline_columns
     blocks: list[dict] = []
     current: Optional[dict] = None
     for line in schema_str.splitlines():
         if line.startswith("TABLE:"):
             m = re.match(r"TABLE:\s+(\S+)", line)
             if m:
-                current = {"table": m.group(1), "header": line, "columns": []}
+                current = {"table": m.group(1), "header": line,
+                           "columns": [{"name": name, "type": dtype, "line": None}
+                                       for name, dtype in parse_inline_columns(line)]}
                 blocks.append(current)
         elif current is not None:
             cm = re.match(r"^\s{2}(\w+)\s+(\S+)", line)
@@ -595,7 +604,8 @@ def link_schema(
         scored_cols.sort(key=lambda x: x[0], reverse=True)
         keep_cols = scored_cols[:top_k_cols]
 
-        block_lines = [block["header"]] + [col["line"] for _, col in keep_cols] + [""]
+        block_lines = ([block["header"]]
+                       + [col["line"] for _, col in keep_cols if col["line"] is not None] + [""])
         block_chars = sum(len(line) + 1 for line in block_lines)
         # Pack to the char budget: rank order means what falls off the end is the
         # LEAST relevant, never an arbitrary slice. The first table always fits

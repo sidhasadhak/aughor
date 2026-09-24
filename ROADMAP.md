@@ -8170,6 +8170,40 @@ filter-domain checks (which read the question and probe the warehouse) are not a
 `TABLE:`-only parsers remain (`schema_linker`, `answer_resolution`, the portrait's fallback) — item 19 reaches the
 ones on the value path.
 
+### 3.38 · The SQL writer sees the data, not only the schema (PENDING.md item 19, the ML review's point 5; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; two bug fixes default-on, the prompt block behind `grounding.data_profiles`, **off**)
+
+> **The fact it answers.** docs/ENGINE_REVIEW_ANSWERS_2026-09-24.md §3: the model writing SQL attends to the warehouse's
+> schema and five head rows per table; the profiler's measured statistics reach no SQL prompt; tables are linked by
+> name only; values bind only on the house schema form. Measured here, model-free, on the 53 golden questions over
+> the samples warehouse (`evals/linker_recall_eval.py`, results `evals/linker_recall_results.json`).
+
+**What exists — three parts.**
+1. **The linker scores inline-form columns** (bug fix, default-on). Its block parser read only indented column lines,
+   so on the form BigQuery, Snowflake, MySQL, MotherDuck and Exasol write the column-aware score — the linker's own
+   "main recall lever" — never fired; inline columns now score (`line=None`, so the header that already prints them
+   is not packed twice). **Measured:** house form unchanged (recall 1.000, 53/53 complete, 4.72 tables); inline form
+   `main` 0.984 and 51/53 — *"total revenue from Electronics category"* was never shown `products` — → branch 1.000,
+   53/53, identical to the house form.
+2. **Values bind on every warehouse, from what is cached** (bug fix, default-on). The resolver's parser reads the
+   inline form; its offline pass covers every cached column whose table is in scope — the profiler's high-cardinality
+   samples and, new, its low-cardinality top values (`profile_cache.load_top_values`) — instead of only columns named
+   like `name` or `brand`; a binding names the table as the schema spells it. The LIVE probe keeps its gate, so the
+   inline form still never probes: no new billed scan, no new "not present" abstention. **Receipt:** the real
+   profiler's cache for the samples warehouse, the schema rendered inline — *"total revenue from Electronics"*:
+   `main` no binding → branch `ecommerce.products.category = 'Electronics'`.
+3. **The DATA PROFILE block** (`grounding.data_profiles`, EXPERIMENT, off — it changes the prompt). For the linked
+   tables, from the profile cache only: row counts and date ranges; per column the most frequent values of a
+   dimension, a measure's range and median with its unit, null rates of 20% or more; keys left out; under 2,400
+   characters with any table that does not fit named (`aughor/tools/catalog_profiles.py`). A distinct count appears
+   only as "about N", above what is listed — the first render said "5 values:" over a list of six (SUMMARIZE
+   estimates), and a short list is never called complete. **Measured:** mean 1,662 characters on the golden set
+   (max 1,771) beside a mean catalog of 4,067; no table left out.
+
+⏳ **Open:** whether the block lifts accuracy is a paid with/without run (the flag's falsifier); the candidate
+extractor still misses lowercase values ("delivered") and names with an ampersand ("Home & Garden"); on the user's
+BigQuery connections the profile cache is empty (Arc CB's "unknown" share), so part 2 binds there only once it is
+filled; question-matched rows in place of the first five, and value embeddings (the review's level 2), are not built.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
