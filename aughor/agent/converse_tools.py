@@ -424,18 +424,23 @@ def list_tables(connection_id: str, args: dict) -> dict:
 
 def describe_table(connection_id: str, args: dict) -> dict:
     """One table's columns. Kept separate from `list_tables` so the manifest stays cheap
-    and detail is paid for only when the model asks."""
-    from aughor.db.schema_render import parse_schema_tables
+    and detail is paid for only when the model asks.
+
+    ``schema`` is the table's own block from the schema text — types, its row count and the
+    sample values the renderer wrote where it had them. The tool's description has always
+    promised those; it returned names only until PENDING item 18."""
+    from aughor.db.schema_render import parse_schema_tables, schema_block
 
     name = str(args.get("table") or "").strip()
     if not name:
         return {"error": "no table supplied"}
 
-    tables = parse_schema_tables(_connection(connection_id).get_schema())
+    schema = _connection(connection_id).get_schema()
+    tables = parse_schema_tables(schema)
     bare = name.rsplit(".", 1)[-1].lower()
     for table, columns in tables.items():
         if table.lower() == name.lower() or table.rsplit(".", 1)[-1].lower() == bare:
-            return {"table": table, "columns": columns}
+            return {"table": table, "columns": columns, "schema": schema_block(schema, table)}
     # A named table that is not there is an ANSWER, not an error (P2): the model asked
     # about something that does not exist, and the near-misses are what let it recover
     # rather than guess a column list.

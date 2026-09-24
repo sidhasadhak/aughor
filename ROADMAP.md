@@ -8137,6 +8137,39 @@ the refusal replaced by five on the translation, a full two-step loop among them
 ⏳ **Open:** no call against Anthropic's real API (no key here); the first-request fallback was driven through the
 real `_stream_converse` with stubbed bodies, not a live model that refuses tools.
 
+### 3.37 · The SQL checks see the tables they check (PENDING.md item 18, found by the 2026-09-24 re-survey; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a parser fix)
+
+> **The fact it answers.** Reproduced: the quick path REPLACES the schema text with the Data Catalog
+> (`schema = data_catalog`), and `parse_schema_tables` — the one parser some thirty consumers share — read the
+> catalog's markdown as no tables at all. So on every default answer `preflight_repair`'s identifier-case repair
+> returned at its first line, the SQL fixer diagnosed errors with no column lists, and the verifier's chasm battery
+> scanned against an empty map. Two more on the same path: a repair asked for because a check fired was adopted once
+> it merely RAN, with the check never asked again; and the conversation's `describe_table` promised "exact column
+> names, types and sample values" and returned names.
+
+**What exists.** `parse_schema_tables` reads the catalog's form as well as both `TABLE:` forms
+(`aughor/db/schema_render.py`): a `## table` heading counts only when its `| Column | Type |` header follows, so
+another markdown section never becomes a table, and the catalog's sample rows are never read as columns; the raw
+forms parse exactly as before. Every consumer inherits it — the fixer, `preflight_repair`, the executor's guards,
+the analyst, the data-portrait step, the context manifest. `_checks_still_firing` re-runs the SQL-only checks
+(fan-out, id arithmetic, averaged ratios, breakdown grain, the chasm battery) on a repaired query, and a repair that
+still trips the check that asked for it is not adopted: the original stands and a `repair_recheck` receipt says
+what it failed to clear. `describe_table` returns the table's own block from the schema text (`schema_block`) — its
+types, row count and the sample values the renderer wrote where it had them.
+
+**Receipt (2026-09-24, this cloud session).** The real catalog `build_data_catalog` writes, on `main` and on the
+branch. `main`: the checks see `{}`; `preflight_repair` leaves `customerid`/`amount` unrepaired (DuckDB folds case,
+so there it still runs — the repair is what saves a case-sensitive engine); the chasm battery on a query joining
+order items and payments through orders fires **nothing** while the query reports payments of 65.0 against a true
+35.0. Branch: the checks see `{'orders': ['Order_ID', 'customerID', 'Amount']}`; the repair rewrites to
+`customerID`/`Amount`; the battery fires *"SUM(i.price) over a chasm join (order_items, order_payments are each on the
+many-side of 'order')… pre-aggregate EACH satellite"*. 8 tests (`tests/unit/test_checks_see_their_tables.py`).
+
+⏳ **Open:** the repair re-check covers the checks that are functions of the SQL alone; the entity-alignment and
+filter-domain checks (which read the question and probe the warehouse) are not asked twice. A handful of hand-written
+`TABLE:`-only parsers remain (`schema_linker`, `answer_resolution`, the portrait's fallback) — item 19 reaches the
+ones on the value path.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

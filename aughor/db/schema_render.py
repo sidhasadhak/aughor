@@ -308,11 +308,46 @@ def parse_inline_columns(table_line: str) -> list[tuple[str, str]]:
     return out
 
 
+#: The Data Catalog's markdown form (`aughor/tools/data_catalog.py`): a ``## table`` heading,
+#: then a ``| Column | Type | Nullable |`` table. Its ``Sample (5 rows):`` table is not columns.
+_CATALOG_TABLE = re.compile(r"^##\s+([\w.]+)\s*$")
+_CATALOG_HEADER = re.compile(r"^\|\s*Column\s*\|\s*Type\s*\|", re.IGNORECASE)
+
+
 def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
-    """Parse TABLE: blocks from a schema string → {table: [col_name, ...]}."""
+    """Parse a schema string → {table: [col_name, ...]}: ``TABLE:`` blocks (the house and the
+    inline-bracket forms), and the Data Catalog's markdown tables.
+
+    PENDING item 18: the catalog REPLACES the schema text on the quick and deep paths, and this
+    parser read it as no tables at all — so identifier-case repair, the SQL fixer's column lists
+    and the verifier's table map were all empty on every default answer. A ``## heading`` counts
+    as a table only when its column header follows, so another markdown section never does."""
     table_cols: dict[str, list[str]] = {}
     current: str | None = None
+    heading: str | None = None        # a `## table` waiting for its `| Column | Type |` header
+    catalog: str | None = None        # the catalog table whose column rows are being read
     for line in schema_str.splitlines():
+        stripped = line.strip()
+        m = _CATALOG_TABLE.match(line)
+        if m:
+            heading, catalog, current = m.group(1), None, None
+            continue
+        if heading is not None:
+            if not stripped:
+                continue
+            if _CATALOG_HEADER.match(stripped):
+                catalog = heading
+                table_cols.setdefault(catalog, [])
+                heading = None
+                continue
+            heading = None
+        if catalog is not None:
+            if stripped.startswith("|"):
+                cells = [c.strip() for c in stripped.strip("|").split("|")]
+                if cells and cells[0] and set(cells[0]) - set("-: "):   # not the |---| rule
+                    table_cols[catalog].append(cells[0])
+                continue
+            catalog = None
         if ends_column_block(line):
             current = None
             continue
@@ -329,6 +364,29 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
             if col_m and not line.strip().startswith("--"):
                 table_cols[current].append(col_m.group(1))
     return table_cols
+
+
+def schema_block(schema_str: str, table: str) -> str:
+    """One table's own lines from a schema string — its ``TABLE:`` header and column lines
+    (types, and the sample values the renderer writes where it has them), or its Data Catalog
+    section — or ``""`` when the table is not there. For a caller that owes a model the detail
+    the renderer already wrote, rather than the bare names `parse_schema_tables` keeps."""
+    lines = schema_str.splitlines()
+    head = re.compile(rf"^(?:TABLE:|##)\s+{re.escape(table)}(?:\s|\[|\(|$)")
+    for i, line in enumerate(lines):
+        if not head.match(line):
+            continue
+        block = [line]
+        catalog = line.startswith("##")
+        for nxt in lines[i + 1:]:
+            if catalog:
+                if _CATALOG_TABLE.match(nxt):
+                    break
+            elif nxt.startswith("TABLE:") or ends_column_block(nxt):
+                break
+            block.append(nxt)
+        return "\n".join(block).rstrip()
+    return ""
 
 
 def parse_schema_tables(schema_str: str) -> dict[str, list[str]]:

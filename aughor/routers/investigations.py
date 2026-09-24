@@ -421,6 +421,42 @@ _DIM_NOUN_RE = re.compile(
 _GROUP_ID_COL_RE = re.compile(r"(^|_)(id|key|code|sk|pk)$|_id$|_key$|_code$", re.I)
 
 
+def _checks_still_firing(sql: str, triggered: set[str], *, question: str, dialect: str,
+                         full_cols: dict, schema_cols: dict) -> list[str]:
+    """Which of the SQL-only checks in ``triggered`` still fire on ``sql`` — the repaired query.
+
+    PENDING item 18: the quick path handed a check's hint to the SQL fixer and adopted the fix
+    if it merely RAN, never asking the check again, so a repair could keep the very fan-out, id
+    arithmetic or averaged ratio it was asked to remove. Re-runs only the checks that are pure
+    functions of the SQL; the ones that probe the warehouse or the question's entity alignment
+    are not asked twice. A check that cannot run is not counted as firing."""
+    from aughor.agent.verifier import Verifier
+    from aughor.sql.fanout import avg_of_row_ratios, measure_times_key_arithmetic
+    checks = {
+        "fanout": lambda: _fanout_hit(sql, full_cols, dialect),
+        "idmath": lambda: measure_times_key_arithmetic(sql, dialect=dialect),
+        "ratio": lambda: avg_of_row_ratios(sql, dialect=dialect),
+        "grain": lambda: _breakdown_grain_hint(question, sql, dialect),
+        "chasm": lambda: Verifier.scan([sql], schema_cols, dialect),
+    }
+    firing: list[str] = []
+    for name in sorted(triggered & set(checks)):
+        try:
+            if checks[name]():
+                firing.append(name)
+        except Exception as exc:  # noqa: BLE001 — an unrunnable check does not block a repair
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a repair re-check could not run; the repair is judged on the rest",
+                     counter="chat.repair_recheck")
+    return firing
+
+
+def _fanout_hit(sql: str, full_cols: dict, dialect: str):
+    from aughor.sql.fanout import detect_fanout, dimension_ratio_chasm
+    return detect_fanout(sql, full_cols, dialect=dialect) or \
+        dimension_ratio_chasm(sql, full_cols, dialect=dialect)
+
+
 def _breakdown_grain_hint(question: str, sql: str, dialect: str = "duckdb") -> str:
     """Catch a breakdown grouped at TOO FINE a grain: the question names a categorical
     dimension ('top product CATEGORIES', 'by brand') but the SQL GROUPs BY an id/key column
@@ -2616,7 +2652,25 @@ def _answer_core(
                 fix = _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=2)
                 if fix.ok:
                     retry = _execute_chat_sql(db, fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
+                    # PENDING item 18 — a repair asked for by a check is adopted only once that
+                    # check no longer fires on it; running cleanly was all this used to ask.
+                    _triggered = {_n for _n, _h in (("fanout", _fanout_fix_hint),
+                                                    ("idmath", _idmath_fix_hint),
+                                                    ("ratio", _ratio_fix_hint),
+                                                    ("grain", _grain_fix_hint),
+                                                    ("chasm", _chasm_fix_hint)) if _h}
+                    from aughor.db.schema_render import parse_schema_tables as _pst_recheck
+                    _still = _checks_still_firing(
+                        fix.sql, _triggered, question=question, dialect=db.dialect,
+                        full_cols=_pst_recheck(_full_schema),
+                        schema_cols=_pst_recheck(schema)) if _triggered else []
+                    if _still:
+                        _receipt({
+                            "guard": "repair_recheck", "action": "kept_original",
+                            "detail": (f"the repair still trips {', '.join(_still)}, so it was "
+                                       "not adopted and the original query stands"),
+                            "before": final_sql[:2000], "after": fix.sql[:2000]})
+                    elif not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         emit("sql", {"sql": final_sql})
