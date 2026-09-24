@@ -196,7 +196,7 @@ def measure_override_display_properties(connection_id: str, schema_name: Optiona
             save_override(connection_id, schema_name or "default", ov)
             report.overrides_measured.append(ov.target_id)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("display property measurement not saved for %s: %s", ov.target_id, exc)
+            logger.warning("display property measurement not saved for %s: %s", ov.target_id, exc)
         report.measurements.append(m)
     return report
 

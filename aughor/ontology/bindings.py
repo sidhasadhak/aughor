@@ -921,7 +921,7 @@ def measure_override_bindings(connection_id: str, schema_name: Optional[str], db
         try:
             save_override(connection_id, schema_name or "default", ov)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("binding measurement not saved for %s: %s", ov.target_id, exc)
+            logger.warning("binding measurement not saved for %s: %s", ov.target_id, exc)
     return report
 
 

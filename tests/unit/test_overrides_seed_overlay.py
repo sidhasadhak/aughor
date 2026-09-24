@@ -89,8 +89,11 @@ def test_a_write_that_dies_halfway_leaves_the_previous_declaration_whole(roots, 
 
     with monkeypatch.context() as mp:              # scoped: undo() would also undo the fixture's roots
         mp.setattr(pathlib.Path, "write_text", dies_halfway)
-        ov.save_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
-                                                        fields={"label": "after"}))
+        # and it SAYS so (PENDING item 21): a write that did not land used to be swallowed, so every door reported
+        # a save that never happened
+        with pytest.raises(ov.OverrideWriteFailed, match="entity 'o' was not saved"):
+            ov.save_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
+                                                            fields={"label": "after"}))
     assert ids() == [("entity", "o", "before")]
     assert [p.name for p in inst.rglob("*") if p.is_file()] == ["o.yaml"], "a temp file leaked"
 

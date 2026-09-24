@@ -180,7 +180,7 @@ def measure_override_backings(connection_id: str, schema_name: Optional[str], db
             save_override(connection_id, schema_name or "default", ov)
             report.overrides_measured.append(ov.target_id)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("override backing measurement not saved for %s: %s", ov.target_id, exc)
+            logger.warning("override backing measurement not saved for %s: %s", ov.target_id, exc)
         report.measurements.append(m)
     return report
 

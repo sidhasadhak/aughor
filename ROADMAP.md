@@ -8239,6 +8239,32 @@ tests green.
 low-coverage part (refunds on an order) is refused too, and a person binds it by hand; the explorer's paid quality
 re-check has still not run.
 
+### 3.40 · Declarations never fail silently (PENDING.md item 21, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** Measured by reading: `save_override` was documented "never raises", and the override store's
+> `_write` and `_unlink` swallowed every exception — so every declare and confirm door answered 200 for a declaration
+> that was never written (a full disk, a read-only volume), and the explorer recorded such a proposal as written. The
+> ontology store read a saved graph that failed validation as "no ontology" with no log line, and turned a failed build
+> into None with no trace — every door then told a person to build what had been built.
+
+**What exists.** `OverrideWriteFailed` (`aughor/ontology/overrides.py`): a write or a withdrawal that does not land
+raises, named — *"entity 'Order' was not saved — the ontology store could not write it (No space left on device)"* —
+with the operating system's reason and no path; the temp file's cleanup can no longer mask the failure it follows (a
+test found `unlink(missing_ok=True)` raising `NotADirectoryError` over it). The API answers it as
+`{"error": "declaration_not_saved", "kind", "target", "detail"}` (500) instead of the catch-all's `internal_error`. The
+four measure passes that re-save a measurement log a lost re-save as a warning, not at debug. The ontology store reads
+every cached graph through `_graph_from`, which counts and logs one that does not validate
+(`tolerated.ontology.saved_graph_unreadable`), and a failed build is counted (`tolerated.ontology.build_failed`); both
+still read as none, as their callers expect.
+
+**Receipt.** Four tests (`tests/unit/test_declarations_never_fail_silently.py`): a save and a withdrawal against an
+overrides root that cannot hold a directory raise with the declaration named and no path; a door answers
+`declaration_not_saved` with *"No space left on device"*; an unreadable saved graph is counted. The atomicity test
+(`test_overrides_seed_overlay.py`) now also asserts the dying write raises; 1,824 ontology, object and API tests green.
+
+⏳ **Open:** an unreadable saved graph still reads as "no ontology" at the doors (counted and logged, not yet said on
+the screen that asks for a build).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
