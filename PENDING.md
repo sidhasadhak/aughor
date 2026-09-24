@@ -14,7 +14,7 @@ claim rots silently. If measuring shows an item was already done, tick it and sa
 
 ---
 
-## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON; 16–31 added 2026-09-24)
+## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON; 16–31 added 2026-09-24; 32–37 added 2026-09-25 from Arc TJ, unranked against the rest)
 
 Ranked by how many answers or people each one improves, and whether it unblocks others.
 Items 11–15 were drawn from the ontology arc at the user's direction ("an important part of the core engine") and are
@@ -69,11 +69,34 @@ The rest of the ontology arc, so it is finished entirely:
 30. [ ] ⚑ **Delete the parked object-query tool** — measured twice and lost twice (LuxExperience 10 of 16 against 16 of 16, Olist 7 of 15 against 14 of 15), and the flag rules have no "measured worse, kept anyway" state. Deleting it touches the chat tool and its flag, not the compiler object pages use. *Hours, once the user says yes.*
 31. [ ] ⚑ **The arc's deliberate refusals, decided in the open** — a sub-query hop into a second connection (refused with reasons; two to three days to build), links to query-backed types (half a day to a day), correcting a source value (refused by the read-only law; a read-time override is one to two days), and the prompt blocks the falsifier said to cut back (a paid ablation). Each stays refused, with its reason on its line, until the user says otherwise.
 
+Fourth build order (2026-09-25, the user: *"build a detailed roadmap for this one"*, on the trajectory-based learning
+diagram): 32–37 are Arc TJ's waves (ROADMAP §3.47) in the arc's own order — the record, the label and the funnel first
+because they are free, then the gym. Their rank against 1–31 is the user's; the census behind them is
+[docs/TRAJECTORY_CENSUS_2026-09-25.md](docs/TRAJECTORY_CENSUS_2026-09-25.md), and the six calls the arc needs are §6 item 32.
+
+32. [ ] **Open the taps that exist** (TJ-1, §3.47) — the exporters #547 fixed have not been run since; the directory their files go in does not exist; the few-shot memory's collections were never created on this deployment (no embedding backend is set); the receipt's model id, the decision record's trace id and the history row's trace id are dead columns; a fallback model id is hardcoded in a form the ratchet does not see; every call is unpriced. Run, create, set, fix, and publish the gate report before and after. *About a day.*
+33. [ ] **One record per run** (TJ-2) — a step event on the session log carrying tool, SQL, counts, errors and guard fires always, and the arguments and the model's words only under the capture window or the annex; one read that walks question → steps → SQL → guard → verdict for a chat turn, a deep run, a scheduled brief and an automation step; the exporters read it and nothing else; the guard table says which of its two meanings a row has. *About a week.*
+34. [ ] **A reward that takes both values** (TJ-3) — one deterministic run label (ran, rows, guards clean, re-check stable, no reject) with `unlabeled` as the default, step credit only to the statement a verdict names, confidence NULL when none was given; its live distribution published before anything reads it. ⚑ Then a person audits 50–100 bronze rows and the sheet is committed. *Two to three days plus one sitting.*
+35. [ ] ⚑ **Labels where readers already are** (TJ-4) — ✅ and ❌ on a Slack answer record a verdict on its turn (needs the app's `reactions:read` scope and a `reaction_added` subscription, the owner's); a mark on the Departures screen feeds probation precision and the verdict store at once. *One to two days.*
+36. [ ] ⚑ **The gym** (TJ-5) — problems with known answers from the declared ontology's compiler, the 139 hand-written pairs, the pack templates and the paraphrase set, with no model; K rollouts per problem through the real answer path on the local warehouses, every candidate kept and scored by execution match on one comparator; correct ones to SFT, wrong-versus-right to preference pairs, repairs to repair pairs; the router's label rides along. Paid model runs under a ceiling in tokens; before any training, the corpus must lift held-out accuracy as few-shot context (paired, n ≥ 50, interval excluding zero). *Two weeks plus the batches.*
+37. [ ] ⚑ **Serving a student** (TJ-6) — a generic OpenAI-compatible binding with a base URL and a key, and the adapter artifact record; recommended deferred until MI-4 chooses rented serving, since Ollama serves a fine-tune locally today. *A day or two, when wanted.*
+
 Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
 ---
 
 ## Everything pending, by arc
+
+### Trajectories — Arc TJ (§3.47; drafted 2026-09-25, §6 item 32 open)
+- [x] TJ-0 the census — measured 2026-09-25, [docs/TRAJECTORY_CENSUS_2026-09-25.md](docs/TRAJECTORY_CENSUS_2026-09-25.md); the corrections it made to standing prose are recorded in §3.47.
+- [ ] TJ-1 open the taps — see top item 32.
+- [ ] TJ-2 one record per run — see top item 33.
+- [ ] TJ-3 a reward that takes both values — see top item 34.
+- [ ] ⚑ TJ-4 labels where readers are — see top item 35.
+- [ ] ⚑ TJ-5 the gym — see top item 36.
+- [ ] ⚑ TJ-6 serving a student — see top item 37; recommended deferred.
+- [ ] ⚑ §6 item 32's six clauses — adopt; the payload class of a step; reactions as verdicts; the gym's ceiling; the keyed binding; who audits bronze.
+- [ ] The fifteen defects the census lists (its §10) — the dead joins, the slashless model id, the missing datasets directory and the uncreated collections close inside TJ-1 and TJ-2; the stale docstrings and the README's two phantom files ride the next touch of their files.
 
 ### Central answer path — Arc CP (§3.22)
 - [ ] CP-1 shadow classification — built and live; every answered question gets a logged label (lookup · one query · several · investigation) that changes nothing yet, one model call per answer; needs about a week of rows before CP-2 can read them.
@@ -165,7 +188,7 @@ Just outside the list: the next industry package (insurance has public data to t
 ### Machine intelligence — Arc MI (§3.9)
 - [ ] ⚑ Should cap hits, guardrail events, metric enforcement and budget overruns show in the governance feed? Today they do not.
 - [ ] The chooser-confidence switch has never run — it needs a question set with two competing measures, then it is kept or deleted.
-- [ ] MI-4, the first fine-tuned text-to-SQL model — waits on 1,000 training pairs, 150 preference pairs, 150 gold examples and 30 days of guard data. *Measured 2026-09-24: the exporter that would feed it has five defects and the chat cannot record an accept — see top items 23 and 24.*
+- [ ] MI-4, the first fine-tuned text-to-SQL model — waits on 1,000 training pairs, 150 preference pairs, 150 gold examples and 30 days of guard data. *Measured 2026-09-24: the exporter that would feed it has five defects and the chat cannot record an accept — see top items 23 and 24.* *Re-measured live 2026-09-24 after #547: 0 of 1,000 · 0 of 150 · 5 of 150 · 21 of 30 days, and the two machine-graded tiers never exported; Arc TJ (§3.47, top items 32–37) is the arc that fills them.*
 - [ ] MI-5/MI-6 — a model shipped with the app, adapter releases and RL training all wait behind MI-4.
 
 ### Documents — Arc DX (§3.13)
