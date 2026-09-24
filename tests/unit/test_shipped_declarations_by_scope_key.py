@@ -18,8 +18,27 @@ from aughor.ontology import overrides as OV
 from aughor.ontology.models import OntologyGraph
 
 REPO = Path(__file__).resolve().parents[2]
-HOSTS = {"luxexperience": ("evals/ablation_luxexperience_business_ontology.json", "luxexperience"),
-         "olist": ("evals/ablation_olist_business_ontology.json", "ecommerce")}
+
+
+def _hosts() -> dict:
+    """The scope keys the SHIPPING SCRIPT ships — read from the script, never re-typed here.
+
+    This list used to be a copy: `luxexperience` and `olist`, spelled out beside the expectations
+    they feed. When theLook was shipped as a third host (PENDING item 26) the whole file stayed
+    green without ever loading a theLook declaration, because the population and the expectation
+    came from the same hand. A test that cannot see what it gates cannot fail
+    (`docs/GLOSSARY.md`; the same shape as the `role=` miss in Wave G3). Importing the script's
+    own HOSTS means a fourth host is covered the moment it ships, or this import breaks loudly.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_ship_decls", REPO / "scripts" / "ship_business_declarations.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return dict(mod.HOSTS), mod.is_human
+
+
+HOSTS, IS_HUMAN = _hosts()
 RANDOM_ID = "c0ffee42"
 
 
@@ -46,7 +65,15 @@ def test_a_random_connection_with_the_scope_key_gets_every_declaration_back(fres
     snapshot = json.loads((REPO / path).read_text())
     fresh_install[RANDOM_ID] = key
     graph, _report = OV.apply_overrides(_stripped(snapshot), RANDOM_ID, schema)
-    want = OntologyGraph.model_validate(snapshot)
+    # Only what a PERSON declared ships: the served snapshot also carries the explorer's
+    # unconfirmed proposals (`origin: model`), and a clone must not be handed one as a
+    # declaration. Filtered through the SHIPPING SCRIPT's own `is_human`, so the expectation
+    # cannot drift from the gate that produced the files.
+    want = OntologyGraph.model_validate({
+        **snapshot,
+        "processes": {k: v for k, v in (snapshot.get("processes") or {}).items() if IS_HUMAN(v)},
+        "rules": {k: v for k, v in (snapshot.get("rules") or {}).items() if IS_HUMAN(v)},
+    })
     assert sorted(graph.processes) == sorted(want.processes) and sorted(graph.rules) == sorted(want.rules)
     assert sorted(a.id for a in graph.declared_actions()) == sorted(a.id for a in want.declared_actions())
     for rid, rule in want.rules.items():

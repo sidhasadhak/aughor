@@ -58,6 +58,14 @@ _SKIP_FILES = {
     # the same wire format, the same model field names.
     "evals/ablation_olist_business_ontology.json",
     "evals/ablation_luxexperience_business_ontology.json",
+    # PENDING item 26 (2026-09-24): theLook's and the samples warehouse's served graphs, captured
+    # the same way so `scripts/ship_business_declarations.py` can re-materialise their declarations
+    # on a clone. Measured with THIS file's own counter before exempting: the two together carry
+    # `insight` ×12 and `kinetic` ×2, every one of them a model field name the wire format requires
+    # (`kinetic_actions`, `exploration_insights`) — nothing here is authored prose, and renaming a
+    # key in a captured payload would stop `OntologyGraph.model_validate` reading it back.
+    "evals/ablation_thelook_business_ontology.json",
+    "evals/ablation_samples_business_ontology.json",
 }
 _EXTS = {".py", ".ts", ".tsx", ".css", ".yaml", ".yml", ".json"}
 

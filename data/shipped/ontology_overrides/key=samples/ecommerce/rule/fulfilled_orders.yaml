@@ -1,0 +1,63 @@
+target_kind: rule
+target_id: fulfilled_orders
+fields:
+  declared: true
+  entity: Order
+  kind: condition
+  origin: human
+  conditions:
+  - op: not_in
+    path: status
+    values:
+    - cancelled
+    - refunded
+  display_name: Fulfilled orders
+  provenance: model:deepseek/deepseek-v4.1-flash@2
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: shipped from evals/ablation_samples_business_ontology.json (the served, measured
+  form, 2026-09-24) — PENDING item 26
+binding:
+  rule:
+    bound: true
+    note: admits 3,900 of 5,000 Order objects
+    substance:
+      entity: Order
+      kind: condition
+      property: null
+      values: null
+      conditions:
+      - op: not_in
+        path: status
+        values:
+        - cancelled
+        - refunded
+      scopes: null
+    measured:
+      id: fulfilled_orders
+      display_name: Fulfilled orders
+      description: ''
+      owner: ''
+      entity: Order
+      kind: condition
+      property: ''
+      values: []
+      conditions:
+      - op: not_in
+        path: status
+        values:
+        - cancelled
+        - refunded
+      scopes: []
+      origin: human
+      provenance: model:deepseek/deepseek-v4.1-flash@2
+      objects: 5000
+      admitted: 3900
+      observed: {}
+      missing: []
+      scoped: {}
+      verified: true
+      flags: []
+      note: admits 3,900 of 5,000 Order objects
+    measured_at: '2026-09-24T00:00:00+00:00'

@@ -8199,8 +8199,24 @@ ones on the value path.
    estimates), and a short list is never called complete. **Measured:** mean 1,662 characters on the golden set
    (max 1,771) beside a mean catalog of 4,067; no table left out.
 
-⏳ **Open:** whether the block lifts accuracy is a paid with/without run (the flag's falsifier); the candidate
-extractor still misses lowercase values ("delivered") and names with an ampersand ("Home & Garden"); on the user's
+✅ **The falsifier RAN 2026-09-24** (`evals/data_profiles_ab_2026-09-24.json`) — and two pieces of prep had to
+land first, or it would have measured nothing: `evals/run_golden.py` **never built the block** (`catalog_profiles`
+was called from `routers/investigations.py` alone, so the harness scored a system nobody runs — the very failure the
+harness's own comment warns about), and the samples profile cache was **empty**, which makes `render()` return `""`.
+Wired the block in behind its `enabled()` gate; profiled samples (5 tables / 35 columns, local DuckDB, no billed
+scan); the block renders at 1,770 characters.
+**Result, 65 questions × 2 arms, deepseek-v4.1-flash, temp 0.0:** golden mean 0.5951 → 0.6516 (+0.057), execution
+success 0.9245 → 0.9811; ablation mean 0.6717 → **0.5992 (−0.073)**; combined 0.6092 → 0.6419 (+0.033). Removing the
+empty-generation confound (an empty scores 0, and the arms produced different numbers of them) leaves n=58 where both
+arms generated SQL: 0.6681 → 0.7058 (+0.038), **13 better · 7 worse · 38 unchanged, paired t = 1.49**.
+**Verdict: NOT REFUTED, NOT GRADUATED.** Every cut points the same way, so the falsifier's "no gain ⇒ the block is
+deleted with the flag" does NOT fire — but t=1.49 is inside noise and the ablation set regressed, so the flag stays
+**off** pending a repeated or larger run. ⏳ **Open:** the
+extractor's two misses are CLOSED 2026-09-24 — an ampersand name binds whole on both the preposition and the
+proper-noun path, and a lowercase status ("were delivered") binds as a weaker class that resolves OFFLINE only and
+never abstains, because grammar cannot tell "delivered" (a status) from "placed" (true of every order) and probing
+the latter is the `'flights' is not present in this data` bug again (5 tests, each mutation-killed by assertion);
+on the user's
 BigQuery connections the profile cache is empty (Arc CB's "unknown" share), so part 2 binds there only once it is
 filled; question-matched rows in place of the first five, and value embeddings (the review's level 2), are not built.
 
@@ -8436,10 +8452,36 @@ a clone); the compiled badge is live-only — a restored turn does not carry it.
 `order_to_shipment`; the branch rebuilt all six bindings and both links and compiled every declaration on both
 LuxExperience and Olist. Removing a shipped binding or link file fails the tests (3 of 3).
 
-⏳ **Open — needs a person:** business terms for the samples warehouse. A term — a promise, what "completed" means — is
-a person's declaration, and no model authors one (AGENTS.md: provenance); proposing them is the explorer's job
-(PENDING item 11), confirming them the user's. ⚑ theLook's terms cost billed scans; shipping the two DuckDB datasets is
-a hosting and licensing call.
+✅ **Terms shipped 2026-09-24, on theLook at the user's direction.** theLook had been explored once, on 2026-09-14 by
+explorer **version 1**, which said only parts and links — so the connection this platform is demonstrated on carried
+**no process and no rule at all**. The current explorer, re-run on it, proposed a process and two rules; the user
+confirmed two and the third was refused by the arc's own guard (Order already has a segment `returned_orders`, so a
+rule is read as the segment it names). Each was measured on the warehouse before it landed:
+`order_fulfilment` reaches **4 of 4 stages over 124,778 Order objects** (placed 124,778 · shipped 80,963 ·
+delivered 43,599 · returned 12,518) and `completed_orders` (`status in ['Complete']`) admits **31,081 of 124,778**.
+The model proposed and the person declared — each file keeps both (`source: human`, `edited_by`, and the model's
+`provenance` inside the spec), which is the provenance law working as written, not around it.
+Both now ship under `key=thelook`, and the clone compile test covers them — 🔑 **its host list was a hand-typed copy
+of the shipping script's**, so the whole file would have stayed green without ever loading a theLook declaration; it
+now imports the script's own `HOSTS`, and deleting a shipped file fails it (mutation-checked).
+
+✅ **And the samples warehouse, which is the half that closes it.** Samples had never been explored at all (no draft,
+no overrides, 0 processes, 0 rules). The current explorer proposed a process and two rules in 13s for one model call and
+**no billed scan** — it is a local DuckDB every clone has. The user confirmed `order_fulfilment` (5,000 Orders, 3 of 3
+stages: placed 5,000 · shipped 3,600 · delivered 2,500) and `fulfilled_orders` (`status not_in ['cancelled','refunded']`,
+admits 3,900 of 5,000), and declined `north_america`. ⚠️ `fulfilled_orders` admits `pending` and `processing`; the user
+confirmed it as-is knowing that.
+
+🔴 **Two shipping defects the samples run exposed, both fixed.** (1) The script took a declaration's `origin` as given
+(`source=rule.get("origin") or "human"`), so the explorer's UNCONFIRMED `north_america` would have been written into the
+shipped tree and handed to every clone as a person's declaration — the provenance law inverted. `is_human` now gates it,
+the skip is printed rather than silent, and the clone test filters its expectation through that same function so the two
+cannot drift. (2) The script only ever ADDED, so a declaration that stops shipping kept its file forever; it now prunes —
+but **only the kinds it writes**, because an unscoped prune deleted eight TRACKED `entity/`, `link/` and `metric/`
+artifacts under key=luxexperience that this arc's own binding work had written, not the script (restored from git; the
+prune is now scoped and mutation-checked both ways).
+
+⚑ Shipping the two DuckDB datasets remains a hosting and licensing call.
 
 ### 3.46 · Formula fields and computed properties are first-class (PENDING.md item 27, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
 

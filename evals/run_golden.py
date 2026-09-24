@@ -239,6 +239,26 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
         )
     except Exception:
         semantic_layer_section = ""
+    # PENDING item 19 (`grounding.data_profiles`, off) — the profiler's measured values,
+    # ranges and null rates for the linked tables. Mirrors routers/investigations.py:1943
+    # exactly: same gate, same `render(connection_id, linked_tables)`, same "rides the
+    # semantic section" placement, same tolerate-on-failure.
+    #
+    # Without this the harness could not measure the block AT ALL — `catalog_profiles` was
+    # called from the chat route only, so a with/without run moved nothing and the flag's
+    # falsifier ("no gain ⇒ the block is deleted") would have fired on a null that never
+    # saw the block. The comment above says it outright: the harness has to build the SAME
+    # context those paths build or it measures a system nobody runs.
+    try:
+        from aughor.tools import catalog_profiles as _catalog_profiles
+        if _catalog_profiles.enabled():
+            _prof_block = _catalog_profiles.render(connection_id, linked_tables)
+            if _prof_block:
+                semantic_layer_section = (
+                    semantic_layer_section + "\n\n" + _prof_block
+                    if semantic_layer_section else _prof_block)
+    except Exception:
+        pass
     try:
         from aughor.tools.data_catalog import enforce_context_cap
         schema = enforce_context_cap(schema, max_tables=10)
