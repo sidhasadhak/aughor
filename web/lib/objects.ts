@@ -19,6 +19,9 @@ export interface ObjectProperty {
   description: string;
   /** ON-4 — set by an accepted action and merged at read time: who, when, and why. */
   overlay?: { by: string; at: string; note: string; origin: string; provenance: string; id: string };
+  /** PENDING item 27 — a formula evaluated for this object: an expression a person declared, or a computed property
+   *  the builder verified. Not a column of the source row. */
+  formula?: { expression: string; kind: "expression" | "computed" };
   /** ON-1b — read through a further binding on the object's key: which binding, its source, and the column.
    *  ON-5 — a `timeseries` binding reads the object's LATEST value: `at` is when that was measured, `previous`
    *  is what it read on the reading before that (`previous_at` when), and `note` is the reduction in the
@@ -120,6 +123,8 @@ export interface ObjectAction {
 export interface ObjectRelated {
   metrics: ObjectMetric[];
   findings: ObjectCitation[];
+  /** How many findings could not be read — each is skipped and counted, never the end of the list (PENDING item 25). */
+  findings_unread?: number;
   notes: ObjectNote[];
   actions: ObjectAction[];
 }

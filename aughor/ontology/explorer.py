@@ -527,8 +527,11 @@ def proposal_tier(graph: Optional[OntologyGraph], proposal: DraftProposal) -> st
                  None)
     if parent is None or bound is None:
         return "withdrawn"
-    if t.get("part"):
-        part = graph.entities.get(str(t["part"]))
+    # `part` — absorbed when proposed (records before PENDING item 20); `absorbs` — absorbed when a person confirmed,
+    # so there is nothing to release while the binding is still the model's.
+    part_id = str(t.get("part") or t.get("absorbs") or "")
+    if part_id and (t.get("part") or bound.source != "model"):
+        part = graph.entities.get(part_id)
         if part is None or part_of(graph, part) is not parent:
             return "released"
     return "proposed" if bound.source == "model" else "confirmed"
@@ -664,6 +667,12 @@ def _rollups(p: ProposedPart, columns: dict, owner: Optional[OntologyEntity], ke
     return out, dropped
 
 
+#: The share of a parent's objects a table that is already its own type must reach to be proposed as a part of it —
+#: and so absorbed into it. Order lines, payments and shipments reach nearly every order; LuxExperience's support
+#: tickets reach 10% of them, and reading them as a part of Order was the explorer's one measured fusion.
+PART_MIN_COVERAGE = 0.5
+
+
 def _part_outcome(p: ProposedPart, graph: OntologyGraph, db: Any, describe: Any, earlier: dict[str, str],
                   writers: DraftWriters) -> Outcome:
     said = p.model_dump()
@@ -711,6 +720,15 @@ def _part_outcome(p: ProposedPart, graph: OntologyGraph, db: Any, describe: Any,
     if not trial.covered:
         return done("refused", f"{table}.{column} reaches no {parent.id}: the keys never meet ({trial.note})",
                     measured=measured)
+    if owner is not None and trial.objects and trial.covered is not None \
+            and trial.covered / trial.objects < PART_MIN_COVERAGE:
+        # PENDING item 20 — the fusion the explorer's one live run made, refused with no model and no reference: a
+        # table that is ALREADY its own type and reaches only some of the parent's objects is something that happens
+        # to some of them (a support ticket about an order), not a part every one of them has (its lines).
+        return done("refused", (f"{table} is a type of its own and reaches only {trial.covered:,} of "
+                                f"{trial.objects:,} {parent.id} objects ({trial.covered / trial.objects:.0%}) — a part "
+                                f"is something nearly every {parent.id} has; a table about some of them stays its "
+                                f"own type, linked to {parent.id}"), measured=measured)
     one_each = bool(trial.non_null) and trial.distinct == trial.non_null
     time_column = _named(columns, p.time_column) if (p.time_column or "").strip() else None
     notes: list[str] = []
@@ -735,11 +753,18 @@ def _part_outcome(p: ProposedPart, graph: OntologyGraph, db: Any, describe: Any,
     except ExplorerRefused as exc:
         return done("refused", str(exc), spec=spec, measured=measured)
     absorbed = str((result or {}).get("absorbed") or "") if isinstance(result, dict) else ""
-    if owner is not None and not absorbed:
+    pending = bool(isinstance(result, dict) and result.get("absorb_on_confirm"))
+    if pending:
+        # PENDING item 20 — a proposal never hides a type: the part is read at once, and its table's own type stays
+        # listed until a person confirms the part.
+        notes.append(f"{owner.id} stays a type of its own until a person confirms this part; confirming makes it a "
+                     f"part of {parent.id}")
+    elif owner is not None and not absorbed:
         warned = "; ".join((result or {}).get("warnings") or []) if isinstance(result, dict) else ""
         notes.append(f"bound, but {owner.id} was not made a part: {warned or 'the mark did not hold'}")
     return done("written", "; ".join(notes), spec=spec, measured=measured,
-                target={"entity": parent.id, "binding": name, "table": table, "part": absorbed})
+                target={"entity": parent.id, "binding": name, "table": table, "part": absorbed,
+                        **({"absorbs": owner.id} if pending else {})})
 
 
 def link_name_key(relationship_id: str) -> str:

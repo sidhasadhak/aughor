@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -1287,6 +1288,11 @@ def _bind_entity_core(entity_id: str, name: str, spec: dict, connection_id: str,
         if origin == "model":
             # ON-7b — an explorer's binding: read like any other, proposed until a person confirms it.
             entry = {**entry, "origin": "model", "provenance": provenance}
+            if absorb:
+                # PENDING item 20 — absorbing hides a type from the map and the agent's catalogue, so a proposal never
+                # does it: the table reads both ways until a person confirms the part, and confirming absorbs it.
+                entry["absorb_on_confirm"] = True
+                absorb = False
         existing = find_override(connection_id, effective, "entity", entity_id)
         fields = dict(existing.fields) if existing else {}
         fields["bindings"] = {**(fields.get("bindings") or {}), name: entry["spec"]}
@@ -1311,13 +1317,17 @@ def _bind_entity_core(entity_id: str, name: str, spec: dict, connection_id: str,
         absorbed, why = _absorb_after_bind(connection_id, effective, entity_id, entry["spec"].get("table"))
         if why:
             warnings.append(why)
+    elif entry.get("absorb_on_confirm"):
+        warnings.append(f"{entry['spec'].get('table')}'s own type stays visible until a person confirms this part; "
+                        "confirming it makes that type a part")
     served = _get_ontology_graph(connection_id, effective)
     described = (describe_object_type(served, entity_id)
                  if served is not None and entity_id in served.entities else {})
     row = next((b for b in described.get("bindings", []) if b["name"] == name), None)
     result = _override_result(ov)
     return {**result, "warnings": [*result["warnings"], *warnings], "binding": row,
-            "absorbed": absorbed, "parts": described.get("parts", [])}
+            "absorbed": absorbed, "parts": described.get("parts", []),
+            "absorb_on_confirm": bool(entry.get("absorb_on_confirm"))}
 
 
 def _merge_entity_fields(connection_id: str, schema: str, entity_id: str, fields: dict):
@@ -1486,10 +1496,11 @@ def declare_ontology_expression(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """2026-09-22 — map a typed property to an expression over the type's own row (ON-1b's deferred half). The
-    name must be free on the type, the expression must parse flat (no subquery, aggregate or window) over the
-    backing's own columns, and it is VERIFIED by running it on one row before anything is written — a refusal
-    says why and writes nothing. The compiler, the framing and the pages then read it like any column."""
+    """2026-09-22 — map a typed property to an expression (ON-1b's deferred half). The name must be free on the type,
+    the expression must parse flat (no subquery, aggregate or window) over names the object compiler reads — its own
+    columns, a binding's, another formula, a to-one link's (PENDING item 27) — and it is VERIFIED through that
+    compiler on up to 1,000 of the type's objects before anything is written — a refusal says why and writes nothing.
+    The compiler, the framing and the pages then read it like any column."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.db.connection import open_connection_for_with_schema
@@ -1507,7 +1518,7 @@ def declare_ontology_expression(
         raise HTTPException(status_code=400, detail=problem)
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
-        verdict = probe_expression(db, graph, entity, spec["expression"])
+        verdict = probe_expression(db, graph, entity, spec["expression"], name=name)
     finally:
         db.close()
     if not verdict.get("bound"):
@@ -1556,6 +1567,86 @@ def withdraw_ontology_expression(
         delete_override(connection_id, effective, "entity", entity_id)
     _invalidate_schema_cache(connection_id)
     return {"removed": True, "entity": entity_id, "expression": name}
+
+
+class _SemiAdditiveSpec(BaseModel):
+    """PENDING item 27 — a property that is a reading at a moment, the time property its readings are taken over, and
+    (optionally) which reading stands for a period: `last` (a month-end) or `first`."""
+    over: str
+    note: str = ""
+    take: str = ""
+
+
+@router.put("/ontology/entities/{entity_id}/semiadditive/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_semiadditive(
+    entity_id: str,
+    prop: str,
+    body: _SemiAdditiveSpec,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """PENDING item 27 — declare that a property must not be summed across time: a stock level, a balance, a headcount
+    is a reading AT a moment, taken `over` a time property. Checked against the graph before anything is written — the
+    property must be one the object compiler reads, `over` a date or timestamp of the type's own — and a refusal says
+    why and writes nothing. From then on a sum of it that spans more than one moment is refused, with how to ask."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
+    from aughor.ontology.semiadditive import forget_declared, normalized_semiadditive, semiadditive_problem
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    spec = normalized_semiadditive(body.model_dump())
+    problem = semiadditive_problem(graph, entity, prop, spec)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    fields = dict(existing.fields) if existing is not None else {}
+    fields["semiadditive"] = {**(fields.get("semiadditive") or {}), prop: spec}
+    binding = dict(existing.binding) if existing is not None else {}
+    binding["semiadditive"] = {**(binding.get("semiadditive") or {}),
+                               prop: {"bound": True, "note": "", "over": spec["over"]}}
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields,
+                          source=(existing.source if existing is not None else "human"), binding=binding)
+    save_override(connection_id, effective, ov)
+    _invalidate_schema_cache(connection_id)
+    forget_declared(connection_id)                  # the trust checks read the declaration at once, not in 30s
+    return {**_override_result(ov), "semiadditive": {"property": prop, **spec}}
+
+
+@router.delete("/ontology/entities/{entity_id}/semiadditive/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def withdraw_semiadditive(
+    entity_id: str,
+    prop: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """PENDING item 27 — withdraw a semiadditive declaration. 404 when the type declares none for that property."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override, save_override
+    from aughor.ontology.semiadditive import forget_declared
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    specs = dict((existing.fields.get("semiadditive") if existing else None) or {})
+    if existing is None or prop not in specs:
+        raise HTTPException(status_code=404, detail=f"{entity_id} declares no semiadditive '{prop}'")
+    specs.pop(prop)
+    verdicts = dict(existing.binding.get("semiadditive") or {})
+    verdicts.pop(prop, None)
+    fields = {k: v for k, v in existing.fields.items() if k != "semiadditive"}
+    binding = {k: v for k, v in existing.binding.items() if k != "semiadditive"}
+    if specs:
+        fields["semiadditive"], binding["semiadditive"] = specs, verdicts
+    if fields:
+        save_override(connection_id, effective, existing.model_copy(update={"fields": fields, "binding": binding}))
+    else:
+        delete_override(connection_id, effective, "entity", entity_id)
+    _invalidate_schema_cache(connection_id)
+    forget_declared(connection_id)
+    return {"removed": True, "entity": entity_id, "semiadditive": prop}
 
 
 @router.post("/ontology/entities/{entity_id}/bindings/{name}/restore", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -2282,6 +2373,17 @@ def _through_door(write):
         raise ExplorerRefused(str(exc.detail)) from exc
 
 
+#: One exploration per scope at a time (PENDING item 20): the birth rite runs the explorer on a new connection, and a
+#: person pressing Explore meanwhile would pay a second model call to race the first over the same record.
+_EXPLORING: dict[tuple[str, str], "threading.Lock"] = {}
+_EXPLORING_GUARD = threading.Lock()
+
+
+def _exploration_lock(connection_id: str, schema: str) -> "threading.Lock":
+    with _EXPLORING_GUARD:
+        return _EXPLORING.setdefault((connection_id, schema), threading.Lock())
+
+
 @router.post("/ontology/explore", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def explore_ontology(
     connection_id: str = BUILTIN_ID,
@@ -2297,17 +2399,39 @@ def explore_ontology(
     not proposed again. Costs one model call, so nothing starts it but a person asking."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
-    from aughor.db.connection import open_connection_for_with_schema
-    import uuid
-    from aughor.llm.provider import NoModelConfigured, answered_by, get_provider
-    from aughor.ontology.drafts import load_draft, save_draft
-    from aughor.telemetry import bind_trace
-    from aughor.ontology.explorer import DraftWriters, apply_draft, draft_business, draft_view, record_run
+    from aughor.ontology.drafts import load_draft
     effective = _resolve_schema(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
         raise HTTPException(status_code=404, detail=(f"No ontology built for schema '{effective}' on this connection — "
                                                      "the explorer reads what the build measured, so build it first"))
+    from aughor.ontology.drafts import DraftUnreadable
+    try:
+        # Read BEFORE the model call: a record that does not parse holds what people withdrew, and the run could
+        # neither honour it nor be saved over it — so it is refused without spending the call (PENDING item 20).
+        load_draft(connection_id, effective, strict=True)
+    except DraftUnreadable as exc:
+        raise HTTPException(status_code=409, detail=(f"this scope's explorer record cannot be read, so the explorer "
+                                                     f"cannot tell what a person withdrew — repair or remove it "
+                                                     f"first: {exc}"))
+    lock = _exploration_lock(connection_id, effective)
+    if not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail=(f"an exploration of '{effective}' is already running — its "
+                                                     "proposals appear here when it finishes"))
+    try:
+        return _explore_locked(connection_id, effective, graph)
+    finally:
+        lock.release()
+
+
+def _explore_locked(connection_id: str, effective: str, graph):
+    """The explorer run itself, under the scope's lock (`explore_ontology`)."""
+    import uuid
+    from aughor.llm.provider import NoModelConfigured, answered_by, get_provider
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.drafts import load_draft, save_draft
+    from aughor.telemetry import bind_trace
+    from aughor.ontology.explorer import DraftWriters, apply_draft, draft_business, draft_view, record_run
     glossary: dict = {}
     try:
         from aughor.semantic.glossary import load_merged_glossary
@@ -2345,6 +2469,14 @@ def explore_ontology(
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
         outcomes = apply_draft(said, graph, db, provenance=answerer.provenance, draft=draft, writers=writers)
+    except Exception as exc:  # noqa: BLE001 — recorded, then reported: the call it paid for is not paid again
+        # PENDING item 20 — the model call is spent; recording the run is what stops every restart that finds no run
+        # from spending it again. What was written before the failure stays written, each through its own door.
+        failed = record_run(draft, [], answerer, said, catalogue_chars=len(catalogue), trace_id=trace_id)
+        failed.error = f"{type(exc).__name__}: {str(exc)[:300]}"
+        save_draft(draft)
+        raise HTTPException(status_code=500, detail=(f"the explorer's proposals stopped part-way ({failed.error}); "
+                                                     f"the run is recorded as {failed.id}"))
     finally:
         db.close()
     run = record_run(draft, outcomes, answerer, said, catalogue_chars=len(catalogue), trace_id=trace_id)
@@ -2471,8 +2603,17 @@ def _confirm_proposal(connection_id: str, schema: str, target: dict, actor: str)
         if entry.get("origin") != "model":
             return f"{entity_id}.{name} was bound by a person — there is no proposal to confirm"
         entries[name] = {**entry, "origin": "human", "confirmed_by": who, "confirmed_at": now}
+        entries[name].pop("absorb_on_confirm", None)
         ov.binding["bindings"] = binding_block(entries)
         save_override(connection_id, schema, ov)
+        if entry.get("absorb_on_confirm"):
+            # PENDING item 20 — the absorption the proposal deferred: the table's own type becomes a part now that a
+            # person has said it is one. Refused with the reason when the mark would not hold, as at the bind door.
+            _absorbed, why = _absorb_after_bind(connection_id, schema, entity_id, (entry.get("spec") or {}).get("table"))
+            if why:
+                import logging
+                logging.getLogger(__name__).info("confirmed %s.%s; its table's type was not made a part: %s",
+                                                 entity_id, name, why)
         return ""
     return f"there is no {kind!r} to confirm"
 

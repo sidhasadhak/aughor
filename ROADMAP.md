@@ -8069,6 +8069,454 @@ cross-connection declarations are not shipped (their YAML stores connection ids 
 install's own tree on first use, by the seed layer's existing rule, after which it no longer
 follows the seed.
 
+### 3.35 · Documents stay inside their connection and organisation (PENDING.md item 16, found by the 2026-09-24 re-survey; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a scoping fix)
+
+> **The fact it answers.** Measured by reading, then run: `search_documents` filtered nothing. The generated schema
+> docs of every connection and every organisation's uploads share one collection, and the registry carried no owner on
+> any row. With no agent active, a question on one connection was handed another connection's schema docs as "external
+> context" — tables that connection does not have — and, with sign-in on, another organisation's uploads; the
+> Documents list and every by-id door (markdown, original, convert, delete) were install-wide. A deleted document's
+> vectors, whose removal is best-effort, were still served.
+
+**What exists.** The registry row is the authority (`aughor/knowledge/indexer.py`). Every row is stamped with its
+owner when it is indexed — a schema doc with its connection and that connection's organisation (`""` for a shared
+builtin, read by everyone), anything else with the organisation that indexed it — and a re-index never changes the
+owner (a connector re-sync under another org keeps the first stamp). A row from before the stamp resolves the same
+way: a schema doc through its connection, an upload to the default organisation, the only one that existed then.
+`search_documents(…, connection_id=)` serves only registered documents, never another connection's schema docs, and
+with sign-in on only the caller's organisation's; it over-fetches so the filters do not shrink an answer below its
+`top_k`. All four paths that put documents in front of a model pass their connection (the quick path, the deep
+synthesis, the grounding block, the conversation's `search_documents` tool). The Documents list is scoped by
+`tenant_scope()`; a router-level guard checks every `doc_id` door through a new `document` owner kind in
+`security/authz.py`; the search door and the doc-tree restore check a connection named in their body, which the
+router's connection guard cannot see. Sign-in off, every organisation-shaped filter is `None` and a single-tenant
+install lists and reads exactly as before.
+
+**Receipt (2026-09-24, this cloud session).** The real indexer, registry and embedded Qdrant, with only the embedder
+replaced by a deterministic word hash; the same script on `main` and on the branch. A question on connection shopA —
+*"revenue per order"* — on `main`: 0.73 `old-report` (deleted; its vectors outlived it), 0.58 `doctree::shopB::main`
+(another connection's tables), 0.55 the revenue policy, 0.19 shopA's own schema docs. On the branch: 0.55 the policy,
+0.19 shopA's schema docs. 10 tests (`tests/unit/test_documents_stay_in_scope.py`); the document, canvas, doc-tree
+and search-tool suites pass with their doubles taking the new keyword.
+
+⏳ **Open:** the re-index and orphan-purge doors stay install-wide maintenance (they expose nothing, but an
+organisation's user can trigger them for everyone); the organisation half was checked through `tenant_scope()` and
+`authorize_resource`, not through a live sign-in.
+
+### 3.36 · The default answer works on every model backend (PENDING.md item 17, found by the 2026-09-24 re-survey; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a transport fix)
+
+> **The fact it answers.** Measured, then run: the conversation and the analyst — the bodies `ask.converse` routes
+> every quick and deep `/ask` turn to — are tool loops, and `complete_with_tools` raised `NotImplementedError` for the
+> `anthropic` binding before any fallback (uncaught at `tool_loop.py:178`). Every quick `/ask` turn on that backend
+> ended in an error: the Slack bot's, and since `chat.buttons_reach_agent` went default-on on 2026-09-24 the web's
+> Quick and Agent buttons, which had been served by `/chat` and `/investigate` until then. Deeper: the backend's SDK
+> was never declared, so on a stock install choosing it failed at the first model call with `No module named
+> 'anthropic'` — `test_every_backend_builds_a_client` swallows SDK failures by design, so nothing saw it.
+
+**What exists.** `_tools_on` speaks Anthropic's `messages` surface (`aughor/llm/provider.py`): OpenAI-shaped tool
+specs become `input_schema` tools; the loop's transcript becomes alternating turns — a call as a `tool_use` block, its
+answer as a `tool_result` inside a user turn, adjacent same-role messages merged, since Anthropic refuses two in a
+row; the reply is read as the same `ToolTurn` (a `tool_use` block before any text, `max_tokens` with nothing usable as
+`truncated`, non-object arguments as `malformed`). Metering, the call record and the budget check are the code every
+binding runs, and anthropic re-enters the tool-fallback chain it was filtered out of. `anthropic>=0.40,<1` is a core
+dependency (0.x rides the `httpx` already in the tree; 1.x moves to a second HTTP stack `instructor.from_anthropic` was
+not built against). For a binding that cannot call tools at all: `converse_available()` routes a model whose catalogue
+declares no tool calling — never a merely unknown one — or one that refused a tool call earlier in the process, to
+the quick body and the phase script, exactly as with the flag off; a turn refused on its very first request is
+answered by the quick body with a `converse_step` saying *"this model cannot call tools… answered by the quick
+pipeline instead"*. A refusal after a step has run stays the turn's error (something was already answered).
+
+**Receipt (2026-09-24, this cloud session).** The real anthropic SDK (0.125.0) and the real provider over HTTP,
+against a local server speaking the Messages API; the tool a real DuckDB query. On `main`: `TURN FAILED:
+NotImplementedError … needs its own translation`. On the branch: two requests — `[user]` then `[user, assistant,
+user]` with blocks `[text] · [tool_use] · [tool_result]` — and the answer *"The query returned {"rows": [[1744]]}"*,
+the warehouse's number round-tripped through `tool_result`. Tests: `test_provider_tool_calls.py` (the two that pinned
+the refusal replaced by five on the translation, a full two-step loop among them) and `test_every_backend_answers.py`
+(routing, the first-request fallback, and what is still an error).
+
+⏳ **Open:** no call against Anthropic's real API (no key here); the first-request fallback was driven through the
+real `_stream_converse` with stubbed bodies, not a live model that refuses tools.
+
+### 3.37 · The SQL checks see the tables they check (PENDING.md item 18, found by the 2026-09-24 re-survey; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a parser fix)
+
+> **The fact it answers.** Reproduced: the quick path REPLACES the schema text with the Data Catalog
+> (`schema = data_catalog`), and `parse_schema_tables` — the one parser some thirty consumers share — read the
+> catalog's markdown as no tables at all. So on every default answer `preflight_repair`'s identifier-case repair
+> returned at its first line, the SQL fixer diagnosed errors with no column lists, and the verifier's chasm battery
+> scanned against an empty map. Two more on the same path: a repair asked for because a check fired was adopted once
+> it merely RAN, with the check never asked again; and the conversation's `describe_table` promised "exact column
+> names, types and sample values" and returned names.
+
+**What exists.** `parse_schema_tables` reads the catalog's form as well as both `TABLE:` forms
+(`aughor/db/schema_render.py`): a `## table` heading counts only when its `| Column | Type |` header follows, so
+another markdown section never becomes a table, and the catalog's sample rows are never read as columns; the raw
+forms parse exactly as before. Every consumer inherits it — the fixer, `preflight_repair`, the executor's guards,
+the analyst, the data-portrait step, the context manifest. `_checks_still_firing` re-runs the SQL-only checks
+(fan-out, id arithmetic, averaged ratios, breakdown grain, the chasm battery) on a repaired query, and a repair that
+still trips the check that asked for it is not adopted: the original stands and a `repair_recheck` receipt says
+what it failed to clear. `describe_table` returns the table's own block from the schema text (`schema_block`) — its
+types, row count and the sample values the renderer wrote where it had them.
+
+**Receipt (2026-09-24, this cloud session).** The real catalog `build_data_catalog` writes, on `main` and on the
+branch. `main`: the checks see `{}`; `preflight_repair` leaves `customerid`/`amount` unrepaired (DuckDB folds case,
+so there it still runs — the repair is what saves a case-sensitive engine); the chasm battery on a query joining
+order items and payments through orders fires **nothing** while the query reports payments of 65.0 against a true
+35.0. Branch: the checks see `{'orders': ['Order_ID', 'customerID', 'Amount']}`; the repair rewrites to
+`customerID`/`Amount`; the battery fires *"SUM(i.price) over a chasm join (order_items, order_payments are each on the
+many-side of 'order')… pre-aggregate EACH satellite"*. 8 tests (`tests/unit/test_checks_see_their_tables.py`).
+
+⏳ **Open:** the repair re-check covers the checks that are functions of the SQL alone; the entity-alignment and
+filter-domain checks (which read the question and probe the warehouse) are not asked twice. A handful of hand-written
+`TABLE:`-only parsers remain (`schema_linker`, `answer_resolution`, the portrait's fallback) — item 19 reaches the
+ones on the value path.
+
+### 3.38 · The SQL writer sees the data, not only the schema (PENDING.md item 19, the ML review's point 5; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; two bug fixes default-on, the prompt block behind `grounding.data_profiles`, **off**)
+
+> **The fact it answers.** docs/ENGINE_REVIEW_ANSWERS_2026-09-24.md §3: the model writing SQL attends to the warehouse's
+> schema and five head rows per table; the profiler's measured statistics reach no SQL prompt; tables are linked by
+> name only; values bind only on the house schema form. Measured here, model-free, on the 53 golden questions over
+> the samples warehouse (`evals/linker_recall_eval.py`, results `evals/linker_recall_results.json`).
+
+**What exists — three parts.**
+1. **The linker scores inline-form columns** (bug fix, default-on). Its block parser read only indented column lines,
+   so on the form BigQuery, Snowflake, MySQL, MotherDuck and Exasol write the column-aware score — the linker's own
+   "main recall lever" — never fired; inline columns now score (`line=None`, so the header that already prints them
+   is not packed twice). **Measured:** house form unchanged (recall 1.000, 53/53 complete, 4.72 tables); inline form
+   `main` 0.984 and 51/53 — *"total revenue from Electronics category"* was never shown `products` — → branch 1.000,
+   53/53, identical to the house form.
+2. **Values bind on every warehouse, from what is cached** (bug fix, default-on). The resolver's parser reads the
+   inline form; its offline pass covers every cached column whose table is in scope — the profiler's high-cardinality
+   samples and, new, its low-cardinality top values (`profile_cache.load_top_values`) — instead of only columns named
+   like `name` or `brand`; a binding names the table as the schema spells it. The LIVE probe keeps its gate, so the
+   inline form still never probes: no new billed scan, no new "not present" abstention. **Receipt:** the real
+   profiler's cache for the samples warehouse, the schema rendered inline — *"total revenue from Electronics"*:
+   `main` no binding → branch `ecommerce.products.category = 'Electronics'`.
+3. **The DATA PROFILE block** (`grounding.data_profiles`, EXPERIMENT, off — it changes the prompt). For the linked
+   tables, from the profile cache only: row counts and date ranges; per column the most frequent values of a
+   dimension, a measure's range and median with its unit, null rates of 20% or more; keys left out; under 2,400
+   characters with any table that does not fit named (`aughor/tools/catalog_profiles.py`). A distinct count appears
+   only as "about N", above what is listed — the first render said "5 values:" over a list of six (SUMMARIZE
+   estimates), and a short list is never called complete. **Measured:** mean 1,662 characters on the golden set
+   (max 1,771) beside a mean catalog of 4,067; no table left out.
+
+⏳ **Open:** whether the block lifts accuracy is a paid with/without run (the flag's falsifier); the candidate
+extractor still misses lowercase values ("delivered") and names with an ampersand ("Home & Garden"); on the user's
+BigQuery connections the profile cache is empty (Arc CB's "unknown" share), so part 2 binds there only once it is
+filled; question-matched rows in place of the first five, and value embeddings (the review's level 2), are not built.
+
+### 3.39 · The business explorer cannot fuse two groups, and no proposal hides a type (PENDING.md item 20, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a guard on a default-on path)
+
+> **The fact it answers.** The explorer runs on every new connection since 2026-09-24 (`ontology.explore_on_connect`),
+> and its only fusion check (`compare_groupings`) needs a hand-declared reference a new connection never has. Its one
+> live run read LuxExperience's `customer_service` as a part of Order — each ticket names one order, 11,244 of 112,439
+> — where the reference keeps tickets with Customer; and a proposal ABSORBED the table's own type at once, hiding it
+> from the map and the agent's catalogue before anyone confirmed. Three robustness gaps beside it: a run whose
+> proposals failed part-way was never recorded, so the birth rite's "already explored" skip never fired and every
+> restart paid again; nothing stopped a person's Explore racing the birth rite's; a record that no longer parsed was
+> read as empty — every withdrawal proposed again — and the next save erased the withdrawals for good.
+
+**What exists.** A coverage guard in `_part_outcome` (`aughor/ontology/explorer.py`, `PART_MIN_COVERAGE = 0.5`): a
+table that is already its own type and reaches under half of the parent's objects is refused with the counts — *"is a
+type of its own and reaches only 1,000 of 5,000 Order objects (20%) — a part is something nearly every Order has; a
+table about some of them stays its own type, linked to Order"*. The counts come from the measurement the part already
+took; no model, no reference. Absorption waits for a person: a model-origin bind records `absorb_on_confirm` and does
+not absorb, the table reads both ways meanwhile (as the parent's part and as its own type — nothing hidden, the map's
+cards unmoved), and the confirm door absorbs it; a proposal's tier reads "released" only once a person has confirmed
+and then released it. The route (`routers/ontology.py`): one exploration per scope at a time (a second answers 409); the
+record is read strictly BEFORE the model call (an unreadable one answers 409 naming the file, without spending the
+call); a run whose proposals stop part-way is recorded with its error, so the skip holds; `save_draft` never writes
+over a record that does not parse (`DraftUnreadable`).
+
+**Receipt.** Model-free, on the seeded samples warehouse through the real doors, the model scripted: `reviews` (their
+own type, 1,000 of 5,000 orders) proposed as a part of Order is refused with those numbers; order lines (every order)
+are bound at once, `OrderItem` stays listed until a person confirms, and confirming makes it Order's part and moves
+`order_items` under Order's card; an unreadable record answers 409 with no model call and is left as it was; a run held
+by another answers 409; a run killed mid-proposal is recorded and the birth rite then skips the scope.
+`tests/unit/test_ontology_explorer.py` (21, three of them rewritten for the deferral), 1,457 ontology, object and birth
+tests green.
+
+⏳ **Open:** the threshold (half) is a judgement from one fusion and the parts every fixture holds — a real
+low-coverage part (refunds on an order) is refused too, and a person binds it by hand; the explorer's paid quality
+re-check has still not run.
+
+### 3.40 · Declarations never fail silently (PENDING.md item 21, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** Measured by reading: `save_override` was documented "never raises", and the override store's
+> `_write` and `_unlink` swallowed every exception — so every declare and confirm door answered 200 for a declaration
+> that was never written (a full disk, a read-only volume), and the explorer recorded such a proposal as written. The
+> ontology store read a saved graph that failed validation as "no ontology" with no log line, and turned a failed build
+> into None with no trace — every door then told a person to build what had been built.
+
+**What exists.** `OverrideWriteFailed` (`aughor/ontology/overrides.py`): a write or a withdrawal that does not land
+raises, named — *"entity 'Order' was not saved — the ontology store could not write it (No space left on device)"* —
+with the operating system's reason and no path; the temp file's cleanup can no longer mask the failure it follows (a
+test found `unlink(missing_ok=True)` raising `NotADirectoryError` over it). The API answers it as
+`{"error": "declaration_not_saved", "kind", "target", "detail"}` (500) instead of the catch-all's `internal_error`. The
+four measure passes that re-save a measurement log a lost re-save as a warning, not at debug. The ontology store reads
+every cached graph through `_graph_from`, which counts and logs one that does not validate
+(`tolerated.ontology.saved_graph_unreadable`), and a failed build is counted (`tolerated.ontology.build_failed`); both
+still read as none, as their callers expect.
+
+**Receipt.** Four tests (`tests/unit/test_declarations_never_fail_silently.py`): a save and a withdrawal against an
+overrides root that cannot hold a directory raise with the declaration named and no path; a door answers
+`declaration_not_saved` with *"No space left on device"*; an unreadable saved graph is counted. The atomicity test
+(`test_overrides_seed_overlay.py`) now also asserts the dying write raises; 1,824 ontology, object and API tests green.
+
+⏳ **Open:** an unreadable saved graph still reads as "no ontology" at the doors (counted and logged, not yet said on
+the screen that asks for a build).
+
+### 3.41 · No number is shown before it is measured (PENDING.md item 22, found by the 2026-09-24 re-survey; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** The quick path's SQL writer returns its headline with the SQL — before the query runs — and
+> the headline streamed onto the screen as the model typed it (`headline_delta`), numbers included, to be replaced
+> afterwards only when the rows flatly contradicted it (`_ground_headline`). The theLook briefing incident began with
+> exactly such a number ("orders fell 97.5%").
+
+**What exists.** The stream carries the headline's words up to the word holding its first digit
+(`_numberless_prefix`, `aughor/routers/investigations.py`), and flushes those words at once when a number is reached
+rather than waiting on the stream's throttle; the number arrives with the grounded headline once the rows are in. No
+web change: the chat already types the partial headline in place of the skeleton and lets the settled `headline`
+overwrite it.
+
+**Receipt.** The real `_stream_chat` over a DuckDB connection, the faux model's streaming call typing its scripted
+headline *"Orders fell 97.5% yesterday to 3 orders"* three characters at a time: the frames were `headline_delta
+"Orders "`, `headline_delta "Orders fell"`, the SQL, then `headline "Orders: 600"` — the guess never reached the
+screen, and the rows replaced it. `tests/unit/test_no_number_before_measured.py` (the first test that ever drove a
+real `headline_delta`: the faux backend does not stream, so none had).
+
+⏳ **Open:** the narrator's streamed prose is written after the query from its rows but is not number-checked the way
+the conversation's closing prose is (`ground_answer_numbers`).
+
+### 3.42 · Training data that means something (PENDING.md item 23, the ML review's point 2; MI-3 → MI-4; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** MI-3's exporters existed and taught the wrong thing: the prompt was the answer's HEADLINE,
+> not the question; no row said which warehouse it was answered against; a typed correction became the "chosen" SQL
+> without being run; an accept stayed exportable after a later reject; the SQL was whatever the grading door POSTED;
+> the golden split was keyed on the answer's id, so a question asked twice landed on both sides; the gate report
+> summed every version of a dataset; export was ungated and read other organisations' trusted queries and agents.
+> And the chat — where most answers are given — could not say "yes": its 👍 recorded no verdict.
+> (docs/ENGINE_REVIEW_ANSWERS_2026-09-24.md §2.)
+
+**What exists.**
+
+- **The chat's accept.** A 👍 records an `accept` on the turn, carrying the SQL the turn ran — read from its own history
+  row, never from the request (`_accept_chat_answer`, `aughor/routers/query.py`); idempotent, and the thanks line says
+  "recorded as accepted" only when it was.
+- **Rows that mean what they say** (`aughor/learning/exporters.py`): the prompt is the question asked (an answer
+  nobody asked — an explorer finding — is left out); each answer's verdicts reconciled to its latest; a verdict's SQL
+  counts only when the answer's own record ran it, in this organisation; a correction is a preference pair only when
+  it dry-runs on its connection; every row carries `context` (connection, dialect, the tables its SQL reads) and its
+  `tier` (gold · silver · bronze · guard_rewrite).
+- **A split that cannot leak.** The held-out tenth is decided by the normalised QUESTION, before any data is seen, and
+  no trainable corpus carries a golden row's question or its SQL (the paraphrase the hash cannot see).
+- **Two machine-graded tiers, gated on nothing.** `sft_bronze`: answers that ran, returned rows, had clean guards (an
+  envelope with no caveat and no warning receipt), no failed re-run and no reject. `dpo_repair`: every guard rewrite
+  as wrong SQL → fixed SQL — the fan-out de-fan, the lint fix, and now the preflight repair and the repair adopted
+  after a failed run, which the quick path used to make in silence (they are receipts now, `preflight_repair` and
+  `sql_repair`); a side cut at the receipt's 2,000-character cap is left out.
+- **Counting and scope.** The gate report counts each dataset's latest version and checks the fourth gate (30 days of
+  guard data, `GuardVerdicts.first_live_fire`); a corpus that shrinks back to an earlier snapshot is a new version, so
+  `get()` never serves the rejected row; export needs `semantic.edit` and reads only this organisation's trusted
+  queries, agents and answers. The history row carries its `trace_id` (migration v7), so a guard fire outlives the
+  14-day session log.
+
+**Receipt.** One script, the same graded history, `main` against the branch (two chat 👍, an accept later rejected,
+two corrections — one typed with a typo — an accept whose posted SQL the answer never ran, an answer a guard repaired
+twice). `main`: the SFT corpus was one row, prompt `'3'`, completion `DELETE FROM stores`; DPO's prompts were `'EU'`
+and one "chosen" was `SELEC region FORM orders`; the golden set held the accept a person had since rejected; the chat's
+👍 recorded nothing. The branch: SFT two rows, prompted by the questions the 👍 answers were asked by, with their
+tables; DPO the one correction that runs; golden empty; bronze four rows; repair pairs two, both naming their guard;
+a four-gate report. Every guard above was mutation-checked — undone one at a time, each fails its test
+(`tests/unit/test_mi3_dataset_plane.py`, `tests/unit/test_every_rewrite_is_said.py`).
+
+⏳ **Open:** the thresholds wait on use (ROADMAP §3.9's gates are unchanged); bronze's verifier needs the hand audit
+§3.9 requires before anything trains on it; deep runs' guard fires reach `dpo_repair` only through their envelope.
+
+### 3.43 · The few-shot memory learns from every good answer and forgets bad ones (PENDING.md item 24, the ML review's point 2 at answer time; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** Past SQL reaches the SQL writer as few-shot examples (`aughor/tools/prior_analyses.py`) —
+> the self-improving loop that exists without training — and it learned from almost nothing. Only deep runs wrote to
+> it, never a quick answer or a chat turn; a query a person rejected stayed an example forever; nothing checked the
+> guards; every deep sub-query was filed under the top-level question though the writer searches by hypothesis;
+> deleting an investigation left its SQL examples behind (`_qdrant_inv` purged one collection of two); and a dead
+> vector store or embedder read exactly like "nothing similar was ever asked" (bare `except`s at every door).
+
+**What exists.**
+
+- **Every clean answer is remembered.** A quick answer, once its envelope is filed, is indexed off the stream
+  (`index_answer`, from `stream_with_envelope`, on a daemon thread carrying the request's organisation) when its
+  question stands alone (not a follow-up), its query returned rows and its guards were clean — the one definition the
+  training corpus's bronze tier reads too (`aughor.answer.envelope.guards_clean`). Examples only: a quick answer never
+  becomes a cached investigation. A deep run's sub-query is filed under its hypothesis's text, with the run's
+  question beside it; a result a guard flagged (`caveats`) is not an example; a direct-mode run teaches examples but
+  is not cached (`complete_investigation(cache=False)`).
+- **Bad ones are forgotten, for good.** The verdict store is the tombstone (`feedback.verdicts.overruled`): an answer
+  whose latest verdict is reject or correct, and the SQL it ran — the verdict's own, else the answer's when it ran
+  one distinct statement — are refused when a point is written AND when one is read, so a reindex, a backfill or the
+  same query answered again cannot bring one back. A verdict also evicts the answer's points at once
+  (`forget_answer`), as does deleting the investigation. A later accept lifts it.
+- **An unreachable memory is said.** Counted every time, logged once a minute (a dead embedder fails every answer),
+  and shown on the grounding receipt as a note on the past-SQL block (`search_sql_examples_checked`) — "the embedding
+  service did not answer", "no vector store is configured" — never written into the prompt.
+
+**Receipt.** One script, the same events, `main` against the branch, on the real embedded vector store (the embedder
+a hashed bag of words). A quick answer through the real `_stream_chat` and envelope: `main` remembered nothing, the
+branch remembered it and offered it to the next question. A deep sub-query searched by its hypothesis: `main` missed,
+the branch hit, and the query a guard flagged was remembered on `main` only. A person rejects the run: `main` still
+offered it and still stored it; the branch neither. The embedder goes down: both return an empty block, and only the
+branch says why. Every guard mutation-checked (`tests/unit/test_few_shot_memory.py`, 16 of 16 caught).
+
+⏳ **Open:** the live collection on an install was not measured (a fresh clone holds none) — how much of it is
+overruled or unpaired today is the first number to read on a real deployment; an accepted answer is not ranked above
+an unjudged one yet.
+
+### 3.44 · Object pages right on every connection (PENDING.md item 25, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** The object pages (ON-3) were built and measured on DuckDB with text keys, and broke
+> everywhere else. Findings cited an object only by a STRING literal parsed as generic SQL — theLook (BigQuery:
+> backticked names, integer ids) never cited one object, and a finding pinned to another user showed as "users in
+> general". One finding that could not be read ended the scan in silence. A metric reaching another connection
+> compiles to a plan whose SQL is for a reader, and the page ran it. SQL NULL reached the page as the word "NULL". The
+> query over an organisation's ontology merged no accepted edit, and its Withdraw sent the ontology's token as the
+> connection, so every withdrawal answered "no such edit". LuxExperience's metrics panel was empty (the shipped revenue
+> reads `total_amount`). The compiled badge was emitted and never shown.
+
+**What exists.**
+
+- **Citations on every warehouse.** `extract_filter_literals(sql, dialects=…, numbers=…)`: the object page tries the
+  neutral reading then BigQuery, Snowflake and Postgres, and reads numeric keys; the join guard's callers keep the
+  text-only default (a test pins it).
+- **The list survives a bad finding.** Each finding and answer receipt is read on its own; one that cannot be read is
+  counted (`findings_unread`) and the page says how many were left out.
+- **Display-only SQL is never run.** `object_metrics` runs a cross-connection metric through its plan
+  (`execute_plan`, every connection it reads checked as the organisation's) on an organisation's page, and withholds it
+  with the reason elsewhere. A NULL measurement is no value (`—`), never the word; a NULL property reads `—` too.
+- **An organisation's ontology.** Its object query and page merge each type's OWN accepted edits, from the connection
+  its rows live on (`_domain_edits`) — never another connection's same-named type; Withdraw sends the connection the
+  object lives on, and the door answers a domain token with a 400 that says where to withdraw.
+- **LuxExperience measures something.** `GMV` (`SUM(gmv_eur)`) and `GMV per order` (`AVG(gmv_eur)`) ship under
+  `key=luxexperience`, named as GMV — not revenue — and bound by the real binder against the recorded schema of the
+  2026-09-15 served graph (the note says so: a clone has no warehouse to bind against; the same check refuses
+  `SUM(total_amount)`).
+- **The compiled badge.** When the model adopts the compiler's query verbatim, the answer says "compiled from declared
+  definitions: <measure> on <entity> by <dimension>" (`compiled` left `UNRENDERED_FRAMES`).
+
+**Receipt.** One script, `main` against the branch. Order 12345 with theLook-shaped findings: `main` did not cite the
+finding about it and showed the one about order 999 as "orders in general"; the branch cites the right one and drops
+the other. One unreadable finding before two good ones: `main` listed none and said nothing; the branch lists both and
+says one was left out. A customer with no orders: `main` read `NULL`, the branch `—`. LuxExperience's Order page:
+`main` measured nothing; the branch GMV and GMV per order. Every guard mutation-checked, 10 of 10
+(`tests/unit/test_object_pages_on_every_connection.py`).
+
+⏳ **Open:** nothing was run against the theLook or LuxExperience warehouses themselves (no credentials, no dataset on
+a clone); the compiled badge is live-only — a restored turn does not carry it.
+
+### 3.45 · A fresh clone compiles every shipped declaration (PENDING.md item 26, Arc ON; **PARTLY BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** Item 14 shipped LuxExperience's processes, rules and action so a clone would reproduce
+> the ontology's measured gain — but not the parts they stand on. The `order_to_shipment` process's shipped stage
+> reads `ship_date`, which only the `shipments` binding a person set supplies; that binding, five others and two
+> declared links never shipped. The test built its clone graph from the served snapshot WITH those bindings, so it
+> stayed green while a real clone refused the process ("Order has no property 'ship_date'").
+
+**What exists.**
+
+- **Every human-declared part of LuxExperience's served ontology ships** under `key=luxexperience`: the bindings on
+  Order (payments, shipments, lines), Customer (tickets), Product (price_history) and Return (logistics), and the
+  declared links Order→Customer and Shipment→Warehouse. Each spec as the person set it (`binding_spec`), bound by the
+  REAL binder against the recorded source schemas, carrying the counts measured on the warehouse on 2026-09-15 — the
+  note on each file says exactly that.
+- **A compile test over every shipped declaration** (`tests/unit/test_shipped_declarations_by_scope_key.py`): a clone
+  graph with EVERY person's part stripped (bindings and declared links too), the shipped tree applied, then each
+  process and rule through its own door's resolver, each verified metric through the compiler and each action's type
+  looked up — plus the other direction (without the shipped bindings the check refuses `order_to_shipment`) and a
+  rebuild-equals-served check on the bindings and links.
+
+**Receipt.** The same clone check on `main` and the branch: `main` rebuilt no binding and no link and refused
+`order_to_shipment`; the branch rebuilt all six bindings and both links and compiled every declaration on both
+LuxExperience and Olist. Removing a shipped binding or link file fails the tests (3 of 3).
+
+⏳ **Open — needs a person:** business terms for the samples warehouse. A term — a promise, what "completed" means — is
+a person's declaration, and no model authors one (AGENTS.md: provenance); proposing them is the explorer's job
+(PENDING item 11), confirming them the user's. ⚑ theLook's terms cost billed scans; shipping the two DuckDB datasets is
+a hosting and licensing call.
+
+### 3.46 · Formula fields and computed properties are first-class (PENDING.md item 27, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** A person's expression property read the backing's own columns only, so a formula could not
+> use a type's linked tables; it was verified on ONE row (as were the builder's computed properties), so a formula that
+> fails past the first row verified; neither kind was ever shown on the object page; the builder's own verified
+> computed properties (`Customer.days_since_signup`) could not be used in object queries; and a formula on a type read
+> from another connection was read as a column its table would hold.
+
+**What exists.**
+
+- **One formula law** (`_Compiler.formula_column`, `aughor/semantic/object_query.py`): every name in a formula is read
+  by the compiler's own path law (`column_at`) — the type's column, a binding's property (a linked table joined on the
+  object's key), another formula, or a property through to-one links (`order_to_customer.lifetime_spend`). A formula
+  that reaches itself is refused with its chain. Builder computed properties are properties (`computed_prop`), in
+  measures, filters and groupings; an aggregate one is refused (a figure about the type, not an object's property).
+- **The door reads what the compiler reads** (`expression_problem` checks every path with `property_at`) and
+  **verifies on up to 1,000 objects** (`probe_expression`): compiled like a query, the anchor sampled so the joins
+  stay whole, grouped by value (dialect-safe: no MIN/MAX over a boolean), the counts taken in SQL (a result's rows are
+  capped). A formula that fails past the first row, or is empty on every object checked, does not verify. The builder's
+  computed properties are verified on 1,000 rows the same way (`_verify_formula_rows`).
+- **Shown on the object page**: every verified formula, evaluated for THIS object through the compiler, with its text
+  (`= CURRENT_DATE - signup_date`); one the compiler refuses is said as a caveat and costs only itself.
+- **Across connections**: a formula on a type read by key from another connection is refused with why, never read as a
+  column (`far_column`).
+
+**Receipt.** One script, the samples warehouse, `main` against the branch. Customers signed up over a year ago by
+`days_since_signup`: `main` refused ("Customer has no property"), the branch answered 500 (hand SQL agrees). Declaring
+`Order.spend_share = total_amount / order_to_customer.lifetime_spend`: `main`'s door refused ("a binding's column is not
+read here"), the branch's accepts. A cast that fails on the second row: `main` verified it (`bound: True`), the branch
+does not (the conversion error). Customer C00042's page: `main` showed no formula, the branch `days_since_signup` and
+`avg_order_value`. Every guard mutation-checked, 12 of 12 (`tests/unit/test_formulas_are_first_class.py`, and the
+cross-connection case in `tests/unit/test_object_sources.py`).
+
+**Measures that must not be summed across periods** (item 27's second half, built the same day). O5 named the kind —
+a semiadditive measure (`aughor/ontology/window_measures.py`) — but nothing could declare one, so `SUM(on_hand)` over
+daily stock snapshots compiled, was written by the SQL writer, and answered three mornings' stock added together.
+
+- **Declared by a person** — `PUT /ontology/entities/{type}/semiadditive/{property}` names the time property its
+  readings are taken `over` (DELETE withdraws). Checked at the door against the graph (a property the compiler reads;
+  `over` the type's own date or timestamp; a moment is not a quantity), the verdict on the override, rebuilt by the
+  overlay without a database like every declaration (`aughor/ontology/semiadditive.py`).
+- **One law in the object compiler** (`_Compiler.semiadditive_check`): a SUM of the reading — as a measure, in a
+  metric's formula, through a link (to-one or to-many), through a formula that reads it (a stock's value is still a
+  stock), over a timeseries binding's readings, or in a frame that sums them — is refused unless the query keeps one
+  moment: grouped by `over` or by the type's measured key; filtered, or the measure's own where, to one value of
+  either; a day grain on a DATE; or divided by the count of distinct `over` (an average per moment). A timeseries
+  property, read as each object's latest reading, sums across objects as before; avg, min and max are untouched.
+- **A month-end, when a person says which reading stands for a period** — the declaration's `take: last | first`
+  (O5's own `first | last`). Declared, a sum across moments is answered at each group's last (or first) moment — per
+  month under a month grain, per product grouped by product, the latest in all ungrouped — found over the query's own
+  rows (its filters, window and the measure's where) by one join on its grouping (`period_reading`, `period_joins`).
+  Undeclared, it stays refused, and the refusal now says the declaration exists. Never across connections (refused).
+- **The SQL writer is told** — one line per declaration in the ENTITY MODEL block, on every chat and deep prompt (the
+  prompt-reach baseline grew by `semiadditive.*.over` and `.note`).
+- **The trust checks flag what is written anyway** — `semiadditive-sum` in `run_trust_checks`, on every final statement
+  (the quick answer, deep analysis, `run_sql`, the validate door, the trust plane). The platform reads the declarations
+  as plain data through a new registry (`aughor/kernel/registries/readings.py`), never by importing the ontology: a
+  caveat on the headline and a receipt, never a rewrite — which moment the question means is the question's to say.
+  The reading is followed through the statement's own CTEs and derived tables (`traverse_scope`): daily totals summed
+  across days are flagged, naming where the reading came from; a month-end (`IN (SELECT MAX(d) … GROUP BY` the
+  period the query groups by), the latest reading per partition (`ROW_NUMBER() … = 1`, QUALIFY), an intermediate
+  pinned to one moment, and a change since the last reading (a flow) are not.
+
+**Receipt.** The samples warehouse with daily snapshots of 150 products' stock on 30 and 31 March and 1 April; the
+stock on the latest morning is 35,375 (hand SQL). On `main` the declaration has no field to hold it: "total stock"
+answers 105,675 (three mornings added); the month-end stock by month answers 70,300 for March (two mornings added)
+where the 31 March count is 35,225; the SQL writer is told nothing; neither `SELECT SUM(on_hand)` nor daily totals
+summed through a CTE is flagged. On the branch, declared `take: last`: total stock 35,375 and March 35,225, both
+equal to hand SQL; the prompt carries the rule; both statements are flagged `semiadditive-sum`. Undeclared, the sum
+across mornings is refused with how to ask. Grouped by date, or filtered to one date, both answer as before. Every
+guard mutation-checked, 60 of 60 (`tests/unit/test_semiadditive_measures.py`).
+
+**Not built, said.** A declaration is made through the door; the object-type page has no control for it yet. The SQL
+check does not follow a reading through a window computed across readings (a running total, a change since the last
+one) or through a set operation — silent, not guessed.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

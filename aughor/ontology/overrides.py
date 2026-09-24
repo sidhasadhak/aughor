@@ -29,6 +29,8 @@ typo that won't bind is surfaced (``bound=False``) and never injected.
 """
 from __future__ import annotations
 
+import contextlib
+
 import os
 import re
 import threading
@@ -183,6 +185,9 @@ _EDITABLE: dict[str, set[str]] = {
         # override declared). A withdrawal has to be representable: deleting a key only worked for what a person had
         # written, so a found binding could never be unbound from the UI. Restored by POST …/bindings/{name}/restore.
         "withdrawn_bindings",
+        # PENDING item 27 — the properties that must not be summed across time: {property: {over, note}}, checked against
+        # the graph at the door (`ontology.semiadditive.semiadditive_problem`), the verdict recorded on the binding.
+        "semiadditive",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -312,6 +317,18 @@ def _seed_twin(p: Path) -> Path:
     return _SEED_ROOT / p.relative_to(_ROOT)
 
 
+class OverrideWriteFailed(RuntimeError):
+    """A declaration could not be written — or withdrawn — on disk. Raised, never swallowed (PENDING item 21): every
+    declare and confirm door used to report a failed write as saved, and the explorer recorded such a proposal as
+    written, so a person was told a declaration held that did not exist. The message names what was not saved and the
+    operating system's reason, and no path."""
+
+    def __init__(self, action: str, kind: str, target_id: str, cause: BaseException):
+        self.action, self.kind, self.target_id = action, kind, target_id
+        reason = getattr(cause, "strerror", None) or type(cause).__name__
+        super().__init__(f"{kind} '{target_id}' was not {action} — the ontology store could not write it ({reason})")
+
+
 def _write(conn: str, schema: str, ov: OntologyOverride) -> None:
     _refuse_seed_root()
     p = _path(conn, schema, ov.target_kind, ov.target_id)
@@ -327,10 +344,13 @@ def _write(conn: str, schema: str, ov: OntologyOverride) -> None:
             # succeeds — the pre-overlay behaviour, kept rather than dropping the declaration.
             p.write_text(text)
         p.with_name(p.name + _HIDDEN).unlink(missing_ok=True)   # re-declared: no longer hidden
-    except Exception:
-        pass
+    except Exception as exc:
+        raise OverrideWriteFailed("saved", ov.target_kind, ov.target_id, exc) from exc
     finally:
-        tmp.unlink(missing_ok=True)
+        # cleanup never masks the failure it follows: `missing_ok` covers only a missing file, and where the parent
+        # is not a directory unlinking the temp raises too
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
 
 
 def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
@@ -350,9 +370,8 @@ def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
             hidden.parent.mkdir(parents=True, exist_ok=True)
             hidden.write_text("withdrawn on this install; the shipped declaration stays hidden\n")
         return visible
-    except Exception:
-        pass
-    return False
+    except Exception as exc:
+        raise OverrideWriteFailed("withdrawn", kind, target_id, exc) from exc
 
 
 # ── an organisation's ontology: edited by people only ───────────────────────
@@ -389,8 +408,9 @@ def not_a_persons(ov: OntologyOverride) -> str:
 # ── public store API ────────────────────────────────────────────────────────
 
 def save_override(conn: str, schema: str, ov: OntologyOverride) -> None:
-    """Write (replace) one override's YAML file. Best-effort — never raises, except when ``conn`` is not a connection:
-    an organisation's ontology is written by `save_organisation_override` alone."""
+    """Write (replace) one override's YAML file. Raises :class:`OverrideWriteFailed` when the file could not be written
+    — a declaration that did not land must never read as saved (PENDING item 21) — and ``ValueError`` when ``conn`` is
+    not a connection: an organisation's ontology is written by `save_organisation_override` alone."""
     if organisation_scope(conn):
         raise ValueError(f"'{conn}' is an organisation's ontology, not a connection's — it is written by "
                          "save_organisation_override, which takes a person's declaration only")
@@ -398,8 +418,9 @@ def save_override(conn: str, schema: str, ov: OntologyOverride) -> None:
 
 
 def delete_override(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
-    """Remove one override file. Returns True if a file was deleted. Raises when ``conn`` is not a connection: a
-    declaration is withdrawn from an organisation's ontology by `delete_organisation_override` alone."""
+    """Remove one override file. Returns True if a file was deleted. Raises :class:`OverrideWriteFailed` when the
+    withdrawal could not be written, and ``ValueError`` when ``conn`` is not a connection: a declaration is withdrawn
+    from an organisation's ontology by `delete_organisation_override` alone."""
     if organisation_scope(conn):
         raise ValueError(f"'{conn}' is an organisation's ontology, not a connection's — a declaration is withdrawn "
                          "from it by delete_organisation_override")
@@ -541,6 +562,12 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
             continue
         if field == "withdrawn_bindings":
             touched.append(field)            # applied after the loop, over whatever the other fields built
+            continue
+        if field == "semiadditive":
+            from aughor.ontology.semiadditive import declared_semiadditive
+            ent.semiadditive = declared_semiadditive(value, ov.binding.get("semiadditive"))
+            if ent.semiadditive:
+                touched.append(field)
             continue
         if field == "expressions":
             from aughor.ontology.expressions import declared_expressions

@@ -53,6 +53,19 @@ def _conn_prefix(connection_id: str) -> str:
     return f"{connection_id}:"
 
 
+def _graph_from(entry: dict, connection_id: str) -> Optional[OntologyGraph]:
+    """A cached entry's graph, or None when it does not validate — counted and logged, never silent (PENDING item 21):
+    an unreadable saved graph used to read as "no ontology" with no trace, and every door then told a person to build
+    one that had been built."""
+    try:
+        return OntologyGraph.model_validate(entry["graph"])
+    except Exception as exc:  # noqa: BLE001 — one unreadable entry reads as none, and says so in the log
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a saved ontology did not validate and reads as none; rebuilding it replaces the entry",
+                 counter="ontology.saved_graph_unreadable", conn_id=connection_id or None)
+        return None
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def load_ontology(
@@ -64,10 +77,7 @@ def load_ontology(
     entry = cache.get(_key(connection_id, schema_name, fingerprint))
     if not entry:
         return None
-    try:
-        return OntologyGraph.model_validate(entry["graph"])
-    except Exception:
-        return None
+    return _graph_from(entry, connection_id)
 
 
 def save_ontology(
@@ -124,9 +134,8 @@ def patch_entity(
     if not entry:
         return None
 
-    try:
-        graph = OntologyGraph.model_validate(entry["graph"])
-    except Exception:
+    graph = _graph_from(entry, connection_id)
+    if graph is None:
         return None
 
     if entity_id not in graph.entities:
@@ -177,9 +186,8 @@ def load_latest_ontology(
     if not matches:
         return None
     last_entry = list(matches.values())[-1]
-    try:
-        graph = OntologyGraph.model_validate(last_entry["graph"])
-    except Exception:
+    graph = _graph_from(last_entry, connection_id)
+    if graph is None:
         return None
     # THE shared authority point: chat (investigations._stream_chat), the metrics
     # catalog (semantic.metrics.build_metrics_block) and the eval harness all read
@@ -206,9 +214,8 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
     if not matches:
         return None
     key, entry = list(matches.items())[-1]
-    try:
-        graph = OntologyGraph.model_validate(entry["graph"])
-    except Exception:
+    graph = _graph_from(entry, connection_id)
+    if graph is None:
         return None
     from aughor.packs.ontology_map import (
         apply_bound_pack_claims, apply_core_claims, bound_end_state_names, end_state_names_for_pack,
@@ -271,9 +278,8 @@ def patch_action(
     if not entry:
         return None
 
-    try:
-        graph = OntologyGraph.model_validate(entry["graph"])
-    except Exception:
+    graph = _graph_from(entry, connection_id)
+    if graph is None:
         return None
 
     if action_id not in graph.actions:
@@ -456,7 +462,10 @@ def get_or_build_ontology(
         save_ontology(connection_id, schema_name, fingerprint, graph)
         return _overlay_learned_actions(graph, connection_id, schema_name)
 
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — a failed build is no ontology, and says why in the log
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the ontology build failed; the scope reads as unbuilt until a build succeeds",
+                 counter="ontology.build_failed", conn_id=connection_id or None)
         return None
 
 

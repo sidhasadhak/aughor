@@ -142,6 +142,16 @@ def _migrate_v5(c: sqlite3.Connection) -> None:
     """ % DEFAULT_ORG_ID)
 
 
+def _migrate_v7(c: sqlite3.Connection) -> None:
+    """PENDING item 23 — the trace a row was answered under, on the row.
+
+    A guard fire lands in the durable guard log with its trace id (`GuardVerdicts.record`), and the only bridge
+    from a trace to the question it answered was the session log, swept after 14 days — so after two weeks no fire
+    could be tied to the question that caused it, which is what a training row needs. Additive; rows written before
+    it read '' (unknown), and so does a row written outside any trace."""
+    add_column_if_missing(c, "investigations", "trace_id", "TEXT NOT NULL DEFAULT ''")
+
+
 _MIGRATIONS = [
     Migration(2, "additive columns + backfills (through 2026-07)", _migrate_v2),
     Migration(3, "add agent_id (per-agent run history)", _migrate_v3),
@@ -149,6 +159,7 @@ _MIGRATIONS = [
     Migration(5, "chat_session_meta (thread rename, CA-5)", _migrate_v5),
     Migration(6, "investigation failure reason (the row said failed and never why)",
               _migrate_v6),
+    Migration(7, "trace id on the row (a guard fire outlives the 14-day session log)", _migrate_v7),
 ]
 
 
@@ -175,6 +186,15 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
     run_migrations(c, _MIGRATIONS, store="history")
 
 
+def _trace_id() -> str:
+    """The trace this row is written under ('' outside one) — see `_migrate_v7`."""
+    try:
+        from aughor.telemetry import current_trace_id
+        return current_trace_id() or ""
+    except Exception:  # noqa: BLE001 — a row is never lost for want of its trace
+        return ""
+
+
 def create_investigation(
     question: str,
     connection_id: str,
@@ -198,10 +218,10 @@ def create_investigation(
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
-        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose, session_id) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose, session_id, trace_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id, purpose or "",
-         (session_id or None)),
+         (session_id or None), _trace_id()),
     )
     c.commit()
     c.close()
@@ -219,11 +239,14 @@ def complete_investigation(
     connection_id: str = "",
     skip_index: bool = False,
     origin_insight_id: Optional[str] = None,
+    cache: bool = True,
 ) -> None:
     """Persist the final state and optionally index in Qdrant. Only called on clean completion.
 
     ``origin_insight_id`` records the briefing finding this investigation drilled, so the
-    chain finding → investigation → report is queryable lineage (None for a cold start)."""
+    chain finding → investigation → report is queryable lineage (None for a cold start).
+    ``cache`` False indexes the run's SQL as few-shot examples but not the run itself as a
+    past investigation a later question could be answered from (a direct-mode run)."""
     report_dict = report.model_dump() if hasattr(report, "model_dump") else report
     hypotheses_list = [h.model_dump() if hasattr(h, "model_dump") else h for h in hypotheses]
     queries_list = [q.model_dump() if hasattr(q, "model_dump") else q for q in query_history]
@@ -261,14 +284,16 @@ def complete_investigation(
                     headline=(headline or "")[:200],
                     query_count=len(queries_list))
 
-    # Index in the agent's RAG — only for investigate-mode completions (not direct
-    # queries). Emitted via the platform ingestion seam so this module (platform db)
-    # never imports the agent; the agent registers the "investigation_index" sink.
+    # Index in the agent's RAG — the run as a past investigation (not a direct query's:
+    # `cache` False) and its clean SQL as few-shot examples (every run's, PENDING item 24).
+    # Emitted via the platform ingestion seam so this module (platform db) never imports
+    # the agent; the agent registers the "investigation_index" sink.
     if report_dict and not skip_index:
         key_findings = [f.get("claim", "") for f in (report_dict.get("key_findings") or [])]
         from aughor.kernel.registries.ingestion import ingest
         ingest("investigation_index", inv_id=inv_id, question=question, headline=headline,
-               key_findings=key_findings, connection_id=connection_id, query_history=query_history)
+               key_findings=key_findings, connection_id=connection_id, query_history=query_history,
+               hypotheses=hypotheses_list, cache=cache)
 
 
 def pause_investigation(inv_id: str) -> None:
@@ -381,12 +406,12 @@ def save_chat_turn(
         """INSERT INTO investigations
            (id, question, connection_id, canvas_id, started_at, completed_at,
             status, hypothesis_count, query_count, headline,
-            report_json, kind, session_id, org_id, purpose, agent_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            report_json, kind, session_id, org_id, purpose, agent_id, trace_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (inv_id, question, connection_id, canvas_id, now, now,
          status, 0, 1, headline,
          json.dumps(report),
-         "chat", sid, current_org_id(), purpose or "", agent_id),
+         "chat", sid, current_org_id(), purpose or "", agent_id, _trace_id()),
     )
     c.commit()
     c.close()
@@ -1428,6 +1453,51 @@ def list_investigations_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
     combined.sort(key=lambda r: r.get("started_at") or "", reverse=True)
     return combined[:limit]
 
+
+
+def sql_ran_by(record: Optional[dict]) -> set[str]:
+    """Every SQL statement an answer's record says it RAN — a chat turn's query, a deep run's query history, a report's
+    cited queries — as written. ONE definition, read by the training exporter's integrity check and the few-shot
+    memory's tombstone (PENDING items 23, 24). It walks every ``sql`` key because this record has held several report
+    shapes over time (see `recent_executed_sql`), and it skips the envelope: its provenance lists every query the turn
+    SHOWED, including one a repair then replaced."""
+    ran: set[str] = set()
+
+    def walk(node, under_sql: bool = False) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k != "envelope":
+                    walk(v, under_sql=(k == "sql"))
+        elif isinstance(node, list):
+            for v in node:
+                walk(v, under_sql)
+        elif under_sql and isinstance(node, str) and node.strip():
+            ran.add(node)
+    walk({"report": (record or {}).get("report"), "queries": (record or {}).get("query_history")})
+    return ran
+
+
+def sql_ran_by_ids(inv_ids) -> dict[str, set[str]]:
+    """:func:`sql_ran_by` for many answers in one read. An id with no row, or a row that will not parse, is absent."""
+    ids = [i for i in dict.fromkeys(inv_ids or []) if i]
+    if not ids:
+        return {}
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    try:
+        rows = c.execute(f"SELECT id, report_json, query_history_json FROM investigations "
+                         f"WHERE id IN ({','.join('?' * len(ids))})", ids).fetchall()
+    finally:
+        c.close()
+    out: dict[str, set[str]] = {}
+    for r in rows:
+        try:
+            record = {"report": json.loads(r["report_json"] or "null"),
+                      "query_history": json.loads(r["query_history_json"] or "null")}
+        except ValueError:
+            continue
+        out[r["id"]] = sql_ran_by(record)
+    return out
 
 def get_investigation(inv_id: str) -> Optional[dict]:
     """Return the full investigation record including parsed JSON fields."""

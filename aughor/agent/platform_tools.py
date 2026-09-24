@@ -409,7 +409,7 @@ def search_documents(connection_id: str, args: dict) -> dict:
         # Always over-fetch: the cap is applied AFTER de-duplication, and agent scoping
         # filters on top of that. Fetching exactly the cap would hand back three passages
         # where five were asked for.
-        raw = _search(query, top_k=max(_MAX_DOC_HITS * 4, 16))
+        raw = _search(query, top_k=max(_MAX_DOC_HITS * 4, 16), connection_id=connection_id)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a failed document search answers empty, not with a broken turn",

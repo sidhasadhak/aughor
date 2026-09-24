@@ -25,7 +25,7 @@ import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
 import { StatusChip } from "@/components/brief/StatusChip";
-import type { ChatTurn } from "@/lib/chatTurn";
+import type { ChatTurn, CompiledFrame } from "@/lib/chatTurn";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
@@ -1189,11 +1189,25 @@ function NarrativeBrief({
   );
 }
 
+// ── The compiled badge: this answer's SQL is the semantic compiler's, used as written ──────
+function CompiledBadge({ compiled }: { compiled: CompiledFrame }) {
+  const what = [compiled.measure, compiled.entity && `on ${compiled.entity}`, compiled.dimension && `by ${compiled.dimension}`]
+    .filter(Boolean).join(" ");
+  return (
+    <div className="flex items-center gap-2 my-1 aug-text-xs text-zinc-400"
+      title="The SQL was compiled from the declared definitions and used as written — not written freehand by the model">
+      <span className="aug-tag aug-tag-blue">compiled</span>
+      <span>from declared definitions{what ? `: ${what}` : ""}</span>
+    </div>
+  );
+}
+
 // ── Opt-in actions on a chat answer: re-validate the query + a feedback signal ──────
 function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?: string }) {
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | null>(null);
+  const [accepted, setAccepted] = useState(false);
   // S3 fix-it: a thumbs-down opens the typed what-was-wrong form; the correction
   // flows through record_verdict into the ledger, so the next answer cites it.
   const [fixItOpen, setFixItOpen] = useState(false);
@@ -1210,7 +1224,10 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   };
   const rate = (v: "helpful" | "unhelpful") => {
     setFeedback(v);
-    if (turn.receiptId) void sendChatFeedback(connectionId, turn.receiptId, v);
+    setAccepted(false);
+    // A 👍 is the chat's accept: the server records it with the SQL this turn ran (PENDING item 23), and the
+    // thanks line says so only when it did.
+    if (turn.receiptId) void sendChatFeedback(connectionId, turn.receiptId, v).then(r => setAccepted(v === "helpful" && r.accepted));
     // The lightweight receipt signal stays; the STRUCTURED correction is opt-in.
     if (v === "unhelpful") setFixItOpen(true);
   };
@@ -1274,10 +1291,12 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
         {annotateDone && <span className="text-zinc-600 italic">note pinned to {annotateTarget}</span>}
         <span className="text-zinc-700">·</span>
         <Button variant="ghost" size="xs" onClick={() => rate("helpful")}
-          className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful">👍</Button>
+          className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful — records this answer as accepted">👍</Button>
         <Button variant="ghost" size="xs" onClick={() => rate("unhelpful")}
           className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "unhelpful" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Not helpful">👎</Button>
-        {feedback && !fixItOpen && !fixItDone && <span className="text-zinc-600 italic">thanks — noted</span>}
+        {feedback && !fixItOpen && !fixItDone && (
+          <span className="text-zinc-600 italic">{accepted ? "thanks — recorded as accepted" : "thanks — noted"}</span>
+        )}
         {fixItDone && <span className="text-zinc-600 italic">correction recorded — future answers cite it</span>}
       </div>
       {fixItOpen && (
@@ -1353,6 +1372,8 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
   }
 
   const present = data?.receipt.blocks.filter(b => b.present) ?? [];
+  // Said, never implied (PENDING item 24): a source that could not be reached is not one that had nothing.
+  const unreached = data?.receipt.blocks.filter(b => !b.present && b.note) ?? [];
   return (
     <div className="flex flex-col gap-2">
       <Button
@@ -1371,6 +1392,9 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
           <p className="aug-text-xs text-zinc-400 font-medium">{b.title}</p>
           <pre className="aug-text-xs text-zinc-400 whitespace-pre-wrap break-words bg-zinc-900/40 rounded-md p-2 max-h-48 overflow-auto">{b.content}</pre>
         </div>
+      ))}
+      {unreached.map(b => (
+        <p key={b.key} className="aug-text-xs text-amber-300/80">{b.title} — {b.note}</p>
       ))}
     </div>
   );
@@ -1627,6 +1651,7 @@ export function ChatMessage({
 
       {/* ── B2: guard interventions as a Chain of Thought — both modes; renders
              nothing when no guard fired (most turns) ── */}
+      {turn.compiled && <CompiledBadge compiled={turn.compiled} />}
       <GuardReceiptChain receipts={turn.guardReceipts} streaming={turn.status === "loading"} />
 
       {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}

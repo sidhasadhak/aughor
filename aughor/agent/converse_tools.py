@@ -24,6 +24,7 @@ must choose between them, not for documentation.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Callable, Optional
 
 from pydantic import BaseModel
@@ -423,18 +424,23 @@ def list_tables(connection_id: str, args: dict) -> dict:
 
 def describe_table(connection_id: str, args: dict) -> dict:
     """One table's columns. Kept separate from `list_tables` so the manifest stays cheap
-    and detail is paid for only when the model asks."""
-    from aughor.db.schema_render import parse_schema_tables
+    and detail is paid for only when the model asks.
+
+    ``schema`` is the table's own block from the schema text — types, its row count and the
+    sample values the renderer wrote where it had them. The tool's description has always
+    promised those; it returned names only until PENDING item 18."""
+    from aughor.db.schema_render import parse_schema_tables, schema_block
 
     name = str(args.get("table") or "").strip()
     if not name:
         return {"error": "no table supplied"}
 
-    tables = parse_schema_tables(_connection(connection_id).get_schema())
+    schema = _connection(connection_id).get_schema()
+    tables = parse_schema_tables(schema)
     bare = name.rsplit(".", 1)[-1].lower()
     for table, columns in tables.items():
         if table.lower() == name.lower() or table.rsplit(".", 1)[-1].lower() == bare:
-            return {"table": table, "columns": columns}
+            return {"table": table, "columns": columns, "schema": schema_block(schema, table)}
     # A named table that is not there is an ANSWER, not an error (P2): the model asked
     # about something that does not exist, and the near-misses are what let it recover
     # rather than guess a column list.
@@ -775,14 +781,59 @@ def ground_answer_numbers(answer: str, rows: list, *, question: str = "",
 
 
 def converse_available() -> bool:
-    """Whether the converse body may serve a turn (`ask.converse`, EXPERIMENT, off).
+    """Whether the converse body may serve a turn (`ask.converse`, on by default since SP-14).
 
     Read at CALL time, never at import: a module-level read makes the flag unflippable
     in a running process and silently turns `monkeypatch.setenv` into a no-op — the trap
     that once had tests spending the real LLM budget.
+
+    PENDING item 17: the conversation and the analyst are tool loops, so a coder binding
+    that cannot make a tool call cannot serve them — the quick body and the phase script
+    answer instead, exactly as with the flag off.
     """
     from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ask.converse")
+    return flag_enabled("ask.converse") and binding_calls_tools()
+
+
+#: Coder bindings — ``(backend, model)`` — that refused a tool call in this process. Held in
+#: memory like a quota cooldown: the refusal is the binding's own answer, and asking again
+#: on every turn would open each one with the same error.
+_REFUSED_TOOLS: set[tuple[str, str]] = set()
+
+_TOOLS_UNSUPPORTED = re.compile(
+    r"(does not|doesn't|do not|don't) support (tools|tool[ _-]?(use|calls?|calling)|function[ _-]?calling)"
+    r"|(tools?|tool[ _-]?(use|calls?|calling)|function[ _-]?calling) (is|are) not supported",
+    re.IGNORECASE)
+
+
+def tools_unsupported(exc: BaseException) -> bool:
+    """Did the binding say it cannot make a tool call at all — not that one call went wrong?
+    A backend with no tool surface raises ``NotImplementedError``; a served model without the
+    capability answers with an error that says so."""
+    return isinstance(exc, NotImplementedError) or bool(_TOOLS_UNSUPPORTED.search(str(exc)))
+
+
+def binding_calls_tools() -> bool:
+    """False when the coder binding is known not to call tools: its model declares no tool
+    calling (``model_supports_tools`` is False — never merely unknown), or it refused a tool
+    call in this process (`remember_tools_refused`)."""
+    from aughor.llm.provider import model_supports_tools, resolve_binding
+    try:
+        backend, model, _ = resolve_binding("coder")
+    except Exception as exc:  # noqa: BLE001 — an unresolvable binding fails at its own call
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the coder binding did not resolve; the turn's own model call reports "
+                      "why", counter="converse.binding_tools")
+        return True
+    return (backend, model) not in _REFUSED_TOOLS and model_supports_tools(model) is not False
+
+
+def remember_tools_refused() -> None:
+    """Record that the current coder binding refused a tool call, so the next turn is routed
+    to the bodies that need none instead of opening with the same error."""
+    from aughor.llm.provider import resolve_binding
+    backend, model, _ = resolve_binding("coder")
+    _REFUSED_TOOLS.add((backend, model))
 
 
 def converse(connection_id: str, question: str, *, extra_context: Optional[str] = None,

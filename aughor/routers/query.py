@@ -1069,6 +1069,7 @@ def chat_feedback(body: _ChatFeedbackRequest, request: Request):
     # drill-recording below reads it with `get_investigation`), so it pins directly.
     from aughor.obs.session_log import pin_run
     pin_run(investigation_id=body.turn_id or "")
+    accepted = body.verdict == "helpful" and bool(body.turn_id) and _accept_chat_answer(body.conn_id, body.turn_id)
     if body.verdict == "helpful" and body.turn_id:
         try:
             from aughor.db.history import get_investigation
@@ -1080,7 +1081,38 @@ def chat_feedback(body: _ChatFeedbackRequest, request: Request):
         except Exception as exc:
             tolerate(exc, "thumbs→prior bump is best-effort; the verdict is already journaled",
                      counter="chat.feedback")
-    return {"ok": True}
+    return {"ok": True, "accepted": accepted}
+
+
+def _accept_chat_answer(conn_id: str, turn_id: str) -> bool:
+    """PENDING item 23 — the chat's "yes". The chat, where most answers are given, could record only `correct` or
+    `reject`, so nobody could accept an answer there and the human-graded corpus could only learn what was wrong.
+    A 👍 now records an `accept` verdict on the turn, carrying the SQL the turn RAN — read from its own record, never
+    from the request, so the click cannot put SQL into the corpus that the answer did not run. Idempotent: a second
+    👍 on an already-accepted turn records nothing. True when the answer stands accepted."""
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.db.history import get_chat_answer
+        from aughor.feedback.verdicts import latest_verdict, record_verdict
+        from aughor.org.context import current_org_id
+        answer = get_chat_answer(turn_id)
+        if (not answer or answer.get("connection_id") != conn_id
+                or (answer.get("org_id") or "default") != (current_org_id() or "default")):
+            return False
+        report = answer.get("report") or {}
+        sql = str(report.get("sql") or "").strip()
+        if not sql:
+            return False
+        prior = latest_verdict(turn_id)
+        if prior and prior.get("verdict") == "accept":
+            return True
+        record_verdict(connection_id=conn_id, investigation_id=turn_id, verdict="accept", note="helpful (chat)",
+                       headline=str(report.get("headline") or "")[:200], sql_source=sql)
+        return True
+    except Exception as exc:  # noqa: BLE001 — the thumbs signal is journaled either way
+        tolerate(exc, "the chat's accept could not be recorded; the feedback event stands",
+                 counter="chat.feedback_accept")
+        return False
 
 
 # ── Saved queries ─────────────────────────────────────────────────────────────

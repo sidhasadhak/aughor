@@ -92,6 +92,7 @@ from fastapi.security import APIKeyHeader
 from aughor.db.registry import list_connections, get_connection_settings
 from aughor.db.registry import ConnectionKeyMismatch
 from aughor.llm.provider import NoModelConfigured
+from aughor.ontology.overrides import OverrideWriteFailed
 
 # Shared mutable state — imported here so startup events can populate the dicts
 
@@ -442,6 +443,19 @@ async def _connection_key_mismatch_handler(request: "Request", exc: ConnectionKe
         "error": "connection_key_mismatch", "connection_id": exc.conn_id,
         "detail": str(exc),
     })
+
+
+# ── a declaration that did not land is said, never reported as saved ──────────────
+# PENDING item 21: the override store swallowed every write failure, so each declare and confirm door answered 200
+# for a declaration that was never written. It raises now; the catch-all would call that "internal_error", hiding the
+# one fact the person needs — it was NOT saved — and the cause they can fix (a full disk, a read-only volume). The
+# message names the declaration and the operating system's reason, and no path.
+@app.exception_handler(OverrideWriteFailed)
+async def _override_write_failed_handler(request: "Request", exc: OverrideWriteFailed):
+    from fastapi.responses import JSONResponse
+    logger.error("Ontology declaration not written (%s %s): %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"error": "declaration_not_saved", "kind": exc.kind,
+                                                  "target": exc.target_id, "detail": str(exc)})
 
 
 # ── Global exception handler (SEC-06) ───────────────────────────────────────────

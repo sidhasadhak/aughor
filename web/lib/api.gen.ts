@@ -3760,7 +3760,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Search Documents Endpoint */
+        /**
+         * Search Documents Endpoint
+         * @description Search the corpus the caller may read (`search_documents`): with ``connection_id`` in the
+         *     body, another connection's schema docs are left out, as they are for a question.
+         */
         post: operations["search_documents_endpoint_documents_search_post"];
         delete?: never;
         options?: never;
@@ -6817,7 +6821,9 @@ export interface paths {
         /**
          * Post Export
          * @description Run every exporter once. Idempotent — an unchanged corpus registers no new version,
-         *     so this is safe to call repeatedly and safe to put on a schedule later.
+         *     so this is safe to call repeatedly and safe to put on a schedule later. Gated like the
+         *     trusted-query doors beside it (PENDING item 23: it had no gate, and it writes users'
+         *     questions into files).
          *
          *     `publish_golden` also registers the held-out set as an eval suite: a golden set that
          *     never reaches the plane enforcing promotion gates is a measuring stick nobody measures
@@ -9103,10 +9109,11 @@ export interface paths {
         get?: never;
         /**
          * Declare Ontology Expression
-         * @description 2026-09-22 — map a typed property to an expression over the type's own row (ON-1b's deferred half). The
-         *     name must be free on the type, the expression must parse flat (no subquery, aggregate or window) over the
-         *     backing's own columns, and it is VERIFIED by running it on one row before anything is written — a refusal
-         *     says why and writes nothing. The compiler, the framing and the pages then read it like any column.
+         * @description 2026-09-22 — map a typed property to an expression (ON-1b's deferred half). The name must be free on the type,
+         *     the expression must parse flat (no subquery, aggregate or window) over names the object compiler reads — its own
+         *     columns, a binding's, another formula, a to-one link's (PENDING item 27) — and it is VERIFIED through that
+         *     compiler on up to 1,000 of the type's objects before anything is written — a refusal says why and writes nothing.
+         *     The compiler, the framing and the pages then read it like any column.
          */
         put: operations["declare_ontology_expression_ontology_entities__entity_id__expressions__name__put"];
         post?: never;
@@ -9293,6 +9300,33 @@ export interface paths {
         put: operations["override_entity_segment_ontology_entities__entity_id__segments__segment_id__put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/semiadditive/{prop}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Declare Semiadditive
+         * @description PENDING item 27 — declare that a property must not be summed across time: a stock level, a balance, a headcount
+         *     is a reading AT a moment, taken `over` a time property. Checked against the graph before anything is written — the
+         *     property must be one the object compiler reads, `over` a date or timestamp of the type's own — and a refusal says
+         *     why and writes nothing. From then on a sum of it that spans more than one moment is refused, with how to ask.
+         */
+        put: operations["declare_semiadditive_ontology_entities__entity_id__semiadditive__prop__put"];
+        post?: never;
+        /**
+         * Withdraw Semiadditive
+         * @description PENDING item 27 — withdraw a semiadditive declaration. 404 when the type declares none for that property.
+         */
+        delete: operations["withdraw_semiadditive_ontology_entities__entity_id__semiadditive__prop__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -16362,6 +16396,25 @@ export interface components {
             predicate?: string | null;
             /** Sql */
             sql: string;
+        };
+        /**
+         * _SemiAdditiveSpec
+         * @description PENDING item 27 — a property that is a reading at a moment, the time property its readings are taken over, and
+         *     (optionally) which reading stands for a period: `last` (a month-end) or `first`.
+         */
+        _SemiAdditiveSpec: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Over */
+            over: string;
+            /**
+             * Take
+             * @default
+             */
+            take: string;
         };
         /** _SendFindingBody */
         _SendFindingBody: {
@@ -27911,6 +27964,7 @@ export interface operations {
             query?: {
                 task?: string;
                 publish_golden?: boolean;
+                connection_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -27943,6 +27997,7 @@ export interface operations {
             query?: {
                 site?: string | null;
                 task?: string;
+                connection_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -32423,6 +32478,80 @@ export interface operations {
                 "application/json": components["schemas"]["_SegmentOverride"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_semiadditive_ontology_entities__entity_id__semiadditive__prop__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                prop: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SemiAdditiveSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_semiadditive_ontology_entities__entity_id__semiadditive__prop__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                prop: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

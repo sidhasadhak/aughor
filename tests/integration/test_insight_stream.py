@@ -36,6 +36,9 @@ _HL_PARTIALS = [
     "Group **A** leads with **57%** of the total value",
 ]
 _HL_FINAL = _HL_PARTIALS[-1]
+# PENDING item 22 (ROADMAP §3.41): the coder's headline is written BEFORE its query runs, so the stream carries its
+# words only up to the word holding its first number — the number arrives with the measured headline, never before.
+_HL_SHOWN = ["Group **A** leads", "Group **A** leads with"]
 
 
 def _stream_events(client, conn_id, question, *, timeout=60):
@@ -120,9 +123,11 @@ def test_flag_on_dual_emits_deltas_before_terminal_insight(client: TestClient, b
     assert "error" not in types, events
 
     # The coder's headline typed in as growing `headline_delta` frames, in order, and
-    # all BEFORE the answer is done (they fill the otherwise-dead SQL-generation wait).
+    # all BEFORE the answer is done (they fill the otherwise-dead SQL-generation wait) —
+    # up to its first number, which no frame carries before the rows are in.
     hdeltas = [e for e in events if e["type"] == "headline_delta"]
-    assert [d["headline"] for d in hdeltas] == _HL_PARTIALS
+    assert [d["headline"] for d in hdeltas] == _HL_SHOWN
+    assert not any(ch.isdigit() for d in hdeltas for ch in d["headline"])
     assert all(i < types.index("done") for i, t in enumerate(types) if t == "headline_delta"), types
 
     # Every partial made it out as a parseable delta frame, in order, growing.

@@ -428,7 +428,7 @@ def measure_override_links(connection_id: str, schema_name: Optional[str], db: A
         try:
             save_override(connection_id, schema_name or "default", ov)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("declared link measurement not saved for %s: %s", ov.target_id, exc)
+            logger.warning("declared link measurement not saved for %s: %s", ov.target_id, exc)
         out.append({"link": ov.target_id, "measured_cardinality": entry.get("measured_cardinality"),
                     "value_overlap": entry.get("value_overlap"), "bound": entry.get("bound"), "note": entry.get("note")})
     return out

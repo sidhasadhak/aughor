@@ -72,6 +72,37 @@ def _check_value(value: Any) -> tuple[bool, str]:
     return True, ""
 
 
+#: How many rows a computed property is verified on (PENDING item 27 — it was one).
+_FORMULA_ROWS = 1000
+
+
+def _verify_formula_rows(db: Any, formula: str, table: str) -> tuple[bool, str]:
+    """A computed property's formula run over the first `_FORMULA_ROWS` rows of its table, every value checked — it
+    was run on ONE row, so a formula that fails past it, or is empty on every row, verified. Values are read rather
+    than aggregated: MIN/MAX over a boolean formula does not run everywhere."""
+    rows = f"SELECT ({formula}) AS v FROM (SELECT * FROM {table} LIMIT {_FORMULA_ROWS}) AS _s"
+    try:
+        # counted in SQL — exact over every row checked; a result's returned rows are capped
+        counted = db.execute("__ontology_validate__", f"SELECT COUNT(*) AS n, COUNT(v) AS held FROM ({rows}) AS _v")
+        res = None if getattr(counted, "error", None) else db.execute("__ontology_validate__", rows)
+    except Exception as e:  # noqa: BLE001 — defensive, like `_probe`
+        return False, f"did not execute: {str(e)[:200]}"
+    error = getattr(counted, "error", None) or getattr(res, "error", None)
+    if error:
+        return False, f"did not execute: {str(error)[:200]}"
+    n, held = (int(float(v or 0)) for v in ((counted.rows or [[0, 0]])[0] + [0, 0])[:2])
+    for row in getattr(res, "rows", None) or []:
+        value = row[0] if row else None
+        if value is None or (isinstance(value, str) and value.strip().upper() == "NULL"):
+            continue
+        sane, note = _check_value(value)
+        if not sane:
+            return False, note
+    if n and not held:
+        return False, f"empty on every one of the {n:,} rows checked"
+    return True, ""
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
@@ -116,12 +147,7 @@ def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
                 if not table:
                     cp.verified, cp.verification_note = False, "entity has no source table"
                     continue
-                ok, err, val = _probe(db, f"SELECT ({cp.formula_sql}) AS v FROM {table} LIMIT 1")
-                if not ok:
-                    cp.verified, cp.verification_note = False, f"did not execute: {err}"
-                    continue
-                sane, note = _check_value(val)
-                cp.verified, cp.verification_note = sane, ("" if sane else note)
+                cp.verified, cp.verification_note = _verify_formula_rows(db, cp.formula_sql, table)
             except Exception as e:  # pragma: no cover
                 cp.verified, cp.verification_note = False, str(e)[:120]
 

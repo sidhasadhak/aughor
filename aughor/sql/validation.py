@@ -109,7 +109,7 @@ def validate_sql(conn_id: str, sql: str, *, dialect: str = "duckdb",
             from aughor.sql.trust_checks import connection_column_types, run_trust_checks
             col_types = connection_column_types(conn_id, db) or None
             trust_findings = [f.to_dict() for f in run_trust_checks(
-                sql, col_types=col_types, dialect=dialect, phase="validate")]
+                sql, col_types=col_types, dialect=dialect, phase="validate", connection_id=conn_id or "")]
         except Exception as exc:
             tolerate(exc, "validate: trust checks", counter="validate.trust")
     finally:

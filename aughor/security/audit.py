@@ -342,3 +342,19 @@ class GuardVerdicts:
             return [dict(r) for r in rows]
         finally:
             c.close()
+
+    @classmethod
+    def first_live_fire(cls, org_id: str | None = None) -> str | None:
+        """When the guards first fired on real traffic (never an eval run's), or None — the start of the guard record
+        MI-4's fourth entry gate counts days from (PENDING item 23: the gate report checked three gates of four)."""
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            where, params = "WHERE phase != 'eval'", []
+            if org_id is not None:
+                where += " AND org_id = ?"
+                params.append(org_id)
+            row = c.execute(f"SELECT MIN(ts) FROM guard_verdicts {where}", params).fetchone()
+            return row[0] if row and row[0] else None
+        finally:
+            c.close()

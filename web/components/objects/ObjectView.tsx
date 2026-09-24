@@ -58,8 +58,9 @@ function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** SQL NULL arrives as the text "NULL" on the display path — no value, never the word (PENDING item 25). */
 function cellText(value: unknown): string {
-  return value == null ? "—" : displayCellValue(value);
+  return value == null || value === "NULL" ? "—" : displayCellValue(value);
 }
 
 /** "a customer", "an order" — the noun as a sentence reads it. */
@@ -183,12 +184,12 @@ function ObjectBody({ page, scope, reload }: { page: ObjectPage; scope: Scope; r
           <PropertiesCard page={page} scope={scope} reload={reload} />
           {(page.timeseries ?? []).map((series) => <HistoryCard key={series.binding} page={page} series={series} />)}
           <LinksCard page={page} scope={scope} />
-          <CitationsCard page={page} citations={related.findings} />
+          <CitationsCard page={page} citations={related.findings} unread={related.findings_unread ?? 0} />
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <ActionsCard page={page} actions={related.actions} scope={scope} />
           <MetricsCard page={page} metrics={related.metrics} />
-          <NotesCard notes={related.notes} scope={scope} reload={reload} />
+          <NotesCard notes={related.notes} connectionId={page.connection_id} reload={reload} />
         </div>
       </div>
     </div>
@@ -223,11 +224,13 @@ function propertiesSummary(page: ObjectPage): string {
 }
 
 /** ON-4 — take back ONE accepted edit. The source was never written, so this restores nothing: it stops
- *  the merge, and the next read shows the value the warehouse holds. */
-function Withdraw({ editId, what, scope, reload }: {
+ *  the merge, and the next read shows the value the warehouse holds. `connectionId` is where the object's rows —
+ *  and so its edits — live: the page's own, never an organisation's ontology token, which answered every
+ *  withdrawal with "no such edit" (PENDING item 25). */
+function Withdraw({ editId, what, connectionId, reload }: {
   editId: string;
   what: string;
-  scope: Scope;
+  connectionId: string;
   reload: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -235,10 +238,10 @@ function Withdraw({ editId, what, scope, reload }: {
   const withdraw = useCallback(() => {
     setBusy(true);
     setError("");
-    withdrawEdit(editId, scope.connectionId)
+    withdrawEdit(editId, connectionId)
       .then(reload)
       .catch((e: unknown) => { setError(errorText(e)); setBusy(false); });
-  }, [editId, scope.connectionId, reload]);
+  }, [editId, connectionId, reload]);
   return (
     <>
       <Button variant="ghost" size="xs" disabled={busy} onClick={withdraw}
@@ -278,12 +281,19 @@ function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scop
                   </Link>
                 ) : cellText(p.value)}
                 {p.unit && p.value != null && <span style={{ color: "var(--t3)" }}> {p.unit}</span>}
+                {p.formula && (
+                  <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", ...MONO }}
+                    title={p.formula.kind === "computed" ? "A computed property the builder verified — evaluated for this object"
+                      : "An expression a person declared — evaluated for this object"}>
+                    = {p.formula.expression}
+                  </span>
+                )}
                 {p.overlay && (
                   <span className="aug-fs-xs"
                     style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "var(--t3)" }}>
                     {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
                     <Withdraw editId={p.overlay.id} what={`${p.display_name} on this ${page.type_name}`}
-                      scope={scope} reload={reload} />
+                      connectionId={page.connection_id} reload={reload} />
                   </span>
                 )}
                 {/* ON-5 — a timeseries property is a value AT A TIME, and what it was before is half of what a
@@ -474,10 +484,15 @@ function LinkedObjects({ page, link, scope }: { page: ObjectPage; link: ObjectLi
   );
 }
 
-function CitationsCard({ page, citations }: { page: ObjectPage; citations: ObjectCitation[] }) {
+function CitationsCard({ page, citations, unread }: { page: ObjectPage; citations: ObjectCitation[]; unread: number }) {
   return (
     <Section title="Findings and answers about it"
       description={<>First what names this exact {page.type_name.toLowerCase()} (its <span style={MONO}>{page.key}</span>, or a column joined to it); then findings about its segment — one of its own values, like its country — and about {page.type_name.toLowerCase()}s in general, each marked.</>}>
+      {unread > 0 && (
+        <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "0 0 6px" }}>
+          {unread === 1 ? "1 finding could not be read and is left out." : `${unread} findings could not be read and are left out.`}
+        </p>
+      )}
       {citations.length === 0 ? (
         <EmptyState variant="inline" title={`No finding or answer is about this ${page.type_name.toLowerCase()}, its segment or its type yet.`} />
       ) : citations.map((c, i) => (
@@ -611,7 +626,7 @@ function objectParamText(param: ObjectActionParam, page: ObjectPage): string {
   return key === page.pk && page.title ? page.title : text;
 }
 
-function NotesCard({ notes, scope, reload }: { notes: ObjectNote[]; scope: Scope; reload: () => void }) {
+function NotesCard({ notes, connectionId, reload }: { notes: ObjectNote[]; connectionId: string; reload: () => void }) {
   return (
     <Section title="Notes" description="Edits kept beside the data on this row; the source is never written.">
       {notes.length === 0 ? (
@@ -622,7 +637,7 @@ function NotesCard({ notes, scope, reload }: { notes: ObjectNote[]; scope: Scope
           <div className="aug-fs-xs"
             style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--t3)", marginTop: 2 }}>
             {[n.column, n.kind, n.source, typeof n.at === "string" ? relTime(n.at) : ""].filter(Boolean).join(" · ")}
-            {n.id && <Withdraw editId={n.id} what="this note" scope={scope} reload={reload} />}
+            {n.id && <Withdraw editId={n.id} what="this note" connectionId={connectionId} reload={reload} />}
           </div>
         </div>
       ))}

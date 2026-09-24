@@ -78,7 +78,8 @@ def _verify_sql(sql: str, scope: Scope) -> Verdict:
     try:
         from aughor.sql.trust_checks import run_trust_checks
         for f in run_trust_checks(sql, col_types=scope.col_types, dialect=dialect,
-                                  phase="trust_scope"):
+                                  phase="trust_scope",
+                                  connection_id=getattr(scope.conn, "_connection_id", "") or ""):
             d = f.to_dict()
             checks.append(Check("trust_checks", ok=False, severity=WARN,
                                 reason=d.get("message", ""), detail=d))

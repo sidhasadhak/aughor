@@ -3722,12 +3722,20 @@ export async function validateQuery(
 }
 
 // Lightweight feedback/remember signal on a chat answer (journaled to the ledger).
-export async function sendChatFeedback(connId: string, turnId: string, verdict: "helpful" | "unhelpful", note = ""): Promise<void> {
-  await fetch(`${getApiBase()}/chat/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conn_id: connId, turn_id: turnId, verdict, note }),
-  }).catch(() => {});
+/** A 👍 also records the chat answer as ACCEPTED (PENDING item 23), with the SQL the server read from the turn's
+ *  own record. `accepted` says whether it now stands accepted — false when the turn could not be graded. */
+export async function sendChatFeedback(connId: string, turnId: string, verdict: "helpful" | "unhelpful", note = ""): Promise<{ accepted: boolean }> {
+  try {
+    const res = await fetch(`${getApiBase()}/chat/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conn_id: connId, turn_id: turnId, verdict, note }),
+    });
+    const body = res.ok ? await res.json().catch(() => ({})) : {};
+    return { accepted: Boolean((body as { accepted?: unknown }).accepted) };
+  } catch {
+    return { accepted: false };
+  }
 }
 
 // ── Evidence Ledger ────────────────────────────────────────────────────────────
@@ -7234,7 +7242,9 @@ export async function runLearningExport(): Promise<{ datasets: Record<string, un
 // ── Grounding-context receipt (Rec 5) ───────────────────────────────────────
 // The input-side twin of the Trust Receipt: the exact grounding blocks the SQL
 // writer was given for a question. See routers/investigations.py GET /ask/context.
-export interface GroundingBlock { key: string; title: string; present: boolean; content: string }
+/** `note` — why a block could not be produced, when it could not (a memory that was unreachable is not one that
+ *  had nothing). */
+export interface GroundingBlock { key: string; title: string; present: boolean; content: string; note?: string }
 export interface GroundingReceipt {
   receipt: { question: string; connection_id: string; blocks: GroundingBlock[]; present_count: number };
   markdown: string;

@@ -164,9 +164,10 @@ def test_a_draft_is_measured_before_it_lands_and_what_survives_is_read_at_once(d
     assert set(bound["lines"]["rollups"]) == {"units"}                 # status is Order's already; the column is not there
     assert "rollup status dropped" in outcome[LINES]["note"] and "rollup top_price dropped" in outcome[LINES]["note"]
     assert set(bound["refunds"]["rollups"]) == {"refunds_count"}       # none said: the count the data vouches for
-    [part] = order["parts"]
-    assert (part["object_type"], part["binding"], part["origin"], part["provenance"]) == (
-        "order_item", "lines", "model", PROVENANCE)
+    # PENDING item 20 — a proposal never hides a type: order_item is read as Order's lines at once, and stays a type of
+    # its own until a person confirms the part (confirming absorbs it — pinned below)
+    assert order["parts"] == []
+    assert "OrderItem stays a type of its own until a person confirms this part" in outcome[LINES]["note"]
 
     # the declarations carry who said them, on the overrides tree the platform reads
     saved = yaml.safe_load((OV._ROOT / CONN / "ecommerce" / "entity" / "Order.yaml").read_text())
@@ -227,8 +228,10 @@ def test_a_draft_is_measured_before_it_lands_and_what_survives_is_read_at_once(d
 
     view = client.get("/ontology/draft", params=PARAMS).json()
     assert view["counts"] == {"proposed": 9, "confirmed": 0, "released": 0, "withdrawn": 0, "refused": 7}
-    assert view["grouping"]["Order"] == ["order_events", "order_items", "orders", "payments", "refunds"]
-    assert "OrderItem" not in view["grouping"] and [r["id"] for r in view["runs"]] == [run["id"]]
+    # an unconfirmed part does not move a card on the map: order_items stays with its own type until a person confirms
+    # (PENDING item 20); confirming moves it under Order — `test_confirming_a_part_absorbs_its_type_and_not_before`
+    assert view["grouping"]["Order"] == ["order_events", "orders", "payments", "refunds"]
+    assert view["grouping"]["OrderItem"] == ["order_items"] and [r["id"] for r in view["runs"]] == [run["id"]]
 
 
 def test_a_second_run_writes_nothing_twice_and_a_withdrawn_proposal_is_not_proposed_again(door, client, faux_llm):
@@ -241,6 +244,9 @@ def test_a_second_run_writes_nothing_twice_and_a_withdrawn_proposal_is_not_propo
 
     assert client.delete("/ontology/entities/Category", params=PARAMS).status_code == 200
     assert client.delete("/ontology/entities/Order/bindings/refunds", params=PARAMS).status_code == 200
+    # a part is absorbed when a person confirms it (PENDING item 20); releasing it is what a person does after that
+    assert client.post("/ontology/draft/confirm", params=PARAMS, json={
+        "targets": [{"kind": "binding", "entity": "Order", "binding": "lines"}]}).status_code == 200
     assert client.put("/ontology/entities/OrderItem", params=PARAMS, json={"absorbed_into": ""}).status_code == 200
     assert client.delete("/ontology/processes/order_fulfilment", params=PARAMS).status_code == 200
     tiers = {p["key"]: p["tier"] for p in client.get("/ontology/draft", params=PARAMS).json()["proposals"]}
@@ -256,6 +262,45 @@ def test_a_second_run_writes_nothing_twice_and_a_withdrawn_proposal_is_not_propo
     assert "category" not in {t["object_type"] for t in client.get("/object-types", params=PARAMS).json()["object_types"]}
     order = client.get("/object-types/order", params=PARAMS).json()
     assert "refunds" not in {b["name"] for b in order["bindings"]} and order["parts"] == []
+
+
+def test_confirming_a_part_absorbs_its_type_and_not_before(door, client, faux_llm):
+    """PENDING item 20: absorbing hides a type from the map and the agent's catalogue, so it waits for a person."""
+    faux_llm.set_responses([DRAFT])
+    explore(client)
+    before = client.get("/object-types/order", params=PARAMS).json()
+    assert before["parts"] == []
+    tiers = {p["key"]: p["tier"] for p in client.get("/ontology/draft", params=PARAMS).json()["proposals"]}
+    assert tiers[LINES] == "proposed"
+
+    confirmed = client.post("/ontology/draft/confirm", params=PARAMS, json={
+        "targets": [{"kind": "binding", "entity": "Order", "binding": "lines"}], "actor": "ana"})
+
+    assert confirmed.status_code == 200, confirmed.text
+    [part] = client.get("/object-types/order", params=PARAMS).json()["parts"]
+    assert (part["object_type"], part["binding"]) == ("order_item", "lines")
+    assert {p["key"]: p["tier"] for p in confirmed.json()["proposals"]}[LINES] == "confirmed"
+    grouping = confirmed.json()["grouping"]
+    assert "order_items" in grouping["Order"] and "OrderItem" not in grouping
+
+
+def test_a_table_that_reaches_few_of_its_parent_is_not_made_a_part(door, client, faux_llm):
+    """PENDING item 20 — the explorer's one measured fusion, replayed with no model and no reference: LuxExperience's
+    support tickets (their own type; 11,244 of 112,439 orders) were read as a part of Order. Here reviews play them —
+    their own type, reaching 1,000 of 5,000 orders."""
+    draft = {"entities": [], "links": [], "processes": [], "rules": [],
+             "parts": [{"entity": "Order", "table": "reviews", "key": "order_id", "name": "reviews",
+                        "reason": "an order has reviews"}]}
+    faux_llm.set_responses([draft])
+
+    body = explore(client)
+
+    (outcome,) = body["outcomes"]
+    assert outcome["outcome"] == "refused"
+    assert "reaches only 1,000 of 5,000 Order objects (20%)" in outcome["note"]
+    assert "stays its own type" in outcome["note"]
+    order = client.get("/object-types/order", params=PARAMS).json()
+    assert "reviews" not in {b["name"] for b in order["bindings"]} and order["parts"] == []
 
 
 def test_a_person_confirms_a_proposal_and_it_keeps_who_proposed_it(door, client, faux_llm):
@@ -560,3 +605,57 @@ def test_a_builder_found_binding_is_withdrawn_and_restored_over_http(door, clien
     assert "lines" in names()
     assert client.post("/ontology/entities/Order/bindings/lines/restore", params=PARAMS).status_code == 404
     assert client.delete("/ontology/entities/Order/bindings/nothing", params=PARAMS).status_code == 404
+
+
+# ── PENDING item 20 — the run is robust to its own failures ─────────────────────────────────────────────────────────
+
+def test_an_unreadable_record_refuses_the_run_before_the_model_call(door, client, faux_llm):
+    """The record holds what people withdrew. Read as empty, a run would propose every withdrawal again, and saving
+    that empty record would erase them for good — so the run is refused, and nothing writes over the record."""
+    faux_llm.set_responses([DRAFT])
+    path = DR._path(CONN, "ecommerce")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("runs: [unclosed\n")
+
+    res = client.post("/ontology/explore", params=PARAMS)
+
+    assert res.status_code == 409 and "cannot be read" in res.json()["detail"]
+    assert not faux_llm.calls()                                          # the model call was never spent
+    assert path.read_text() == "runs: [unclosed\n"
+    with pytest.raises(DR.DraftUnreadable):
+        DR.save_draft(DR.OntologyDraft(connection_id=CONN, schema_name="ecommerce"))
+
+
+def test_a_second_exploration_of_a_scope_waits_for_the_first(door, client, faux_llm):
+    from aughor.routers.ontology import _exploration_lock
+    faux_llm.set_responses([DRAFT])
+    lock = _exploration_lock(CONN, "ecommerce")
+    assert lock.acquire(blocking=False)             # a run already in flight — the birth rite's, say
+    try:
+        res = client.post("/ontology/explore", params=PARAMS)
+    finally:
+        lock.release()
+    assert res.status_code == 409 and "already running" in res.json()["detail"]
+    assert not faux_llm.calls()
+    explore(client)                                 # and once it finishes, the next one runs
+
+
+def test_a_run_that_fails_part_way_is_recorded_so_a_restart_does_not_pay_again(door, client, faux_llm, monkeypatch):
+    import aughor.ontology.explorer as EX
+    faux_llm.set_responses([DRAFT])
+
+    def _dies(*_a, **_k):
+        raise RuntimeError("the warehouse went away mid-run")
+    monkeypatch.setattr(EX, "apply_draft", _dies)
+
+    res = client.post("/ontology/explore", params=PARAMS)
+
+    assert res.status_code == 500 and "stopped part-way" in res.json()["detail"]
+    (run,) = DR.load_draft(CONN, "ecommerce").runs
+    assert "the warehouse went away mid-run" in run.error
+    # the birth rite skips a scope with any recorded run — exactly the check that never fired before
+    from aughor.routers._shared import run_business_terms
+    seen: list = []
+    monkeypatch.setattr("aughor.licensing.resolver.has_capability", lambda cap, conn_id=None: True)
+    monkeypatch.setattr("aughor.routers.ontology.resolve_effective_schema", lambda conn, schema=None: "ecommerce")
+    assert run_business_terms(CONN, "ecommerce", lambda *a, **k: seen.append(a)) == "skipped"

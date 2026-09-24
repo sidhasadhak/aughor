@@ -72,7 +72,13 @@ def identity_columns(graph: OntologyGraph, entity: OntologyEntity, instance: Obj
 
 
 def object_metrics(graph: OntologyGraph, db: Any, entity: OntologyEntity, instance: ObjectInstance,
-                   *, dialect: str = "duckdb") -> list[dict]:
+                   *, dialect: str = "duckdb", run_cross_source: Any = None) -> list[dict]:
+    """Every verified metric on the object's type and the types it reaches, measured for this object.
+
+    A metric that reads another connection compiles to a PLAN (`compiled.cross_source`) whose ``sql`` is the
+    statement as written, for a reader — never run: executed on this connection it reads what is not there (PENDING
+    item 25). It runs through ``run_cross_source(compiled)`` when the page can run a plan (an organisation's
+    ontology), and is withheld with the reason when it cannot."""
     values = _values(instance)
     scopes = [(entity, instance.key, instance.pk, "")]
     for link in object_links(graph, entity):
@@ -97,24 +103,49 @@ def object_metrics(graph: OntologyGraph, db: Any, entity: OntologyEntity, instan
             except ObjectQueryRefused as exc:
                 out.append({**row, "refused": exc.reason})
                 continue
-            result = db.execute("object_metric", compiled.sql)
+            if compiled.cross_source is not None:
+                if run_cross_source is None:
+                    out.append({**row, "refused": "it reads another connection; open this object from the "
+                                                  "organisation's ontology to measure it", "sql": compiled.sql})
+                    continue
+                try:
+                    result = run_cross_source(compiled)
+                except ObjectQueryRefused as exc:
+                    out.append({**row, "refused": exc.reason, "sql": compiled.sql})
+                    continue
+            else:
+                result = db.execute("object_metric", compiled.sql)
             if getattr(result, "error", None):
                 out.append({**row, "error": str(result.error)[:300], "sql": compiled.sql})
                 continue
             first = (result.rows or [[None]])[0]
-            out.append({**row, "value": first[0] if first else None, "sql": compiled.sql})
+            # `measured`, never `value`: that name is this scope's key, which every later metric filters on
+            measured = first[0] if first else None
+            # `execute` hands rows back as display text and spells SQL NULL "NULL" (semantic/metrics.py reads it the
+            # same way): a metric with nothing to measure is no value, never the word (PENDING item 25)
+            if isinstance(measured, str) and measured.strip().upper() == "NULL":
+                measured = None
+            out.append({**row, "value": measured, "sql": compiled.sql})
     return out
 
 
 def object_findings(connection_id: str, schema_name: str, graph: OntologyGraph, entity: OntologyEntity,
                     instance: ObjectInstance) -> list[dict]:
+    return _object_findings(connection_id, schema_name, graph, entity, instance)[0]
+
+
+def _object_findings(connection_id: str, schema_name: str, graph: OntologyGraph, entity: OntologyEntity,
+                     instance: ObjectInstance) -> tuple[list[dict], int]:
+    """The findings and answers around one object, and how many could not be read. One that cannot be read is
+    counted and skipped — it used to end the scan, silently dropping every finding after it (PENDING item 25)."""
     from aughor.kernel.errors import tolerate
     from aughor.sql.join_guard import extract_filter_literals
 
     identity = identity_columns(graph, entity, instance)
+    unread = 0
 
     def cites(sql: Any) -> str:
-        for table, column, literal, op in extract_filter_literals(str(sql or "")):
+        for table, column, literal, op in extract_filter_literals(str(sql or ""), dialects=_DIALECTS, numbers=True):
             want = identity.get((_bare(table), column.lower()))
             if op in ("=", "IN") and want is not None and str(literal) == str(want):
                 return f"{_bare(table)}.{column} {op} '{literal}'"
@@ -124,36 +155,48 @@ def object_findings(connection_id: str, schema_name: str, graph: OntologyGraph, 
     wider: list[dict] = []          # PENDING item 13 — its segment's findings, then its type's
     segment = segment_values(entity, instance)
     tables = _entity_tables(entity)
+    findings: list[dict] = []
     try:
         from aughor.explorer.store import get_findings
         seen: set = set()
         for key in dict.fromkeys([connection_id] + ([f"{connection_id}__{schema_name}"] if schema_name else [])):
             for finding in get_findings(key):
-                if finding.get("id") in seen:
-                    continue
-                seen.add(finding.get("id"))
-                matched = cites(finding.get("sql"))
-                if matched:
-                    cited.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
-                                  "domain": finding.get("domain", ""), "matched": matched})
-                    continue
-                if pins_another(finding.get("sql"), identity):
-                    continue      # about ANOTHER object — never this one's segment or type (branch review)
-                about = about_segment(finding, segment, tables)
-                if about:
-                    wider.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
-                                  "domain": finding.get("domain", ""), "scope": "segment", **about})
-                elif reads_tables(finding.get("sql"), tables):
-                    wider.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
-                                  "domain": finding.get("domain", ""), "scope": "type",
-                                  "matched": f"reads {', '.join(sorted(tables))}"})
+                if finding.get("id") not in seen:
+                    seen.add(finding.get("id"))
+                    findings.append(finding)
     except Exception as exc:  # noqa: BLE001
         tolerate(exc, "object page: exploration findings are best-effort", counter="objects.findings_scan")
+    for finding in findings:
+        try:
+            matched = cites(finding.get("sql"))
+            if matched:
+                cited.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
+                              "domain": finding.get("domain", ""), "matched": matched})
+                continue
+            if pins_another(finding.get("sql"), identity):
+                continue      # about ANOTHER object — never this one's segment or type (branch review)
+            about = about_segment(finding, segment, tables)
+            if about:
+                wider.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
+                              "domain": finding.get("domain", ""), "scope": "segment", **about})
+            elif reads_tables(finding.get("sql"), tables):
+                wider.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
+                              "domain": finding.get("domain", ""), "scope": "type",
+                              "matched": f"reads {', '.join(sorted(tables))}"})
+        except Exception as exc:  # noqa: BLE001 — one finding, not the list
+            unread += 1
+            tolerate(exc, "object page: a finding could not be read; the rest are listed",
+                     counter="objects.finding_unread")
+    artifacts: list[dict] = []
     try:
         from aughor.kernel.ledger import Ledger
         from aughor.ontology.context_graph_build import RECEIPT_KINDS
-        for artifact in Ledger.default().artifacts_of_kind(list(RECEIPT_KINDS), conn_id=connection_id,
-                                                           limit=_SCAN_RECEIPTS):
+        artifacts = Ledger.default().artifacts_of_kind(list(RECEIPT_KINDS), conn_id=connection_id,
+                                                       limit=_SCAN_RECEIPTS)
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "object page: answer receipts are best-effort", counter="objects.receipts_scan")
+    for artifact in artifacts:
+        try:
             payload = artifact.get("payload") if isinstance(artifact.get("payload"), dict) else {}
             matched = cites(payload.get("sql"))
             if matched:
@@ -161,14 +204,16 @@ def object_findings(connection_id: str, schema_name: str, graph: OntologyGraph, 
                               "text": payload.get("headline") or payload.get("question", ""),
                               "question": payload.get("question", ""), "at": artifact.get("created_at"),
                               "matched": matched})
-    except Exception as exc:  # noqa: BLE001
-        tolerate(exc, "object page: answer receipts are best-effort", counter="objects.receipts_scan")
+        except Exception as exc:  # noqa: BLE001
+            unread += 1
+            tolerate(exc, "object page: an answer receipt could not be read; the rest are listed",
+                     counter="objects.finding_unread")
     # The exact citations come first and keep their shape; the wider ones fill what is left,
     # segment before type, each marked with its `scope` so the page never presents a finding
     # about Italian customers as one about THIS customer.
     segment_rows = [w for w in wider if w["scope"] == "segment"][:_MAX_SEGMENT]
     type_rows = [w for w in wider if w["scope"] == "type"][:_MAX_TYPE]
-    return (cited + segment_rows + type_rows)[:_MAX_FINDINGS]
+    return (cited + segment_rows + type_rows)[:_MAX_FINDINGS], unread
 
 
 #: How many findings about the object's segment, and about its type, fill the panel after the
@@ -249,7 +294,7 @@ def about_segment(finding: dict, segment: dict[str, tuple[str, str]], tables: se
     if not sql or not segment:
         return {}
     from aughor.sql.join_guard import extract_filter_literals
-    for table, column, literal, op in extract_filter_literals(sql):
+    for table, column, literal, op in extract_filter_literals(sql, dialects=_DIALECTS, numbers=True):
         mine = segment.get(column.lower())
         if mine and _bare(table) in tables and op in ("=", "IN") and str(literal).lower() == mine[0].lower():
             return {"matched": f"{_bare(table)}.{column} {op} '{literal}'", "segment": f"{mine[1]} {mine[0]}"}
@@ -265,7 +310,7 @@ def pins_another(sql: Any, identity: dict) -> bool:
     """Whether a finding's SQL filters this type's key (or a column joined to it) to ANOTHER
     object — `order_id = 'O000999'` is about that order, not about orders in general."""
     from aughor.sql.join_guard import extract_filter_literals
-    for table, column, literal, op in extract_filter_literals(str(sql or "")):
+    for table, column, literal, op in extract_filter_literals(str(sql or ""), dialects=_DIALECTS, numbers=True):
         want = identity.get((_bare(table), column.lower()))
         if want is not None and op in ("=", "IN") and str(literal) != str(want):
             return True
@@ -333,10 +378,13 @@ def object_actions(graph: OntologyGraph, entity: OntologyEntity, instance: Objec
 
 
 def object_context(graph: OntologyGraph, db: Any, connection_id: str, schema_name: str, instance: ObjectInstance,
-                   *, dialect: str = "duckdb") -> dict:
-    """The four panels around one object."""
+                   *, dialect: str = "duckdb", run_cross_source: Any = None) -> dict:
+    """The four panels around one object. ``findings_unread`` says how many findings could not be read, when any
+    could not — an unreadable one is skipped, and said, never the end of the list."""
     entity = find_object_type(graph, instance.type_id)
-    return {"metrics": object_metrics(graph, db, entity, instance, dialect=dialect),
-            "findings": object_findings(connection_id, schema_name, graph, entity, instance),
+    findings, unread = _object_findings(connection_id, schema_name, graph, entity, instance)
+    return {"metrics": object_metrics(graph, db, entity, instance, dialect=dialect, run_cross_source=run_cross_source),
+            "findings": findings,
+            **({"findings_unread": unread} if unread else {}),
             "notes": object_notes(connection_id, entity, instance),
             "actions": object_actions(graph, entity, instance)}

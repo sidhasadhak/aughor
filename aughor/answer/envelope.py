@@ -363,3 +363,23 @@ def fold_frames(frames: Any, *, question: str = "", connection_id: str = "",
         if isinstance(frame, dict) and frame.get("type"):
             folder.feed(str(frame["type"]), frame)
     return folder.finish()
+
+
+# ── Whether an answer's guards were clean ──────────────────────────────────────
+
+#: A receipt with one of these actions told the reader something was wrong or unproven with the query — a check fired
+#: and no rewrite cleared it. The quick path's own vocabulary (routers/investigations.py `_receipt`). A rewrite
+#: (`rewrote_sql`, `repaired_sql`) is not a warning: the query that ran is the one that passed.
+WARNING_ACTIONS = frozenset({"flagged", "caveated", "caveated_headline", "hinted", "kept_original"})
+
+
+def guards_clean(envelope: Any) -> bool:
+    """Provably clean: an envelope is there, and it carries no caveat and no warning receipt. An answer filed before
+    envelopes were cannot be vouched for, so it is not. ONE definition, read by every consumer that must not learn
+    from a query the reader was warned about — the training corpus's bronze tier and the few-shot memory
+    (PENDING items 23, 24)."""
+    if not isinstance(envelope, dict):
+        return False
+    receipts = ((envelope.get("provenance") or {}).get("guard_receipts") or [])
+    return not envelope.get("caveats") and not any(
+        isinstance(r, dict) and r.get("action") in WARNING_ACTIONS for r in receipts)

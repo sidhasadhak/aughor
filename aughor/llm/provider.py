@@ -1114,6 +1114,82 @@ def _parse_tool_turn(raw, fallback_text: Any = None) -> ToolTurn:
     return ToolTurn(text=content)
 
 
+def _anthropic_tools(tools: list[dict]) -> list[dict]:
+    """OpenAI-shaped function specs → Anthropic's ``tools`` (name, description, input_schema)."""
+    out = []
+    for spec in tools:
+        fn = spec.get("function", spec)
+        out.append({"name": fn.get("name", ""), "description": fn.get("description", ""),
+                    "input_schema": fn.get("parameters") or {"type": "object", "properties": {}}})
+    return out
+
+
+def _anthropic_messages(user: str, history: Optional[list[dict]]) -> list[dict]:
+    """The tool loop's OpenAI-shaped transcript → Anthropic's alternating turns.
+
+    The loop records a step as an assistant message carrying ``tool_calls`` and a
+    ``role="tool"`` result, or a plain user message (`tool_loop._exchange`). Anthropic puts a
+    call in a ``tool_use`` block, its answer in a ``tool_result`` block inside a USER turn,
+    and refuses two turns in a row from one role — so adjacent same-role messages merge."""
+    def _blocks(content) -> list[dict]:
+        if isinstance(content, list):
+            return list(content)
+        return [{"type": "text", "text": str(content)}] if content else []
+
+    turns: list[dict] = []
+
+    def _push(role: str, blocks: list[dict]) -> None:
+        if not blocks:
+            return
+        if turns and turns[-1]["role"] == role:
+            turns[-1]["content"].extend(blocks)
+        else:
+            turns.append({"role": role, "content": blocks})
+
+    _push("user", _blocks(user))
+    for message in history or []:
+        role = message.get("role")
+        if role == "assistant":
+            blocks = _blocks(message.get("content"))
+            for call in message.get("tool_calls") or []:
+                fn = call.get("function") or {}
+                args = fn.get("arguments") or "{}"
+                try:
+                    parsed = json.loads(args) if isinstance(args, str) else dict(args)
+                except (ValueError, TypeError):
+                    parsed = {}
+                blocks.append({"type": "tool_use", "id": call.get("id") or "call_1",
+                               "name": fn.get("name", ""),
+                               "input": parsed if isinstance(parsed, dict) else {}})
+            _push("assistant", blocks)
+        elif role == "tool":
+            _push("user", [{"type": "tool_result",
+                            "tool_use_id": message.get("tool_call_id") or "call_1",
+                            "content": str(message.get("content") or "")}])
+        else:
+            _push("user", _blocks(message.get("content")))
+    return turns
+
+
+def _parse_anthropic_tool_turn(raw) -> ToolTurn:
+    """Read one Anthropic ``messages`` reply as a :class:`ToolTurn` — a ``tool_use`` block
+    before any text, as `_parse_tool_turn` reads ``tool_calls`` before ``content``."""
+    blocks = getattr(raw, "content", None) or []
+    for block in blocks:
+        if getattr(block, "type", "") == "tool_use":
+            name = str(getattr(block, "name", "") or "")
+            args = getattr(block, "input", None)
+            if not isinstance(args, dict):
+                return ToolTurn(malformed=f"{name}: arguments were {type(args).__name__}, not an object")
+            return ToolTurn(tool_call=ToolCall(name=name, arguments=args,
+                                               id=str(getattr(block, "id", "") or "")))
+    text = "".join(str(getattr(b, "text", "") or "") for b in blocks
+                   if getattr(b, "type", "") == "text").strip()
+    if not text and getattr(raw, "stop_reason", None) == "max_tokens":
+        return ToolTurn(truncated=True)
+    return ToolTurn(text=text or None)
+
+
 def _extract_usage(raw) -> tuple[int, int]:
     """(prompt_tokens, completion_tokens) from a raw OpenAI/Anthropic completion,
     best-effort. Returns (0, 0) when unavailable (e.g. some local backends omit
@@ -2030,18 +2106,10 @@ class LLMProvider:
 
         NOT YET EXERCISED AGAINST A LIVE BACKEND: ``response_model=None`` is faux-proven
         and is instructor's documented pass-through, but no run has confirmed it on a
-        real provider — verify before converse serves traffic. The anthropic branch is
-        unsupported here (it speaks ``client.messages``, a different surface).
+        real provider — verify before converse serves traffic. The anthropic binding speaks
+        ``client.messages``; `_tools_on` translates for it (PENDING item 17 — it used to
+        raise here, and every quick `/ask` turn on that backend ended in an error).
         """
-        # Backend support is checked BEFORE the binding: anthropic cannot serve this
-        # surface at all, which is true whether or not a model is configured, and
-        # reporting "no model configured" for it would send the reader to fix the
-        # wrong thing.
-        if self.backend == "anthropic":
-            raise NotImplementedError(
-                "complete_with_tools speaks the OpenAI-compatible chat surface; the "
-                "anthropic binding uses client.messages and needs its own translation."
-            )
         if not self._model:                       # same contract as `complete()`
             raise NoModelConfigured(self.backend, self.role)
         # Same posture as `complete()`: a primary already known to be out of allowance is
@@ -2067,13 +2135,10 @@ class LLMProvider:
                                             primary_exc)
 
     def _tools_fallbacks(self) -> list[str]:
-        """Fallback links that can actually serve a tool call.
-
-        `anthropic` is filtered out rather than tried and caught: it speaks
-        `client.messages`, so it would raise NotImplementedError on every link walk and
-        turn a real outage into a confusing second error.
-        """
-        return [b for b in self._fallback_candidates() if b != "anthropic"]
+        """Fallback links that can serve a tool call — every link, since `_tools_on` speaks
+        each binding's own surface (anthropic's ``client.messages`` included; it was filtered
+        out here while it could only raise)."""
+        return list(self._fallback_candidates())
 
     def _tools_via_fallback(self, system: str, user: str, tools: list[dict],
                             temperature: float, history: Optional[list[dict]],
@@ -2114,34 +2179,56 @@ class LLMProvider:
         # This request skips `_run_resilient`, so it needs the funnel's stop of its own:
         # an abandoned analyst's next tool choice is a full-context request.
         cancellation.checkpoint()
-        endpoint = client.chat.completions
-        kwargs: dict[str, Any] = dict(
-            model=model,
-            temperature=_effective_temperature(temperature, backend),
-            max_tokens=_max_output_tokens(self.role, model),
-            messages=([{"role": "system", "content": system},
-                       {"role": "user", "content": user}] + list(history or [])),
-            tools=tools,
-            tool_choice="auto",
-            response_model=None,
-        )
-        extra = _reasoning_extra_body(backend)
-        if extra:
-            kwargs["extra_body"] = extra
+        if backend == "anthropic":
+            # Anthropic speaks `messages`, not chat completions (PENDING item 17): the tools,
+            # the transcript and the reply are translated here, on the raw client instructor
+            # wraps, and everything after the request — metering, the call record, the budget
+            # check — is the code every other binding runs. Temperature rides only a pinned
+            # run, as on this binding's structured path.
+            pinned = current_run_temperature() is not None
+            anthropic_kwargs: dict[str, Any] = dict(
+                model=model,
+                max_tokens=_max_output_tokens(self.role, model),
+                system=system,
+                messages=_anthropic_messages(user, history),
+                tools=_anthropic_tools(tools),
+                tool_choice={"type": "auto"},
+                **({"temperature": _effective_temperature(temperature, backend)} if pinned else {}),
+            )
+            _t0 = time.monotonic()
+            raw = (getattr(client, "client", None) or client).messages.create(**anthropic_kwargs)
+            _ms = (time.monotonic() - _t0) * 1000.0
+            _out = raw
+        else:
+            endpoint = client.chat.completions
+            kwargs: dict[str, Any] = dict(
+                model=model,
+                temperature=_effective_temperature(temperature, backend),
+                max_tokens=_max_output_tokens(self.role, model),
+                messages=([{"role": "system", "content": system},
+                           {"role": "user", "content": user}] + list(history or [])),
+                tools=tools,
+                tool_choice="auto",
+                response_model=None,
+            )
+            extra = _reasoning_extra_body(backend)
+            if extra:
+                kwargs["extra_body"] = extra
 
-        _t0 = time.monotonic()
-        _out, raw = endpoint.create_with_completion(**kwargs)
-        _ms = (time.monotonic() - _t0) * 1000.0
+            _t0 = time.monotonic()
+            _out, raw = endpoint.create_with_completion(**kwargs)
+            _ms = (time.monotonic() - _t0) * 1000.0
 
-        # instructor's `response_model=None` pass-through hands the completion back as the
-        # FIRST element and None as the second — the opposite of the structured path,
-        # where the first is the validated object and the second is the raw response.
-        # Found only by a live call: the faux backend returns both halves non-None, so no
-        # offline test could reach this. Without the swap the turn parses to nothing
-        # (no choices on None) AND `_extract_usage(None)` returns (0, 0), so every live
-        # tool turn read as an empty reply that cost zero tokens — silent on both counts.
-        if raw is None:
-            raw = _out
+            # instructor's `response_model=None` pass-through hands the completion back as
+            # the FIRST element and None as the second — the opposite of the structured
+            # path, where the first is the validated object and the second is the raw
+            # response. Found only by a live call: the faux backend returns both halves
+            # non-None, so no offline test could reach this. Without the swap the turn
+            # parses to nothing (no choices on None) AND `_extract_usage(None)` returns
+            # (0, 0), so every live tool turn read as an empty reply that cost zero tokens
+            # — silent on both counts.
+            if raw is None:
+                raw = _out
 
         # Metered exactly like a structured call. A turn the model spends choosing a tool
         # costs the same tokens as one it spends answering, and a loop that runs untracked
@@ -2158,7 +2245,8 @@ class LLMProvider:
                          user=user, output=_out,
                          extra=({"cached_tokens": _cached} if _cached is not None else None))
         metering.check_budget()
-        turn = _parse_tool_turn(raw, _out)
+        turn = (_parse_anthropic_tool_turn(raw) if backend == "anthropic"
+                else _parse_tool_turn(raw, _out))
         if (turn.tool_call is None and not turn.text and not turn.malformed
                 and not turn.truncated):
             # Neither a choice, nor words, nor a stated failure. That is the transport

@@ -25,8 +25,21 @@ def register_agent_plugins() -> None:
     _register_schema_annotators()
     _register_authz_resolvers()
     _register_value_sample_loader()
+    _register_readings_loader()
     _register_guard_receipt_forwarder()
     _REGISTERED = True
+
+
+def _register_readings_loader() -> None:
+    """PENDING item 27 — the ontology's declared readings at a moment (a stock, a balance), readable by the
+    platform's trust checks through the registry seam (no Platform→Agent import)."""
+    from aughor.kernel.registries.readings import register_readings_loader
+
+    def _load(connection_id: str) -> dict:
+        from aughor.ontology.semiadditive import connection_declared_columns
+        return connection_declared_columns(connection_id)
+
+    register_readings_loader(_load)
 
 
 def _register_guard_receipt_forwarder() -> None:
@@ -81,6 +94,12 @@ def _register_authz_resolvers() -> None:
     rreg.register_resource_conn_resolver("alert", _alert_conn)
     rreg.register_resource_conn_resolver("brief", _brief_conn)
 
+    def _document_org(doc_id):
+        # A document carries its own owner (PENDING item 16) — resolved to the org directly.
+        from aughor.knowledge.indexer import document_org
+        return document_org(doc_id)
+    rreg.register_resource_org_resolver("document", _document_org)
+
 
 # ── Schema annotators (Pattern B) — invert db/connection.py's schema enrichment ─
 
@@ -99,13 +118,16 @@ def _register_ingest_sinks() -> None:
         return index_text(**doc)
 
     def _investigation_index_sink(*, inv_id, question, headline, key_findings,
-                                  connection_id, query_history):
+                                  connection_id, query_history, hypotheses=None, cache=True):
         from aughor.tools.prior_analyses import index_investigation, index_sql_examples
-        index_investigation(inv_id, question=question, headline=headline,
-                            key_findings=key_findings, connection_id=connection_id)
+        # `cache` False (a direct-mode run): its SQL still teaches the few-shot memory, but it is not an
+        # investigation and must not short-circuit one (PENDING item 24)
+        if cache:
+            index_investigation(inv_id, question=question, headline=headline,
+                                key_findings=key_findings, connection_id=connection_id)
         if question and query_history:
             index_sql_examples(inv_id, question=question, query_history=query_history,
-                               connection_id=connection_id)
+                               connection_id=connection_id, hypotheses=hypotheses)
         return {}
 
     def _connection_invalidated_sink(*, conn_id):
@@ -342,13 +364,7 @@ def _evidence_inv(inv_ids):
 
 
 def _qdrant_inv(inv_ids):
-    from aughor.semantic.vector_store import available
-    if not available():
-        return {"qdrant_points": 0}      # nothing indexed, so nothing to purge
-    from aughor.semantic.vector_store import delete_by_filter, match_filter
-    from aughor.tools.prior_analyses import INVESTIGATIONS_COLLECTION
-    total = 0
-    for inv_id in inv_ids:
-        filt = match_filter("inv_id", inv_id)
-        total += delete_by_filter(INVESTIGATIONS_COLLECTION, filt) or 0
-    return {"qdrant_points": total}
+    # Both collections (PENDING item 24): the investigation's entry AND every SQL example it taught — deleting an
+    # investigation used to leave its SQL steering the next answer's few-shot block.
+    from aughor.tools.prior_analyses import forget_answer
+    return {"qdrant_points": sum(forget_answer(inv_id) for inv_id in inv_ids)}

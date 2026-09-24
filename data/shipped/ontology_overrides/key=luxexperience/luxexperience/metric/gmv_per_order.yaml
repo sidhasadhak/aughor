@@ -1,0 +1,23 @@
+target_kind: metric
+target_id: gmv_per_order
+fields:
+  entity: Order
+  display_name: GMV per order
+  formula_sql: AVG(gmv_eur)
+  unit: EUR
+  grain: order
+  description: The average order's gross merchandise value, in euros — GMV over the
+    number of orders it counts.
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: 'shipped for LuxExperience (PENDING item 25): the shipped revenue and AOV read
+  total_amount, which its orders do not have, so its object pages measured nothing.
+  Bound by the real binder against the RECORDED schema — luxexperience.orders as the
+  served graph of 2026-09-15 holds it (connection 914df862, evals/ablation_luxexperience_business_ontology.json:
+  gmv_eur DOUBLE, 0% null, 112,439 orders) — not against the warehouse, which a clone
+  does not have.'
+binding:
+  formula_sql:
+    bound: true
+    note: ''

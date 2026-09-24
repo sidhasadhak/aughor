@@ -1,0 +1,209 @@
+target_kind: entity
+target_id: Order
+fields:
+  bindings:
+    payments:
+      kind: static
+      key: order_id
+      table: luxexperience.payments
+      properties:
+        payment_method: payment_method
+        psp: psp
+        payment_amount_eur: amount_eur
+        installments: installments
+        fraud_score: fraud_score
+        fraud_flag: fraud_flag
+        payment_status: status
+    shipments:
+      kind: static
+      key: order_id
+      table: luxexperience.shipments
+    lines:
+      kind: detail
+      key: order_id
+      table: order_items
+      rollups:
+        units:
+          column: quantity
+          agg: sum
+        line_count:
+          column: order_item_id
+          agg: count
+        top_unit_price:
+          column: unit_price_eur
+          agg: max
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: 'shipped for LuxExperience (PENDING item 26): the bindings a person set on Order.
+  Specs from the served graph of 2026-09-15 (connection 914df862, evals/ablation_luxexperience_business_ontology.json);
+  bound by the real binder against the recorded source schemas, not the warehouse,
+  which a clone does not have; the counts are the ones measured on the warehouse that
+  day.'
+binding:
+  bindings:
+    bound: true
+    note: ''
+    entries:
+      payments:
+        bound: true
+        note: ''
+        spec:
+          kind: static
+          key: order_id
+          table: luxexperience.payments
+          properties:
+            payment_method: payment_method
+            psp: psp
+            payment_amount_eur: amount_eur
+            installments: installments
+            fraud_score: fraud_score
+            fraud_flag: fraud_flag
+            payment_status: status
+        columns:
+          payment_id: VARCHAR
+          order_id: VARCHAR
+          payment_method: VARCHAR
+          psp: VARCHAR
+          amount_eur: DOUBLE
+          installments: BIGINT
+          status: VARCHAR
+          fraud_score: DOUBLE
+          fraud_flag: BOOLEAN
+        supplies:
+          payment_method: payment_method
+          psp: psp
+          payment_amount_eur: amount_eur
+          installments: installments
+          fraud_score: fraud_score
+          fraud_flag: fraud_flag
+          payment_status: status
+        skipped: {}
+        measured:
+          spec:
+            kind: static
+            key: order_id
+            table: luxexperience.payments
+            properties:
+              payment_method: payment_method
+              psp: psp
+              payment_amount_eur: amount_eur
+              installments: installments
+              fraud_score: fraud_score
+              fraud_flag: fraud_flag
+              payment_status: status
+          rows: 112439
+          non_null: 112439
+          distinct: 112439
+          objects: 112439
+          covered: 112439
+          orphans: 0
+          verified: true
+          note: 'order_id: 112,439 distinct over 112,439 keyed rows; covers 112,439
+            of 112,439 Order objects'
+      shipments:
+        bound: true
+        note: ''
+        spec:
+          kind: static
+          key: order_id
+          table: luxexperience.shipments
+        columns:
+          shipment_id: VARCHAR
+          order_id: VARCHAR
+          platform: VARCHAR
+          warehouse: VARCHAR
+          origin_country: VARCHAR
+          destination_country: VARCHAR
+          service_level: VARCHAR
+          carrier: VARCHAR
+          ship_date: DATE
+          delivery_days: BIGINT
+          shipping_cost_eur: DOUBLE
+          duty_eur: DOUBLE
+        supplies:
+          shipment_id: shipment_id
+          warehouse: warehouse
+          origin_country: origin_country
+          destination_country: destination_country
+          service_level: service_level
+          carrier: carrier
+          ship_date: ship_date
+          delivery_days: delivery_days
+          shipping_cost_eur: shipping_cost_eur
+        skipped:
+          platform: Order already has the property platform — name it in `properties`
+            to bind it
+          duty_eur: Order already has the property duty_eur — name it in `properties`
+            to bind it
+        measured:
+          spec:
+            kind: static
+            key: order_id
+            table: luxexperience.shipments
+          rows: 107903
+          non_null: 107903
+          distinct: 107903
+          objects: 112439
+          covered: 107903
+          orphans: 0
+          verified: true
+          note: 'order_id: 107,903 distinct over 107,903 keyed rows; covers 107,903
+            of 112,439 Order objects'
+      lines:
+        bound: true
+        note: ''
+        spec:
+          kind: detail
+          key: order_id
+          table: order_items
+          rollups:
+            units:
+              column: quantity
+              agg: sum
+            line_count:
+              column: order_item_id
+              agg: count
+            top_unit_price:
+              column: unit_price_eur
+              agg: max
+        columns:
+          order_item_id: VARCHAR
+          order_id: VARCHAR
+          platform: VARCHAR
+          product_id: VARCHAR
+          brand: VARCHAR
+          category: VARCHAR
+          brand_tier: VARCHAR
+          quantity: BIGINT
+          unit_price_eur: DOUBLE
+          returned: BOOLEAN
+        supplies:
+          units: the sum of quantity over each object's lines rows
+          line_count: how many of each object's lines rows carry order_item_id
+          top_unit_price: the max of unit_price_eur over each object's lines rows
+        skipped: {}
+        measured:
+          spec:
+            kind: detail
+            key: order_id
+            table: order_items
+            rollups:
+              units:
+                column: quantity
+                agg: sum
+              line_count:
+                column: order_item_id
+                agg: count
+              top_unit_price:
+                column: unit_price_eur
+                agg: max
+          rows: 191093
+          non_null: 191093
+          distinct: 112439
+          objects: 112439
+          covered: 112439
+          orphans: 0
+          verified: true
+          note: 'order_id: 191,093 keyed rows over 112,439 keys; covers 112,439 of
+            112,439 Order objects'

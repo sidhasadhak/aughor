@@ -22,7 +22,8 @@ def test_validate_unknown_connection_is_404():
 
 def test_chat_feedback_is_accepted_and_journaled():
     r = client.post("/chat/feedback", json={"conn_id": "c1", "turn_id": "t1", "verdict": "helpful", "note": "great"})
-    assert r.status_code == 200 and r.json() == {"ok": True}
+    # `accepted` (PENDING item 23): a 👍 records an accept only on a turn that exists and ran SQL; "t1" is neither
+    assert r.status_code == 200 and r.json() == {"ok": True, "accepted": False}
     # unhelpful with no note also accepted (fail-open journaling)
     r2 = client.post("/chat/feedback", json={"conn_id": "c1", "turn_id": "t2", "verdict": "unhelpful"})
     assert r2.status_code == 200

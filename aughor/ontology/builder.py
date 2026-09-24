@@ -1117,6 +1117,11 @@ def render_ontology_annotations(graph: OntologyGraph) -> str:
             for x in entity.exclude_when[:2]:
                 lines.append(f"    EXCLUDES (rows the business does not count here): {x}")
 
+        # PENDING item 27 — a declared reading at a moment (a stock, a balance) must not be summed across its
+        # moments: the SQL writer is told so wherever this block rides, and the trust checks flag a sum that is.
+        from aughor.ontology.semiadditive import semiadditive_lines
+        lines.extend(semiadditive_lines(entity))
+
     # Actions section
     if graph.actions:
         lines.append("")

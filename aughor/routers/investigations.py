@@ -421,6 +421,42 @@ _DIM_NOUN_RE = re.compile(
 _GROUP_ID_COL_RE = re.compile(r"(^|_)(id|key|code|sk|pk)$|_id$|_key$|_code$", re.I)
 
 
+def _checks_still_firing(sql: str, triggered: set[str], *, question: str, dialect: str,
+                         full_cols: dict, schema_cols: dict) -> list[str]:
+    """Which of the SQL-only checks in ``triggered`` still fire on ``sql`` — the repaired query.
+
+    PENDING item 18: the quick path handed a check's hint to the SQL fixer and adopted the fix
+    if it merely RAN, never asking the check again, so a repair could keep the very fan-out, id
+    arithmetic or averaged ratio it was asked to remove. Re-runs only the checks that are pure
+    functions of the SQL; the ones that probe the warehouse or the question's entity alignment
+    are not asked twice. A check that cannot run is not counted as firing."""
+    from aughor.agent.verifier import Verifier
+    from aughor.sql.fanout import avg_of_row_ratios, measure_times_key_arithmetic
+    checks = {
+        "fanout": lambda: _fanout_hit(sql, full_cols, dialect),
+        "idmath": lambda: measure_times_key_arithmetic(sql, dialect=dialect),
+        "ratio": lambda: avg_of_row_ratios(sql, dialect=dialect),
+        "grain": lambda: _breakdown_grain_hint(question, sql, dialect),
+        "chasm": lambda: Verifier.scan([sql], schema_cols, dialect),
+    }
+    firing: list[str] = []
+    for name in sorted(triggered & set(checks)):
+        try:
+            if checks[name]():
+                firing.append(name)
+        except Exception as exc:  # noqa: BLE001 — an unrunnable check does not block a repair
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a repair re-check could not run; the repair is judged on the rest",
+                     counter="chat.repair_recheck")
+    return firing
+
+
+def _fanout_hit(sql: str, full_cols: dict, dialect: str):
+    from aughor.sql.fanout import detect_fanout, dimension_ratio_chasm
+    return detect_fanout(sql, full_cols, dialect=dialect) or \
+        dimension_ratio_chasm(sql, full_cols, dialect=dialect)
+
+
 def _breakdown_grain_hint(question: str, sql: str, dialect: str = "duckdb") -> str:
     """Catch a breakdown grouped at TOO FINE a grain: the question names a categorical
     dimension ('top product CATEGORIES', 'by brand') but the SQL GROUPs BY an id/key column
@@ -1077,6 +1113,21 @@ def _primary_num_idx(columns, rows):
     return fallback
 
 
+_FIRST_DIGIT = re.compile(r"\d")
+
+
+def _numberless_prefix(text: str) -> str:
+    """A streamed headline up to the word that holds its first digit — PENDING item 22. The coder writes the headline
+    alongside its SQL, before the query runs, and it used to type onto the screen number and all ("orders fell 97.5%"
+    before a row existed), replaced afterwards only on a flat contradiction. The words before the first number are
+    no claim; the number waits for the grounded headline."""
+    m = _FIRST_DIGIT.search(text or "")
+    if m is None:
+        return text or ""
+    cut = text.rfind(" ", 0, m.start())
+    return text[:cut].rstrip() if cut > 0 else ""
+
+
 def _ground_headline(headline, columns, rows):
     """Return the headline unchanged when it is consistent with the data; otherwise a
     grounded replacement built from the actual top row. Conservative: only fires on a
@@ -1725,7 +1776,8 @@ def _answer_core(
             # The canvas is passed so ITS pinned documents reach the prompt. Without
             # it a workspace's own documents were retrievable only by coincidence of
             # embedding similarity, which is not what binding one means.
-            s = build_external_context_section(question, top_k=2, canvas_id=canvas_id)
+            s = build_external_context_section(question, top_k=2, canvas_id=canvas_id,
+                                               connection_id=connection_id)
             return (s + "\n\n") if s else ""
 
         def _pb_match():
@@ -1884,6 +1936,22 @@ def _answer_core(
                                 if semantic_layer_section else _rel_block)
                     except Exception:
                         logger.debug("relationship block injection skipped", exc_info=True)
+                    # PENDING item 19 (`grounding.data_profiles`, off) — what the data HOLDS for
+                    # the linked tables, from the profile cache: the catalog carries five head
+                    # rows, and the profiler's measured ranges, values and null rates reached no
+                    # SQL prompt. Rides the same section, prepended after the table cap.
+                    from aughor.tools import catalog_profiles as _catalog_profiles
+                    if _catalog_profiles.enabled():
+                        try:
+                            _prof_block = _catalog_profiles.render(connection_id, linked_tables)
+                            if _prof_block:
+                                semantic_layer_section = (
+                                    semantic_layer_section + "\n\n" + _prof_block
+                                    if semantic_layer_section else _prof_block)
+                        except Exception as _prof_exc:
+                            from aughor.kernel.errors import tolerate
+                            tolerate(_prof_exc, "the data profile block is advisory; the catalog "
+                                                "stands without it", counter="chat.data_profiles")
         except Exception:
             logger.warning("Data Catalog build failed; using linked schema text", exc_info=True)
 
@@ -2316,9 +2384,15 @@ def _answer_core(
             if not isinstance(_hitem, str):
                 continue
             _hnow = _htime.monotonic()
-            if len(_hitem) - _hl_last_len >= 6 or _hnow - _hl_last_ts > 0.120:
-                _hl_last_len, _hl_last_ts = len(_hitem), _hnow
-                emit("headline_delta", {"headline": _hitem})
+            # PENDING item 22 — this headline is written BEFORE its query runs, so a number in it is a prediction:
+            # its words may type in, and it stops at the word holding its first digit until the rows are in (the
+            # grounded headline replaces it then).
+            _hshown = _numberless_prefix(_hitem)
+            _held = len(_hshown) < len(_hitem.rstrip())       # at a number: flush the words before it now
+            if len(_hshown) > _hl_last_len and (_held or len(_hshown) - _hl_last_len >= 6
+                                                or _hnow - _hl_last_ts > 0.120):
+                _hl_last_len, _hl_last_ts = len(_hshown), _hnow
+                emit("headline_delta", {"headline": _hshown})
         _hl_thread.join()
         if "exc" in _hl_result:
             raise _hl_result["exc"]
@@ -2563,7 +2637,19 @@ def _answer_core(
         if final_sql:
             try:
                 from aughor.sql.safety import preflight_repair
+                _pf_before = final_sql
                 final_sql, _pf_receipt = preflight_repair(db, final_sql, schema)
+                if final_sql.strip() != _pf_before.strip():
+                    # Said, as the shared executor already says it (sql/executor.py): the rewrite was silent on the
+                    # quick path, so its before-and-after — a query that would not bind and the one that did — was
+                    # the one guard pair the training corpus never saw (PENDING item 23).
+                    _what = [k for k in ("identifiers_repaired", "filter_bound", "aliases_uniquified", "fixed")
+                             if (_pf_receipt or {}).get(k)]
+                    _receipt({
+                        "guard": "preflight_repair", "action": "repaired_sql",
+                        "detail": (", ".join(_what) or "repaired before execution")
+                                  + (f" ({_pf_receipt['error_class']})" if (_pf_receipt or {}).get("error_class") else ""),
+                        "before": _pf_before[:2000], "after": final_sql[:2000]})
             except Exception as _e:
                 logger.debug("chat pre-flight validation is best-effort; skipped: %s", _e)
 
@@ -2615,7 +2701,38 @@ def _answer_core(
                 fix = _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=2)
                 if fix.ok:
                     retry = _execute_chat_sql(db, fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
+                    # PENDING item 18 — a repair asked for by a check is adopted only once that
+                    # check no longer fires on it; running cleanly was all this used to ask.
+                    _triggered = {_n for _n, _h in (("fanout", _fanout_fix_hint),
+                                                    ("idmath", _idmath_fix_hint),
+                                                    ("ratio", _ratio_fix_hint),
+                                                    ("grain", _grain_fix_hint),
+                                                    ("chasm", _chasm_fix_hint)) if _h}
+                    from aughor.db.schema_render import parse_schema_tables as _pst_recheck
+                    _still = _checks_still_firing(
+                        fix.sql, _triggered, question=question, dialect=db.dialect,
+                        full_cols=_pst_recheck(_full_schema),
+                        schema_cols=_pst_recheck(schema)) if _triggered else []
+                    if _still:
+                        _receipt({
+                            "guard": "repair_recheck", "action": "kept_original",
+                            "detail": (f"the repair still trips {', '.join(_still)}, so it was "
+                                       "not adopted and the original query stands"),
+                            "before": final_sql[:2000], "after": fix.sql[:2000]})
+                    elif not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
+                        # The adopted repair is said too (PENDING item 23): the query shown changed with no
+                        # word of why, and the pair — a query that failed or tripped a check, and the one that
+                        # ran clean — was kept nowhere.
+                        _fired = [_n for _n, _h in (("scope", _scope_fix_hint), ("filter", _filter_fix_hint),
+                                                    ("grain", _grain_fix_hint), ("id arithmetic", _idmath_fix_hint),
+                                                    ("ratio", _ratio_fix_hint), ("columns", _semantic_fix_hint),
+                                                    ("fan-out", _fanout_fix_hint), ("chasm", _chasm_fix_hint)) if _h]
+                        _receipt({
+                            "guard": "sql_repair", "action": "repaired_sql",
+                            "detail": (f"the query failed: {str(result.error)[:300]}" if result.error
+                                       else f"checks fired on it: {', '.join(_fired)}" if _fired
+                                       else "the query returned no rows"),
+                            "before": final_sql[:2000], "after": fix.sql[:2000]})
                         final_sql = fix.sql
                         result = retry
                         emit("sql", {"sql": final_sql})
@@ -2714,7 +2831,7 @@ def _answer_core(
                 # false positive the name heuristic would raise otherwise).
                 _e1_ct = connection_column_types(connection_id, db)
                 _e1_hits = run_trust_checks(final_sql, col_types=_e1_ct or None,
-                                            dialect=db.dialect, phase="deep")
+                                            dialect=db.dialect, phase="deep", connection_id=connection_id)
                 if _e1_hits:
                     _e1_msgs = "; ".join(t.message for t in _e1_hits[:2])
                     _grounded_headline = (
@@ -3297,7 +3414,7 @@ async def _stream_converse(
     agent_id: str = "",
     surface: str = "",
 ) -> AsyncGenerator[str, None]:
-    """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, EXPERIMENT, default off).
+    """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, default on since SP-14).
 
     Same shape as :func:`_stream_chat` — the shared bridge, a different body — and
     deliberately so: one copy of the concurrency design, two bodies riding it.
@@ -3409,11 +3526,30 @@ async def _stream_converse(
         # verdict can ever close.
         import uuid as _uuid
         _decision_trace = _uuid.uuid4().hex
-        result = converse(connection_id, question,
-                          extra_context=_memory,
-                          on_step=_on_step, tool_emit=_forward,
-                          session_id=session_id, canvas_id=canvas_id, agent=_agent_rec,
-                          trace_id=_decision_trace)
+        try:
+            result = converse(connection_id, question,
+                              extra_context=_memory,
+                              on_step=_on_step, tool_emit=_forward,
+                              session_id=session_id, canvas_id=canvas_id, agent=_agent_rec,
+                              trace_id=_decision_trace)
+        except _CoreCancelled:
+            raise
+        except Exception as _exc:
+            from aughor.agent.converse_tools import remember_tools_refused, tools_unsupported
+            if turn["steps"] or not tools_unsupported(_exc):
+                raise
+            # PENDING item 17 — the binding cannot make a tool call, and said so on the turn's
+            # first request: nothing has been answered yet, so the quick body answers instead,
+            # and the step trail says why. Remembered, so the next turn routes there at once.
+            remember_tools_refused()
+            emit("converse_step", {
+                "index": 1, "tool": "(none)", "arguments": {}, "ok": False,
+                "detail": ("this model cannot call tools, so the conversation could not run — "
+                           f"answered by the quick pipeline instead ({str(_exc)[:160]})"),
+                "result_chars": 0,
+            })
+            return _answer_core(question, connection_id, history, emit=emit, cancelled=cancelled,
+                                session_id=session_id, canvas_id=canvas_id, surface=surface)
 
         answer = (result.answer or "").strip()
         if not answer:
@@ -4359,7 +4495,7 @@ async def _stream_investigation(
                     from aughor.kernel.errors import tolerate
                     tolerate(exc, "follow-up suggestions are best-effort; the report was already emitted",
                              counter="investigation.followups")
-                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct", origin_insight_id=insight_id))
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, cache=merged.get("query_mode") != "direct", origin_insight_id=insight_id))
                 await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
 
@@ -5425,11 +5561,25 @@ async def stream_with_envelope(
     if inv_id:
         try:
             from aughor.db.history import attach_envelope
-            await _asyncio.to_thread(attach_envelope, inv_id, payload)
+            if await _asyncio.to_thread(attach_envelope, inv_id, payload):
+                _remember_answer(inv_id)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "envelope persistence is best-effort; it was already streamed",
                      counter="ask.envelope_persist")
+
+
+def _remember_answer(inv_id: str) -> None:
+    """PENDING item 24 — a filed quick answer teaches the few-shot memory (`prior_analyses.index_answer` decides
+    whether it is clean enough to). Off the stream: the embedding call can be slow or hang, and the reader already
+    has the answer, so nothing waits on it. The thread carries the request's context — the organisation the
+    tombstone check reads."""
+    import contextvars
+    import threading
+
+    from aughor.tools.prior_analyses import index_answer
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(index_answer, inv_id), daemon=True, name="remember-answer").start()
 
 
 def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGenerator[str, None]:

@@ -148,9 +148,16 @@ def kb_patterns(question: str, connection_id: str = "") -> str:
     return _safe(lambda: retrieve_for_planning(question, top_k=2), "grounding: KB planning patterns")
 
 
-def sql_examples(question: str, connection_id: str) -> str:
-    from aughor.tools.prior_analyses import search_sql_examples
-    return _safe(lambda: search_sql_examples(question, connection_id), "grounding: prior-analysis SQL examples")
+def sql_examples(question: str, connection_id: str) -> tuple[str, str]:
+    """``(block, note)`` — the few-shot block, and why it could not be searched when it could not (PENDING item 24): a
+    vector store or embedder that is down used to read here exactly like "nothing similar was ever asked"."""
+    from aughor.tools.prior_analyses import search_sql_examples_checked
+    try:
+        return search_sql_examples_checked(question, connection_id)
+    except Exception as exc:  # noqa: BLE001 — a receipt block never breaks the receipt
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "grounding: prior-analysis SQL examples", counter="grounding.block")
+        return "", f"past SQL was not searched ({type(exc).__name__})"
 
 
 def exploration_annotations(question: str, connection_id: str) -> str:
@@ -173,7 +180,8 @@ def external_docs(question: str, connection_id: str = "", canvas_id: str = "") -
     """
     from aughor.knowledge.indexer import build_external_context_section
     return _safe(lambda: build_external_context_section(question, top_k=2,
-                                                        canvas_id=canvas_id or None),
+                                                        canvas_id=canvas_id or None,
+                                                        connection_id=connection_id or None),
                  "grounding: connection documents")
 
 
@@ -293,6 +301,9 @@ class GroundingBlock:
     key: str
     title: str
     content: str
+    #: Why the block could not be produced, when it could not — so an empty block that means "the source was
+    #: unreachable" is not read as "the source had nothing" (AGENTS.md: withheld is said, never implied).
+    note: str = ""
 
     @property
     def present(self) -> bool:
@@ -320,7 +331,8 @@ class GroundingContext:
         return {
             "question": self.question,
             "connection_id": self.connection_id,
-            "blocks": [{"key": b.key, "title": b.title, "present": b.present, "content": b.display}
+            "blocks": [{"key": b.key, "title": b.title, "present": b.present, "content": b.display,
+                        **({"note": b.note} if b.note else {})}
                        for b in self.blocks],
             "present_count": len(self.present),
         }
@@ -328,10 +340,13 @@ class GroundingContext:
     def to_markdown(self) -> str:
         lines = [f"# Grounding for “{self.question}”", ""]
         present = self.present
+        unreached = [b for b in self.blocks if b.note and not b.present]
         if not present:
             lines.append("_No grounding blocks fired for this question on this connection._")
+            lines += [f"_{b.title}: {b.note}._" for b in unreached]
             return "\n".join(lines)
         lines.append(f"_{len(present)} of {len(self.blocks)} grounding blocks active._")
+        lines += [f"_{b.title}: {b.note}._" for b in unreached]
         lines.append("")
         for b in present:
             lines.append(f"## {b.title}")
@@ -362,7 +377,8 @@ def build_grounding_context(
     """
     blocks: list[GroundingBlock] = []
     for key, title, producer, _needs in _BLOCKS:
-        content = producer(question, connection_id, db=db, schema=schema, eff_schema=eff_schema,
-                           canvas_id=canvas_id)
-        blocks.append(GroundingBlock(key=key, title=title, content=content))
+        out = producer(question, connection_id, db=db, schema=schema, eff_schema=eff_schema,
+                       canvas_id=canvas_id)
+        content, note = out if isinstance(out, tuple) else (out, "")
+        blocks.append(GroundingBlock(key=key, title=title, content=content, note=note))
     return GroundingContext(question=question, connection_id=connection_id, blocks=blocks)

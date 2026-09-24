@@ -299,6 +299,12 @@ def _family(p: EntityProperty) -> str:
     return "text"
 
 
+def find_computed(entity: OntologyEntity, name: str):
+    """A builder computed property of the type by name (`ComputedProperty`), or None."""
+    low = (name or "").lower()
+    return next((c for c in entity.computed_properties or [] if c.id.lower() == low), None)
+
+
 def find_property(entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
     """A property of the type by name: one its backing supplies, else one a further binding supplies (ON-1b)."""
     props = entity.properties or {}
@@ -462,10 +468,9 @@ def _qualify(fragment: str, alias: str, read: str, *, what: str, expression: boo
     return node.sql(dialect="duckdb")
 
 
-def _qualify_row_expression(fragment: str, alias: str, read: str, *, what: str) -> str:
-    """`_qualify` for a per-row expression property (2026-09-22): parsed as a SELECT expression, refused when it
-    holds a subquery, an aggregate or a window, and anchored on `alias` so a join cannot make a bare name mean
-    another table."""
+def _row_formula(fragment: str, read: str, *, what: str):
+    """A per-row formula (an expression property, or a builder's computed property) as a parsed SELECT expression —
+    refused when it holds a subquery, an aggregate or a window: a property is per row, an aggregate is a metric."""
     import sqlglot
     from sqlglot import exp
     try:
@@ -473,13 +478,18 @@ def _qualify_row_expression(fragment: str, alias: str, read: str, *, what: str) 
     except Exception as exc:  # noqa: BLE001 — an unparseable fragment is a refusal, never a guess
         raise ObjectQueryRefused(f"{what} could not be parsed to anchor it on the object ({exc})") from exc
     if node.find(exp.Select) is not None:
-        raise ObjectQueryRefused(f"{what} holds a subquery; an expression property is a flat expression")
+        raise ObjectQueryRefused(f"{what} holds a subquery; a formula property is a flat expression")
     if node.find(exp.AggFunc) is not None or node.find(exp.Window) is not None:
-        raise ObjectQueryRefused(f"{what} holds an aggregate or a window; an expression property is per row")
-    for col in node.find_all(exp.Column):
-        if not col.table:
-            col.set("table", exp.to_identifier(alias))
-    return node.sql(dialect="duckdb")
+        raise ObjectQueryRefused(f"{what} holds an aggregate or a window; a formula property is per row")
+    return node
+
+
+def formula_paths(fragment: str, read: str = "duckdb") -> list[str]:
+    """The property paths a per-row formula reads — a bare name is a property of the type, a dotted one reaches it
+    through to-one links (`customer.tier`). What the door checks each one against (`property_at`)."""
+    from sqlglot import exp
+    node = _row_formula(fragment, read, what="the formula")
+    return list(dict.fromkeys(".".join(p.name for p in col.parts) for col in node.find_all(exp.Column)))
 
 
 def _within(formula: str, condition: str) -> str:
@@ -642,6 +652,16 @@ class _Compiler:
         #: read's own statement (``__r`` for the read's own type, another for a type or binding joined inside it).
         self.far_paths: dict[str, tuple[KeyedRead, str]] = {}
         self._far_joined: dict[tuple, str] = {}
+        #: PENDING item 27 — the formula properties being resolved right now, so one that reaches itself is refused.
+        self._open_formulas: list[tuple[str, str]] = []
+        #: PENDING item 27 — what keeps a sum of a reading at a moment to one moment beyond `by` and `filters`: the
+        #: path a grain or window reads, and the path the measure being compiled is divided by the distinct count of.
+        self.time_path = ""
+        self._per_moment = ""
+        #: PENDING item 27 — each period reading a sum is answered at (a declared `take`): its join alias, the moment's
+        #: column, first or last, and the condition of the rows the measure reads — joined at assembly (`period_joins`).
+        self._periods: dict[tuple, str] = {}
+        self._period_specs: list[tuple[str, str, str, str]] = []
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
@@ -656,13 +676,15 @@ class _Compiler:
         return find_object_type(self.g, name)
 
     def prop(self, entity: OntologyEntity, name: str, path: str) -> EntityProperty:
-        p = find_property(entity, name) or self.virtual_prop(entity, name) or self.derived_prop(entity, name)
+        p = (find_property(entity, name) or self.virtual_prop(entity, name) or self.derived_prop(entity, name)
+             or self.computed_prop(entity, name))
         if p is not None:
             return p
         bound = sorted(name for binding in entity.bindings or [] for name in binding.properties)
         derived = sorted(d.name for d in derived_for(self.g, entity).properties)
+        computed = sorted(c.id for c in entity.computed_properties or [] if c.verified)
         names = (sorted(entity.properties or {}) + bound + sorted(overlay_properties(entity, self.overlay_edits))
-                 + derived)
+                 + derived + computed)
         links = sorted(h.name for h in object_links(self.g, entity))
         raise ObjectQueryRefused(f"{entity.id} has no property '{name}' (in '{path}'){_did_you_mean(name, names + links)}",
                                  names + links)
@@ -677,6 +699,17 @@ class _Compiler:
         return EntityProperty(name=edits[0].column, data_type="BOOLEAN" if boolean else "VARCHAR",
                               semantic_type="flag" if boolean else "dimension",
                               description="an overlay property — set by accepted edits, merged at read time")
+
+    def computed_prop(self, entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
+        """PENDING item 27 — a computed property the builder VERIFIED on the type (`Customer.days_since_signup`), as a
+        property: the prompt has cited these with authority all along, and the object door could not read one. An
+        unverified one is not a name it accepts; one whose formula aggregates is refused when read (a metric)."""
+        computed = find_computed(entity, name)
+        if computed is None or not computed.verified:
+            return None
+        return EntityProperty(name=computed.id, display_name=computed.label or computed.id,
+                              semantic_type="measure", unit=computed.unit or "", is_derived=True,
+                              description=f"a computed property: {computed.formula_sql}")
 
     def derived_prop(self, entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
         """ON-9 — a property a declared process derives on ``entity`` (`dispatch_lag_days`): the whole calendar days
@@ -696,7 +729,12 @@ class _Compiler:
             return self.far_column(scope, alias, entity, p)
         expression = (entity.expressions or {}).get(p.name)
         if expression is not None:
-            return self.expression_column(alias, entity, p.name, expression)
+            return self.expression_column(scope, alias, entity, p.name, expression)
+        computed = find_computed(entity, p.name) if find_property(entity, p.name) is None else None
+        if computed is not None:
+            self.plan.append(f"{entity.id}.{p.name}: = {computed.formula_sql} (a computed property)")
+            return self.formula_column(scope, alias, entity, p.name, computed.formula_sql,
+                                       what=f"{entity.id}.{p.name} (a computed property)")
         binding = property_binding(entity, p.name)
         if binding is not None:
             return self.binding_column(scope, alias, entity, binding, p)
@@ -728,15 +766,38 @@ class _Compiler:
             self.note_overlay(entity, p.name, edits)
         return f"CAST({ov}.v AS BOOLEAN)" if _is_bool(p) else f"{ov}.v"
 
-    def expression_column(self, alias: str, entity: OntologyEntity, name: str, expression) -> str:
-        """2026-09-22 — a property a person mapped to an expression over the type's own row: anchored on the
-        object's alias the way a segment's WHERE is, refused while unverified — a wrong expression must not
-        become a silent column."""
+    def expression_column(self, scope: _Scope, alias: str, entity: OntologyEntity, name: str, expression) -> str:
+        """2026-09-22 — a property a person mapped to an expression: refused while unverified — a wrong expression
+        must not become a silent column — and read through `formula_column`."""
         if expression.verified is not True:
             raise ObjectQueryRefused(f"{entity.id}.{name} is an expression that did not bind: "
                                      f"{expression.note or 'not yet verified'}")
         self.plan.append(f"{entity.id}.{name}: = {expression.expression} (an expression property)")
-        return _qualify_row_expression(expression.expression, alias, self.dialect, what=f"{entity.id}.{name}")
+        return self.formula_column(scope, alias, entity, name, expression.expression, what=f"{entity.id}.{name}")
+
+    def formula_column(self, scope: _Scope, alias: str, entity: OntologyEntity, name: str, formula: str, *,
+                       what: str) -> str:
+        """PENDING item 27 — a per-row formula, every name in it read by the compiler's own path law (`column_at`):
+        the type's own column, a property a binding supplies (a linked table, joined on the object's key), another
+        formula, or a property through to-one links (`customer.tier`). It read the backing's own columns only, so a
+        formula could not use a type's linked tables. A formula that reaches itself is refused, never looped."""
+        from sqlglot import exp
+        slot = (entity.id, name.lower())
+        if slot in self._open_formulas:
+            chain = " → ".join(f"{e}.{n}" for e, n in self._open_formulas[self._open_formulas.index(slot):] + [slot])
+            raise ObjectQueryRefused(f"{what} reaches itself ({chain}) — a formula cannot be defined by itself")
+        node = _row_formula(formula, self.dialect, what=what)
+        self._open_formulas.append(slot)
+        try:
+            def read(column):
+                if not isinstance(column, exp.Column):
+                    return column
+                path = ".".join(part.name for part in column.parts)
+                sql, _, _ = self.column_at(scope, entity, alias, path, what)
+                return exp.maybe_parse(sql, dialect=self.dialect)
+            return f"({node.transform(read).sql(dialect=self.dialect)})"
+        finally:
+            self._open_formulas.pop()
 
     def derived_column(self, scope: _Scope, alias: str, entity: OntologyEntity, d) -> str:
         """ON-9 — a derived lag: the calendar days between two of the object's moments, each read under the compiler's
@@ -773,6 +834,9 @@ class _Compiler:
         object's key. The join is taken only for a binding measured one row per object, so it can neither multiply
         nor drop an object; any other binding is a refusal naming why. ON-5 — a TIMESERIES binding is joined
         through its latest-row reduction, which is one row per object again."""
+        frame = (binding.frames or {}).get(p.name)
+        if frame is not None:
+            self.frame_check(entity, binding, p.name, frame)
         problem = binding_problem(entity, binding)
         if problem:
             raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which the compiler "
@@ -943,6 +1007,8 @@ class _Compiler:
                              + (" (its where applied to the readings)" if cond else ""))
             return out
         p = self.readings_property(binding, rest, t.path)
+        if t.agg == "sum":
+            self.readings_semiadditive_check(scope, binding, p.name, t.where, label)
         _check_aggregate(t.agg, p, t.path, self.caveats)
         value = f"{r.inner_alias}.{quote_ident(column_of(binding, p.name))}"
         if t.agg in ("sum", "avg") and _is_bool(p):
@@ -952,6 +1018,29 @@ class _Compiler:
                          f"{scope.entity.id}, rolled up" + (" (a ratio of sums)" if t.agg == "avg" else "")
                          + (" — its where applied to the readings" if cond else ""))
         return out
+
+    def readings_semiadditive_check(self, scope: _Scope, binding: Binding, name: str, where: list[ObjectFilter],
+                                    label: str) -> None:
+        """PENDING item 27 — a SUM over the READINGS of a reading at a moment (the history of a balance) adds it across
+        moments: refused unless the measure's own where keeps one moment of the readings — their time column, or the
+        declaration's `over`, `=` one value."""
+        from aughor.ontology.semiadditive import declared_reading, one_value
+        reading = declared_reading(self.g, scope.entity, name)
+        if reading is None:
+            return
+        clock_col = (binding.time_column or "").lower()
+        clock = {clock_col, reading.decl.over.lower()} | {
+            k.lower() for k in binding.properties if column_of(binding, k).lower() == clock_col}
+        if any(one_value(f) and f.path.strip().lower() in clock for f in where):
+            self.plan.append(f"{label}: {reading.owner.id}.{reading.prop} is a reading at a moment — its readings of "
+                             f"{binding.name} summed within one {binding.time_column} (the measure's where)")
+            return
+        raise ObjectQueryRefused(
+            f"{label}: {reading.said(scope.entity, name)} a reading at a moment, taken over {reading.decl.over}"
+            f"{reading.why()} — the readings of {binding.name} are many moments per {scope.entity.id} over "
+            f"{binding.time_column}, so their sum counts the same quantity once per reading. Keep the measure's where "
+            f"to one {binding.time_column}, take the readings' avg, min or max, or read {name} itself — its latest "
+            "reading")
 
     def note_readings(self, entity: OntologyEntity, binding: Binding, treatment: str, line: str) -> None:
         key = (entity.id, binding.name, treatment)
@@ -1123,6 +1212,12 @@ class _Compiler:
         """ON-8 — a property of a type this query reads by key from another connection: a column its backing holds, or
         (O2) one a binding of that type supplies."""
         read, inner = self.far_paths[alias]
+        if p.name in (entity.expressions or {}) or find_computed(entity, p.name) is not None:
+            # PENDING item 27 — a formula is minted into the type's properties by name, and was read here as a column
+            # the other connection's table would hold; it holds none of that name
+            raise ObjectQueryRefused(
+                f"{entity.id}.{p.name} is a formula, and {entity.id} is read by key from another connection — a type "
+                "read that way is read for its own columns and bindings; anchor the query on it to evaluate the formula")
         column = next((k for k in entity.properties or {} if k.lower() == p.name.lower()), None)
         if column is None:
             binding = property_binding(entity, p.name)
@@ -1436,6 +1531,9 @@ class _Compiler:
             raise ObjectQueryRefused(f"metric '{m.id}' is defined on {m.entity or ', '.join(m.tables)}, not "
                                      f"{scope.entity.id} — anchor the query on its object type", mine)
         formula = _qualify(m.formula_sql, scope.alias, self.dialect, what=f"metric {m.id}", expression=True)
+        at = self.semiadditive_formula_check(scope, m.formula_sql, f"metric {m.id}")
+        if at:
+            formula = _within(formula, at)          # every aggregate at each group's declared first or last moment
         # ON-9 — a verified rule on this type that scopes the metric restricts every aggregate its formula holds
         scoping = [r for _, r in sorted((self.g.rules or {}).items())
                    if r.verified is True and r.entity == scope.entity.id and m.id in (r.scopes or [])]
@@ -1504,7 +1602,8 @@ class _Compiler:
         for i, seg in enumerate(segs):
             last = i == len(segs) - 1
             if last:
-                p = find_property(entity, seg) or self.virtual_prop(entity, seg) or self.derived_prop(entity, seg)
+                p = (find_property(entity, seg) or self.virtual_prop(entity, seg) or self.derived_prop(entity, seg)
+                     or self.computed_prop(entity, seg))
                 if p is not None:
                     return self.prop_measure(scope, alias, p, hops, t, label, entity=entity)
                 if self.hop(entity, seg) is None:
@@ -1525,8 +1624,174 @@ class _Compiler:
             return self.many_measure(scope, h, ".".join(segs[i + 1:]), t, label)
         raise ObjectQueryRefused(f"{label}: measure path '{t.path}' did not resolve")
 
+    def semiadditive_check(self, scope: _Scope, entity: OntologyEntity, name: str, hops: list, label: str,
+                           where: Optional[list[ObjectFilter]] = None):
+        """PENDING item 27 — a SUM of a reading at a moment (a balance, a stock, a headcount — declared so, or a formula
+        that reads one) is refused unless the query keeps it to ONE moment (`one_moment`) — and only on the type that
+        declares it, never through a link, where the rows summed are readings from many moments. Summed across
+        moments, the same quantity is counted once per reading — unless the declaration names which reading stands for
+        a period (`take`): then the reading is returned, and the caller answers the sum at each group's first or last
+        moment (`period_reading`). None when nothing more is needed."""
+        from aughor.ontology.semiadditive import declared_reading
+        reading = declared_reading(self.g, entity, name)
+        if reading is None:
+            return None
+        decl, owner = reading.decl, reading.owner
+        if hops or reading.hops or scope is not self.top:
+            raise ObjectQueryRefused(
+                f"{label}: {reading.said(entity, name)} a reading at a moment, taken over {decl.over}{reading.why()} — "
+                f"a sum of it through a link adds readings from many moments. Anchor the query on {owner.id} "
+                f"(object_type '{owner.api_name}') and group by {decl.over}, or take its avg, min or max")
+        latest = property_binding(owner, reading.prop)
+        if latest is not None and latest.kind == "timeseries":
+            # ON-5 reads a timeseries property as each object's LATEST reading — one moment per object already; it
+            # is the readings behind it (`readings_semiadditive_check`) and a frame over them that span moments.
+            self.plan.append(f"{label}: {owner.id}.{reading.prop} is a reading at a moment — each {owner.id}'s "
+                             f"latest reading of {latest.name}, one per {owner.id}")
+            return None
+        how = self.one_moment(decl.over, where or [])
+        if how:
+            self.plan.append(f"{label}: {owner.id}.{reading.prop} is a reading at a moment over {decl.over} — summed "
+                             f"within one {decl.over} ({how})")
+            return None
+        if decl.take:
+            return reading
+        raise ObjectQueryRefused(
+            f"{label}: {reading.said(entity, name)} a reading at a moment, taken over {decl.over}{reading.why()} — "
+            f"summed across {decl.over} it counts the same quantity once per reading. Group by {decl.over}, filter "
+            f"to one {decl.over}, divide by the count of distinct {decl.over}, or take its avg, min or max — or "
+            f"declare which reading stands for a period (take: last, a month-end)")
+
+    def period_reading(self, reading, label: str, cond: str) -> str:
+        """PENDING item 27 — the condition that keeps a sum of a reading to each group's last (or first) moment, as its
+        declaration's `take` says: `<moment> = <that group's moment>`. The group's moment is found over the SAME rows
+        and the same grouping as the query itself — the query's filters, window and the measure's own where — so a
+        month-end is the last day in that month that has a reading, and ungrouped it is the last in all. A row whose
+        reading is not at that moment is not counted: a product not counted that day is not in that day's stock."""
+        decl = reading.decl
+        col, _, hops = self.column(self.top, decl.over, "its moment")
+        if hops:
+            raise ObjectQueryRefused(f"{label}: {decl.over} is reached through a link — a period's reading is taken on "
+                                     f"{reading.owner.id}'s own moment")
+        key = (col, decl.take, cond)
+        alias = self._periods.get(key)
+        if alias is None:
+            alias = self._alias("pr")
+            self._periods[key] = alias
+            self._period_specs.append((alias, col, decl.take, cond))
+        grouped = "each group's" if (self.q.by or self.q.grain) else "the query's"
+        self.plan.append(f"{label}: {reading.owner.id}.{reading.prop} is a reading at a moment over {decl.over} — "
+                         f"summed at {grouped} {decl.take} {decl.over} (declared take: {decl.take}), found over the "
+                         f"same rows")
+        return f"{col} = {alias}.__at"
+
+    def period_joins(self, source: str, where: str, keys: list[str]) -> str:
+        """The joins that carry each group's first or last moment for `period_reading`: the query's own rows and
+        grouping, aggregated to that moment, and joined back on the grouping (NULL-safe; no grouping, one row)."""
+        if self.far:
+            raise ObjectQueryRefused("a period's first or last reading is found over the query's rows on one connection, "
+                                     "and this query reads another connection by key — group by the moment instead")
+        out = ""
+        for alias, col, take, cond in self._period_specs:
+            target = f"CASE WHEN {cond} THEN {col} END" if cond else col
+            select = [*(f"{k} AS __g{i}" for i, k in enumerate(keys)),
+                      f"{'MAX' if take == 'last' else 'MIN'}({target}) AS __at"]
+            inner = f"SELECT {', '.join(select)} FROM {source}{where}"
+            if keys:
+                inner += " GROUP BY " + ", ".join(str(i + 1) for i in range(len(keys)))
+            on = " AND ".join(f"{k} IS NOT DISTINCT FROM {alias}.__g{i}" for i, k in enumerate(keys)) or "TRUE"
+            out += f" LEFT JOIN ({inner}) AS {alias} ON {on}"
+        return out
+
+    def one_moment(self, over: str, where: list[ObjectFilter]) -> str:
+        """How the query keeps a sum at the anchor to one moment of ``over`` — "" when it does not. Grouped by ``over``
+        or by the anchor's key measured unique (one row per group); filtered — the query, or the measure's own
+        `where` — to one value of either; a day or hour grain on ``over`` when it is a DATE; or the measure divided by
+        the count of distinct ``over`` (an average per moment)."""
+        top = self.top.entity
+        want = over.strip().lower()
+        b = top.backing
+        key = self.object_key(top).lower() if (b.verified if b is not None else top.grain_verified) is True else ""
+
+        def names(path: str) -> str:
+            path = (path or "").strip()
+            if not path or "." in path:
+                return ""
+            p = find_property(top, path)
+            return (p.name if p is not None else path).lower()
+
+        for path in self.q.by:
+            if names(path) == want:
+                return f"grouped by {over}"
+            if key and names(path) == key:
+                return f"grouped by {top.id}'s key {key}"
+        from aughor.ontology.semiadditive import one_value
+        for f in [*self.q.filters, *where]:
+            if one_value(f) and names(f.path) == want:
+                return f"filtered to one {over}"
+            if one_value(f) and key and names(f.path) == key:
+                return f"filtered to one {top.id}"
+        if self.q.grain in ("day", "hour") and names(self.time_path) == want:
+            p = find_property(top, over)
+            dtype = ((p.data_type if p is not None else "") or "").upper()
+            if "DATE" in dtype and "TIME" not in dtype:
+                return f"a {self.q.grain} grain on the date {over}"
+        if self._per_moment and names(self._per_moment) == want:
+            return f"divided by the count of distinct {over} — an average per {over}"
+        return ""
+
+    def semiadditive_formula_check(self, scope: _Scope, formula: str, label: str) -> str:
+        """A metric whose formula SUMs a reading at a moment is held to the same law as a sum measure — except the one
+        shape that is itself an average per moment, `SUM(x) / COUNT(DISTINCT <over>)`. Returns the condition that keeps
+        the formula to each group's declared first or last moment, or "" (`period_reading`)."""
+        if not scope.entity.semiadditive:
+            return ""
+        import sqlglot
+        from sqlglot import exp
+
+        from aughor.ontology.semiadditive import declared_reading
+        from aughor.sql.semiadditive import per_moment
+        try:
+            node = sqlglot.parse_one(f"SELECT {formula} FROM _t", read=self.dialect)
+        except Exception:  # noqa: BLE001 — `_qualify` already refused what cannot parse
+            return ""
+        at: list[str] = []
+        for total in node.find_all(exp.Sum):
+            for column in total.find_all(exp.Column):
+                reading = declared_reading(self.g, scope.entity, column.name)
+                if reading is not None and per_moment(total, reading.decl.over.lower(), exp):
+                    self.plan.append(f"{label}: SUM({column.name}) / COUNT(DISTINCT {reading.decl.over}) — an "
+                                     f"average per {reading.decl.over} of a reading at a moment")
+                    continue
+                period = self.semiadditive_check(scope, scope.entity, column.name, [], label)
+                if period is not None:
+                    at.append(self.period_reading(period, label, ""))
+        return " AND ".join(dict.fromkeys(at))
+
+    def frame_check(self, entity: OntologyEntity, binding: Binding, name: str, frame) -> None:
+        """PENDING item 27 — a frame that SUMS the readings of a reading at a moment adds it across moments, whatever
+        reads the frame: refused, naming the frame and the declaration. A frame over the current reading only, or
+        one that reads a reading back (`offset`), is one moment."""
+        if frame.offset or frame.agg != "sum" or frame.range == "current":
+            return
+        from aughor.ontology.semiadditive import declared_reading
+        column = frame.column.lower()
+        supplied = next((k for k in binding.properties
+                         if k not in binding.frames and column_of(binding, k).lower() == column), frame.column)
+        reading = declared_reading(self.g, entity, supplied)
+        if reading is None:
+            return
+        raise ObjectQueryRefused(
+            f"{entity.id}.{name} is {frame.describe()} — and {reading.said(entity, supplied)} a reading at a moment, "
+            f"taken over {reading.decl.over}{reading.why()}, so that sum counts the same quantity once per reading. "
+            f"Declare the frame an avg, min or max")
+
     def prop_measure(self, scope: _Scope, alias: str, p: EntityProperty, hops: list[ObjectLink],
                      t: MeasureTerm, label: str, entity: Optional[OntologyEntity] = None) -> str:
+        period = None
+        if t.agg == "sum":
+            period = self.semiadditive_check(scope, entity or (hops[-1].target if hops else scope.entity), p.name,
+                                             hops, label, t.where)
         _check_aggregate(t.agg, p, t.path, self.caveats)
         # A 1:1 hop cannot repeat a value (both keys are unique); an N:1 hop repeats the one
         # side once per matching row, and that is what a SUM, AVG or COUNT would count.
@@ -1539,6 +1804,9 @@ class _Compiler:
                 f"Anchor the query on {one.id} (object_type '{one.api_name}') and reach {scope.entity.id} "
                 "through its link, or use count_distinct / min / max, which repetition cannot change.")
         cond = self.where(scope, t.where)
+        if period is not None:
+            at = self.period_reading(period, label, cond)
+            cond = f"({cond}) AND ({at})" if cond else at
         if entity is not None:
             value = self.colref(scope, alias, entity, p)
         elif alias in self.far_paths:
@@ -1585,6 +1853,9 @@ class _Compiler:
             self.plan.append(f"{label}: {h.target.id} objects counted per {h.source.id}, then summed")
             return f"COALESCE(SUM({ml.alias}.{v}), 0)"
         col, p, inner_hops = self.column(ml.inner, rest, "measure")
+        if agg == "sum":
+            self.semiadditive_check(ml.inner, inner_hops[-1].target if inner_hops else h.target, p.name,
+                                    [h, *inner_hops], label)
         _check_aggregate(agg, p, f"{h.name}.{rest}", self.caveats)
         if agg in ("sum", "avg", "count") and any(h.label != "1:1" for h in inner_hops):
             raise ObjectQueryRefused(
@@ -1659,12 +1930,15 @@ class _Compiler:
         names: list[str] = []
         dims: list[str] = []
         measure_names: list[str] = []
+        keys: list[str] = []                     # the grouping, as SQL — what a period reading is found per
         time_col = ""
         if q.grain or q.start or q.end:
             time_col, time_path = self.time_column(scope)
+            self.time_path = time_path
         if q.grain:
             from aughor.sql.fiscal import fiscal_period_expr
             select.append(f"{fiscal_period_expr(q.grain, time_col, self.fiscal, 'duckdb')} AS period")
+            keys.append(fiscal_period_expr(q.grain, time_col, self.fiscal, 'duckdb'))
             names.append("period")
             where.append(f"{time_col} IS NOT NULL")
             self.plan.append(f"over({q.grain}) on {time_path}")
@@ -1672,6 +1946,7 @@ class _Compiler:
             col, _, _ = self.column(scope, path, "dimension")
             name = _output_name(names, path.rsplit(".", 1)[-1], path.replace(".", "_"))
             select.append(f"{col} AS {quote_ident(name)}")
+            keys.append(col)
             names.append(name)
             dims.append(name)
             self.plan.append(f"by {path}")
@@ -1686,7 +1961,12 @@ class _Compiler:
 
         for m in q.measures:
             label = f"measure {m.name or m.metric or (m.agg + ('(' + m.path + ')' if m.path else ''))}"
-            expr = self.term(scope, m, label)
+            d = m.divide_by
+            self._per_moment = d.path if (d is not None and d.agg == "count_distinct" and not d.where) else ""
+            try:
+                expr = self.term(scope, m, label)
+            finally:
+                self._per_moment = ""
             if m.divide_by is not None:
                 den = self.term(scope, m.divide_by, f"{label} ÷")
                 expr = f"1.0 * ({expr}) / NULLIF({den}, 0)"
@@ -1703,19 +1983,21 @@ class _Compiler:
             names.append(name)
             measure_names.append(name)
 
-        sql = f"SELECT {', '.join(select)} FROM {backing_from(anchor, 't0')}"
-        sql += "".join(f" {j}" for j in scope.joins)
+        source = backing_from(anchor, 't0')
+        source += "".join(f" {j}" for j in scope.joins)
         for ml in self._many.values():
-            sql += " " + (self.pre_aggregated(ml.alias, ml.pre_aggregate(), ml.inner.source, ml.outer_alias,
-                                              ml.hop.local_col, ml.columns, ml.hop.target.id,
-                                              f"link {ml.hop.name} ({ml.hop.source.id} → {ml.hop.target.id}), "
-                                              "pre-aggregated") if ml.far else ml.join_sql())
+            source += " " + (self.pre_aggregated(ml.alias, ml.pre_aggregate(), ml.inner.source, ml.outer_alias,
+                                                 ml.hop.local_col, ml.columns, ml.hop.target.id,
+                                                 f"link {ml.hop.name} ({ml.hop.source.id} → {ml.hop.target.id}), "
+                                                 "pre-aggregated") if ml.far else ml.join_sql())
         for r in self._readings.values():
-            sql += " " + (self.pre_aggregated(r.alias, r.pre_aggregate(), r.source, r.outer_alias, r.entity_key,
-                                              r.columns, r.binding.name,
-                                              f"readings of {r.binding.name}, pre-aggregated") if r.far else r.join_sql())
-        if where:
-            sql += " WHERE " + " AND ".join(f"({w})" for w in where)
+            source += " " + (self.pre_aggregated(r.alias, r.pre_aggregate(), r.source, r.outer_alias, r.entity_key,
+                                                 r.columns, r.binding.name,
+                                                 f"readings of {r.binding.name}, pre-aggregated") if r.far
+                             else r.join_sql())
+        where_sql = (" WHERE " + " AND ".join(f"({w})" for w in where)) if where else ""
+        periods = self.period_joins(source, where_sql, keys) if self._period_specs else ""
+        sql = f"SELECT {', '.join(select)} FROM {source}{periods}{where_sql}"
         if grouped:
             sql += " GROUP BY " + ", ".join(str(i + 1) for i in range(grouped))
         order = self.order(names, grouped)

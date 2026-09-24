@@ -90,6 +90,15 @@ export interface ClarifyPending {
   previews: string[];
 }
 
+/** The answer's SQL is the semantic compiler's, adopted as written — what it compiled (PENDING item 25: the
+ *  backend has emitted this since the compiler stopped overriding the model, and nothing showed it). */
+export interface CompiledFrame {
+  intentType: string;
+  entity: string;
+  measure: string;
+  dimension: string;
+}
+
 /** A4 — one visible guard intervention: a silent rewrite made narratable. */
 export interface GuardReceipt {
   guard: string;
@@ -261,6 +270,8 @@ export interface ChatTurn {
 
   // ON-10 — the question's frame: its business terms read against the declared ontology before the run started.
   frame: OntologyFrame | null;
+  // The answer's SQL came from the semantic compiler, adopted as written.
+  compiled: CompiledFrame | null;
 
   // Explore mode
   subQuestions: SubQuestion[];
@@ -338,6 +349,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   statusText: null, phases: [], deepReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
   frame: null,
+  compiled: null,
   dossierReport: null, dossierInsightId: null,
   overviewReport: null,
   recheck: null,
@@ -555,6 +567,12 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
   },
   playbook_refs: (t, d) => { t.playbookRefs = (d.items as PlaybookRef[]) ?? []; },
   frame: (t, d) => { t.frame = (d.frame as OntologyFrame) ?? null; },
+  compiled: (t, d) => {
+    t.compiled = {
+      intentType: String(d.intent_type ?? ""), entity: String(d.entity ?? ""),
+      measure: String(d.measure ?? ""), dimension: String(d.dimension ?? ""),
+    };
+  },
   clarifying_questions: (t, d) => {
     t.clarifyingQuestions = (d.questions as string[]) ?? [];
     t.clarifyingContext = (d.context_note as string) ?? "";

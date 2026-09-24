@@ -80,6 +80,15 @@ class DraftRun(BaseModel):
     refused: int = 0
     already: int = 0
     withdrawn: int = 0
+    #: Why applying the run's proposals stopped part-way, when it did (PENDING item 20): the run is recorded anyway,
+    #: so the model call it paid for is not paid again by every restart that finds no run here.
+    error: str = ""
+
+
+class DraftUnreadable(RuntimeError):
+    """The scope's record exists and does not parse. It holds what people WITHDREW, so nothing may write over it and
+    no explorer may run on it until a person repairs or removes it — an empty record in its place would propose
+    every withdrawal again, and saving that record would erase them for good (PENDING item 20)."""
 
 
 class OntologyDraft(BaseModel):
@@ -97,21 +106,41 @@ def _path(connection_id: str, schema_name: str) -> Path:
     return _ROOT / _safe(connection_id) / f"{_safe(schema_name)}.yaml"
 
 
-def load_draft(connection_id: str, schema_name: str) -> OntologyDraft:
+def draft_unreadable(connection_id: str, schema_name: str) -> str:
+    """Why the scope's record cannot be read, or ``""`` when it reads (or does not exist yet)."""
+    path = _path(connection_id, schema_name)
+    if not path.exists():
+        return ""
+    try:
+        OntologyDraft.model_validate(yaml.safe_load(path.read_text()) or {})
+    except Exception as exc:  # noqa: BLE001 — any failure to read is the answer
+        return f"{path} does not parse ({type(exc).__name__}: {str(exc)[:200]})"
+    return ""
+
+
+def load_draft(connection_id: str, schema_name: str, *, strict: bool = False) -> OntologyDraft:
     """The scope's record, or an empty one when there is none. A record that no longer parses is logged and read as
-    empty — the explorer still works, and what it forgot is only which proposals a person withdrew."""
+    empty for SHOWING (``strict=False``); a caller about to act on it — the explorer — passes ``strict=True`` and
+    gets :class:`DraftUnreadable` instead, because what the empty record forgot is which proposals a person
+    withdrew (PENDING item 20)."""
     path = _path(connection_id, schema_name)
     if path.exists():
         try:
             return OntologyDraft.model_validate(yaml.safe_load(path.read_text()) or {})
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ontology draft %s could not be read (%s) — starting an empty record", path, exc)
+            if strict:
+                raise DraftUnreadable(draft_unreadable(connection_id, schema_name)) from exc
+            logger.warning("ontology draft %s could not be read (%s) — showing an empty record", path, exc)
     return OntologyDraft(connection_id=connection_id, schema_name=schema_name)
 
 
 def save_draft(draft: OntologyDraft) -> None:
     """Write the record, atomically. Raises: the record is what keeps a second run from writing twice and from
-    proposing what a person withdrew, so a failed save must be reported, not swallowed."""
+    proposing what a person withdrew, so a failed save must be reported, not swallowed. It never writes over a record
+    that does not parse — that record still holds the withdrawals an empty one would erase (:class:`DraftUnreadable`)."""
+    unreadable = draft_unreadable(draft.connection_id, draft.schema_name)
+    if unreadable:
+        raise DraftUnreadable(unreadable)
     path = _path(draft.connection_id, draft.schema_name)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")

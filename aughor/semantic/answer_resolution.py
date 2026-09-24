@@ -256,11 +256,15 @@ def _parse_schema(schema: str):
     domains: list[tuple[str, str, list[str]]] = []
     seen: set[tuple[str, str]] = set()
     cur = None
+    from aughor.db.schema_render import parse_inline_columns
     for line in (schema or "").splitlines():
         tm = _TABLE_LINE.match(line)
         if tm:
             cur = tm.group(1)
-            tables[cur] = []
+            # The inline form five warehouse connectors write (`TABLE: t [a INT, b TEXT]`) carries
+            # its columns on the header and nothing beneath it; read as indented lines only, every
+            # such table had no columns and nothing here could bind (PENDING item 19).
+            tables[cur] = [name for name, _t in parse_inline_columns(line)]
             continue
         if not cur:
             continue
@@ -448,6 +452,24 @@ def _string_dim_columns(schema: str) -> list[tuple[str, str]]:
     return out
 
 
+def _cached_columns_in_scope(value_samples: dict, schema: str, *,
+                             exclude: list[tuple[str, str]]) -> list[tuple[tuple[str, str], tuple]]:
+    """The offline lookup's second pass: ``((table as this schema spells it, col), cache key)``
+    for every cached column whose table this schema names, in a stable order. A key for a table
+    outside the schema (another canvas's scope, a table since dropped) is never offered, and a
+    binding names the table the way the prompt does, not the way the cache happened to."""
+    names = {t.rsplit(".", 1)[-1].lower(): t for t in _parse_schema(schema)[0]}
+    seen = set(exclude)
+    out: list[tuple[tuple[str, str], tuple]] = []
+    for key in sorted(value_samples):
+        table, col = key
+        spelled = names.get(str(table).rsplit(".", 1)[-1].lower())
+        if spelled is not None and (spelled, col) not in seen:
+            out.append(((spelled, col), key))
+            seen.add((spelled, col))
+    return out
+
+
 def _stem(w: str) -> str:
     """Crudest singular stem, so a plural question word matches a singular column name
     ('categories' → 'category', 'brands' → 'brand'). Good enough for column-name matching."""
@@ -521,15 +543,19 @@ def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] 
     present there binds OFFLINE, skipping the live probe. A MISS still falls through to the live
     probe — the persisted set can lag the data, and the contract forbids a sample-only absent."""
     cols = _rank_dim_columns(_string_dim_columns(schema), prefer_tables, question)
-    if not cols:
-        return None
 
     low = token.lower()
-    # Offline first, over ALL ranked columns (in-memory; no DB) — cheapest and complete.
+    # Offline first (in-memory; no DB) — cheapest and complete. The ranked candidates, then
+    # EVERY other cached column whose table is in this schema: the name gate on `cols` limits
+    # LIVE probes, which cost a warehouse round trip each, and was also gating this read of
+    # values already cached — so a value in a column named `make`, or any column on a
+    # warehouse whose schema carries no indented column lines, never bound (PENDING item 19).
     if value_samples:
         from aughor.sql.value_index import ValueIndex
-        for table, col in cols:
-            sample = value_samples.get((table, col))
+        pairs = [((t, c), (t, c)) for t, c in cols] + _cached_columns_in_scope(
+            value_samples, schema, exclude=cols)
+        for (table, col), key in pairs:
+            sample = value_samples.get(key)
             if not sample:
                 continue
             for v in sample:
@@ -539,7 +565,7 @@ def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] 
             if m is not None:
                 return (table, col, m)
 
-    if db is None:
+    if not cols or db is None:
         return None
     lit = token.replace("'", "''")  # SQL-literal escape; the read-only gate blocks non-SELECT
     checked = 0
@@ -666,8 +692,11 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
         value_samples: dict = {}
         if candidates and connection_id:
             try:
-                from aughor.tools.profile_cache import load_value_samples
-                value_samples = load_value_samples(connection_id)
+                from aughor.tools.profile_cache import load_top_values, load_value_samples
+                # the low-cardinality columns' top values too: the house schema renders them as
+                # annotations, the inline form renders none (PENDING item 19)
+                value_samples = {**load_top_values(connection_id),
+                                 **load_value_samples(connection_id)}
             except Exception:
                 value_samples = {}
         # R11 — a per-column-config `index: false` retires a column's persisted

@@ -1,0 +1,67 @@
+target_kind: entity
+target_id: Customer
+fields:
+  bindings:
+    tickets:
+      kind: detail
+      key: customer_id
+      table: customer_service
+      rollups:
+        ticket_count:
+          column: ticket_id
+          agg: count
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: 'shipped for LuxExperience (PENDING item 26): the bindings a person set on Customer.
+  Specs from the served graph of 2026-09-15 (connection 914df862, evals/ablation_luxexperience_business_ontology.json);
+  bound by the real binder against the recorded source schemas, not the warehouse,
+  which a clone does not have; the counts are the ones measured on the warehouse that
+  day.'
+binding:
+  bindings:
+    bound: true
+    note: ''
+    entries:
+      tickets:
+        bound: true
+        note: ''
+        spec:
+          kind: detail
+          key: customer_id
+          table: customer_service
+          rollups:
+            ticket_count:
+              column: ticket_id
+              agg: count
+        columns:
+          ticket_id: VARCHAR
+          customer_id: VARCHAR
+          order_id: VARCHAR
+          platform: VARCHAR
+          channel: VARCHAR
+          category: VARCHAR
+          created_date: DATE
+          resolution_days: BIGINT
+          csat: BIGINT
+        supplies:
+          ticket_count: how many of each object's tickets rows carry ticket_id
+        skipped: {}
+        measured:
+          spec:
+            kind: detail
+            key: customer_id
+            table: customer_service
+            rollups:
+              ticket_count:
+                column: ticket_id
+                agg: count
+          rows: 11244
+          non_null: 11244
+          distinct: 7841
+          objects: 35136
+          covered: 7841
+          orphans: 0
+          verified: true
+          note: 'customer_id: 11,244 keyed rows over 7,841 keys; covers 7,841 of 35,136
+            Customer objects'

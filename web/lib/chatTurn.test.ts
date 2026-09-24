@@ -206,6 +206,15 @@ describe("deep-path parity (the reducer's investigate-mode fields)", () => {
     expect(projectTurn("q", undefined).frame).toBeNull();
   });
 
+  it("carries the compiled badge onto the turn (PENDING item 25)", async () => {
+    const msg = await messageFrom([
+      { event: "compiled", data: { intent_type: "aggregate", entity: "orders", measure: "revenue", dimension: "month" } },
+    ]);
+    expect(projectTurn("revenue by month", msg).compiled).toEqual(
+      { intentType: "aggregate", entity: "orders", measure: "revenue", dimension: "month" });
+    expect(projectTurn("q", undefined).compiled).toBeNull();
+  });
+
   it("keeps the live synthesis prose on its own channel while streaming", async () => {
     const msg = await messageFrom([
       { event: "report_delta", data: { executive_summary: "Deep prose so far" } },

@@ -120,11 +120,15 @@ def _resource_org(kind: str, resource_id: str) -> Optional[str]:
         from aughor.savedquery.store import get_saved_query
         q = get_saved_query(resource_id)
         return get_connection_org(q.connection_id) if q and q.connection_id else None
-    # Agent-owned resources (monitor / alert / brief subscription) live in agent stores
-    # the platform must not import — the Agent registers a resource→connection resolver
-    # in the registry at bootstrap, and we resolve conn→org here (org lives on the
-    # connection). Bare platform (no agent) → no resolver → None → allow, as above.
+    # Agent-owned resources live in agent stores the platform must not import — the Agent
+    # registers resolvers in the registry at bootstrap. A resource that carries its OWN owner
+    # (a document, PENDING item 16: an upload belongs to the org that indexed it, a schema doc
+    # to its connection's org, a shared builtin's to none) resolves straight to its org; the
+    # rest (monitor / alert / brief subscription) resolve to a connection, and conn→org here
+    # (org lives on the connection). Bare platform (no agent) → no resolver → None → allow.
     from aughor.kernel.registries import resource_org as _rreg
+    if _rreg.resolves_org(kind):
+        return _rreg.resolve_resource_org(kind, resource_id)
     conn_id = _rreg.resolve_resource_conn(kind, resource_id)
     return get_connection_org(conn_id) if conn_id else None
 

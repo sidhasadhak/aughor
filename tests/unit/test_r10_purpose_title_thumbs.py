@@ -90,4 +90,5 @@ def test_unhelpful_thumbs_never_decrements(client):
 def test_thumbs_on_unknown_turn_is_fail_open(client):
     r = client.post("/chat/feedback", json={"conn_id": "connT", "turn_id": "nope",
                                             "verdict": "helpful"})
-    assert r.status_code == 200 and r.json() == {"ok": True}
+    # fail-open, and it says so: an unknown turn is not recorded as accepted (PENDING item 23)
+    assert r.status_code == 200 and r.json() == {"ok": True, "accepted": False}

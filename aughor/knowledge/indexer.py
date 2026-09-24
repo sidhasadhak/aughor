@@ -52,6 +52,7 @@ def get_document(doc_id: str) -> Optional[dict]:
 def _register(doc_id: str, filename: str, title: str, chunk_count: int, uploaded_at: str,
               settings: Optional[dict] = None) -> None:
     docs = _load_registry()
+    previous = next((d for d in docs if d["doc_id"] == doc_id), None)
     # Remove any existing entry for this doc_id
     docs = [d for d in docs if d["doc_id"] != doc_id]
     docs.append({
@@ -65,8 +66,74 @@ def _register(doc_id: str, filename: str, title: str, chunk_count: int, uploaded
         # and cannot now recall. Absent on every document indexed before this existed,
         # which `ChunkSettings.from_dict(None)` reads as "the defaults", because it was.
         **({"chunk_settings": settings} if settings else {}),
+        # Whose it is. A re-index (a connector re-sync, a restore) never changes the owner a
+        # document was first stamped with — only the connection's own org decides a doc tree.
+        **_ownership(doc_id, previous),
     })
     _save_registry(docs)
+
+
+def _ownership(doc_id: str, previous: Optional[dict] = None) -> dict:
+    """The registry fields that say whose a document is, stamped when it is indexed.
+
+    PENDING item 16: the store had no owner on any row, so retrieval handed a question on one
+    connection another connection's schema docs, and with sign-in on another organisation's
+    uploads. A generated schema doc belongs to its connection and, through it, to that
+    connection's organisation — ``""`` for a shared builtin, which every organisation reads.
+    Anything else belongs to the organisation that indexed it, and keeps it."""
+    conn = doctree_connection(doc_id)
+    if conn is not None:
+        return {"connection_id": conn, "org_id": _connection_org(conn)}
+    if previous and "org_id" in previous:
+        return {"org_id": previous["org_id"]}
+    from aughor.org.context import current_org_id
+    return {"org_id": current_org_id()}
+
+
+def _connection_org(connection_id: str) -> str:
+    """The organisation that owns a connection, ``""`` for a shared builtin. An unreadable
+    registry raises: guessing an owner would decide who may read the document."""
+    from aughor.db.registry import get_connection_org
+    return get_connection_org(connection_id) or ""
+
+
+def entry_org(entry: dict) -> Optional[str]:
+    """The organisation a registry row belongs to, or ``None`` when every organisation may
+    read it (a shared builtin connection's schema docs).
+
+    A row indexed before owners were stamped carries none: a schema doc resolves through its
+    connection as a new one would, and an upload belongs to the default organisation — the
+    only one that existed when it was made."""
+    if "org_id" in entry:
+        return entry["org_id"] or None
+    conn = doctree_connection(entry.get("doc_id", ""))
+    if conn is not None:
+        return _connection_org(conn) or None
+    from aughor.org.context import DEFAULT_ORG_ID
+    return DEFAULT_ORG_ID
+
+
+def document_org(doc_id: str) -> Optional[str]:
+    """The organisation that owns a registered document (``entry_org``), or ``None`` for an
+    unregistered id — the ownership guard then lets the door answer its own 404."""
+    entry = get_document(doc_id)
+    return entry_org(entry) if entry else None
+
+
+def in_scope(entry: dict, *, connection_id: Optional[str] = None,
+             org_id: Optional[str] = None) -> bool:
+    """May a question on ``connection_id``, asked inside ``org_id``, read this document?
+
+    Another connection's schema docs describe tables this connection does not have, so they
+    are never in scope for it. ``org_id`` is ``None`` with sign-in off (one tenant owns every
+    row); otherwise a document is readable by its own organisation, or by everyone when it
+    belongs to none."""
+    doc_id = entry.get("doc_id", "")
+    if connection_id and doctree_connection(doc_id) not in (None, connection_id):
+        return False
+    if org_id is not None and entry_org(entry) not in (None, org_id):
+        return False
+    return True
 
 
 def correct_chunk_count(doc_id: str, chunk_count: int) -> bool:
@@ -249,6 +316,14 @@ def doctree_doc_id(connection_id: str, schema: str = "") -> str:
     return f"{DOCTREE_PREFIX}{connection_id}::{schema or 'default'}"
 
 
+def doctree_connection(doc_id: str) -> Optional[str]:
+    """The connection a generated doc tree documents — ``doctree_doc_id`` read backwards — or
+    ``None`` for a document a person or a connector put there."""
+    if not is_generated(doc_id):
+        return None
+    return doc_id[len(DOCTREE_PREFIX):].rsplit("::", 1)[0]
+
+
 def is_generated(doc_id: str) -> bool:
     """Was this document COMPILED by the platform rather than uploaded by a person?
 
@@ -323,21 +398,36 @@ def index_doc_tree(tree, *, connection_id: str, schema: str = "") -> dict:
     return {"doc_id": doc_id, "chunk_count": len(chunks)}
 
 
-def search_documents(query: str, top_k: int = 4) -> list[dict]:
+def search_documents(query: str, top_k: int = 4, *,
+                     connection_id: Optional[str] = None) -> list[dict]:
     """
     Semantic search over indexed documents.
     Returns list of {text, filename, title, doc_id, score} sorted by relevance.
+
+    Only what the question may read (PENDING item 16): a document still in the registry — a
+    deleted one's vectors can outlive it, since deleting them is best-effort, and the registry
+    row is what deleting it removed — never another connection's schema docs when
+    ``connection_id`` is given, and with sign-in on only the caller's organisation's documents.
+    Over-fetches so the filters cannot shrink the answer below ``top_k``.
     """
     try:
+        from aughor.security.authz import tenant_scope
         from aughor.semantic.embedder import embed_one
         from aughor.semantic.vector_store import collection_count, search
         if collection_count(DOCS_COLLECTION) == 0:
             return []
         vector = embed_one(query)
-        hits = search(DOCS_COLLECTION, vector, top_k=top_k)
+        hits = search(DOCS_COLLECTION, vector, top_k=max(top_k * 4, 16))
+        registry = {d["doc_id"]: d for d in _load_registry()}
+        org_id = tenant_scope()
         results = []
         for h in hits:
             p = h["payload"]
+            entry = registry.get(p.get("doc_id", ""))
+            if entry is None or not in_scope(entry, connection_id=connection_id, org_id=org_id):
+                continue
+            if len(results) >= top_k:
+                break
             results.append({
                 "text": p.get("text", ""),
                 "filename": p.get("filename", ""),
@@ -354,10 +444,12 @@ def search_documents(query: str, top_k: int = 4) -> list[dict]:
 
 
 def build_external_context_section(query: str, top_k: int = 4,
-                                   canvas_id: Optional[str] = None) -> str:
+                                   canvas_id: Optional[str] = None,
+                                   connection_id: Optional[str] = None) -> str:
     """
     Retrieve relevant document snippets and format them for prompt injection.
     Returns empty string when no documents are indexed or Qdrant is unavailable.
+    ``connection_id`` keeps another connection's schema docs out (`search_documents`).
 
     Two scopes act here, and they are deliberately not the same shape.
 
@@ -389,10 +481,11 @@ def build_external_context_section(query: str, top_k: int = 4,
 
     pinned_hits: list[dict] = []
     if pinned_ids:
-        wide = search_documents(query, top_k=max(top_k * 8, 32))
+        wide = search_documents(query, top_k=max(top_k * 8, 32), connection_id=connection_id)
         pinned_hits = [h for h in wide if h.get("doc_id") in set(pinned_ids)][:top_k]
 
-    hits = search_documents(query, top_k=top_k if allowed is None else max(top_k * 4, 16))
+    hits = search_documents(query, top_k=top_k if allowed is None else max(top_k * 4, 16),
+                            connection_id=connection_id)
     if allowed is not None:
         hits = [h for h in hits if h.get("doc_id") in allowed]
     seen = {(h.get("doc_id"), h.get("chunk_index")) for h in pinned_hits}

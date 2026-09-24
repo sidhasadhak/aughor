@@ -89,3 +89,95 @@ def test_withdrawing_a_shipped_declaration_hides_it_on_this_install_only(fresh_i
     assert "vip_customers" not in graph.rules and "eu_markets" in graph.rules
     assert (REPO / "data/shipped/ontology_overrides/key=luxexperience/luxexperience/rule/vip_customers.yaml").exists()
     assert OV.override_scopes(RANDOM_ID) == ["luxexperience"]
+
+
+# ── PENDING item 26 — every shipped declaration compiles on a clone ─────────────────────────────
+
+def _clone(snapshot: dict) -> OntologyGraph:
+    """What a fresh clone builds before any declaration: the snapshot without ANY part a person declared — the
+    processes, rules and actions `_stripped` removes, and also the bindings a person set and the links a person
+    declared. `_stripped` kept those, which is how the shipped `order_to_shipment` could not compile on a clone (its
+    shipped stage reads `ship_date`, which only the `shipments` binding supplies) while this file stayed green."""
+    clone = json.loads(json.dumps(snapshot))
+    for entity in clone["entities"].values():
+        entity["bindings"] = [b for b in (entity.get("bindings") or []) if b.get("source") != "human"]
+    rels = clone.get("relationships") or {}
+    declared = {rid for rid, r in rels.items() if r.get("declared") or r.get("origin") == "human"}
+    clone["relationships"] = {rid: r for rid, r in rels.items() if rid not in declared}
+    kept = {frozenset((r["from_entity"], r["to_entity"])) for r in clone["relationships"].values()}
+    clone["relationship_index"] = {a: [b for b in bs if frozenset((a, b)) in kept]
+                                   for a, bs in (clone.get("relationship_index") or {}).items()}
+    return _stripped(clone)
+
+
+def _problems(graph: OntologyGraph) -> list[str]:
+    """Each declaration through its OWN door's resolver — the check that runs before a person's declaration is
+    written, so a shipped one is held to exactly the same law."""
+    from aughor.ontology.business_rules import resolve_rule
+    from aughor.ontology.processes import resolve_process
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
+    out = []
+    for pid, p in graph.processes.items():
+        fields = json.loads(json.dumps({"entity": p.entity, "stages": [s.model_dump(exclude_none=True) for s in p.stages]}))
+        problem, _ = resolve_process(graph, pid, fields)
+        out += [f"process {pid}: {problem}"] if problem else []
+    for rid, r in graph.rules.items():
+        problem, _ = resolve_rule(graph, rid, {k: v for k, v in r.model_dump().items()
+                                               if k in ("entity", "kind", "property", "values", "conditions")})
+        out += [f"rule {rid}: {problem}"] if problem else []
+    for mid, m in graph.metrics.items():
+        if not m.verified:
+            continue
+        try:
+            entity = find_object_type(graph, m.entity)
+            compile_object_query({"object_type": entity.api_name, "measures": [{"name": "v", "metric": mid}]}, graph)
+        except ObjectQueryRefused as exc:
+            out.append(f"metric {mid}: {exc.reason}")
+    for action in graph.declared_actions():
+        try:
+            find_object_type(graph, action.entity or action.object_type)
+        except ObjectQueryRefused as exc:
+            out.append(f"action {action.id}: {exc.reason}")
+    return out
+
+
+@pytest.mark.parametrize("key", sorted(HOSTS))
+def test_every_shipped_declaration_compiles_on_a_clone(fresh_install, key):
+    path, schema = HOSTS[key]
+    fresh_install[RANDOM_ID] = key
+    graph, _ = OV.apply_overrides(_clone(json.loads((REPO / path).read_text())), RANDOM_ID, schema)
+    assert graph.processes or graph.rules, "nothing shipped — the check would be vacuous"
+    assert _problems(graph) == []
+
+
+def test_the_check_sees_a_declaration_that_cannot_compile(fresh_install, monkeypatch):
+    """The other direction: without the shipped bindings, the shipped process is refused — as it was on a clone."""
+    path, schema = HOSTS["luxexperience"]
+    fresh_install[RANDOM_ID] = "luxexperience"
+    real = OV._visible
+
+    def without_bindings(rel_dir, pattern, **kw):
+        return [f for f in real(rel_dir, pattern, **kw) if "entity" not in f.parts]
+    monkeypatch.setattr(OV, "_visible", without_bindings)
+    graph, _ = OV.apply_overrides(_clone(json.loads((REPO / path).read_text())), RANDOM_ID, schema)
+    assert any(p.startswith("process order_to_shipment: stage 'shipped'") for p in _problems(graph)), _problems(graph)
+
+
+def test_the_shipped_bindings_and_links_rebuild_what_was_served(fresh_install):
+    path, schema = HOSTS["luxexperience"]
+    snapshot = json.loads((REPO / path).read_text())
+    fresh_install[RANDOM_ID] = "luxexperience"
+    graph, _ = OV.apply_overrides(_clone(snapshot), RANDOM_ID, schema)
+    served = OntologyGraph.model_validate(snapshot)
+    fields = ("name", "kind", "table", "key", "rows", "objects", "covered", "verified")
+    for eid, entity in served.entities.items():
+        want = {b.name: ({f: getattr(b, f) for f in fields}, sorted(b.properties)) for b in entity.bindings
+                if b.source == "human"}
+        got = {b.name: ({f: getattr(b, f) for f in fields}, sorted(b.properties)) for b in graph.entities[eid].bindings
+               if b.name in want}
+        assert got == want, eid
+    for rid, rel in served.relationships.items():
+        if rel.origin == "human":
+            built = graph.relationships[rid]
+            assert (built.from_entity, built.to_entity, built.from_col, built.to_col, built.cardinality) == (
+                rel.from_entity, rel.to_entity, rel.from_col, rel.to_col, rel.cardinality), rid
