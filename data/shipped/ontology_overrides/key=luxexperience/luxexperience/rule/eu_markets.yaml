@@ -1,0 +1,100 @@
+target_kind: rule
+target_id: eu_markets
+fields:
+  declared: true
+  entity: Order
+  kind: value_set
+  origin: human
+  property: ship_country
+  values:
+  - Austria
+  - Belgium
+  - Denmark
+  - France
+  - Germany
+  - Greece
+  - Ireland
+  - Italy
+  - Netherlands
+  - Portugal
+  - Spain
+  - Sweden
+  display_name: EU markets
+  description: 'Orders shipped to an EU member state, the duty and VAT territory:
+    Ireland is in; the United Kingdom, Switzerland and Norway are not.'
+  owner: finance
+source: human
+edited_by: ''
+edited_at: '2026-09-15T00:00:00+00:00'
+note: shipped from evals/ablation_luxexperience_business_ontology.json (the served,
+  measured form, 2026-09-15) — PENDING item 14
+binding:
+  rule:
+    bound: true
+    note: admits 43,105 of 112,439 Order objects
+    substance:
+      entity: Order
+      kind: value_set
+      property: ship_country
+      values:
+      - Austria
+      - Belgium
+      - Denmark
+      - France
+      - Germany
+      - Greece
+      - Ireland
+      - Italy
+      - Netherlands
+      - Portugal
+      - Spain
+      - Sweden
+      conditions: null
+      scopes: null
+    measured:
+      id: eu_markets
+      display_name: EU markets
+      description: 'Orders shipped to an EU member state, the duty and VAT territory:
+        Ireland is in; the United Kingdom, Switzerland and Norway are not.'
+      owner: finance
+      entity: Order
+      kind: value_set
+      property: ship_country
+      values:
+      - Austria
+      - Belgium
+      - Denmark
+      - France
+      - Germany
+      - Greece
+      - Ireland
+      - Italy
+      - Netherlands
+      - Portugal
+      - Spain
+      - Sweden
+      conditions: []
+      scopes: []
+      origin: human
+      provenance: ''
+      objects: 112439
+      admitted: 43105
+      observed:
+        Ireland: 8539
+        Spain: 3213
+        Austria: 3197
+        Denmark: 3187
+        Portugal: 3180
+        Belgium: 3166
+        Germany: 3140
+        France: 3115
+        Netherlands: 3108
+        Greece: 3096
+        Sweden: 3086
+        Italy: 3078
+      missing: []
+      scoped: {}
+      verified: true
+      flags: []
+      note: admits 43,105 of 112,439 Order objects
+    measured_at: '2026-09-15T00:00:00+00:00'

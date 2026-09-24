@@ -8012,6 +8012,48 @@ gates and the flag dispositions green.
 (~20k tokens a conversation turn, §3.22); the flag's falsifier reads a week of CP-1's shadow labels
 against the answers each door gave.
 
+### 3.34 · Declared business terms survive a fresh clone — shipped under a connection's scope key (PENDING.md item 14, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a new seed layer an install opts into by naming a key)
+
+> **The fact it answers.** The Olist and LuxExperience declarations behind §3.15's numbers (1
+> process and 2 rules; 2 processes, 7 rules and an action) lived only on the builder's machine, in
+> untracked override files keyed by that machine's random connection ids (`add_connection` mints
+> `uuid4()[:8]`). Their shipped home, `data/shipped/ontology_overrides/`, did not exist, and
+> AGENTS.md still called `data/ontology_overrides/` tracked while `test_seed_overlay_frozen`
+> fails if anything new is tracked there. No fresh checkout could re-prove items 11 or 12.
+
+**What ships.**
+* **A connection SCOPE KEY** (`db/registry.scope_key_of`; set with `PUT /connections/{id}/settings
+  {"scope_key": "olist"}`, validated: lowercase, digits, `_`, `-`, never `=`). Builtin connections
+  need none — their ids are already the same everywhere.
+* **A keyed seed layer** in the overrides tree: after this install's files and the seed filed under
+  the connection's id, the seed filed under `key=<scope key>/<schema>/…` — resolved to the local id
+  at read time. Everything the seed already did holds: an install's own file shadows a shipped one
+  whole, withdrawing a shipped declaration leaves a `.hidden` marker and never deletes it, and the
+  overlay never writes into the seed. Like `org=`, the `key=` segment holds `=`, which no
+  connection id can.
+* **The declarations themselves**, 13 files under `data/shipped/ontology_overrides/key=olist/` and
+  `key=luxexperience/`, re-materialised by `scripts/ship_business_declarations.py` from the TRACKED
+  eval snapshots with the declare doors' own field and binding helpers, each carrying the
+  measurement it was served with; a re-run writes the same bytes.
+* AGENTS.md and `.gitignore` corrected: the instance tree is an install's own; what the repo ships
+  goes in `data/shipped/ontology_overrides/`.
+
+**Receipt.** Hermetic, no database and no model: a connection minted `c0ffee42` with scope key
+`luxexperience` (then `olist`), over a graph stripped of its declarations, gets every process, rule
+and the action back — equal, measurement included, to the snapshot — and the frame matcher scores
+all 80 items on the rebuilt graphs exactly as on the snapshots (items 11 and 12 re-provable on a
+fresh clone). Over HTTP: a fresh install minted `ac81ab89`; `GET /ontology` served no process and
+no rule; `PUT …/settings {"scope_key": "Olist Shop!"}` → 422 with the rule; `{"scope_key":
+"olist"}` → 200; `GET /ontology` then served `order_to_delivery`, `fulfilled_orders` and
+`southeast` — "admits 2,287 of 3,095 Seller objects". `git status data/` showed only the new
+shipped files. 11 tests, the frozen-tree test and the ratchets green.
+⏳ **Open:** the §3.15 accuracy numbers still need the two DuckDB datasets, which no clone has (a
+gate-4-style dataset descriptor — URL and sha256 — is the precedent for fetching them); the
+cross-connection declarations are not shipped (their YAML stores connection ids inside — a
+`key=` reference there is the next slice); a measure pass copies a shipped process or rule into the
+install's own tree on first use, by the seed layer's existing rule, after which it no longer
+follows the seed.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

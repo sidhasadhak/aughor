@@ -1,0 +1,65 @@
+target_kind: rule
+target_id: fulfilled_orders
+fields:
+  declared: true
+  entity: Order
+  kind: condition
+  origin: human
+  conditions:
+  - path: order_status
+    op: not_in
+    values:
+    - canceled
+    - unavailable
+  display_name: Fulfilled orders
+  description: 'an order the business counts as fulfilled: neither canceled nor unavailable'
+  owner: finance
+source: human
+edited_by: ''
+edited_at: '2026-09-15T00:00:00+00:00'
+note: shipped from evals/ablation_olist_business_ontology.json (the served, measured
+  form, 2026-09-15) — PENDING item 14
+binding:
+  rule:
+    bound: true
+    note: admits 98,207 of 99,441 Order objects
+    substance:
+      entity: Order
+      kind: condition
+      property: null
+      values: null
+      conditions:
+      - path: order_status
+        op: not_in
+        values:
+        - canceled
+        - unavailable
+      scopes: null
+    measured:
+      id: fulfilled_orders
+      display_name: Fulfilled orders
+      description: 'an order the business counts as fulfilled: neither canceled nor
+        unavailable'
+      owner: finance
+      entity: Order
+      kind: condition
+      property: ''
+      values: []
+      conditions:
+      - path: order_status
+        op: not_in
+        values:
+        - canceled
+        - unavailable
+      scopes: []
+      origin: human
+      provenance: ''
+      objects: 99441
+      admitted: 98207
+      observed: {}
+      missing: []
+      scoped: {}
+      verified: true
+      flags: []
+      note: admits 98,207 of 99,441 Order objects
+    measured_at: '2026-09-15T00:00:00+00:00'
