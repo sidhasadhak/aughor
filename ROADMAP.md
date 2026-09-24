@@ -7994,6 +7994,24 @@ recorded.
 (the door exists); "best customers" and "our own fault" share no word with their definitions —
 only a person's synonym, or a model, reaches them.
 
+### 3.33 · The chat's two main buttons can reach the conversation agent (PENDING.md item 15, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `chat.buttons_reach_agent`, **off** ⚑)
+
+> **The fact it answers.** Measured: Quick posts `/chat` and the default Agent button posts the
+> deep-analysis door; only Edit, starters, clarify answers and re-runs reach `/ask`, where the
+> conversation agent holds the ontology's tools. Both buttons still read the ontology through the
+> shared answer core — what they lose is the tools — and the "filed defect" PENDING cited was never
+> filed.
+
+**What ships.** `web/lib/chatDoors.doorFor` decides a button's door: with the flag on, Quick goes
+through `/ask` at quick depth and Agent at deep depth (a depth the person chose is kept); off, the
+turn's body is byte-identical — the chat panel reads the flag once and a failed read is "off".
+**Not run live:** the conversation agent needs a model, and this session has none; 3 door tests,
+all 1,157 web tests (the chat panel's own among them, unchanged with the flag off), the seven web
+gates and the flag dispositions green.
+⚑ **Open — the operator's, with item 4 (CP-3):** the gain is unmeasured and the cost is known
+(~20k tokens a conversation turn, §3.22); the flag's falsifier reads a week of CP-1's shadow labels
+against the answers each door gave.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

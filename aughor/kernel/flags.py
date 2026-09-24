@@ -95,6 +95,7 @@ FLAG_ENV = {
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
+    "chat.buttons_reach_agent": "AUGHOR_CHAT_BUTTONS_REACH_AGENT",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
@@ -290,6 +291,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "chat.buttons_reach_agent": {
+        "label": "Send the chat's Quick and Agent buttons to the conversation agent",
+        "description": "Today Quick posts /chat and the Agent button /investigate; only Edit, starters, clarify answers and re-runs reach /ask, where the conversation agent holds the ontology's tools (look up an object, describe a type). On, Quick goes through /ask at quick depth and Agent at deep depth. A conversation turn costs about 20k tokens, which is why this is off. Off by default → every turn is sent exactly as today.",
+    },
     "ontology.explore_on_connect": {
         "label": "Propose a new connection's business terms when it is added",
         "description": "When a connection's ontology is first built, run the business explorer once — the one model call that proposes its entities, links, processes and rules (the same as Ontology ▸ Explore). Every proposal is measured before it lands and stays PROPOSED until a person confirms it. A scope already explored is skipped, so a restart spends nothing. Off by default → a new connection gets no business terms until a person presses Explore.",
@@ -388,6 +393,14 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # PENDING.md item 15 (ROADMAP §3.33). Decide with item 4 (CP-3: route quick vs deep).
+    "chat.buttons_reach_agent": "do answers from the chat's two main buttons improve when they reach "
+                                "the conversation agent and its ontology tools? The gain is "
+                                "unmeasured; the cost is known (~20k tokens a conversation turn). "
+                                "Falsifier: if a week of shadow-labelled turns (CP-1) shows the "
+                                "Quick/Agent answers the agent would have given are no better "
+                                "judged than the ones /chat and /investigate gave, the buttons keep "
+                                "their doors and the flag is deleted",
     # PENDING.md item 11 (ROADMAP §3.31). The declared business terms are what lift answers
     # (LuxExperience 5/16 → 16/16, Olist 7/15 → 14/15, §3.15); a new connection gets none.
     "ontology.explore_on_connect": "does proposing a connection's business terms on arrival give "
