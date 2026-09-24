@@ -294,6 +294,12 @@ def withdraw_annotation(edit_id: str, connection_id: str = BUILTIN_ID):
     restored, because the source was never written. 404 when this connection and org hold no such edit."""
     from aughor.actions.overlay import withdraw_edit
     from aughor.org.context import current_org_id
+    if connection_id.startswith("domain:"):
+        # PENDING item 25 — the page of an organisation's ontology sent its own token here, and every withdrawal
+        # answered "no such edit": an edit lives on the connection its object's rows live on, and says so.
+        raise HTTPException(status_code=400, detail=(
+            "An edit is withdrawn on the connection its object lives on, not on an organisation's ontology — "
+            "send that connection's id"))
     gone = withdraw_edit(edit_id, connection_id, current_org_id() or None)
     if gone is None:
         raise HTTPException(status_code=404,

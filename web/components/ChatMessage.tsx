@@ -25,7 +25,7 @@ import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
 import { StatusChip } from "@/components/brief/StatusChip";
-import type { ChatTurn } from "@/lib/chatTurn";
+import type { ChatTurn, CompiledFrame } from "@/lib/chatTurn";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
@@ -1189,6 +1189,19 @@ function NarrativeBrief({
   );
 }
 
+// ── The compiled badge: this answer's SQL is the semantic compiler's, used as written ──────
+function CompiledBadge({ compiled }: { compiled: CompiledFrame }) {
+  const what = [compiled.measure, compiled.entity && `on ${compiled.entity}`, compiled.dimension && `by ${compiled.dimension}`]
+    .filter(Boolean).join(" ");
+  return (
+    <div className="flex items-center gap-2 my-1 aug-text-xs text-zinc-400"
+      title="The SQL was compiled from the declared definitions and used as written — not written freehand by the model">
+      <span className="aug-tag aug-tag-blue">compiled</span>
+      <span>from declared definitions{what ? `: ${what}` : ""}</span>
+    </div>
+  );
+}
+
 // ── Opt-in actions on a chat answer: re-validate the query + a feedback signal ──────
 function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?: string }) {
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
@@ -1638,6 +1651,7 @@ export function ChatMessage({
 
       {/* ── B2: guard interventions as a Chain of Thought — both modes; renders
              nothing when no guard fired (most turns) ── */}
+      {turn.compiled && <CompiledBadge compiled={turn.compiled} />}
       <GuardReceiptChain receipts={turn.guardReceipts} streaming={turn.status === "loading"} />
 
       {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}

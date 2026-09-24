@@ -174,11 +174,16 @@ describe("the unknown-frame path (why an open model beats a closed switch)", () 
   });
 
   it("skips a DELIBERATELY silent frame instead of calling it unrecognised", () => {
-    // `compiled` is in the reducer's UNRENDERED_FRAMES. A live run surfaced it
-    // through the escape hatch, which would render deliberate silence as a gap
-    // — the exact ambiguity that list was created to end.
-    const { chunks } = adaptFrames([{ event: "compiled", data: { n: 1 } }]);
+    // `trusted` is in UNRENDERED_FRAMES. A live run surfaced `compiled` (then on
+    // the list) through the escape hatch, which would render deliberate silence
+    // as a gap — the exact ambiguity that list was created to end.
+    const { chunks } = adaptFrames([{ event: "trusted", data: { n: 1 } }]);
     expect(chunks.filter((c) => c.type.startsWith("data-"))).toHaveLength(0);
+  });
+
+  it("carries the compiled badge as a declared part (PENDING item 25)", () => {
+    const { chunks } = adaptFrames([{ event: "compiled", data: { entity: "orders", measure: "revenue" } }]);
+    expect(chunks.some((c) => c.type === "data-compiled")).toBe(true);
   });
 
   it("still surfaces a frame that is in NEITHER list", () => {

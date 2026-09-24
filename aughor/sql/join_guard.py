@@ -580,7 +580,8 @@ class FilterDomainWarning:
         )
 
 
-def _extract_filter_literals(sql: str) -> list[tuple[str, str, str, str]]:
+def _extract_filter_literals(sql: str, *, dialects: tuple = (None,),
+                             numbers: bool = False) -> list[tuple[str, str, str, str]]:
     """(table, col, literal, op) for `col = 'lit'` / `col != 'lit'` / `col [NOT] IN (…)`
     predicates that are NOT inside a JOIN … ON (those are the join guard's job). `op` is one
     of '=', '!=', 'IN', 'NOT IN'. Unqualified columns resolve only when the query has exactly
@@ -588,14 +589,28 @@ def _extract_filter_literals(sql: str) -> list[tuple[str, str, str, str]]:
 
     Negated predicates (`!=` / `NOT IN`) matter as much as positive ones: a misspelled
     EXCLUDED literal is a silent no-op (`status != 'cancelled'` keeps every row when the data
-    holds 'canceled'), the Q29 'zero cancellations despite 15,737' scar."""
+    holds 'canceled'), the Q29 'zero cancellations despite 15,737' scar.
+
+    ``dialects`` are tried in order until one parses (the default, the neutral reading, is what
+    the guards have always used); ``numbers`` admits numeric literals too — an integer KEY
+    (`user_id = 12345`), which a guard about text values never needs and an object page must
+    read (PENDING item 25: on theLook, BigQuery with integer ids, no finding ever cited one
+    object)."""
     out: list[tuple[str, str, str, str]] = []
-    try:
-        import sqlglot
-        import sqlglot.expressions as exp
-        tree = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
-    except Exception:
+    import sqlglot
+    import sqlglot.expressions as exp
+    tree = None
+    for dialect in dialects:
+        try:
+            tree = sqlglot.parse_one(sql, read=dialect, error_level=sqlglot.ErrorLevel.RAISE)
+            break
+        except Exception:
+            continue
+    if tree is None:
         return out
+
+    def _value(node) -> bool:
+        return isinstance(node, exp.Literal) and (node.is_string or (numbers and node.is_number))
     alias_map: dict[str, str] = {}
     base_tables: list[str] = []
     for tbl in tree.find_all(exp.Table):
@@ -622,9 +637,9 @@ def _extract_filter_literals(sql: str) -> list[tuple[str, str, str, str]]:
     def _emit_binary(node, op: str) -> None:
         # `col <op> 'lit'` (or the reversed `'lit' <op> col`) → record it.
         col = lit = None
-        if isinstance(node.left, exp.Column) and isinstance(node.right, exp.Literal) and node.right.is_string:
+        if isinstance(node.left, exp.Column) and _value(node.right):
             col, lit = node.left, node.right
-        elif isinstance(node.right, exp.Column) and isinstance(node.left, exp.Literal) and node.left.is_string:
+        elif isinstance(node.right, exp.Column) and _value(node.left):
             col, lit = node.right, node.left
         if col is not None:
             t = _resolve(col)
@@ -648,7 +663,7 @@ def _extract_filter_literals(sql: str) -> list[tuple[str, str, str, str]]:
                 # `col NOT IN (…)` parses as Not(In(…)) — the negated form.
                 op = "NOT IN" if isinstance(inn.parent, exp.Not) else "IN"
                 for e in inn.expressions:
-                    if isinstance(e, exp.Literal) and e.is_string:
+                    if _value(e):
                         out.append((t, col.name, e.this, op))
     return out
 
@@ -670,10 +685,12 @@ def _persisted_value_sample(conn: "DatabaseConnection", t: str, c: str) -> "list
 
 # Public alias (stable cross-module interface — keeps the "no cross-module private
 # imports" ratchet satisfied; the R7 grounded-literal contract reads it).
-def extract_filter_literals(sql: str) -> "list[tuple[str, str, str, str]]":
+def extract_filter_literals(sql: str, *, dialects: tuple = (None,),
+                            numbers: bool = False) -> "list[tuple[str, str, str, str]]":
     """Public: (table, column, literal, op) for every WHERE/HAVING string-literal
-    equality/IN predicate in ``sql`` (alias-resolved, ON-clause nodes excluded)."""
-    return _extract_filter_literals(sql)
+    equality/IN predicate in ``sql`` (alias-resolved, ON-clause nodes excluded) — numeric ones
+    too with ``numbers``, parsed in the first of ``dialects`` that reads it."""
+    return _extract_filter_literals(sql, dialects=dialects, numbers=numbers)
 
 
 def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,

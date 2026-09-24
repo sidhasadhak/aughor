@@ -8370,6 +8370,47 @@ branch says why. Every guard mutation-checked (`tests/unit/test_few_shot_memory.
 overruled or unpaired today is the first number to read on a real deployment; an accepted answer is not ranked above
 an unjudged one yet.
 
+### 3.44 · Object pages right on every connection (PENDING.md item 25, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** The object pages (ON-3) were built and measured on DuckDB with text keys, and broke
+> everywhere else. Findings cited an object only by a STRING literal parsed as generic SQL — theLook (BigQuery:
+> backticked names, integer ids) never cited one object, and a finding pinned to another user showed as "users in
+> general". One finding that could not be read ended the scan in silence. A metric reaching another connection
+> compiles to a plan whose SQL is for a reader, and the page ran it. SQL NULL reached the page as the word "NULL". The
+> query over an organisation's ontology merged no accepted edit, and its Withdraw sent the ontology's token as the
+> connection, so every withdrawal answered "no such edit". LuxExperience's metrics panel was empty (the shipped revenue
+> reads `total_amount`). The compiled badge was emitted and never shown.
+
+**What exists.**
+
+- **Citations on every warehouse.** `extract_filter_literals(sql, dialects=…, numbers=…)`: the object page tries the
+  neutral reading then BigQuery, Snowflake and Postgres, and reads numeric keys; the join guard's callers keep the
+  text-only default (a test pins it).
+- **The list survives a bad finding.** Each finding and answer receipt is read on its own; one that cannot be read is
+  counted (`findings_unread`) and the page says how many were left out.
+- **Display-only SQL is never run.** `object_metrics` runs a cross-connection metric through its plan
+  (`execute_plan`, every connection it reads checked as the organisation's) on an organisation's page, and withholds it
+  with the reason elsewhere. A NULL measurement is no value (`—`), never the word; a NULL property reads `—` too.
+- **An organisation's ontology.** Its object query and page merge each type's OWN accepted edits, from the connection
+  its rows live on (`_domain_edits`) — never another connection's same-named type; Withdraw sends the connection the
+  object lives on, and the door answers a domain token with a 400 that says where to withdraw.
+- **LuxExperience measures something.** `GMV` (`SUM(gmv_eur)`) and `GMV per order` (`AVG(gmv_eur)`) ship under
+  `key=luxexperience`, named as GMV — not revenue — and bound by the real binder against the recorded schema of the
+  2026-09-15 served graph (the note says so: a clone has no warehouse to bind against; the same check refuses
+  `SUM(total_amount)`).
+- **The compiled badge.** When the model adopts the compiler's query verbatim, the answer says "compiled from declared
+  definitions: <measure> on <entity> by <dimension>" (`compiled` left `UNRENDERED_FRAMES`).
+
+**Receipt.** One script, `main` against the branch. Order 12345 with theLook-shaped findings: `main` did not cite the
+finding about it and showed the one about order 999 as "orders in general"; the branch cites the right one and drops
+the other. One unreadable finding before two good ones: `main` listed none and said nothing; the branch lists both and
+says one was left out. A customer with no orders: `main` read `NULL`, the branch `—`. LuxExperience's Order page:
+`main` measured nothing; the branch GMV and GMV per order. Every guard mutation-checked, 10 of 10
+(`tests/unit/test_object_pages_on_every_connection.py`).
+
+⏳ **Open:** nothing was run against the theLook or LuxExperience warehouses themselves (no credentials, no dataset on
+a clone); the compiled badge is live-only — a restored turn does not carry it.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

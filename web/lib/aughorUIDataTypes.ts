@@ -76,6 +76,9 @@ export type AughorEvidenceData = {
   "playbook_refs": unknown;
   // ON-10 — the question's frame: its business terms read against the declared ontology before the run started.
   "frame": unknown;
+  // The answer's SQL is the semantic compiler's, adopted as written — the badge (PENDING item 25; it sat in
+  // UNRENDERED_FRAMES while the backend emitted it for exactly this).
+  "compiled": unknown;
   "hypotheses": unknown;
   "score": unknown;
   "analysis": unknown;
@@ -179,7 +182,7 @@ const DECLARED = [
   "route", "headline", "narrative", "answer", "sql", "columns", "rows", "chart_type",
   "chart_config", "tables_used",
   "queries_executed", "figure", "receipt_id", "recheck", "context_assembled", "guard_receipt",
-  "playbook_refs", "frame", "hypotheses", "score", "analysis",
+  "playbook_refs", "frame", "compiled", "hypotheses", "score", "analysis",
   "clarify", "clarify_pending", "clarifying_questions", "plan_pending", "escalate",
   "followups",
   "agent", "status", "phase_complete", "phase_progress", "converse_step", "mode",
@@ -203,7 +206,8 @@ export const DECLARED_DATA_PARTS: ReadonlySet<string> = new Set(DECLARED);
  *   start — the run id it carries is harvested by the adapter for drop-recovery;
  *     the rest is a stream-opening marker.
  *   learning · activations — flag-gated per-run receipts no surface renders.
- *   compiled · trusted — quick-body internals; nothing renders them.
+ *   trusted — a quick-body internal; nothing renders it. (`compiled` LEFT this
+ *     list 2026-09-24, PENDING item 25: it is the compiled badge, and renders.)
  *   fanout — every emission is paired with a `guard_receipt` frame that IS
  *     rendered, so the interpretation reaches the user.
  *   paused — dormant `hitl` branch no web caller arms (tracked separately).
@@ -220,7 +224,7 @@ export const DECLARED_DATA_PARTS: ReadonlySet<string> = new Set(DECLARED);
  */
 export const UNRENDERED_FRAMES: ReadonlySet<string> = new Set([
   "start", "learning", "activations",
-  "compiled", "fanout", "trusted", "paused",
+  "fanout", "trusted", "paused",
   // CP-4 — the folded answer envelope, the LAST frame of a completed ask. The web has
   // already rendered every part it folds (headline, narrative, grid, chart, receipts,
   // follow-ups) from the frames themselves; headless doors (Slack, a scheduled send,

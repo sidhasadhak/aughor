@@ -51,6 +51,28 @@ def _accepted_edits(connection_id: str) -> list:
     return accepted_object_edits(connection_id)
 
 
+def _domain_edits(graph) -> list:
+    """ON-4 × ON-8 — the accepted edits a read of an organisation's ontology merges: each type's OWN, from the
+    connection its rows live on (PENDING item 25: the domain object query merged none, so an accepted edit vanished
+    from every query over the organisation's ontology). Never another connection's edits on a type of the same
+    name — two connections' `customers` are two types."""
+    from aughor.ontology.sources import entity_source
+
+    def word(s: str) -> str:
+        return "".join(ch for ch in (s or "").lower() if ch.isalnum())
+    by_connection: dict[str, list] = {}
+    out: list = []
+    for entity in graph.entities.values():
+        home = entity_source(graph, entity)
+        if not home:
+            continue
+        if home not in by_connection:
+            by_connection[home] = _accepted_edits(home)
+        names = {word(entity.api_name), word(entity.id)}
+        out += [e for e in by_connection[home] if word(getattr(e, "object_type", "")) in names]
+    return out
+
+
 def _domain_served(domain: str, *, allow_empty: bool = False):
     """ON-8 — ``(scope, graph)`` for the organisation's ontology a request names; 404 while nothing is declared in it —
     except for the map, whose empty state is where its first type is declared."""
@@ -140,7 +162,7 @@ def _domain_object_page(object_type: str, pk: str, domain: str) -> dict:
     home = entity_source(graph, entity)
     with _domain_sources(scope) as source_db:
         try:
-            instance = get_object(graph, None, entity.api_name, pk, overlay=_accepted_edits(home), source_db=source_db)
+            instance = get_object(graph, None, entity.api_name, pk, overlay=_domain_edits(graph), source_db=source_db)
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
@@ -148,9 +170,20 @@ def _domain_object_page(object_type: str, pk: str, domain: str) -> dict:
                     "connection_id": home}
         db = source_db(home)
         table = (entity.backing.table if entity.backing is not None else "") or ""
+
+        def run_plan(compiled):
+            """A metric that reads another connection runs as its plan — never its display SQL (PENDING item 25) —
+            every connection it reads checked as the organisation's first."""
+            from aughor.semantic.cross_source import execute_plan
+            try:
+                result, _ = execute_plan(compiled.cross_source, home_connection_id=home, home_db=db,
+                                         open_source=source_db, label="object_metric", display_sql=compiled.sql)
+            except HTTPException as exc:
+                raise ObjectQueryRefused(str(exc.detail)) from exc
+            return result
         # the findings and notes around it are the ones kept on the connection its rows live on
         related = object_context(graph, db, home, table.split(".")[-2] if "." in table else "", instance,
-                                 dialect=getattr(db, "dialect", "") or "duckdb")
+                                 dialect=getattr(db, "dialect", "") or "duckdb", run_cross_source=run_plan)
     return {"path": "object", "domain": scope.key, "connection_id": home, "schema_name": "", **instance.to_dict(),
             "related": related}
 
@@ -418,7 +451,8 @@ def _domain_object_query(query: ObjectQuery, domain: str, execute: bool) -> dict
     db = open_connection_for(home)
     try:
         try:
-            compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb")
+            compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
+                                            overlay=_domain_edits(graph))
         except ObjectQueryRefused as exc:
             return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
                     "connection_id": home}

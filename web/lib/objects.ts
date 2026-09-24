@@ -120,6 +120,8 @@ export interface ObjectAction {
 export interface ObjectRelated {
   metrics: ObjectMetric[];
   findings: ObjectCitation[];
+  /** How many findings could not be read — each is skipped and counted, never the end of the list (PENDING item 25). */
+  findings_unread?: number;
   notes: ObjectNote[];
   actions: ObjectAction[];
 }
