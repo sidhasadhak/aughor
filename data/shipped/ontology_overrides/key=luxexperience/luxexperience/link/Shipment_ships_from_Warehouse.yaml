@@ -1,0 +1,33 @@
+target_kind: link
+target_id: Shipment_ships_from_Warehouse
+fields:
+  declared: true
+  name: ships_from
+  from_entity: Shipment
+  to_entity: Warehouse
+  from_column: warehouse
+  to_column: name
+  cardinality: N:1
+  reverse_name: warehouse_to_shipment
+  origin: human
+  provenance: ''
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: 'shipped for LuxExperience (PENDING item 26): a link a person declared. From
+  the served graph of 2026-09-15 (connection 914df862, evals/ablation_luxexperience_business_ontology.json);
+  bound by the real binder against the recorded source schemas, not the warehouse,
+  which a clone does not have; the counts are the ones measured on the warehouse that
+  day.'
+binding:
+  link:
+    bound: true
+    measured_cardinality: N:1
+    value_overlap: 1.0
+    from_table: luxexperience.shipments
+    from_column: warehouse
+    to_table: luxexperience.warehouses
+    to_column: name
+    note: 'measured N:1: Shipment.warehouse 8 distinct over 107,903 non-null rows
+      (N); Warehouse.name 8 distinct over 8 non-null rows (1); 100% of Shipment''s
+      keys are held by Warehouse'

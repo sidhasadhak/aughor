@@ -1,0 +1,66 @@
+target_kind: entity
+target_id: Return
+fields:
+  bindings:
+    logistics:
+      kind: static
+      key: return_id
+      table: return_logistics
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: 'shipped for LuxExperience (PENDING item 26): the bindings a person set on Return.
+  Specs from the served graph of 2026-09-15 (connection 914df862, evals/ablation_luxexperience_business_ontology.json);
+  bound by the real binder against the recorded source schemas, not the warehouse,
+  which a clone does not have; the counts are the ones measured on the warehouse that
+  day.'
+binding:
+  bindings:
+    bound: true
+    note: ''
+    entries:
+      logistics:
+        bound: true
+        note: ''
+        spec:
+          kind: static
+          key: return_id
+          table: return_logistics
+        columns:
+          return_logistics_id: VARCHAR
+          return_id: VARCHAR
+          order_id: VARCHAR
+          platform: VARCHAR
+          carrier: VARCHAR
+          received_date: DATE
+          condition: VARCHAR
+          restocked: BOOLEAN
+          refund_method: VARCHAR
+          refund_completed_date: DATE
+        supplies:
+          return_logistics_id: return_logistics_id
+          carrier: carrier
+          received_date: received_date
+          condition: condition
+          restocked: restocked
+          refund_method: refund_method
+          refund_completed_date: refund_completed_date
+        skipped:
+          order_id: Return already has the property order_id — name it in `properties`
+            to bind it
+          platform: Return already has the property platform — name it in `properties`
+            to bind it
+        measured:
+          spec:
+            kind: static
+            key: return_id
+            table: return_logistics
+          rows: 50048
+          non_null: 50048
+          distinct: 50048
+          objects: 50048
+          covered: 50048
+          orphans: 0
+          verified: true
+          note: 'return_id: 50,048 distinct over 50,048 keyed rows; covers 50,048
+            of 50,048 Return objects'

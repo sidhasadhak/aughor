@@ -8411,6 +8411,36 @@ says one was left out. A customer with no orders: `main` read `NULL`, the branch
 ⏳ **Open:** nothing was run against the theLook or LuxExperience warehouses themselves (no credentials, no dataset on
 a clone); the compiled badge is live-only — a restored turn does not carry it.
 
+### 3.45 · A fresh clone compiles every shipped declaration (PENDING.md item 26, Arc ON; **PARTLY BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** Item 14 shipped LuxExperience's processes, rules and action so a clone would reproduce
+> the ontology's measured gain — but not the parts they stand on. The `order_to_shipment` process's shipped stage
+> reads `ship_date`, which only the `shipments` binding a person set supplies; that binding, five others and two
+> declared links never shipped. The test built its clone graph from the served snapshot WITH those bindings, so it
+> stayed green while a real clone refused the process ("Order has no property 'ship_date'").
+
+**What exists.**
+
+- **Every human-declared part of LuxExperience's served ontology ships** under `key=luxexperience`: the bindings on
+  Order (payments, shipments, lines), Customer (tickets), Product (price_history) and Return (logistics), and the
+  declared links Order→Customer and Shipment→Warehouse. Each spec as the person set it (`binding_spec`), bound by the
+  REAL binder against the recorded source schemas, carrying the counts measured on the warehouse on 2026-09-15 — the
+  note on each file says exactly that.
+- **A compile test over every shipped declaration** (`tests/unit/test_shipped_declarations_by_scope_key.py`): a clone
+  graph with EVERY person's part stripped (bindings and declared links too), the shipped tree applied, then each
+  process and rule through its own door's resolver, each verified metric through the compiler and each action's type
+  looked up — plus the other direction (without the shipped bindings the check refuses `order_to_shipment`) and a
+  rebuild-equals-served check on the bindings and links.
+
+**Receipt.** The same clone check on `main` and the branch: `main` rebuilt no binding and no link and refused
+`order_to_shipment`; the branch rebuilt all six bindings and both links and compiled every declaration on both
+LuxExperience and Olist. Removing a shipped binding or link file fails the tests (3 of 3).
+
+⏳ **Open — needs a person:** business terms for the samples warehouse. A term — a promise, what "completed" means — is
+a person's declaration, and no model authors one (AGENTS.md: provenance); proposing them is the explorer's job
+(PENDING item 11), confirming them the user's. ⚑ theLook's terms cost billed scans; shipping the two DuckDB datasets is
+a hosting and licensing call.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

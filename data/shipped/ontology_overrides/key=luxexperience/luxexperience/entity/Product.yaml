@@ -1,0 +1,59 @@
+target_kind: entity
+target_id: Product
+fields:
+  bindings:
+    price_history:
+      kind: timeseries
+      key: product_id
+      table: price_history
+      time_column: effective_date
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: 'shipped for LuxExperience (PENDING item 26): the bindings a person set on Product.
+  Specs from the served graph of 2026-09-15 (connection 914df862, evals/ablation_luxexperience_business_ontology.json);
+  bound by the real binder against the recorded source schemas, not the warehouse,
+  which a clone does not have; the counts are the ones measured on the warehouse that
+  day.'
+binding:
+  bindings:
+    bound: true
+    note: ''
+    entries:
+      price_history:
+        bound: true
+        note: ''
+        spec:
+          kind: timeseries
+          key: product_id
+          table: price_history
+          time_column: effective_date
+        columns:
+          price_id: VARCHAR
+          product_id: VARCHAR
+          effective_date: DATE
+          price_eur: DOUBLE
+          markdown_pct: DOUBLE
+          is_markdown: BOOLEAN
+        supplies:
+          price_id: price_id
+          effective_date: effective_date
+          price_eur: price_eur
+          markdown_pct: markdown_pct
+          is_markdown: is_markdown
+        skipped: {}
+        measured:
+          spec:
+            kind: timeseries
+            key: product_id
+            table: price_history
+            time_column: effective_date
+          rows: 26005
+          non_null: 26005
+          distinct: 8600
+          objects: 8600
+          covered: 8600
+          orphans: 0
+          verified: true
+          note: 'product_id: 26,005 keyed rows over 8,600 keys; covers 8,600 of 8,600
+            Product objects'

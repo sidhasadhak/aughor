@@ -1,0 +1,33 @@
+target_kind: link
+target_id: Order_placed_by_Customer
+fields:
+  declared: true
+  name: placed_by
+  from_entity: Order
+  to_entity: Customer
+  from_column: customer_id
+  to_column: customer_id
+  cardinality: N:1
+  reverse_name: customer_to_order
+  origin: human
+  provenance: ''
+source: human
+edited_by: ''
+edited_at: '2026-09-24T00:00:00+00:00'
+note: 'shipped for LuxExperience (PENDING item 26): a link a person declared. From
+  the served graph of 2026-09-15 (connection 914df862, evals/ablation_luxexperience_business_ontology.json);
+  bound by the real binder against the recorded source schemas, not the warehouse,
+  which a clone does not have; the counts are the ones measured on the warehouse that
+  day.'
+binding:
+  link:
+    bound: true
+    measured_cardinality: N:1
+    value_overlap: 1.0
+    from_table: luxexperience.orders
+    from_column: customer_id
+    to_table: luxexperience.customers
+    to_column: customer_id
+    note: 'measured N:1: Order.customer_id 29,048 distinct over 112,439 non-null rows
+      (N); Customer.customer_id 35,136 distinct over 35,136 non-null rows (1); 100%
+      of Order''s keys are held by Customer'
