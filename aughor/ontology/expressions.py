@@ -1,9 +1,15 @@
 """2026-09-22 — typed properties mapped to expressions (ON-1b's deferred half).
 
-A person maps a property to a SQL expression over the type's own row. The shape is checked here (a name that is
-free, an expression that parses, holds no subquery, no aggregate and no window, and reads the backing's own columns
-only), the expression is VERIFIED by running it on one row at the door, and the overlay rebuilds the property from
-the recorded verdict without a database — the same three-way law bindings live under.
+A person maps a property to a SQL expression over the type's row. The shape is checked here (a name that is free, an
+expression that parses and holds no subquery, no aggregate and no window), the expression is VERIFIED against the data
+at the door, and the overlay rebuilds the property from the recorded verdict without a database — the same three-way
+law bindings live under.
+
+PENDING item 27 — an expression read the backing's own columns only and was verified on ONE row. It now reads every
+name the object compiler reads (a binding's property — a linked table joined on the object's key —, another formula,
+a property through to-one links, `customer.tier`), each checked by the compiler's own path law at the door; and it is
+verified through that compiler on up to `PROBE_ROWS` of the type's objects, so a formula that fails past the first
+row, or reads nothing on every one, does not verify.
 """
 from __future__ import annotations
 
@@ -48,25 +54,104 @@ def expression_problem(entity: OntologyEntity, name: str, spec: dict, graph: Opt
         return "the expression holds an aggregate — a property is per row; an aggregate belongs to a metric"
     if node.find(exp.Window) is not None:
         return "the expression holds a window function; a property is a flat expression over the row"
-    own = {k.lower() for k in (entity.properties or {}) if k not in (entity.expressions or {})}
-    for col in node.find_all(exp.Column):
-        if col.name.lower() not in own:
-            return (f"'{col.name}' is not a column of {entity.id}'s own rows — an expression reads the backing's "
-                    "columns only (a binding's column is not read here)")
+    paths = list(dict.fromkeys(".".join(p.name for p in col.parts) for col in node.find_all(exp.Column)))
+    if any(path.lower() == name.lower() for path in paths):
+        return f"'{name}' reads itself — a formula cannot be defined by itself"
+    if graph is None:
+        own = {k.lower() for k in (entity.properties or {}) if k not in (entity.expressions or {})}
+        stray = next((path for path in paths if path.lower() not in own), None)
+        return (f"'{stray}' is not a column of {entity.id}'s own rows — with no graph to read its links, an expression "
+                "reads the backing's columns only") if stray else ""
+    from aughor.semantic.object_query import ObjectQueryRefused, property_at
+    for path in paths:
+        try:
+            property_at(graph, entity.api_name, path, purpose=f"the expression '{name}'")
+        except ObjectQueryRefused as exc:
+            return exc.reason
     return ""
 
 
-def probe_expression(db: Any, graph: OntologyGraph, entity: OntologyEntity, expression: str) -> dict:
-    """Run the expression on ONE row of the type's own table: ``{bound, note, sample}``."""
-    from aughor.ontology.validator import check_value, entity_table, probe_query
-    table = entity_table(graph, entity.id) if entity.source_tables or entity.backing is not None else ""
-    if not table:
+#: How many of a type's objects a formula is verified on — the first rows of its table, read as a query reads them.
+PROBE_ROWS = 1000
+
+
+def _sampled(sql: str, dialect: str, rows: int) -> str:
+    """``sql`` with its ANCHOR — the object type's own table, ``t0`` — read as its first ``rows`` rows. Everything the
+    formula joins stays whole, so a linked table is still read the way a query reads it."""
+    import sqlglot
+    from sqlglot import exp
+    tree = sqlglot.parse_one(sql, read=dialect)
+    source = (tree.args.get("from_") or tree.args.get("from")).this
+    if not isinstance(source, exp.Table):
+        return sql                     # already a subquery — a query-backed type reads its own keyed SELECT
+    first = exp.select("*").from_(exp.Table(this=source.this.copy(), db=source.args.get("db"),
+                                            catalog=source.args.get("catalog"))).limit(rows)
+    source.replace(exp.Subquery(this=first, alias=exp.TableAlias(this=exp.to_identifier(source.alias))))
+    return tree.sql(dialect=dialect)
+
+
+def _cell(value: Any) -> Any:
+    """A probe cell: the display path spells SQL NULL "NULL"."""
+    return None if value is None or (isinstance(value, str) and value.strip().upper() == "NULL") else value
+
+
+def probe_expression(db: Any, graph: OntologyGraph, entity: OntologyEntity, expression: str, *,
+                     name: str = "") -> dict:
+    """Verify the expression through the object compiler on up to `PROBE_ROWS` of the type's objects — every path it
+    reads joined as a query would join it: ``{bound, note, sample, rows_checked, non_null}``. Bound when it executes,
+    its smallest and largest values are sane, and it holds a value on at least one object checked."""
+    from aughor.ontology.validator import check_value
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    if not (entity.source_tables or entity.backing is not None):
         return {"bound": False, "note": f"{entity.id} has no source table to read the expression on", "sample": None}
-    ok, err, val = probe_query(db, f"SELECT ({expression}) AS v FROM {table} LIMIT 1")
-    if not ok:
-        return {"bound": False, "note": f"did not execute: {err}", "sample": None}
-    sane, note = check_value(val)
-    return {"bound": bool(sane), "note": "" if sane else note, "sample": None if val is None else str(val)[:80]}
+    probe = name or "probe_expression"
+    work = graph.model_copy(deep=True)
+    target = work.entities[entity.id]
+    candidate = ExpressionProperty(expression=expression, verified=True)
+    target.expressions = {**(target.expressions or {}), probe: candidate}
+    target.properties = {**(target.properties or {}), probe: candidate.as_property(probe)}
+    dialect = (getattr(db, "dialect", "") or "duckdb").lower()
+    try:
+        # grouped BY the value, never MIN/MAX over it: an aggregate over a boolean does not run everywhere (Postgres)
+        compiled = compile_object_query({"object_type": target.api_name, "by": [probe],
+                                         "measures": [{"name": "objects", "agg": "count"}]}, work, dialect=dialect)
+    except ObjectQueryRefused as exc:
+        return {"bound": False, "note": exc.reason, "sample": None}
+    if compiled.cross_source is not None:
+        return {"bound": False, "sample": None,
+                "note": "it reads another connection — a formula is read on the connection its type lives on"}
+    grouped = _sampled(compiled.sql, dialect, PROBE_ROWS)
+    # the counts in SQL, exact on any connector — a result's returned rows are capped (500 on DuckDB), its groups not
+    totals_sql = (f"SELECT SUM(g.objects) AS n, SUM(CASE WHEN g.{probe} IS NOT NULL THEN g.objects ELSE 0 END) "
+                  f"AS non_null FROM ({grouped}) AS g")
+    bounded = getattr(db, "execute_bounded", None)
+    try:
+        totals = db.execute("__ontology_validate__", totals_sql)
+        values = (bounded("__ontology_validate__", grouped, PROBE_ROWS) if callable(bounded)
+                  else db.execute("__ontology_validate__", grouped))
+    except Exception as exc:  # noqa: BLE001 — a probe that cannot run does not bind, and says why
+        return {"bound": False, "note": f"did not execute: {str(exc)[:200]}", "sample": None}
+    error = getattr(totals, "error", None) or getattr(values, "error", None)
+    if error:
+        return {"bound": False, "note": f"did not execute: {str(error)[:200]}", "sample": None}
+    n, non_null = ([int(float(_cell(v) or 0)) for v in (totals.rows or [[0, 0]])[0]] + [0, 0])[:2]
+    columns = [str(c).lower() for c in (values.columns or compiled.columns)]
+    at_value = columns.index(probe.lower()) if probe.lower() in columns else 0
+    sample = None
+    for row in values.rows or []:
+        value = _cell(row[at_value])
+        if value is None:
+            continue
+        sample = value if sample is None else sample
+        sane, note = check_value(value)
+        if not sane:
+            return {"bound": False, "note": note, "sample": str(value)[:80], "rows_checked": n, "non_null": non_null}
+    if n and not non_null:
+        return {"bound": False, "sample": None, "rows_checked": n, "non_null": 0,
+                "note": f"it is empty on every one of the {n:,} {entity.id} objects checked — a formula that reads "
+                        "nothing is not verified (a path that never joins, a column that is never set)"}
+    return {"bound": True, "note": "" if n else f"{entity.id} has no rows to check it on yet",
+            "sample": None if sample is None else str(sample)[:80], "rows_checked": n, "non_null": non_null}
 
 
 def declared_expressions(entity: OntologyEntity, specs: dict, verdicts: Optional[dict]) -> dict[str, ExpressionProperty]:

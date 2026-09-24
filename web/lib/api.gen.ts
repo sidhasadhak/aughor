@@ -9109,10 +9109,11 @@ export interface paths {
         get?: never;
         /**
          * Declare Ontology Expression
-         * @description 2026-09-22 — map a typed property to an expression over the type's own row (ON-1b's deferred half). The
-         *     name must be free on the type, the expression must parse flat (no subquery, aggregate or window) over the
-         *     backing's own columns, and it is VERIFIED by running it on one row before anything is written — a refusal
-         *     says why and writes nothing. The compiler, the framing and the pages then read it like any column.
+         * @description 2026-09-22 — map a typed property to an expression (ON-1b's deferred half). The name must be free on the type,
+         *     the expression must parse flat (no subquery, aggregate or window) over names the object compiler reads — its own
+         *     columns, a binding's, another formula, a to-one link's (PENDING item 27) — and it is VERIFIED through that
+         *     compiler on up to 1,000 of the type's objects before anything is written — a refusal says why and writes nothing.
+         *     The compiler, the framing and the pages then read it like any column.
          */
         put: operations["declare_ontology_expression_ontology_entities__entity_id__expressions__name__put"];
         post?: never;

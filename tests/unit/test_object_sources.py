@@ -1519,3 +1519,17 @@ def test_a_part_binding_must_read_from_the_parts_own_connection():
     assert "own connection" in absorb_problem(graph, "Order", part)
     parent.bindings[0].connection_id = "shop"
     assert part_binding(parent, part, graph) is not None and absorb_problem(graph, "Order", part) == ""
+
+
+def test_a_formula_on_a_type_read_from_another_connection_is_refused_never_read_as_a_column(both):
+    """PENDING item 27 — a formula is minted into its type's properties by name, and a type read by key from another
+    connection was read for that name as a column its table would hold. It holds none; the query is refused, with why."""
+    from aughor.ontology.models import ExpressionProperty
+    from aughor.semantic.object_query import ObjectQueryRefused
+    graph = domain_graph(both[0])
+    customer = graph.entities["Customer"]
+    customer.expressions["spend_band"] = ExpressionProperty(expression="country || '-x'", verified=True)
+    customer.properties["spend_band"] = customer.expressions["spend_band"].as_property("spend_band")
+    with pytest.raises(ObjectQueryRefused, match="is a formula, and Customer is read by key from another connection"):
+        compile_object_query({"object_type": "order", "by": ["placed_by.spend_band"],
+                              "measures": [{"name": "n", "agg": "count"}]}, graph, fiscal_start_month=1)

@@ -281,6 +281,13 @@ function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scop
                   </Link>
                 ) : cellText(p.value)}
                 {p.unit && p.value != null && <span style={{ color: "var(--t3)" }}> {p.unit}</span>}
+                {p.formula && (
+                  <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", ...MONO }}
+                    title={p.formula.kind === "computed" ? "A computed property the builder verified — evaluated for this object"
+                      : "An expression a person declared — evaluated for this object"}>
+                    = {p.formula.expression}
+                  </span>
+                )}
                 {p.overlay && (
                   <span className="aug-fs-xs"
                     style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "var(--t3)" }}>

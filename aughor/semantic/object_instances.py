@@ -247,6 +247,47 @@ def _link_view(on: Callable[..., Any], link: ObjectLink, row: dict) -> dict:
     return {**view, "usable": True, "count": int(counted.rows[0][0]) if counted.rows else 0}
 
 
+def _formula_properties(graph: OntologyGraph, on: Callable[..., Any], entity: OntologyEntity, key: str,
+                        pk: str) -> tuple[list[dict], list[str]]:
+    """PENDING item 27 — the object's formula properties, each evaluated for THIS object through the object compiler:
+    every expression a person declared and every computed property the builder verified. Neither is a column of the
+    backing row, so the page never showed one. Each is read on its own — one the compiler refuses (an aggregate
+    formula is a figure about the type, not a property of an object) costs only itself, and is said."""
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    wanted = [(name, e.expression, "expression", e.description, e.unit, e.semantic_type)
+              for name, e in (entity.expressions or {}).items() if e.verified is True]
+    wanted += [(c.id, c.formula_sql, "computed", c.label, c.unit, "measure")
+               for c in entity.computed_properties or [] if c.verified and c.id not in (entity.properties or {})]
+    out: list[dict] = []
+    caveats: list[str] = []
+    db = on(entity) if wanted else None
+    for name, formula, kind, described, unit, role in wanted:
+        try:
+            compiled = compile_object_query({"object_type": entity.api_name, "filters": [{"path": key, "value": pk}],
+                                             "by": [name], "measures": [{"name": "objects", "agg": "count"}]},
+                                            graph, dialect=(getattr(db, "dialect", "") or "duckdb"))
+        except ObjectQueryRefused as exc:
+            caveats.append(f"{name} is not shown: {exc.reason}")
+            continue
+        if compiled.cross_source is not None:
+            caveats.append(f"{name} is not shown: it reads another connection")
+            continue
+        result = db.execute("object_instance", compiled.sql)
+        if getattr(result, "error", None):
+            caveats.append(f"{name} could not be read: {str(result.error)[:200]}")
+            continue
+        columns = [str(c).lower() for c in (result.columns or [])]
+        row = (result.rows or [[None]])[0]
+        value = row[columns.index(name.lower())] if name.lower() in columns and row else None
+        if isinstance(value, str) and value.strip().upper() == "NULL":
+            value = None
+        out.append({"name": name, "value": value, "display_name": described if kind == "computed" else name,
+                    "semantic_type": role, "data_type": "", "unit": unit or "",
+                    "description": described if kind == "expression" else "",
+                    "formula": {"expression": formula, "kind": kind}})
+    return out, caveats
+
+
 def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                overlay: Optional[list] = None, source_db: Optional[Callable[[str], Any]] = None) -> ObjectInstance:
     """One object — its properties (with the overlay properties accepted edits set on it, ON-4), and
@@ -273,6 +314,9 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
     bound, series, bound_caveats = _bound_properties(on, entity, key, pk)
     properties += bound
     caveats += bound_caveats
+    formulas, formula_caveats = _formula_properties(graph, on, entity, key, pk)
+    properties += formulas
+    caveats += formula_caveats
     for edits in overlay_properties(entity, overlay).values():
         mine = next((e for e in edits if str(e.row_key) == str(pk)), None)
         if mine is None:

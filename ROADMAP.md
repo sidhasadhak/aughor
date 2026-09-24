@@ -8441,6 +8441,41 @@ a person's declaration, and no model authors one (AGENTS.md: provenance); propos
 (PENDING item 11), confirming them the user's. ⚑ theLook's terms cost billed scans; shipping the two DuckDB datasets is
 a hosting and licensing call.
 
+### 3.46 · Formula fields and computed properties are first-class (PENDING.md item 27, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** A person's expression property read the backing's own columns only, so a formula could not
+> use a type's linked tables; it was verified on ONE row (as were the builder's computed properties), so a formula that
+> fails past the first row verified; neither kind was ever shown on the object page; the builder's own verified
+> computed properties (`Customer.days_since_signup`) could not be used in object queries; and a formula on a type read
+> from another connection was read as a column its table would hold.
+
+**What exists.**
+
+- **One formula law** (`_Compiler.formula_column`, `aughor/semantic/object_query.py`): every name in a formula is read
+  by the compiler's own path law (`column_at`) — the type's column, a binding's property (a linked table joined on the
+  object's key), another formula, or a property through to-one links (`order_to_customer.lifetime_spend`). A formula
+  that reaches itself is refused with its chain. Builder computed properties are properties (`computed_prop`), in
+  measures, filters and groupings; an aggregate one is refused (a figure about the type, not an object's property).
+- **The door reads what the compiler reads** (`expression_problem` checks every path with `property_at`) and
+  **verifies on up to 1,000 objects** (`probe_expression`): compiled like a query, the anchor sampled so the joins
+  stay whole, grouped by value (dialect-safe: no MIN/MAX over a boolean), the counts taken in SQL (a result's rows are
+  capped). A formula that fails past the first row, or is empty on every object checked, does not verify. The builder's
+  computed properties are verified on 1,000 rows the same way (`_verify_formula_rows`).
+- **Shown on the object page**: every verified formula, evaluated for THIS object through the compiler, with its text
+  (`= CURRENT_DATE - signup_date`); one the compiler refuses is said as a caveat and costs only itself.
+- **Across connections**: a formula on a type read by key from another connection is refused with why, never read as a
+  column (`far_column`).
+
+**Receipt.** One script, the samples warehouse, `main` against the branch. Customers signed up over a year ago by
+`days_since_signup`: `main` refused ("Customer has no property"), the branch answered 500 (hand SQL agrees). Declaring
+`Order.spend_share = total_amount / order_to_customer.lifetime_spend`: `main`'s door refused ("a binding's column is not
+read here"), the branch's accepts. A cast that fails on the second row: `main` verified it (`bound: True`), the branch
+does not (the conversion error). Customer C00042's page: `main` showed no formula, the branch `days_since_signup` and
+`avg_order_value`. Every guard mutation-checked, 12 of 12 (`tests/unit/test_formulas_are_first_class.py`, and the
+cross-connection case in `tests/unit/test_object_sources.py`).
+
+⏳ **Open:** measures that must not be summed across periods (semi-additive) — the second half of item 27.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

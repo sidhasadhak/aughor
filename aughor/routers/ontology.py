@@ -1496,10 +1496,11 @@ def declare_ontology_expression(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """2026-09-22 — map a typed property to an expression over the type's own row (ON-1b's deferred half). The
-    name must be free on the type, the expression must parse flat (no subquery, aggregate or window) over the
-    backing's own columns, and it is VERIFIED by running it on one row before anything is written — a refusal
-    says why and writes nothing. The compiler, the framing and the pages then read it like any column."""
+    """2026-09-22 — map a typed property to an expression (ON-1b's deferred half). The name must be free on the type,
+    the expression must parse flat (no subquery, aggregate or window) over names the object compiler reads — its own
+    columns, a binding's, another formula, a to-one link's (PENDING item 27) — and it is VERIFIED through that
+    compiler on up to 1,000 of the type's objects before anything is written — a refusal says why and writes nothing.
+    The compiler, the framing and the pages then read it like any column."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.db.connection import open_connection_for_with_schema
@@ -1517,7 +1518,7 @@ def declare_ontology_expression(
         raise HTTPException(status_code=400, detail=problem)
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
-        verdict = probe_expression(db, graph, entity, spec["expression"])
+        verdict = probe_expression(db, graph, entity, spec["expression"], name=name)
     finally:
         db.close()
     if not verdict.get("bound"):

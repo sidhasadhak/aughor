@@ -131,7 +131,7 @@ def test_a_metric_with_nothing_to_measure_is_no_value_not_the_word(graph):
 def test_every_metric_measures_this_object_whatever_the_one_before_measured(graph):
     """A measured value once shadowed the scope's key: the second metric filtered `customer_id = '42'`."""
     db = _Db(cell="42")
-    rows = [r for r in OC.object_metrics(graph, db, graph.entities["Customer"], _customer()) if "refused" not in r]
+    OC.object_metrics(graph, db, graph.entities["Customer"], _customer())
     assert len(db.ran) >= 2 and all("'C00042'" in sql for sql in db.ran), db.ran
 
 

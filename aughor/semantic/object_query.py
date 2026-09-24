@@ -299,6 +299,12 @@ def _family(p: EntityProperty) -> str:
     return "text"
 
 
+def find_computed(entity: OntologyEntity, name: str):
+    """A builder computed property of the type by name (`ComputedProperty`), or None."""
+    low = (name or "").lower()
+    return next((c for c in entity.computed_properties or [] if c.id.lower() == low), None)
+
+
 def find_property(entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
     """A property of the type by name: one its backing supplies, else one a further binding supplies (ON-1b)."""
     props = entity.properties or {}
@@ -462,10 +468,9 @@ def _qualify(fragment: str, alias: str, read: str, *, what: str, expression: boo
     return node.sql(dialect="duckdb")
 
 
-def _qualify_row_expression(fragment: str, alias: str, read: str, *, what: str) -> str:
-    """`_qualify` for a per-row expression property (2026-09-22): parsed as a SELECT expression, refused when it
-    holds a subquery, an aggregate or a window, and anchored on `alias` so a join cannot make a bare name mean
-    another table."""
+def _row_formula(fragment: str, read: str, *, what: str):
+    """A per-row formula (an expression property, or a builder's computed property) as a parsed SELECT expression —
+    refused when it holds a subquery, an aggregate or a window: a property is per row, an aggregate is a metric."""
     import sqlglot
     from sqlglot import exp
     try:
@@ -473,13 +478,18 @@ def _qualify_row_expression(fragment: str, alias: str, read: str, *, what: str) 
     except Exception as exc:  # noqa: BLE001 — an unparseable fragment is a refusal, never a guess
         raise ObjectQueryRefused(f"{what} could not be parsed to anchor it on the object ({exc})") from exc
     if node.find(exp.Select) is not None:
-        raise ObjectQueryRefused(f"{what} holds a subquery; an expression property is a flat expression")
+        raise ObjectQueryRefused(f"{what} holds a subquery; a formula property is a flat expression")
     if node.find(exp.AggFunc) is not None or node.find(exp.Window) is not None:
-        raise ObjectQueryRefused(f"{what} holds an aggregate or a window; an expression property is per row")
-    for col in node.find_all(exp.Column):
-        if not col.table:
-            col.set("table", exp.to_identifier(alias))
-    return node.sql(dialect="duckdb")
+        raise ObjectQueryRefused(f"{what} holds an aggregate or a window; a formula property is per row")
+    return node
+
+
+def formula_paths(fragment: str, read: str = "duckdb") -> list[str]:
+    """The property paths a per-row formula reads — a bare name is a property of the type, a dotted one reaches it
+    through to-one links (`customer.tier`). What the door checks each one against (`property_at`)."""
+    from sqlglot import exp
+    node = _row_formula(fragment, read, what="the formula")
+    return list(dict.fromkeys(".".join(p.name for p in col.parts) for col in node.find_all(exp.Column)))
 
 
 def _within(formula: str, condition: str) -> str:
@@ -642,6 +652,8 @@ class _Compiler:
         #: read's own statement (``__r`` for the read's own type, another for a type or binding joined inside it).
         self.far_paths: dict[str, tuple[KeyedRead, str]] = {}
         self._far_joined: dict[tuple, str] = {}
+        #: PENDING item 27 — the formula properties being resolved right now, so one that reaches itself is refused.
+        self._open_formulas: list[tuple[str, str]] = []
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
@@ -656,13 +668,15 @@ class _Compiler:
         return find_object_type(self.g, name)
 
     def prop(self, entity: OntologyEntity, name: str, path: str) -> EntityProperty:
-        p = find_property(entity, name) or self.virtual_prop(entity, name) or self.derived_prop(entity, name)
+        p = (find_property(entity, name) or self.virtual_prop(entity, name) or self.derived_prop(entity, name)
+             or self.computed_prop(entity, name))
         if p is not None:
             return p
         bound = sorted(name for binding in entity.bindings or [] for name in binding.properties)
         derived = sorted(d.name for d in derived_for(self.g, entity).properties)
+        computed = sorted(c.id for c in entity.computed_properties or [] if c.verified)
         names = (sorted(entity.properties or {}) + bound + sorted(overlay_properties(entity, self.overlay_edits))
-                 + derived)
+                 + derived + computed)
         links = sorted(h.name for h in object_links(self.g, entity))
         raise ObjectQueryRefused(f"{entity.id} has no property '{name}' (in '{path}'){_did_you_mean(name, names + links)}",
                                  names + links)
@@ -677,6 +691,17 @@ class _Compiler:
         return EntityProperty(name=edits[0].column, data_type="BOOLEAN" if boolean else "VARCHAR",
                               semantic_type="flag" if boolean else "dimension",
                               description="an overlay property — set by accepted edits, merged at read time")
+
+    def computed_prop(self, entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
+        """PENDING item 27 — a computed property the builder VERIFIED on the type (`Customer.days_since_signup`), as a
+        property: the prompt has cited these with authority all along, and the object door could not read one. An
+        unverified one is not a name it accepts; one whose formula aggregates is refused when read (a metric)."""
+        computed = find_computed(entity, name)
+        if computed is None or not computed.verified:
+            return None
+        return EntityProperty(name=computed.id, display_name=computed.label or computed.id,
+                              semantic_type="measure", unit=computed.unit or "", is_derived=True,
+                              description=f"a computed property: {computed.formula_sql}")
 
     def derived_prop(self, entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
         """ON-9 — a property a declared process derives on ``entity`` (`dispatch_lag_days`): the whole calendar days
@@ -696,7 +721,12 @@ class _Compiler:
             return self.far_column(scope, alias, entity, p)
         expression = (entity.expressions or {}).get(p.name)
         if expression is not None:
-            return self.expression_column(alias, entity, p.name, expression)
+            return self.expression_column(scope, alias, entity, p.name, expression)
+        computed = find_computed(entity, p.name) if find_property(entity, p.name) is None else None
+        if computed is not None:
+            self.plan.append(f"{entity.id}.{p.name}: = {computed.formula_sql} (a computed property)")
+            return self.formula_column(scope, alias, entity, p.name, computed.formula_sql,
+                                       what=f"{entity.id}.{p.name} (a computed property)")
         binding = property_binding(entity, p.name)
         if binding is not None:
             return self.binding_column(scope, alias, entity, binding, p)
@@ -728,15 +758,38 @@ class _Compiler:
             self.note_overlay(entity, p.name, edits)
         return f"CAST({ov}.v AS BOOLEAN)" if _is_bool(p) else f"{ov}.v"
 
-    def expression_column(self, alias: str, entity: OntologyEntity, name: str, expression) -> str:
-        """2026-09-22 — a property a person mapped to an expression over the type's own row: anchored on the
-        object's alias the way a segment's WHERE is, refused while unverified — a wrong expression must not
-        become a silent column."""
+    def expression_column(self, scope: _Scope, alias: str, entity: OntologyEntity, name: str, expression) -> str:
+        """2026-09-22 — a property a person mapped to an expression: refused while unverified — a wrong expression
+        must not become a silent column — and read through `formula_column`."""
         if expression.verified is not True:
             raise ObjectQueryRefused(f"{entity.id}.{name} is an expression that did not bind: "
                                      f"{expression.note or 'not yet verified'}")
         self.plan.append(f"{entity.id}.{name}: = {expression.expression} (an expression property)")
-        return _qualify_row_expression(expression.expression, alias, self.dialect, what=f"{entity.id}.{name}")
+        return self.formula_column(scope, alias, entity, name, expression.expression, what=f"{entity.id}.{name}")
+
+    def formula_column(self, scope: _Scope, alias: str, entity: OntologyEntity, name: str, formula: str, *,
+                       what: str) -> str:
+        """PENDING item 27 — a per-row formula, every name in it read by the compiler's own path law (`column_at`):
+        the type's own column, a property a binding supplies (a linked table, joined on the object's key), another
+        formula, or a property through to-one links (`customer.tier`). It read the backing's own columns only, so a
+        formula could not use a type's linked tables. A formula that reaches itself is refused, never looped."""
+        from sqlglot import exp
+        slot = (entity.id, name.lower())
+        if slot in self._open_formulas:
+            chain = " → ".join(f"{e}.{n}" for e, n in self._open_formulas[self._open_formulas.index(slot):] + [slot])
+            raise ObjectQueryRefused(f"{what} reaches itself ({chain}) — a formula cannot be defined by itself")
+        node = _row_formula(formula, self.dialect, what=what)
+        self._open_formulas.append(slot)
+        try:
+            def read(column):
+                if not isinstance(column, exp.Column):
+                    return column
+                path = ".".join(part.name for part in column.parts)
+                sql, _, _ = self.column_at(scope, entity, alias, path, what)
+                return exp.maybe_parse(sql, dialect=self.dialect)
+            return f"({node.transform(read).sql(dialect=self.dialect)})"
+        finally:
+            self._open_formulas.pop()
 
     def derived_column(self, scope: _Scope, alias: str, entity: OntologyEntity, d) -> str:
         """ON-9 — a derived lag: the calendar days between two of the object's moments, each read under the compiler's
@@ -1123,6 +1176,12 @@ class _Compiler:
         """ON-8 — a property of a type this query reads by key from another connection: a column its backing holds, or
         (O2) one a binding of that type supplies."""
         read, inner = self.far_paths[alias]
+        if p.name in (entity.expressions or {}) or find_computed(entity, p.name) is not None:
+            # PENDING item 27 — a formula is minted into the type's properties by name, and was read here as a column
+            # the other connection's table would hold; it holds none of that name
+            raise ObjectQueryRefused(
+                f"{entity.id}.{p.name} is a formula, and {entity.id} is read by key from another connection — a type "
+                "read that way is read for its own columns and bindings; anchor the query on it to evaluate the formula")
         column = next((k for k in entity.properties or {} if k.lower() == p.name.lower()), None)
         if column is None:
             binding = property_binding(entity, p.name)
@@ -1504,7 +1563,8 @@ class _Compiler:
         for i, seg in enumerate(segs):
             last = i == len(segs) - 1
             if last:
-                p = find_property(entity, seg) or self.virtual_prop(entity, seg) or self.derived_prop(entity, seg)
+                p = (find_property(entity, seg) or self.virtual_prop(entity, seg) or self.derived_prop(entity, seg)
+                     or self.computed_prop(entity, seg))
                 if p is not None:
                     return self.prop_measure(scope, alias, p, hops, t, label, entity=entity)
                 if self.hop(entity, seg) is None:
