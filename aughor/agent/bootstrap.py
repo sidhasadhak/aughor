@@ -81,6 +81,12 @@ def _register_authz_resolvers() -> None:
     rreg.register_resource_conn_resolver("alert", _alert_conn)
     rreg.register_resource_conn_resolver("brief", _brief_conn)
 
+    def _document_org(doc_id):
+        # A document carries its own owner (PENDING item 16) — resolved to the org directly.
+        from aughor.knowledge.indexer import document_org
+        return document_org(doc_id)
+    rreg.register_resource_org_resolver("document", _document_org)
+
 
 # ── Schema annotators (Pattern B) — invert db/connection.py's schema enrichment ─
 

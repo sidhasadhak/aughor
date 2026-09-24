@@ -47,11 +47,43 @@ def resolve_resource_conn(kind: str, resource_id: str) -> Optional[str]:
         return None
 
 
+OrgResolver = Callable[[str], Optional[str]]
+
+#: Resources that carry their OWN owner rather than a connection's — an uploaded document belongs to the
+#: organisation that indexed it, whatever connection it was indexed beside (PENDING item 16). Consulted before
+#: the connection resolvers; a registered kind's answer stands, even when it is None (a shared resource).
+_ORG_RESOLVERS: dict[str, OrgResolver] = {}
+
+
+def register_resource_org_resolver(kind: str, fn: OrgResolver) -> None:
+    """Register a resolver mapping a resource id of ``kind`` straight to its owning org id (None when shared or
+    unknown). Last registration for a kind wins."""
+    _ORG_RESOLVERS[kind] = fn
+
+
+def resolves_org(kind: str) -> bool:
+    return kind in _ORG_RESOLVERS
+
+
+def resolve_resource_org(kind: str, resource_id: str) -> Optional[str]:
+    """The org owning a resource, via its registered org resolver — None when none is registered, the resource is
+    shared, or resolution fails (best-effort, like `resolve_resource_conn`)."""
+    fn = _ORG_RESOLVERS.get(kind)
+    if fn is None:
+        return None
+    try:
+        return fn(resource_id)
+    except Exception as e:
+        tolerate(e, f"resource-org resolver {kind!r}", counter=f"authz.org_resolver.{kind}")
+        return None
+
+
 def registered_kinds() -> list[str]:
     """The resource kinds an agent has plugged in a resolver for (for the manifest)."""
-    return sorted(_RESOLVERS)
+    return sorted(set(_RESOLVERS) | set(_ORG_RESOLVERS))
 
 
 def clear() -> None:
     """Drop every registered resolver (idempotent re-registration / test isolation)."""
     _RESOLVERS.clear()
+    _ORG_RESOLVERS.clear()

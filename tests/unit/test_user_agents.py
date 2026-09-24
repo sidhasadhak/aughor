@@ -135,7 +135,7 @@ def test_external_context_scoped_to_agent_docs(monkeypatch):
         {"text": "alpha", "filename": "a.pdf", "title": "A", "doc_id": "d1", "score": 0.9},
         {"text": "beta", "filename": "b.pdf", "title": "B", "doc_id": "d2", "score": 0.8},
     ]
-    monkeypatch.setattr(idx, "search_documents", lambda q, top_k=4: hits)
+    monkeypatch.setattr(idx, "search_documents", lambda q, top_k=4, **_: hits)
 
     # No agent → global behavior, both docs, global header.
     s = idx.build_external_context_section("q")
