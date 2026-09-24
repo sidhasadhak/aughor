@@ -1113,6 +1113,21 @@ def _primary_num_idx(columns, rows):
     return fallback
 
 
+_FIRST_DIGIT = re.compile(r"\d")
+
+
+def _numberless_prefix(text: str) -> str:
+    """A streamed headline up to the word that holds its first digit — PENDING item 22. The coder writes the headline
+    alongside its SQL, before the query runs, and it used to type onto the screen number and all ("orders fell 97.5%"
+    before a row existed), replaced afterwards only on a flat contradiction. The words before the first number are
+    no claim; the number waits for the grounded headline."""
+    m = _FIRST_DIGIT.search(text or "")
+    if m is None:
+        return text or ""
+    cut = text.rfind(" ", 0, m.start())
+    return text[:cut].rstrip() if cut > 0 else ""
+
+
 def _ground_headline(headline, columns, rows):
     """Return the headline unchanged when it is consistent with the data; otherwise a
     grounded replacement built from the actual top row. Conservative: only fires on a
@@ -2369,9 +2384,15 @@ def _answer_core(
             if not isinstance(_hitem, str):
                 continue
             _hnow = _htime.monotonic()
-            if len(_hitem) - _hl_last_len >= 6 or _hnow - _hl_last_ts > 0.120:
-                _hl_last_len, _hl_last_ts = len(_hitem), _hnow
-                emit("headline_delta", {"headline": _hitem})
+            # PENDING item 22 — this headline is written BEFORE its query runs, so a number in it is a prediction:
+            # its words may type in, and it stops at the word holding its first digit until the rows are in (the
+            # grounded headline replaces it then).
+            _hshown = _numberless_prefix(_hitem)
+            _held = len(_hshown) < len(_hitem.rstrip())       # at a number: flush the words before it now
+            if len(_hshown) > _hl_last_len and (_held or len(_hshown) - _hl_last_len >= 6
+                                                or _hnow - _hl_last_ts > 0.120):
+                _hl_last_len, _hl_last_ts = len(_hshown), _hnow
+                emit("headline_delta", {"headline": _hshown})
         _hl_thread.join()
         if "exc" in _hl_result:
             raise _hl_result["exc"]

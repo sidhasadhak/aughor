@@ -8265,6 +8265,28 @@ overrides root that cannot hold a directory raise with the declaration named and
 ⏳ **Open:** an unreadable saved graph still reads as "no ontology" at the doors (counted and logged, not yet said on
 the screen that asks for a build).
 
+### 3.41 · No number is shown before it is measured (PENDING.md item 22, found by the 2026-09-24 re-survey; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** The quick path's SQL writer returns its headline with the SQL — before the query runs — and
+> the headline streamed onto the screen as the model typed it (`headline_delta`), numbers included, to be replaced
+> afterwards only when the rows flatly contradicted it (`_ground_headline`). The theLook briefing incident began with
+> exactly such a number ("orders fell 97.5%").
+
+**What exists.** The stream carries the headline's words up to the word holding its first digit
+(`_numberless_prefix`, `aughor/routers/investigations.py`), and flushes those words at once when a number is reached
+rather than waiting on the stream's throttle; the number arrives with the grounded headline once the rows are in. No
+web change: the chat already types the partial headline in place of the skeleton and lets the settled `headline`
+overwrite it.
+
+**Receipt.** The real `_stream_chat` over a DuckDB connection, the faux model's streaming call typing its scripted
+headline *"Orders fell 97.5% yesterday to 3 orders"* three characters at a time: the frames were `headline_delta
+"Orders "`, `headline_delta "Orders fell"`, the SQL, then `headline "Orders: 600"` — the guess never reached the
+screen, and the rows replaced it. `tests/unit/test_no_number_before_measured.py` (the first test that ever drove a
+real `headline_delta`: the faux backend does not stream, so none had).
+
+⏳ **Open:** the narrator's streamed prose is written after the query from its rows but is not number-checked the way
+the conversation's closing prose is (`ground_answer_numbers`).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
