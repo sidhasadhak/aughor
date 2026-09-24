@@ -8204,6 +8204,41 @@ extractor still misses lowercase values ("delivered") and names with an ampersan
 BigQuery connections the profile cache is empty (Arc CB's "unknown" share), so part 2 binds there only once it is
 filled; question-matched rows in place of the first five, and value embeddings (the review's level 2), are not built.
 
+### 3.39 · The business explorer cannot fuse two groups, and no proposal hides a type (PENDING.md item 20, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a guard on a default-on path)
+
+> **The fact it answers.** The explorer runs on every new connection since 2026-09-24 (`ontology.explore_on_connect`),
+> and its only fusion check (`compare_groupings`) needs a hand-declared reference a new connection never has. Its one
+> live run read LuxExperience's `customer_service` as a part of Order — each ticket names one order, 11,244 of 112,439
+> — where the reference keeps tickets with Customer; and a proposal ABSORBED the table's own type at once, hiding it
+> from the map and the agent's catalogue before anyone confirmed. Three robustness gaps beside it: a run whose
+> proposals failed part-way was never recorded, so the birth rite's "already explored" skip never fired and every
+> restart paid again; nothing stopped a person's Explore racing the birth rite's; a record that no longer parsed was
+> read as empty — every withdrawal proposed again — and the next save erased the withdrawals for good.
+
+**What exists.** A coverage guard in `_part_outcome` (`aughor/ontology/explorer.py`, `PART_MIN_COVERAGE = 0.5`): a
+table that is already its own type and reaches under half of the parent's objects is refused with the counts — *"is a
+type of its own and reaches only 1,000 of 5,000 Order objects (20%) — a part is something nearly every Order has; a
+table about some of them stays its own type, linked to Order"*. The counts come from the measurement the part already
+took; no model, no reference. Absorption waits for a person: a model-origin bind records `absorb_on_confirm` and does
+not absorb, the table reads both ways meanwhile (as the parent's part and as its own type — nothing hidden, the map's
+cards unmoved), and the confirm door absorbs it; a proposal's tier reads "released" only once a person has confirmed
+and then released it. The route (`routers/ontology.py`): one exploration per scope at a time (a second answers 409); the
+record is read strictly BEFORE the model call (an unreadable one answers 409 naming the file, without spending the
+call); a run whose proposals stop part-way is recorded with its error, so the skip holds; `save_draft` never writes
+over a record that does not parse (`DraftUnreadable`).
+
+**Receipt.** Model-free, on the seeded samples warehouse through the real doors, the model scripted: `reviews` (their
+own type, 1,000 of 5,000 orders) proposed as a part of Order is refused with those numbers; order lines (every order)
+are bound at once, `OrderItem` stays listed until a person confirms, and confirming makes it Order's part and moves
+`order_items` under Order's card; an unreadable record answers 409 with no model call and is left as it was; a run held
+by another answers 409; a run killed mid-proposal is recorded and the birth rite then skips the scope.
+`tests/unit/test_ontology_explorer.py` (21, three of them rewritten for the deferral), 1,457 ontology, object and birth
+tests green.
+
+⏳ **Open:** the threshold (half) is a judgement from one fusion and the parts every fixture holds — a real
+low-coverage part (refunds on an order) is refused too, and a person binds it by hand; the explorer's paid quality
+re-check has still not run.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
