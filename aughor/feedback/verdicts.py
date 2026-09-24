@@ -135,6 +135,19 @@ def record_verdict(
     return result
 
 
+def latest_verdict(investigation_id: str) -> Optional[dict]:
+    """The newest verdict this organisation recorded on one answer, or None."""
+    if not investigation_id:
+        return None
+    c = _conn()
+    try:
+        row = c.execute("SELECT * FROM finding_verdicts WHERE org_id=? AND investigation_id=? "
+                        "ORDER BY id DESC LIMIT 1", (current_org_id(), investigation_id)).fetchone()
+        return dict(row) if row else None
+    finally:
+        c.close()
+
+
 def verdict_stats(connection_id: Optional[str] = None) -> dict:
     """Counts by verdict for the current org (optionally filtered to one connection) plus the
     acceptance rate — the headline calibration signal the trust economy reads."""

@@ -31,7 +31,7 @@ _DB_PATH = resolve_db_path("AUGHOR_LEARNING_DB", Path("data/learning.db"))
 #: (`{context, options, label}` selection rows, exporters.export_decisions): a separate
 #: kind pair rather than reusing sft/golden because MI-4's entry gates COUNT golden
 #: examples, and a decision row inflating the nl2sql gate would corrupt that measurement.
-KINDS = ("sft", "dpo", "golden", "choice", "choice_golden")
+KINDS = ("sft", "dpo", "golden", "choice", "choice_golden", "sft_bronze", "dpo_repair")
 
 
 def datasets_dir() -> Path:
@@ -157,10 +157,13 @@ def register(name: str, kind: str, rows: list[dict], *, task: str = "",
     c = _connect()
     try:
         ensure_once(c, _ensure_schema)
+        # Unchanged means unchanged since the LATEST version. A corpus can shrink back to an earlier snapshot — a later
+        # reject overrules an accept (PENDING item 23) — and matching any earlier version returned that old node while
+        # `get()` kept serving the newer one, rejected row and all. Going back is a change, so it is a new version.
         existing = c.execute(
-            "SELECT * FROM dataset_node WHERE org_id=? AND name=? AND data_id=? "
-            "ORDER BY version DESC LIMIT 1", (org, name, h)).fetchone()
-        if existing is not None:
+            "SELECT * FROM dataset_node WHERE org_id=? AND name=? ORDER BY version DESC LIMIT 1",
+            (org, name)).fetchone()
+        if existing is not None and existing["data_id"] == h:
             return dict(existing)
 
         c.execute(
@@ -271,9 +274,12 @@ def stats(org_id: Optional[str] = None) -> dict[str, Any]:
         ensure_once(c, _ensure_schema)
         out: dict[str, Any] = {}
         for kind in KINDS:
+            # Each dataset's LATEST version only (PENDING item 23): a version is a whole snapshot, so summing every
+            # version counted a corpus exported at 100 and again at 110 as 210, and a gate could pass early.
             row = c.execute(
-                "SELECT COUNT(*) AS datasets, COALESCE(SUM(row_count), 0) AS examples "
-                "FROM dataset_node WHERE org_id=? AND kind=?", (org, kind)).fetchone()
+                "SELECT COUNT(*) AS datasets, COALESCE(SUM(row_count), 0) AS examples FROM dataset_node n "
+                "WHERE org_id=? AND kind=? AND version = (SELECT MAX(version) FROM dataset_node m "
+                "WHERE m.org_id = n.org_id AND m.name = n.name)", (org, kind)).fetchone()
             out[kind] = {"datasets": int(row["datasets"]), "examples": int(row["examples"])}
         return out
     finally:

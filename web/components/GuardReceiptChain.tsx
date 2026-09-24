@@ -30,6 +30,7 @@ import type { GuardReceipt } from "@/lib/chatTurn";
 const GUARD_LABEL: Record<string, string> = {
   fanout_defan: "Join over-count prevented",
   preflight_repair: "SQL repaired before execution",
+  sql_repair: "SQL repaired after its first run",
   sql_lint: "Query quality issues fixed",
   headline_grounding: "Headline re-grounded in the returned rows",
   narration_inversion: "Universal claim qualified",
@@ -45,6 +46,7 @@ const GUARD_LABEL: Record<string, string> = {
 const GUARD_SHORT: Record<string, string> = {
   fanout_defan: "fan-out",
   preflight_repair: "preflight",
+  sql_repair: "repair",
   sql_lint: "sql lint",
   headline_grounding: "grounding",
   narration_inversion: "narration",

@@ -2637,7 +2637,19 @@ def _answer_core(
         if final_sql:
             try:
                 from aughor.sql.safety import preflight_repair
+                _pf_before = final_sql
                 final_sql, _pf_receipt = preflight_repair(db, final_sql, schema)
+                if final_sql.strip() != _pf_before.strip():
+                    # Said, as the shared executor already says it (sql/executor.py): the rewrite was silent on the
+                    # quick path, so its before-and-after — a query that would not bind and the one that did — was
+                    # the one guard pair the training corpus never saw (PENDING item 23).
+                    _what = [k for k in ("identifiers_repaired", "filter_bound", "aliases_uniquified", "fixed")
+                             if (_pf_receipt or {}).get(k)]
+                    _receipt({
+                        "guard": "preflight_repair", "action": "repaired_sql",
+                        "detail": (", ".join(_what) or "repaired before execution")
+                                  + (f" ({_pf_receipt['error_class']})" if (_pf_receipt or {}).get("error_class") else ""),
+                        "before": _pf_before[:2000], "after": final_sql[:2000]})
             except Exception as _e:
                 logger.debug("chat pre-flight validation is best-effort; skipped: %s", _e)
 
@@ -2708,6 +2720,19 @@ def _answer_core(
                                        "not adopted and the original query stands"),
                             "before": final_sql[:2000], "after": fix.sql[:2000]})
                     elif not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
+                        # The adopted repair is said too (PENDING item 23): the query shown changed with no
+                        # word of why, and the pair — a query that failed or tripped a check, and the one that
+                        # ran clean — was kept nowhere.
+                        _fired = [_n for _n, _h in (("scope", _scope_fix_hint), ("filter", _filter_fix_hint),
+                                                    ("grain", _grain_fix_hint), ("id arithmetic", _idmath_fix_hint),
+                                                    ("ratio", _ratio_fix_hint), ("columns", _semantic_fix_hint),
+                                                    ("fan-out", _fanout_fix_hint), ("chasm", _chasm_fix_hint)) if _h]
+                        _receipt({
+                            "guard": "sql_repair", "action": "repaired_sql",
+                            "detail": (f"the query failed: {str(result.error)[:300]}" if result.error
+                                       else f"checks fired on it: {', '.join(_fired)}" if _fired
+                                       else "the query returned no rows"),
+                            "before": final_sql[:2000], "after": fix.sql[:2000]})
                         final_sql = fix.sql
                         result = retry
                         emit("sql", {"sql": final_sql})

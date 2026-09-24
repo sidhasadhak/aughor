@@ -3760,7 +3760,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Search Documents Endpoint */
+        /**
+         * Search Documents Endpoint
+         * @description Search the corpus the caller may read (`search_documents`): with ``connection_id`` in the
+         *     body, another connection's schema docs are left out, as they are for a question.
+         */
         post: operations["search_documents_endpoint_documents_search_post"];
         delete?: never;
         options?: never;
@@ -6817,7 +6821,9 @@ export interface paths {
         /**
          * Post Export
          * @description Run every exporter once. Idempotent — an unchanged corpus registers no new version,
-         *     so this is safe to call repeatedly and safe to put on a schedule later.
+         *     so this is safe to call repeatedly and safe to put on a schedule later. Gated like the
+         *     trusted-query doors beside it (PENDING item 23: it had no gate, and it writes users'
+         *     questions into files).
          *
          *     `publish_golden` also registers the held-out set as an eval suite: a golden set that
          *     never reaches the plane enforcing promotion gates is a measuring stick nobody measures
@@ -27911,6 +27917,7 @@ export interface operations {
             query?: {
                 task?: string;
                 publish_golden?: boolean;
+                connection_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -27943,6 +27950,7 @@ export interface operations {
             query?: {
                 site?: string | null;
                 task?: string;
+                connection_id?: string | null;
             };
             header?: never;
             path?: never;

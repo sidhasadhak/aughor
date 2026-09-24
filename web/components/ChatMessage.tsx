@@ -1194,6 +1194,7 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | null>(null);
+  const [accepted, setAccepted] = useState(false);
   // S3 fix-it: a thumbs-down opens the typed what-was-wrong form; the correction
   // flows through record_verdict into the ledger, so the next answer cites it.
   const [fixItOpen, setFixItOpen] = useState(false);
@@ -1210,7 +1211,10 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   };
   const rate = (v: "helpful" | "unhelpful") => {
     setFeedback(v);
-    if (turn.receiptId) void sendChatFeedback(connectionId, turn.receiptId, v);
+    setAccepted(false);
+    // A 👍 is the chat's accept: the server records it with the SQL this turn ran (PENDING item 23), and the
+    // thanks line says so only when it did.
+    if (turn.receiptId) void sendChatFeedback(connectionId, turn.receiptId, v).then(r => setAccepted(v === "helpful" && r.accepted));
     // The lightweight receipt signal stays; the STRUCTURED correction is opt-in.
     if (v === "unhelpful") setFixItOpen(true);
   };
@@ -1274,10 +1278,12 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
         {annotateDone && <span className="text-zinc-600 italic">note pinned to {annotateTarget}</span>}
         <span className="text-zinc-700">·</span>
         <Button variant="ghost" size="xs" onClick={() => rate("helpful")}
-          className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful">👍</Button>
+          className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful — records this answer as accepted">👍</Button>
         <Button variant="ghost" size="xs" onClick={() => rate("unhelpful")}
           className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "unhelpful" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Not helpful">👎</Button>
-        {feedback && !fixItOpen && !fixItDone && <span className="text-zinc-600 italic">thanks — noted</span>}
+        {feedback && !fixItOpen && !fixItDone && (
+          <span className="text-zinc-600 italic">{accepted ? "thanks — recorded as accepted" : "thanks — noted"}</span>
+        )}
         {fixItDone && <span className="text-zinc-600 italic">correction recorded — future answers cite it</span>}
       </div>
       {fixItOpen && (

@@ -8287,6 +8287,51 @@ real `headline_delta`: the faux backend does not stream, so none had).
 ⏳ **Open:** the narrator's streamed prose is written after the query from its rows but is not number-checked the way
 the conversation's closing prose is (`ground_answer_numbers`).
 
+### 3.42 · Training data that means something (PENDING.md item 23, the ML review's point 2; MI-3 → MI-4; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** MI-3's exporters existed and taught the wrong thing: the prompt was the answer's HEADLINE,
+> not the question; no row said which warehouse it was answered against; a typed correction became the "chosen" SQL
+> without being run; an accept stayed exportable after a later reject; the SQL was whatever the grading door POSTED;
+> the golden split was keyed on the answer's id, so a question asked twice landed on both sides; the gate report
+> summed every version of a dataset; export was ungated and read other organisations' trusted queries and agents.
+> And the chat — where most answers are given — could not say "yes": its 👍 recorded no verdict.
+> (docs/ENGINE_REVIEW_ANSWERS_2026-09-24.md §2.)
+
+**What exists.**
+
+- **The chat's accept.** A 👍 records an `accept` on the turn, carrying the SQL the turn ran — read from its own history
+  row, never from the request (`_accept_chat_answer`, `aughor/routers/query.py`); idempotent, and the thanks line says
+  "recorded as accepted" only when it was.
+- **Rows that mean what they say** (`aughor/learning/exporters.py`): the prompt is the question asked (an answer
+  nobody asked — an explorer finding — is left out); each answer's verdicts reconciled to its latest; a verdict's SQL
+  counts only when the answer's own record ran it, in this organisation; a correction is a preference pair only when
+  it dry-runs on its connection; every row carries `context` (connection, dialect, the tables its SQL reads) and its
+  `tier` (gold · silver · bronze · guard_rewrite).
+- **A split that cannot leak.** The held-out tenth is decided by the normalised QUESTION, before any data is seen, and
+  no trainable corpus carries a golden row's question or its SQL (the paraphrase the hash cannot see).
+- **Two machine-graded tiers, gated on nothing.** `sft_bronze`: answers that ran, returned rows, had clean guards (an
+  envelope with no caveat and no warning receipt), no failed re-run and no reject. `dpo_repair`: every guard rewrite
+  as wrong SQL → fixed SQL — the fan-out de-fan, the lint fix, and now the preflight repair and the repair adopted
+  after a failed run, which the quick path used to make in silence (they are receipts now, `preflight_repair` and
+  `sql_repair`); a side cut at the receipt's 2,000-character cap is left out.
+- **Counting and scope.** The gate report counts each dataset's latest version and checks the fourth gate (30 days of
+  guard data, `GuardVerdicts.first_live_fire`); a corpus that shrinks back to an earlier snapshot is a new version, so
+  `get()` never serves the rejected row; export needs `semantic.edit` and reads only this organisation's trusted
+  queries, agents and answers. The history row carries its `trace_id` (migration v7), so a guard fire outlives the
+  14-day session log.
+
+**Receipt.** One script, the same graded history, `main` against the branch (two chat 👍, an accept later rejected,
+two corrections — one typed with a typo — an accept whose posted SQL the answer never ran, an answer a guard repaired
+twice). `main`: the SFT corpus was one row, prompt `'3'`, completion `DELETE FROM stores`; DPO's prompts were `'EU'`
+and one "chosen" was `SELEC region FORM orders`; the golden set held the accept a person had since rejected; the chat's
+👍 recorded nothing. The branch: SFT two rows, prompted by the questions the 👍 answers were asked by, with their
+tables; DPO the one correction that runs; golden empty; bronze four rows; repair pairs two, both naming their guard;
+a four-gate report. Every guard above was mutation-checked — undone one at a time, each fails its test
+(`tests/unit/test_mi3_dataset_plane.py`, `tests/unit/test_every_rewrite_is_said.py`).
+
+⏳ **Open:** the thresholds wait on use (ROADMAP §3.9's gates are unchanged); bronze's verifier needs the hand audit
+§3.9 requires before anything trains on it; deep runs' guard fires reach `dpo_repair` only through their envelope.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

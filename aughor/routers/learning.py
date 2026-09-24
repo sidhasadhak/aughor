@@ -151,7 +151,7 @@ def get_decisions(site: Optional[str] = None, limit: int = 50):
             "recent": [_metadata_only(r) for r in list_decisions(site=site, limit=limit)]}
 
 
-@router.post("/learning/export/decisions")
+@router.post("/learning/export/decisions", dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def post_export_decisions(site: Optional[str] = None, task: str = "decision"):
     """Export decision records as selection corpora (`choice` + held-out `choice_golden`
     per site). Idempotent like every exporter — an unchanged corpus registers no new
@@ -171,10 +171,12 @@ def get_dataset(name: str, version: Optional[int] = None):
     return {"found": True, "dataset": node, "lineage": store.lineage_of(node["id"])}
 
 
-@router.post("/learning/export")
+@router.post("/learning/export", dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def post_export(task: str = "nl2sql", publish_golden: bool = True):
     """Run every exporter once. Idempotent — an unchanged corpus registers no new version,
-    so this is safe to call repeatedly and safe to put on a schedule later.
+    so this is safe to call repeatedly and safe to put on a schedule later. Gated like the
+    trusted-query doors beside it (PENDING item 23: it had no gate, and it writes users'
+    questions into files).
 
     `publish_golden` also registers the held-out set as an eval suite: a golden set that
     never reaches the plane enforcing promotion gates is a measuring stick nobody measures

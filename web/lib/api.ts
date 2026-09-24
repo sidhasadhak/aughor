@@ -3722,12 +3722,20 @@ export async function validateQuery(
 }
 
 // Lightweight feedback/remember signal on a chat answer (journaled to the ledger).
-export async function sendChatFeedback(connId: string, turnId: string, verdict: "helpful" | "unhelpful", note = ""): Promise<void> {
-  await fetch(`${getApiBase()}/chat/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conn_id: connId, turn_id: turnId, verdict, note }),
-  }).catch(() => {});
+/** A 👍 also records the chat answer as ACCEPTED (PENDING item 23), with the SQL the server read from the turn's
+ *  own record. `accepted` says whether it now stands accepted — false when the turn could not be graded. */
+export async function sendChatFeedback(connId: string, turnId: string, verdict: "helpful" | "unhelpful", note = ""): Promise<{ accepted: boolean }> {
+  try {
+    const res = await fetch(`${getApiBase()}/chat/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conn_id: connId, turn_id: turnId, verdict, note }),
+    });
+    const body = res.ok ? await res.json().catch(() => ({})) : {};
+    return { accepted: Boolean((body as { accepted?: unknown }).accepted) };
+  } catch {
+    return { accepted: false };
+  }
 }
 
 // ── Evidence Ledger ────────────────────────────────────────────────────────────

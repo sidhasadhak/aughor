@@ -142,6 +142,16 @@ def _migrate_v5(c: sqlite3.Connection) -> None:
     """ % DEFAULT_ORG_ID)
 
 
+def _migrate_v7(c: sqlite3.Connection) -> None:
+    """PENDING item 23 — the trace a row was answered under, on the row.
+
+    A guard fire lands in the durable guard log with its trace id (`GuardVerdicts.record`), and the only bridge
+    from a trace to the question it answered was the session log, swept after 14 days — so after two weeks no fire
+    could be tied to the question that caused it, which is what a training row needs. Additive; rows written before
+    it read '' (unknown), and so does a row written outside any trace."""
+    add_column_if_missing(c, "investigations", "trace_id", "TEXT NOT NULL DEFAULT ''")
+
+
 _MIGRATIONS = [
     Migration(2, "additive columns + backfills (through 2026-07)", _migrate_v2),
     Migration(3, "add agent_id (per-agent run history)", _migrate_v3),
@@ -149,6 +159,7 @@ _MIGRATIONS = [
     Migration(5, "chat_session_meta (thread rename, CA-5)", _migrate_v5),
     Migration(6, "investigation failure reason (the row said failed and never why)",
               _migrate_v6),
+    Migration(7, "trace id on the row (a guard fire outlives the 14-day session log)", _migrate_v7),
 ]
 
 
@@ -175,6 +186,15 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
     run_migrations(c, _MIGRATIONS, store="history")
 
 
+def _trace_id() -> str:
+    """The trace this row is written under ('' outside one) — see `_migrate_v7`."""
+    try:
+        from aughor.telemetry import current_trace_id
+        return current_trace_id() or ""
+    except Exception:  # noqa: BLE001 — a row is never lost for want of its trace
+        return ""
+
+
 def create_investigation(
     question: str,
     connection_id: str,
@@ -198,10 +218,10 @@ def create_investigation(
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
-        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose, session_id) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose, session_id, trace_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id, purpose or "",
-         (session_id or None)),
+         (session_id or None), _trace_id()),
     )
     c.commit()
     c.close()
@@ -381,12 +401,12 @@ def save_chat_turn(
         """INSERT INTO investigations
            (id, question, connection_id, canvas_id, started_at, completed_at,
             status, hypothesis_count, query_count, headline,
-            report_json, kind, session_id, org_id, purpose, agent_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            report_json, kind, session_id, org_id, purpose, agent_id, trace_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (inv_id, question, connection_id, canvas_id, now, now,
          status, 0, 1, headline,
          json.dumps(report),
-         "chat", sid, current_org_id(), purpose or "", agent_id),
+         "chat", sid, current_org_id(), purpose or "", agent_id, _trace_id()),
     )
     c.commit()
     c.close()
