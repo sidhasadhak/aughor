@@ -184,11 +184,12 @@ REACH_BASELINE: dict[str, set[str]] = {
     # ENTITY MODEL block, the time property it must not be summed across and why.
     "entities.*.semiadditive.*.over": {'entity_model'},
     "entities.*.semiadditive.*.note": {'entity_model'},
+    "entities.*.semiadditive.*.take": {'entity_model'},   # which reading stands for a period (a month-end)
 }
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 336   # +2 (2026-09-24, PENDING item 27): a declared reading on the fixture, its `over` and `note` —
+FIELDS_WALKED = 337   # +3 (2026-09-24, PENDING item 27): a declared reading on the fixture, its `over`, `note` and `take` —
 #   main walked 334 that day, grown past this baseline unrecorded since; +14 (2026-09-17): five claims on the fixture, so the explorer catalogue's gate is
 #   measured from both sides (a deployed pack's confirmed claim, and every tier and pack it must drop); +71 ON-10 (2026-09-13): a declared process with two promises and a rule on the fixture, and the
 #   timestamps and dimension they anchor to — 43 of those fields reach the question frame, the rest (a process's owner and

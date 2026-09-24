@@ -1570,9 +1570,11 @@ def withdraw_ontology_expression(
 
 
 class _SemiAdditiveSpec(BaseModel):
-    """PENDING item 27 — a property that is a reading at a moment, and the time property its readings are taken over."""
+    """PENDING item 27 — a property that is a reading at a moment, the time property its readings are taken over, and
+    (optionally) which reading stands for a period: `last` (a month-end) or `first`."""
     over: str
     note: str = ""
+    take: str = ""
 
 
 @router.put("/ontology/entities/{entity_id}/semiadditive/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

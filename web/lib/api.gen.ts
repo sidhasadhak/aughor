@@ -16399,7 +16399,8 @@ export interface components {
         };
         /**
          * _SemiAdditiveSpec
-         * @description PENDING item 27 — a property that is a reading at a moment, and the time property its readings are taken over.
+         * @description PENDING item 27 — a property that is a reading at a moment, the time property its readings are taken over, and
+         *     (optionally) which reading stands for a period: `last` (a month-end) or `first`.
          */
         _SemiAdditiveSpec: {
             /**
@@ -16409,6 +16410,11 @@ export interface components {
             note: string;
             /** Over */
             over: string;
+            /**
+             * Take
+             * @default
+             */
+            take: string;
         };
         /** _SendFindingBody */
         _SendFindingBody: {

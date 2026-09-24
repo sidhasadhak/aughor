@@ -658,6 +658,10 @@ class _Compiler:
         #: path a grain or window reads, and the path the measure being compiled is divided by the distinct count of.
         self.time_path = ""
         self._per_moment = ""
+        #: PENDING item 27 — each period reading a sum is answered at (a declared `take`): its join alias, the moment's
+        #: column, first or last, and the condition of the rows the measure reads — joined at assembly (`period_joins`).
+        self._periods: dict[tuple, str] = {}
+        self._period_specs: list[tuple[str, str, str, str]] = []
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
@@ -1527,7 +1531,9 @@ class _Compiler:
             raise ObjectQueryRefused(f"metric '{m.id}' is defined on {m.entity or ', '.join(m.tables)}, not "
                                      f"{scope.entity.id} — anchor the query on its object type", mine)
         formula = _qualify(m.formula_sql, scope.alias, self.dialect, what=f"metric {m.id}", expression=True)
-        self.semiadditive_formula_check(scope, m.formula_sql, f"metric {m.id}")
+        at = self.semiadditive_formula_check(scope, m.formula_sql, f"metric {m.id}")
+        if at:
+            formula = _within(formula, at)          # every aggregate at each group's declared first or last moment
         # ON-9 — a verified rule on this type that scopes the metric restricts every aggregate its formula holds
         scoping = [r for _, r in sorted((self.g.rules or {}).items())
                    if r.verified is True and r.entity == scope.entity.id and m.id in (r.scopes or [])]
@@ -1619,15 +1625,17 @@ class _Compiler:
         raise ObjectQueryRefused(f"{label}: measure path '{t.path}' did not resolve")
 
     def semiadditive_check(self, scope: _Scope, entity: OntologyEntity, name: str, hops: list, label: str,
-                           where: Optional[list[ObjectFilter]] = None) -> None:
+                           where: Optional[list[ObjectFilter]] = None):
         """PENDING item 27 — a SUM of a reading at a moment (a balance, a stock, a headcount — declared so, or a formula
         that reads one) is refused unless the query keeps it to ONE moment (`one_moment`) — and only on the type that
         declares it, never through a link, where the rows summed are readings from many moments. Summed across
-        moments, the same quantity is counted once per reading."""
+        moments, the same quantity is counted once per reading — unless the declaration names which reading stands for
+        a period (`take`): then the reading is returned, and the caller answers the sum at each group's first or last
+        moment (`period_reading`). None when nothing more is needed."""
         from aughor.ontology.semiadditive import declared_reading
         reading = declared_reading(self.g, entity, name)
         if reading is None:
-            return
+            return None
         decl, owner = reading.decl, reading.owner
         if hops or reading.hops or scope is not self.top:
             raise ObjectQueryRefused(
@@ -1640,15 +1648,60 @@ class _Compiler:
             # is the readings behind it (`readings_semiadditive_check`) and a frame over them that span moments.
             self.plan.append(f"{label}: {owner.id}.{reading.prop} is a reading at a moment — each {owner.id}'s "
                              f"latest reading of {latest.name}, one per {owner.id}")
-            return
+            return None
         how = self.one_moment(decl.over, where or [])
-        if not how:
-            raise ObjectQueryRefused(
-                f"{label}: {reading.said(entity, name)} a reading at a moment, taken over {decl.over}{reading.why()} — "
-                f"summed across {decl.over} it counts the same quantity once per reading. Group by {decl.over}, filter "
-                f"to one {decl.over}, divide by the count of distinct {decl.over}, or take its avg, min or max")
-        self.plan.append(f"{label}: {owner.id}.{reading.prop} is a reading at a moment over {decl.over} — summed "
-                         f"within one {decl.over} ({how})")
+        if how:
+            self.plan.append(f"{label}: {owner.id}.{reading.prop} is a reading at a moment over {decl.over} — summed "
+                             f"within one {decl.over} ({how})")
+            return None
+        if decl.take:
+            return reading
+        raise ObjectQueryRefused(
+            f"{label}: {reading.said(entity, name)} a reading at a moment, taken over {decl.over}{reading.why()} — "
+            f"summed across {decl.over} it counts the same quantity once per reading. Group by {decl.over}, filter "
+            f"to one {decl.over}, divide by the count of distinct {decl.over}, or take its avg, min or max — or "
+            f"declare which reading stands for a period (take: last, a month-end)")
+
+    def period_reading(self, reading, label: str, cond: str) -> str:
+        """PENDING item 27 — the condition that keeps a sum of a reading to each group's last (or first) moment, as its
+        declaration's `take` says: `<moment> = <that group's moment>`. The group's moment is found over the SAME rows
+        and the same grouping as the query itself — the query's filters, window and the measure's own where — so a
+        month-end is the last day in that month that has a reading, and ungrouped it is the last in all. A row whose
+        reading is not at that moment is not counted: a product not counted that day is not in that day's stock."""
+        decl = reading.decl
+        col, _, hops = self.column(self.top, decl.over, "its moment")
+        if hops:
+            raise ObjectQueryRefused(f"{label}: {decl.over} is reached through a link — a period's reading is taken on "
+                                     f"{reading.owner.id}'s own moment")
+        key = (col, decl.take, cond)
+        alias = self._periods.get(key)
+        if alias is None:
+            alias = self._alias("pr")
+            self._periods[key] = alias
+            self._period_specs.append((alias, col, decl.take, cond))
+        grouped = "each group's" if (self.q.by or self.q.grain) else "the query's"
+        self.plan.append(f"{label}: {reading.owner.id}.{reading.prop} is a reading at a moment over {decl.over} — "
+                         f"summed at {grouped} {decl.take} {decl.over} (declared take: {decl.take}), found over the "
+                         f"same rows")
+        return f"{col} = {alias}.__at"
+
+    def period_joins(self, source: str, where: str, keys: list[str]) -> str:
+        """The joins that carry each group's first or last moment for `period_reading`: the query's own rows and
+        grouping, aggregated to that moment, and joined back on the grouping (NULL-safe; no grouping, one row)."""
+        if self.far:
+            raise ObjectQueryRefused("a period's first or last reading is found over the query's rows on one connection, "
+                                     "and this query reads another connection by key — group by the moment instead")
+        out = ""
+        for alias, col, take, cond in self._period_specs:
+            target = f"CASE WHEN {cond} THEN {col} END" if cond else col
+            select = [*(f"{k} AS __g{i}" for i, k in enumerate(keys)),
+                      f"{'MAX' if take == 'last' else 'MIN'}({target}) AS __at"]
+            inner = f"SELECT {', '.join(select)} FROM {source}{where}"
+            if keys:
+                inner += " GROUP BY " + ", ".join(str(i + 1) for i in range(len(keys)))
+            on = " AND ".join(f"{k} IS NOT DISTINCT FROM {alias}.__g{i}" for i, k in enumerate(keys)) or "TRUE"
+            out += f" LEFT JOIN ({inner}) AS {alias} ON {on}"
+        return out
 
     def one_moment(self, over: str, where: list[ObjectFilter]) -> str:
         """How the query keeps a sum at the anchor to one moment of ``over`` — "" when it does not. Grouped by ``over``
@@ -1687,11 +1740,12 @@ class _Compiler:
             return f"divided by the count of distinct {over} — an average per {over}"
         return ""
 
-    def semiadditive_formula_check(self, scope: _Scope, formula: str, label: str) -> None:
+    def semiadditive_formula_check(self, scope: _Scope, formula: str, label: str) -> str:
         """A metric whose formula SUMs a reading at a moment is held to the same law as a sum measure — except the one
-        shape that is itself an average per moment, `SUM(x) / COUNT(DISTINCT <over>)`."""
+        shape that is itself an average per moment, `SUM(x) / COUNT(DISTINCT <over>)`. Returns the condition that keeps
+        the formula to each group's declared first or last moment, or "" (`period_reading`)."""
         if not scope.entity.semiadditive:
-            return
+            return ""
         import sqlglot
         from sqlglot import exp
 
@@ -1700,7 +1754,8 @@ class _Compiler:
         try:
             node = sqlglot.parse_one(f"SELECT {formula} FROM _t", read=self.dialect)
         except Exception:  # noqa: BLE001 — `_qualify` already refused what cannot parse
-            return
+            return ""
+        at: list[str] = []
         for total in node.find_all(exp.Sum):
             for column in total.find_all(exp.Column):
                 reading = declared_reading(self.g, scope.entity, column.name)
@@ -1708,7 +1763,10 @@ class _Compiler:
                     self.plan.append(f"{label}: SUM({column.name}) / COUNT(DISTINCT {reading.decl.over}) — an "
                                      f"average per {reading.decl.over} of a reading at a moment")
                     continue
-                self.semiadditive_check(scope, scope.entity, column.name, [], label)
+                period = self.semiadditive_check(scope, scope.entity, column.name, [], label)
+                if period is not None:
+                    at.append(self.period_reading(period, label, ""))
+        return " AND ".join(dict.fromkeys(at))
 
     def frame_check(self, entity: OntologyEntity, binding: Binding, name: str, frame) -> None:
         """PENDING item 27 — a frame that SUMS the readings of a reading at a moment adds it across moments, whatever
@@ -1730,9 +1788,10 @@ class _Compiler:
 
     def prop_measure(self, scope: _Scope, alias: str, p: EntityProperty, hops: list[ObjectLink],
                      t: MeasureTerm, label: str, entity: Optional[OntologyEntity] = None) -> str:
+        period = None
         if t.agg == "sum":
-            self.semiadditive_check(scope, entity or (hops[-1].target if hops else scope.entity), p.name, hops, label,
-                                    t.where)
+            period = self.semiadditive_check(scope, entity or (hops[-1].target if hops else scope.entity), p.name,
+                                             hops, label, t.where)
         _check_aggregate(t.agg, p, t.path, self.caveats)
         # A 1:1 hop cannot repeat a value (both keys are unique); an N:1 hop repeats the one
         # side once per matching row, and that is what a SUM, AVG or COUNT would count.
@@ -1745,6 +1804,9 @@ class _Compiler:
                 f"Anchor the query on {one.id} (object_type '{one.api_name}') and reach {scope.entity.id} "
                 "through its link, or use count_distinct / min / max, which repetition cannot change.")
         cond = self.where(scope, t.where)
+        if period is not None:
+            at = self.period_reading(period, label, cond)
+            cond = f"({cond}) AND ({at})" if cond else at
         if entity is not None:
             value = self.colref(scope, alias, entity, p)
         elif alias in self.far_paths:
@@ -1868,6 +1930,7 @@ class _Compiler:
         names: list[str] = []
         dims: list[str] = []
         measure_names: list[str] = []
+        keys: list[str] = []                     # the grouping, as SQL — what a period reading is found per
         time_col = ""
         if q.grain or q.start or q.end:
             time_col, time_path = self.time_column(scope)
@@ -1875,6 +1938,7 @@ class _Compiler:
         if q.grain:
             from aughor.sql.fiscal import fiscal_period_expr
             select.append(f"{fiscal_period_expr(q.grain, time_col, self.fiscal, 'duckdb')} AS period")
+            keys.append(fiscal_period_expr(q.grain, time_col, self.fiscal, 'duckdb'))
             names.append("period")
             where.append(f"{time_col} IS NOT NULL")
             self.plan.append(f"over({q.grain}) on {time_path}")
@@ -1882,6 +1946,7 @@ class _Compiler:
             col, _, _ = self.column(scope, path, "dimension")
             name = _output_name(names, path.rsplit(".", 1)[-1], path.replace(".", "_"))
             select.append(f"{col} AS {quote_ident(name)}")
+            keys.append(col)
             names.append(name)
             dims.append(name)
             self.plan.append(f"by {path}")
@@ -1918,19 +1983,21 @@ class _Compiler:
             names.append(name)
             measure_names.append(name)
 
-        sql = f"SELECT {', '.join(select)} FROM {backing_from(anchor, 't0')}"
-        sql += "".join(f" {j}" for j in scope.joins)
+        source = backing_from(anchor, 't0')
+        source += "".join(f" {j}" for j in scope.joins)
         for ml in self._many.values():
-            sql += " " + (self.pre_aggregated(ml.alias, ml.pre_aggregate(), ml.inner.source, ml.outer_alias,
-                                              ml.hop.local_col, ml.columns, ml.hop.target.id,
-                                              f"link {ml.hop.name} ({ml.hop.source.id} → {ml.hop.target.id}), "
-                                              "pre-aggregated") if ml.far else ml.join_sql())
+            source += " " + (self.pre_aggregated(ml.alias, ml.pre_aggregate(), ml.inner.source, ml.outer_alias,
+                                                 ml.hop.local_col, ml.columns, ml.hop.target.id,
+                                                 f"link {ml.hop.name} ({ml.hop.source.id} → {ml.hop.target.id}), "
+                                                 "pre-aggregated") if ml.far else ml.join_sql())
         for r in self._readings.values():
-            sql += " " + (self.pre_aggregated(r.alias, r.pre_aggregate(), r.source, r.outer_alias, r.entity_key,
-                                              r.columns, r.binding.name,
-                                              f"readings of {r.binding.name}, pre-aggregated") if r.far else r.join_sql())
-        if where:
-            sql += " WHERE " + " AND ".join(f"({w})" for w in where)
+            source += " " + (self.pre_aggregated(r.alias, r.pre_aggregate(), r.source, r.outer_alias, r.entity_key,
+                                                 r.columns, r.binding.name,
+                                                 f"readings of {r.binding.name}, pre-aggregated") if r.far
+                             else r.join_sql())
+        where_sql = (" WHERE " + " AND ".join(f"({w})" for w in where)) if where else ""
+        periods = self.period_joins(source, where_sql, keys) if self._period_specs else ""
+        sql = f"SELECT {', '.join(select)} FROM {source}{periods}{where_sql}"
         if grouped:
             sql += " GROUP BY " + ", ".join(str(i + 1) for i in range(grouped))
         order = self.order(names, grouped)

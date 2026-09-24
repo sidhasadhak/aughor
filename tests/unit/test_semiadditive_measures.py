@@ -9,7 +9,8 @@ a number the data never held. A person now declares the property semiadditive (O
   date, an average per date, and an average, min or max across dates stay what they were;
 * the ENTITY MODEL block tells the SQL writer, and the trust checks flag a written sum across dates.
 
-On the samples warehouse with a daily stock-snapshot table beside it, every answer checked against hand-written SQL.
+On the samples warehouse with a daily stock-snapshot table beside it — three mornings across a month's end (30 and 31
+March, 1 April) — every answer checked against hand-written SQL.
 """
 from __future__ import annotations
 
@@ -40,7 +41,7 @@ from aughor.sql.semiadditive import semiadditive_misuse
 REPO = Path(__file__).resolve().parents[2]
 GRAPH = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 SNAPSHOTS = ("CREATE TABLE ecommerce.stock_snapshots AS SELECT row_number() OVER () AS snapshot_id, product_id, "
-             "DATE '2026-03-01' + CAST(d AS INTEGER) AS snapshot_date, stock_quantity + CAST(d AS INTEGER) AS on_hand "
+             "DATE '2026-03-30' + CAST(d AS INTEGER) AS snapshot_date, stock_quantity + CAST(d AS INTEGER) AS on_hand "
              "FROM ecommerce.products, range(0, 3) r(d)")
 REFUSED = "is a reading at a moment, taken over snapshot_date"
 
@@ -125,11 +126,11 @@ def test_every_way_of_keeping_one_date_is_answered(warehouse, graph):
     _declared(graph)
     assert _run(con, graph, _sum(by=["snapshot_date"])) == _hand(
         con, "SELECT snapshot_date, SUM(on_hand) FROM stock_snapshots GROUP BY 1")
-    one_day = _hand(con, "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = DATE '2026-03-02'")
-    assert _run(con, graph, _sum(filters=[{"path": "snapshot_date", "value": "2026-03-02"}])) == one_day
-    assert _run(con, graph, _sum(filters=[{"path": "snapshot_date", "op": "in", "values": ["2026-03-02"]}])) == one_day
+    one_day = _hand(con, "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = DATE '2026-03-31'")
+    assert _run(con, graph, _sum(filters=[{"path": "snapshot_date", "value": "2026-03-31"}])) == one_day
+    assert _run(con, graph, _sum(filters=[{"path": "snapshot_date", "op": "in", "values": ["2026-03-31"]}])) == one_day
     own_where = {"object_type": "stock_snapshot", "measures": [
-        {"name": "stock", "agg": "sum", "path": "on_hand", "where": [{"path": "snapshot_date", "value": "2026-03-02"}]}]}
+        {"name": "stock", "agg": "sum", "path": "on_hand", "where": [{"path": "snapshot_date", "value": "2026-03-31"}]}]}
     assert _run(con, graph, own_where) == one_day
     by_day = compile_object_query(_sum(grain="day"), graph, fiscal_start_month=1)
     assert sorted(r[-1] for r in con.execute(by_day.sql).fetchall()) == sorted(
@@ -158,13 +159,77 @@ def test_one_snapshot_by_its_key_is_answered_as_its_object_page_asks(warehouse, 
     assert _run(con, graph, page) == _hand(con, "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_id = 5")
 
 
+MONTH_END = ("SELECT SUM(on_hand) FROM stock_snapshots s WHERE snapshot_date = (SELECT {edge}(snapshot_date) "
+             "FROM stock_snapshots t WHERE DATE_TRUNC('month', t.snapshot_date) = DATE_TRUNC('month', s.snapshot_date)) "
+             "GROUP BY DATE_TRUNC('month', snapshot_date)")
+
+
+def _taking(graph, take):
+    graph.entities["StockSnapshot"].semiadditive = {"on_hand": SemiAdditive(over="snapshot_date", take=take)}
+    return graph
+
+
+def test_a_declared_month_end_is_each_months_last_reading(warehouse, graph):
+    _, con = warehouse
+    _taking(graph, "last")
+    monthly = compile_object_query(_sum(grain="month"), graph, fiscal_start_month=1)
+    assert sorted(r[-1] for r in con.execute(monthly.sql).fetchall()) == sorted(
+        r[0] for r in con.execute(MONTH_END.format(edge="MAX")).fetchall())          # 31 March, then 1 April
+    assert any("summed at each group's last snapshot_date (declared take: last)" in line for line in monthly.plan)
+    assert _run(con, graph, _sum()) == _hand(con, "SELECT SUM(on_hand) FROM stock_snapshots "
+                                                  "WHERE snapshot_date = DATE '2026-04-01'")
+    assert _run(con, graph, _sum(start="2026-03-01", end="2026-04-01")) == _hand(
+        con, "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = DATE '2026-03-31'")   # the window's last
+    before_april = {"object_type": "stock_snapshot", "measures": [{"name": "stock", "agg": "sum", "path": "on_hand",
+                    "where": [{"path": "snapshot_date", "op": "<", "value": "2026-04-01"}]}]}
+    assert _run(con, graph, before_april) == _hand(                          # the last among the rows it reads
+        con, "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = DATE '2026-03-31'")
+    assert _run(con, graph, _sum(by=["product_id"])) == _hand(
+        con, "SELECT product_id, SUM(on_hand) FROM stock_snapshots s WHERE snapshot_date = (SELECT MAX(snapshot_date) "
+             "FROM stock_snapshots t WHERE t.product_id = s.product_id) GROUP BY 1")
+    graph.metrics["stock_level"] = OntologyMetric(id="stock_level", display_name="Stock level", entity="StockSnapshot",
+                                                  formula_sql="SUM(on_hand)", verified=True)
+    by_metric = compile_object_query({"object_type": "stock_snapshot", "grain": "month",
+                                      "measures": [{"name": "s", "metric": "stock_level"}]}, graph, fiscal_start_month=1)
+    assert sorted(r[-1] for r in con.execute(by_metric.sql).fetchall()) == sorted(
+        r[0] for r in con.execute(MONTH_END.format(edge="MAX")).fetchall())
+
+
+def test_a_declared_first_reading_is_each_months_opening(warehouse, graph):
+    _, con = warehouse
+    _taking(graph, "first")
+    monthly = compile_object_query(_sum(grain="month"), graph, fiscal_start_month=1)
+    assert sorted(r[-1] for r in con.execute(monthly.sql).fetchall()) == sorted(
+        r[0] for r in con.execute(MONTH_END.format(edge="MIN")).fetchall())          # 30 March, then 1 April
+
+
+def test_a_period_reading_is_never_found_across_connections(graph):
+    from aughor.semantic.object_query import ObjectQuery, _Compiler
+    compiler = _Compiler(_taking(graph, "last"), ObjectQuery.model_validate(_sum()), "duckdb", 1)
+    compiler.far = {"x": object()}                  # as ON-8 compiles a read by key from another connection
+    compiler._period_specs = [("pr1", "t0.snapshot_date", "last", "")]
+    with pytest.raises(ObjectQueryRefused, match="reads another connection by key"):
+        compiler.period_joins("stock_snapshots AS t0", "", [])
+
+
+def test_without_take_a_month_is_refused_with_how_to_declare_one(graph):
+    with pytest.raises(ObjectQueryRefused, match=r"declare which reading stands for a period \(take: last"):
+        compile_object_query(_sum(grain="month"), _declared(graph), fiscal_start_month=1)
+    snap = _taking(graph, "last").entities["StockSnapshot"]
+    assert semiadditive_problem(graph, snap, "on_hand", {"over": "snapshot_date", "take": "middle"}).startswith(
+        "`take` names which reading stands for a period")
+    with pytest.raises(ObjectQueryRefused, match="through a link"):   # a period's reading is the declaring type's own
+        compile_object_query({"object_type": "product", "measures": [
+            {"name": "s", "agg": "sum", "path": "product_to_stock_snapshot.on_hand"}]}, graph, fiscal_start_month=1)
+
+
 def test_what_only_looks_like_one_date_is_refused(graph):
     _declared(graph)
     for looks_like_one in (
             # a comparison with another property: each row with its own date, never one date
             _sum(filters=[{"path": "snapshot_date", "op": "=", "value_path": "snapshot_date"}]),
-            _sum(filters=[{"path": "snapshot_date", "op": "in", "values": ["2026-03-01", "2026-03-02"]}]),
-            _sum(filters=[{"path": "snapshot_date", "op": "!=", "value": "2026-03-01"}]),
+            _sum(filters=[{"path": "snapshot_date", "op": "in", "values": ["2026-03-30", "2026-03-31"]}]),
+            _sum(filters=[{"path": "snapshot_date", "op": "!=", "value": "2026-03-30"}]),
             _sum(grain="month"),
             _sum(by=["product_id"]),
             {"object_type": "stock_snapshot", "measures": [
@@ -256,9 +321,9 @@ def test_the_latest_reading_sums_across_objects_and_its_history_does_not(warehou
     history = {"object_type": "product", "measures": [{"name": "s", "agg": "sum", "path": "stock_history.on_hand"}]}
     with pytest.raises(ObjectQueryRefused, match="the readings of stock_history are many moments per Product"):
         compile_object_query(history, graph, fiscal_start_month=1)
-    history["measures"][0]["where"] = [{"path": "snapshot_date", "value": "2026-03-02"}]
+    history["measures"][0]["where"] = [{"path": "snapshot_date", "value": "2026-03-31"}]
     assert _run(con, graph, history) == _hand(
-        con, "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = DATE '2026-03-02'")
+        con, "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = DATE '2026-03-31'")
     history["measures"][0] = {"name": "a", "agg": "avg", "path": "stock_history.on_hand"}
     (got,), = _run(con, graph, history)
     assert got == pytest.approx(_hand(con, "SELECT AVG(on_hand) FROM stock_snapshots")[0][0])
@@ -300,6 +365,14 @@ def test_the_overlay_applies_a_bound_declaration_and_never_a_stale_one(graph):
     assert served.entities["StockSnapshot"].semiadditive["on_hand"].over == "snapshot_date"
     save_override("c27", "main", OntologyOverride(
         target_kind="entity", target_id="StockSnapshot",
+        fields={"semiadditive": {"on_hand": {"over": "snapshot_date", "note": "", "take": "last"}}},
+        binding={"semiadditive": {"on_hand": {"bound": True, "note": "", "over": "snapshot_date"}}}))
+    fresh = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
+    fresh.entities["StockSnapshot"] = snapshot_type()
+    served, _ = OV.apply_overrides(fresh, "c27", "main")
+    assert served.entities["StockSnapshot"].semiadditive["on_hand"].take == "last"
+    save_override("c27", "main", OntologyOverride(
+        target_kind="entity", target_id="StockSnapshot",
         fields={"semiadditive": {"on_hand": {"over": "snapshot_date", "note": ""}}},
         binding={"semiadditive": {"on_hand": {"bound": True, "note": "", "over": "another_date"}}}))
     fresh = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
@@ -316,35 +389,75 @@ def test_the_sql_writer_is_told_in_the_entity_model(graph):
     block = render_ontology_annotations(_declared(graph))
     assert ("READING AT A MOMENT: on_hand, taken over snapshot_date (a stock count taken each morning) — SUM it only "
             "within one snapshot_date") in block
+    assert "a period's figure" not in block
+    assert ("a period's figure (a month's) is the total at its last snapshot_date — WHERE snapshot_date IN (SELECT "
+            "MAX(snapshot_date)") in render_ontology_annotations(_taking(graph, "last"))
 
 
 DECLARED = {"stock_snapshots": {"on_hand": {"over": "snapshot_date", "note": ""}}}
+DAILY = "WITH daily AS (SELECT snapshot_date, SUM(on_hand) AS total FROM stock_snapshots GROUP BY 1) "
 FLAGGED = (
     "SELECT SUM(on_hand) FROM stock_snapshots",
     "SELECT product_id, SUM(on_hand) FROM stock_snapshots GROUP BY 1",
     "SELECT SUM(s.on_hand) FROM stock_snapshots s JOIN products p ON p.product_id = s.product_id",
-    "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = '2026-03-01' OR snapshot_date = '2026-03-02'",
-    "SELECT SUM(on_hand) FROM stock_snapshots WHERE NOT snapshot_date = '2026-03-01'",
+    "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = '2026-03-30' OR snapshot_date = '2026-03-31'",
+    "SELECT SUM(on_hand) FROM stock_snapshots WHERE NOT snapshot_date = '2026-03-30'",
     "SELECT SUM(s.on_hand) FROM stock_snapshots s JOIN stock_snapshots t ON t.snapshot_id = s.snapshot_id "
     "WHERE s.snapshot_date = t.snapshot_date",
     "SELECT SUM(s.on_hand) FROM stock_snapshots s JOIN stock_snapshots t ON t.snapshot_id = s.snapshot_id "
     "WHERE s.snapshot_date = CAST(t.snapshot_date AS DATE)",          # a value that is another row's, not one
     "SELECT SUM(on_hand) / COUNT(DISTINCT product_id) FROM stock_snapshots",
     "SELECT DATE_TRUNC('month', snapshot_date) AS m, SUM(on_hand) FROM stock_snapshots GROUP BY 1",
+    # every month's end, added together
+    "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date IN (SELECT MAX(snapshot_date) FROM stock_snapshots "
+    "GROUP BY DATE_TRUNC('month', snapshot_date))",
+    # through an intermediate query: daily totals summed across days — the moment carried, or not
+    DAILY + "SELECT SUM(total) FROM daily",
+    DAILY + "SELECT SUM(d.total) FROM daily d JOIN products p ON TRUE WHERE p.product_id = 'P001'",
+    "SELECT SUM(t) FROM (SELECT SUM(on_hand) AS t FROM stock_snapshots GROUP BY snapshot_date) d",
+    "WITH s AS (SELECT * FROM stock_snapshots) SELECT product_id, SUM(on_hand) FROM s GROUP BY 1",
+    "WITH v AS (SELECT snapshot_date AS d, on_hand * 2 AS units FROM stock_snapshots) SELECT SUM(units) FROM v",
+    "WITH a AS (SELECT * FROM stock_snapshots), b AS (SELECT snapshot_date, SUM(on_hand) AS t FROM a GROUP BY 1) "
+    "SELECT SUM(t) FROM b",
+    # a window beside the readings does not make them one moment
+    "WITH x AS (SELECT *, SUM(on_hand) OVER (PARTITION BY product_id) AS product_total FROM stock_snapshots) "
+    "SELECT SUM(on_hand) FROM x",
 )
 SILENT = (
     "SELECT snapshot_date, SUM(on_hand) FROM stock_snapshots GROUP BY snapshot_date",
     "SELECT snapshot_date, SUM(on_hand) FROM stock_snapshots GROUP BY 1",
     "SELECT snapshot_date AS d, SUM(on_hand) FROM stock_snapshots GROUP BY d",
     "SELECT snapshot_date, SUM(on_hand) FROM stock_snapshots GROUP BY ALL",
-    "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = '2026-03-02'",
-    "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date IN ('2026-03-02')",
+    "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = '2026-03-31'",
+    "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date IN ('2026-03-31')",
     "SELECT SUM(on_hand) FROM stock_snapshots WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM stock_snapshots)",
     "SELECT SUM(on_hand) / COUNT(DISTINCT snapshot_date) FROM stock_snapshots",
     "SELECT 1.0 * SUM(on_hand) / NULLIF(COUNT(DISTINCT snapshot_date), 0) FROM stock_snapshots",
     "SELECT AVG(on_hand), MIN(on_hand), MAX(on_hand) FROM stock_snapshots",
     "SELECT SUM(stock_quantity) FROM products",
     "SELECT snapshot_date, SUM(on_hand) OVER (PARTITION BY snapshot_date) FROM stock_snapshots",
+    # a month-end: each month's last reading, per month — uncorrelated and correlated
+    "SELECT DATE_TRUNC('month', snapshot_date) AS m, SUM(on_hand) FROM stock_snapshots WHERE snapshot_date IN "
+    "(SELECT MAX(snapshot_date) FROM stock_snapshots GROUP BY DATE_TRUNC('month', snapshot_date)) GROUP BY 1",
+    "SELECT DATE_TRUNC('month', s.snapshot_date) AS m, SUM(s.on_hand) FROM stock_snapshots s WHERE s.snapshot_date = "
+    "(SELECT MAX(t.snapshot_date) FROM stock_snapshots t WHERE DATE_TRUNC('month', t.snapshot_date) = "
+    "DATE_TRUNC('month', s.snapshot_date)) GROUP BY 1",
+    # through an intermediate query, kept to one moment or averaged
+    DAILY + "SELECT AVG(total) FROM daily",
+    DAILY + "SELECT snapshot_date, SUM(total) FROM daily GROUP BY 1",
+    DAILY + "SELECT SUM(total) FROM daily WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM daily)",
+    DAILY + "SELECT SUM(total) / COUNT(DISTINCT snapshot_date) FROM daily",
+    "SELECT SUM(t) / COUNT(*) FROM (SELECT SUM(on_hand) AS t FROM stock_snapshots GROUP BY snapshot_date) d",
+    "WITH s AS (SELECT * FROM stock_snapshots WHERE snapshot_date = '2026-03-31') SELECT SUM(on_hand) FROM s",
+    # the latest reading per product, then summed: one moment per product
+    "SELECT SUM(on_hand) FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY snapshot_date DESC) AS rn "
+    "FROM stock_snapshots) x WHERE rn = 1",
+    "SELECT SUM(on_hand) FROM (SELECT product_id, on_hand FROM stock_snapshots QUALIFY ROW_NUMBER() OVER ("
+    "PARTITION BY product_id ORDER BY snapshot_date DESC) = 1) x",
+    "WITH d AS (SELECT snapshot_date, AVG(on_hand) AS a FROM stock_snapshots GROUP BY 1) SELECT SUM(a) FROM d",
+    # a change since the last reading is a flow: its sum across days is the net change
+    "WITH c AS (SELECT snapshot_date, on_hand - LAG(on_hand) OVER (PARTITION BY product_id ORDER BY snapshot_date) "
+    "AS change FROM stock_snapshots) SELECT SUM(change) FROM c",
 )
 
 
@@ -354,9 +467,19 @@ def test_the_trust_checks_flag_a_written_sum_across_dates_and_nothing_within_one
         con.execute(sql).fetchall()                         # every statement here is one the warehouse runs
     for sql in FLAGGED:
         hit = semiadditive_misuse(sql, DECLARED)
-        assert hit is not None and "a reading at a moment taken over snapshot_date" in hit[1], sql
+        assert hit is not None and "a reading at a moment taken over" in hit[1] and "snapshot_date" in hit[1], sql
     for sql in SILENT:
         assert semiadditive_misuse(sql, DECLARED) is None, sql
+
+
+def test_a_statement_whose_scopes_cannot_be_built_is_still_read_flat(monkeypatch):
+    import sqlglot.optimizer.scope as scope
+
+    def unbuildable(_tree):
+        raise ValueError("a shape the scope builder does not know")
+    monkeypatch.setattr(scope, "traverse_scope", unbuildable)
+    assert semiadditive_misuse("SELECT SUM(on_hand) FROM stock_snapshots", DECLARED) is not None
+    assert semiadditive_misuse("SELECT snapshot_date, SUM(on_hand) FROM stock_snapshots GROUP BY 1", DECLARED) is None
 
 
 def test_the_trust_checks_read_the_declaration_through_the_registry(monkeypatch):

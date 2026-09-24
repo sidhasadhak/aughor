@@ -40,6 +40,10 @@ class SemiAdditive(BaseModel):
     SUM of it that spans more than one value of ``over``. O5's word for the kind (`window_measures`): semiadditive."""
     over: str
     note: str = ""
+    #: Which reading stands for a period — O5's `semiadditive: first | last` (`window_measures.SEMIADDITIVE`). Declared,
+    #: a sum across moments is answered at each group's last (or first) moment — a month-end stock per month —
+    #: instead of refused; "" (the default) says nothing, and a sum across moments stays refused with how to ask.
+    take: Literal["", "first", "last"] = ""
 
 
 class ExpressionProperty(BaseModel):

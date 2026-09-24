@@ -8488,24 +8488,34 @@ daily stock snapshots compiled, was written by the SQL writer, and answered thre
   moment: grouped by `over` or by the type's measured key; filtered, or the measure's own where, to one value of
   either; a day grain on a DATE; or divided by the count of distinct `over` (an average per moment). A timeseries
   property, read as each object's latest reading, sums across objects as before; avg, min and max are untouched.
+- **A month-end, when a person says which reading stands for a period** — the declaration's `take: last | first`
+  (O5's own `first | last`). Declared, a sum across moments is answered at each group's last (or first) moment — per
+  month under a month grain, per product grouped by product, the latest in all ungrouped — found over the query's own
+  rows (its filters, window and the measure's where) by one join on its grouping (`period_reading`, `period_joins`).
+  Undeclared, it stays refused, and the refusal now says the declaration exists. Never across connections (refused).
 - **The SQL writer is told** — one line per declaration in the ENTITY MODEL block, on every chat and deep prompt (the
   prompt-reach baseline grew by `semiadditive.*.over` and `.note`).
 - **The trust checks flag what is written anyway** — `semiadditive-sum` in `run_trust_checks`, on every final statement
   (the quick answer, deep analysis, `run_sql`, the validate door, the trust plane). The platform reads the declarations
   as plain data through a new registry (`aughor/kernel/registries/readings.py`), never by importing the ontology: a
   caveat on the headline and a receipt, never a rewrite — which moment the question means is the question's to say.
+  The reading is followed through the statement's own CTEs and derived tables (`traverse_scope`): daily totals summed
+  across days are flagged, naming where the reading came from; a month-end (`IN (SELECT MAX(d) … GROUP BY` the
+  period the query groups by), the latest reading per partition (`ROW_NUMBER() … = 1`, QUALIFY), an intermediate
+  pinned to one moment, and a change since the last reading (a flow) are not.
 
-**Receipt.** The samples warehouse with three daily snapshots of 150 products' stock; the stock on the latest morning
-is 35,375 (hand SQL). "Total stock" on `main`: the declaration has no field to hold it; the object door answers
-105,675 (three mornings added); the SQL writer is told nothing; the written `SELECT SUM(on_hand)` is flagged by
-nothing. On the branch: held; refused with how to ask; the prompt carries the rule; the same statement is flagged
-`semiadditive-sum`. Grouped by date, or filtered to one date, both answer the same as before. Every guard
-mutation-checked, 35 of 35 (`tests/unit/test_semiadditive_measures.py`).
+**Receipt.** The samples warehouse with daily snapshots of 150 products' stock on 30 and 31 March and 1 April; the
+stock on the latest morning is 35,375 (hand SQL). On `main` the declaration has no field to hold it: "total stock"
+answers 105,675 (three mornings added); the month-end stock by month answers 70,300 for March (two mornings added)
+where the 31 March count is 35,225; the SQL writer is told nothing; neither `SELECT SUM(on_hand)` nor daily totals
+summed through a CTE is flagged. On the branch, declared `take: last`: total stock 35,375 and March 35,225, both
+equal to hand SQL; the prompt carries the rule; both statements are flagged `semiadditive-sum`. Undeclared, the sum
+across mornings is refused with how to ask. Grouped by date, or filtered to one date, both answer as before. Every
+guard mutation-checked, 60 of 60 (`tests/unit/test_semiadditive_measures.py`).
 
-**Not built, said.** The last reading of each period (a month-end stock from daily snapshots) is refused with how to
-ask, never computed. The SQL check reads only a SUM over the declaring table itself: a SUM over a CTE or a derived
-table of daily totals is not read — silent, not guessed. A declaration is made through the door; the object-type page
-has no control for it yet.
+**Not built, said.** A declaration is made through the door; the object-type page has no control for it yet. The SQL
+check does not follow a reading through a window computed across readings (a running total, a change since the last
+one) or through a set operation — silent, not guessed.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

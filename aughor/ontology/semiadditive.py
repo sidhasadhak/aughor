@@ -32,7 +32,8 @@ from aughor.ontology.models import OntologyEntity, OntologyGraph, SemiAdditive
 
 def normalized_semiadditive(raw: Any) -> dict:
     raw = raw if isinstance(raw, dict) else {}
-    return {"over": str(raw.get("over") or "").strip(), "note": str(raw.get("note") or "").strip()}
+    return {"over": str(raw.get("over") or "").strip(), "note": str(raw.get("note") or "").strip(),
+            "take": str(raw.get("take") or "").strip().lower()}
 
 
 def semiadditive_problem(graph: Optional[OntologyGraph], entity: OntologyEntity, prop: str, spec: dict) -> str:
@@ -40,6 +41,10 @@ def semiadditive_problem(graph: Optional[OntologyGraph], entity: OntologyEntity,
     from aughor.semantic.object_query import ObjectQueryRefused, is_temporal, property_at
     if not spec.get("over"):
         return "name the time property its readings are taken over (`over`)"
+    from aughor.ontology.window_measures import SEMIADDITIVE
+    if spec.get("take") and spec["take"] not in SEMIADDITIVE:
+        return (f"`take` names which reading stands for a period — one of {', '.join(SEMIADDITIVE)}, or nothing to "
+                f"refuse a sum across moments; not '{spec['take']}'")
     try:
         _, measured, _ = property_at(graph, entity.api_name, prop, purpose="the semiadditive measure")
         _, clock, hops = property_at(graph, entity.api_name, spec["over"], purpose="its `over`")
@@ -62,8 +67,8 @@ def declared_semiadditive(specs: Any, verdicts: Any) -> dict[str, SemiAdditive]:
     out: dict[str, SemiAdditive] = {}
     for prop, raw in (specs.items() if isinstance(specs, dict) else []):
         spec, verdict = normalized_semiadditive(raw), verdicts.get(prop) or {}
-        if verdict.get("bound") is True and verdict.get("over") == spec["over"]:
-            out[prop] = SemiAdditive(over=spec["over"], note=spec["note"])
+        if verdict.get("bound") is True and verdict.get("over") == spec["over"] and spec["take"] in ("", "first", "last"):
+            out[prop] = SemiAdditive(over=spec["over"], note=spec["note"], take=spec["take"])
     return out
 
 
@@ -154,9 +159,12 @@ def semiadditive_lines(entity: OntologyEntity) -> list[str]:
     out = []
     for prop, decl in sorted((entity.semiadditive or {}).items()):
         note = f" ({decl.note})" if decl.note else ""
+        period = (f"; a period's figure (a month's) is the total at its {decl.take} {decl.over} — WHERE {decl.over} "
+                  f"IN (SELECT {'MAX' if decl.take == 'last' else 'MIN'}({decl.over}) … GROUP BY the period)"
+                  if decl.take else "")
         out.append(f"    READING AT A MOMENT: {prop}, taken over {decl.over}{note} — SUM it only within one "
                    f"{decl.over} (GROUP BY {decl.over}, or WHERE {decl.over} = one value such as the latest); across "
-                   f"{decl.over} use AVG, MIN or MAX, or SUM(...) / COUNT(DISTINCT {decl.over})")
+                   f"{decl.over} use AVG, MIN or MAX, or SUM(...) / COUNT(DISTINCT {decl.over}){period}")
     return out
 
 
