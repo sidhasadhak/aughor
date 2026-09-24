@@ -183,7 +183,7 @@ def test_a_canvas_with_no_documents_changes_nothing(monkeypatch, canvas):
     from aughor.knowledge import indexer
 
     monkeypatch.setattr(indexer, "search_documents",
-                        lambda q, top_k=4: [{"doc_id": "g1", "chunk_index": 0,
+                        lambda q, top_k=4, **_: [{"doc_id": "g1", "chunk_index": 0,
                                              "text": "global", "title": "Global",
                                              "filename": "g.md", "score": 0.9}])
     with_canvas = indexer.build_external_context_section("q", canvas_id=canvas.id)
@@ -202,7 +202,7 @@ def test_pinned_documents_are_placed_first_and_labelled(monkeypatch, canvas):
         {"doc_id": "pinned1", "chunk_index": 0, "text": "pinned text",
          "title": "Pinned", "filename": "p.md", "score": 0.4},
     ]
-    monkeypatch.setattr(indexer, "search_documents", lambda q, top_k=4: hits)
+    monkeypatch.setattr(indexer, "search_documents", lambda q, top_k=4, **_: hits)
 
     section = indexer.build_external_context_section("q", canvas_id=canvas.id)
 
@@ -219,7 +219,7 @@ def test_a_pinned_document_is_not_repeated_in_the_general_block(monkeypatch, can
     update_canvas(canvas.id, doc_ids=["pinned1"])
     hits = [{"doc_id": "pinned1", "chunk_index": 0, "text": "the only text",
              "title": "Pinned", "filename": "p.md", "score": 0.9}]
-    monkeypatch.setattr(indexer, "search_documents", lambda q, top_k=4: hits)
+    monkeypatch.setattr(indexer, "search_documents", lambda q, top_k=4, **_: hits)
 
     section = indexer.build_external_context_section("q", canvas_id=canvas.id)
     assert section.count("the only text") == 1
@@ -232,7 +232,7 @@ def test_an_agent_still_fences_what_a_canvas_pins(monkeypatch, canvas):
 
     update_canvas(canvas.id, doc_ids=["pinned1"])
     monkeypatch.setattr(indexer, "search_documents",
-                        lambda q, top_k=4: [{"doc_id": "pinned1", "chunk_index": 0,
+                        lambda q, top_k=4, **_: [{"doc_id": "pinned1", "chunk_index": 0,
                                              "text": "pinned text", "title": "Pinned",
                                              "filename": "p.md", "score": 0.9}])
     # An agent bound to a DIFFERENT document than the canvas pins.

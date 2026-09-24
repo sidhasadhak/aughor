@@ -1725,7 +1725,8 @@ def _answer_core(
             # The canvas is passed so ITS pinned documents reach the prompt. Without
             # it a workspace's own documents were retrievable only by coincidence of
             # embedding similarity, which is not what binding one means.
-            s = build_external_context_section(question, top_k=2, canvas_id=canvas_id)
+            s = build_external_context_section(question, top_k=2, canvas_id=canvas_id,
+                                               connection_id=connection_id)
             return (s + "\n\n") if s else ""
 
         def _pb_match():

@@ -8069,6 +8069,40 @@ cross-connection declarations are not shipped (their YAML stores connection ids 
 install's own tree on first use, by the seed layer's existing rule, after which it no longer
 follows the seed.
 
+### 3.35 · Documents stay inside their connection and organisation (PENDING.md item 16, found by the 2026-09-24 re-survey; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a scoping fix)
+
+> **The fact it answers.** Measured by reading, then run: `search_documents` filtered nothing. The generated schema
+> docs of every connection and every organisation's uploads share one collection, and the registry carried no owner on
+> any row. With no agent active, a question on one connection was handed another connection's schema docs as "external
+> context" — tables that connection does not have — and, with sign-in on, another organisation's uploads; the
+> Documents list and every by-id door (markdown, original, convert, delete) were install-wide. A deleted document's
+> vectors, whose removal is best-effort, were still served.
+
+**What exists.** The registry row is the authority (`aughor/knowledge/indexer.py`). Every row is stamped with its
+owner when it is indexed — a schema doc with its connection and that connection's organisation (`""` for a shared
+builtin, read by everyone), anything else with the organisation that indexed it — and a re-index never changes the
+owner (a connector re-sync under another org keeps the first stamp). A row from before the stamp resolves the same
+way: a schema doc through its connection, an upload to the default organisation, the only one that existed then.
+`search_documents(…, connection_id=)` serves only registered documents, never another connection's schema docs, and
+with sign-in on only the caller's organisation's; it over-fetches so the filters do not shrink an answer below its
+`top_k`. All four paths that put documents in front of a model pass their connection (the quick path, the deep
+synthesis, the grounding block, the conversation's `search_documents` tool). The Documents list is scoped by
+`tenant_scope()`; a router-level guard checks every `doc_id` door through a new `document` owner kind in
+`security/authz.py`; the search door and the doc-tree restore check a connection named in their body, which the
+router's connection guard cannot see. Sign-in off, every organisation-shaped filter is `None` and a single-tenant
+install lists and reads exactly as before.
+
+**Receipt (2026-09-24, this cloud session).** The real indexer, registry and embedded Qdrant, with only the embedder
+replaced by a deterministic word hash; the same script on `main` and on the branch. A question on connection shopA —
+*"revenue per order"* — on `main`: 0.73 `old-report` (deleted; its vectors outlived it), 0.58 `doctree::shopB::main`
+(another connection's tables), 0.55 the revenue policy, 0.19 shopA's own schema docs. On the branch: 0.55 the policy,
+0.19 shopA's schema docs. 10 tests (`tests/unit/test_documents_stay_in_scope.py`); the document, canvas, doc-tree
+and search-tool suites pass with their doubles taking the new keyword.
+
+⏳ **Open:** the re-index and orphan-purge doors stay install-wide maintenance (they expose nothing, but an
+organisation's user can trigger them for everyone); the organisation half was checked through `tenant_scope()` and
+`authorize_resource`, not through a live sign-in.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

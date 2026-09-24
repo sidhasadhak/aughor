@@ -173,7 +173,8 @@ def external_docs(question: str, connection_id: str = "", canvas_id: str = "") -
     """
     from aughor.knowledge.indexer import build_external_context_section
     return _safe(lambda: build_external_context_section(question, top_k=2,
-                                                        canvas_id=canvas_id or None),
+                                                        canvas_id=canvas_id or None,
+                                                        connection_id=connection_id or None),
                  "grounding: connection documents")
 
 

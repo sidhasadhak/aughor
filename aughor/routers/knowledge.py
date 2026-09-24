@@ -6,15 +6,28 @@ import re
 from pathlib import Path as _Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from aughor.semantic.glossary import load_glossary, update_column, update_table
 from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
-#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
-router = APIRouter(tags=["knowledge"], dependencies=[Depends(connection_owner_guard)])
+
+
+def _document_owner_guard(request: Request) -> None:
+    """PENDING item 16: a by-id document door is reachable only by the organisation that owns the
+    document (identity on). A no-op in localhost mode, for a document every organisation reads (a
+    shared builtin's schema docs), and for an unregistered id — the door's own 404."""
+    from aughor.security.authz import check_owner, get_principal
+    if (doc_id := request.path_params.get("doc_id")):
+        check_owner("document", doc_id, get_principal(request))
+
+
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on),
+#: and so does every document a door names by id.
+router = APIRouter(tags=["knowledge"],
+                   dependencies=[Depends(connection_owner_guard), Depends(_document_owner_guard)])
 
 
 # ── Documents ─────────────────────────────────────────────────────────────────
@@ -538,7 +551,7 @@ class RestoreDoctreesIn(BaseModel):
 
 
 @router.post("/documents/restore-doctrees")
-def restore_doctrees(body: RestoreDoctreesIn):
+def restore_doctrees(body: RestoreDoctreesIn, request: Request):
     """Put the schema documentation back into the store from its persisted artifact.
 
     `/documents/reindex` re-embeds what the store holds; when the store has lost chunks,
@@ -555,7 +568,11 @@ def restore_doctrees(body: RestoreDoctreesIn):
     failed instead of leaving the caller to infer it.
     """
     from aughor.knowledge import reindex
+    from aughor.security.authz import check_owner, get_principal
 
+    if body.connection_id:
+        # a body is invisible to the router's connection guard, so the door checks it itself
+        check_owner("connection", body.connection_id, get_principal(request))
     if body.dry_run:
         return {"dry_run": True, **reindex.doctree_plan(connection_id=body.connection_id)}
     try:
@@ -589,15 +606,17 @@ def list_documents_endpoint():
     row that never offered one.
     """
     from aughor.knowledge import blobs
-    from aughor.knowledge.indexer import is_generated, list_documents
+    from aughor.knowledge.indexer import in_scope, is_generated, list_documents
+    from aughor.security.authz import tenant_scope
 
+    org_id = tenant_scope()      # None with sign-in off: one tenant owns every row
     return [{**doc, **blobs.info(doc["doc_id"]),
              # Compiled schema documentation shares this collection with uploads, which
              # is right for retrieval and wrong for this list. Flagged rather than
              # filtered: the surface decides how to present them, and a caller that
              # wants everything still gets everything.
              "generated": is_generated(doc["doc_id"])}
-            for doc in list_documents()]
+            for doc in list_documents() if in_scope(doc, org_id=org_id)]
 
 
 @router.delete("/documents/{doc_id}")
@@ -620,11 +639,18 @@ def delete_document_endpoint(doc_id: str):
 
 
 @router.post("/documents/search")
-def search_documents_endpoint(body: dict):
+def search_documents_endpoint(body: dict, request: Request):
+    """Search the corpus the caller may read (`search_documents`): with ``connection_id`` in the
+    body, another connection's schema docs are left out, as they are for a question."""
     from aughor.knowledge.indexer import search_documents
+    from aughor.security.authz import check_owner, get_principal
     query = body.get("query", "")
     top_k = int(body.get("top_k", 5))
-    return search_documents(query, top_k=top_k)
+    connection_id = body.get("connection_id") or None
+    if connection_id:
+        # a body is invisible to the router's connection guard, so the door checks it itself
+        check_owner("connection", connection_id, get_principal(request))
+    return search_documents(query, top_k=top_k, connection_id=connection_id)
 
 
 # ── Org Intelligence ──────────────────────────────────────────────────────────

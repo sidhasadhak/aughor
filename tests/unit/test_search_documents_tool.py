@@ -30,7 +30,7 @@ def index(monkeypatch):
     asked = {}
 
     def _install(hits, allowed=None):
-        def _search(query, top_k=4):
+        def _search(query, top_k=4, **_):
             asked["query"], asked["top_k"] = query, top_k
             return list(hits)
         monkeypatch.setattr("aughor.knowledge.indexer.search_documents", _search)

@@ -120,6 +120,11 @@ def _resource_org(kind: str, resource_id: str) -> Optional[str]:
         from aughor.savedquery.store import get_saved_query
         q = get_saved_query(resource_id)
         return get_connection_org(q.connection_id) if q and q.connection_id else None
+    if kind == "document":
+        # A document carries its own owner (PENDING item 16): an upload belongs to the org that
+        # indexed it, a schema doc to its connection's org, a shared builtin's to none.
+        from aughor.knowledge.indexer import document_org
+        return document_org(resource_id)
     # Agent-owned resources (monitor / alert / brief subscription) live in agent stores
     # the platform must not import — the Agent registers a resource→connection resolver
     # in the registry at bootstrap, and we resolve conn→org here (org lives on the
