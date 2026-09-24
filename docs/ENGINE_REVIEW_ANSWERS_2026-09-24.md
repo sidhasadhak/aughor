@@ -145,6 +145,6 @@ What does not:
 | Point | PENDING.md item |
 |---|---|
 | 1 — the path's own defects | 17 (every backend) · 18 (the checks see the tables) · 22 (no number before it is measured) |
-| 2 — labelled data | 23 (training data that means something) — built 2026-09-24 (ROADMAP §3.42): the chat's accept, question prompts with their context, verified corrections, the four tiers kept apart, a split that cannot leak · 24 (the few-shot memory) |
+| 2 — labelled data | 23 (training data that means something) — built 2026-09-24 (ROADMAP §3.42): the chat's accept, question prompts with their context, verified corrections, the four tiers kept apart, a split that cannot leak · 24 (the few-shot memory) — built 2026-09-24 (ROADMAP §3.43): every clean answer remembered, overruled ones forgotten for good, an unreachable memory said |
 | 5 — the data in attention | 19 (the SQL writer sees the data) — level 1 built 2026-09-24 (ROADMAP §3.38): the inline-form fixes on by default, the DATA PROFILE block behind `grounding.data_profiles` until measured; levels 2–3 follow its measurement |
 | Found on the way | 16 (documents stay inside their connection and organisation) |

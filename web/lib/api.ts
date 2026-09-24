@@ -7242,7 +7242,9 @@ export async function runLearningExport(): Promise<{ datasets: Record<string, un
 // ── Grounding-context receipt (Rec 5) ───────────────────────────────────────
 // The input-side twin of the Trust Receipt: the exact grounding blocks the SQL
 // writer was given for a question. See routers/investigations.py GET /ask/context.
-export interface GroundingBlock { key: string; title: string; present: boolean; content: string }
+/** `note` — why a block could not be produced, when it could not (a memory that was unreachable is not one that
+ *  had nothing). */
+export interface GroundingBlock { key: string; title: string; present: boolean; content: string; note?: string }
 export interface GroundingReceipt {
   receipt: { question: string; connection_id: string; blocks: GroundingBlock[]; present_count: number };
   markdown: string;

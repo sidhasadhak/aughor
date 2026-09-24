@@ -105,13 +105,16 @@ def _register_ingest_sinks() -> None:
         return index_text(**doc)
 
     def _investigation_index_sink(*, inv_id, question, headline, key_findings,
-                                  connection_id, query_history):
+                                  connection_id, query_history, hypotheses=None, cache=True):
         from aughor.tools.prior_analyses import index_investigation, index_sql_examples
-        index_investigation(inv_id, question=question, headline=headline,
-                            key_findings=key_findings, connection_id=connection_id)
+        # `cache` False (a direct-mode run): its SQL still teaches the few-shot memory, but it is not an
+        # investigation and must not short-circuit one (PENDING item 24)
+        if cache:
+            index_investigation(inv_id, question=question, headline=headline,
+                                key_findings=key_findings, connection_id=connection_id)
         if question and query_history:
             index_sql_examples(inv_id, question=question, query_history=query_history,
-                               connection_id=connection_id)
+                               connection_id=connection_id, hypotheses=hypotheses)
         return {}
 
     def _connection_invalidated_sink(*, conn_id):
@@ -348,13 +351,7 @@ def _evidence_inv(inv_ids):
 
 
 def _qdrant_inv(inv_ids):
-    from aughor.semantic.vector_store import available
-    if not available():
-        return {"qdrant_points": 0}      # nothing indexed, so nothing to purge
-    from aughor.semantic.vector_store import delete_by_filter, match_filter
-    from aughor.tools.prior_analyses import INVESTIGATIONS_COLLECTION
-    total = 0
-    for inv_id in inv_ids:
-        filt = match_filter("inv_id", inv_id)
-        total += delete_by_filter(INVESTIGATIONS_COLLECTION, filt) or 0
-    return {"qdrant_points": total}
+    # Both collections (PENDING item 24): the investigation's entry AND every SQL example it taught — deleting an
+    # investigation used to leave its SQL steering the next answer's few-shot block.
+    from aughor.tools.prior_analyses import forget_answer
+    return {"qdrant_points": sum(forget_answer(inv_id) for inv_id in inv_ids)}

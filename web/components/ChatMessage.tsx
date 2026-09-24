@@ -1359,6 +1359,8 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
   }
 
   const present = data?.receipt.blocks.filter(b => b.present) ?? [];
+  // Said, never implied (PENDING item 24): a source that could not be reached is not one that had nothing.
+  const unreached = data?.receipt.blocks.filter(b => !b.present && b.note) ?? [];
   return (
     <div className="flex flex-col gap-2">
       <Button
@@ -1377,6 +1379,9 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
           <p className="aug-text-xs text-zinc-400 font-medium">{b.title}</p>
           <pre className="aug-text-xs text-zinc-400 whitespace-pre-wrap break-words bg-zinc-900/40 rounded-md p-2 max-h-48 overflow-auto">{b.content}</pre>
         </div>
+      ))}
+      {unreached.map(b => (
+        <p key={b.key} className="aug-text-xs text-amber-300/80">{b.title} — {b.note}</p>
       ))}
     </div>
   );

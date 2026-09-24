@@ -4495,7 +4495,7 @@ async def _stream_investigation(
                     from aughor.kernel.errors import tolerate
                     tolerate(exc, "follow-up suggestions are best-effort; the report was already emitted",
                              counter="investigation.followups")
-                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct", origin_insight_id=insight_id))
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, cache=merged.get("query_mode") != "direct", origin_insight_id=insight_id))
                 await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
 
@@ -5561,11 +5561,25 @@ async def stream_with_envelope(
     if inv_id:
         try:
             from aughor.db.history import attach_envelope
-            await _asyncio.to_thread(attach_envelope, inv_id, payload)
+            if await _asyncio.to_thread(attach_envelope, inv_id, payload):
+                _remember_answer(inv_id)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "envelope persistence is best-effort; it was already streamed",
                      counter="ask.envelope_persist")
+
+
+def _remember_answer(inv_id: str) -> None:
+    """PENDING item 24 — a filed quick answer teaches the few-shot memory (`prior_analyses.index_answer` decides
+    whether it is clean enough to). Off the stream: the embedding call can be slow or hang, and the reader already
+    has the answer, so nothing waits on it. The thread carries the request's context — the organisation the
+    tombstone check reads."""
+    import contextvars
+    import threading
+
+    from aughor.tools.prior_analyses import index_answer
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(index_answer, inv_id), daemon=True, name="remember-answer").start()
 
 
 def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGenerator[str, None]:

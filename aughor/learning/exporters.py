@@ -71,7 +71,8 @@ def _question_key(question: str) -> str:
 
 
 def _sql_key(sql: str) -> str:
-    return " ".join(str(sql or "").strip().rstrip(";").lower().split())
+    from aughor.feedback.verdicts import sql_key
+    return sql_key(sql)
 
 
 def _held_out(question: str) -> bool:
@@ -209,19 +210,8 @@ def _answer_of(verdict: dict) -> tuple[str, set[str]]:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the verdict's question could not be read; the row is left out", counter="learning.question")
         return "", set()
-    ran: set[str] = set()
-
-    def walk(node, under_sql: bool = False) -> None:
-        if isinstance(node, dict):
-            for k, v in node.items():
-                walk(v, under_sql=(k == "sql"))
-        elif isinstance(node, list):
-            for v in node:
-                walk(v, under_sql)
-        elif under_sql and isinstance(node, str) and node.strip():
-            ran.add(_sql_key(node))
-    walk({"report": inv.get("report"), "queries": inv.get("query_history")})
-    return str(inv.get("question") or "").strip(), ran
+    from aughor.db.history import sql_ran_by
+    return str(inv.get("question") or "").strip(), {_sql_key(sql) for sql in sql_ran_by(inv)}
 
 
 def _dialects() -> dict[str, str]:
@@ -412,10 +402,6 @@ def _answered_turns(limit: int) -> list[dict]:
                   key=lambda a: a.get("completed_at") or "")
 
 
-#: A receipt with one of these actions told the reader something was wrong or unproven with the query — a check fired
-#: and no rewrite cleared it. The quick path's own vocabulary (routers/investigations.py `_receipt`).
-_WARNING_ACTIONS = frozenset({"flagged", "caveated", "caveated_headline", "hinted", "kept_original"})
-
 
 #: A receipt whose action replaced the query: its before and after are a wrong-SQL → fixed-SQL pair.
 _REWRITE_ACTIONS = frozenset({"rewrote_sql", "repaired_sql"})
@@ -425,13 +411,8 @@ _RECEIPT_SQL_CAP = 2000
 
 
 def _guards_clean(report: dict) -> bool:
-    """Provably clean: the answer's envelope is there, and it carries no caveat and no warning receipt. An answer
-    from before envelopes were filed cannot be vouched for, so it is not."""
-    env = report.get("envelope")
-    if not isinstance(env, dict):
-        return False
-    receipts = ((env.get("provenance") or {}).get("guard_receipts") or [])
-    return not env.get("caveats") and not any(r.get("action") in _WARNING_ACTIONS for r in receipts)
+    from aughor.answer.envelope import guards_clean
+    return guards_clean(report.get("envelope"))
 
 
 def _latest_recheck(report: dict) -> dict:

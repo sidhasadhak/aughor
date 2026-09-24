@@ -8332,6 +8332,44 @@ a four-gate report. Every guard above was mutation-checked — undone one at a t
 ⏳ **Open:** the thresholds wait on use (ROADMAP §3.9's gates are unchanged); bronze's verifier needs the hand audit
 §3.9 requires before anything trains on it; deep runs' guard fires reach `dpo_repair` only through their envelope.
 
+### 3.43 · The few-shot memory learns from every good answer and forgets bad ones (PENDING.md item 24, the ML review's point 2 at answer time; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
+
+> **The fact it answers.** Past SQL reaches the SQL writer as few-shot examples (`aughor/tools/prior_analyses.py`) —
+> the self-improving loop that exists without training — and it learned from almost nothing. Only deep runs wrote to
+> it, never a quick answer or a chat turn; a query a person rejected stayed an example forever; nothing checked the
+> guards; every deep sub-query was filed under the top-level question though the writer searches by hypothesis;
+> deleting an investigation left its SQL examples behind (`_qdrant_inv` purged one collection of two); and a dead
+> vector store or embedder read exactly like "nothing similar was ever asked" (bare `except`s at every door).
+
+**What exists.**
+
+- **Every clean answer is remembered.** A quick answer, once its envelope is filed, is indexed off the stream
+  (`index_answer`, from `stream_with_envelope`, on a daemon thread carrying the request's organisation) when its
+  question stands alone (not a follow-up), its query returned rows and its guards were clean — the one definition the
+  training corpus's bronze tier reads too (`aughor.answer.envelope.guards_clean`). Examples only: a quick answer never
+  becomes a cached investigation. A deep run's sub-query is filed under its hypothesis's text, with the run's
+  question beside it; a result a guard flagged (`caveats`) is not an example; a direct-mode run teaches examples but
+  is not cached (`complete_investigation(cache=False)`).
+- **Bad ones are forgotten, for good.** The verdict store is the tombstone (`feedback.verdicts.overruled`): an answer
+  whose latest verdict is reject or correct, and the SQL it ran — the verdict's own, else the answer's when it ran
+  one distinct statement — are refused when a point is written AND when one is read, so a reindex, a backfill or the
+  same query answered again cannot bring one back. A verdict also evicts the answer's points at once
+  (`forget_answer`), as does deleting the investigation. A later accept lifts it.
+- **An unreachable memory is said.** Counted every time, logged once a minute (a dead embedder fails every answer),
+  and shown on the grounding receipt as a note on the past-SQL block (`search_sql_examples_checked`) — "the embedding
+  service did not answer", "no vector store is configured" — never written into the prompt.
+
+**Receipt.** One script, the same events, `main` against the branch, on the real embedded vector store (the embedder
+a hashed bag of words). A quick answer through the real `_stream_chat` and envelope: `main` remembered nothing, the
+branch remembered it and offered it to the next question. A deep sub-query searched by its hypothesis: `main` missed,
+the branch hit, and the query a guard flagged was remembered on `main` only. A person rejects the run: `main` still
+offered it and still stored it; the branch neither. The embedder goes down: both return an empty block, and only the
+branch says why. Every guard mutation-checked (`tests/unit/test_few_shot_memory.py`, 16 of 16 caught).
+
+⏳ **Open:** the live collection on an install was not measured (a fresh clone holds none) — how much of it is
+overruled or unpaired today is the first number to read on a real deployment; an accepted answer is not ranked above
+an unjudged one yet.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

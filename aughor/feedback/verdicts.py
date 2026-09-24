@@ -81,6 +81,7 @@ def record_verdict(
     v = (verdict or "").strip().lower()
     if v not in VERDICTS:
         raise ValueError(f"verdict must be one of {VERDICTS}, got {verdict!r}")
+    _OVERRULED.clear()          # the few-shot memory's tombstone reads the verdict store fresh from here on
     org = current_org_id()
     now = _now()
     c = _conn()
@@ -111,6 +112,11 @@ def record_verdict(
             from aughor.learning.decisions import mark_outcomes_for_run
             mark_outcomes_for_run(inv_id=investigation_id or "",
                                   outcome="rejected" if v == "reject" else "corrected")
+            # PENDING item 24 — the few-shot memory forgets what a person overruled. After the commit: the verdict is
+            # the tombstone every later write and read of the memory checks, so a failed eviction here only leaves a
+            # point that the next search already refuses.
+            from aughor.tools.prior_analyses import forget_answer
+            forget_answer(investigation_id or "")
         result = {
             "id": new_id, "org_id": org, "connection_id": connection_id or "",
             "investigation_id": investigation_id or "", "verdict": v,
@@ -133,6 +139,70 @@ def record_verdict(
             tolerate(exc, "verdict→ledger crystallization is best-effort",
                      counter="verdicts.ledger_bridge")
     return result
+
+
+def sql_key(sql: str) -> str:
+    """One query as the verdict store compares it: case, spacing and a trailing semicolon are not a different query.
+    The ONE normalisation the tombstone below and the training exporters share."""
+    return " ".join(str(sql or "").strip().rstrip(";").lower().split())
+
+
+#: `overruled` is read on every search of the few-shot memory; a verdict clears it at once in this process, and a
+#: sibling worker's copy is at most this old — its vector points were evicted when the verdict was recorded anyway.
+_OVERRULED_TTL_S = 30.0
+_OVERRULED: dict[tuple[str, str], tuple[float, tuple[set[str], set[str]]]] = {}
+
+
+def overruled(connection_id: str = "") -> tuple[set[str], set[str]]:
+    """The answers a person has overruled — each one's LATEST verdict is ``reject`` or ``correct`` — and the SQL they
+    ran, normalised (`sql_key`), in this organisation (and on ``connection_id`` when one is given).
+
+    The authority over what the few-shot memory may hold (PENDING item 24). It is a tombstone in AGENTS.md's sense: a
+    point evicted from the vector store comes back on the next reindex, backfill, or the same query answered again —
+    the verdict does not, so memory is checked against it when a point is written AND when one is read. A later
+    ``accept`` on the same answer lifts it: a person may change their mind.
+
+    The SQL is the verdict's own when it carries one, else the answer's — but only when the answer ran ONE distinct
+    statement: a run that issued several has no single query its verdict rests on (the rule `lib/verdictSql` holds
+    every grading surface to)."""
+    import time
+    key = (current_org_id() or "", connection_id or "")
+    hit = _OVERRULED.get(key)
+    if hit and time.monotonic() - hit[0] < _OVERRULED_TTL_S:
+        return set(hit[1][0]), set(hit[1][1])
+    answers, queries = _overruled_now(connection_id)
+    _OVERRULED[key] = (time.monotonic(), (answers, queries))
+    return set(answers), set(queries)
+
+
+def _overruled_now(connection_id: str) -> tuple[set[str], set[str]]:
+    where, params = "org_id=?", [current_org_id()]
+    if connection_id:
+        where += " AND connection_id=?"
+        params.append(connection_id)
+    c = _conn()
+    try:
+        rows = c.execute(
+            f"SELECT investigation_id, verdict, sql_source FROM finding_verdicts WHERE id IN ("
+            f"SELECT MAX(id) FROM finding_verdicts WHERE {where} AND investigation_id != '' "
+            f"GROUP BY investigation_id)", params).fetchall()
+    finally:
+        c.close()
+    answers, queries, unnamed = set(), set(), []
+    for r in rows:
+        if r["verdict"] in ("reject", "correct"):
+            answers.add(r["investigation_id"])
+            if (r["sql_source"] or "").strip():
+                queries.add(sql_key(r["sql_source"]))
+            else:
+                unnamed.append(r["investigation_id"])
+    if unnamed:
+        from aughor.db.history import sql_ran_by_ids
+        for ran in sql_ran_by_ids(unnamed).values():
+            sole = {sql_key(s) for s in ran}
+            if len(sole) == 1:
+                queries |= sole
+    return answers, queries
 
 
 def latest_verdict(investigation_id: str) -> Optional[dict]:
