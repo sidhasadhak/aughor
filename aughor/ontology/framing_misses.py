@@ -32,6 +32,11 @@ def record(frame: Any, graph: Any, connection_id: str, schema_name: Optional[str
         if frame is None or getattr(frame, "defines", False) or not declares_definitions(graph):
             return False
         from aughor.kernel.ledger import Ledger
+        if inv_id and any((e.get("payload") or {}).get("inv_id") == inv_id
+                          for e in Ledger.default().events(kind=KIND, conn_id=connection_id, limit=50)):
+            # a deep run frames its question twice (the door, then the graph's first node) — one
+            # question is one miss (found by the branch review, 2026-09-24)
+            return False
         Ledger.default().emit(KIND, {"schema": schema_name or "", "inv_id": inv_id,
                                      "words": len(str(getattr(frame, "question", "") or "").split())},
                               conn_id=connection_id, trace_id=trace_id or None)

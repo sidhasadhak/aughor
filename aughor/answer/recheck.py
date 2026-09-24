@@ -28,6 +28,7 @@ Off by default (flag ``answers.recheck``). Off → nothing runs, nothing is writ
 """
 from __future__ import annotations
 
+import contextlib
 import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Optional
@@ -62,6 +63,10 @@ def _noise_rel() -> float:
 # ── comparing two results ──────────────────────────────────────────────────────────────────
 
 _DATEISH = re.compile(r"^\d{4}-\d{2}-\d{2}")
+#: SQL that reads the clock — its window moves with the day it runs on.
+_RELATIVE_TIME = re.compile(
+    r"\b(current_date|current_timestamp|current_time|localtimestamp|localtime|sysdate|getdate|"
+    r"now|today|curdate|systimestamp)\b", re.I)
 _KEY_NAME = re.compile(r"(^|_)(id|date|day|week|month|year|quarter|period|code)$|_at$|_on$", re.I)
 
 
@@ -94,6 +99,24 @@ def _day_of(row: list, labels: list[int]) -> Optional[str]:
     return None
 
 
+def _bucket_days(days: list) -> int:
+    """How many days one row's date covers: a monthly result is labelled by each month's FIRST
+    day, and a late row on the 22nd changes the bucket labelled the 1st. Read off the labels
+    themselves — every label a 1st and a month apart is a month; seven days apart a week; a 1
+    January and a year apart a year; else a day."""
+    ds = sorted({date.fromisoformat(d) for d in days if d})
+    if len(ds) < 2:
+        return 1
+    gaps = {(b - a).days for a, b in zip(ds, ds[1:])}
+    if all(d.day == 1 and d.month == 1 for d in ds) and gaps <= {365, 366}:
+        return 365
+    if all(d.day == 1 for d in ds) and gaps <= {28, 29, 30, 31}:
+        return 31
+    if gaps == {7}:
+        return 7
+    return 1
+
+
 def diff_results(old_columns: list, old_rows: list, new_columns: list, new_rows: list) -> dict:
     """What changed between the result a person was given and the same query's result now.
     Pure. ``{"comparable": bool, "reason", "changes": [...], "compared", "missing_rows",
@@ -118,11 +141,13 @@ def diff_results(old_columns: list, old_rows: list, new_columns: list, new_rows:
 
     fresh = {key(r): r for r in new_rows}
     noise = _noise_rel()
-    changes, compared, missing = [], 0, 0
+    span = _bucket_days([_day_of(r, labels) for r in old_rows])
+    changes, compared, gone = [], 0, []
     for row in old_rows:
+        label = {str(old_columns[j]): row[j] for j in labels}
         now = fresh.get(key(row))
         if now is None:
-            missing += 1
+            gone.append(label)            # a row the person was given that the query no longer returns
             continue
         for i in measures:
             old, new = _number(row[i] if i < len(row) else None), _number(now[i] if i < len(now) else None)
@@ -130,14 +155,24 @@ def diff_results(old_columns: list, old_rows: list, new_columns: list, new_rows:
                 continue
             compared += 1
             base = max(abs(old), abs(new))
-            rel = 0.0 if base == 0 else (new - old) / (abs(old) if old else base)
             if base and abs(new - old) / base >= noise:
-                changes.append({"label": {str(old_columns[j]): row[j] for j in labels},
-                                "column": str(old_columns[i]), "old": old, "new": new,
-                                "rel": rel, "day": _day_of(row, labels)})
+                # a move from zero has no percentage: "0 → 12" is not "+100%"
+                changes.append({"label": label, "column": str(old_columns[i]), "old": old, "new": new,
+                                "rel": (new - old) / abs(old) if old else None,
+                                "day": _day_of(row, labels), "span_days": span})
     known = {key(r) for r in old_rows}
     return {"comparable": True, "reason": "", "changes": changes, "compared": compared,
-            "missing_rows": missing, "new_rows": sum(1 for k in fresh if k not in known)}
+            "missing_rows": len(gone), "missing": gone[:3],
+            "new_rows": sum(1 for k in fresh if k not in known)}
+
+
+def _last_day(start: date, span: int) -> date:
+    if span == 31:
+        nxt = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return nxt - timedelta(days=1)
+    if span == 365:
+        return start.replace(month=12, day=31)
+    return start + timedelta(days=span - 1)
 
 
 def classify(changes: list[dict], answered_on: date, lag_days: Optional[int]) -> str:
@@ -153,7 +188,9 @@ def classify(changes: list[dict], answered_on: date, lag_days: Optional[int]) ->
             c["cause"] = "unknown"
         else:
             settled_by = answered_on - timedelta(days=int(lag_days))
-            c["cause"] = "late_rows" if date.fromisoformat(day) > settled_by else "restated"
+            last = _last_day(date.fromisoformat(day), int(c.get("span_days") or 1))
+            # the bucket held a day still inside the lag when the answer was given → late rows
+            c["cause"] = "late_rows" if last > settled_by else "restated"
         causes.add(c["cause"])
     if causes == {"late_rows"}:
         return "late_rows"
@@ -192,12 +229,19 @@ def correction_text(answer: dict, recheck: dict) -> str:
     lines = [f"On {when} you asked: “{asked}”{'' if asked[-1:] in '?.!' else '.'}" if asked
              else f"On {when} we answered you."]
     for c in changes[:NAMED_CHANGES]:
-        lines.append(f"We told you {_what(c)} was {_fmt(c['old'])}; it is now {_fmt(c['new'])} "
-                     f"({c['rel'] * 100:+.1f}%).")
+        pct = f" ({c['rel'] * 100:+.1f}%)" if c.get("rel") is not None else ""
+        lines.append(f"We told you {_what(c)} was {_fmt(c['old'])}; it is now {_fmt(c['new'])}{pct}.")
+    gone = int(recheck.get("missing_rows") or 0)
+    if gone:
+        first = ", ".join(str(v) for v in ((recheck.get("missing") or [{}])[0] or {}).values() if v not in (None, ""))
+        lines.append(f"{gone} row{'s' if gone != 1 else ''} the answer gave "
+                     f"{'is' if gone == 1 else 'are'} no longer returned" + (f" (such as {first})" if first else "") + ".")
     if len(changes) > NAMED_CHANGES:
         lines.append(f"{len(changes) - NAMED_CHANGES} more number"
                      f"{'s' if len(changes) - NAMED_CHANGES != 1 else ''} in that answer changed too.")
     cause, lag = recheck.get("cause"), recheck.get("lag_days")
+    if not changes:
+        return "\n".join(lines)                    # only rows that vanished: nothing to place in time
     late = sorted({c["day"] for c in changes if c.get("cause") == "late_rows"})
     restated = sorted({c["day"] for c in changes if c.get("cause") == "restated"})
     if cause == "late_rows":
@@ -221,7 +265,9 @@ def correction_text(answer: dict, recheck: dict) -> str:
 
 # ── running one re-check ───────────────────────────────────────────────────────────────────
 
-def _open_runner(conn_id: str):
+@contextlib.contextmanager
+def _runner(conn_id: str):
+    """``run_sql`` on the answer's connection, released when the re-check is done."""
     from aughor.db.connection import open_connection_for
     db = open_connection_for(conn_id)
 
@@ -229,7 +275,14 @@ def _open_runner(conn_id: str):
         res = db.execute("__answer_recheck__", sql)
         return (list(getattr(res, "columns", []) or []), list(getattr(res, "rows", []) or []),
                 getattr(res, "error", None))
-    return run_sql
+    try:
+        yield run_sql
+    finally:
+        try:
+            db.close()
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "re-check: best-effort connection release", counter="answers.recheck.close")
 
 
 def _answered_on(answer: dict) -> date:
@@ -252,8 +305,18 @@ def measure_answer(answer: dict, *, run_sql: Optional[RunSql] = None,
     if not (sql and report.get("columns") and report.get("rows")):
         entry["reason"] = "the answer carries no query result to compare"
         return entry
+    if _RELATIVE_TIME.search(sql):
+        # "yesterday", "this month so far": re-run tomorrow, the same SQL measures another window,
+        # and the difference would be told as a correction it is not
+        entry["reason"] = ("its query is relative to today (it reads the current date), so re-running "
+                           "it measures a different window, not the one the answer was about")
+        return entry
     try:
-        columns, rows, error = (run_sql or _open_runner(answer["connection_id"]))(sql)
+        if run_sql is not None:
+            columns, rows, error = run_sql(sql)
+        else:
+            with _runner(answer["connection_id"]) as own:
+                columns, rows, error = own(sql)
     except Exception as exc:  # noqa: BLE001
         columns, rows, error = [], [], f"{type(exc).__name__}: {exc}"
     if error:
@@ -272,10 +335,13 @@ def measure_answer(answer: dict, *, run_sql: Optional[RunSql] = None,
         tolerate(exc, "no learned lag; a change is reported with its cause unknown",
                  counter="answers.recheck.lag")
     changes = diff["changes"]
-    entry.update(status="changed" if changes else "unchanged", changes=changes[:10],
+    moved = bool(changes or diff["missing_rows"])     # a row that vanished is a change too
+    entry.update(status="changed" if moved else "unchanged", changes=changes[:10],
                  changed=len(changes), compared=diff["compared"],
-                 missing_rows=diff["missing_rows"], new_rows=diff["new_rows"],
-                 lag_days=lag, cause=classify(changes, _answered_on(answer), lag))
+                 missing_rows=diff["missing_rows"], missing=diff.get("missing", []),
+                 new_rows=diff["new_rows"], lag_days=lag,
+                 cause=classify(changes, _answered_on(answer), lag) if changes else
+                 ("none" if not moved else "unknown"))
     return entry
 
 
@@ -306,12 +372,14 @@ def slack_thread(session_id: str) -> Optional[tuple[str, str]]:
 
 def _told_before(answer: dict, entry: dict) -> bool:
     """The same numbers, already told — a change is news once."""
-    mine = {(c["column"], str(c.get("label")), c["new"]) for c in entry.get("changes") or []}
+    def said(e: dict) -> set:
+        return ({(c["column"], str(c.get("label")), c["new"]) for c in e.get("changes") or []}
+                | {("gone", str(m)) for m in e.get("missing") or []})
+    mine = said(entry)
     for prior in (answer.get("report") or {}).get("rechecks") or []:
         told = prior.get("told") or {}
-        if told.get("status") in ("sent", "shown") and prior.get("changes"):
-            if mine == {(c["column"], str(c.get("label")), c["new"]) for c in prior["changes"]}:
-                return True
+        if told.get("status") in ("sent", "shown") and said(prior) == mine:
+            return True
     return False
 
 
@@ -405,21 +473,25 @@ def run_rechecks_daily(*, force: bool = False, now: Optional[datetime] = None,
         if last and last > (now - timedelta(hours=RECHECK_EVERY_HOURS)).isoformat():
             continue
         due.append(answer)
+    # never re-checked first, then the longest since its last re-check — so with more answers in the
+    # window than a day's budget, every one is reached in turn instead of the newest forty forever
+    due.sort(key=lambda a: ((a.get("report") or {}).get("rechecks") or [{}])[-1].get("checked_at", ""))
     due = due[:PER_RUN]
-    runners: dict[str, RunSql] = {}
     summary = {"checked": 0, "changed": 0, "told": 0}
-    for answer in due:
-        conn = answer["connection_id"]
-        try:
-            run_sql = runners.get(conn) or (runner or _open_runner)(conn)
-            runners[conn] = run_sql
-        except Exception as exc:  # noqa: BLE001 — one unreachable connection skips its answers
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "an answer's connection could not be opened for its re-check",
-                     counter="answers.recheck.open", conn_id=conn)
-            continue
-        entry = recheck_and_tell(answer, run_sql=run_sql, now=now)
-        summary["checked"] += 1
-        summary["changed"] += entry.get("status") == "changed"
-        summary["told"] += (entry.get("told") or {}).get("status") in ("sent", "shown")
+    with contextlib.ExitStack() as stack:
+        runners: dict[str, RunSql] = {}
+        for answer in due:
+            conn = answer["connection_id"]
+            try:
+                if conn not in runners:
+                    runners[conn] = runner(conn) if runner else stack.enter_context(_runner(conn))
+            except Exception as exc:  # noqa: BLE001 — one unreachable connection skips its answers
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "an answer's connection could not be opened for its re-check",
+                         counter="answers.recheck.open", conn_id=conn)
+                continue
+            entry = recheck_and_tell(answer, run_sql=runners[conn], now=now)
+            summary["checked"] += 1
+            summary["changed"] += entry.get("status") == "changed"
+            summary["told"] += (entry.get("told") or {}).get("status") in ("sent", "shown")
     return summary

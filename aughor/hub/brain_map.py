@@ -151,18 +151,18 @@ def _claims(connection_id: str) -> dict:
                     f"{counts['unchecked']} not checked"}
 
 
-def _departures() -> dict:
-    """What left the platform and what the gate held — every connection (the departures ledger
-    carries no organisation filter, so this box says so rather than pretending to be scoped)."""
+def _departures(org_id: str) -> dict:
+    """What left the platform and what the gate held, for this organisation — across its
+    connections (a departure is judged per message, not per connection)."""
     from aughor.govern.departure_store import summary_counts
-    counts = summary_counts()
+    counts = summary_counts(org_id=org_id)
     by_state = dict(counts.get("by_state") or {})
     total = int(counts.get("total") or 0)
     held = sum(v for k, v in by_state.items() if str(k).startswith("held") and isinstance(v, int))
     return {"count": total, "unit": "messages judged at the gate",
             "detail": {"by_state": by_state, "held": held, "awaiting_a_person": counts.get("awaiting", 0),
-                       "scope": "every connection"},
-            "line": f"{held} held of {total} judged — across every connection"}
+                       "scope": "this organisation, every connection" if org_id else "every organisation"},
+            "line": f"{held} held of {total} judged" + ("" if org_id else " — every organisation")}
 
 
 # ── working memory ─────────────────────────────────────────────────────────────────────────
@@ -235,7 +235,8 @@ def brain_map(connection_id: str, *, workspace_id: Optional[str] = None) -> dict
         _box("outcomes", "engagement", "Recommendations and outcomes", "GET /investigations/{id}/outcomes",
              lambda: _outcomes(connection_id)),
         _box("claims", "engagement", "Claims checked", "GET /arrivals/claims", lambda: _claims(connection_id)),
-        _box("departures", "engagement", "Messages judged at the gate", "GET /departures/summary", _departures),
+        _box("departures", "engagement", "Messages judged at the gate", "GET /departures/summary",
+             lambda: _departures(org)),
         _box("priorities", "working_memory", "This quarter's priorities", "GET /org-settings",
              lambda: _priorities(workspace_id)),
         _box("owners", "working_memory", "Owners reachable", "GET /owners",

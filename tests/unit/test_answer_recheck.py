@@ -239,3 +239,70 @@ def test_a_restored_turn_carries_the_recheck_only_once_one_found_a_change(con, l
     recheck.recheck_and_tell(answer, run_sql=run_on(con), now=LATER)
     turn, kinds = parts()
     assert "data-recheck" in kinds and turn["latest_recheck"]["changes"][0]["new"] == 1902.0
+
+
+# ── what the review of this branch found (2026-09-24), each fixed at its cause ───────────────
+
+def test_a_query_relative_to_today_is_not_rechecked(con, lag):
+    """"Revenue yesterday" re-run tomorrow measures another day; telling the difference as a
+    correction would be false."""
+    answer = answer_from(con, sql="SELECT CAST(created_at AS DATE) AS day, COUNT(*) AS orders FROM orders "
+                                  "WHERE created_at >= CURRENT_DATE - INTERVAL 30 DAY GROUP BY 1")
+    entry = recheck.measure_answer(answer, run_sql=run_on(con), now=LATER)
+    assert entry["status"] == "unchecked" and "relative to today" in entry["reason"]
+
+
+def test_a_monthly_bucket_changed_by_late_rows_is_late_rows():
+    """A September total labelled 2026-09-01 changed by rows on the 22nd, answered on the 23rd with
+    a one-day lag: the bucket held unsettled days, so late rows — not a restatement."""
+    d = recheck.diff_results(["month", "orders"], [["2026-08-01", 5000], ["2026-09-01", 4000]],
+                             ["month", "orders"], [["2026-08-01", 5000], ["2026-09-01", 4400]])
+    assert d["changes"][0]["span_days"] == 31
+    assert recheck.classify(d["changes"], date(2026, 9, 23), 1) == "late_rows"
+    august = recheck.diff_results(["month", "orders"], [["2026-08-01", 5000], ["2026-09-01", 4000]],
+                                  ["month", "orders"], [["2026-08-01", 5600], ["2026-09-01", 4000]])
+    assert recheck.classify(august["changes"], date(2026, 9, 23), 1) == "restated"
+
+
+def test_a_row_that_vanished_is_a_change_and_is_said(con, lag):
+    answer = answer_from(con)
+    con.execute("DELETE FROM orders WHERE CAST(created_at AS DATE) = DATE '2026-09-15'")
+    entry = recheck.measure_answer(answer, run_sql=run_on(con), now=LATER)
+    assert entry["status"] == "changed" and entry["missing_rows"] == 1 and entry["changes"] == []
+    assert "1 row the answer gave is no longer returned (such as 2026-09-15)." in recheck.correction_text(answer, entry)
+
+
+def test_a_move_from_zero_states_no_percentage():
+    d = recheck.diff_results(["total"], [[0]], ["total"], [[12]])
+    assert d["changes"][0]["rel"] is None
+    text = recheck.correction_text({"completed_at": "2026-09-21", "question": "How many?"},
+                                   {"changes": d["changes"], "cause": "unknown", "lag_days": None})
+    assert "We told you total was 0; it is now 12." in text and "%" not in text
+
+
+def test_the_daily_pass_reaches_the_answer_checked_longest_ago_first(con, lag, monkeypatch):
+    monkeypatch.setenv(FLAG_ENV, "1")
+    monkeypatch.setattr(recheck, "_last_run_day", None)
+    monkeypatch.setattr(recheck, "PER_RUN", 1)
+    from aughor.db import history
+    old, new = answer_from(con, session_id="s-old"), answer_from(con, session_id="s-new")
+    history.append_recheck(new["id"], {"checked_at": "2026-09-20T06:00:00Z", "status": "unchanged"})
+    history.append_recheck(old["id"], {"checked_at": "2026-09-10T06:00:00Z", "status": "unchanged"})
+    real = history.recent_chat_answers
+    monkeypatch.setattr(history, "recent_chat_answers",
+                        lambda since, limit=200: [a for a in real("2000-01-01", limit=limit)
+                                                  if a["id"] in (old["id"], new["id"])])
+    recheck.run_rechecks_daily(now=LATER, runner=lambda conn: run_on(con))
+    assert get_chat_answer(old["id"])["report"]["rechecks"][-1]["checked_at"].startswith("2026-09-23")
+    assert get_chat_answer(new["id"])["report"]["rechecks"][-1]["checked_at"].startswith("2026-09-20")
+
+
+def test_the_banner_comes_down_when_a_later_recheck_finds_the_answer_as_said(con, lag):
+    from aughor.db.history import get_session_turns
+    answer = answer_from(con, session_id="web-banner")
+    con.execute("INSERT INTO orders SELECT TIMESTAMP '2026-09-20 23:00' FROM range(0, 158)")
+    recheck.recheck_and_tell(answer, run_sql=run_on(con), now=LATER)
+    assert "latest_recheck" in get_session_turns("web-banner")[0]
+    con.execute("DELETE FROM orders WHERE created_at = TIMESTAMP '2026-09-20 23:00'")
+    recheck.recheck_and_tell(answer, run_sql=run_on(con), now=LATER)
+    assert "latest_recheck" not in get_session_turns("web-banner")[0]

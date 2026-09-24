@@ -133,3 +133,20 @@ def test_a_number_that_arrives_as_text_does_not_segment(db, graph):
     customer = get_object(graph, db, "customer", "C00042")
     segment = segment_values(graph.entities["Customer"], customer)
     assert "country" in segment and "lifetime_orders" not in segment and "lifetime_spend" not in segment
+
+
+
+def test_bigquery_findings_are_read_and_another_objects_segment_twin_is_not_shown(db, graph, monkeypatch):
+    """Branch review, 2026-09-24: backticked BigQuery tables failed the neutral parse and those
+    findings vanished from the wider tiers; and a finding pinned to ANOTHER customer who shares
+    this one's country was shown as "about its segment"."""
+    customer = get_object(graph, db, "customer", "C00042")
+    country = {p["name"]: p["value"] for p in customer.properties}["country"]
+    monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: [
+        {"id": "bq", "finding": f"{country} leads repeat purchases.",
+         "sql": "SELECT c.country, COUNT(*) FROM `proj.shop.customers` c GROUP BY c.country"},
+        {"id": "twin", "finding": "C00077 spent the most.",
+         "sql": f"SELECT * FROM customers WHERE customer_id = 'C00077' AND country = '{country}'"},
+    ])
+    found = {f["id"]: f.get("scope") for f in object_context(graph, db, CONN, "ecommerce", customer)["findings"]}
+    assert found.get("bq") == "segment" and "twin" not in found

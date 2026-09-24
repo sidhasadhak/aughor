@@ -90,3 +90,17 @@ def test_no_ontology_built_yet_is_a_skip_not_a_failure(monkeypatch, seen, explor
     monkeypatch.setattr(ontology_store, "load_latest_ontology", lambda conn, schema=None: None)
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "skipped"
     assert explorer == [] and seen[0][2]["reason"].startswith("no ontology is built on this scope yet")
+
+
+
+def test_the_already_explored_check_reads_the_scope_the_explorer_writes(monkeypatch, seen, explorer):
+    """A connection registered with a schema in its meta: the explorer files its run under that
+    schema, so the skip must read it there — reading "default" never found the run (branch review)."""
+    monkeypatch.setenv(FLAG_ENV, "1")
+    import aughor.ontology.drafts as drafts
+    import aughor.routers.ontology as ontology
+    monkeypatch.setattr(ontology, "resolve_effective_schema", lambda conn, schema=None: schema or "shop")
+    monkeypatch.setattr(drafts, "load_draft",
+                        lambda conn, schema: SimpleNamespace(runs=[object()] if schema == "shop" else []))
+    assert _shared.run_business_terms("c1", None, emit_into(seen)) == "skipped"
+    assert explorer == []

@@ -7805,6 +7805,7 @@ leaves only where an approved metric defines revenue on the connection (law 2 he
 "Revenue reached $4,000" in the test, as it should). The coverage slack (week 2 days, month 7,
 year 31) is a judgement, not a measurement. The canvas brief has no period. The standing brief's
 own metric moves still anchor on a fixed yesterday (§3.23's note) — untouched here.
+**Fixed after an independent review of the branch (2026-09-24):** the send-time re-measurement read the result cache the brief had just filled, so law 1 checked the brief against itself for up to an hour — it now reads the warehouse (`connection_runner(cached=False)`); a briefing subscription saved while the flag was on could not be paused after it was turned off — a period or content is now validated only when it changes; an empty fiscal month crashed the year window — it reads as the calendar year.
 
 ### 3.28 · Answers that say when they have changed — a recall, for numbers (from `IDEAS.md` 5; **BUILT 2026-09-23**, PENDING.md item 8, branch `claude/determined-bohr-qh3b1p`; flag `answers.recheck`, **off**)
 
@@ -7866,6 +7867,7 @@ original Slack mention answer is not gated while its correction is (the TypeScri
 `/ask` straight to Slack), so a correction faces a stricter gate than the answer it corrects:
 by law 2 a KPI word no approved metric defines holds the correction (recorded, not sent). Only
 chat answers are re-checked — a deep report's many queries are not.
+**Fixed after an independent review of the branch (2026-09-24), each with a test:** a query that reads the clock ("yesterday", "this month so far") is no longer re-checked — re-run tomorrow it measures another window, and the difference would have been told as a correction; a monthly or weekly result is labelled by its bucket's FIRST day, so late rows on the 22nd were called a restatement — the bucket's span is read off its labels and its LAST day decides; a row that vanished read as "unchanged" — it is a change, and said; a move from zero no longer states "+100%"; the daily pass took the newest forty answers forever — the longest-unchecked go first; a later re-check that found the numbers back as said now takes the web banner down; the append is a locked read-modify-write; each re-check releases its connection.
 
 ### 3.29 · Object pages say what is known about the object, its segment and its type (PENDING.md item 13, Arc ON leftover; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a read-only panel, every row marked)
 
@@ -7895,6 +7897,7 @@ numbers arrive as strings ("46" lifetime orders) and would have segmented on the
 revenue and AOV are scoped to the samples and name a column LuxExperience lacks — a declared
 LuxExperience metric fixes it, and only survives a fresh clone once item 14 lands. Object pages
 still read only the home connection's findings.
+**Fixed after an independent review of the branch (2026-09-24):** a finding pinned to ANOTHER customer who shares this one's country was shown as "about its segment" — a finding pinned to another object is skipped before either wider tier; BigQuery's backticked tables failed the neutral parse, so theLook's findings never reached the wider tiers — the SQL is tried in the warehouse dialects in turn.
 
 ### 3.30 · The company-brain map — every store a box with a live count, every arrow a measurement (PENDING.md item 9, Arc CB's closing ask, §3.21; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a read-only screen)
 
@@ -7932,6 +7935,7 @@ web gates, all 1,154 web tests and the ratchets green.
 and the box says so); the visibility share stays unknown until the profiler has seen the
 connection; not yet the Sources → Observers → Judge lanes §3.21 sketches — the vaults are the
 stores, the lanes would be the processes between them.
+**Fixed after an independent review of the branch (2026-09-24):** the departures box counted every organisation's departures — `summary_counts(org_id=)` now scopes it to the caller's.
 
 ### 3.31 · A new connection's business terms, proposed when it arrives (PENDING.md item 11, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `ontology.explore_on_connect`, **off** ⚑)
 
@@ -7961,6 +7965,7 @@ session has no model; the rite stood. 6 tests, the ratchets and the flag disposi
 no fusions); its one live run fused two groups that should stay apart, and re-checking it is a
 paid model run. A failed explorer call is retried by the next rite, since only a finished run is
 recorded.
+**Fixed after an independent review of the branch (2026-09-24):** the "already explored" skip read the run record under "default" while the explorer files it under the connection's own schema — on such a connection every restart would have paid for the model call again; it now reads the explorer's own scope (`resolve_effective_schema`), and the step runs in a copy of the rite's context so its `birth.step` events carry the job's id.
 
 ### 3.32 · Business terms however worded — the misses counted, the paraphrase set grown, near-matches measured (PENDING.md item 12, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; the near-match is NOT wired — ⚑ the user's call)
 
@@ -7993,6 +7998,7 @@ recorded.
 ⏳ Open: the chooser's behaviour on near-match candidates (a paid run); a screen for the misses
 (the door exists); "best customers" and "our own fault" share no word with their definitions —
 only a person's synonym, or a model, reaches them.
+**Fixed after an independent review of the branch (2026-09-24):** a deep run frames its question twice (the door, then the graph's first node), so each miss was counted twice — the door now passes the run's id and a run is one miss.
 
 ### 3.33 · The chat's two main buttons can reach the conversation agent (PENDING.md item 15, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `chat.buttons_reach_agent`, **off** ⚑)
 
@@ -8011,6 +8017,7 @@ gates and the flag dispositions green.
 ⚑ **Open — the operator's, with item 4 (CP-3):** the gain is unmeasured and the cost is known
 (~20k tokens a conversation turn, §3.22); the flag's falsifier reads a week of CP-1's shadow labels
 against the answers each door gave.
+**Fixed after an independent review of the branch (2026-09-24):** the flag rewrote EVERY deep-analysis send, and `/ask` does not forward seed SQL, seed context or a cache skip — "Explore this fact" would have lost its seed and "Run fresh" been served from cache; only a plain question (nothing but a depth or a schema) changes door now.
 
 ### 3.34 · Declared business terms survive a fresh clone — shipped under a connection's scope key (PENDING.md item 14, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a new seed layer an install opts into by naming a key)
 

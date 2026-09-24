@@ -5615,7 +5615,8 @@ export interface AnswerRecheckChange {
   column: string;
   old: number;
   new: number;
-  rel: number;
+  /** null when the number moved from zero — a move from nothing has no percentage. */
+  rel: number | null;
   day: string | null;
   cause?: "late_rows" | "restated" | "unknown";
 }
@@ -5626,6 +5627,9 @@ export interface AnswerRecheck {
   reason?: string;
   changes: AnswerRecheckChange[];
   changed?: number;
+  /** Rows the answer gave that the query no longer returns, and the first few of their labels. */
+  missing_rows?: number;
+  missing?: Record<string, unknown>[];
   cause: "late_rows" | "restated" | "unknown" | "none";
   lag_days: number | null;
   told?: { door?: string; status?: string; note?: string };

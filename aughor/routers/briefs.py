@@ -128,10 +128,13 @@ def create_brief_subscription(body: _SubscriptionBody, request: Request):
 def update_briefing_subscription(sub_id: str, body: _SubscriptionBody):
     from aughor.briefing.store     import get_subscription, save_subscription
 
-    _validate_period(body.period, body.content)
     existing = get_subscription(sub_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Subscription not found")
+    if (body.period, body.content) != (existing.period, existing.content):
+        # validated only when it CHANGES: a briefing subscription saved while the flag was on can
+        # still be paused or renamed after it is turned off (branch review, 2026-09-24)
+        _validate_period(body.period, body.content)
 
     existing.conn_id    = body.conn_id
     existing.name       = body.name

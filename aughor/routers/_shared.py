@@ -203,7 +203,10 @@ def run_business_terms(conn_id: str, schema_name: str | None, emit) -> str:
         return "skipped"
     try:
         from aughor.ontology.drafts import load_draft
-        if load_draft(conn_id, schema_name or "").runs:
+        from aughor.routers.ontology import resolve_effective_schema
+        # the scope the explorer itself files its run under (meta's schema when none is named) —
+        # reading "default" instead never found the run, and every restart paid again (branch review)
+        if load_draft(conn_id, resolve_effective_schema(conn_id, schema_name)).runs:
             # a restart re-runs the rite; the explorer ran here already, and a second run would
             # spend a model call to write nothing twice
             emit("business_terms", "skipped", reason="the business explorer already ran on this scope")
@@ -334,8 +337,11 @@ async def run_birth(
             _emit("popularity", "failed", error=str(exc)[:300])
 
     async def _business_terms_step() -> None:
+        import contextvars
+        # a copy of this rite's context, so the step's `birth.step` events carry the birth job's id
+        ctx = contextvars.copy_context()
         await asyncio.get_running_loop().run_in_executor(
-            None, lambda: run_business_terms(conn_id, schema_name, _emit))
+            None, ctx.run, lambda: run_business_terms(conn_id, schema_name, _emit))
 
     async def _exploration_step() -> bool:
         _emit("exploration", "started")

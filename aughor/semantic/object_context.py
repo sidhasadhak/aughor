@@ -137,11 +137,13 @@ def object_findings(connection_id: str, schema_name: str, graph: OntologyGraph, 
                     cited.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
                                   "domain": finding.get("domain", ""), "matched": matched})
                     continue
+                if pins_another(finding.get("sql"), identity):
+                    continue      # about ANOTHER object — never this one's segment or type (branch review)
                 about = about_segment(finding, segment, tables)
                 if about:
                     wider.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
                                   "domain": finding.get("domain", ""), "scope": "segment", **about})
-                elif reads_tables(finding.get("sql"), tables) and not pins_another(finding.get("sql"), identity):
+                elif reads_tables(finding.get("sql"), tables):
                     wider.append({"kind": "finding", "id": finding.get("id"), "text": finding.get("finding", ""),
                                   "domain": finding.get("domain", ""), "scope": "type",
                                   "matched": f"reads {', '.join(sorted(tables))}"})
@@ -198,13 +200,30 @@ def segment_values(entity: OntologyEntity, instance: ObjectInstance) -> dict[str
     return out
 
 
+#: The dialects a finding's SQL is tried in: the neutral reading first, then the warehouses whose
+#: quoting it cannot read (BigQuery's backticked `project.dataset.table` failed the neutral parse,
+#: and every theLook finding dropped out of the wider tiers — branch review, 2026-09-24).
+_DIALECTS = (None, "bigquery", "snowflake", "postgres")
+
+
+def _parse_any(sql: str):
+    """The finding's SQL as the first dialect that can read it, or None. Only sqlglot's own
+    parse and tokenise errors are expected here — the next dialect may read what this one cannot."""
+    import contextlib
+
+    import sqlglot
+    from sqlglot.errors import ParseError, TokenError
+    for dialect in _DIALECTS:
+        with contextlib.suppress(ParseError, TokenError):
+            return sqlglot.parse_one(sql, read=dialect)
+    return None
+
+
 def _group_columns(sql: str) -> set[str]:
     """The bare column names a query groups by (ordinals and aliases resolved). Never raises."""
-    try:
-        import sqlglot
-        from sqlglot import exp
-        tree = sqlglot.parse_one(sql)
-    except Exception:  # noqa: BLE001 — an unparsable finding simply groups by nothing we can see
+    from sqlglot import exp
+    tree = _parse_any(sql)
+    if tree is None:
         return set()
     names: set[str] = set()
     for select in tree.find_all(exp.Select):
@@ -255,11 +274,9 @@ def pins_another(sql: Any, identity: dict) -> bool:
 
 def reads_tables(sql: Any, tables: set[str]) -> bool:
     """Whether a finding's SQL reads one of the type's tables — a finding about the type."""
-    try:
-        import sqlglot
-        from sqlglot import exp
-        tree = sqlglot.parse_one(str(sql or ""))
-    except Exception:  # noqa: BLE001
+    from sqlglot import exp
+    tree = _parse_any(str(sql or ""))
+    if tree is None:
         return False
     return any(_bare(t.name) in tables for t in tree.find_all(exp.Table))
 

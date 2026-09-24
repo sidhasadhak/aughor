@@ -71,3 +71,12 @@ def test_resolve_frame_records_the_miss_on_the_way(monkeypatch):
     agent_framing.resolve_frame("How many payments were high-risk for each payment method?", "conn-resolve", "lux",
                                 choose=False)
     assert misses("conn-resolve")["misses"] == before + 1                 # a framed question is not a miss
+
+
+
+def test_one_run_that_frames_its_question_twice_is_one_miss():
+    frame = frame_question("How many transactions look fraudulent?", LUX)
+    before = misses("conn-twice")["misses"]
+    assert record(frame, LUX, "conn-twice", "lux", inv_id="inv-1") is True
+    assert record(frame, LUX, "conn-twice", "lux", inv_id="inv-1") is False
+    assert misses("conn-twice")["misses"] == before + 1

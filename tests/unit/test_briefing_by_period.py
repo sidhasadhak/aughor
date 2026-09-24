@@ -440,3 +440,24 @@ def test_a_briefing_subscription_is_not_sent_while_off(monkeypatch):
     delivery._deliver_period(BriefSubscription(conn_id="c1", name="n", trigger_id="t",
                                                period="week", content="briefing"), object(), result)
     assert result["error"].startswith("not sent — briefings by period are off")
+
+
+def test_a_briefing_subscription_can_be_paused_after_the_flag_is_turned_off(monkeypatch):
+    """Branch review, 2026-09-24: pause re-sends period and content, and a period/content the
+    install no longer offers was refused — so a saved briefing subscription could not be paused."""
+    from aughor.briefing.models import BriefSubscription
+    from aughor.briefing.store import save_subscription
+    from aughor.routers.briefs import _SubscriptionBody, update_briefing_subscription
+    import aughor.notifications.store as triggers
+    monkeypatch.setattr(triggers, "get_trigger", lambda tid: object())
+    sub = save_subscription(BriefSubscription(conn_id="c1", name="m", trigger_id="t", period="month",
+                                              content="briefing"))
+    monkeypatch.delenv(FLAG_ENV, raising=False)
+    paused = update_briefing_subscription(sub.id, _SubscriptionBody(
+        conn_id="c1", name="m", trigger_id="t", period="month", content="briefing", enabled=False))
+    assert paused["enabled"] is False and paused["content"] == "briefing"
+
+
+def test_an_empty_fiscal_month_reads_as_the_calendar_year():
+    assert complete_period("year", TODAY, fiscal_start_month=None).start == date(2025, 1, 1)
+    assert complete_period("year", TODAY, fiscal_start_month=0).start == date(2025, 1, 1)

@@ -145,7 +145,8 @@ def complete_period(period: str, today: date, lag_days: int = DEFAULT_LAG_DAYS,
         start = (end - timedelta(days=1)).replace(day=1)
         previous_start = (start - timedelta(days=1)).replace(day=1)
         return PeriodWindow(period, start, end, previous_start, start, lag)
-    month = fiscal_start_month if 1 <= int(fiscal_start_month or 1) <= 12 else 1
+    raw = int(fiscal_start_month or 1)
+    month = raw if 1 <= raw <= 12 else 1
     # the fiscal year containing the anchor starts on the most recent 1st of `month`
     year_start = date(anchor.year, month, 1)
     if year_start > anchor:

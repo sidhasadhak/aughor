@@ -352,18 +352,20 @@ def findings_in_window(domain_data: dict, window: PeriodWindow) -> dict:
 # ── running it ─────────────────────────────────────────────────────────────────────────────
 
 @contextlib.contextmanager
-def connection_runner(conn_id: str) -> Iterator[tuple[Callable[[str], tuple], str]]:
+def connection_runner(conn_id: str, *, cached: bool = True) -> Iterator[tuple[Callable[[str], tuple], str]]:
     """``(run_sql, dialect)`` over the connection, matcache-first — the same reader the
-    standing brief's metric moves use, so a period query cached by one path serves both."""
+    standing brief's metric moves use, so a period query cached by one path serves both.
+    ``cached=False`` reads the warehouse itself: the send-time re-measurement, which must never
+    be handed back the very numbers the brief was built from."""
     from aughor.db.connection import open_connection_for, result_cache_tenancy
     from aughor.db.matcache import get_cached, put_cache
     db = open_connection_for(conn_id)
 
     def run_sql(sql: str):
         tenancy = result_cache_tenancy()
-        cached = get_cached(conn_id, sql, tenancy=tenancy)
-        if cached is not None:
-            return cached.columns, cached.rows, None
+        hit = get_cached(conn_id, sql, tenancy=tenancy) if cached else None
+        if hit is not None:
+            return hit.columns, hit.rows, None
         res = db.execute("__brief_period__", sql)
         err = getattr(res, "error", None)
         if not err:
@@ -488,7 +490,7 @@ def fresh_measurement(conn_id: str, brief: dict, *,
     block = brief.get("period") or {}
     values: list[float] = []
     try:
-        with (runner or (lambda: connection_runner(conn_id)))() as (run_sql, _dialect):
+        with (runner or (lambda: connection_runner(conn_id, cached=False)))() as (run_sql, _dialect):
             for m in block.get("measured") or []:
                 _c, rows, error = run_sql(m["sql"])
                 if error:

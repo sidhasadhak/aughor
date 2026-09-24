@@ -37,6 +37,12 @@ describe("AnswerRecheck", () => {
     expect(screen.getByText(/cannot say whether these are late rows or a restatement/)).toBeTruthy();
   });
 
+  it("says so when rows the answer gave are no longer returned, with no cause to place", () => {
+    render(<AnswerRecheck recheck={entry({ changes: [], changed: 0, missing_rows: 2, missing: [{ day: "2026-09-15" }] })} />);
+    expect(screen.getByText(/2 rows this answer gave are no longer returned/).textContent).toContain("2026-09-15");
+    expect(screen.queryByText(/Late rows/)).toBeNull();
+  });
+
   it("renders nothing for an answer that did not change", () => {
     const { container } = render(<AnswerRecheck recheck={entry({ status: "unchanged", changes: [] })} />);
     expect(container.innerHTML).toBe("");

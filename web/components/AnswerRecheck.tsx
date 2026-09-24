@@ -25,8 +25,10 @@ function cause(r: Recheck): string {
 }
 
 export function AnswerRecheck({ recheck }: { recheck: Recheck }) {
-  if (recheck.status !== "changed" || !recheck.changes?.length) return null;
+  const gone = recheck.missing_rows ?? 0;
+  if (recheck.status !== "changed" || (!recheck.changes?.length && !gone)) return null;
   const more = (recheck.changed ?? recheck.changes.length) - Math.min(SHOWN, recheck.changes.length);
+  const firstGone = Object.values(recheck.missing?.[0] ?? {}).filter((v) => v !== null && v !== "").join(", ");
   return (
     <div data-testid="answer-recheck" className="aug-fs-sm"
       style={{ border: "1px solid var(--amb2)", background: "var(--amb1)", borderRadius: "var(--r2)",
@@ -37,12 +39,19 @@ export function AnswerRecheck({ recheck }: { recheck: Recheck }) {
       <ul style={{ margin: 0, paddingLeft: 16 }}>
         {recheck.changes.slice(0, SHOWN).map((c, i) => (
           <li key={i}>
-            {what(c)} was {formatMetricValue(c.old)}, now {formatMetricValue(c.new)} ({formatVariance(c.rel)})
+            {what(c)} was {formatMetricValue(c.old)}, now {formatMetricValue(c.new)}
+            {c.rel !== null && c.rel !== undefined ? ` (${formatVariance(c.rel)})` : ""}
           </li>
         ))}
       </ul>
       {more > 0 && <div style={{ color: "var(--t2)" }}>{more} more number{more === 1 ? "" : "s"} changed too.</div>}
-      <div style={{ color: "var(--t2)", marginTop: 4 }}>{cause(recheck)}</div>
+      {gone > 0 && (
+        <div style={{ color: "var(--t2)" }}>
+          {gone} row{gone === 1 ? "" : "s"} this answer gave {gone === 1 ? "is" : "are"} no longer returned
+          {firstGone ? ` (such as ${firstGone})` : ""}.
+        </div>
+      )}
+      {recheck.changes.length > 0 && <div style={{ color: "var(--t2)", marginTop: 4 }}>{cause(recheck)}</div>}
     </div>
   );
 }

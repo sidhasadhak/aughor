@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChatMode } from "@/components/ChatPanel";
-import { doorFor } from "@/lib/chatDoors";
+import { doorFor, isPlainSend } from "@/lib/chatDoors";
 
 /** The Agent button's wire value — the backend spelling, named once. */
 const AGENT: ChatMode = "investigate";
@@ -26,5 +26,17 @@ describe("doorFor", () => {
   it("keeps a depth the person chose, and leaves turns already on /ask alone", () => {
     expect(doorFor(AGENT, "quick", true)).toEqual({ mode: "auto", depth: "quick" });
     expect(doorFor("auto", "auto", true)).toEqual({ mode: "auto", depth: "auto" });
+  });
+
+  it("leaves a send that carries more than a question on its own door", () => {
+    expect(doorFor(AGENT, "auto", true, false)).toEqual({ mode: AGENT, depth: "auto" });
+    expect(doorFor("ask", "auto", true, false)).toEqual({ mode: "ask", depth: "auto" });
+  });
+
+  it("reads a send as plain only when it carries nothing but a depth or a schema", () => {
+    expect(isPlainSend({})).toBe(true);
+    expect(isPlainSend({ depth: "quick", schema: "shop", skipCache: false })).toBe(true);
+    expect(isPlainSend({ skipCache: true })).toBe(false);
+    expect(isPlainSend({ seedSql: "SELECT 1" })).toBe(false);
   });
 });

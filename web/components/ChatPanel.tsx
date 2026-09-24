@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { getConnections, getSystemFlags, listUserAgents, recordOverviewDrill, cancelInvestigation, cancelActiveDeepRun, type UserAgent } from "@/lib/api";
-import { doorFor } from "@/lib/chatDoors";
+import { doorFor, isPlainSend } from "@/lib/chatDoors";
 import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
 import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
@@ -842,7 +842,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     const initialMode: "ask" | "investigate" = m === "investigate" || opts.requestMode ? "investigate" : "ask";
     // PENDING item 15 — with `chat.buttons_reach_agent` on, Quick and Agent go through `/ask`
     // (the conversation agent and its ontology tools); off, the body is exactly as before.
-    const door = doorFor(m, opts.depth ?? "auto", buttonsReachAgent);
+    const door = doorFor(m, opts.depth ?? "auto", buttonsReachAgent, isPlainSend(opts));
     void sendMessage(
       { text: question, metadata: { mode: initialMode } },
       { body: {

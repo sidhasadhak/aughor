@@ -526,19 +526,24 @@ def append_recheck(inv_id: str, entry: dict) -> bool:
     dated record beside it."""
     c = _conn()
     ensure_once(c, _ensure_schema)
-    row = c.execute(
-        "SELECT report_json FROM investigations WHERE id = ? AND kind = 'chat'", (inv_id,),
-    ).fetchone()
-    if not row:
+    try:
+        # read-modify-write under a write lock: a manual and a daily re-check of the same answer
+        # must both land, never one overwriting the other
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute(
+            "SELECT report_json FROM investigations WHERE id = ? AND kind = 'chat'", (inv_id,),
+        ).fetchone()
+        if not row:
+            c.rollback()
+            return False
+        report = json.loads(row["report_json"] or "{}")
+        report["rechecks"] = (list(report.get("rechecks") or []) + [entry])[-RECHECKS_KEPT:]
+        c.execute("UPDATE investigations SET report_json = ? WHERE id = ?",
+                  (json.dumps(report, default=str), inv_id))
+        c.commit()
+        return True
+    finally:
         c.close()
-        return False
-    report = json.loads(row["report_json"] or "{}")
-    report["rechecks"] = (list(report.get("rechecks") or []) + [entry])[-RECHECKS_KEPT:]
-    c.execute("UPDATE investigations SET report_json = ? WHERE id = ?",
-              (json.dumps(report, default=str), inv_id))
-    c.commit()
-    c.close()
-    return True
 
 
 def last_activity_by_canvas() -> dict[str, str]:
@@ -742,9 +747,11 @@ def get_session_turns(session_id: str) -> list[dict]:
             d["deep_report"] = None
             # Idea 5 — the latest re-check that found the answer changed. Absent (not null)
             # when there is none, so a turn nobody re-checked projects exactly as before.
-            changed = [r for r in report.get("rechecks") or [] if r.get("status") == "changed"]
-            if changed:
-                d["latest_recheck"] = changed[-1]
+            # the LATEST re-check, and only while it says the answer has changed — a later re-check
+            # that found the numbers back to what was said takes the banner down
+            rechecks = [r for r in report.get("rechecks") or [] if r.get("status") in ("changed", "unchanged")]
+            if rechecks and rechecks[-1].get("status") == "changed":
+                d["latest_recheck"] = rechecks[-1]
         else:
             # FL-6 — report_json IS the deep report here. Quick fields stay
             # present-and-empty so every existing consumer is type-stable.

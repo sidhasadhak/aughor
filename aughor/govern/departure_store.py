@@ -164,20 +164,27 @@ def get_departure(departure_id: str) -> Optional[dict]:
             conn.close()
 
 
-def summary_counts(since: str = "") -> dict:
+def summary_counts(since: str = "", *, org_id: str = "") -> dict:
     """How many departures took each state (optionally since an ISO time), and how many a
-    person still owes — the number the departures screen's badge shows."""
+    person still owes — the number the departures screen's badge shows. ``org_id`` narrows it
+    to one organisation's departures (the company-brain map's box); "" counts every one, as the
+    badge always has."""
     with _LOCK:
         conn = _connect()
         try:
-            where, params = ("WHERE ts >= ?", [since]) if since else ("", [])
+            clauses, params = [], []
+            if since:
+                clauses.append("ts >= ?"); params.append(since)
+            if org_id:
+                clauses.append("org_id = ?"); params.append(org_id)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
             by_state = {r["state"]: r["n"] for r in conn.execute(
                 f"SELECT state, COUNT(*) AS n FROM departures {where} GROUP BY state",
                 params).fetchall()}
+            owed = ("(state = 'held_probation' AND verdict = '') OR (question != '{}' AND answer = '')")
             awaiting = conn.execute(
-                "SELECT COUNT(*) AS n FROM departures WHERE "
-                "(state = 'held_probation' AND verdict = '') "
-                "OR (question != '{}' AND answer = '')").fetchone()["n"]
+                f"SELECT COUNT(*) AS n FROM departures WHERE ({owed})" + (" AND org_id = ?" if org_id else ""),
+                [org_id] if org_id else []).fetchone()["n"]
         finally:
             conn.close()
     return {"by_state": by_state, "total": sum(by_state.values()), "awaiting": awaiting}

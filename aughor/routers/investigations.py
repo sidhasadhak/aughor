@@ -4062,7 +4062,8 @@ async def _stream_investigation(
         try:
             from aughor.agent.framing import resolve_frame
             _frame = await asyncio.to_thread(resolve_frame, question, connection_id, scope_schema or None,
-                                             dialect=getattr(db, "dialect", "") or "duckdb", choose=False)
+                                             dialect=getattr(db, "dialect", "") or "duckdb", choose=False,
+                                             inv_id=inv_id)
             if _frame is not None and _frame.defines:
                 _frame_dump = _frame.model_dump(mode="json")
                 yield _sse("frame", {"frame": _frame_dump, "investigation_id": inv_id})
