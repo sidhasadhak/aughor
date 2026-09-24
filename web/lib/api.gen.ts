@@ -15678,6 +15678,8 @@ export interface components {
             briefings_enabled?: boolean | null;
             /** Ontology Refresh Hours */
             ontology_refresh_hours?: number | null;
+            /** Scope Key */
+            scope_key?: string | null;
         };
         /** _CrossSourceJoinRequest */
         _CrossSourceJoinRequest: {
