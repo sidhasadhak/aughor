@@ -1569,6 +1569,84 @@ def withdraw_ontology_expression(
     return {"removed": True, "entity": entity_id, "expression": name}
 
 
+class _SemiAdditiveSpec(BaseModel):
+    """PENDING item 27 — a property that is a reading at a moment, and the time property its readings are taken over."""
+    over: str
+    note: str = ""
+
+
+@router.put("/ontology/entities/{entity_id}/semiadditive/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_semiadditive(
+    entity_id: str,
+    prop: str,
+    body: _SemiAdditiveSpec,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """PENDING item 27 — declare that a property must not be summed across time: a stock level, a balance, a headcount
+    is a reading AT a moment, taken `over` a time property. Checked against the graph before anything is written — the
+    property must be one the object compiler reads, `over` a date or timestamp of the type's own — and a refusal says
+    why and writes nothing. From then on a sum of it that spans more than one moment is refused, with how to ask."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
+    from aughor.ontology.semiadditive import forget_declared, normalized_semiadditive, semiadditive_problem
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    spec = normalized_semiadditive(body.model_dump())
+    problem = semiadditive_problem(graph, entity, prop, spec)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    fields = dict(existing.fields) if existing is not None else {}
+    fields["semiadditive"] = {**(fields.get("semiadditive") or {}), prop: spec}
+    binding = dict(existing.binding) if existing is not None else {}
+    binding["semiadditive"] = {**(binding.get("semiadditive") or {}),
+                               prop: {"bound": True, "note": "", "over": spec["over"]}}
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields,
+                          source=(existing.source if existing is not None else "human"), binding=binding)
+    save_override(connection_id, effective, ov)
+    _invalidate_schema_cache(connection_id)
+    forget_declared(connection_id)                  # the trust checks read the declaration at once, not in 30s
+    return {**_override_result(ov), "semiadditive": {"property": prop, **spec}}
+
+
+@router.delete("/ontology/entities/{entity_id}/semiadditive/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def withdraw_semiadditive(
+    entity_id: str,
+    prop: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """PENDING item 27 — withdraw a semiadditive declaration. 404 when the type declares none for that property."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override, save_override
+    from aughor.ontology.semiadditive import forget_declared
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    specs = dict((existing.fields.get("semiadditive") if existing else None) or {})
+    if existing is None or prop not in specs:
+        raise HTTPException(status_code=404, detail=f"{entity_id} declares no semiadditive '{prop}'")
+    specs.pop(prop)
+    verdicts = dict(existing.binding.get("semiadditive") or {})
+    verdicts.pop(prop, None)
+    fields = {k: v for k, v in existing.fields.items() if k != "semiadditive"}
+    binding = {k: v for k, v in existing.binding.items() if k != "semiadditive"}
+    if specs:
+        fields["semiadditive"], binding["semiadditive"] = specs, verdicts
+    if fields:
+        save_override(connection_id, effective, existing.model_copy(update={"fields": fields, "binding": binding}))
+    else:
+        delete_override(connection_id, effective, "entity", entity_id)
+    _invalidate_schema_cache(connection_id)
+    forget_declared(connection_id)
+    return {"removed": True, "entity": entity_id, "semiadditive": prop}
+
+
 @router.post("/ontology/entities/{entity_id}/bindings/{name}/restore", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def restore_ontology_binding(
     entity_id: str,

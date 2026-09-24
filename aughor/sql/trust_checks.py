@@ -105,9 +105,15 @@ def _date_only_literal(node) -> Optional[str]:
 
 def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
                      dialect: str = "duckdb",
-                     phase: str = "trust_check") -> list[TrustIssue]:
+                     phase: str = "trust_check",
+                     connection_id: str = "") -> list[TrustIssue]:
     """Return E1 function-semantics caveats for `sql`. Pure AST; never raises. `col_types` keys are
     lowercased "table.col" and/or "col" → type string (optional).
+
+    PENDING item 27 — given the `connection_id`, also a SUM of a reading at a moment the connection's ontology
+    declares (a stock, a balance) that spans more than one of its moments (`semiadditive-sum`,
+    `aughor.sql.semiadditive`), the declarations read through the readings registry. Without one, or with nothing
+    declared, the check reads nothing.
 
     MI-1: a fire is also PERSISTED, from here rather than from the callers. Four sites run
     these checks (the quick path, the deep path, the executor and the trust scope) and a
@@ -217,6 +223,17 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
                       f"'{word}' is quoted, so this compares the STRING \'{word}\' to the number "
                       f"{n_lit.name} — not a column to a value. {fix} A strict engine refuses the "
                       f"query; a coercing one returns zero rows from an always-false predicate.")
+
+    # PENDING item 27 — a SUM of a declared reading at a moment across its moments counts the same quantity once
+    # per reading. Declared on the ontology, read here as plain data through the registry the agent fills.
+    if connection_id:
+        from aughor.kernel.registries.readings import declared_readings_for
+        declared = declared_readings_for(connection_id)
+        if declared:
+            from aughor.sql.semiadditive import semiadditive_misuse
+            hit = semiadditive_misuse(sql, declared, dialect=dialect)
+            if hit is not None:
+                _emit("semiadditive-sum", *hit)
 
     if out:
         from aughor.stats import bump

@@ -33,6 +33,15 @@ class ComputedProperty(BaseModel):
     verification_note: str = ""   # why it failed, when not verified
 
 
+class SemiAdditive(BaseModel):
+    """PENDING item 27 — a property that is a reading AT a moment (a balance, a stock level, a headcount), taken
+    ``over`` a time property: summed within one moment it is a total, summed across moments it counts the same stock
+    once per reading. Declared by a person (PUT /ontology/entities/{id}/semiadditive/{property}); the compiler refuses a
+    SUM of it that spans more than one value of ``over``. O5's word for the kind (`window_measures`): semiadditive."""
+    over: str
+    note: str = ""
+
+
 class ExpressionProperty(BaseModel):
     """2026-09-22 (ON-1b's deferred half) — a typed property a person mapped to a SQL EXPRESSION over the type's own
     row (`days_to_ship = date_diff('day', order_date, shipped_at)`), declared through
@@ -335,6 +344,9 @@ class OntologyEntity(BaseModel):
     #: ON-1b: the bindings the data proposes — another table carrying this type's key, measured one row per
     #: object. Kept apart so a proposal changes no query, no page and no answer until a person binds it.
     proposed_bindings: list[Binding] = Field(default_factory=list)
+    #: PENDING item 27 — the properties that must not be summed across time, each with the time property its
+    #: readings are taken over (see SemiAdditive). Empty on every graph built before, which loads unchanged.
+    semiadditive: dict[str, SemiAdditive] = Field(default_factory=dict)
     #: ON-7 — where this type came from: `table` (the builder minted it from a profiled table — a PROPOSAL the
     #: business keeps, absorbs or renames), `human` (declared through POST /ontology/entities), `model` (an
     #: explorer's proposal, ON-7b). Every graph built before reads `table`, so it loads unchanged.

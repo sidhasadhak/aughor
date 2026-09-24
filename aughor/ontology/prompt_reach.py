@@ -65,6 +65,7 @@ from aughor.ontology.models import (
     Promise,
     QueryTemplate,
     Segment,
+    SemiAdditive,
     SideEffect,
     SubmissionCriterion,
 )
@@ -163,6 +164,9 @@ def fixture_graph() -> OntologyGraph:
             id="days_since_order", label="Days Since Order",
             formula_sql="DATEDIFF('day', created_at, NOW())", unit="days",
             verified=True, verification_note="executed")],
+        # PENDING item 27 — a declared reading at a moment, so the walk reaches its fields. The fixture's one measure
+        # stands in for a stock: reach is a question about text, not about what the number means.
+        semiadditive={"order_value": SemiAdditive(over="created_at", note="read at checkout")},
         implements=["HasLifecycle"],
         exploration_insights=["32% of orders never reach a terminal state"],
     )

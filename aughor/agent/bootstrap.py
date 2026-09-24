@@ -25,8 +25,21 @@ def register_agent_plugins() -> None:
     _register_schema_annotators()
     _register_authz_resolvers()
     _register_value_sample_loader()
+    _register_readings_loader()
     _register_guard_receipt_forwarder()
     _REGISTERED = True
+
+
+def _register_readings_loader() -> None:
+    """PENDING item 27 — the ontology's declared readings at a moment (a stock, a balance), readable by the
+    platform's trust checks through the registry seam (no Platform→Agent import)."""
+    from aughor.kernel.registries.readings import register_readings_loader
+
+    def _load(connection_id: str) -> dict:
+        from aughor.ontology.semiadditive import connection_declared_columns
+        return connection_declared_columns(connection_id)
+
+    register_readings_loader(_load)
 
 
 def _register_guard_receipt_forwarder() -> None:

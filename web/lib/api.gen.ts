@@ -9305,6 +9305,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/entities/{entity_id}/semiadditive/{prop}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Declare Semiadditive
+         * @description PENDING item 27 — declare that a property must not be summed across time: a stock level, a balance, a headcount
+         *     is a reading AT a moment, taken `over` a time property. Checked against the graph before anything is written — the
+         *     property must be one the object compiler reads, `over` a date or timestamp of the type's own — and a refusal says
+         *     why and writes nothing. From then on a sum of it that spans more than one moment is refused, with how to ask.
+         */
+        put: operations["declare_semiadditive_ontology_entities__entity_id__semiadditive__prop__put"];
+        post?: never;
+        /**
+         * Withdraw Semiadditive
+         * @description PENDING item 27 — withdraw a semiadditive declaration. 404 when the type declares none for that property.
+         */
+        delete: operations["withdraw_semiadditive_ontology_entities__entity_id__semiadditive__prop__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/explore": {
         parameters: {
             query?: never;
@@ -16369,6 +16396,19 @@ export interface components {
             predicate?: string | null;
             /** Sql */
             sql: string;
+        };
+        /**
+         * _SemiAdditiveSpec
+         * @description PENDING item 27 — a property that is a reading at a moment, and the time property its readings are taken over.
+         */
+        _SemiAdditiveSpec: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Over */
+            over: string;
         };
         /** _SendFindingBody */
         _SendFindingBody: {
@@ -32432,6 +32472,80 @@ export interface operations {
                 "application/json": components["schemas"]["_SegmentOverride"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_semiadditive_ontology_entities__entity_id__semiadditive__prop__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                prop: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SemiAdditiveSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_semiadditive_ontology_entities__entity_id__semiadditive__prop__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                prop: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

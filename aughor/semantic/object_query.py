@@ -654,6 +654,10 @@ class _Compiler:
         self._far_joined: dict[tuple, str] = {}
         #: PENDING item 27 — the formula properties being resolved right now, so one that reaches itself is refused.
         self._open_formulas: list[tuple[str, str]] = []
+        #: PENDING item 27 — what keeps a sum of a reading at a moment to one moment beyond `by` and `filters`: the
+        #: path a grain or window reads, and the path the measure being compiled is divided by the distinct count of.
+        self.time_path = ""
+        self._per_moment = ""
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
@@ -826,6 +830,9 @@ class _Compiler:
         object's key. The join is taken only for a binding measured one row per object, so it can neither multiply
         nor drop an object; any other binding is a refusal naming why. ON-5 — a TIMESERIES binding is joined
         through its latest-row reduction, which is one row per object again."""
+        frame = (binding.frames or {}).get(p.name)
+        if frame is not None:
+            self.frame_check(entity, binding, p.name, frame)
         problem = binding_problem(entity, binding)
         if problem:
             raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which the compiler "
@@ -996,6 +1003,8 @@ class _Compiler:
                              + (" (its where applied to the readings)" if cond else ""))
             return out
         p = self.readings_property(binding, rest, t.path)
+        if t.agg == "sum":
+            self.readings_semiadditive_check(scope, binding, p.name, t.where, label)
         _check_aggregate(t.agg, p, t.path, self.caveats)
         value = f"{r.inner_alias}.{quote_ident(column_of(binding, p.name))}"
         if t.agg in ("sum", "avg") and _is_bool(p):
@@ -1005,6 +1014,29 @@ class _Compiler:
                          f"{scope.entity.id}, rolled up" + (" (a ratio of sums)" if t.agg == "avg" else "")
                          + (" — its where applied to the readings" if cond else ""))
         return out
+
+    def readings_semiadditive_check(self, scope: _Scope, binding: Binding, name: str, where: list[ObjectFilter],
+                                    label: str) -> None:
+        """PENDING item 27 — a SUM over the READINGS of a reading at a moment (the history of a balance) adds it across
+        moments: refused unless the measure's own where keeps one moment of the readings — their time column, or the
+        declaration's `over`, `=` one value."""
+        from aughor.ontology.semiadditive import declared_reading, one_value
+        reading = declared_reading(self.g, scope.entity, name)
+        if reading is None:
+            return
+        clock_col = (binding.time_column or "").lower()
+        clock = {clock_col, reading.decl.over.lower()} | {
+            k.lower() for k in binding.properties if column_of(binding, k).lower() == clock_col}
+        if any(one_value(f) and f.path.strip().lower() in clock for f in where):
+            self.plan.append(f"{label}: {reading.owner.id}.{reading.prop} is a reading at a moment — its readings of "
+                             f"{binding.name} summed within one {binding.time_column} (the measure's where)")
+            return
+        raise ObjectQueryRefused(
+            f"{label}: {reading.said(scope.entity, name)} a reading at a moment, taken over {reading.decl.over}"
+            f"{reading.why()} — the readings of {binding.name} are many moments per {scope.entity.id} over "
+            f"{binding.time_column}, so their sum counts the same quantity once per reading. Keep the measure's where "
+            f"to one {binding.time_column}, take the readings' avg, min or max, or read {name} itself — its latest "
+            "reading")
 
     def note_readings(self, entity: OntologyEntity, binding: Binding, treatment: str, line: str) -> None:
         key = (entity.id, binding.name, treatment)
@@ -1495,6 +1527,7 @@ class _Compiler:
             raise ObjectQueryRefused(f"metric '{m.id}' is defined on {m.entity or ', '.join(m.tables)}, not "
                                      f"{scope.entity.id} — anchor the query on its object type", mine)
         formula = _qualify(m.formula_sql, scope.alias, self.dialect, what=f"metric {m.id}", expression=True)
+        self.semiadditive_formula_check(scope, m.formula_sql, f"metric {m.id}")
         # ON-9 — a verified rule on this type that scopes the metric restricts every aggregate its formula holds
         scoping = [r for _, r in sorted((self.g.rules or {}).items())
                    if r.verified is True and r.entity == scope.entity.id and m.id in (r.scopes or [])]
@@ -1585,8 +1618,121 @@ class _Compiler:
             return self.many_measure(scope, h, ".".join(segs[i + 1:]), t, label)
         raise ObjectQueryRefused(f"{label}: measure path '{t.path}' did not resolve")
 
+    def semiadditive_check(self, scope: _Scope, entity: OntologyEntity, name: str, hops: list, label: str,
+                           where: Optional[list[ObjectFilter]] = None) -> None:
+        """PENDING item 27 — a SUM of a reading at a moment (a balance, a stock, a headcount — declared so, or a formula
+        that reads one) is refused unless the query keeps it to ONE moment (`one_moment`) — and only on the type that
+        declares it, never through a link, where the rows summed are readings from many moments. Summed across
+        moments, the same quantity is counted once per reading."""
+        from aughor.ontology.semiadditive import declared_reading
+        reading = declared_reading(self.g, entity, name)
+        if reading is None:
+            return
+        decl, owner = reading.decl, reading.owner
+        if hops or reading.hops or scope is not self.top:
+            raise ObjectQueryRefused(
+                f"{label}: {reading.said(entity, name)} a reading at a moment, taken over {decl.over}{reading.why()} — "
+                f"a sum of it through a link adds readings from many moments. Anchor the query on {owner.id} "
+                f"(object_type '{owner.api_name}') and group by {decl.over}, or take its avg, min or max")
+        latest = property_binding(owner, reading.prop)
+        if latest is not None and latest.kind == "timeseries":
+            # ON-5 reads a timeseries property as each object's LATEST reading — one moment per object already; it
+            # is the readings behind it (`readings_semiadditive_check`) and a frame over them that span moments.
+            self.plan.append(f"{label}: {owner.id}.{reading.prop} is a reading at a moment — each {owner.id}'s "
+                             f"latest reading of {latest.name}, one per {owner.id}")
+            return
+        how = self.one_moment(decl.over, where or [])
+        if not how:
+            raise ObjectQueryRefused(
+                f"{label}: {reading.said(entity, name)} a reading at a moment, taken over {decl.over}{reading.why()} — "
+                f"summed across {decl.over} it counts the same quantity once per reading. Group by {decl.over}, filter "
+                f"to one {decl.over}, divide by the count of distinct {decl.over}, or take its avg, min or max")
+        self.plan.append(f"{label}: {owner.id}.{reading.prop} is a reading at a moment over {decl.over} — summed "
+                         f"within one {decl.over} ({how})")
+
+    def one_moment(self, over: str, where: list[ObjectFilter]) -> str:
+        """How the query keeps a sum at the anchor to one moment of ``over`` — "" when it does not. Grouped by ``over``
+        or by the anchor's key measured unique (one row per group); filtered — the query, or the measure's own
+        `where` — to one value of either; a day or hour grain on ``over`` when it is a DATE; or the measure divided by
+        the count of distinct ``over`` (an average per moment)."""
+        top = self.top.entity
+        want = over.strip().lower()
+        b = top.backing
+        key = self.object_key(top).lower() if (b.verified if b is not None else top.grain_verified) is True else ""
+
+        def names(path: str) -> str:
+            path = (path or "").strip()
+            if not path or "." in path:
+                return ""
+            p = find_property(top, path)
+            return (p.name if p is not None else path).lower()
+
+        for path in self.q.by:
+            if names(path) == want:
+                return f"grouped by {over}"
+            if key and names(path) == key:
+                return f"grouped by {top.id}'s key {key}"
+        from aughor.ontology.semiadditive import one_value
+        for f in [*self.q.filters, *where]:
+            if one_value(f) and names(f.path) == want:
+                return f"filtered to one {over}"
+            if one_value(f) and key and names(f.path) == key:
+                return f"filtered to one {top.id}"
+        if self.q.grain in ("day", "hour") and names(self.time_path) == want:
+            p = find_property(top, over)
+            dtype = ((p.data_type if p is not None else "") or "").upper()
+            if "DATE" in dtype and "TIME" not in dtype:
+                return f"a {self.q.grain} grain on the date {over}"
+        if self._per_moment and names(self._per_moment) == want:
+            return f"divided by the count of distinct {over} — an average per {over}"
+        return ""
+
+    def semiadditive_formula_check(self, scope: _Scope, formula: str, label: str) -> None:
+        """A metric whose formula SUMs a reading at a moment is held to the same law as a sum measure — except the one
+        shape that is itself an average per moment, `SUM(x) / COUNT(DISTINCT <over>)`."""
+        if not scope.entity.semiadditive:
+            return
+        import sqlglot
+        from sqlglot import exp
+
+        from aughor.ontology.semiadditive import declared_reading
+        from aughor.sql.semiadditive import per_moment
+        try:
+            node = sqlglot.parse_one(f"SELECT {formula} FROM _t", read=self.dialect)
+        except Exception:  # noqa: BLE001 — `_qualify` already refused what cannot parse
+            return
+        for total in node.find_all(exp.Sum):
+            for column in total.find_all(exp.Column):
+                reading = declared_reading(self.g, scope.entity, column.name)
+                if reading is not None and per_moment(total, reading.decl.over.lower(), exp):
+                    self.plan.append(f"{label}: SUM({column.name}) / COUNT(DISTINCT {reading.decl.over}) — an "
+                                     f"average per {reading.decl.over} of a reading at a moment")
+                    continue
+                self.semiadditive_check(scope, scope.entity, column.name, [], label)
+
+    def frame_check(self, entity: OntologyEntity, binding: Binding, name: str, frame) -> None:
+        """PENDING item 27 — a frame that SUMS the readings of a reading at a moment adds it across moments, whatever
+        reads the frame: refused, naming the frame and the declaration. A frame over the current reading only, or
+        one that reads a reading back (`offset`), is one moment."""
+        if frame.offset or frame.agg != "sum" or frame.range == "current":
+            return
+        from aughor.ontology.semiadditive import declared_reading
+        column = frame.column.lower()
+        supplied = next((k for k in binding.properties
+                         if k not in binding.frames and column_of(binding, k).lower() == column), frame.column)
+        reading = declared_reading(self.g, entity, supplied)
+        if reading is None:
+            return
+        raise ObjectQueryRefused(
+            f"{entity.id}.{name} is {frame.describe()} — and {reading.said(entity, supplied)} a reading at a moment, "
+            f"taken over {reading.decl.over}{reading.why()}, so that sum counts the same quantity once per reading. "
+            f"Declare the frame an avg, min or max")
+
     def prop_measure(self, scope: _Scope, alias: str, p: EntityProperty, hops: list[ObjectLink],
                      t: MeasureTerm, label: str, entity: Optional[OntologyEntity] = None) -> str:
+        if t.agg == "sum":
+            self.semiadditive_check(scope, entity or (hops[-1].target if hops else scope.entity), p.name, hops, label,
+                                    t.where)
         _check_aggregate(t.agg, p, t.path, self.caveats)
         # A 1:1 hop cannot repeat a value (both keys are unique); an N:1 hop repeats the one
         # side once per matching row, and that is what a SUM, AVG or COUNT would count.
@@ -1645,6 +1791,9 @@ class _Compiler:
             self.plan.append(f"{label}: {h.target.id} objects counted per {h.source.id}, then summed")
             return f"COALESCE(SUM({ml.alias}.{v}), 0)"
         col, p, inner_hops = self.column(ml.inner, rest, "measure")
+        if agg == "sum":
+            self.semiadditive_check(ml.inner, inner_hops[-1].target if inner_hops else h.target, p.name,
+                                    [h, *inner_hops], label)
         _check_aggregate(agg, p, f"{h.name}.{rest}", self.caveats)
         if agg in ("sum", "avg", "count") and any(h.label != "1:1" for h in inner_hops):
             raise ObjectQueryRefused(
@@ -1722,6 +1871,7 @@ class _Compiler:
         time_col = ""
         if q.grain or q.start or q.end:
             time_col, time_path = self.time_column(scope)
+            self.time_path = time_path
         if q.grain:
             from aughor.sql.fiscal import fiscal_period_expr
             select.append(f"{fiscal_period_expr(q.grain, time_col, self.fiscal, 'duckdb')} AS period")
@@ -1746,7 +1896,12 @@ class _Compiler:
 
         for m in q.measures:
             label = f"measure {m.name or m.metric or (m.agg + ('(' + m.path + ')' if m.path else ''))}"
-            expr = self.term(scope, m, label)
+            d = m.divide_by
+            self._per_moment = d.path if (d is not None and d.agg == "count_distinct" and not d.where) else ""
+            try:
+                expr = self.term(scope, m, label)
+            finally:
+                self._per_moment = ""
             if m.divide_by is not None:
                 den = self.term(scope, m.divide_by, f"{label} ÷")
                 expr = f"1.0 * ({expr}) / NULLIF({den}, 0)"

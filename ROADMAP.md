@@ -8474,7 +8474,38 @@ does not (the conversion error). Customer C00042's page: `main` showed no formul
 `avg_order_value`. Every guard mutation-checked, 12 of 12 (`tests/unit/test_formulas_are_first_class.py`, and the
 cross-connection case in `tests/unit/test_object_sources.py`).
 
-⏳ **Open:** measures that must not be summed across periods (semi-additive) — the second half of item 27.
+**Measures that must not be summed across periods** (item 27's second half, built the same day). O5 named the kind —
+a semiadditive measure (`aughor/ontology/window_measures.py`) — but nothing could declare one, so `SUM(on_hand)` over
+daily stock snapshots compiled, was written by the SQL writer, and answered three mornings' stock added together.
+
+- **Declared by a person** — `PUT /ontology/entities/{type}/semiadditive/{property}` names the time property its
+  readings are taken `over` (DELETE withdraws). Checked at the door against the graph (a property the compiler reads;
+  `over` the type's own date or timestamp; a moment is not a quantity), the verdict on the override, rebuilt by the
+  overlay without a database like every declaration (`aughor/ontology/semiadditive.py`).
+- **One law in the object compiler** (`_Compiler.semiadditive_check`): a SUM of the reading — as a measure, in a
+  metric's formula, through a link (to-one or to-many), through a formula that reads it (a stock's value is still a
+  stock), over a timeseries binding's readings, or in a frame that sums them — is refused unless the query keeps one
+  moment: grouped by `over` or by the type's measured key; filtered, or the measure's own where, to one value of
+  either; a day grain on a DATE; or divided by the count of distinct `over` (an average per moment). A timeseries
+  property, read as each object's latest reading, sums across objects as before; avg, min and max are untouched.
+- **The SQL writer is told** — one line per declaration in the ENTITY MODEL block, on every chat and deep prompt (the
+  prompt-reach baseline grew by `semiadditive.*.over` and `.note`).
+- **The trust checks flag what is written anyway** — `semiadditive-sum` in `run_trust_checks`, on every final statement
+  (the quick answer, deep analysis, `run_sql`, the validate door, the trust plane). The platform reads the declarations
+  as plain data through a new registry (`aughor/kernel/registries/readings.py`), never by importing the ontology: a
+  caveat on the headline and a receipt, never a rewrite — which moment the question means is the question's to say.
+
+**Receipt.** The samples warehouse with three daily snapshots of 150 products' stock; the stock on the latest morning
+is 35,375 (hand SQL). "Total stock" on `main`: the declaration has no field to hold it; the object door answers
+105,675 (three mornings added); the SQL writer is told nothing; the written `SELECT SUM(on_hand)` is flagged by
+nothing. On the branch: held; refused with how to ask; the prompt carries the rule; the same statement is flagged
+`semiadditive-sum`. Grouped by date, or filtered to one date, both answer the same as before. Every guard
+mutation-checked, 35 of 35 (`tests/unit/test_semiadditive_measures.py`).
+
+**Not built, said.** The last reading of each period (a month-end stock from daily snapshots) is refused with how to
+ask, never computed. The SQL check reads only a SUM over the declaring table itself: a SUM over a CTE or a derived
+table of daily totals is not read — silent, not guessed. A declaration is made through the door; the object-type page
+has no control for it yet.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

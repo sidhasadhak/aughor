@@ -185,6 +185,9 @@ _EDITABLE: dict[str, set[str]] = {
         # override declared). A withdrawal has to be representable: deleting a key only worked for what a person had
         # written, so a found binding could never be unbound from the UI. Restored by POST …/bindings/{name}/restore.
         "withdrawn_bindings",
+        # PENDING item 27 — the properties that must not be summed across time: {property: {over, note}}, checked against
+        # the graph at the door (`ontology.semiadditive.semiadditive_problem`), the verdict recorded on the binding.
+        "semiadditive",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -559,6 +562,12 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
             continue
         if field == "withdrawn_bindings":
             touched.append(field)            # applied after the loop, over whatever the other fields built
+            continue
+        if field == "semiadditive":
+            from aughor.ontology.semiadditive import declared_semiadditive
+            ent.semiadditive = declared_semiadditive(value, ov.binding.get("semiadditive"))
+            if ent.semiadditive:
+                touched.append(field)
             continue
         if field == "expressions":
             from aughor.ontology.expressions import declared_expressions
