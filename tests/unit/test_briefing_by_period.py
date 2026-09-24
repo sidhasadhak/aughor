@@ -319,10 +319,12 @@ def test_a_lag_longer_than_a_day_is_said_in_the_prompt(con, narrator, monkeypatc
     assert "the platform measured a 8-day settling lag" in narrator.calls[-1][1]
 
 
-# ── off by default, byte-identical when off ─────────────────────────────────────────────────
+# ── on by default (the user's call, 2026-09-24), byte-identical when switched off ──────────
 
-def test_off_by_default_and_the_refusal_says_why(monkeypatch):
+def test_on_by_default_and_off_the_refusal_says_why(monkeypatch):
     monkeypatch.delenv(FLAG_ENV, raising=False)
+    assert period_brief.enabled() is True
+    monkeypatch.setenv(FLAG_ENV, "0")
     assert period_brief.enabled() is False
     assert "needs the 'briefing.by_period' flag" in period_brief.refusal("week")
     assert "period must be one of" in period_brief.refusal("fortnight")
@@ -332,7 +334,7 @@ def test_the_route_refuses_a_period_brief_while_off(monkeypatch):
     from fastapi import HTTPException
 
     from aughor.routers import exploration
-    monkeypatch.delenv(FLAG_ENV, raising=False)
+    monkeypatch.setenv(FLAG_ENV, "0")
     with pytest.raises(HTTPException) as off:
         exploration._period_briefing("c1", "week", schema=None, requested_schema=None,
                                      refresh=False, workspace_id=None, by_domain={})
@@ -366,7 +368,7 @@ def test_subscription_periods_and_contents(monkeypatch):
     from fastapi import HTTPException
 
     from aughor.routers.briefs import _validate_period
-    monkeypatch.delenv(FLAG_ENV, raising=False)
+    monkeypatch.setenv(FLAG_ENV, "0")
     _validate_period("day")
     _validate_period("week")
     for period, content in (("month", "alert_summary"), ("week", "briefing")):
@@ -435,7 +437,7 @@ def test_a_scheduled_period_brief_remeasures_at_the_send(con, narrator, flag_on,
 def test_a_briefing_subscription_is_not_sent_while_off(monkeypatch):
     from aughor.briefing import delivery
     from aughor.briefing.models import BriefSubscription
-    monkeypatch.delenv(FLAG_ENV, raising=False)
+    monkeypatch.setenv(FLAG_ENV, "0")
     result: dict = {}
     delivery._deliver_period(BriefSubscription(conn_id="c1", name="n", trigger_id="t",
                                                period="week", content="briefing"), object(), result)
@@ -452,7 +454,7 @@ def test_a_briefing_subscription_can_be_paused_after_the_flag_is_turned_off(monk
     monkeypatch.setattr(triggers, "get_trigger", lambda tid: object())
     sub = save_subscription(BriefSubscription(conn_id="c1", name="m", trigger_id="t", period="month",
                                               content="briefing"))
-    monkeypatch.delenv(FLAG_ENV, raising=False)
+    monkeypatch.setenv(FLAG_ENV, "0")
     paused = update_briefing_subscription(sub.id, _SubscriptionBody(
         conn_id="c1", name="m", trigger_id="t", period="month", content="briefing", enabled=False))
     assert paused["enabled"] is False and paused["content"] == "briefing"

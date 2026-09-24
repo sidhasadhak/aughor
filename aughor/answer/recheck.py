@@ -24,7 +24,8 @@ recall needs no new store and no model:
    through the departure gate like every message that leaves; a web answer shows it on the
    answer. The same change is never told twice.
 
-Off by default (flag ``answers.recheck``). Off → nothing runs, nothing is written, nothing sent.
+On by default since 2026-09-24, the user's call (flag ``answers.recheck``). Switched off → nothing
+runs, nothing is written, nothing sent.
 """
 from __future__ import annotations
 

@@ -85,8 +85,13 @@ def test_specialist_packs_left_the_registry_for_good():
     # ask.converse, default-ON with its off-path alive as the ineligible-turn
     # fallback. JD-3 (2026-09-21, the user's flip on the receipts) entered the second:
     # semops.banded_cascade, default-ON with the sampled cascade alive as its kill
-    # switch. The guard keeps its real claim: nothing ELSE drifts back in.
-    assert set(FLAG_DEFAULT) == {"ask.converse", "semops.banded_cascade"}
+    # switch. The user's call of 2026-09-24 entered four more, each with its off-path
+    # alive as a kill switch: briefing.by_period, answers.recheck,
+    # ontology.explore_on_connect and chat.buttons_reach_agent. The guard keeps its real
+    # claim: nothing ELSE drifts back in.
+    assert set(FLAG_DEFAULT) == {"ask.converse", "semops.banded_cascade",
+                                 "briefing.by_period", "answers.recheck",
+                                 "ontology.explore_on_connect", "chat.buttons_reach_agent"}
 
 
 def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):

@@ -5,9 +5,9 @@
  * door; only Edit, starters, clarify answers and re-runs reach the unified `/ask`, where the
  * conversation agent holds the ontology's tools (look up an object, describe a type). With
  * `chat.buttons_reach_agent` on, both buttons go through `/ask` — Quick at quick depth, Agent at
- * deep depth. Off, a turn is sent exactly as before. The flag is off by default because a
- * conversation turn costs ~20k tokens (ROADMAP §3.22) — the operator's call, taken with PENDING
- * item 4 (routing quick against deep).
+ * deep depth. Off, a turn is sent exactly as before. On by default since 2026-09-24 — the user's
+ * call, taken knowing a conversation turn costs ~20k tokens (ROADMAP §3.22); the operator turns it
+ * off with AUGHOR_CHAT_BUTTONS_REACH_AGENT=0.
  */
 import type { ChatMode } from "@/components/ChatPanel";
 

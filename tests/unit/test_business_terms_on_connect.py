@@ -2,8 +2,8 @@
 
 The declared business terms are what lift answers (§3.15: LuxExperience 5/16 → 16/16), and a new
 connection had none until a person pressed Explore. The birth rite now runs the business explorer
-once per scope, behind `ontology.explore_on_connect` — off by default, and off means the rite is
-exactly what it was.
+once per scope, behind `ontology.explore_on_connect` — on by default since 2026-09-24 (the user's
+call), and switched off the rite is exactly what it was.
 """
 from __future__ import annotations
 
@@ -41,8 +41,14 @@ def explorer(monkeypatch):
     return calls
 
 
-def test_off_by_default_the_rite_is_unchanged(monkeypatch, seen, explorer):
+def test_on_by_default(monkeypatch, seen, explorer):
     monkeypatch.delenv(FLAG_ENV, raising=False)
+    assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "done"
+    assert explorer == [("c1", "shop")]
+
+
+def test_switched_off_the_rite_is_unchanged(monkeypatch, seen, explorer):
+    monkeypatch.setenv(FLAG_ENV, "0")
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "off"
     assert seen == [] and explorer == []                   # no step emitted, no model call
 

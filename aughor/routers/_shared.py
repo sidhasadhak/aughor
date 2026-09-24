@@ -395,10 +395,11 @@ async def run_birth(
 
     # PENDING item 11 — the BUSINESS layer, once the build it reads exists: the explorer that
     # proposes entities, links, processes and rules (`POST /ontology/explore`, one model call),
-    # run for a scope nobody has explored yet. Off by default (`ontology.explore_on_connect`):
-    # its one live quality check fused two groups that should stay apart, and it may run by
-    # default only with none — re-checking that is a paid run, the operator's call. Off → the
-    # rite is exactly what it was, no step emitted.
+    # run for a scope nobody has explored yet. On by default since 2026-09-24
+    # (`ontology.explore_on_connect`), the user's call taken over the explorer's unrun paid
+    # quality re-check — its one live check fused two groups that should stay apart, and every
+    # proposal stays PROPOSED until a person confirms it. Off → the rite is exactly what it
+    # was, no step emitted.
     if intelligence_ok and not canvas_id:
         await _business_terms_step()
 

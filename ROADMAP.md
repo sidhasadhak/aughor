@@ -7725,7 +7725,7 @@ alert and writes it into history; a metric-condition chain queries the warehouse
 60-second heartbeat; the "guarded" flag is not checked; the Hub map lists automations and not
 monitors. No web buttons yet (the MonitorCard's action row and subtitle are the place).
 
-### 3.27 · Briefings by period — the Briefing written for one complete day, week, month or year (from `IDEAS.md` 3; **BUILT 2026-09-23**, PENDING.md item 7, branch `claude/determined-bohr-qh3b1p`; flag `briefing.by_period`, **off**)
+### 3.27 · Briefings by period — the Briefing written for one complete day, week, month or year (from `IDEAS.md` 3; **BUILT 2026-09-23**, PENDING.md item 7, branch `claude/determined-bohr-qh3b1p`; flag `briefing.by_period`, **on by default since 2026-09-24**, the user's call)
 
 > **The fact it answers.** Measured before a line was written: the Briefing took no window at
 > all — `get_briefing` had no period parameter, read every stored finding (each measured inside
@@ -7799,7 +7799,7 @@ sent was headed **"Dayly"** (`period.capitalize() + "ly"`; only "Weekly" was tes
 ⏳ **Open:** no live receipt on a real warehouse — the operator's run: flag on, Briefing → Week on
 theLook, and one scheduled `content: "briefing"` send to a test trigger; the narrator has never
 written a period brief for real (stubbed here), so the period prompt is unmeasured — the flag's
-falsifier (§ `kernel/flags.py` EXPERIMENT) is read against a person comparing the weekly and the
+falsifier (now the flag's `kernel/flags.py` FLAG_DEFAULT entry) is read against a person comparing the weekly and the
 standing brief for the same week. By the departure laws, a scheduled period brief's revenue line
 leaves only where an approved metric defines revenue on the connection (law 2 held the stub's
 "Revenue reached $4,000" in the test, as it should). The coverage slack (week 2 days, month 7,
@@ -7807,7 +7807,9 @@ year 31) is a judgement, not a measurement. The canvas brief has no period. The 
 own metric moves still anchor on a fixed yesterday (§3.23's note) — untouched here.
 **Fixed after an independent review of the branch (2026-09-24):** the send-time re-measurement read the result cache the brief had just filled, so law 1 checked the brief against itself for up to an hour — it now reads the warehouse (`connection_runner(cached=False)`); a briefing subscription saved while the flag was on could not be paused after it was turned off — a period or content is now validated only when it changes; an empty fiscal month crashed the year window — it reads as the calendar year.
 
-### 3.28 · Answers that say when they have changed — a recall, for numbers (from `IDEAS.md` 5; **BUILT 2026-09-23**, PENDING.md item 8, branch `claude/determined-bohr-qh3b1p`; flag `answers.recheck`, **off**)
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_BRIEFING_BY_PERIOD=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the weekly brief answers 200 for *the week 2026-09-14 to 2026-09-20*, then 404 with the refusal quoted above. The narrator's period prompt is still unmeasured on a real reader.
+
+### 3.28 · Answers that say when they have changed — a recall, for numbers (from `IDEAS.md` 5; **BUILT 2026-09-23**, PENDING.md item 8, branch `claude/determined-bohr-qh3b1p`; flag `answers.recheck`, **on by default since 2026-09-24**, the user's call)
 
 > **The fact it answers.** Measured before building: nothing re-checked a chat answer, ever.
 > Yet each answer's history row already kept the query that produced it and the rows it
@@ -7868,6 +7870,8 @@ original Slack mention answer is not gated while its correction is (the TypeScri
 by law 2 a KPI word no approved metric defines holds the correction (recorded, not sent). Only
 chat answers are re-checked — a deep report's many queries are not.
 **Fixed after an independent review of the branch (2026-09-24), each with a test:** a query that reads the clock ("yesterday", "this month so far") is no longer re-checked — re-run tomorrow it measures another window, and the difference would have been told as a correction; a monthly or weekly result is labelled by its bucket's FIRST day, so late rows on the 22nd were called a restatement — the bucket's span is read off its labels and its LAST day decides; a row that vanished read as "unchanged" — it is a change, and said; a move from zero no longer states "+100%"; the daily pass took the newest forty answers forever — the longest-unchecked go first; a later re-check that found the numbers back as said now takes the web banner down; the append is a locked read-modify-write; each re-check releases its connection.
+
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_ANSWERS_RECHECK=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the re-check door reaches the answer lookup (404 *No chat answer with this id* for an unknown id), then 404 with the refusal quoted above. On, the scheduler heartbeat re-runs each chat answer's query from the last 14 days once a day — warehouse queries the operator now pays by default.
 
 ### 3.29 · Object pages say what is known about the object, its segment and its type (PENDING.md item 13, Arc ON leftover; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a read-only panel, every row marked)
 
@@ -7937,7 +7941,7 @@ connection; not yet the Sources → Observers → Judge lanes §3.21 sketches �
 stores, the lanes would be the processes between them.
 **Fixed after an independent review of the branch (2026-09-24):** the departures box counted every organisation's departures — `summary_counts(org_id=)` now scopes it to the caller's.
 
-### 3.31 · A new connection's business terms, proposed when it arrives (PENDING.md item 11, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `ontology.explore_on_connect`, **off** ⚑)
+### 3.31 · A new connection's business terms, proposed when it arrives (PENDING.md item 11, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `ontology.explore_on_connect`, **on by default since 2026-09-24**, the user's call over the ⚑)
 
 > **The fact it answers.** The ontology lifts answers only where a question's business terms are
 > declared (§3.15's re-runs: LuxExperience 5/16 → 16/16, Olist 7/15 → 14/15, plain SQL's misses
@@ -7966,6 +7970,8 @@ no fusions); its one live run fused two groups that should stay apart, and re-ch
 paid model run. A failed explorer call is retried by the next rite, since only a finished run is
 recorded.
 **Fixed after an independent review of the branch (2026-09-24):** the "already explored" skip read the run record under "default" while the explorer files it under the connection's own schema — on such a connection every restart would have paid for the model call again; it now reads the explorer's own scope (`resolve_effective_schema`), and the step runs in a copy of the rite's context so its `birth.step` events carry the job's id.
+
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the birth rite's business-terms step reaches the explorer's preconditions (skipped: *no ontology is built on this scope yet*), then `off` with no step emitted. Taken over the quality gate this section names: the explorer's one live check still stands at two groups fused and the paid re-check has not run, so a new connection's proposals may fuse groups — each stays PROPOSED until a person confirms it. One model call per new scope.
 
 ### 3.32 · Business terms however worded — the misses counted, the paraphrase set grown, near-matches measured (PENDING.md item 12, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; the near-match is NOT wired — ⚑ the user's call)
 
@@ -8000,7 +8006,7 @@ recorded.
 only a person's synonym, or a model, reaches them.
 **Fixed after an independent review of the branch (2026-09-24):** a deep run frames its question twice (the door, then the graph's first node), so each miss was counted twice — the door now passes the run's id and a run is one miss.
 
-### 3.33 · The chat's two main buttons can reach the conversation agent (PENDING.md item 15, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `chat.buttons_reach_agent`, **off** ⚑)
+### 3.33 · The chat's two main buttons can reach the conversation agent (PENDING.md item 15, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `chat.buttons_reach_agent`, **on by default since 2026-09-24**, the user's call over the ⚑)
 
 > **The fact it answers.** Measured: Quick posts `/chat` and the default Agent button posts the
 > deep-analysis door; only Edit, starters, clarify answers and re-runs reach `/ask`, where the
@@ -8018,6 +8024,8 @@ gates and the flag dispositions green.
 (~20k tokens a conversation turn, §3.22); the flag's falsifier reads a week of CP-1's shadow labels
 against the answers each door gave.
 **Fixed after an independent review of the branch (2026-09-24):** the flag rewrote EVERY deep-analysis send, and `/ask` does not forward seed SQL, seed context or a cache skip — "Explore this fact" would have lost its seed and "Run fresh" been served from cache; only a plain question (nothing but a depth or a schema) changes door now.
+
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_CHAT_BUTTONS_REACH_AGENT=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the web reads the flag from that endpoint, so Quick and Agent now go through `/ask` on a fresh clone. Taken knowing a conversation turn runs ~20k tokens; the gain is still unmeasured, and CP-1's shadow labels are what would measure it.
 
 ### 3.34 · Declared business terms survive a fresh clone — shipped under a connection's scope key (PENDING.md item 14, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a new seed layer an install opts into by naming a key)
 

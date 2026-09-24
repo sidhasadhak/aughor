@@ -183,8 +183,10 @@ def test_a_query_that_fails_now_is_recorded_as_unchecked(con, lag):
 
 # ── the daily pass and the doors ────────────────────────────────────────────────────────────
 
-def test_off_by_default_nothing_runs(monkeypatch):
+def test_on_by_default_and_switched_off_nothing_runs(monkeypatch):
     monkeypatch.delenv(FLAG_ENV, raising=False)
+    assert recheck.enabled() is True
+    monkeypatch.setenv(FLAG_ENV, "0")
     assert recheck.enabled() is False
     assert recheck.run_rechecks_daily(force=True) == {"skipped": "off"}
 
@@ -211,7 +213,7 @@ def test_the_recheck_door_is_refused_while_off(monkeypatch):
     from fastapi import HTTPException
 
     from aughor.routers.investigations import recheck_investigation
-    monkeypatch.delenv(FLAG_ENV, raising=False)
+    monkeypatch.setenv(FLAG_ENV, "0")
     with pytest.raises(HTTPException) as off:
         recheck_investigation("x", principal=None)
     assert off.value.status_code == 404 and "answers.recheck" in off.value.detail
