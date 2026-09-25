@@ -3753,6 +3753,38 @@ joins BOTH sides and the rate stays a rate. The test that asserted the old rule 
 evidence — a test changed by measurement, not by convenience.
 **Needs:** nothing.
 
+**SP-15 · The platform explains what is on screen — DRAFTED 2026-09-25 (the user: *"Ideally, Spotlight should be able
+to answer such questions.. Like a RAG on the all the modules, actions, processes with the use of, may be, company
+brain, ontology, agent runs, etc?"*, then *"I like your path.. go ahead"*; decision §6 item 33).** The question that
+named it: a scheduled briefing's Slack post read *held · re-measured at departure: 1,648.08 … not in analysis
+ecb56660*, and the user asked what re-measure was and how to unblock it. The answer existed in
+`govern/departure.py`'s own docstring and nowhere a reader could reach: `platform_help` knows eight topics (overview,
+connect, explore, briefing, analysis, monitors, packs, governance) and names the gate in one clause; `platform_guide`
+(SP-4) walks four how-do-I topics; `askSpotlight` parks a question string and never the thing on screen. The Guide
+limb, three movements:
+- **The corpus knows the platform's laws.** The departure laws (1–8, from the module's own text), the glossary and
+  each active arc's §3 one-paragraph summary join `platform_help`'s corpus as retrievable topics — words the repo
+  already maintains, served, never a second telling; alias resolution first, KI's document lane when aliases stop
+  being enough. `platform_help("re-measure")` answers with law 1's sentence and its remedy.
+- **`explain` — one declared tool over the object on screen.** Takes an object kind and id (`departure`,
+  `automation`, `metric`, `agent`, `analysis`) and returns its live state as a tool result the answer may cite: the
+  departure's guards and reasons, the automation's effects and last run, the metric's status and tests. Claims
+  bound to tool results, the arc's standing law; reads free within scope. The remedy text is the SAME table the
+  departures screen renders (`web/lib/departureRemedies.ts` today); it moves server-side beside the laws with this
+  wave, so both read one source.
+- **The door on the row.** A held departure, a paused automation, a draft metric each carry "Ask Spotlight" that
+  summons the palette WITH the object (kind + id), so the first answer is about this hold, not holds in general —
+  and ends in the offered act: revise the automation's question in place (SP-11), run it now, open the metric.
+**Shipped ahead of the wave, same day (`claude/arc-tj-trajectories`):** the departures screen's "What to do next" —
+per held guard, what it means, what to change, and doors to Automations, the analysis, the Semantic Layer and
+Spotlight (the question carries the guard's own sentence and the departure id, the handoff this wave makes
+structural).
+**Done when:** "what is re-measure and how do I unblock it", asked in the palette from a held row, answers with law 1
+in its own words, THIS departure's ungrounded numerals, the automation by name, and offers the revise; measured like
+SP-M — the share of held rows whose Ask door was used, from the session log, no model.
+**Cost:** a corpus loader over prose that already exists; one declared tool; three doors. No new store. ⚑ nothing
+spends: every read is local.
+
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
 > **Origin.** The user's 2026-09-07 directive, given while wiring Google sign-in:
@@ -10453,6 +10485,19 @@ the browser** · **measure the premise before building.**
     committed beside the census; until it exists bronze is reported and never read.
     Not part of this item: MI-4's gates and recipe (§3.9, unchanged), and a model judge over live traffic (dropped
     2026-09-06; the rewards here are deterministic).
+33. ⭕ **DRAFTED 2026-09-25 (the user, on a held Slack post: *"user needs to know where to troubleshoot such issues..
+    otherwise its a wall that it hits.."*, and on Spotlight: *"I like your path.. go ahead"*) — SP-15, the platform
+    explains what is on screen (§3.11). The wall is closed on the departures screen today (a remedy per held guard,
+    with doors); the wave makes the same knowledge reachable by sentence. Three clauses, OPEN with recommendations.**
+    **(a) Adopt SP-15 as drafted?** *Recommended: yes.* It reuses SP-4's tools and the roster's standing laws; no new
+    store, nothing spends.
+    **(b) The corpus's first shelf.** *Recommended:* the departure laws, the glossary and the §3 one-paragraph
+    summaries of active arcs — prose the repo already maintains — served through `platform_help`'s alias resolution;
+    KI's document lane indexes it only when aliases stop being enough. Not the whole roadmap: ten thousand lines of
+    history is not help.
+    **(c) Which objects `explain` covers first.** *Recommended:* departure, automation, metric — the three a held send
+    points at — then agent and analysis.
+    Not part of this item: a model judge over answers, and cross-user "who changed this" (waits on sign-in, PENDING).
 
 ---
 
