@@ -582,8 +582,9 @@ Excel for light — they are so easy to read and interact with."* Drawn as five 
 Two Skins"** (https://claude.ai/artifact/XvA4nrhaGxTLjSWLs5VCc3 — private until shared): the two token sets side by
 side with their contrast measured, then the Briefing and the Agent Ops overview in each skin. Sources in
 `docs/assets/ui-study-2026-09-25/_method/canvas-skins/`: `gen.py` builds every board from ONE layout and two token
-dicts, so the dark and light screens differ by tokens and four skin rules and by nothing else. Nothing below is
-written into `INSTRUMENT.md` or `tokens-v2.css`; that is wave UI-6 of §5 once the calls in §9.4 are made.
+dicts, so the dark and light screens differ by tokens and four skin rules and by nothing else. The calls in §9.4 were
+taken the same day and the boards redrawn to them; nothing is yet written into `INSTRUMENT.md` or `tokens-v2.css` —
+that lift is wave UI-6 of §5.
 
 ### 9.1 · What each reference actually does for the reader
 
@@ -635,32 +636,36 @@ validated by `lint:palette` and its CVD order is a guarantee, so it moves only t
 
 ### 9.3 · What changes in the layout, and what does not
 
-The region stack of §4.3 holds in both skins — topbar 48 · rail 248 · header 44 · layer tabs 36 · toolbar 36 · body
-· inspector 400 · status — with two regions borrowed from Excel:
+The region stack of §4.3 holds in both skins — topbar 48 · rail 248 · header 44 · context bar or toolbar 36 · layer
+tabs 36 · body · inspector 400 on the Briefing. Two regions were proposed from Excel and **refused the same day**;
+the boards were redrawn without them:
 
-- **The definition bar** (36 px, between the header and the layer tabs; it replaces §4.3's context bar on any page
-  that has a selection): a Name box, *fx*, and one line stating what the selected thing is and where it comes from —
-  a tile's SQL and table, an agent's bundle and connection, a row's source. It is the formula bar for a number: the
-  provenance invariant given a fixed place on every screen.
-- **The status bar** (26 px, bottom): Ready · the scope and its freshness · what is withheld and why ("cost unpriced:
-  7 models without a price", "Explorer stopped short, earlier findings kept") · the selection's figure · the density
-  switch. "Withheld is said" gets a permanent address.
+- ~~The definition bar~~ (a Name box, *fx*, and one line stating what the selected thing is and where it comes from —
+  Excel's formula bar for a number). Refused 2026-09-25: the Briefing keeps §4.3's context bar (explorer status ·
+  period · schedule) and its inspector; on Agent Ops the click on an agent opens that agent's own page and nothing
+  opens inside the overview — no inspector, no selected row, the agent names are links.
+- ~~The status bar~~ (Ready · scope · what is withheld · the selection's figure · density). Refused 2026-09-25 for
+  both screens; "withheld is said" stays where §2 put it — on the card or the line that carries the figure ("all
+  finished runs metered · cost unpriced").
 
-Rows 34 px, controls 28 px (from 26), body 14 px (from 13; §4.5 and UI-6's receipt move with it if decision 1 is
-taken). Four skin rules, and only four: gridlines both ways (light) against hairline rows (dark); layer tabs as sheet
+Rows 34 px, controls 28 px (from 26), body 14 px (from 13; §4.5 and UI-6's receipt move with it). Four skin rules,
+and only four: gridlines both ways (light) against hairline rows (dark); layer tabs as sheet
 tabs (light) against text with a 2 px blue underline (dark); state on a value as Good/Bad/Neutral cell fills (light)
 against bordered pills (dark); the selection as a 2 px green outline plus tint (light) against a blue edge plus navy
 tint (dark). Kept as decided: the verdict-first Briefing; no numbered gutters — Excel's row numbers are not adopted;
 28 px rail rows and the collapsible rail; press scale on the primary only; PX-6; the chart palette.
 
-### 9.4 · Decisions that are the user's
+### 9.4 · Decisions — taken by the user 2026-09-25
 
-1. Body text 13 → 14 px (Databricks 13, Excel ~14.7).
-2. Figures in Inter with tabular numerals; mono only for SQL and ids. Neither reference sets a number in mono.
-3. The light accent: Excel green for selection, active tab and the primary, blue kept for links — or blue for all of
-   it, as in dark. Green then carries two meanings in light (the app's own state and "verified"), which Excel gets
-   away with because one is chrome and the other is a cell fill.
-4. The definition bar as a standing region.
-5. The status bar as a standing region.
-6. Sentence-case 12 px semibold labels in place of 11 px mono caps (neither reference uses mono labels).
-7. Light chrome: Excel grey `#F3F3F3`, or white with rules.
+1. Body text 13 → 14 px (Databricks 13, Excel ~14.7) — **agreed.**
+2. Figures in Inter with tabular numerals; mono only for SQL and ids — **yes.**
+3. The light accent: Excel green for selection, active tab and the primary with blue kept for links, or blue for all
+   of it as in dark — **keep the different colours**: green is light's own state, blue is dark's; a link is blue in
+   both. Green carries two meanings in light (the app's own state and "verified"), which Excel gets away with
+   because one is chrome and the other is a cell fill.
+4. The definition bar as a standing region — **no; removed.** The click on an agent must open that agent's page;
+   nothing appears in the overview.
+5. The status bar as a standing region — **no; removed from both screens.**
+6. Sentence-case 12 px semibold labels in place of 11 px mono caps — delegated; **sentence case** it is (neither
+   reference uses mono labels).
+7. Light chrome: Excel grey `#F3F3F3` — **yes.**

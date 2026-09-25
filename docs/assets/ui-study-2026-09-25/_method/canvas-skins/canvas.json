@@ -1,49 +1,111 @@
 {
   "v": 3,
-  "createdOnFiles": {
-    "v": 1,
-    "at": "2026-09-25T08:54:38Z"
+  "attachments": {},
+  "boards": {
+    "AgentOps-Dark.dc.html": {
+      "h": 900,
+      "title": "4 \u00b7 Agent Ops overview \u2014 dark",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "AgentOps-Light.dc.html": {
+      "h": 900,
+      "title": "5 \u00b7 Agent Ops overview \u2014 light",
+      "w": 1440,
+      "x": 3040,
+      "y": 1020
+    },
+    "Briefing-Dark.dc.html": {
+      "h": 900,
+      "title": "2 \u00b7 Briefing \u2014 dark",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Briefing-Light.dc.html": {
+      "h": 900,
+      "title": "3 \u00b7 Briefing \u2014 light",
+      "w": 1440,
+      "x": 1520,
+      "y": 1020
+    },
+    "Main.dc.html": {
+      "h": 1250,
+      "title": "1 \u00b7 Tokens \u2014 dark after Databricks, light after Excel",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Piece-6qz0.dc.html": {
+      "frameless": true,
+      "h": 19,
+      "title": "Text",
+      "w": 410,
+      "x": 2492,
+      "y": 913
+    },
+    "Piece-jsm0.dc.html": {
+      "frameless": true,
+      "h": 19,
+      "title": "Div (2)",
+      "w": 437,
+      "x": 3437,
+      "y": -44
+    },
+    "Piece-kuib.dc.html": {
+      "frameless": true,
+      "h": 19,
+      "title": "Div",
+      "w": 437,
+      "x": 1902,
+      "y": -80
+    }
   },
-  "title": "Aughor Two Skins",
+  "createdOnFiles": {
+    "at": "2026-09-25T08:54:38Z",
+    "v": 1
+  },
+  "designSystems": [],
   "launch": {
     "view": "canvas"
   },
-  "pages": [],
-  "boards": {
-    "Main.dc.html": {
+  "notes": {
+    "calls": {
+      "fill": "orange",
+      "text": "Next: wave UI-6 of the study writes these tokens into tokens-v2.css and INSTRUMENT.md and moves the body size to 14 px; \u00a74.5 and UI-6's receipt move with it. Not started \u2014 the token files are dirty in another session's branch, so the lift waits for that to land.",
+      "w": 520,
+      "x": 4560,
+      "y": 0
+    },
+    "kept": {
+      "fill": "gray",
+      "text": "Kept from earlier decisions: verdict-first Briefing, no numbered gutters (Excel's row numbers are NOT adopted), 28 px rail rows and a collapsible rail, press scale on the primary only, the chart palette and its CVD order untouched (lint:palette), no LLM-judge evals, no merging of run planes.",
+      "w": 520,
+      "x": 4560,
+      "y": 560
+    },
+    "new": {
+      "fill": "green",
+      "text": "Decided 2026-09-25: body text 14 px \u00b7 figures in Inter with tabular numerals, mono only for SQL and ids \u00b7 light keeps Excel green for its own state (selection, active tab, the primary) and blue for links; dark stays blue \u00b7 NO definition bar \u00b7 NO status bar \u00b7 sentence-case 12 px labels \u00b7 light chrome is Excel grey #F3F3F3. On Agent Ops the click on an agent opens that agent's own page; nothing opens inside the overview.",
+      "w": 680,
+      "x": 760,
+      "y": 1370
+    },
+    "shared": {
+      "fill": "blue",
+      "text": "One layout, two skins. Every screen is the same region stack in both themes \u2014 topbar 48 \u00b7 rail 248 \u00b7 header 44 \u00b7 context bar or toolbar 36 \u00b7 layer tabs 36 \u00b7 body \u00b7 inspector 400 on the Briefing \u2014 and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px.",
+      "w": 700,
       "x": 0,
-      "y": 0,
-      "w": 1440,
-      "h": 1250,
-      "title": "1 \u00b7 Tokens \u2014 dark after Databricks, light after Excel"
+      "y": 1370
     },
-    "Briefing-Dark.dc.html": {
-      "x": 1520,
-      "y": 0,
-      "w": 1440,
-      "h": 900,
-      "title": "2 \u00b7 Briefing \u2014 dark"
-    },
-    "Briefing-Light.dc.html": {
-      "x": 1520,
-      "y": 1020,
-      "w": 1440,
-      "h": 900,
-      "title": "3 \u00b7 Briefing \u2014 light"
-    },
-    "AgentOps-Dark.dc.html": {
-      "x": 3040,
-      "y": 0,
-      "w": 1440,
-      "h": 900,
-      "title": "4 \u00b7 Agent Ops overview \u2014 dark"
-    },
-    "AgentOps-Light.dc.html": {
-      "x": 3040,
-      "y": 1020,
-      "w": 1440,
-      "h": 900,
-      "title": "5 \u00b7 Agent Ops overview \u2014 light"
+    "title": {
+      "kind": "title1",
+      "maxW": 4480,
+      "text": "Aughor \u2014 two skins, one layout: Databricks dark \u00b7 Excel light (mockup, 2026-09-25)",
+      "w": 240,
+      "x": 0,
+      "y": -300
     }
   },
   "order": [
@@ -51,44 +113,11 @@
     "Briefing-Dark.dc.html",
     "Briefing-Light.dc.html",
     "AgentOps-Dark.dc.html",
-    "AgentOps-Light.dc.html"
+    "AgentOps-Light.dc.html",
+    "Piece-kuib.dc.html",
+    "Piece-6qz0.dc.html",
+    "Piece-jsm0.dc.html"
   ],
-  "notes": {
-    "title": {
-      "x": 0,
-      "y": -300,
-      "text": "Aughor \u2014 two skins, one layout: Databricks dark \u00b7 Excel light (mockup, 2026-09-25)",
-      "kind": "title1",
-      "maxW": 4480
-    },
-    "shared": {
-      "x": 0,
-      "y": 1370,
-      "w": 700,
-      "fill": "blue",
-      "text": "One layout, two skins. Every screen is the same region stack in both themes \u2014 topbar 48 \u00b7 rail 248 \u00b7 header 44 \u00b7 definition bar 36 \u00b7 layer tabs 36 \u00b7 toolbar 36 \u00b7 body \u00b7 inspector 400 \u00b7 status bar 26 \u2014 and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px."
-    },
-    "new": {
-      "x": 760,
-      "y": 1370,
-      "w": 680,
-      "fill": "green",
-      "text": "Two regions are new and come from Excel. The DEFINITION BAR (Name box \u00b7 fx \u00b7 one line): whatever is selected \u2014 a tile, a row, an agent \u2014 states what it is and where it comes from, the way a formula bar shows the cell. The STATUS BAR: Ready, the scope, what is withheld (cost unpriced), the selection's figure, and the density switch. Both are the same in dark; only the dress changes."
-    },
-    "calls": {
-      "x": 4560,
-      "y": 0,
-      "w": 520,
-      "fill": "orange",
-      "text": "Your calls, in order of how much they change: (1) body text 13 \u2192 14 px; (2) figures in Inter tabular, mono only for SQL and ids; (3) light accent = Excel green for selection, active tab and the primary, blue stays the link \u2014 or blue for everything like dark; (4) the definition bar as a standing region; (5) the status bar as a standing region; (6) sentence-case labels instead of mono caps; (7) whether chrome in light is Excel grey #F3F3F3 or white with rules."
-    },
-    "kept": {
-      "x": 4560,
-      "y": 560,
-      "w": 520,
-      "fill": "gray",
-      "text": "Kept from earlier decisions: verdict-first Briefing, no numbered gutters (Excel's row numbers are NOT adopted), 28 px rail rows and a collapsible rail, press scale on the primary only, the chart palette and its CVD order untouched (lint:palette), no LLM-judge evals, no merging of run planes."
-    }
-  },
-  "designSystems": []
+  "pages": [],
+  "title": "Aughor Two Skins"
 }

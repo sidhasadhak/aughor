@@ -236,14 +236,6 @@ def header(t, crumb, title, chip, actions):
   {actions}
 </div>'''
 
-def defbar(t, name, formula, meta):
-    return f'''<div style="height:36px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 24px;border-bottom:1px solid {t['b0']};background:{t['page']}">
-  <button aria-label="Selected: {name}" style="width:220px;height:28px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid {t['b2']};border-radius:{t['r']}px;background:{t['inp']};color:{t['t1']};font-family:{SANS};font-size:13px;font-weight:500;text-align:left;cursor:pointer"><span style="flex-grow:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{name}</span>{svg('chev', 12)}</button>
-  <span aria-hidden="true" style="width:24px;text-align:center;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:600;font-size:15px;color:{t['t3']}">fx</span>
-  <div style="flex-grow:1;min-width:0;height:28px;box-sizing:border-box;display:flex;align-items:center;padding:0 10px;border:1px solid {t['b2']};border-radius:{t['r']}px;background:{t['inp']};font-family:{MONO};font-size:12px;color:{t['t1']};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{formula}</div>
-  <span style="font-size:12px;color:{t['t3']};white-space:nowrap">{meta}</span>
-</div>'''
-
 def tabs(t, items, active, counts=None):
     counts = counts or {}
     out = []
@@ -270,18 +262,6 @@ def tabs(t, items, active, counts=None):
 def toolbar(t, left, right):
     return (f'<div style="height:36px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:0 24px;'
             f'border-bottom:1px solid {t["b0"]};background:{t["page"]};font-size:12px;color:{t["t2"]}">{left}<div style="flex-grow:1"></div>{right}</div>')
-
-def statusbar(t, left, right):
-    def join(items):
-        return f'<span aria-hidden="true" style="margin:0 8px;color:{t["t4"]}">|</span>'.join(items)
-    return (f'<div style="height:26px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;padding:0 16px;background:{t["chrome"]};'
-            f'border-top:1px solid {t["b1"]};font-size:12px;color:{t["t2"]};white-space:nowrap">'
-            f'<div style="display:flex;align-items:center">{join(left)}</div><div style="flex-grow:1"></div>'
-            f'<div style="display:flex;align-items:center">{join(right)}</div></div>')
-
-def density(t):
-    return (f'<button style="height:20px;padding:0 6px;border:0;background:transparent;color:{t["t2"]};font-family:{SANS};font-size:12px;'
-            f'display:inline-flex;align-items:center;gap:4px;cursor:pointer">Comfortable {svg("chev", 11)}</button>')
 
 # ── data surfaces ────────────────────────────────────────────────────────────
 def card_style(t, selected=False):
@@ -411,7 +391,7 @@ def briefing(t):
     body_main = f'''
 <div style="flex-grow:1;min-width:0;padding:24px 24px 0;overflow:hidden">
   <div style="max-width:760px;display:flex;flex-direction:column;gap:22px">
-    <div style="font-size:12px;color:{t['t3']}">Intelligence briefing · theLook · written 1 min ago · 4 domains · 13 findings</div>
+    <div style="font-size:12px;color:{t['t3']}">Intelligence briefing · theLook</div>
     <div>
       {label(t, 'Verdict', 'margin-bottom:8px')}
       <h2 style="margin:0 0 8px;font-size:22px;line-height:1.25;font-weight:600;letter-spacing:-0.01em;color:{t['t1']}">Category visibility gap masks revenue risk</h2>
@@ -459,35 +439,40 @@ def briefing(t):
     <div style="display:flex;gap:16px;font-size:13px"><a href="#promote">Promote to Org</a><a href="#watch">Watch it</a><a href="#jeans">Open Jeans</a></div>
   </div>
 </aside>'''
+    ctx_left = (f'<span style="display:inline-flex;align-items:center;gap:8px;font-size:13px;color:{t["t2"]}">{dot(t, t["amb3"])}Explorer stopped short, earlier findings kept'
+                f'<a href="#explore" style="font-size:13px;margin-left:2px">Run again</a></span>'
+                f'<div style="width:1px;height:16px;background:{t["b2"]}"></div>'
+                f'<span style="font-size:12px;font-weight:600;color:{t["t3"]}">Period</span>{seg(t, ["Standing", "Day", "Week", "Month", "Year"], "Standing")}'
+                f'{btn(t, "Schedule…", "ghost")}')
+    ctx_right = f'<span style="font-size:12px;color:{t["t3"]}">written 1 min ago · 4 domains · 13 findings</span>'
     content = f'''
 {topbar(t, 3)}
 <div style="flex-grow:1;display:flex;min-height:0">
   {sidebar(t, 'Briefing')}
   <div style="flex-grow:1;display:flex;flex-direction:column;min-width:0">
     {header(t, 'Intelligence', 'Briefing', chip, actions)}
-    {defbar(t, 'Inventory cost, Jeans', "SUM(inventory_items.cost) WHERE product_category = 'Jeans'  — theLook · commerce.inventory_items", '488,476 rows read · re-checked 09:41')}
+    {toolbar(t, ctx_left, ctx_right)}
     {tabs(t, ['Briefing', 'Profile', 'Evidence', 'Memory', 'Org', 'Brain map'], 'Briefing')}
     <div style="flex-grow:1;display:flex;min-height:0">{body_main}{inspector}</div>
   </div>
-</div>
-{statusbar(t, ['Ready', 'theLook · written 1 min ago', 'Explorer stopped short, earlier findings kept'], ['1 selected · 1,820,497.55 USD', density(t)])}'''
+</div>'''
     if t['excel']:
         notes = [
             (300, 56, 'chrome is Excel grey #F3F3F3 · the page is white · text #1F1F1F'),
-            (300, 100, 'the definition bar: Name box · fx · the selected number\'s definition, like a formula bar'),
+            (300, 100, 'context bar: explorer status · period · schedule — no definition bar, no status bar (decided 2026-09-25)'),
             (760, 136, 'layer tabs drawn as sheet tabs: white active, green underline'),
-            (300, 420, 'selected tile: Excel\'s thick green cell border, green tint'),
-            (300, 600, 'findings as a grid: gridlines both ways, filter chevrons, Good/Neutral cell fills'),
-            (1000, 868, 'status bar: Ready · the selection\'s figure · density'),
+            (300, 400, 'selected tile: Excel\'s thick green cell border, green tint · figures in Inter tabular'),
+            (300, 580, 'findings as a grid: gridlines both ways, filter chevrons, Good/Neutral cell fills'),
+            (1060, 300, 'the inspector stays: why this number, and the grading row'),
         ]
     else:
         notes = [
             (300, 56, 'page #11171C · chrome and cards #1F272D · borders #3F5162 · text #E8ECF0'),
-            (300, 100, 'the definition bar: the selected number\'s definition in one line'),
+            (300, 100, 'context bar: explorer status · period · schedule — no definition bar, no status bar (decided 2026-09-25)'),
             (760, 136, 'Databricks tabs: text with a 2 px blue underline'),
-            (300, 420, 'selected tile: blue border, navy tint · figures in Inter tabular, not mono'),
-            (300, 600, 'findings: hairline rows, pills for the check state'),
-            (1000, 868, 'status bar: same region as light, dressed in the dark chrome'),
+            (300, 400, 'selected tile: blue border, navy tint · figures in Inter tabular, not mono'),
+            (300, 580, 'findings: hairline rows, pills for the check state'),
+            (1060, 300, 'the inspector stays: why this number, and the grading row'),
         ]
     return page('Briefing — ' + ('light, after Excel' if t['excel'] else 'dark, after Databricks'), t, 1440, 900, content, notes)
 
@@ -500,17 +485,21 @@ def agentops(t):
             f'<div style="width:220px;height:28px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid {t["b2"]};border-radius:{t["r"]}px;background:{t["inp"]};color:{t["t3"]}">'
             f'{svg("filter", 13)}<input aria-label="Filter agents" placeholder="Filter agents" style="flex-grow:1;min-width:0;border:0;background:transparent;color:{t["t1"]};font-size:13px;outline:none"></div>')
     right = f'<span style="font-size:12px;color:{t["t3"]}">agents only · 5,749 background ticks excluded</span>'
+    def agent(name, blurb):
+        slug = name.lower().replace(' ', '-')
+        return (f'<a href="#agent-{slug}" style="color:{t["link"]};font-weight:500;text-decoration:none;white-space:nowrap">{name}</a>'
+                f'<span style="color:{t["t3"]};margin-left:6px">· {blurb}</span>')
     rows = [
-        ['Explorer ' + muted(t, '· data explorer'), tag(t, 'Idle'), num(t, '1'), num(t, '0'), num(t, '5 h ago'), num(t, '96.1K'), bars(t, [(4, 'none'), (12, 'ok'), (3, 'none'), (6, 'none'), (3, 'none'), (8, 'none'), (3, 'none'), (5, 'none')])],
-        ['Analyst ' + muted(t, '· deep analysis'), tag(t, 'Idle'), num(t, '1'), num(t, '0'), num(t, '15 h ago'), num(t, '59.4K'), bars(t, [(10, 'ok'), (3, 'none'), (3, 'none'), (3, 'none'), (5, 'none'), (3, 'none'), (3, 'none'), (3, 'none')])],
-        ['Responder ' + muted(t, '· quick answers'), tag(t, 'Idle'), muted(t, '—'), muted(t, '—'), muted(t, '—'), muted(t, '—'), muted(t, 'not metered as jobs')],
-        ['The Look Analyst ' + muted(t, '· custom'), tag(t, 'Held', 'warn'), num(t, '2'), num(t, '2', 'red4'), num(t, '14 h ago'), num(t, '21.8K'), bars(t, [(3, 'none'), (12, 'bad'), (11, 'bad'), (3, 'none'), (3, 'none'), (3, 'none'), (3, 'none'), (3, 'none')])],
+        [agent('Explorer', 'data explorer'), tag(t, 'Idle'), num(t, '1'), num(t, '0'), num(t, '5 h ago'), num(t, '96.1K'), bars(t, [(4, 'none'), (12, 'ok'), (3, 'none'), (6, 'none'), (3, 'none'), (8, 'none'), (3, 'none'), (5, 'none')])],
+        [agent('Analyst', 'deep analysis'), tag(t, 'Idle'), num(t, '1'), num(t, '0'), num(t, '15 h ago'), num(t, '59.4K'), bars(t, [(10, 'ok'), (3, 'none'), (3, 'none'), (3, 'none'), (5, 'none'), (3, 'none'), (3, 'none'), (3, 'none')])],
+        [agent('Responder', 'quick answers'), tag(t, 'Idle'), muted(t, '—'), muted(t, '—'), muted(t, '—'), muted(t, '—'), muted(t, 'not metered as jobs')],
+        [agent('The Look Analyst', 'custom'), tag(t, 'Held', 'warn'), num(t, '2'), num(t, '2', 'red4'), num(t, '14 h ago'), num(t, '21.8K'), bars(t, [(3, 'none'), (12, 'bad'), (11, 'bad'), (3, 'none'), (3, 'none'), (3, 'none'), (3, 'none'), (3, 'none')])],
     ]
     runner_rows = [
-        ['Watcher ' + muted(t, '· metric watches'), tag(t, 'Running', 'good', dot=True), num(t, '5,749'), num(t, '0'), num(t, '2 min ago'), muted(t, 'not metered'), bars(t, [(8, 'ok')] * 8)],
+        [agent('Watcher', 'metric watches'), tag(t, 'Running', 'good', dot=True), num(t, '5,749'), num(t, '0'), num(t, '2 min ago'), muted(t, 'not metered'), bars(t, [(8, 'ok')] * 8)],
     ]
-    cols = [('Agent', 'minmax(0, 1fr)', 'left'), ('Status', '104px', 'left'), ('Runs', '64px', 'right'), ('Failures', '84px', 'right'),
-            ('Last run', '96px', 'right'), ('Tokens', '84px', 'right'), ('Activity', '132px', 'left')]
+    cols = [('Agent', 'minmax(0, 1fr)', 'left'), ('Status', '120px', 'left'), ('Runs', '80px', 'right'), ('Failures', '96px', 'right'),
+            ('Last run', '112px', 'right'), ('Tokens', '96px', 'right'), ('Activity', '160px', 'left')]
     body_main = f'''
 <div style="flex-grow:1;min-width:0;padding:24px 24px 0;display:flex;flex-direction:column;gap:20px;overflow:hidden">
   <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:12px">
@@ -521,70 +510,37 @@ def agentops(t):
   </div>
   <div>
     <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px">{label(t, 'Agents')}<span style="font-size:12px;color:{t['t3']}">3 built-in · 1 custom</span></div>
-    {table(t, cols, rows, selected=3, sorted_col=5)}
+    {table(t, cols, rows, sorted_col=5)}
   </div>
   <div>
     <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px">{label(t, 'Runners')}<span style="font-size:12px;color:{t['t3']}">background ticks, never summed into the cards above</span></div>
     {table(t, cols, runner_rows)}
   </div>
 </div>'''
-    inspector = f'''
-<aside aria-label="Selected agent" style="width:400px;flex-shrink:0;box-sizing:border-box;display:flex;flex-direction:column;border-left:1px solid {t['b1']};background:{t['card']}">
-  <div style="height:44px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid {t['b0']}">
-    <span style="font-size:14px;font-weight:600">The Look Analyst</span>{tag(t, 'Held', 'warn')}
-    <div style="flex-grow:1"></div>
-    {btn(t, svg('close', 14), 'icon', aria='Close the inspector')}
-  </div>
-  <div style="padding:16px;display:flex;flex-direction:column;gap:16px;overflow:hidden">
-    <div style="display:flex;gap:8px">{btn(t, svg('play', 13) + 'Run now', 'primary')}{btn(t, svg('pause', 13) + 'Pause')}{btn(t, svg('edit', 13) + 'Edit')}</div>
-    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px">
-      <div style="padding:10px 12px;border:1px solid {t['b1']};border-radius:{t['r']}px;background:{t['page'] if t['excel'] else t['page']}"><div style="font-size:12px;color:{t['t3']}">Runs, 24 h</div><div style="font-size:18px;font-weight:600;{TAB}">2</div></div>
-      <div style="padding:10px 12px;border:1px solid {t['b1']};border-radius:{t['r']}px;background:{t['page']}"><div style="font-size:12px;color:{t['t3']}">Failures</div><div style="font-size:18px;font-weight:600;color:{t['red4']};{TAB}">2</div></div>
-      <div style="padding:10px 12px;border:1px solid {t['b1']};border-radius:{t['r']}px;background:{t['page']}"><div style="font-size:12px;color:{t['t3']}">Tokens</div><div style="font-size:18px;font-weight:600;{TAB}">21.8K</div></div>
-    </div>
-    <div>
-      {label(t, 'Why the runs were held', 'margin-bottom:6px')}
-      <p style="margin:0;font-size:14px;line-height:1.6;color:{t['t1']}">The departure gate held both sends: a figure in the answer had no row behind it. The answers were kept, not delivered.</p>
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">{tag(t, 'Ungrounded numeral', 'warn')}{tag(t, 'Slack · #analytics')}</div>
-    </div>
-    <div>
-      {label(t, 'Last runs', 'margin-bottom:6px')}
-      <div style="border:1px solid {t['b1']};border-radius:{t['r']}px;overflow:hidden">
-        <a href="#run-1" style="display:grid;grid-template-columns:72px minmax(0, 1fr) 64px;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid {t['b0']};font-size:13px;color:{t['t1']};text-decoration:none"><span style="color:{t['t3']};{TAB}">14 h ago</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Which categories drive returns?</span><span style="text-align:right;{TAB}">11.2K</span></a>
-        <a href="#run-2" style="display:grid;grid-template-columns:72px minmax(0, 1fr) 64px;gap:8px;align-items:center;padding:8px 12px;font-size:13px;color:{t['t1']};text-decoration:none"><span style="color:{t['t3']};{TAB}">16 h ago</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Return rate by department</span><span style="text-align:right;{TAB}">10.6K</span></a>
-      </div>
-    </div>
-    <div style="display:flex;gap:16px;font-size:13px"><a href="#runs">All runs</a><a href="#prompt">Prompt and tools</a><a href="#departures">Departures</a></div>
-  </div>
-</aside>'''
     content = f'''
 {topbar(t, 1)}
 <div style="flex-grow:1;display:flex;min-height:0">
   {sidebar(t, 'Agents')}
   <div style="flex-grow:1;display:flex;flex-direction:column;min-width:0">
     {header(t, 'Operate', 'Agents', chip, actions)}
-    {defbar(t, 'The Look Analyst', 'custom agent · theLook · analyst bundle · 2 of 2 runs held by the departure gate in 24 h', 'last run 14 h ago')}
     {tabs(t, ['Overview', 'Roster', 'Attention', 'Activity', 'Automations', 'Hub', 'Departures'], 'Overview', {'Attention': 1})}
     {toolbar(t, left, right)}
-    <div style="flex-grow:1;display:flex;min-height:0">{body_main}{inspector}</div>
+    <div style="flex-grow:1;display:flex;min-height:0">{body_main}</div>
   </div>
-</div>
-{statusbar(t, ['Ready', '24 h · 4 runs · 2 failed · 177.3K tokens', 'cost unpriced: 7 models without a price'], ['1 selected', density(t)])}'''
+</div>'''
     if t['excel']:
         notes = [
-            (300, 100, 'the Name box shows the selected agent; fx shows what it is in one line'),
-            (300, 170, 'the toolbar: Range · Status · Connection · Filter — one row, never beside the tabs'),
-            (300, 300, 'stat cards: white boxes, 24 px figures in tabular Inter, the adverse one in Excel\'s Bad red'),
-            (300, 470, 'the selected row: Excel\'s green outline · Held and Failures as Neutral / Bad cell fills'),
-            (1000, 868, 'status bar says what is withheld: cost unpriced, and why'),
+            (300, 100, 'sheet tabs, then the toolbar under them: Range · Status · Connection · Filter — one row, never beside the tabs'),
+            (300, 290, 'stat cards: white boxes, 24 px figures in tabular Inter, the adverse one in Excel\'s Bad red · "cost unpriced" stays on its card'),
+            (300, 470, 'agent names are links: the click opens that agent\'s own page — nothing opens inside the overview (decided 2026-09-25)'),
+            (300, 640, 'Held and Failures as Neutral / Bad cell fills · filter chevrons in the header row · no status bar, no definition bar'),
         ]
     else:
         notes = [
-            (300, 100, 'the definition bar shows what the selected agent is, in one line'),
-            (300, 170, 'the toolbar: Range · Status · Connection · Filter — one row, never beside the tabs'),
-            (300, 300, 'stat cards on #1F272D with #2F3C47 borders, figures 24 px in tabular Inter'),
-            (300, 470, 'the selected row: navy tint + blue edge · Held and Running as Databricks pills'),
-            (1000, 868, 'status bar says what is withheld: cost unpriced, and why'),
+            (300, 100, 'Databricks tabs, then the toolbar under them: Range · Status · Connection · Filter — one row, never beside the tabs'),
+            (300, 290, 'stat cards on #1F272D with #2F3C47 borders, figures 24 px in tabular Inter · "cost unpriced" stays on its card'),
+            (300, 470, 'agent names are links: the click opens that agent\'s own page — nothing opens inside the overview (decided 2026-09-25)'),
+            (300, 640, 'Held and Running as Databricks pills · no status bar, no definition bar (decided 2026-09-25)'),
         ]
     return page('Agent Ops — ' + ('light, after Excel' if t['excel'] else 'dark, after Databricks'), t, 1440, 900, content, notes)
 
@@ -766,33 +722,46 @@ for name, html in files.items():
         f.write(html)
 
 now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
-index = {
-    'v': 3,
-    'createdOnFiles': {'v': 1, 'at': now},
-    'title': 'Aughor Two Skins',
-    'launch': {'view': 'canvas'},
-    'pages': [],
-    'boards': {
-        'Main.dc.html': {'x': 0, 'y': 0, 'w': 1440, 'h': 1250, 'title': '1 · Tokens — dark after Databricks, light after Excel'},
-        'Briefing-Dark.dc.html': {'x': 1520, 'y': 0, 'w': 1440, 'h': 900, 'title': '2 · Briefing — dark'},
-        'Briefing-Light.dc.html': {'x': 1520, 'y': 1020, 'w': 1440, 'h': 900, 'title': '3 · Briefing — light'},
-        'AgentOps-Dark.dc.html': {'x': 3040, 'y': 0, 'w': 1440, 'h': 900, 'title': '4 · Agent Ops overview — dark'},
-        'AgentOps-Light.dc.html': {'x': 3040, 'y': 1020, 'w': 1440, 'h': 900, 'title': '5 · Agent Ops overview — light'},
-    },
-    'order': ['Main.dc.html', 'Briefing-Dark.dc.html', 'Briefing-Light.dc.html', 'AgentOps-Dark.dc.html', 'AgentOps-Light.dc.html'],
-    'notes': {
-        'title': {'x': 0, 'y': -300, 'text': 'Aughor — two skins, one layout: Databricks dark · Excel light (mockup, 2026-09-25)', 'kind': 'title1', 'maxW': 4480},
-        'shared': {'x': 0, 'y': 1370, 'w': 700, 'fill': 'blue',
-                   'text': 'One layout, two skins. Every screen is the same region stack in both themes — topbar 48 · rail 248 · header 44 · definition bar 36 · layer tabs 36 · toolbar 36 · body · inspector 400 · status bar 26 — and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px.'},
-        'new': {'x': 760, 'y': 1370, 'w': 680, 'fill': 'green',
-                'text': 'Two regions are new and come from Excel. The DEFINITION BAR (Name box · fx · one line): whatever is selected — a tile, a row, an agent — states what it is and where it comes from, the way a formula bar shows the cell. The STATUS BAR: Ready, the scope, what is withheld (cost unpriced), the selection\'s figure, and the density switch. Both are the same in dark; only the dress changes.'},
-        'calls': {'x': 4560, 'y': 0, 'w': 520, 'fill': 'orange',
-                  'text': 'Your calls, in order of how much they change: (1) body text 13 → 14 px; (2) figures in Inter tabular, mono only for SQL and ids; (3) light accent = Excel green for selection, active tab and the primary, blue stays the link — or blue for everything like dark; (4) the definition bar as a standing region; (5) the status bar as a standing region; (6) sentence-case labels instead of mono caps; (7) whether chrome in light is Excel grey #F3F3F3 or white with rules.'},
-        'kept': {'x': 4560, 'y': 560, 'w': 520, 'fill': 'gray',
-                 'text': 'Kept from earlier decisions: verdict-first Briefing, no numbered gutters (Excel\'s row numbers are NOT adopted), 28 px rail rows and a collapsible rail, press scale on the primary only, the chart palette and its CVD order untouched (lint:palette), no LLM-judge evals, no merging of run planes.'},
-    },
-    'designSystems': [],
+BOARDS = {
+    'Main.dc.html': {'x': 0, 'y': 0, 'w': 1440, 'h': 1250, 'title': '1 · Tokens — dark after Databricks, light after Excel'},
+    'Briefing-Dark.dc.html': {'x': 1520, 'y': 0, 'w': 1440, 'h': 900, 'title': '2 · Briefing — dark'},
+    'Briefing-Light.dc.html': {'x': 1520, 'y': 1020, 'w': 1440, 'h': 900, 'title': '3 · Briefing — light'},
+    'AgentOps-Dark.dc.html': {'x': 3040, 'y': 0, 'w': 1440, 'h': 900, 'title': '4 · Agent Ops overview — dark'},
+    'AgentOps-Light.dc.html': {'x': 3040, 'y': 1020, 'w': 1440, 'h': 900, 'title': '5 · Agent Ops overview — light'},
 }
+NOTES = {
+    'title': {'x': 0, 'y': -300, 'text': 'Aughor — two skins, one layout: Databricks dark · Excel light (mockup, 2026-09-25)', 'kind': 'title1', 'maxW': 4480},
+    'shared': {'x': 0, 'y': 1370, 'w': 700, 'fill': 'blue',
+               'text': 'One layout, two skins. Every screen is the same region stack in both themes — topbar 48 · rail 248 · header 44 · context bar or toolbar 36 · layer tabs 36 · body · inspector 400 on the Briefing — and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px.'},
+    'new': {'x': 760, 'y': 1370, 'w': 680, 'fill': 'green',
+            'text': 'Decided 2026-09-25: body text 14 px · figures in Inter with tabular numerals, mono only for SQL and ids · light keeps Excel green for its own state (selection, active tab, the primary) and blue for links; dark stays blue · NO definition bar · NO status bar · sentence-case 12 px labels · light chrome is Excel grey #F3F3F3. On Agent Ops the click on an agent opens that agent\'s own page; nothing opens inside the overview.'},
+    'calls': {'x': 4560, 'y': 0, 'w': 520, 'fill': 'orange',
+              'text': 'Next: wave UI-6 of the study writes these tokens into tokens-v2.css and INSTRUMENT.md and moves the body size to 14 px; §4.5 and UI-6\'s receipt move with it. Not started — the token files are dirty in another session\'s branch, so the lift waits for that to land.'},
+    'kept': {'x': 4560, 'y': 560, 'w': 520, 'fill': 'gray',
+             'text': 'Kept from earlier decisions: verdict-first Briefing, no numbered gutters (Excel\'s row numbers are NOT adopted), 28 px rail rows and a collapsible rail, press scale on the primary only, the chart palette and its CVD order untouched (lint:palette), no LLM-judge evals, no merging of run planes.'},
+}
+# Start from the index as it is on the canvas (the viewer edits live), changing only what is mine.
+base_path = os.path.join(ROOT, 'canvas.read.json')
+if os.path.exists(base_path):
+    index = json.load(open(base_path))
+    for name, frame in BOARDS.items():
+        entry = index['boards'].get(name, {})
+        entry.update({k: v for k, v in frame.items() if k not in entry})  # keep the viewer's frame if they moved it
+        entry['title'] = frame['title']
+        index['boards'][name] = entry
+    for name in BOARDS:
+        if name not in index['order']:
+            index['order'].append(name)
+    index.setdefault('notes', {})
+    for nid, note in NOTES.items():
+        existing = index['notes'].get(nid, {})
+        existing.update({k: v for k, v in note.items() if k not in existing or k == 'text'})
+        index['notes'][nid] = existing
+else:
+    index = {
+        'v': 3, 'createdOnFiles': {'v': 1, 'at': now}, 'title': 'Aughor Two Skins', 'launch': {'view': 'canvas'}, 'pages': [],
+        'boards': BOARDS, 'order': list(BOARDS), 'notes': NOTES, 'designSystems': [],
+    }
 with open(os.path.join(OUT, 'canvas.json'), 'w') as f:
     json.dump(index, f, indent=2)
 
