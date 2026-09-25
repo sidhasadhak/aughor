@@ -578,12 +578,14 @@ holding, and the overlay kit. Each board carries an "annotate" tweak that hides 
 ## 9 · Theme direction — Databricks for dark, Excel for light (proposed 2026-09-25, awaiting the user's opinion)
 
 The ask that followed the study: *"tokens, colours, design layout to be more like Databricks for dark and more like
-Excel for light — they are so easy to read and interact with."* Drawn as seven artboards on the Design canvas **"Aughor
+Excel for light — they are so easy to read and interact with."* Drawn as eleven artboards on the Design canvas **"Aughor
 Two Skins"** (https://claude.ai/artifact/XvA4nrhaGxTLjSWLs5VCc3 — private until shared): the two token sets side by
 side with their contrast measured, then the Briefing and the Agent Ops overview in each skin, and — added the same day at the user's ask — the agent's
-own page that the click on an agent opens (boards 6–7), drawn from the agent model as it is in code
-(`aughor/custom_agents/models.py`): purpose, instructions, connection and schema scope, bound documents, packs, tool
-grants that only ever propose, the golden-suite pass chip, revisions. Sources in
+own page that the click on an agent opens — its Overview (boards 6–7), its Runs tab (8–9: a 30-day run chart, Range ·
+Status · Trigger · Filter, the ledger with a link per run) and its Setup tab (10–11: the Form template, one field per
+field of the agent model, revisions beside it) — drawn from `aughor/custom_agents/models.py`: purpose, instructions,
+connection and schema scope, bound documents, packs, tool grants that only ever propose, the golden-suite pass chip,
+revisions. In Play the tabs move between the three and the breadcrumb returns to Agents. Sources in
 `docs/assets/ui-study-2026-09-25/_method/canvas-skins/`: `gen.py` builds every board from ONE layout and two token
 dicts, so the dark and light screens differ by tokens and four skin rules and by nothing else. The calls in §9.4 were
 taken the same day and the boards redrawn to them; nothing is yet written into `INSTRUMENT.md` or `tokens-v2.css` —

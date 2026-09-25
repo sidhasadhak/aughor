@@ -236,24 +236,29 @@ def header(t, crumb, title, chip, actions):
   {actions}
 </div>'''
 
-def tabs(t, items, active, counts=None, warn=()):
+def tabs(t, items, active, counts=None, warn=(), hrefs=None):
     counts = counts or {}
+    hrefs = hrefs or {}
     out = []
     for it in items:
         on = it == active
         c = counts.get(it)
         cc = t['amb4'] if it in warn else t['t3']
         cnt = f'<span style="margin-left:6px;font-size:12px;font-weight:600;color:{cc}">{c}</span>' if c else ''
+        href = hrefs.get(it)
+        open_tag = f'<a href="{href}" role="tab"' if href else '<button role="tab"'
+        close_tag = '</a>' if href else '</button>'
+        base = 'display:inline-flex;align-items:center;box-sizing:border-box;text-decoration:none;'
         if t['excel']:
             st = (f"background:{t['page']};color:{t['accentText']};font-weight:600;box-shadow:inset 0 -2px 0 {t['accent']};" if on
                   else f"background:transparent;color:{t['t2']};font-weight:400;")
-            out.append(f'<button role="tab" aria-selected="{"true" if on else "false"}" style="height:36px;padding:0 16px;border:0;border-right:1px solid {t["b1"]};'
-                       f'font-family:{SANS};font-size:13px;cursor:pointer;{st}">{it}{cnt}</button>')
+            out.append(f'{open_tag} aria-selected="{"true" if on else "false"}" style="{base}height:36px;padding:0 16px;border:0;border-right:1px solid {t["b1"]};'
+                       f'font-family:{SANS};font-size:13px;cursor:pointer;{st}">{it}{cnt}{close_tag}')
         else:
             st = (f"color:{t['t1']};font-weight:600;box-shadow:inset 0 -2px 0 {t['accent']};" if on
                   else f"color:{t['t2']};font-weight:400;")
-            out.append(f'<button role="tab" aria-selected="{"true" if on else "false"}" style="height:36px;padding:0 2px;border:0;background:transparent;'
-                       f'font-family:{SANS};font-size:13px;cursor:pointer;{st}">{it}{cnt}</button>')
+            out.append(f'{open_tag} aria-selected="{"true" if on else "false"}" style="{base}height:36px;padding:0 2px;border:0;background:transparent;'
+                       f'font-family:{SANS};font-size:13px;cursor:pointer;{st}">{it}{cnt}{close_tag}')
     if t['excel']:
         return (f'<div role="tablist" style="height:36px;flex-shrink:0;box-sizing:border-box;display:flex;padding:0 24px;background:{t["chrome"]};'
                 f'border-bottom:1px solid {t["b1"]}">{"".join(out)}</div>')
@@ -547,12 +552,28 @@ def agentops(t):
     return page('Agent Ops — ' + ('light, after Excel' if t['excel'] else 'dark, after Databricks'), t, 1440, 900, content, notes)
 
 # ── the agent's own page ─────────────────────────────────────────────────────
-def agentpage(t):
-    ops_board = 'AgentOps-Light.dc.html' if t['excel'] else 'AgentOps-Dark.dc.html'
-    crumb = f'Operate / <a href="{ops_board}" style="color:{t["link"]};text-decoration:none">Agents</a>'
+def agent_shell(t, active, body_html, toolbar_html=''):
+    """Topbar, rail, the agent's header and its tabs around one tab's body. The tabs link
+    between the drawn boards so Play moves Overview ↔ Runs ↔ Setup."""
+    skin = 'Light' if t['excel'] else 'Dark'
+    crumb = f'Operate / <a href="AgentOps-{skin}.dc.html" style="color:{t["link"]};text-decoration:none">Agents</a>'
     chips = f'<div style="display:flex;gap:6px;align-items:center">{tag(t, "Custom agent")}{tag(t, "Held: 2", "warn", dot=True)}{tag(t, "7 of 8 goldens pass", "good")}</div>'
-    actions = (btn(t, svg('play', 13) + 'Run now', 'primary') + btn(t, svg('pause', 13) + 'Pause') + btn(t, svg('edit', 13) + 'Edit')
+    actions = (btn(t, svg('play', 13) + 'Run now', 'primary') + btn(t, svg('pause', 13) + 'Pause')
                + btn(t, svg('more', 14), 'icon', aria='More actions'))
+    hrefs = {'Overview': f'Agent-{skin}.dc.html', 'Runs': f'Agent-Runs-{skin}.dc.html', 'Setup': f'Agent-Setup-{skin}.dc.html'}
+    return f'''
+{topbar(t, 1)}
+<div style="flex-grow:1;display:flex;min-height:0">
+  {sidebar(t, 'Agents')}
+  <div style="flex-grow:1;display:flex;flex-direction:column;min-width:0">
+    {header(t, crumb, 'The Look Analyst', chips, actions)}
+    {tabs(t, ['Overview', 'Runs', 'Setup', 'Quality', 'Revisions', 'Departures'], active, {'Departures': 2}, warn=('Departures',), hrefs=hrefs)}
+    {toolbar_html}
+    <div style="flex-grow:1;display:flex;min-height:0">{body_html}</div>
+  </div>
+</div>'''
+
+def agentpage(t):
     strip_bg, strip_bd, strip_fg = t['amb1'], t['amb2'], t['amb4']
     strip = (f'<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:{t["r"]}px;border:1px solid {strip_bd};background:{strip_bg};color:{strip_fg}">'
              f'{dot(t, t["amb3"])}<span style="flex-grow:1;font-size:14px;line-height:1.4">2 answers are held by the departure gate: a figure in each had no row behind it. They were kept, not delivered.</span>'
@@ -611,25 +632,176 @@ def agentpage(t):
     </div>
   </div>
 </aside>'''
-    content = f'''
-{topbar(t, 1)}
-<div style="flex-grow:1;display:flex;min-height:0">
-  {sidebar(t, 'Agents')}
-  <div style="flex-grow:1;display:flex;flex-direction:column;min-width:0">
-    {header(t, crumb, 'The Look Analyst', chips, actions)}
-    {tabs(t, ['Overview', 'Runs', 'Setup', 'Quality', 'Revisions', 'Departures'], 'Overview', {'Runs': 5, 'Departures': 2}, warn=('Departures',))}
-    <div style="flex-grow:1;display:flex;min-height:0">{body_main}{rail}</div>
-  </div>
-</div>'''
-    board = '7' if t['excel'] else '6'
+    content = agent_shell(t, 'Overview', body_main + rail)
     notes = [
         (300, 56, 'the breadcrumb is the way back: Operate / Agents / the agent — no Back button; its chips: kind · held · the pass chip'),
-        (300, 100, 'tabs: Overview · Runs · Setup · Quality · Revisions · Departures — counts on Runs and Departures'),
+        (300, 100, 'tabs: Overview · Runs · Setup · Quality · Revisions · Departures — Runs and Setup are drawn (boards 8–11)'),
         (300, 172, 'what needs a person comes first, in amber: held is waiting, not failed — the answers were kept'),
         (300, 302, 'the agent\'s own figures: runs · held · tokens · goldens (measured against its own reference SQL, never a judge)'),
         (1090, 300, 'the details rail: what it is, what it may PROPOSE (never execute), where it delivers — Setup edits it'),
     ]
     return page('The agent\'s own page — ' + ('light, after Excel' if t['excel'] else 'dark, after Databricks'), t, 1440, 900, content, notes)
+
+# ── the agent's Runs tab ─────────────────────────────────────────────────────
+RUNS_30D = [  # (days ago, clock, question, trigger, status, duration, tokens)
+    (0, '24 Sep 19:12', 'Which categories drive returns?', 'Slack mention', 'Held', '9m 40s', '11.2K'),
+    (0, '24 Sep 17:05', 'Return rate by department', 'Slack mention', 'Held', '10m 07s', '10.6K'),
+    (2, '22 Sep 09:31', 'Top sellers by revenue, last 30 days', 'Slack mention', 'Delivered', '8m 12s', '9.8K'),
+    (3, '21 Sep 14:48', 'Orders by traffic source, August', 'Slack mention', 'Delivered', '7m 55s', '14.1K'),
+    (5, '19 Sep 10:02', 'Inventory cost by category', 'Slack mention', 'Delivered', '11m 03s', '15.7K'),
+    (8, '16 Sep 08:00', 'Weekly returns digest', 'Run now', 'Delivered', '6m 48s', '8.9K'),
+    (11, '13 Sep 16:27', 'Average order value by month', 'Slack mention', 'Failed', '2m 10s', '3.1K'),
+    (12, '12 Sep 11:15', 'Which products are returned most?', 'Slack mention', 'Delivered', '9m 21s', '12.4K'),
+    (15, '9 Sep 15:40', 'Customers by country, top 10', 'Slack mention', 'Delivered', '5m 30s', '7.2K'),
+    (19, '5 Sep 09:58', 'Return rate by category, Q3', 'Slack mention', 'Delivered', '10m 44s', '13.9K'),
+    (24, '31 Aug 08:00', 'Weekly returns digest', 'Run now', 'Delivered', '6m 12s', '8.4K'),
+    (27, '28 Aug 13:22', 'Suits: why so many returns?', 'Slack mention', 'Delivered', '12m 01s', '16.3K'),
+]
+
+def runs_chart(t):
+    by_day = {}
+    for d, *_rest, status, _dur, _tok in RUNS_30D:
+        by_day.setdefault(d, []).append(status)
+    col = {'Delivered': t['grn3'], 'Held': t['amb3'], 'Failed': t['red3']}
+    cols = []
+    for d in range(29, -1, -1):
+        segs = ''.join(f'<span title="{s}" style="width:12px;height:14px;background:{col[s]};border-radius:2px"></span>' for s in by_day.get(d, []))
+        if not segs:
+            segs = f'<span style="width:12px;height:2px;background:{t["b2"]}"></span>'
+        cols.append(f'<div style="display:flex;flex-direction:column-reverse;gap:2px;justify-content:flex-start;height:32px">{segs}</div>')
+    legend = ''.join(f'<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:{t["t2"]}">{dot(t, col[k])}{k}</span>' for k in ('Delivered', 'Held', 'Failed'))
+    return (f'<div style="display:flex;align-items:flex-end;gap:24px">'
+            f'<div><div aria-label="Runs per day, last 30 days" style="display:flex;gap:2px;align-items:flex-end;height:32px">{"".join(cols)}</div>'
+            f'<div style="display:flex;justify-content:space-between;width:418px;margin-top:4px;font-size:11px;color:{t["t3"]}"><span>30 days ago</span><span>today</span></div></div>'
+            f'<div style="display:flex;gap:14px;padding-bottom:18px">{legend}</div></div>')
+
+def agentruns(t):
+    left = (f'<span style="font-size:12px;font-weight:600;color:{t["t3"]}">Range</span>{seg(t, ["24h", "7d", "30d", "90d", "All"], "30d", width=40)}'
+            f'{btn(t, "Status: all " + svg("chev", 12))}{btn(t, "Trigger: any " + svg("chev", 12))}'
+            f'<div style="width:240px;height:28px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid {t["b2"]};border-radius:{t["r"]}px;background:{t["inp"]};color:{t["t3"]}">'
+            f'{svg("filter", 13)}<input aria-label="Filter runs by question" placeholder="Filter by question" style="flex-grow:1;min-width:0;border:0;background:transparent;color:{t["t1"]};font-size:13px;outline:none"></div>')
+    right = f'<span style="font-size:12px;color:{t["t3"]};{TAB}">12 runs · 9 delivered · 2 held · 1 failed · 131.6K tokens · cost unpriced</span>'
+    kind = {'Delivered': 'good', 'Held': 'warn', 'Failed': 'bad'}
+    rows = []
+    for i, (d, clock, question, trigger, status, dur, tok) in enumerate(RUNS_30D):
+        if status == 'Held':
+            to = f'<span style="white-space:nowrap">Slack #analytics{muted(t, " · held")}</span>'
+        elif status == 'Failed':
+            to = muted(t, 'not sent · query failed after 2 repairs')
+        else:
+            to = 'Slack #analytics'
+        rows.append([num(t, clock), f'<a href="#run-{i + 1}" style="color:{t["link"]};text-decoration:none">{question}</a>',
+                     muted(t, trigger), tag(t, status, kind[status]), num(t, dur), num(t, tok), to])
+    cols = [('Started', '128px', 'left'), ('Question', 'minmax(0, 1fr)', 'left'), ('Trigger', '128px', 'left'), ('Status', '112px', 'left'),
+            ('Duration', '96px', 'right'), ('Tokens', '84px', 'right'), ('Delivered to', '236px', 'left')]
+    body = f'''
+<div style="flex-grow:1;min-width:0;padding:20px 24px 0;display:flex;flex-direction:column;gap:16px;overflow:hidden">
+  {runs_chart(t)}
+  {table(t, cols, rows, sorted_col=0)}
+</div>'''
+    content = agent_shell(t, 'Runs', body, toolbar(t, left, right))
+    notes = [
+        (300, 136, 'Runs: a ledger — Range is the one segmented control; Status and Trigger are selects; the count says what is withheld'),
+        (760, 200, 'runs per day, 30 days, coloured by state — a held day is amber, a failed one red'),
+        (300, 300, 'each question is a link: the click opens that run\'s own page with its trace — nothing opens inside the ledger'),
+        (300, 560, 'a failed run says why in its own row: not sent, query failed after 2 repairs'),
+    ]
+    return page('The agent\'s Runs tab — ' + ('light, after Excel' if t['excel'] else 'dark, after Databricks'), t, 1440, 900, content, notes)
+
+# ── the agent's Setup tab ────────────────────────────────────────────────────
+def agentsetup(t):
+    def control(inner, extra=''):
+        return (f'<div style="height:28px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid {t["b2"]};'
+                f'border-radius:{t["r"]}px;background:{t["inp"]};color:{t["t1"]};font-size:13px;{extra}">{inner}</div>')
+    def text(aria, value, extra=''):
+        return control(f'<input aria-label="{aria}" value="{value}" style="flex-grow:1;min-width:0;border:0;background:transparent;color:{t["t1"]};font-size:13px;outline:none">', extra)
+    def select(aria, value, extra=''):
+        return (f'<button aria-label="{aria}: {value}" style="height:28px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid {t["b2"]};'
+                f'border-radius:{t["r"]}px;background:{t["inp"]};color:{t["t1"]};font-family:{SANS};font-size:13px;text-align:left;cursor:pointer;{extra}">'
+                f'<span style="flex-grow:1">{value}</span>{svg("chev", 12)}</button>')
+    def field(name, ctrl, help_text=None):
+        h = f'<div style="font-size:12px;color:{t["t3"]};margin-top:5px;line-height:1.45">{help_text}</div>' if help_text else ''
+        return f'<div style="display:flex;flex-direction:column"><label style="font-size:12px;font-weight:600;color:{t["t2"]};margin-bottom:6px">{name}</label>{ctrl}{h}</div>'
+    def section(title, body_html, blurb=None):
+        b = f'<div style="font-size:13px;color:{t["t3"]};margin-top:2px">{blurb}</div>' if blurb else ''
+        return (f'<section style="display:flex;flex-direction:column;gap:14px;padding:20px 0;border-top:1px solid {t["b0"]}">'
+                f'<div><h2 style="margin:0;font-size:15px;font-weight:600;color:{t["t1"]}">{title}</h2>{b}</div>{body_html}</section>')
+    def chip_x(name):
+        return (f'<span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 4px 0 10px;border-radius:{t["r"]}px;border:1px solid {t["b2"]};'
+                f'background:{t["inp"]};color:{t["t1"]};font-size:13px">{name}<button aria-label="Remove {name}" style="width:20px;height:20px;border:0;'
+                f'border-radius:{t["r"]}px;background:transparent;color:{t["t3"]};display:inline-flex;align-items:center;justify-content:center;cursor:pointer">{svg("close", 11)}</button></span>')
+    def check(idn, name, desc, on):
+        return (f'<label for="{idn}" style="display:grid;grid-template-columns:16px minmax(0, 1fr);gap:10px;align-items:start;cursor:pointer">'
+                f'<input id="{idn}" type="checkbox"{" checked" if on else ""} style="width:14px;height:14px;margin:3px 0 0;accent-color:{t["accent"]}">'
+                f'<span><span style="font-family:{MONO};font-size:12px;color:{t["t1"]}">{name}</span><span style="font-size:13px;color:{t["t2"]};margin-left:8px">{desc}</span></span></label>')
+    two = 'display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:16px'
+    instructions = ('You answer questions about theLook\'s commerce data for the analytics channel. Prefer completed orders, state the period you used, '
+                    'and cite the rows behind every figure. When a figure has no row behind it, say so instead of sending it.')
+    purpose_val = "Answers the analytics channel's questions about theLook's orders and returns."
+    conn_help = "Leave it unbound to answer on the asker's connection."
+    gate_ctrl = control(f'<span style="display:inline-flex;align-items:center;gap:8px">{dot(t, t["grn3"])}On — every send passes the gate</span>',
+                        'background:transparent;color:' + t['t2'])
+    delivery = (f'<div style="{two}">{field("Trigger", select("Trigger", "@mention in Slack"), "No schedule. Add one to make this agent an automation.")}{field("Channel", select("Channel", "#analytics"))}</div>'
+                f'<div style="{two}">{field("Deliver to", select("Deliver to", "Slack #analytics"))}{field("Departure gate", gate_ctrl, "Cannot be turned off here.")}</div>')
+    form = f'''
+<div style="flex-grow:1;min-width:0;padding:8px 24px 0;overflow:hidden">
+  <div style="max-width:760px;display:flex;flex-direction:column">
+    <section style="display:flex;flex-direction:column;gap:14px;padding:16px 0 20px">
+      <div><h2 style="margin:0;font-size:15px;font-weight:600;color:{t['t1']}">Identity</h2></div>
+      <div style="{two}">
+        {field('Name', text('Name', 'The Look Analyst'))}
+        {field('Purpose', text('Purpose', purpose_val), 'One line. A supervisor reads it when choosing which agent to hand a question to.')}
+      </div>
+      {field('Instructions', f'<textarea aria-label="Instructions" rows="5" style="box-sizing:border-box;width:100%;padding:8px 10px;border:1px solid {t["b2"]};border-radius:{t["r"]}px;background:{t["inp"]};color:{t["t1"]};font-family:{SANS};font-size:13px;line-height:1.5;resize:vertical;outline:none">{instructions}</textarea>', 'Read before every answer. Saving writes a new revision; runs in flight finish on the current one.')}
+    </section>
+    {section('Scope', f'<div style="{two}">{field("Connection", select("Connection", "theLook"), conn_help)}{field("Schema scope", select("Schema scope", "commerce"), "All schemas, or one.")}</div>')}
+    {section('Knowledge', field('Documents', f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">{chip_x("Returns policy 2026")}{chip_x("Category map")}{btn(t, svg("plus", 12) + "Add a document", "ghost")}</div>', 'Bound documents are read before every answer.') + field('Packs', f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">{chip_x("Retail")}{btn(t, svg("plus", 12) + "Add a pack", "ghost")}</div>', 'Restricts pack selection to these. A pack still only steers where a confirmed binding exists.'))}
+    {section('What it may propose', f'<div style="display:flex;flex-direction:column;gap:10px">{check("g1", "slack.send", "Send a message to a Slack channel", True)}{check("g2", "jira.create", "Create a Jira issue", True)}{check("g3", "refund.issue", "Issue a refund in Stripe", False)}</div>', 'A grant is permission to propose, never to execute. Every proposal waits in the inbox for a person to accept it.')}
+    {section('Trigger and delivery', delivery)}
+    {section('Ownership', f'<div style="{two}">{field("Workspace", select("Workspace", "Default"))}{field("Owner", text("Owner", "Data team"))}</div>' + f'<label for="enabled" style="display:inline-flex;align-items:center;gap:8px;font-size:13px;color:{t["t1"]};cursor:pointer"><input id="enabled" type="checkbox" checked style="width:14px;height:14px;margin:0;accent-color:{t["accent"]}">Enabled — a disabled agent keeps its history and answers nothing</label>')}
+    <div style="display:flex;align-items:center;gap:8px;padding:16px 0 24px;border-top:1px solid {t['b0']}">
+      {btn(t, 'Save as revision 4', 'primary')}{btn(t, 'Discard changes')}
+      <div style="flex-grow:1"></div>
+      <span style="font-size:12px;color:{t['t3']}">Revision 3 saved 22 Sep 2026 · changed instructions, packs</span>
+    </div>
+  </div>
+</div>'''
+    def rev(n, when, what, current=False):
+        cur = tag(t, 'Current', 'info') if current else ''
+        return (f'<a href="#revision-{n}" style="display:grid;grid-template-columns:72px minmax(0, 1fr) auto;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid {t["b0"]};'
+                f'font-size:13px;color:{t["t1"]};text-decoration:none"><span style="{TAB}">Rev {n}</span><span><span style="color:{t["t3"]}">{when} · </span>{what}</span>{cur}</a>')
+    rail = f'''
+<aside aria-label="Revisions and quality" style="width:360px;flex-shrink:0;box-sizing:border-box;display:flex;flex-direction:column;border-left:1px solid {t['b1']};background:{t['card']}">
+  <div style="height:44px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid {t['b0']}">
+    <span style="font-size:14px;font-weight:600">Revisions</span>
+    <div style="flex-grow:1"></div>
+    <a href="#revisions" style="font-size:13px">All revisions</a>
+  </div>
+  <div style="padding:16px;display:flex;flex-direction:column;gap:16px;overflow:hidden">
+    <div style="border:1px solid {t['b1']};border-radius:{t['r']}px;overflow:hidden">
+      {rev(3, '22 Sep', 'instructions, packs', True)}
+      {rev(2, '18 Sep', 'tool grants')}
+      {rev(1, '14 Sep', 'created from the Analyst template').replace(f'border-bottom:1px solid {t["b0"]};', '')}
+    </div>
+    <p style="margin:0;font-size:13px;line-height:1.55;color:{t['t2']}">Saving writes revision 4 and keeps 3. Runs in flight finish on the revision they started on. Any revision can be restored from this list.</p>
+    <div>
+      {label(t, 'Quality', 'margin-bottom:6px')}
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid {t['b1']};border-radius:{t['r']}px;background:{t['page']}">
+        {tag(t, '7 of 8 pass', 'good')}<span style="font-size:13px;color:{t['t2']};flex-grow:1">8 golden questions with reference SQL · measured 2 d ago on revision 3</span>
+      </div>
+      <div style="font-size:12px;color:{t['t3']};margin-top:6px">A saved revision is re-measured on the next Quality run. <a href="#quality" style="font-size:12px">Open Quality</a></div>
+    </div>
+  </div>
+</aside>'''
+    content = agent_shell(t, 'Setup', form + rail)
+    notes = [
+        (300, 136, 'Setup is the Form template: one column, 760 wide, sections cut by hairlines, labels above controls, help under them'),
+        (300, 420, 'every field is a field of the agent model — name · purpose · instructions · connection · schema scope · documents · packs'),
+        (300, 700, 'grants are permission to PROPOSE, never to execute; the departure gate is shown, not offered as a switch'),
+        (1090, 300, 'the rail: revisions with the current one marked, what saving does, the golden pass chip'),
+        (300, 1090, 'the page scrolls; drawn at its full height'),
+    ]
+    return page('The agent\'s Setup tab — ' + ('light, after Excel' if t['excel'] else 'dark, after Databricks'), t, 1440, 1180, content, notes)
 
 # ── the token board ──────────────────────────────────────────────────────────
 def swatch(t, hexv, name, w=118, h=56, border=None):
@@ -804,6 +976,10 @@ files = {
     'AgentOps-Light.dc.html': agentops(LIGHT),
     'Agent-Dark.dc.html': agentpage(DARK),
     'Agent-Light.dc.html': agentpage(LIGHT),
+    'Agent-Runs-Dark.dc.html': agentruns(DARK),
+    'Agent-Runs-Light.dc.html': agentruns(LIGHT),
+    'Agent-Setup-Dark.dc.html': agentsetup(DARK),
+    'Agent-Setup-Light.dc.html': agentsetup(LIGHT),
 }
 for name, html in files.items():
     check(name, html)
@@ -819,19 +995,23 @@ BOARDS = {
     'AgentOps-Light.dc.html': {'x': 3040, 'y': 1020, 'w': 1440, 'h': 900, 'title': '5 · Agent Ops overview — light', 'is_interactive': True},
     'Agent-Dark.dc.html': {'x': 4560, 'y': 0, 'w': 1440, 'h': 900, 'title': '6 · The agent\'s own page — dark', 'is_interactive': True},
     'Agent-Light.dc.html': {'x': 4560, 'y': 1020, 'w': 1440, 'h': 900, 'title': '7 · The agent\'s own page — light', 'is_interactive': True},
+    'Agent-Runs-Dark.dc.html': {'x': 6080, 'y': 0, 'w': 1440, 'h': 900, 'title': '8 · The agent\'s Runs tab — dark', 'is_interactive': True},
+    'Agent-Runs-Light.dc.html': {'x': 6080, 'y': 1020, 'w': 1440, 'h': 900, 'title': '9 · The agent\'s Runs tab — light', 'is_interactive': True},
+    'Agent-Setup-Dark.dc.html': {'x': 7600, 'y': 0, 'w': 1440, 'h': 1180, 'title': '10 · The agent\'s Setup tab — dark', 'is_interactive': True},
+    'Agent-Setup-Light.dc.html': {'x': 7600, 'y': 1300, 'w': 1440, 'h': 1180, 'title': '11 · The agent\'s Setup tab — light', 'is_interactive': True},
 }
 NOTES = {
-    'title': {'x': 0, 'y': -300, 'text': 'Aughor — two skins, one layout: Databricks dark · Excel light (mockup, 2026-09-25)', 'kind': 'title1', 'maxW': 6000},
+    'title': {'x': 0, 'y': -300, 'text': 'Aughor — two skins, one layout: Databricks dark · Excel light (mockup, 2026-09-25)', 'kind': 'title1', 'maxW': 9040},
     'shared': {'x': 0, 'y': 1370, 'w': 700, 'fill': 'blue',
                'text': 'One layout, two skins. Every screen is the same region stack in both themes — topbar 48 · rail 248 · header 44 · context bar or toolbar 36 · layer tabs 36 · body · inspector 400 on the Briefing, a details rail 360 on the agent\'s page — and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px.'},
     'new': {'x': 760, 'y': 1370, 'w': 680, 'fill': 'green',
             'text': 'Decided 2026-09-25: body text 14 px · figures in Inter with tabular numerals, mono only for SQL and ids · light keeps Excel green for its own state (selection, active tab, the primary) and blue for links; dark stays blue · NO definition bar · NO status bar · sentence-case 12 px labels · light chrome is Excel grey #F3F3F3. On Agent Ops the click on an agent opens that agent\'s own page (boards 6 and 7); nothing opens inside the overview.'},
-    'calls': {'x': 6080, 'y': 0, 'w': 520, 'fill': 'orange',
+    'calls': {'x': 9120, 'y': 0, 'w': 520, 'fill': 'orange',
               'text': 'Next: wave UI-6 of the study writes these tokens into tokens-v2.css and INSTRUMENT.md and moves the body size to 14 px; §4.5 and UI-6\'s receipt move with it. Not started — the token files are dirty in another session\'s branch, so the lift waits for that to land.'},
-    'kept': {'x': 6080, 'y': 560, 'w': 520, 'fill': 'gray',
+    'kept': {'x': 9120, 'y': 560, 'w': 520, 'fill': 'gray',
              'text': 'Kept from earlier decisions: verdict-first Briefing, no numbered gutters (Excel\'s row numbers are NOT adopted), 28 px rail rows and a collapsible rail, press scale on the primary only, the chart palette and its CVD order untouched (lint:palette), no LLM-judge evals, no merging of run planes.'},
-    'agent': {'x': 6080, 'y': 1020, 'w': 520, 'fill': 'teal',
-              'text': 'Boards 6 and 7: the page the click on an agent opens. Drawn from the agent model as it is in code — purpose, instructions, connection and schema scope, bound documents, packs, tool grants (a grant is permission to PROPOSE, never to execute), owner, enabled, the last golden-suite evaluation (the pass chip: measured against the agent\'s own reference SQL, never a judge), revisions. The runs, the holds and the figures are illustrative and add up to boards 4–5. Play: click The Look Analyst on board 4 or 5; the breadcrumb comes back.'},
+    'agent': {'x': 9120, 'y': 1020, 'w': 520, 'fill': 'teal',
+              'text': 'Boards 6–11: the agent\'s own page — Overview (6–7), Runs (8–9), Setup (10–11). Drawn from the agent model as it is in code — purpose, instructions, connection and schema scope, bound documents, packs, tool grants (a grant is permission to PROPOSE, never to execute), owner, enabled, the last golden-suite evaluation (the pass chip: measured against the agent\'s own reference SQL, never a judge), revisions. The runs, the holds and the figures are illustrative and add up across the boards (7 days 61.4K tokens, 30 days 131.6K). Play: click The Look Analyst on board 4 or 5; the tabs move between Overview, Runs and Setup; the breadcrumb comes back.'},
 }
 # Start from the index as it is on the canvas (the viewer edits live), changing only what is mine.
 base_path = os.path.join(ROOT, 'canvas.read.json')
