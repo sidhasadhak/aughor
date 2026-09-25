@@ -739,5 +739,23 @@ The seven cold captures re-taken on fresh profiles at 14 s are in `cold-after-20
 render their workspace, the Briefing and the Ontology show skeletons with the picker present, the Roster lists both
 agents, the SQL editor opens on the URL's connection, the Brain map is reading its stores.
 
-Not yet: the density preference; the Evidence ledger's specification rows (§2.6 MEDIUM); the object page's three
-currencies for one value (§2.6 HIGH, `ObjectView.tsx`).
+**The fifth movement, the same day: the density preference, and one currency reading per figure.** Settings ›
+Appearance gained **Density** beside Theme: Comfortable (the default — 14 px text, 32 px rows) or Compact (13 px text,
+26 px rows). It rides the theme's two homes — this browser first, the user's preference store second (the store's
+closed registry already admitted `density`) — and flips `<html data-density>` the way the theme flips, without
+animating; the compact rules sit at the end of `globals.css` and touch only the reading surfaces (`.aug-dt`, the
+rail's rows, the tabs and toolbar heights, the segments). Verified live: compact reads 13 px on the body and the
+stored value follows the choice.
+
+The object page (`ObjectView.tsx`) reads money one way: a figure is money when its declared unit says so — an ISO
+code, a bare symbol (`$` declares USD as plainly as the code), the word — or when its name reads as money the way a
+column's does; its currency is the one it declares, else the organisation's reporting currency, and the card says
+once which currency it fell back to, or that the organisation has declared none. `formatMoney` in `lib/format.ts`
+draws it to the cent with separators; any other numeric property draws in full. `Order 1` on theLook read
+`revenue 17.989999771118164 USD` beside `average_order_value_aov 17.99 EUR`, `orderitem_sale_price 17.99 USD` and
+`revenue 17.99 $`; it now reads `$17.99`, `€17.99`, `$17.99`, `$17.99` — the euro is the metric's own declaration in the
+semantic layer, exposed rather than blended, and is a metadata fix, not a screen's. The object route loads the
+organisation's settings itself (it lives outside the shell that loads them), and figures are Inter tabular, not mono.
+
+Not yet: the Evidence ledger's specification rows (§2.6 MEDIUM); `average_order_value_aov`'s EUR declaration on
+theLook (semantic layer metadata).

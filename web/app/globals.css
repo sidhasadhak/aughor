@@ -1277,3 +1277,20 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
    controls sit left, spaced wider, on the page. */
 .aug-context-bar { gap: 16px; }
 
+/* ── Density · compact (Settings › Appearance, per user) — the reading size steps down one
+   and every row tightens; chrome, colour and layout stay the same. Comfortable is the sheet's
+   base values, so it declares nothing here. */
+:root[data-density="compact"] body { font-size: 13px; }
+:root[data-density="compact"] .aug-text-ui,
+:root[data-density="compact"] .aug-text-prose,
+:root[data-density="compact"] .aug-text-h3,
+:root[data-density="compact"] .aug-fs-ui,
+:root[data-density="compact"] .aug-state-claim { font-size: 13px; }
+:root[data-density="compact"] .aug-dt { font-size: 12px; }
+:root[data-density="compact"] .aug-dt thead th { height: 26px; padding: 0 10px; }
+:root[data-density="compact"] .aug-dt tbody td { height: 26px; padding: 0 10px; font-size: 12px; }
+:root[data-density="compact"] .aug-nav-item { height: 24px; }
+:root[data-density="compact"] .aug-rail-row { padding: 5px 0; }
+:root[data-density="compact"] .aug-layer-tabs,
+:root[data-density="compact"] .aug-toolbar { height: 32px; }
+:root[data-density="compact"] .aug-seg-item { padding: 3px 10px; font-size: 12px; }

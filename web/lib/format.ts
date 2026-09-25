@@ -149,6 +149,20 @@ export function formatMetricValue(n: number | null | undefined): string {
 }
 
 /**
+ * A money figure for a reader: the symbol, then the full amount to the cent with thousands
+ * separators — `$114.99`, `-€1,820,497.55`. The symbol is the caller's to choose (the metric's
+ * declared currency, else the organisation's reporting currency; `lib/orgSettings.ts`), and an
+ * empty symbol is legal: it is how a page says the currency is undeclared without inventing one.
+ * The object page used to print `114.98999977111816 USD` beside `114.99 EUR` and `114.99 $` for
+ * one value (docs/UI_UX_STUDY_2026-09-25.md §2.6).
+ */
+export function formatMoney(n: number | null | undefined, symbol: string): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const amount = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n < 0 ? "-" : ""}${symbol}${amount}`;
+}
+
+/**
  * Canonical DATA-TABLE cell value — the FULL number, always, with thousands separators:
  * 102870539329 → "102,870,539,329". Small decimals trimmed ("3.1400" → "3.14").
  *
