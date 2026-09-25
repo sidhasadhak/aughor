@@ -209,7 +209,7 @@ def _as_date(cell) -> Optional[date]:
         return None
 
 
-def _partial(first, last, start: date, end: date, slack: int) -> Optional[str]:
+def partial_span(first, last, start: date, end: date, slack: int) -> Optional[str]:
     """``"<first> to <last>"`` when the rows cover less of the window than the slack allows."""
     lo, hi = _as_date(first), _as_date(last)
     if lo is None or hi is None:
@@ -256,8 +256,8 @@ def measure_period(metrics: list, run_sql: Callable[[str], tuple], window: Perio
         slack = _COVERAGE_SLACK.get(window.period, 0)
         current, c_first, c_last = got["current"]
         previous, p_first, p_last = got.get("previous", (None, None, None))
-        current_partial = _partial(c_first, c_last, window.start, window.end, slack)
-        previous_partial = (_partial(p_first, p_last, window.previous_start, window.previous_end, slack)
+        current_partial = partial_span(c_first, c_last, window.start, window.end, slack)
+        previous_partial = (partial_span(p_first, p_last, window.previous_start, window.previous_end, slack)
                             if previous is not None else None)
         rel = ((current - previous) / abs(previous)
                if previous not in (None, 0) and not (current_partial or previous_partial) else None)

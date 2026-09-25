@@ -836,6 +836,17 @@ def peek_briefing(scope_key: str) -> dict[str, Any] | None:
         return None
 
 
+def peek_entry(key: str) -> dict[str, Any] | None:
+    """The cached entry under ``key`` exactly as stored — READ ONLY, never generates, and
+    unlike ``peek_briefing`` returns an entry with no narrative too (a range whose figures were
+    measured and whose period was quiet is still a Briefing)."""
+    try:
+        entry = _store().get(key)
+        return entry if isinstance(entry, dict) else None
+    except Exception:
+        return None
+
+
 def get_briefing(
     connection_id: str,
     domain_data: dict[str, list[dict]],
@@ -878,7 +889,8 @@ def get_briefing(
     """
     key = scope_key or connection_id
     if period is not None:
-        key = f"{key}#{period.get('period')}"
+        # a range Briefing (Arc BR-3) carries its own key, so two custom ranges never share one
+        key = f"{key}#{period.get('key') or period.get('period')}"
     pre_decision = None
     if not force_refresh:
         try:

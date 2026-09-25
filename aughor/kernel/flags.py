@@ -93,6 +93,7 @@ FLAG_ENV = {
     "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
+    "briefing.ranges": "AUGHOR_BRIEFING_RANGES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
@@ -332,6 +333,10 @@ FLAG_META = {
         "label": "Tell people when an answer they were given changes",
         "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. On by default since 2026-09-24 (the user's call); off → nothing is re-run, recorded or sent.",
     },
+    "briefing.ranges": {
+        "label": "Briefings for any date range, measured from approved metrics",
+        "description": "Replaces the Briefing's Standing · Day · Week · Month · Year switch with one date-range control (presets plus a custom range) that scopes the whole page. Headline figures come from the connection's APPROVED metrics, each measured for the range by its own date column — set automatically by rule and corrected by a person in the metric editor — and each says whether it is final, still provisional or to date. Day, Week, Month and Year are written as different jobs: act, steer, review, strategy. Off by default → the Briefing is exactly as today.",
+    },
     "briefing.by_period": {
         "label": "Briefings by period — daily, weekly, monthly and yearly",
         "description": "Adds a Briefing for one period beside the standing one: the most recent complete day, week, month or (fiscal) year whose numbers have settled, each headline metric measured for that period against the one before, the alerts and findings recorded inside it, and a narrator told which version it is writing. A brief subscription can then send that briefing instead of the alert summary, and may run monthly or yearly. On by default since 2026-09-24 (the user's call); off → the Briefing, its subscriptions and their alert summaries behave exactly as before, and a request for a period brief is refused with the reason.",
@@ -422,6 +427,15 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # Arc BR (ROADMAP §3.48). ON: the Briefing reads any date range — Day, Week, Month and Year
+    # become presets of one range control — measures APPROVED metrics compiled from their time
+    # fields (set automatically, corrected by a person), says whether each figure is final,
+    # provisional or to date, and writes each horizon as its own recipe. OFF → the Briefing,
+    # its period versions and their subscriptions are exactly §3.27's.
+    "briefing.ranges": "does a dated Briefing carry what the standing one cannot? Falsifier "
+                       "(§3.48 BR-4): a person given the Day and the Month Briefing for theLook "
+                       "beside the standing one cannot name a move only the dated one carries — "
+                       "then the recipes ship without prose, or the flag is deleted",
     # PENDING item 19 (ROADMAP §3.38) — the ML review's point 5, its first level: the warehouse's
     # measured data in the SQL writer's context. The context it adds is measured model-free
     # (evals/linker_recall_eval.py reports the recall it rides on; the block's size is pinned);
