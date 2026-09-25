@@ -6,7 +6,7 @@
    empty state (.aug-fs-glyph / .aug-empty-glyph). Two families, one job each: Inter for
    every word AND every figure (with tabular numerals, so decimal points still stack);
    JetBrains Mono only for what is an identifier or code — an id, a table or column name,
-   SQL, a log. Neither Databricks nor Excel sets a number in mono, and neither shouts a
+   SQL, a log. Neither Du Bois nor Excel sets a number in mono, and neither shouts a
    label in tracked caps: section labels are 12px semibold sentence case.
 
    Line heights are the spec's: 1.45 at 11 and 18, 1.55 at 12, 1.7 at 13 and 14 (1.8 in

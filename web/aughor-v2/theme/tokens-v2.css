@@ -2,9 +2,8 @@
    AUGHOR — INSTRUMENT · the active token set
    ────────────────────────────────────────────────────────────────────────────
    The design system the product runs on: the Claude Design project "Aughor Design
-   System", adopted 2026-09-13 and re-skinned 2026-09-25 (the user: "tokens, colours,
-   design layout more like Databricks for dark and more like Excel for light — they are
-   so easy to read and interact with"). The spec, in this codebase's names, is
+   System", adopted 2026-09-13 and re-skinned 2026-09-25 (the user asked for dark after Du Bois
+   and light after Excel: "they are so easy to read and interact with"). The spec, in this codebase's names, is
    web/aughor-v2/INSTRUMENT.md; the study that measured the old values and drew the new
    ones is docs/UI_UX_STUDY_2026-09-25.md §9. Imported after styles/tokens.css, whose
    Tailwind and shadcn bridges read every primitive below through var(), so the values
@@ -15,7 +14,7 @@
    honest weight of type. Colour is a data type. What changed is the ground each skin
    stands on:
 
-     DARK follows Databricks (Du Bois): cool navy greys — 900 #11171C for the page, 800
+     DARK follows Du Bois (the study §9's dark reference): cool navy greys — 900 #11171C for the page, 800
      #1F272D for every surface that sits on it (chrome, the rail, a card), 500 #92A4B3
      for secondary text; borders you can see (#3F5162); ONE blue for everything
      interactive — 400 #8ACAFF links and link text, 500 #4299E0 marks and the active

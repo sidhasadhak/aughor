@@ -64,7 +64,7 @@ spring, no overshoot. Every animation's reduced-motion fallback is its **finishe
 An alias is a real `var()`, never a duplicated hex. Values live in `tokens-v2.css` — read it,
 not a copy.
 
-**Two skins (2026-09-25).** Dark follows Databricks' Du Bois greys and blues; light follows
+**Two skins (2026-09-25).** Dark follows the Du Bois greys and blues (the study §9's dark reference); light follows
 Excel — grey chrome, a white grid, Excel green for the app's own state and blue for links,
 Excel's Good / Bad / Neutral fills for state on a value. The values and their measured
 contrast are in `docs/UI_UX_STUDY_2026-09-25.md` §9.2; the rules that differ between the

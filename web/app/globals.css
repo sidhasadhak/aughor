@@ -1176,7 +1176,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-entity-card-table { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
 
 /* ── Two skins (2026-09-25) — the rules that differ between them beyond the tokens ──
-   Dark follows Databricks, light follows Excel (INSTRUMENT.md §4 item 5, the study §9.3).
+   Dark follows Du Bois, light follows Excel (INSTRUMENT.md §4 item 5, the study §9.3).
    1 · Light draws gridlines both ways, like a sheet; dark keeps hairline rows. */
 [data-theme="light"] .aug-dt { border: 1px solid var(--b1); }
 [data-theme="light"] .aug-dt thead th,
@@ -1191,7 +1191,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 [data-theme="light"] .aug-seg-item.active { background: var(--bg-sel); color: var(--accent-text); }
 [data-theme="light"] .aug-nav-item[aria-current="page"],
 [data-theme="light"] .aug-nav-item.active { color: var(--accent-text); }
-/* 3 · State on a value: a bordered pill in dark (a Databricks tag), a cell fill in light (Excel's
+/* 3 · State on a value: a bordered pill in dark (a Du Bois tag), a cell fill in light (Excel's
        Good / Bad / Neutral): the border goes and the corner squares. */
 [data-theme="light"] .aug-chip { border-color: transparent; border-radius: 2px; }
 /* 4 · The selected tile: a 2px green outline on the green tint in light (Excel's selected cell),

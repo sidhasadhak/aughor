@@ -1993,13 +1993,9 @@ export default function Home() {
   // is a constant, and two copies would be the drift this map exists to prevent.
   const LEGACY_DATA_LAYER = DATA_LAYER_FOR_TAB;
 
-  // Fleet / Agents / Control Room merged into ONE Agentic Ops workspace — the
-  // legacy rail ids and deep links land on the matching layer.
-  const LEGACY_AGENTIC_LAYER: Partial<Record<NavTab, AgentsLayer>> = {
-    fleet: "fleet",
-    agents: "agents",
-    "control-room": "fleet",
-  };
+  // The legacy rail ids and deep links land on the matching Agent Ops layer — the one
+  // table the cold-load resolver above also reads.
+  const LEGACY_AGENTIC_LAYER = AGENTIC_LAYER_FOR_TAB;
 
   const handleNavigate = (t: NavTab) => {
     // Always dismiss any floating overlays when the user navigates.

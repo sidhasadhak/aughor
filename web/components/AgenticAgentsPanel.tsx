@@ -226,7 +226,7 @@ function PageHeader({ onBack, title, chips, actions }: {
     <div className="aug-page-header">
       <Button variant="link" size="xs" onClick={onBack} style={{ padding: 0 }}
         title="Back to every agent">Agents</Button>
-      <span aria-hidden style={{ color: "var(--t4)" }}>/</span>
+      <span aria-hidden style={{ color: "var(--t3)" }}>/</span>
       <h1 className="aug-content-title" style={{ margin: 0 }}>{title}</h1>
       {chips}
       <span style={{ flex: 1 }} />
@@ -351,7 +351,7 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
           {tab === "overview" ? (
             <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
           ) : tab === "runs" ? (
-            <PersonaRuns agent={agent} onOpenTrace={onOpenTrace} />
+            <AgentRuns agent={agent} onOpenTrace={onOpenTrace} />
           ) : tab === "quality" ? (
             <AgentBenchmark agent={agent} onChanged={onChanged} onError={onError} />
           ) : tab === "map" ? (
@@ -440,7 +440,7 @@ function AgentRail({ agent, grounding, connName, onSetup }: {
 
 /** The Runs tab — every run this agent made, as a ledger. Each question is a door to
  *  its trace; nothing opens inside the ledger. */
-function PersonaRuns({ agent, onOpenTrace }: {
+function AgentRuns({ agent, onOpenTrace }: {
   agent: UserAgent; onOpenTrace?: (invId: string) => void;
 }) {
   const [obs, setObs] = useState<AgentObservability | null>(null);

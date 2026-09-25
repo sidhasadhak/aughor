@@ -10,7 +10,7 @@
  *
  * Instrument (2026-09-13): the six series ARE the six intent hues — blue interactive,
  * green passed, violet analysis, amber waiting, cyan no-state, red adverse — so a red line
- * and an adverse figure are the same red. Re-skinned 2026-09-25 (dark after Databricks,
+ * and an adverse figure are the same red. Re-skinned 2026-09-25 (dark after Du Bois,
  * light after Excel; tokens-v2.css header): the hues moved with the intent tokens, the
  * ORDER did not, and dark amber moved once more for the band (#DE7921 → #D57420).
  *

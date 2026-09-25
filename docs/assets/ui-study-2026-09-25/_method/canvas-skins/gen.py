@@ -8,7 +8,9 @@ bar and a status bar). Every screen is built by the SAME functions; only the tok
 changes, plus the few skin rules the dict carries (gridlines vs hairlines, sheet tabs vs
 underlined tabs, cell fills vs pills).
 """
-import json, os, datetime
+import datetime
+import json
+import os
 from html.parser import HTMLParser
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -574,6 +576,7 @@ def agent_shell(t, active, body_html, toolbar_html=''):
 </div>'''
 
 def agentpage(t):
+    purpose_txt = "Answers the analytics channel's questions about theLook's orders and returns."
     strip_bg, strip_bd, strip_fg = t['amb1'], t['amb2'], t['amb4']
     strip = (f'<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:{t["r"]}px;border:1px solid {strip_bd};background:{strip_bg};color:{strip_fg}">'
              f'{dot(t, t["amb3"])}<span style="flex-grow:1;font-size:14px;line-height:1.4">2 answers are held by the departure gate: a figure in each had no row behind it. They were kept, not delivered.</span>'
@@ -616,7 +619,7 @@ def agentpage(t):
     <a href="#setup" style="font-size:13px">Open Setup</a>
   </div>
   <div style="padding:8px 16px 16px;display:flex;flex-direction:column;overflow:hidden">
-    {row('Purpose', 'Answers the analytics channel\'s questions about theLook\'s orders and returns.')}
+    {row('Purpose', purpose_txt)}
     {row('Connection', 'theLook ' + muted(t, '· schema commerce'))}
     {row('Documents', '2 bound ' + muted(t, '· Returns policy 2026, Category map'))}
     {row('Packs', 'Retail')}

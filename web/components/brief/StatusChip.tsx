@@ -9,7 +9,7 @@
  *
  * Drawn as the Instrument badge (INSTRUMENT.md §5): a 12px rectangle at 3px — tint 1,
  * border 2, text 4 of its hue. Two skins (2026-09-25): in dark it is a bordered pill, like a
- * Databricks tag; in light the border goes and it is a cell fill, like Excel's Good / Bad /
+ * Du Bois tag; in light the border goes and it is a cell fill, like Excel's Good / Bad /
  * Neutral styles (the `aug-chip` rule at the end of globals.css). `soft` is the callout form
  * of the same hue: tint and border, with the text in --t1.
  */
