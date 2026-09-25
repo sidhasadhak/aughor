@@ -1294,3 +1294,19 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 :root[data-density="compact"] .aug-layer-tabs,
 :root[data-density="compact"] .aug-toolbar { height: 32px; }
 :root[data-density="compact"] .aug-seg-item { padding: 3px 10px; font-size: 12px; }
+
+/* ── Semantic Layer › metric editor: fields left, governance right (2026-09-25) ──────────
+   The governance report sat above a 36rem form and pushed the first field a screen down
+   while the right half of the row stayed empty. The report now has its own column and
+   stays in view while the form scrolls; under 1100px it stacks back above the fields. */
+.aug-metric-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 36rem) minmax(20rem, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.aug-metric-governance { position: sticky; top: 8px; }
+@media (max-width: 1100px) {
+  .aug-metric-editor { grid-template-columns: minmax(0, 1fr); }
+  .aug-metric-governance { order: -1; position: static; }
+}

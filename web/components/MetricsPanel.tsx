@@ -501,16 +501,11 @@ export function MetricsPanel({ connId }: { connId?: string }) {
         )}
 
         {isEditing && (
-          <div className="flex flex-col gap-3 max-w-xl pb-8">
+          <div className="aug-metric-editor pb-8">
+          <div className="flex flex-col gap-3 min-w-0">
             <h3 className="text-sm font-semibold text-zinc-300">
               {adding ? "New Metric" : `Edit — ${selected}`}
             </h3>
-
-            {/* ── Governance lifecycle (B-8) — existing metrics only ──────── */}
-            {!adding && (() => {
-              const sm = metrics.find((m) => m.name === selected);
-              return sm ? <GovernanceSection metric={sm} onChanged={load} /> : null;
-            })()}
 
             {/* ── Core fields ─────────────────────────────────────────────── */}
             <Field label="Name (snake_case)" required>
@@ -746,6 +741,20 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 </>
               )}
             </div>
+          </div>
+
+          {/* ── Governance lifecycle (B-8) — existing metrics only. Its own column beside the
+                 fields (asked for 2026-09-25): the advisory reads while you edit, and the first
+                 field keeps the top of the row instead of sitting under a report. Under 1100 px
+                 it stacks back above the fields, as it always did. */}
+          {!adding && (() => {
+            const sm = metrics.find((m) => m.name === selected);
+            return sm ? (
+              <div className="aug-metric-governance">
+                <GovernanceSection metric={sm} onChanged={load} />
+              </div>
+            ) : null;
+          })()}
           </div>
         )}
     </div>
