@@ -20,7 +20,7 @@ import { GuardChip } from "@/components/ui/trust";
  */
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
+import { formatDateTime, formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
 import {
   runDirectQuery,
   getDomainInsights,
@@ -2808,7 +2808,9 @@ export function BriefingPanel({
               <span className="aug-fs-xs" title="The last run stopped short; earlier findings are kept"
                 style={{ color: "var(--t3)", flex: "1 1 0", minWidth: 0, overflow: "hidden",
                          textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                · the last run stopped short; earlier findings are kept
+                {explorerStatus.continues_at
+                  ? `· the last run stopped on its time limit; it continues by itself after ${formatDateTime(explorerStatus.continues_at)}`
+                  : "· the last run stopped short; earlier findings are kept"}
               </span>
             )}
             {/* No run counters here: queries_executed is the CURRENT run's number while

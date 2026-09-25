@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,18 @@ _DEFAULT_REFRESH_DAYS = 7.0      # a completed run older than this is refreshed
 # Decisions (also the ledger-event reasons):
 SCHEMA_CHANGED = "schema_changed"
 STALE = "stale"
+STOPPED_ON_BUDGET = "stopped_on_budget"
 SKIP = "skip"
+
+#: A run stopped by its own time or token budget is continued this long after it stopped —
+#: the user's call, 2026-09-26 (ROADMAP §6 item 34(f)): theLook's run stopped on its 600 s
+#: budget and nothing ever continued it. It resumes from its saved progress, under the same
+#: per-connection gates as a stale run. A person's stop is never continued.
+STOPPED_RERUN_SECONDS = 86_400.0
+#: The one sentence the budget path writes (``explorer/agent.py``); a run recorded before the
+#: ``stopped_on_budget_at`` stamp existed is recognised by it. A user's stop or a kernel
+#: cancel ends "… or stopped) — progress saved" and never matches.
+_BUDGET_STOP_TAIL = "exceeded) — progress saved"
 
 
 def refresh_seconds() -> float:
@@ -50,17 +61,48 @@ def refresh_seconds() -> float:
     return max(0.0, days) * 86_400.0
 
 
+def stopped_on_budget_at(state: dict) -> Optional[datetime]:
+    """When a run that its own budget stopped came to a halt, or None — a complete or running
+    run, a failure with an error, and a person's stop are not budget stops."""
+    from aughor.explorer.models import ExplorationPhase
+    if state.get("phase") != ExplorationPhase.FAILED.value:
+        return None
+    stamp = state.get("stopped_on_budget_at")
+    if not stamp:
+        error = str(state.get("error") or "")
+        if not (error.startswith("cancelled (") and error.endswith(_BUDGET_STOP_TAIL)):
+            return None
+        # recorded before the stamp: the run stopped within its budget of starting
+        stamp = state.get("started_at")
+    try:
+        at = datetime.fromisoformat(str(stamp))
+    except (TypeError, ValueError):
+        return None   # an unreadable stamp is not a reason to spend
+    return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+
+
+def continues_at(state: dict) -> Optional[str]:
+    """When the continuous loop will continue a budget-stopped run, for the Briefing to say."""
+    at = stopped_on_budget_at(state)
+    return (at + timedelta(seconds=STOPPED_RERUN_SECONDS)).isoformat() if at else None
+
+
 def reexplore_decision(state: dict, current_fp: Optional[str], *,
                        now: datetime, refresh_secs: float) -> str:
-    """Pure decision: should a COMPLETED exploration be re-armed? Returns a reason or SKIP.
+    """Pure decision: should an exploration be re-armed? Returns a reason or SKIP.
 
-    Only re-arms a run that is actually COMPLETE — a running/paused/failed run is never
-    touched here (a still-running run must not be double-spawned; a failed run's resume is
-    a separate concern). A schema-change re-arm requires BOTH fingerprints to be known:
+    Re-arms a COMPLETE run on a schema change or staleness, and a run its own budget stopped
+    once ``STOPPED_RERUN_SECONDS`` have passed (it resumes from its saved progress). A
+    running/paused run, a failure with an error, and a person's stop are never touched (a
+    still-running run must not be double-spawned; pause intent belongs to the person).
+    A schema-change re-arm requires BOTH fingerprints to be known:
     a run that predates fingerprint-stamping has `None` stored, and `None != current` must
     NOT be read as "changed" (that would re-explore every connection once on first enable).
     """
     from aughor.explorer.models import ExplorationPhase
+    stopped = stopped_on_budget_at(state)
+    if stopped is not None:
+        return STOPPED_ON_BUDGET if (now - stopped).total_seconds() >= STOPPED_RERUN_SECONDS else SKIP
     if state.get("phase") != ExplorationPhase.COMPLETE.value:
         return SKIP
     stored_fp = state.get("schema_fingerprint")

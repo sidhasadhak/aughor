@@ -55,6 +55,28 @@ def test_refresh_disabled_ignores_staleness():
     assert cont.reexplore_decision(old, "abc", now=_NOW, refresh_secs=0) == cont.SKIP
 
 
+_BUDGET_STOP = "cancelled (time budget (600s) exceeded) — progress saved"   # agent.py's sentence
+
+
+def _stopped(**kw) -> dict:
+    return {"phase": ExplorationPhase.FAILED.value, **kw}
+
+
+def test_a_run_its_budget_stopped_is_continued_a_day_later_and_never_sooner():
+    """theLook 2026-09-24: stopped on its 600 s budget and never continued (§6 item 34(f))."""
+    legacy = _stopped(error=_BUDGET_STOP, started_at="2026-07-10T18:42:59+00:00")
+    assert cont.reexplore_decision(legacy, "abc", now=_NOW, refresh_secs=0) == cont.STOPPED_ON_BUDGET
+    fresh = _stopped(error=_BUDGET_STOP, stopped_on_budget_at="2026-07-11T12:00:00+00:00")
+    assert cont.reexplore_decision(fresh, "abc", now=_NOW, refresh_secs=0) == cont.SKIP
+    assert cont.continues_at(fresh) == "2026-07-12T12:00:00+00:00"
+    # a person's stop, a kernel cancel and a plain error are never continued
+    for state in (_stopped(error="cancelled (budget exceeded or stopped) — progress saved",
+                           started_at="2026-07-01T00:00:00+00:00"),
+                  _stopped(error="connection refused", started_at="2026-07-01T00:00:00+00:00")):
+        assert cont.reexplore_decision(state, "abc", now=_NOW, refresh_secs=0) == cont.SKIP
+        assert cont.continues_at(state) is None
+
+
 def test_running_exploration_is_never_touched():
     assert cont.reexplore_decision({"phase": "domain_intel"}, "xyz", now=_NOW, refresh_secs=0) == cont.SKIP
     assert cont.reexplore_decision({"phase": "failed"}, "xyz", now=_NOW, refresh_secs=0) == cont.SKIP

@@ -5668,7 +5668,9 @@ export interface BriefingPeriodBlock {
   start: string;
   last_day: string;
   lag_days: number;
-  lag_source: "learned" | "default";
+  /** "beyond_horizon": a table was still moving at the oldest age read, so the lag is a floor. */
+  lag_source: "learned" | "beyond_horizon" | "default";
+  still_moving?: string[];
   measured: BriefingPeriodMeasure[];
   unmeasured: { name: string; reason: string }[];
 }
@@ -5941,6 +5943,8 @@ export interface ExplorerStatus {
   started_at: string | null;
   completed_at: string | null;
   error: string | null;
+  /** A run its own budget stopped is continued on its own after a day — when, or null. */
+  continues_at?: string | null;
   /** True when Phase-8 domain intelligence was skipped because its prerequisite
    *  ontology could not be built — distinguishes "couldn't generate" from "never ran". */
   domain_intel_skipped?: boolean;

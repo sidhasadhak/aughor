@@ -67,8 +67,11 @@ export function PeriodMeasures({ block }: { block: BriefingPeriodBlock }) {
       </div>
       {block.lag_days > 1 && (
         <div style={{ color: "var(--t3)", marginBottom: 6 }}>
-          Ends {block.lag_days} days before today: newer days are still settling
-          {block.lag_source === "learned" ? ", a lag the platform measured" : ""}.
+          {block.lag_source === "beyond_horizon"
+            ? <>Ends {block.lag_days} days before today: {(block.still_moving ?? []).join(", ") || "a table"} was
+                still changing {block.lag_days - 1} days after a day ended, so its figures may still move.</>
+            : <>Ends {block.lag_days} days before today: newer days are still settling
+                {block.lag_source === "learned" ? ", a lag the platform measured" : ""}.</>}
         </div>
       )}
       {block.measured.length > 0 && (

@@ -195,9 +195,11 @@ def period_split(sql: str, *, start, end, previous_start, previous_end,
         for src in [source.this if source is not None else None]
         + [j.this for j in tree.args.get("joins") or []])
     if isinstance(bucket, exp.Column):
-        # a bare column is a date only by its name: `status` in "top statuses by revenue"
-        # is the first column of a breakdown, and casting it to a date fails at run time
-        if not (_first_is_date_bucket(first, first_alias, dialect) or _DATE_NAME.search(column.name)):
+        # a bare column is a date only by its OWN name: `status` in "top statuses by revenue"
+        # is the first column of a breakdown, and casting it to a date fails at run time. The
+        # alias it was given proves nothing — theLook's sell-through chart named
+        # `product_department AS bucket` and the cut was refused by BigQuery (2026-09-25).
+        if not (_BUCKET_ALIAS.match(column.name) or _DATE_NAME.search(column.name)):
             return None, "its first column is not a date"
         if derived:
             return None, ("its date column comes from a sub-query, where it may already be a "

@@ -98,10 +98,23 @@ def sample_connection(connection_id: str, run_sql: RunSql, *, today: Optional[da
     """Read every time table once and file today's counts. Returns what happened per table;
     a table whose query fails is reported and skipped, never guessed."""
     today = today or datetime.now(timezone.utc).date()
-    start, stop = today - timedelta(days=horizon_days), today
+    stop = today
     sampled: list[str] = []
     errors: dict[str, str] = {}
+    # A table still moving at the oldest age read cannot name its lag until the horizon
+    # grows — so read it twice as far back (theLook's order_items was still moving at 14 on
+    # 2026-09-25). One wider scan of one column a day; the others keep the short horizon.
+    try:
+        from aughor.settling.store import verdicts
+        moving = {t for t, v in verdicts(connection_id).items() if v.still_moving}
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "unreadable verdicts: every table is read at the short horizon",
+                 counter="settling.horizon_verdicts")
+        moving = set()
     for table, col, _rows in time_tables(connection_id):
+        span = horizon_days * 2 if table in moving else horizon_days
+        start = today - timedelta(days=span)
         try:
             columns, rows, error = run_sql(count_by_day_sql(table, col, start, stop))
         except Exception as exc:
@@ -126,7 +139,7 @@ def sample_connection(connection_id: str, run_sql: RunSql, *, today: Optional[da
                 continue
         # A day with no rows is a reading too — zero is a value, and a day that later
         # gains rows is exactly a day that was still settling.
-        for i in range(horizon_days):
+        for i in range(span):
             counts.setdefault((start + timedelta(days=i)).isoformat(), 0.0)
         record_observations(connection_id, table, col, today, counts)
         sampled.append(table)

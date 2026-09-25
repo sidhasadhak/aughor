@@ -317,6 +317,11 @@ def _restored_error(state: dict) -> str | None:
     return f"{len(failed)} of {len(per)} schemas failed to explore: {shown}"
 
 
+def _continues_at(state: dict) -> str | None:
+    from aughor.explorer.continuous import continues_at
+    return continues_at(state)
+
+
 @router.get("/exploration/{conn_id}/status")
 def get_exploration_status(conn_id: str, schema: str | None = None):
     explorer = _explorer_for(conn_id, schema)
@@ -343,6 +348,8 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
         "first_insight_seconds": elapsed_seconds(state.get("started_at"), state.get("first_insight_at")),
         "completed_at": state.get("completed_at"),
         "error": _restored_error(state),
+        # a run its own budget stopped is continued a day later — the Briefing says when
+        "continues_at": _continues_at(state),
         "domain_intel_skipped": state.get("domain_intel_skipped", False),
         "domain_intel_note": state.get("domain_intel_note"),
         # {schema: phase} for the 'All schemas' aggregate — lets the UI show per-schema progress.

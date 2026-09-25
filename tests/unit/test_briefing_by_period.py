@@ -205,6 +205,8 @@ def test_a_comparison_the_data_only_partly_covers_states_no_change(con):
 
 @pytest.mark.parametrize("sql, reason", [
     (TOP_STATUSES, "not a date"),
+    # theLook's sell-through chart, 2026-09-25: an alias is not a date
+    ("SELECT status AS bucket, SUM(amount) FROM orders GROUP BY status", "not a date"),
     ("SELECT date_trunc('day', created_at) d, SUM(SUM(amount)) OVER (ORDER BY 1) FROM orders "
      "GROUP BY 1", "window function"),
     ("WITH m AS (SELECT date_trunc('month', created_at) AS month, amount FROM orders) "
@@ -309,14 +311,21 @@ def test_deleting_a_connection_or_schema_drops_its_period_briefs_too(narrator):
     assert {k for k in store.load()} == {"c2#week"}
 
 
-def test_a_lag_longer_than_a_day_is_said_in_the_prompt(con, narrator, monkeypatch):
+@pytest.mark.parametrize("source, moving, said", [
+    ("learned", [], "the platform measured a 8-day settling lag"),
+    # theLook 2026-09-25: a table still moving at the horizon is named, and nothing is final
+    ("beyond_horizon", ["order_items"], "order_items was still changing 7 days after a day ended"),
+])
+def test_a_lag_longer_than_a_day_is_said_in_the_prompt(con, narrator, monkeypatch, source, moving, said):
     import aughor.settling.store as settling
-    monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 8)
+    monkeypatch.setattr(settling, "connection_lag", lambda conn_id: {
+        "days": 8, "source": source, "still_moving": moving, "horizon": 7})
     brief = period_brief.build_period_briefing(
         "c1", "week", scope_key="c1", domain_data={},
         profile=_profile(_metric("Revenue", REVENUE_TREND)), runner=_runner(con), today=TODAY)
-    assert brief["period"]["lag_source"] == "learned" and brief["period"]["start"] == "2026-09-07"
-    assert "the platform measured a 8-day settling lag" in narrator.calls[-1][1]
+    assert brief["period"]["lag_source"] == source and brief["period"]["start"] == "2026-09-07"
+    assert brief["period"]["still_moving"] == moving
+    assert said in narrator.calls[-1][1]
 
 
 # ── on by default (the user's call, 2026-09-24), byte-identical when switched off ──────────

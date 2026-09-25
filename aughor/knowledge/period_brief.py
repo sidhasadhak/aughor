@@ -81,13 +81,16 @@ def refusal(period: str) -> Optional[str]:
 # ── the window ─────────────────────────────────────────────────────────────────────────────
 
 def resolve_window(conn_id: str, period: str, *, workspace_id: Optional[str] = None,
-                   today: Optional[date] = None) -> tuple[PeriodWindow, str]:
-    """The window this connection's ``period`` brief covers, and where its lag came from
-    (``"learned"`` — idea 4's settling verdict — or ``"default"``, one day)."""
-    learned = None
+                   today: Optional[date] = None) -> tuple[PeriodWindow, str, list[str]]:
+    """The window this connection's ``period`` brief covers, where its lag came from
+    (``"learned"`` — idea 4's settling verdict; ``"beyond_horizon"`` — a table was still
+    moving at the oldest age read, so the lag is a floor; or ``"default"``, one day), and the
+    tables still moving."""
+    learned, source, moving = None, None, []
     try:
-        from aughor.settling.store import learned_lag_days
-        learned = learned_lag_days(conn_id)
+        from aughor.settling.store import connection_lag
+        lag = connection_lag(conn_id)
+        learned, source, moving = lag["days"], lag["source"], list(lag["still_moving"])
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the learned lag is unreadable; the brief anchors on the one-day default",
@@ -102,7 +105,7 @@ def resolve_window(conn_id: str, period: str, *, workspace_id: Optional[str] = N
                  counter="briefing.period.fiscal")
     today = today or datetime.now(timezone.utc).date()
     window = complete_period(period, today, resolve_lag({}, learned), fiscal_start_month=fiscal)
-    return window, ("learned" if learned else "default")
+    return window, (source if learned and source else "default"), moving
 
 
 def _d(d: date) -> str:
@@ -127,13 +130,13 @@ def phrases(window: PeriodWindow) -> tuple[str, str]:
             f"the fiscal year before, {_d(window.previous_start)} to {_d(prev_last)}")
 
 
-def window_block(window: PeriodWindow, lag_source: str) -> dict:
+def window_block(window: PeriodWindow, lag_source: str, still_moving: Optional[list] = None) -> dict:
     """The period block every period brief carries: what it covers, why it ends where it
     does, and (filled on a build) what was measured and what could not be."""
     covers, against = phrases(window)
     return {**window.to_dict(), "label": LABEL[window.period], "covers": covers,
             "compared_with": against, "lag_source": lag_source,
-            "measured": [], "unmeasured": []}
+            "still_moving": list(still_moving or []), "measured": [], "unmeasured": []}
 
 
 def period_note(block: dict, today: Optional[date] = None) -> str:
@@ -149,7 +152,14 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
         "place there, and do not compare it with any period other than the one named.",
     ]
     lag = int(block.get("lag_days") or 1)
-    if lag > 1:
+    if lag > 1 and block.get("lag_source") == "beyond_horizon":
+        tables = ", ".join(block.get("still_moving") or []) or "a table"
+        lines.append(
+            f"The {block['period']} ends {lag} days before today ({today.isoformat()}) because "
+            f"{tables} was still changing {lag - 1} days after a day ended, and the platform has "
+            "not yet seen it stop: figures read from it may still move. Say so in one plain "
+            "sentence, and do not call any of its figures final.")
+    elif lag > 1:
         why = ("the platform measured" if block.get("lag_source") == "learned"
                else "this source is configured with")
         lines.append(
@@ -397,8 +407,9 @@ def build_period_briefing(conn_id: str, period: str, *, scope_key: str, domain_d
     dialect)`` and defaults to the connection's own. Cached per scope and period, and rebuilt
     whenever the window moves, so yesterday's daily brief is never served as today's."""
     from aughor.knowledge.briefing import get_briefing
-    window, lag_source = resolve_window(conn_id, period, workspace_id=workspace_id, today=today)
-    block = window_block(window, lag_source)
+    window, lag_source, still_moving = resolve_window(conn_id, period, workspace_id=workspace_id,
+                                                      today=today)
+    block = window_block(window, lag_source, still_moving)
     metrics = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
     from aughor.orgsettings import resolve_currency
     currency = resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
