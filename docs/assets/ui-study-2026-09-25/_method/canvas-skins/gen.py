@@ -236,13 +236,14 @@ def header(t, crumb, title, chip, actions):
   {actions}
 </div>'''
 
-def tabs(t, items, active, counts=None):
+def tabs(t, items, active, counts=None, warn=()):
     counts = counts or {}
     out = []
     for it in items:
         on = it == active
         c = counts.get(it)
-        cnt = f'<span style="margin-left:6px;font-size:12px;font-weight:600;color:{t["amb4"]}">{c}</span>' if c else ''
+        cc = t['amb4'] if it in warn else t['t3']
+        cnt = f'<span style="margin-left:6px;font-size:12px;font-weight:600;color:{cc}">{c}</span>' if c else ''
         if t['excel']:
             st = (f"background:{t['page']};color:{t['accentText']};font-weight:600;box-shadow:inset 0 -2px 0 {t['accent']};" if on
                   else f"background:transparent;color:{t['t2']};font-weight:400;")
@@ -485,15 +486,16 @@ def agentops(t):
             f'<div style="width:220px;height:28px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid {t["b2"]};border-radius:{t["r"]}px;background:{t["inp"]};color:{t["t3"]}">'
             f'{svg("filter", 13)}<input aria-label="Filter agents" placeholder="Filter agents" style="flex-grow:1;min-width:0;border:0;background:transparent;color:{t["t1"]};font-size:13px;outline:none"></div>')
     right = f'<span style="font-size:12px;color:{t["t3"]}">agents only · 5,749 background ticks excluded</span>'
-    def agent(name, blurb):
+    def agent(name, blurb, href=None):
         slug = name.lower().replace(' ', '-')
-        return (f'<a href="#agent-{slug}" style="color:{t["link"]};font-weight:500;text-decoration:none;white-space:nowrap">{name}</a>'
+        return (f'<a href="{href or "#agent-" + slug}" style="color:{t["link"]};font-weight:500;text-decoration:none;white-space:nowrap">{name}</a>'
                 f'<span style="color:{t["t3"]};margin-left:6px">· {blurb}</span>')
+    agent_board = 'Agent-Light.dc.html' if t['excel'] else 'Agent-Dark.dc.html'
     rows = [
         [agent('Explorer', 'data explorer'), tag(t, 'Idle'), num(t, '1'), num(t, '0'), num(t, '5 h ago'), num(t, '96.1K'), bars(t, [(4, 'none'), (12, 'ok'), (3, 'none'), (6, 'none'), (3, 'none'), (8, 'none'), (3, 'none'), (5, 'none')])],
         [agent('Analyst', 'deep analysis'), tag(t, 'Idle'), num(t, '1'), num(t, '0'), num(t, '15 h ago'), num(t, '59.4K'), bars(t, [(10, 'ok'), (3, 'none'), (3, 'none'), (3, 'none'), (5, 'none'), (3, 'none'), (3, 'none'), (3, 'none')])],
         [agent('Responder', 'quick answers'), tag(t, 'Idle'), muted(t, '—'), muted(t, '—'), muted(t, '—'), muted(t, '—'), muted(t, 'not metered as jobs')],
-        [agent('The Look Analyst', 'custom'), tag(t, 'Held', 'warn'), num(t, '2'), num(t, '2', 'red4'), num(t, '14 h ago'), num(t, '21.8K'), bars(t, [(3, 'none'), (12, 'bad'), (11, 'bad'), (3, 'none'), (3, 'none'), (3, 'none'), (3, 'none'), (3, 'none')])],
+        [agent('The Look Analyst', 'custom', agent_board), tag(t, 'Held', 'warn'), num(t, '2'), num(t, '2', 'red4'), num(t, '14 h ago'), num(t, '21.8K'), bars(t, [(3, 'none'), (12, 'bad'), (11, 'bad'), (3, 'none'), (3, 'none'), (3, 'none'), (3, 'none'), (3, 'none')])],
     ]
     runner_rows = [
         [agent('Watcher', 'metric watches'), tag(t, 'Running', 'good', dot=True), num(t, '5,749'), num(t, '0'), num(t, '2 min ago'), muted(t, 'not metered'), bars(t, [(8, 'ok')] * 8)],
@@ -532,17 +534,102 @@ def agentops(t):
         notes = [
             (300, 100, 'sheet tabs, then the toolbar under them: Range · Status · Connection · Filter — one row, never beside the tabs'),
             (300, 290, 'stat cards: white boxes, 24 px figures in tabular Inter, the adverse one in Excel\'s Bad red · "cost unpriced" stays on its card'),
-            (300, 470, 'agent names are links: the click opens that agent\'s own page — nothing opens inside the overview (decided 2026-09-25)'),
+            (300, 470, 'agent names are links: the click opens that agent\'s own page (board 7) — nothing opens inside the overview'),
             (300, 640, 'Held and Failures as Neutral / Bad cell fills · filter chevrons in the header row · no status bar, no definition bar'),
         ]
     else:
         notes = [
             (300, 100, 'Databricks tabs, then the toolbar under them: Range · Status · Connection · Filter — one row, never beside the tabs'),
             (300, 290, 'stat cards on #1F272D with #2F3C47 borders, figures 24 px in tabular Inter · "cost unpriced" stays on its card'),
-            (300, 470, 'agent names are links: the click opens that agent\'s own page — nothing opens inside the overview (decided 2026-09-25)'),
+            (300, 470, 'agent names are links: the click opens that agent\'s own page (board 6) — nothing opens inside the overview'),
             (300, 640, 'Held and Running as Databricks pills · no status bar, no definition bar (decided 2026-09-25)'),
         ]
     return page('Agent Ops — ' + ('light, after Excel' if t['excel'] else 'dark, after Databricks'), t, 1440, 900, content, notes)
+
+# ── the agent's own page ─────────────────────────────────────────────────────
+def agentpage(t):
+    ops_board = 'AgentOps-Light.dc.html' if t['excel'] else 'AgentOps-Dark.dc.html'
+    crumb = f'Operate / <a href="{ops_board}" style="color:{t["link"]};text-decoration:none">Agents</a>'
+    chips = f'<div style="display:flex;gap:6px;align-items:center">{tag(t, "Custom agent")}{tag(t, "Held: 2", "warn", dot=True)}{tag(t, "7 of 8 goldens pass", "good")}</div>'
+    actions = (btn(t, svg('play', 13) + 'Run now', 'primary') + btn(t, svg('pause', 13) + 'Pause') + btn(t, svg('edit', 13) + 'Edit')
+               + btn(t, svg('more', 14), 'icon', aria='More actions'))
+    strip_bg, strip_bd, strip_fg = t['amb1'], t['amb2'], t['amb4']
+    strip = (f'<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:{t["r"]}px;border:1px solid {strip_bd};background:{strip_bg};color:{strip_fg}">'
+             f'{dot(t, t["amb3"])}<span style="flex-grow:1;font-size:14px;line-height:1.4">2 answers are held by the departure gate: a figure in each had no row behind it. They were kept, not delivered.</span>'
+             f'{btn(t, "Review the held answers")}{btn(t, "Correct the instructions", "ghost")}</div>')
+    def q(text, href):
+        return f'<a href="{href}" style="color:{t["link"]};text-decoration:none">{text}</a>'
+    def to(channel, held=False):
+        return f'<span style="white-space:nowrap">{channel}{muted(t, " · held") if held else ""}</span>'
+    rows = [
+        [num(t, '14 h ago'), q('Which categories drive returns?', '#run-1'), tag(t, 'Held', 'warn'), num(t, '9m 40s'), num(t, '11.2K'), to('Slack #analytics', True)],
+        [num(t, '16 h ago'), q('Return rate by department', '#run-2'), tag(t, 'Held', 'warn'), num(t, '10m 07s'), num(t, '10.6K'), to('Slack #analytics', True)],
+        [num(t, '2 d ago'), q('Top sellers by revenue, last 30 days', '#run-3'), tag(t, 'Delivered', 'good'), num(t, '8m 12s'), num(t, '9.8K'), to('Slack #analytics')],
+        [num(t, '3 d ago'), q('Orders by traffic source, August', '#run-4'), tag(t, 'Delivered', 'good'), num(t, '7m 55s'), num(t, '14.1K'), to('Slack #analytics')],
+        [num(t, '5 d ago'), q('Inventory cost by category', '#run-5'), tag(t, 'Delivered', 'good'), num(t, '11m 03s'), num(t, '15.7K'), to('Slack #analytics')],
+    ]
+    cols = [('Started', '96px', 'left'), ('Question', 'minmax(0, 1fr)', 'left'), ('Status', '112px', 'left'), ('Duration', '96px', 'right'),
+            ('Tokens', '84px', 'right'), ('Delivered to', '184px', 'left')]
+    body_main = f'''
+<div style="flex-grow:1;min-width:0;padding:24px 24px 0;display:flex;flex-direction:column;gap:20px;overflow:hidden">
+  {strip}
+  <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:12px">
+    {stat(t, 'Runs, 7 days', '5', '2 held · 3 delivered')}
+    {stat(t, 'Held', '2', 'waiting on a person, not failed', 'amb4')}
+    {stat(t, 'Tokens, 7 days', '61.4K', '21.8K in the last 24 h · cost unpriced')}
+    {stat(t, 'Goldens', '7 of 8', 'measured 2 d ago · revision 3', 'grn4')}
+  </div>
+  <div>
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px">{label(t, 'Runs')}<span style="font-size:12px;color:{t['t3']}">last 7 days · newest first</span><div style="flex-grow:1"></div><a href="#runs" style="font-size:13px">All runs</a></div>
+    {table(t, cols, rows, sorted_col=0)}
+  </div>
+</div>'''
+    def row(k, v):
+        return (f'<div style="display:grid;grid-template-columns:104px minmax(0, 1fr);gap:12px;padding:8px 0;border-bottom:1px solid {t["b0"]};align-items:baseline">'
+                f'<span style="font-size:12px;color:{t["t3"]}">{k}</span><span style="font-size:13px;color:{t["t1"]};line-height:1.45">{v}</span></div>')
+    rail = f'''
+<aside aria-label="Agent details" style="width:360px;flex-shrink:0;box-sizing:border-box;display:flex;flex-direction:column;border-left:1px solid {t['b1']};background:{t['card']}">
+  <div style="height:44px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid {t['b0']}">
+    <span style="font-size:14px;font-weight:600">Details</span>
+    <div style="flex-grow:1"></div>
+    <a href="#setup" style="font-size:13px">Open Setup</a>
+  </div>
+  <div style="padding:8px 16px 16px;display:flex;flex-direction:column;overflow:hidden">
+    {row('Purpose', 'Answers the analytics channel\'s questions about theLook\'s orders and returns.')}
+    {row('Connection', 'theLook ' + muted(t, '· schema commerce'))}
+    {row('Documents', '2 bound ' + muted(t, '· Returns policy 2026, Category map'))}
+    {row('Packs', 'Retail')}
+    {row('May propose', 'slack.send · jira.create ' + muted(t, '· proposes, never executes'))}
+    {row('Trigger', '@mention in Slack #analytics ' + muted(t, '· no schedule'))}
+    {row('Delivery', 'Slack #analytics ' + muted(t, '· departure gate on'))}
+    {row('Owner', 'Data team')}
+    {row('State', f'<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" checked style="width:14px;height:14px;margin:0;accent-color:{t["accent"]}">Enabled</label>')}
+    {row('History', 'Created 14 Sep 2026 · updated 22 Sep 2026 · <a href="#revisions" style="color:' + t['link'] + ';text-decoration:none">revision 3</a>')}
+    <div style="margin-top:14px">
+      {label(t, 'Instructions', 'margin-bottom:6px')}
+      <div style="padding:10px 12px;border-radius:{t['r']}px;background:{t['code']};border:1px solid {t['b1']};font-size:13px;line-height:1.5;color:{t['t2']}">You answer questions about theLook's commerce data for the analytics channel. Prefer completed orders, state the period you used, and cite the rows behind every figure. When a figure has no row behind it, say so instead of sending it.</div>
+    </div>
+  </div>
+</aside>'''
+    content = f'''
+{topbar(t, 1)}
+<div style="flex-grow:1;display:flex;min-height:0">
+  {sidebar(t, 'Agents')}
+  <div style="flex-grow:1;display:flex;flex-direction:column;min-width:0">
+    {header(t, crumb, 'The Look Analyst', chips, actions)}
+    {tabs(t, ['Overview', 'Runs', 'Setup', 'Quality', 'Revisions', 'Departures'], 'Overview', {'Runs': 5, 'Departures': 2}, warn=('Departures',))}
+    <div style="flex-grow:1;display:flex;min-height:0">{body_main}{rail}</div>
+  </div>
+</div>'''
+    board = '7' if t['excel'] else '6'
+    notes = [
+        (300, 56, 'the breadcrumb is the way back: Operate / Agents / the agent — no Back button; its chips: kind · held · the pass chip'),
+        (300, 100, 'tabs: Overview · Runs · Setup · Quality · Revisions · Departures — counts on Runs and Departures'),
+        (300, 172, 'what needs a person comes first, in amber: held is waiting, not failed — the answers were kept'),
+        (300, 302, 'the agent\'s own figures: runs · held · tokens · goldens (measured against its own reference SQL, never a judge)'),
+        (1090, 300, 'the details rail: what it is, what it may PROPOSE (never execute), where it delivers — Setup edits it'),
+    ]
+    return page('The agent\'s own page — ' + ('light, after Excel' if t['excel'] else 'dark, after Databricks'), t, 1440, 900, content, notes)
 
 # ── the token board ──────────────────────────────────────────────────────────
 def swatch(t, hexv, name, w=118, h=56, border=None):
@@ -715,6 +802,8 @@ files = {
     'Briefing-Light.dc.html': briefing(LIGHT),
     'AgentOps-Dark.dc.html': agentops(DARK),
     'AgentOps-Light.dc.html': agentops(LIGHT),
+    'Agent-Dark.dc.html': agentpage(DARK),
+    'Agent-Light.dc.html': agentpage(LIGHT),
 }
 for name, html in files.items():
     check(name, html)
@@ -726,19 +815,23 @@ BOARDS = {
     'Main.dc.html': {'x': 0, 'y': 0, 'w': 1440, 'h': 1250, 'title': '1 · Tokens — dark after Databricks, light after Excel'},
     'Briefing-Dark.dc.html': {'x': 1520, 'y': 0, 'w': 1440, 'h': 900, 'title': '2 · Briefing — dark'},
     'Briefing-Light.dc.html': {'x': 1520, 'y': 1020, 'w': 1440, 'h': 900, 'title': '3 · Briefing — light'},
-    'AgentOps-Dark.dc.html': {'x': 3040, 'y': 0, 'w': 1440, 'h': 900, 'title': '4 · Agent Ops overview — dark'},
-    'AgentOps-Light.dc.html': {'x': 3040, 'y': 1020, 'w': 1440, 'h': 900, 'title': '5 · Agent Ops overview — light'},
+    'AgentOps-Dark.dc.html': {'x': 3040, 'y': 0, 'w': 1440, 'h': 900, 'title': '4 · Agent Ops overview — dark', 'is_interactive': True},
+    'AgentOps-Light.dc.html': {'x': 3040, 'y': 1020, 'w': 1440, 'h': 900, 'title': '5 · Agent Ops overview — light', 'is_interactive': True},
+    'Agent-Dark.dc.html': {'x': 4560, 'y': 0, 'w': 1440, 'h': 900, 'title': '6 · The agent\'s own page — dark', 'is_interactive': True},
+    'Agent-Light.dc.html': {'x': 4560, 'y': 1020, 'w': 1440, 'h': 900, 'title': '7 · The agent\'s own page — light', 'is_interactive': True},
 }
 NOTES = {
-    'title': {'x': 0, 'y': -300, 'text': 'Aughor — two skins, one layout: Databricks dark · Excel light (mockup, 2026-09-25)', 'kind': 'title1', 'maxW': 4480},
+    'title': {'x': 0, 'y': -300, 'text': 'Aughor — two skins, one layout: Databricks dark · Excel light (mockup, 2026-09-25)', 'kind': 'title1', 'maxW': 6000},
     'shared': {'x': 0, 'y': 1370, 'w': 700, 'fill': 'blue',
-               'text': 'One layout, two skins. Every screen is the same region stack in both themes — topbar 48 · rail 248 · header 44 · context bar or toolbar 36 · layer tabs 36 · body · inspector 400 on the Briefing — and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px.'},
+               'text': 'One layout, two skins. Every screen is the same region stack in both themes — topbar 48 · rail 248 · header 44 · context bar or toolbar 36 · layer tabs 36 · body · inspector 400 on the Briefing, a details rail 360 on the agent\'s page — and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px.'},
     'new': {'x': 760, 'y': 1370, 'w': 680, 'fill': 'green',
-            'text': 'Decided 2026-09-25: body text 14 px · figures in Inter with tabular numerals, mono only for SQL and ids · light keeps Excel green for its own state (selection, active tab, the primary) and blue for links; dark stays blue · NO definition bar · NO status bar · sentence-case 12 px labels · light chrome is Excel grey #F3F3F3. On Agent Ops the click on an agent opens that agent\'s own page; nothing opens inside the overview.'},
-    'calls': {'x': 4560, 'y': 0, 'w': 520, 'fill': 'orange',
+            'text': 'Decided 2026-09-25: body text 14 px · figures in Inter with tabular numerals, mono only for SQL and ids · light keeps Excel green for its own state (selection, active tab, the primary) and blue for links; dark stays blue · NO definition bar · NO status bar · sentence-case 12 px labels · light chrome is Excel grey #F3F3F3. On Agent Ops the click on an agent opens that agent\'s own page (boards 6 and 7); nothing opens inside the overview.'},
+    'calls': {'x': 6080, 'y': 0, 'w': 520, 'fill': 'orange',
               'text': 'Next: wave UI-6 of the study writes these tokens into tokens-v2.css and INSTRUMENT.md and moves the body size to 14 px; §4.5 and UI-6\'s receipt move with it. Not started — the token files are dirty in another session\'s branch, so the lift waits for that to land.'},
-    'kept': {'x': 4560, 'y': 560, 'w': 520, 'fill': 'gray',
+    'kept': {'x': 6080, 'y': 560, 'w': 520, 'fill': 'gray',
              'text': 'Kept from earlier decisions: verdict-first Briefing, no numbered gutters (Excel\'s row numbers are NOT adopted), 28 px rail rows and a collapsible rail, press scale on the primary only, the chart palette and its CVD order untouched (lint:palette), no LLM-judge evals, no merging of run planes.'},
+    'agent': {'x': 6080, 'y': 1020, 'w': 520, 'fill': 'teal',
+              'text': 'Boards 6 and 7: the page the click on an agent opens. Drawn from the agent model as it is in code — purpose, instructions, connection and schema scope, bound documents, packs, tool grants (a grant is permission to PROPOSE, never to execute), owner, enabled, the last golden-suite evaluation (the pass chip: measured against the agent\'s own reference SQL, never a judge), revisions. The runs, the holds and the figures are illustrative and add up to boards 4–5. Play: click The Look Analyst on board 4 or 5; the breadcrumb comes back.'},
 }
 # Start from the index as it is on the canvas (the viewer edits live), changing only what is mine.
 base_path = os.path.join(ROOT, 'canvas.read.json')
@@ -753,10 +846,8 @@ if os.path.exists(base_path):
         if name not in index['order']:
             index['order'].append(name)
     index.setdefault('notes', {})
-    for nid, note in NOTES.items():
-        existing = index['notes'].get(nid, {})
-        existing.update({k: v for k, v in note.items() if k not in existing or k == 'text'})
-        index['notes'][nid] = existing
+    for nid, note in NOTES.items():  # these notes are mine: text and place both follow the generator
+        index['notes'][nid] = dict(index['notes'].get(nid, {}), **note)
 else:
     index = {
         'v': 3, 'createdOnFiles': {'v': 1, 'at': now}, 'title': 'Aughor Two Skins', 'launch': {'view': 'canvas'}, 'pages': [],
