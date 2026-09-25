@@ -70,10 +70,15 @@ def merge_time_edit(existing: Any, sent: dict) -> dict:
     kind = sent.get("time_kind", out["time_kind"])
     if kind is not None and kind not in KINDS:
         raise ValueError(f"time_kind must be one of {', '.join(KINDS)}")
+    before = {k: out[k] for k in TIME_FIELDS if k != "time_confirmed_by"}
     out.update({k: v for k, v in sent.items() if k in TIME_FIELDS})
     who = sent.get("time_confirmed_by") or out.get("time_confirmed_by") or "a person"
     out["time_confirmed_by"] = who
-    out["time_source"] = f"confirmed by {who} in the metric editor"
+    changed = any(out[k] != v for k, v in before.items())
+    # a confirmation keeps the rule and the measurement that set the fields, and adds who
+    # stood behind them; a correction replaces them, so the source is the person's alone
+    out["time_source"] = (f"set by {who} in the metric editor" if changed or not out.get("time_source")
+                          else f"{out['time_source']}; confirmed by {who}")
     return out
 
 

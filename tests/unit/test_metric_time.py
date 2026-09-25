@@ -174,6 +174,8 @@ def test_an_edit_that_does_not_send_the_dates_keeps_them_and_a_sent_one_is_a_per
     kept = mt.merge_time_edit(existing, {})
     assert kept["time_column"] == "created_at" and kept["time_source"].startswith("set automatically")
     fixed = mt.merge_time_edit(existing, {"time_column": "shipped_at", "time_confirmed_by": "Ana"})
-    assert fixed["time_column"] == "shipped_at" and fixed["time_source"] == "confirmed by Ana in the metric editor"
+    assert fixed["time_column"] == "shipped_at" and fixed["time_source"] == "set by Ana in the metric editor"
+    ok = mt.merge_time_edit(existing, {"time_confirmed_by": "Ana"})
+    assert ok["time_source"].startswith("set automatically") and ok["time_source"].endswith("; confirmed by Ana")
     with pytest.raises(ValueError):
         mt.merge_time_edit(existing, {"time_kind": "sometimes"})

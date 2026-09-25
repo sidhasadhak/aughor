@@ -949,6 +949,15 @@ export interface Metric {
   connection?: string;
   proposed_by?: string | null;
   proposed_at?: string | null;
+  /** Arc BR-2 — how the metric is measured for a date range: set automatically by rule
+   *  (`time_source` says which), confirmed or corrected by a person (`time_confirmed_by`). */
+  time_column?: string | null;
+  time_kind?: "flow" | "stock" | "cohort" | null;
+  outcome_column?: string | null;
+  until_column?: string | null;
+  settles_after_days?: number | null;
+  time_source?: string | null;
+  time_confirmed_by?: string | null;
 }
 
 export interface MetricAuditEntry {
