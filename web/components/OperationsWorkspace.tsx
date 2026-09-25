@@ -87,6 +87,7 @@ export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange,
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Operations views"
+      title="Operations"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "monitors")    return <MonitorsPanel connId={connId} workspaceId={workspaceId} />;

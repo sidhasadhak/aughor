@@ -190,26 +190,43 @@ export function pct(ratio: number | null | undefined, digits = 0): string {
 // A decimal run long enough to be float noise rather than intended precision. MIRRORS
 // `_LONG_DECIMAL_RE` in aughor/util/format.py — keep the two in step.
 const LONG_DECIMAL_RE = /-?\d+\.\d{4,}/g;
+// Scientific notation that leaked out of a float64 into prose: `7.49e+06` reached a
+// Briefing tile as its headline figure (docs/UI_UX_STUDY_2026-09-25.md §2.6).
+const E_NOTATION_RE = /-?\d+(?:\.\d+)?e[+-]?\d+/gi;
+// A bare magnitude of five digits or more, with an optional short fraction, that carries no
+// grouping — `180925`, `1820497.55` — and is not the tail of a longer number, a fraction, a
+// date (2026-06-25), a time or a path. Four-digit runs are left alone: they are years more
+// often than counts, and a year with a comma in it is wrong in a way a reader notices.
+const UNGROUPED_RE = /(?<![\d,.\-/:])(\d{5,})(\.\d{1,3})?(?![\d,]|[-/:]\d)/g;
+const group = (digits: string) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
 /**
- * Collapse over-long decimal runs inside a STRING we did not compose — grounded prose the
- * backend wrote, or a figure lifted out of it. The platform quotes its own numbers verbatim
- * ("never invent a number"), so a raw float64 that reached a finding is reproduced here
- * exactly: `…is 43.959061407888164%`.
+ * Make the numbers inside a STRING we did not compose read as a reader reads them — grounded
+ * prose the backend wrote, or a figure lifted out of it. The platform quotes its own numbers
+ * verbatim ("never invent a number"), so whatever a float64 looked like when it reached a
+ * finding is reproduced here exactly: `…is 43.959061407888164%`, `180925 total`, `7.49e+06`.
  *
- * The real fix is upstream (aughor/util/format.py rounds rows on the way into the prompt and
- * findings on the way out), so this is the render-boundary backstop that also corrects prose
- * persisted before that landed. Same policy as the backend: |v| ≥ 1 → 2dp, |v| < 1 → 6dp,
- * whole results drop the decimal point. Comma grouping, currency symbols and already-short
- * numbers are untouched. Idempotent; safe on null/empty.
+ * Three rewrites, none of which changes a value: scientific notation is expanded; over-long
+ * decimal runs collapse to the platform's precision (|v| ≥ 1 → 2dp, |v| < 1 → 6dp, whole
+ * results drop the point — the backend's policy in aughor/util/format.py); and a bare
+ * magnitude of five digits or more gains thousands grouping (2026-09-25, the Briefing tiles
+ * that read `180925` and `1820497.55`). Already-grouped numbers, currency symbols, years,
+ * dates and short numbers are untouched. Idempotent; safe on null/empty.
  */
 export function normalizeNumberPrecision(text: string | null | undefined): string {
   if (!text) return text ?? "";
-  return text.replace(LONG_DECIMAL_RE, m => {
-    const v = parseFloat(m);
-    const r = Math.abs(v) >= 1 ? Math.round(v * 1e2) / 1e2 : Math.round(v * 1e6) / 1e6;
-    return String(r);
-  });
+  return text
+    .replace(E_NOTATION_RE, m => {
+      const v = Number(m);
+      if (!Number.isFinite(v)) return m;
+      return String(Math.abs(v) >= 1 ? Math.round(v * 1e2) / 1e2 : Math.round(v * 1e6) / 1e6);
+    })
+    .replace(LONG_DECIMAL_RE, m => {
+      const v = parseFloat(m);
+      const r = Math.abs(v) >= 1 ? Math.round(v * 1e2) / 1e2 : Math.round(v * 1e6) / 1e6;
+      return String(r);
+    })
+    .replace(UNGROUPED_RE, (_m, int: string, frac: string | undefined) => group(int) + (frac ?? ""));
 }
 
 /** "1 entity" / "3 entities" — a count with its correctly-inflected noun (PX-1:

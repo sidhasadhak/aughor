@@ -169,8 +169,8 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     <>
       {/* Connection picker — lists only briefings-enabled connections (Catalog opt-in). */}
       {showConnPicker && (
-        <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>Connection</span>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="aug-label">Connection</span>
           <select
             value={connectionId}
             onChange={e => onConnectionChange?.(e.target.value)}
@@ -189,8 +189,8 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       {/* Shared schema scope — drives Briefing / Hub / Domains together. Only shown
           when the connection exposes more than one schema (and never for a canvas). */}
       {showSchema && (
-        <label style={{ marginLeft: showConnPicker ? 0 : "auto", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="aug-label">Schema</span>
           <select
             value={selectedSchema ?? ""}
             onChange={e => setSelectedSchema(e.target.value || null)}
@@ -215,6 +215,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Intelligence layers"
+      title="Intelligence"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       headerControls={headerControls}
       renderLayer={id => {

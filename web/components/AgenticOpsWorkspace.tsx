@@ -163,6 +163,7 @@ export function AgenticOpsWorkspace({
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Agent Ops views"
+      title="Agent Ops"
       badges={{ attention, departures: departuresOwed }}
       toolbar={<RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />}
       headerTrailing={

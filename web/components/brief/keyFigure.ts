@@ -56,7 +56,10 @@ function sublabelBefore(text: string, index: number): string | undefined {
 }
 
 export function extractKeyFigure(finding: string): KeyFigure | null {
-  const text = (finding || "").trim();
+  // The precision policy runs on the statement BEFORE extraction, so a magnitude the finding
+  // wrote bare (`180925`) or in scientific notation (`7.49e+06`) is grouped by the time the
+  // pattern below reads it — the tile then shows `180,925`, not the float's own spelling.
+  const text = normalizeNumberPrecision((finding || "").trim());
   if (!text) return null;
 
   // 1) Percentages — the most common headline number. An explicit range takes its peak

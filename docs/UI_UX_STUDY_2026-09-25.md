@@ -701,5 +701,21 @@ with guardrails and the configuration history still inside it). Charters wear th
 inside the Overview layer; the click on an agent arrives here. Not drawn from the mockup: the held-answers strip,
 a Revisions tab (history lives in Setup), a Departures tab.
 
-Not yet, in order: the Briefing's formatted figures and named ids (UI-3); the header diet and the context bar
-(UI-2); the Intelligence header's ten controls at 1024; the density preference.
+**The third movement, the same day: the Briefing's figures and the header diet.** The precision policy in
+`lib/format.ts` (`normalizeNumberPrecision`) now does three things to a number inside prose it did not compose,
+none of which changes a value: it expands scientific notation (`7.49e+06`), collapses float noise as before, and
+groups a bare magnitude of five digits or more (`180925` → `180,925`, `1820497.55` → `1,820,497.55`); years, dates and
+already-grouped figures are untouched. `extractKeyFigure` runs the policy on the statement before it looks for a
+figure, so the Briefing's tiles read `180,925` and `1,820,497.55` where they read the float's own spelling, and the
+ledger rows group with them. Four cases in `keyFigure.test.ts` hold it.
+
+The workspace shell (`Workspace.tsx`) now draws §4.3's region stack, one job per row: **header 44** — the
+workspace's name and its one action; **context bar 36** — what scopes the view (Intelligence's Connection and
+Schema pickers, sentence-case labels), only when there is one; **layer tabs 36** — the perspectives as underlined
+tabs (`.aug-layer-tabs`; sheet tabs on chrome in light) in a row that scrolls rather than clips; **toolbar 36** — what
+filters the view (the Agent Ops range). Measured at 1024: the Intelligence header holds one title where it held ten
+controls with the rightmost at 1201 px; all nine layers fit their row with no overflow; the page has no horizontal
+scroll. The Briefing's explorer strip lost its last tracked-caps label and keeps its status on one line.
+
+Not yet, in order: ids as names outside the Briefing (`Agentic · 8233e4fd` on Agent runs, the audit's dunder
+kinds, `GET /graph` on the Brain map); the density preference; the cold-load empty states of §2.1 (UI-1).

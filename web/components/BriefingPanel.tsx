@@ -2780,7 +2780,7 @@ export function BriefingPanel({
       {/* ── Explorer control bar ── demoted to a thin machinery strip: it explains where the
           brief comes from, but it isn't content. Single hairline row, mono --t4. */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "9px 2px", borderBottom: "1px solid var(--b0)" }}>
-        <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", letterSpacing: ".08em", textTransform: "uppercase" }}>
+        <span className="aug-label" style={{ color: "var(--t3)" }}>
           Explorer
         </span>
         {explorerStatus ? (
@@ -2805,7 +2805,9 @@ export function BriefingPanel({
                 figure counts something slightly different, so a second number here would
                 invite the reader to reconcile two things that were never the same. */}
             {explorerStatus.phase === "failed" && hasFindings && (
-              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+              <span className="aug-fs-xs" title="The last run stopped short; earlier findings are kept"
+                style={{ color: "var(--t3)", flex: "1 1 0", minWidth: 0, overflow: "hidden",
+                         textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 · the last run stopped short; earlier findings are kept
               </span>
             )}

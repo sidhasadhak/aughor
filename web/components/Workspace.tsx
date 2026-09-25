@@ -20,9 +20,12 @@ type WorkspaceProps<L extends string> = {
   /** Render a layer's switcher icon at a given size/colour — kept injectable so the
    *  primitive owns no icon set (each workspace brings its own). */
   renderIcon: (icon: string, size: number, color: string) => React.ReactNode;
-  /** Optional header controls (connection / schema pickers …) inserted between the
-   *  title and the switcher. When present the switcher drops its `margin-left:auto`,
-   *  so the trailing group is right-aligned by the first control instead. */
+  /** The workspace's name, shown as the header's title ("Agent Ops", "Intelligence").
+   *  Without it the active layer's label stands in, which repeats the tab under it. */
+  title?: string;
+  /** Optional controls that SCOPE the view — a connection, a schema. Since 2026-09-25 they
+   *  render in the context bar, the 36px row under the header, never in the header itself:
+   *  the header carries the title and the one action, and nothing else. */
   headerControls?: React.ReactNode;
   /** Optional controls pinned to the RIGHT of the header, after the switcher.
    *  `headerControls` sits between the title and the switcher and is for things that
@@ -51,8 +54,8 @@ type WorkspaceProps<L extends string> = {
 };
 
 /**
- * The one Workspace shell — a header (active title + optional controls + a segmented
- * perspective switcher) over a keep-alive layered body. Extracted from
+ * The one Workspace shell — the region stack (header 44 · context bar 36 · layer tabs 36 ·
+ * toolbar 36) over a keep-alive layered body. Extracted from
  * `IntelligenceWorkspace` so Intelligence / Canvas / Operations are all *instances* of
  * one shell rather than three hand-rolled copies of the same layer chrome (Part 2
  * Track B — "one shell").
@@ -62,7 +65,7 @@ type WorkspaceProps<L extends string> = {
  * switches. Layers that have never been visited aren't mounted at all.
  */
 export function Workspace<L extends string>({
-  layers, layer, onLayerChange, ariaLabel, headerControls, headerTrailing, toolbar,
+  layers, layer, onLayerChange, ariaLabel, title, headerControls, headerTrailing, toolbar,
   renderLayer, badges, headerless,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
@@ -75,64 +78,53 @@ export function Workspace<L extends string>({
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-      {/* Workspace header — title + optional controls + perspective switcher */}
+      {/* The region stack (docs/UI_UX_STUDY_2026-09-25.md §4.3, implemented 2026-09-25):
+          header 44 — the workspace's name and its ONE action;
+          context bar 36 — what scopes the view (a connection, a schema), when there is one;
+          layer tabs 36 — the perspectives, underlined, in a row that scrolls rather than clips;
+          toolbar 36 — what filters the view (a range, a search), when there is one.
+          The header used to hold the title, the scope pickers, the segmented switcher AND the
+          action in one 44px row: at 1024 the Intelligence header's tenth control sat at
+          1201px, and the Agent Ops range drew under its own tabs. One job per row. */}
       {!headerless && (
       <div className="aug-content-header" style={{ flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}>
-        {/* The screen title. The layer's blurb survives as the switcher's tooltip, where it
-            answers a question someone is actually asking; beside the title it only repeated
-            the chip next to it. */}
-        <span className="aug-content-title" style={{ flexShrink: 0 }}>{active.label}</span>
-
-        {headerControls}
-
-        {/* Layer switcher — segmented: --bg-4 fills the selected layer and --b2 hairlines
-            divide them. Labels only: an icon that repeats its word is decoration. */}
-        <div
-          role="tablist"
-          aria-label={ariaLabel}
-          className="aug-segmented"
-          style={{
-            marginLeft: headerControls ? 0 : "auto",
-            minWidth: 0,
-            overflowX: "auto",
-            scrollbarWidth: "none",
-          }}
-        >
-          {layers.map(l => {
-            const on = l.id === layer;
-            return (
-              <Button
-                key={l.id}
-                role="tab"
-                aria-selected={on}
-                onClick={() => onLayerChange(l.id)}
-                title={l.blurb}
-                variant="ghost"
-                size="sm"
-                className="aug-seg-item"
-              >
-                {l.label}
-                {(badges?.[l.id] ?? 0) > 0 && (
-                  // Amber: something in this layer is waiting on a human.
-                  <span className="aug-tab-badge aug-tab-badge-waiting">
-                    {badges![l.id]}
-                  </span>
-                )}
-              </Button>
-            );
-          })}
-        </div>
-
-        {/* `margin-left: auto` HERE rather than on the switcher: with `headerControls`
-            present nothing in the row claimed the free space, so the header packed left
-            and left a third of its width empty. This pins the action to the right edge
-            and lets the switcher sit against the view controls it belongs with. */}
+        <span className="aug-content-title" style={{ flexShrink: 0 }}>{title ?? active.label}</span>
+        <span style={{ flex: 1 }} />
         {headerTrailing && (
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center",
-                        gap: 8, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             {headerTrailing}
           </div>
         )}
+      </div>
+      )}
+
+      {headerControls && <div className="aug-toolbar aug-context-bar">{headerControls}</div>}
+
+      {!headerless && (
+      <div role="tablist" aria-label={ariaLabel} className="aug-layer-tabs">
+        {layers.map(l => {
+          const on = l.id === layer;
+          return (
+            <Button
+              key={l.id}
+              role="tab"
+              aria-selected={on}
+              onClick={() => onLayerChange(l.id)}
+              title={l.blurb}
+              variant="ghost"
+              size="sm"
+              className="aug-tab"
+            >
+              {l.label}
+              {(badges?.[l.id] ?? 0) > 0 && (
+                // Amber: something in this layer is waiting on a human.
+                <span className="aug-tab-badge aug-tab-badge-waiting">
+                  {badges![l.id]}
+                </span>
+              )}
+            </Button>
+          );
+        })}
       </div>
       )}
 

@@ -1252,3 +1252,28 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 }
 .aug-rail-row > span:first-child { font-size: 12px; color: var(--t3); }
 
+/* ── Layer tabs · 36 — the workspace's perspectives in their own row under the header (and
+   under the context bar when there is one): underlined tabs that scroll rather than clip, so
+   the header keeps its title and its one action. Light draws them as sheet tabs on chrome. */
+.aug-layer-tabs {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 22px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--b1);
+  background: var(--bg-0);
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+.aug-layer-tabs::-webkit-scrollbar { display: none; }
+.aug-layer-tabs .aug-tab { height: auto; margin: 0; padding: 0 2px; border-radius: 0; flex-shrink: 0; }
+[data-theme="light"] .aug-layer-tabs { gap: 0; background: var(--bg-1); }
+[data-theme="light"] .aug-layer-tabs .aug-tab { padding: 0 14px; border-right: 1px solid var(--b1); }
+[data-theme="light"] .aug-layer-tabs .aug-tab[aria-selected="true"] { background: var(--bg-0); color: var(--accent-text); }
+/* The context bar is a toolbar that holds SCOPE (a connection, a schema), not filters: its
+   controls sit left, spaced wider, on the page. */
+.aug-context-bar { gap: 16px; }
+
