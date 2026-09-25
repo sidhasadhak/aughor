@@ -34,4 +34,24 @@ describe("extractKeyFigure", () => {
     // "2,014" carries grouping — a count, not a calendar year.
     expect(extractKeyFigure("Returns hit 2,014 units")?.value).toBe("2,014");
   });
+
+  // 2026-09-25 — the three spellings a float64 reached the Briefing tiles in
+  // (docs/UI_UX_STUDY_2026-09-25.md §2.6): a bare magnitude, a bare decimal, e-notation.
+  it("groups a magnitude the finding wrote without separators", () => {
+    expect(extractKeyFigure("The query returns 180925 total sold items")?.value).toBe("180,925");
+  });
+
+  it("groups a decimal magnitude and keeps its cents", () => {
+    expect(extractKeyFigure("Inventory cost is concentrated in Jeans at 1820497.55")?.value)
+      .toBe("1,820,497.55");
+  });
+
+  it("expands scientific notation that leaked out of a float", () => {
+    expect(extractKeyFigure("Department cost totals 7.49e+06 for Men")?.value).toBe("7,490,000");
+  });
+
+  it("leaves a year and a date alone", () => {
+    expect(extractKeyFigure("Between 2026-06-25 and 2026-09-22 orders rose to 12400")?.value)
+      .toBe("12,400");
+  });
 });

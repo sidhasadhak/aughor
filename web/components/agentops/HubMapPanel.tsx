@@ -7,6 +7,7 @@ import {
   costCaveat, costText, destinationText, ownerText, probationDetail, probationText,
   stateColor,
 } from "@/lib/hubMap";
+import { formatDateTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/motion";
@@ -33,7 +34,8 @@ function Mono({ children, tint }: { children: React.ReactNode; tint?: string }) 
 
 /**
  * HB-6 — the hub-wide map: every automation on one screen, with the seven columns the
- * roadmap names. Agent Ops' Map answers this per agent; this panel answers it for the
+ * roadmap names. Last run sits second since 2026-09-25 (asked): a destination's prompt text
+ * had pushed it off the right edge, so the one column a reader checks first was never seen. Agent Ops' Map answers this per agent; this panel answers it for the
  * whole hub, from ONE read (`GET /hub/map`). Cost renders as what the server says it
  * is — a floor — and an unmeasured precision renders as "not measured", never 0%.
  */
@@ -109,11 +111,11 @@ export function HubMapPanel({ connId }: { connId?: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Automation</TableHead>
+                <TableHead>Last run</TableHead>
                 <TableHead>Trigger</TableHead>
                 <TableHead>Destinations</TableHead>
                 <TableHead>Grant</TableHead>
                 <TableHead>Owner</TableHead>
-                <TableHead>Last run</TableHead>
                 <TableHead className="num">Cost</TableHead>
                 <TableHead>Probation</TableHead>
               </TableRow>
@@ -130,7 +132,7 @@ export function HubMapPanel({ connId }: { connId?: string }) {
 
 function MapRow({ row }: { row: HubMapRow }) {
   const caveat = costCaveat(row.cost);
-  const lastAt = row.last_run.at ? row.last_run.at.replace("T", " ").slice(0, 16) : "";
+  const lastAt = formatDateTime(row.last_run.at);
   return (
     <TableRow>
       <TableCell>
@@ -143,12 +145,31 @@ function MapRow({ row }: { row: HubMapRow }) {
         </div>
         <div className="aug-fs-xs" style={{ color: "var(--t3)", paddingLeft: 15 }}>{row.conn_id}{row.state !== "live" ? ` · ${row.state}` : ""}</div>
       </TableCell>
-      <TableCell><Mono>{row.trigger.join(" · ")}</Mono></TableCell>
+      <TableCell>
+        {row.last_run.status ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <span className="aug-fs-sm aug-num" style={{ color: "var(--t1)", whiteSpace: "nowrap" }}
+                  title={row.last_run.at || undefined}>{lastAt}</span>
+            <span className="aug-fs-xs" style={{ color: RUN_COLOR[row.last_run.status] || "var(--t3)" }}>
+              ● {row.last_run.status}
+            </span>
+          </div>
+        ) : <Mono tint="var(--t3)">never</Mono>}
+      </TableCell>
+      <TableCell>
+        <Mono>
+          <span title={row.trigger.join(" · ")}
+                style={{ display: "block", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis" }}>
+            {row.trigger.join(" · ")}
+          </span>
+        </Mono>
+      </TableCell>
       <TableCell>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {row.destinations.map((d, i) => (
             <Mono key={i} tint={d.routed_about ? "var(--cyn3)" : undefined}>
-              <span title={d.resolved?.map(x => x.principal).join(", ") || d.target}>
+              <span title={d.resolved?.map(x => x.principal).join(", ") || d.target}
+                    style={{ display: "block", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis" }}>
                 {destinationText(d)}
               </span>
             </Mono>
@@ -175,15 +196,6 @@ function MapRow({ row }: { row: HubMapRow }) {
         {row.owner.agent_id && (
           <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>runs as {row.owner.agent_id}</div>
         )}
-      </TableCell>
-      <TableCell>
-        {row.last_run.status ? (
-          <span className="aug-fs-xs" style={{ color: RUN_COLOR[row.last_run.status] || "var(--t3)" }}
-                title={row.last_run.at || undefined}>
-            ● {row.last_run.status}
-            <span style={{ color: "var(--t3)", marginLeft: 6 }}>{lastAt}</span>
-          </span>
-        ) : <Mono tint="var(--t3)">never</Mono>}
       </TableCell>
       <TableCell className="num">
         <span title={caveat || `${row.cost.runs} runs · ${row.cost.deep_runs} deep runs in ${row.cost.window_days}d`}

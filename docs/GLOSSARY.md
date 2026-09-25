@@ -42,6 +42,7 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Briefing** | The periodic narrative artifact, and its subscription | brief (as the artifact), digest, Intelligence Digest |
 | **Run** | One execution of anything | session, episode (a step *inside* a run is a **step**) |
 | **Trace** | The telemetry kept ABOUT one run — the `session_events` it wrote, reconstructed | run (a trace is the record, not the execution) |
+| **Trajectory** | One run's trace with its steps' tool, arguments and results, its answer, and the reward attached to it — the one record the exporters read (Arc TJ, ROADMAP §3.47). A trace without a reward is not a trajectory | episode; rollout (a rollout is the act of producing one or more trajectories for one problem, not the record) |
 | **Segment** | A saved, named filter over an entity's rows | ObjectSet |
 | **Query template** | A reusable governed SQL template | OntologyAction |
 

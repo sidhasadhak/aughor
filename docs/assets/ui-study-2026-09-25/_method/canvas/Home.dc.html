@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home, returning</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#181818}
+:root{--bg0:#181818;--bg1:#1c1b1a;--bg3:#211e1c;--bg4:#2a2725;--sel:#2d2622;--b0:#23211f;--b1:#2c2928;--b2:#3a3532;--t1:#e9ecee;--t2:#99a2a8;--t3:#7c878d;--t4:#545c62;--blue:#4c9ad6;--grn:#3eab82;--amb:#b88d30;--red:#d2665c;--sans:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;--ann:#e0a84a}
+a{color:#4c9ad6}a:hover{color:#7bb8e6}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--bg0); color: var(--t1); font-family: var(--sans); font-size: 13px; line-height: 1.5; overflow: hidden">
+
+  <div style="height: 48px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--bg1); border-bottom: 1px solid var(--b1)">
+    <div style="font-family: var(--mono); font-weight: 600; letter-spacing: 0.08em">AUGHOR</div>
+    <button style="height: 26px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--mono)">Default ▾</button>
+    <div style="width: 1px; height: 20px; background: var(--b2)"></div>
+    <span style="font: 500 11px var(--mono); letter-spacing: 0.06em; color: var(--t3)">CONNECTION</span>
+    <button style="height: 26px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--sans)">theLook ▾</button>
+    <div style="flex-grow: 1"></div>
+    <button style="width: 320px; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t3); font: 400 12px var(--sans); text-align: left"><span style="flex-grow: 1">Search, ask, or run a command</span><span style="font-family: var(--mono); font-size: 11px">⌘K</span></button>
+    <button aria-label="Needs you: 3 items" style="position: relative; width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t2); font: 500 11px var(--mono)">!<span style="position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 3px; background: var(--amb); color: #181818; font: 500 11px var(--mono); display: flex; align-items: center; justify-content: center">3</span></button>
+    <button aria-label="Account menu" style="width: 28px; height: 28px; border-radius: 999px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 11px var(--mono)">AU</button>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0">
+    <nav aria-label="Primary" style="width: 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; background: var(--bg1); border-right: 1px solid var(--b1); padding: 8px">
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: var(--sel); color: var(--t1); font: 500 12px var(--sans); text-align: left; box-shadow: inset 2px 0 0 var(--blue)">Home</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left; display: flex; align-items: center"><span style="flex-grow: 1">Needs you</span><span style="min-width: 18px; padding: 0 5px; border-radius: 3px; background: var(--bg4); color: var(--t1); font: 500 11px var(--mono); text-align: center">3</span></button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Ask</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Briefing</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Runs</button>
+      <div style="margin: 10px 10px 4px; font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">DATA</div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Catalog</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">SQL</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Semantic layer</button>
+      <div style="margin: 10px 10px 4px; font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">MODEL</div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Ontology</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Graph</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Actions</button>
+      <div style="margin: 10px 10px 4px; font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">OPERATE</div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Agents</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Automations</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Monitors</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Departures</button>
+      <div style="margin: 10px 10px 4px; font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">GOVERN</div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Spend</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Security</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Evals</button>
+      <div style="flex-grow: 1"></div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-top: 1px solid var(--b0); border-radius: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Settings</button>
+    </nav>
+
+    <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0">
+      <div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid var(--b1)">
+        <h1 style="margin: 0; font: 600 13px var(--sans)">Home</h1>
+        <div style="flex-grow: 1"></div>
+        <span style="font: 400 11px var(--mono); color: var(--t3)">Thursday 25 September · theLook</span>
+      </div>
+
+      <div style="flex-grow: 1; padding: 32px 24px 0; overflow: hidden">
+        <div style="max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px">
+
+          <div style="padding: 20px; border-radius: 6px; border: 1px solid var(--b1); background: var(--bg1); display: flex; flex-direction: column; gap: 12px">
+            <label for="ask" style="font: 600 15px var(--sans)">Ask anything about theLook</label>
+            <textarea id="ask" placeholder="Where are we losing money? · Which categories churn most? · How did revenue trend last quarter?" style="height: 64px; padding: 10px 12px; box-sizing: border-box; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 400 13px var(--sans); resize: none"></textarea>
+            <div style="display: flex; align-items: center; gap: 12px">
+              <div role="group" aria-label="Treatment" style="display: inline-flex; height: 26px; border: 1px solid var(--b2); border-radius: 4px; overflow: hidden">
+                <button style="height: 26px; padding: 0 10px; border: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans)">Quick</button>
+                <button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: var(--bg4); color: var(--t1); font: 500 12px var(--sans)">Agent</button>
+              </div>
+              <span style="font-size: 12px; color: var(--t3)">a multi-step run; Quick for a straight answer</span>
+              <div style="flex-grow: 1"></div>
+              <button style="height: 26px; padding: 0 12px; border-radius: 3px; border: 0; background: var(--blue); color: #ffffff; font: 600 12px var(--sans)">Ask →</button>
+            </div>
+          </div>
+
+          <div>
+            <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3); margin-bottom: 8px">SINCE YOU WERE HERE · 14 h</div>
+            <div style="display: flex; flex-direction: column">
+              <a href="#departures" style="display: grid; grid-template-columns: 10px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--b0); text-decoration: none; color: var(--t1); font-size: 13px"><span style="width: 7px; height: 7px; border-radius: 999px; background: var(--amb)"></span><span><span style="font-family: var(--mono)">13</span> sends held at the gate — the Daily Briefing twice, on an unapproved definition of <span style="font-family: var(--mono)">aov</span></span><span style="color: var(--blue); font-size: 12px">Review →</span></a>
+              <a href="#briefing" style="display: grid; grid-template-columns: 10px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--b0); text-decoration: none; color: var(--t1); font-size: 13px"><span style="width: 7px; height: 7px; border-radius: 999px; background: var(--grn)"></span><span><span style="font-family: var(--mono)">3</span> new findings on theLook — the newest: Suits return at <span style="font-family: var(--mono)">14.59%</span>, the highest of any category</span><span style="color: var(--blue); font-size: 12px">Read the briefing →</span></a>
+              <a href="#needs" style="display: grid; grid-template-columns: 10px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--b0); border-bottom: 1px solid var(--b0); text-decoration: none; color: var(--t1); font-size: 13px"><span style="width: 7px; height: 7px; border-radius: 999px; background: var(--amb)"></span><span><span style="font-family: var(--mono)">1</span> proposal waiting <span style="font-family: var(--mono)">27 h</span> — a Units Sold anomaly watch, with a Slack channel still to choose</span><span style="color: var(--blue); font-size: 12px">Decide →</span></a>
+            </div>
+          </div>
+
+          <div>
+            <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px"><div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">RUNS · LAST 7 DAYS</div><span style="font: 400 11px var(--mono); color: var(--t3)">42 agent · 8 chat</span><div style="flex-grow: 1"></div><a href="#runs" style="font-size: 12px; text-decoration: none">All runs →</a></div>
+            <div style="display: grid; grid-template-columns: 1fr 90px 110px 100px 80px; gap: 12px; height: 22px; align-items: center; border-bottom: 1px solid var(--b2); font: 500 11px var(--mono); letter-spacing: 0.06em; color: var(--t3)"><div>QUESTION</div><div>KIND</div><div>CONNECTION</div><div>OUTCOME</div><div style="text-align: right">WHEN</div></div>
+            <div style="display: grid; grid-template-columns: 1fr 90px 110px 100px 80px; gap: 12px; height: 28px; align-items: center; border-bottom: 1px solid var(--b0); font-size: 12px"><div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">What changed in theLook in the last day? Top three findings with the numbers.</div><div style="color: var(--t2)">Agent</div><div style="color: var(--t2)">theLook</div><div style="color: #6cc8a1">completed</div><div style="text-align: right; font-family: var(--mono); font-size: 11px; color: var(--t3)">15 h</div></div>
+            <div style="display: grid; grid-template-columns: 1fr 90px 110px 100px 80px; gap: 12px; height: 28px; align-items: center; border-bottom: 1px solid var(--b0); font-size: 12px"><div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Fact-check: board memo, September 2026 — 4 claims, 2 match, 2 contradicted</div><div style="color: var(--t2)">Chat</div><div style="color: var(--t2)">theLook</div><div style="color: #6cc8a1">completed</div><div style="text-align: right; font-family: var(--mono); font-size: 11px; color: var(--t3)">1 d</div></div>
+            <div style="display: grid; grid-template-columns: 1fr 90px 110px 100px 80px; gap: 12px; height: 28px; align-items: center; border-bottom: 1px solid var(--b0); font-size: 12px"><div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Which 5 product categories had the highest revenue last month?</div><div style="color: var(--t2)">Chat</div><div style="color: var(--t2)">theLook</div><div style="color: #6cc8a1">completed</div><div style="text-align: right; font-family: var(--mono); font-size: 11px; color: var(--t3)">1 d</div></div>
+            <div style="display: grid; grid-template-columns: 1fr 90px 110px 100px 80px; gap: 12px; height: 28px; align-items: center; border-bottom: 1px solid var(--b0); font-size: 12px"><div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">What are the anomalies in the data over the last day?</div><div style="color: var(--t2)">Agent</div><div style="color: var(--t2)">theLook</div><div style="color: #e08a82">failed · budget</div><div style="text-align: right; font-family: var(--mono); font-size: 11px; color: var(--t3)">2 d</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ann}}" hint-placeholder-val="{{true}}">
+    <div style="position: absolute; left: 1150px; top: 120px; padding: 1px 6px; border-radius: 3px; background: var(--ann); color: #181818; font: 500 11px var(--mono)">one hero · no welcome card once data exists</div>
+    <div style="position: absolute; left: 1150px; top: 330px; padding: 1px 6px; border-radius: 3px; background: var(--ann); color: #181818; font: 500 11px var(--mono)">three lines, each a door — no tiles that read “—”</div>
+    <div style="position: absolute; left: 1150px; top: 560px; padding: 1px 6px; border-radius: 3px; background: var(--ann); color: #181818; font: 500 11px var(--mono)">connection by name, never its id</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"annotate":{"editor":"boolean","default":true,"section":"Spec"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { ann: this.props.annotate ?? true };
+  }
+}
+</script>
+</body>
+</html>

@@ -449,7 +449,7 @@ BASELINE: dict[str, int] = {
     # 72 → 4: the wire-discriminant files were exempted with their reason (the API row
     # kind IS "charter"), and the two places it reached prose now say "built-in".
     "charter": 4,
-    "control_room": 27,
+    "control_room": 26,
     "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is
     # outside CODE_ROOTS); Wave 2d removed the last one in a FLAG_META description.
@@ -461,7 +461,7 @@ BASELINE: dict[str, int] = {
     "expertise": 43,
     # 58 → 28: FleetOverviewPanel and the api.ts client are exempt — they name the
     # frozen /control-room/fleet route and its component. No reader sees the word.
-    "fleet": 27,
+    "fleet": 26,
     "foundry": 0,
     "genie": 23,
     "hire": 24,  # paid down 2026-08-22: the create flow replaced the hire wording
@@ -489,7 +489,7 @@ BASELINE: dict[str, int] = {
     # (GET /investigations, `investigation.*` events) and the header's Investigate door.
     # 2026-09-14: 573 → 583, a RAISE: the restored Briefing's Investigate doors (+15), less
     # the shell header's Investigate door that the restore took out (−5).
-    "investigation_in_web": 583,
+    "investigation_in_web": 582,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
@@ -510,7 +510,7 @@ BASELINE: dict[str, int] = {
                       # execute call and its "kinetic plane" prose; its classes are `aug-actions-*`.
     "mindsdb": 0,
     "palantir": 6,
-    "persona": 215,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
+    "persona": 214,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
                      # component (281 → 271) and VA-8 renamed the custom-agent detail
                      # component it hangs off (271 → 216). Both were named for the retired
                      # word and both were being edited anyway.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { countNoun } from "@/lib/format";
 import {
   getPacks, proposePackBindings, bindPack, evaluatePack, getPackDeltas, setPackDeltaStatus,
   getConnections, getCatalogTree,
@@ -40,7 +41,7 @@ export function PacksManager() {
                 {layerLabel(p) && <Badge color="#888">{layerLabel(p)}</Badge>}
               </span>
               <span className="aug-fs-xs text-zinc-500">
-                {p.layer ? "" : `${p.metrics ?? 0}m · ${p.roles ?? 0}r · ${p.evals ?? 0}e `}
+                {p.layer ? "" : `${countNoun(p.metrics ?? 0, "metric")} · ${countNoun(p.roles ?? 0, "role")} · ${countNoun(p.evals ?? 0, "eval")} `}
                 {sel === p.id ? "▾" : "▸"}
               </span>
             </button>

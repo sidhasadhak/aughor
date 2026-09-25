@@ -52,6 +52,29 @@ def _parse_ts(value: Any) -> Optional[datetime]:
         return None
 
 
+# The accumulators a fold keeps for itself; `_fold_columns` settles them into the row.
+_FOLD_PRIVATE = ("kinds", "_dur_sum", "_dur_n")
+
+
+def _empty_fold(spark_buckets: int) -> dict:
+    """A charter or runner with no job in the window: every shared column at rest."""
+    return {
+        "runs": 0, "succeeded": 0, "failed": 0, "orphaned": 0, "tokens": 0, "queries": 0,
+        "metered_runs": 0, "unmetered_runs": 0, "last_run_at": None,
+        "spark": [0] * spark_buckets, "kinds": set(), "_dur_sum": 0.0, "_dur_n": 0,
+    }
+
+
+def _fold_columns(fold: dict) -> dict:
+    """The shared columns of a fleet row, from its fold. The private accumulators go, and
+    the mean run duration is settled: `avg_duration_ms` is None when no job in the window
+    finished with both timestamps, never 0 — an unmeasured run is not a fast one."""
+    n = int(fold.get("_dur_n") or 0)
+    out = {k: v for k, v in fold.items() if k not in _FOLD_PRIVATE}
+    out["avg_duration_ms"] = round(float(fold.get("_dur_sum") or 0.0) / n) if n else None
+    return out
+
+
 def _pct(values: list[float], q: float) -> Optional[float]:
     if not values:
         return None
@@ -249,17 +272,21 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
     by_charter: dict[str, dict] = {}
     for j in jobs:
         charter = charter_for_kind(j.get("kind"))
-        row = by_charter.setdefault(charter.id, {
-            "runs": 0, "failed": 0, "orphaned": 0, "tokens": 0, "queries": 0,
-            "metered_runs": 0, "unmetered_runs": 0, "last_run_at": None,
-            "spark": [0] * spark_buckets, "kinds": set(),
-        })
+        row = by_charter.setdefault(charter.id, _empty_fold(spark_buckets))
         row["runs"] += 1
         row["kinds"].add(j.get("kind") or "")
         if j.get("state") == "INTERRUPTED":
             row["orphaned"] += 1
         elif j.get("state") == "FAILED":
             row["orphaned" if (j.get("error") or "") == _ORPHAN_ERROR else "failed"] += 1
+        elif j.get("state") == "SUCCEEDED":
+            row["succeeded"] += 1
+        # How long a run took, from its own timestamps — a failed run took time too, so
+        # every finished pair counts, whatever the state.
+        started, finished = _parse_ts(j.get("started_at")), _parse_ts(j.get("finished_at"))
+        if started and finished:
+            row["_dur_sum"] += (finished - started).total_seconds() * 1000
+            row["_dur_n"] += 1
         metrics = j.get("metrics") or {}
         if isinstance(metrics, dict) and metrics.get("total_tokens") is not None:
             row["metered_runs"] += 1
@@ -278,17 +305,14 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
 
     rows: list[dict] = []
     for charter in list_charters():
-        fold = by_charter.pop(charter.id, None) or {
-            "runs": 0, "failed": 0, "orphaned": 0, "tokens": 0, "queries": 0,
-            "metered_runs": 0, "unmetered_runs": 0, "last_run_at": None,
-            "spark": [0] * spark_buckets, "kinds": set()}
+        fold = by_charter.pop(charter.id, None) or _empty_fold(spark_buckets)
         rows.append({
             "kind": "charter", "id": charter.id, "name": charter.name,
             "role": charter.role, "icon": charter.icon, "lane": charter.lane,
             "enabled": charter_enabled(charter.id),
             "job_kinds": list(charter.job_kinds),
             "spend_source": "job_metering",
-            **{k: v for k, v in fold.items() if k != "kinds"},
+            **_fold_columns(fold),
         })
     # Job kinds no charter claims are RUNNERS, not agents — the automation engine's
     # every-minute evaluation tick, eval experiments. They used to fold into one row
@@ -305,7 +329,7 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
             "role": _runner_role(kinds, fold),
             "icon": "gear", "lane": "background", "enabled": True,
             "job_kinds": kinds, "spend_source": "job_metering",
-            **{k: v for k, v in fold.items() if k != "kinds"},
+            **_fold_columns(fold),
         })
 
     # ── persona rows, from H2's agent axis over the session log ──────────────
@@ -348,6 +372,21 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
             idx = win.index_of(e.get("at") or "")
             if idx is not None:
                 spark[idx] += 1
+        # A custom agent's run is a TRACE. It succeeded when none of its calls failed, and
+        # it took the sum of its calls' durations — model time, which is what the session
+        # log records; the answer's wall time (SQL, tools) is longer and is not claimed.
+        traces: dict[str, dict] = {}
+        for e in mine:
+            tid = e.get("trace_id")
+            if not tid:
+                continue
+            t = traces.setdefault(tid, {"ok": True, "ms": 0.0, "timed": False})
+            if e.get("ok") is False:
+                t["ok"] = False
+            if e.get("duration_ms") is not None:
+                t["ms"] += float(e.get("duration_ms") or 0.0)
+                t["timed"] = True
+        timed = [t["ms"] for t in traces.values() if t["timed"]]
         rows.append({
             "kind": "persona", "id": persona.id, "name": persona.name,
             "enabled": persona.enabled, "connection_id": persona.connection_id,
@@ -356,7 +395,9 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
             "spend": spend,
             # The shared columns, from the agent's own calls.
             "runs": len({e.get("trace_id") for e in mine if e.get("trace_id")}),
+            "succeeded": sum(1 for t in traces.values() if t["ok"]),
             "failed": sum(1 for e in mine if e.get("ok") is False),
+            "avg_duration_ms": round(sum(timed) / len(timed)) if timed else None,
             "orphaned": 0,
             "tokens": sum(int(e.get("total_tokens") or 0) for e in mine),
             "metered_runs": sum(1 for e in mine if e.get("total_tokens") is not None),

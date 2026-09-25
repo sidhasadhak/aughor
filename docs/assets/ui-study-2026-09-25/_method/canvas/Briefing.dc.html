@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Briefing at 1440, inspector open</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#181818}
+:root{--bg0:#181818;--bg1:#1c1b1a;--bg3:#211e1c;--bg4:#2a2725;--sel:#2d2622;--b0:#23211f;--b1:#2c2928;--b2:#3a3532;--t1:#e9ecee;--t2:#99a2a8;--t3:#7c878d;--t4:#545c62;--blue:#4c9ad6;--grn:#3eab82;--amb:#b88d30;--red:#d2665c;--sans:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;--ann:#e0a84a}
+a{color:#4c9ad6}a:hover{color:#7bb8e6}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--bg0); color: var(--t1); font-family: var(--sans); font-size: 13px; line-height: 1.5; overflow: hidden">
+
+  <div style="height: 48px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--bg1); border-bottom: 1px solid var(--b1)">
+    <div style="font-family: var(--mono); font-weight: 600; letter-spacing: 0.08em">AUGHOR</div>
+    <button style="height: 26px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--mono)">Default ▾</button>
+    <div style="width: 1px; height: 20px; background: var(--b2)"></div>
+    <span style="font: 500 11px var(--mono); letter-spacing: 0.06em; color: var(--t3)">CONNECTION</span>
+    <button style="height: 26px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--sans)">theLook ▾</button>
+    <div style="flex-grow: 1"></div>
+    <button style="width: 320px; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t3); font: 400 12px var(--sans); text-align: left"><span style="flex-grow: 1">Search, ask, or run a command</span><span style="font-family: var(--mono); font-size: 11px">⌘K</span></button>
+    <button aria-label="Needs you: 3 items" style="position: relative; width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t2); font: 500 11px var(--mono)">!<span style="position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 3px; background: var(--amb); color: #181818; font: 500 11px var(--mono); display: flex; align-items: center; justify-content: center">3</span></button>
+    <button aria-label="Account menu" style="width: 28px; height: 28px; border-radius: 999px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 11px var(--mono)">AU</button>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0">
+    <nav aria-label="Primary" style="width: 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; background: var(--bg1); border-right: 1px solid var(--b1); padding: 8px">
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Home</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left; display: flex; align-items: center"><span style="flex-grow: 1">Needs you</span><span style="min-width: 18px; padding: 0 5px; border-radius: 3px; background: var(--bg4); color: var(--t1); font: 500 11px var(--mono); text-align: center">3</span></button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Ask</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: var(--sel); color: var(--t1); font: 500 12px var(--sans); text-align: left; box-shadow: inset 2px 0 0 var(--blue)">Briefing</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Runs</button>
+      <div style="margin: 10px 10px 4px; font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">DATA</div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Catalog</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">SQL</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Semantic layer</button>
+      <div style="margin: 10px 10px 4px; font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">MODEL</div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Ontology</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Graph</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Actions</button>
+      <div style="margin: 10px 10px 4px; font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">OPERATE</div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Agents</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Automations</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Monitors</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Departures</button>
+      <div style="margin: 10px 10px 4px; font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">GOVERN</div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Spend</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Security</button>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Evals</button>
+      <div style="flex-grow: 1"></div>
+      <button style="height: 28px; padding: 0 10px; border: 0; border-top: 1px solid var(--b0); border-radius: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans); text-align: left">Settings</button>
+    </nav>
+
+    <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0">
+      <div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid var(--b1)">
+        <h1 style="margin: 0; font: 600 13px var(--sans)">Briefing</h1>
+        <span style="height: 20px; padding: 0 7px; display: inline-flex; align-items: center; gap: 6px; border-radius: 3px; border: 1px solid #245a45; background: #14261f; color: #6cc8a1; font: 400 11px var(--mono)"><span style="width: 7px; height: 7px; border-radius: 999px; background: var(--grn)"></span>grounded &amp; guarded</span>
+        <div style="flex-grow: 1"></div>
+        <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t1); font: 500 12px var(--sans)">Regenerate</button>
+        <button aria-label="More actions" style="width: 26px; height: 26px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t2); font: 600 12px var(--sans)">⋯</button>
+      </div>
+      <div style="height: 36px; box-sizing: border-box; display: flex; align-items: center; gap: 16px; padding: 0 24px; border-bottom: 1px solid var(--b0); font-size: 12px; color: var(--t2)">
+        <span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 999px; background: var(--amb)"></span>Explorer stopped short — earlier findings kept <a href="#explore" style="text-decoration: none; margin-left: 4px">Run again →</a></span>
+        <div style="width: 1px; height: 16px; background: var(--b2)"></div>
+        <div role="group" aria-label="Period" style="display: inline-flex; height: 26px; border: 1px solid var(--b2); border-radius: 4px; overflow: hidden">
+          <button style="height: 26px; padding: 0 10px; border: 0; background: var(--bg4); color: var(--t1); font: 500 12px var(--sans)">Standing</button>
+          <button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: transparent; color: var(--t2); font: 400 12px var(--sans)">Day</button>
+          <button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: transparent; color: var(--t2); font: 400 12px var(--sans)">Week</button>
+          <button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: transparent; color: var(--t2); font: 400 12px var(--sans)">Month</button>
+          <button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: transparent; color: var(--t2); font: 400 12px var(--sans)">Year</button>
+        </div>
+        <button style="height: 26px; padding: 0 8px; border: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans)">Schedule…</button>
+        <div style="flex-grow: 1"></div>
+        <span style="font: 400 11px var(--mono); color: var(--t3)">written 1 min ago · 4 domains · 13 findings</span>
+      </div>
+      <div role="tablist" style="height: 36px; box-sizing: border-box; display: flex; gap: 20px; padding: 0 24px; border-bottom: 1px solid var(--b0)">
+        <button role="tab" aria-selected="true" style="border: 0; background: transparent; color: var(--t1); font: 600 12px var(--sans); padding: 0 2px; box-shadow: inset 0 -2px 0 var(--blue)">Briefing</button>
+        <button role="tab" style="border: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans); padding: 0 2px">Profile</button>
+        <button role="tab" style="border: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans); padding: 0 2px">Evidence</button>
+        <button role="tab" style="border: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans); padding: 0 2px">Memory</button>
+        <button role="tab" style="border: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans); padding: 0 2px">Org</button>
+        <button role="tab" style="border: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans); padding: 0 2px">Brain map</button>
+      </div>
+
+      <div style="flex-grow: 1; display: flex; min-height: 0">
+        <div style="flex-grow: 1; min-width: 0; padding: 24px 24px 0; overflow: hidden">
+          <div style="max-width: 720px; display: flex; flex-direction: column; gap: 20px">
+            <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">INTELLIGENCE BRIEFING · THELOOK</div>
+            <div>
+              <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3); margin-bottom: 8px">VERDICT</div>
+              <h2 style="margin: 0 0 8px; font: 600 22px/1.2 var(--sans); letter-spacing: -0.01em">Category visibility gap masks revenue risk</h2>
+              <p style="margin: 0; font-size: 13px; line-height: 1.7; color: var(--t2)">Overall return rate is <span style="font-family: var(--mono); color: var(--t1)">10.03%</span> — roughly one in ten order items comes back. Suits return most at <span style="font-family: var(--mono); color: var(--t1)">14.59%</span>, ahead of Outerwear &amp; Coats and Swim, and sales volume is visible only as one aggregate, so the categories that carry the risk cannot yet be watched one by one.</p>
+              <div style="display: flex; gap: 8px; margin-top: 12px; align-items: center">
+                <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 0; background: var(--blue); color: #ffffff; font: 600 12px var(--sans)">Investigate →</button>
+                <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t1); font: 500 12px var(--sans)">Monitor</button>
+                <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t1); font: 500 12px var(--sans)">Pin</button>
+                <span style="margin-left: 8px; font: 400 11px var(--mono); color: var(--t3)">4 domains · 13 findings</span>
+              </div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3); margin-bottom: 8px">NUMBERS THAT MOVED</div>
+              <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+                <button style="text-align: left; padding: 12px 14px; border-radius: 4px; border: 1px solid var(--b1); background: var(--bg1); color: var(--t1)"><div style="font: 500 22px var(--mono); letter-spacing: -0.01em">10.03%</div><div style="font-size: 12px; color: var(--t2); margin-top: 4px">return rate, all items</div><div style="font: 400 11px var(--mono); color: var(--t3); margin-top: 6px">Commerce</div></button>
+                <button style="text-align: left; padding: 12px 14px; border-radius: 4px; border: 1px solid var(--blue); background: var(--sel); color: var(--t1)"><div style="font: 500 22px var(--mono); letter-spacing: -0.01em">$1.82M</div><div style="font-size: 12px; color: var(--t2); margin-top: 4px">inventory cost, Jeans</div><div style="font: 400 11px var(--mono); color: var(--t3); margin-top: 6px">Catalog · 1,820,497.55</div></button>
+                <button style="text-align: left; padding: 12px 14px; border-radius: 4px; border: 1px solid var(--b1); background: var(--bg1); color: var(--t1)"><div style="font: 500 22px var(--mono); letter-spacing: -0.01em">$3.56M</div><div style="font-size: 12px; color: var(--t2); margin-top: 4px">retail value, Outerwear &amp; Coats</div><div style="font: 400 11px var(--mono); color: var(--t3); margin-top: 6px">Commerce · 3,561,748.63</div></button>
+                <button style="text-align: left; padding: 12px 14px; border-radius: 4px; border: 1px solid var(--b1); background: var(--bg1); color: var(--t1)"><div style="font: 500 22px var(--mono); letter-spacing: -0.01em">14.59%</div><div style="font-size: 12px; color: var(--t2); margin-top: 4px">return rate, Suits</div><div style="font: 400 11px var(--mono); color: var(--t3); margin-top: 6px">Key questions</div></button>
+              </div>
+            </div>
+            <div>
+              <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px"><div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--t3)">FINDINGS</div><span style="font: 400 11px var(--mono); color: var(--t3)">6 · ranked by novelty</span><div style="flex-grow: 1"></div><span style="font-size: 12px; color: var(--t2)">Scope: All 13 · Key questions 5 · Catalog 3 · Commerce 3 · Customer 2</span></div>
+              <div style="display: flex; flex-direction: column">
+                <div style="display: grid; grid-template-columns: 110px 1fr 90px; gap: 12px; padding: 8px 0; border-top: 1px solid var(--b0); font-size: 13px; align-items: baseline"><span style="font: 400 11px var(--mono); color: var(--t3)">Key questions</span><span>Outerwear &amp; Coats is the top category by total profit, then Jeans and Sweaters.</span><span style="font-family: var(--mono); font-size: 12px; text-align: right; color: var(--t2)">5 categories</span></div>
+                <div style="display: grid; grid-template-columns: 110px 1fr 90px; gap: 12px; padding: 8px 0; border-top: 1px solid var(--b0); font-size: 13px; align-items: baseline"><span style="font: 400 11px var(--mono); color: var(--t3)">Key questions</span><span>Monthly orders rose from 6 in January 2019 to 291 in August 2020 — about 15 more a month.</span><span style="font-family: var(--mono); font-size: 12px; text-align: right; color: var(--t2)">+15 / mo</span></div>
+                <div style="display: grid; grid-template-columns: 110px 1fr 90px; gap: 12px; padding: 8px 0; border-top: 1px solid var(--b0); font-size: 13px; align-items: baseline"><span style="font: 400 11px var(--mono); color: var(--t3)">Catalog</span><span>Department cost is only Men and Women, so the two account for all inventory cost.</span><span style="font-family: var(--mono); font-size: 12px; text-align: right; color: var(--t2)">$7.49M · $6.50M</span></div>
+                <div style="display: grid; grid-template-columns: 110px 1fr 90px; gap: 12px; padding: 8px 0; border-top: 1px solid var(--b0); border-bottom: 1px solid var(--b0); font-size: 13px; align-items: baseline"><span style="font: 400 11px var(--mono); color: var(--t3)">Key questions</span><span>Email drove the most unique user activity, ahead of Adwords and YouTube.</span><span style="font-family: var(--mono); font-size: 12px; text-align: right; color: var(--t2)">52,142 users</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside aria-label="Selected number" style="width: 440px; box-sizing: border-box; display: flex; flex-direction: column; border-left: 1px solid var(--b1); background: var(--bg1)">
+          <div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--b0)">
+            <span style="font: 600 13px var(--sans)">Inventory cost, Jeans</span>
+            <div style="flex-grow: 1"></div>
+            <button aria-label="Close inspector" style="width: 26px; height: 26px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t2); font-size: 12px">Esc</button>
+          </div>
+          <div style="padding: 16px; display: flex; flex-direction: column; gap: 16px; overflow: hidden">
+            <div style="display: flex; align-items: baseline; gap: 10px"><span style="font: 500 28px var(--mono); letter-spacing: -0.02em">$1,820,497.55</span><span style="font-size: 12px; color: var(--t2)">USD · org setting</span></div>
+            <p style="margin: 0; font-size: 13px; line-height: 1.6; color: var(--t1)">Inventory cost is concentrated in Jeans, Outerwear &amp; Coats and Sweaters — the three highest-cost product categories.</p>
+            <div>
+              <div style="font: 500 11px var(--mono); letter-spacing: 0.06em; color: var(--t3); margin-bottom: 6px">WHY THIS NUMBER</div>
+              <div style="padding: 10px 12px; border-radius: 4px; background: var(--bg3); border: 1px solid var(--b1); font: 400 11px/1.6 var(--mono); color: var(--t2); white-space: pre-wrap">SELECT product_category,
+       SUM(cost) AS inventory_cost
+FROM inventory_items
+GROUP BY 1 ORDER BY 2 DESC LIMIT 3</div>
+              <div style="display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap">
+                <span style="height: 20px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: 3px; border: 1px solid #245a45; background: #14261f; color: #6cc8a1; font: 400 11px var(--mono)">grain ✓</span>
+                <span style="height: 20px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: 3px; border: 1px solid #245a45; background: #14261f; color: #6cc8a1; font: 400 11px var(--mono)">join coverage ✓</span>
+                <span style="height: 20px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: 3px; border: 1px solid #245a45; background: #14261f; color: #6cc8a1; font: 400 11px var(--mono)">re-check stable ✓</span>
+                <span style="height: 20px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: 3px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t2); font: 400 11px var(--mono)">488,476 rows read</span>
+              </div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--mono); letter-spacing: 0.06em; color: var(--t3); margin-bottom: 6px">IS THIS RIGHT?</div>
+              <div style="display: flex; gap: 8px">
+                <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--sans)">Yes</button>
+                <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--sans)">Correct it…</button>
+                <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--sans)">No</button>
+              </div>
+              <div style="font-size: 12px; color: var(--t3); margin-top: 6px">Your answer is kept with the number and teaches the next one.</div>
+            </div>
+            <div style="display: flex; gap: 12px; font-size: 12px">
+              <a href="#promote" style="text-decoration: none">Promote to Org</a>
+              <a href="#monitor" style="text-decoration: none">Watch it</a>
+              <a href="#object" style="text-decoration: none">Open Jeans →</a>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ann}}" hint-placeholder-val="{{true}}">
+    <div style="position: absolute; left: 640px; top: 56px; padding: 1px 6px; border-radius: 3px; background: var(--ann); color: #181818; font: 500 11px var(--mono)">header: title · status chip · Regenerate · ⋯ — ten controls became four</div>
+    <div style="position: absolute; left: 980px; top: 100px; padding: 1px 6px; border-radius: 3px; background: var(--ann); color: #181818; font: 500 11px var(--mono)">context bar: explorer status · period · schedule</div>
+    <div style="position: absolute; left: 760px; top: 136px; padding: 1px 6px; border-radius: 3px; background: var(--ann); color: #181818; font: 500 11px var(--mono)">six layers after the split; Ontology · Graph · Actions live under Model</div>
+    <div style="position: absolute; left: 290px; top: 420px; padding: 1px 6px; border-radius: 3px; background: var(--ann); color: #181818; font: 500 11px var(--mono)">figures formatted once, unit stated, raw value on the tile's second line</div>
+    <div style="position: absolute; left: 1010px; top: 560px; padding: 1px 6px; border-radius: 3px; background: var(--ann); color: #181818; font: 500 11px var(--mono)">the grading row — Arc TJ's funnel, on the number itself</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"annotate":{"editor":"boolean","default":true,"section":"Spec"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { ann: this.props.annotate ?? true };
+  }
+}
+</script>
+</body>
+</html>

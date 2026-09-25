@@ -2,6 +2,7 @@
 import { ErrorState } from "@/components/ui/states";
 import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 
+import { callerLabel, connectionLabel } from "@/lib/names";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { formatCount } from "@/lib/format";
 import { getApiBase } from "@/lib/config";
@@ -114,12 +115,17 @@ function agentLabel(hypothesisId: string): { agent: string; detail?: string } {
     case "federated_planner":  return { agent: "Analyst", detail: "federation" };
     case "semantic_operator":  return { agent: "You", detail: "semantic op" };
     case "profile-calibrate":  return { agent: "Curator", detail: "profile" };
+    // 2026-09-25 — the callers built since PX's sweep (the study §2.6 read them off the trail).
+    case "__brief_metric_move__": return { agent: "Briefer", detail: "metric move check" };
+    case "cb2_review":            return { agent: "Curator", detail: "measurement" };
   }
+  if (h.startsWith("card:")) return { agent: "You", detail: "a pinned card" };
   // Investigation hypotheses / subquestions (h1, inv2, subq_3, …) are the Analyst.
   if (/^(h|inv|subq|hypothesis)[\d_]/i.test(h) || h.startsWith("intake") || h.startsWith("clarify")) {
     return { agent: "Analyst", detail: h };
   }
-  return { agent: h || "—" };
+  // Anything else still reads as words, never as a key: `__some_caller__` → "some caller".
+  return callerLabel(h);
 }
 
 function AgentCell({ hypothesisId }: { hypothesisId: string }) {
@@ -574,15 +580,8 @@ export function SecurityAuditPanel({
       }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Security &amp; Audit</span>
         {connId && (
-          <span style={{
-            fontSize: 11,
-            color: "var(--t3)",
-            background: "var(--bg-2)",
-            borderRadius: 3,
-            padding: "2px 6px",
-            fontFamily: "monospace",
-          }}>
-            {connId.slice(0, 8)}
+          <span className="aug-fs-sm" title={connId} style={{ color: "var(--t3)" }}>
+            {connectionLabel(connId, connections)}
           </span>
         )}
         <LensToggle value={lens} onChange={v => onLensChange?.(v)} />
@@ -787,8 +786,7 @@ export function SecurityAuditPanel({
                       {rec.ts.replace("T", " ").replace("Z", "")}
                     </td>
                     <td style={{ padding: "8px 12px", color: "var(--t2)", whiteSpace: "nowrap" }}>
-                      <span style={{ fontFamily: "monospace" }}>{rec.connection_id.slice(0, 8)}</span>
-                      <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 4 }}>{connections.find(c => c.id === rec.connection_id)?.name || rec.connection_id}</span>
+                      <span title={rec.connection_id}>{connectionLabel(rec.connection_id, connections)}</span>
                     </td>
                     <td style={{ padding: "8px 12px" }}>
                       <AgentCell hypothesisId={rec.hypothesis_id} />

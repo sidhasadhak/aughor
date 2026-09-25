@@ -29,7 +29,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "border-[var(--blue-solid)] bg-[var(--blue-solid)] font-semibold text-white hover:border-[var(--blue-solid-hover)] hover:bg-[var(--blue-solid-hover)] active:brightness-90 disabled:border-[var(--b2)] disabled:bg-[var(--bg-4)] disabled:text-[var(--t3)] disabled:opacity-55",
+          "border-[var(--primary)] bg-[var(--primary)] font-semibold text-white hover:border-[var(--primary-hover)] hover:bg-[var(--primary-hover)] active:brightness-90 disabled:border-[var(--b2)] disabled:bg-[var(--bg-4)] disabled:text-[var(--t3)] disabled:opacity-55",
         secondary:
           "border-[var(--b2)] bg-[var(--bg-3)] font-semibold text-[var(--t1)] hover:border-[var(--b3)] hover:bg-[var(--bg-4)] active:bg-[var(--bg-4)] aria-expanded:bg-[var(--bg-4)] disabled:border-[var(--b1)] disabled:bg-[var(--bg-1)] disabled:text-[var(--t3)] disabled:opacity-60",
         outline:

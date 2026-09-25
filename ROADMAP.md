@@ -3753,6 +3753,38 @@ joins BOTH sides and the rate stays a rate. The test that asserted the old rule 
 evidence — a test changed by measurement, not by convenience.
 **Needs:** nothing.
 
+**SP-15 · The platform explains what is on screen — DRAFTED 2026-09-25 (the user: *"Ideally, Spotlight should be able
+to answer such questions.. Like a RAG on the all the modules, actions, processes with the use of, may be, company
+brain, ontology, agent runs, etc?"*, then *"I like your path.. go ahead"*; decision §6 item 33).** The question that
+named it: a scheduled briefing's Slack post read *held · re-measured at departure: 1,648.08 … not in analysis
+ecb56660*, and the user asked what re-measure was and how to unblock it. The answer existed in
+`govern/departure.py`'s own docstring and nowhere a reader could reach: `platform_help` knows eight topics (overview,
+connect, explore, briefing, analysis, monitors, packs, governance) and names the gate in one clause; `platform_guide`
+(SP-4) walks four how-do-I topics; `askSpotlight` parks a question string and never the thing on screen. The Guide
+limb, three movements:
+- **The corpus knows the platform's laws.** The departure laws (1–8, from the module's own text), the glossary and
+  each active arc's §3 one-paragraph summary join `platform_help`'s corpus as retrievable topics — words the repo
+  already maintains, served, never a second telling; alias resolution first, KI's document lane when aliases stop
+  being enough. `platform_help("re-measure")` answers with law 1's sentence and its remedy.
+- **`explain` — one declared tool over the object on screen.** Takes an object kind and id (`departure`,
+  `automation`, `metric`, `agent`, `analysis`) and returns its live state as a tool result the answer may cite: the
+  departure's guards and reasons, the automation's effects and last run, the metric's status and tests. Claims
+  bound to tool results, the arc's standing law; reads free within scope. The remedy text is the SAME table the
+  departures screen renders (`web/lib/departureRemedies.ts` today); it moves server-side beside the laws with this
+  wave, so both read one source.
+- **The door on the row.** A held departure, a paused automation, a draft metric each carry "Ask Spotlight" that
+  summons the palette WITH the object (kind + id), so the first answer is about this hold, not holds in general —
+  and ends in the offered act: revise the automation's question in place (SP-11), run it now, open the metric.
+**Shipped ahead of the wave, same day (`claude/arc-tj-trajectories`):** the departures screen's "What to do next" —
+per held guard, what it means, what to change, and doors to Automations, the analysis, the Semantic Layer and
+Spotlight (the question carries the guard's own sentence and the departure id, the handoff this wave makes
+structural).
+**Done when:** "what is re-measure and how do I unblock it", asked in the palette from a held row, answers with law 1
+in its own words, THIS departure's ungrounded numerals, the automation by name, and offers the revise; measured like
+SP-M — the share of held rows whose Ask door was used, from the session log, no model.
+**Cost:** a corpus loader over prose that already exists; one declared tool; three doors. No new store. ⚑ nothing
+spends: every read is local.
+
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
 > **Origin.** The user's 2026-09-07 directive, given while wiring Google sign-in:
@@ -8559,6 +8591,317 @@ guard mutation-checked, 60 of 60 (`tests/unit/test_semiadditive_measures.py`).
 check does not follow a reading through a window computed across readings (a running total, a change since the last
 one) or through a set operation — silent, not guessed.
 
+### 3.47 · Arc TJ — trajectories: one record per run, a reward that takes both values, and a gym that makes MI-4's gates reachable (DRAFTED 2026-09-25 at the user's direction — §6 item 32, **OPEN with recommendations**; the census TJ-0 was MEASURED first, `docs/TRAJECTORY_CENSUS_2026-09-25.md`; nothing built)
+
+> **Origin.** The user, 2026-09-25, on the diagram *Post-Training to Agentic Learning for LLMs — Reasoning-First,
+> Trajectory-Based System*: *"Check this image deeply.. I want to know where we are realistically and how we can reach
+> the most mature phase from here... go all in!"*, and then *"build a detailed roadmap for this one."* The diagram is
+> eleven boxes in two phases over a shared-infrastructure strip and one store. Phase 1 is single-shot reasoning — a
+> problem, intermediate steps, a final answer, a reward. Phase 2 is a multi-step agent — a task, tool actions,
+> observations, a final state, a reward. Both feed one trajectory store, and one loop turns: graded trajectories are
+> selected, trained on, and the better model produces better trajectories. Its two worked examples are a warehouse
+> query and a warehouse analysis with a chart, which is this platform's work.
+>
+> **The census came first, and it is this arc's premise.** Four read-only surveys on 2026-09-24/25 against `main`
+> `39e8cfb4` (#548) and the serving instance, no model call, every count a floor. The reading: **Aughor is a complete
+> Phase 2 serving environment standing on a Phase 1 learning ledger that is built and starved, with no training engine
+> on either side; the loop at the top of the diagram has never turned once.** What stands between here and it is
+> volume, labels and one store — not code. §3.9 (Arc MI) already holds the training half, MI-4 to MI-6, and its laws
+> bind here too; this arc is the half MI-4 has been waiting on since 2026-09-03, and **it ends where MI-4 begins.**
+>
+> **The thesis, from three measured facts and four assets.**
+> (1) **Volume.** 68 ask turns in this instance's lifetime, 5 human verdicts ever, 3 shadow-classifier rows in the
+> classifier's first day. At that rate MI-4's first gate is years of hand grading away, and CP-2's "week of shadow
+> rows" is about twenty rows. Every plumbing fix of the last three weeks was right; none changes this arithmetic.
+> (2) **Labels.** The one step-level corpus that exists, 188 decision records, carries an outcome that is `ok` on
+> every row and a confidence that is 0.0 on every row. A column that never takes its other value carries no
+> information — MI-3a found the same column constant at 40 rows; it is constant at 188.
+> (3) **The store.** 17 run-level stores, no shared run id, no persisted step record, no reward on any live run.
+> **The assets the diagram does not draw:** deterministic graders already run on live traffic at full sample — every
+> statement is audited, every guard fire is kept; the custody law for training data is decided (§6 item 7); the
+> declared ontology compiles a business question to reference SQL with no model call, a free oracle; and the eval
+> plane with its graduation receipts is the ratchet a training engine needs anyway. So this arc builds the record,
+> the label and the funnel first — all free — and then a **gym**: problems with known answers and K rollouts per
+> problem on the local warehouses, which is the only way a one-operator instance reaches gates written for an
+> organisation of analysts. The diagram's boxes 1 to 5 and 8 to 10 are what the record and the gym are; boxes 6 and
+> 11 stay MI-4 to MI-6.
+
+**Laws that bind every TJ wave (standing, not per-wave; §3.9's laws apply unchanged):**
+
+- **The lawful lane, by field.** A step's tool name, its SQL, row counts, errors, guard fires and outcome are work
+  artifacts: stored always, org-scoped. A step's free-text arguments and the model's own words between calls are
+  payloads: stored under the rule `decision_record.context` already follows — withheld on ungated reads, exportable
+  only under §6 item 7's annex — and, outside an open capture window, written only where the annex is on. §6.4's
+  reading half and §6.7's machine half, applied one level down.
+- **A label must take both values on real traffic before anything reads it.** JD-4's posture, and the lesson of the
+  decision corpus. Every label this arc adds publishes its live distribution before a consumer is wired to it.
+- **Synthetic is fuel, never ground truth** (MI-3, unchanged). Gym rows enter SFT and preference corpora marked
+  `source=gym`; the held-out golden set stays human-written; the split stays keyed on the question.
+- **The harness drives the real path.** A rollout that does not build the prompt the live path builds measures
+  nothing — the scorer once bypassed the connection, and item 19's A/B could not run until its block was wired into
+  the harness. The gym calls the answer path in-process through `ask_target` (`aughor/evals/targets.py:83`), never
+  the hand mirror in `evals/run_golden.py:116`.
+- **No second store, no second harness, no second comparator.** Steps ride `session_events`; datasets ride MI-3's
+  plane; scores ride the evals plane; the two result comparators (`evals/sql_accuracy.py:78`,
+  `aughor/custom_agents/quality.py:138`) become one before the gym scores anything.
+- **Tokens, not dollars.** All 97 calls this instance made on 2026-09-24 were unpriced. A saving is stated in tokens
+  until pricing lands; a dollar figure in this section is a defect.
+- **Receipts that cost model calls run when the user says so** (⚑). TJ-1 to TJ-4 are free; the gym is not.
+- **Catalogue-timestamp discipline.** Every number here is dated 2026-09-24/25 and lives in the census. Re-measure
+  at each wave's pre-check; every DS and MI wave moved its own scope there.
+
+**What is true today (measured 2026-09-24/25; the census holds the file:line receipts):**
+
+| Diagram box | Today | State |
+|---|---|---|
+| 1 Problem source | 139 hand-written question-to-SQL pairs over four connections, 24 Superstore cases, 5 theLook goldens, 12 trusted queries (1 person-verified); no synthetic generation; the pack knowledge base's vector collection at 0 points | thin, no generator |
+| 2 Rollout engine | one trajectory per question live; the self-consistency sampler has no caller; K arms exist only offline and keep outcomes, not trajectories | single-shot live |
+| 3 Reasoning trajectory | model, temperature, tokens, timings per call; prompts in a capture window only (3 of 1,744 calls); no logprobs; tool arguments and results never persisted; the explorer's step log is the one trajectory-shaped record and has no model, reward or trace id | partial |
+| 4 Verification and reward | executable tests and constraints live; exact-answer match eval-only, on two comparators that disagree; no model judge of answers (decided 2026-09-06); 5 verdicts, none with SQL; no numeric reward on a live run | half, reward absent |
+| 5 Selection | five exporters with dedupe, scrub, scope and a leak-proof split; manual trigger; 0, 0 and 5 rows; their directory absent; the few-shot memory's collections never created here | built, unfed |
+| 6 Training | nothing; MI-4 to MI-6 planned; a fine-tune servable through Ollama or LM Studio only | absent until gates |
+| 7 Environment | 42 conversation tools, 11 analyst tools, 13 connectors plus three builtins, a seeded samples warehouse, an MCP server, declared actions with risk tiers; no reset, no replay | live |
+| 8 Agent rollout | 8 or 24 steps by tier, budgets, stop reasons, a decision record per pick, a scheduled path; nothing re-executes a stored run | live |
+| 9 Verification, agentic | environment feedback live; no goal check; the departure gate on outbound only (30 judged, 13 held, 0 marks); no harm or jailbreak check | half |
+| 10 Trajectory processing | 188 decision records, `ok` on all, confidence 0.0 on all, a trace id that joins nothing | capture only |
+| 11 Training, agentic | nothing; JD-6 on hold for want of a corpus | absent |
+| Shared strip | dataset registry, config-only model ids over seven backends, 14 flags with receipts (last July; four defaulted on 2026-09-24 without one, the user's call), 44 stores, a single-process kernel, observability with every call unpriced, the custody law in place | mostly live, local |
+| Unified store | 17 stores, no shared run id; the trace id reaches only the observability tables | absent |
+
+**MI-4's gates, live 2026-09-24:** SFT **0 of 1,000** · preference **0 of 150** · golden **5 of 150** · guard days
+**21 of 30**. The two machine-graded tiers #547 added have never been exported (0 datasets).
+
+#### TJ-0 · The census — ✅ MEASURED 2026-09-25
+
+`docs/TRAJECTORY_CENSUS_2026-09-25.md`: the eleven boxes against the code and the data, the seventeen stores with
+their columns and live counts, every verification and reward mechanism with where its output lands, every problem
+source with its size, the environment and the strip, and fifteen defects found on the way. **Rows that corrected
+standing prose, recorded here so nobody re-derives them:** the grounded-answer guard is *not* persisted per fire — its
+receipts live only in the four stored envelopes, and `guard_verdicts` holds the E1 checks and the rewrites; the
+treatment-shadow flag reads off-by-default in `kernel/flags.py` and is ON on this deployment through `.env`; the
+conversation roster is no longer reads-only, whatever `platform_tools.py:26` says; a model id *is* hardcoded, at
+`aughor/llm/provider.py:279`, in a slashless form the ratchet's pattern does not see; §1's "theLook mirrored daily
+07:00" was not found in connector code and is unverified; and `AGENTS.md`'s `data/vocabulary/` does not exist.
+
+#### TJ-1 · Open the taps that exist (substrate-sized, free, about a day)
+
+> **Premise.** #547 built the taps and none is running: the exporters have a manual trigger and have not been called
+> since; the dataset directory their blobs point at does not exist; the few-shot memory's two collections were never
+> created on this deployment and no embedding backend is set; three join columns are dead; a model id is hardcoded;
+> the day's calls are unpriced. Each is an hour, and together they decide whether TJ-2 measures a fed ledger or an
+> empty one.
+
+- **Run the exporters once** against the live ledger, all six kinds, and publish the gate report before and after in
+  this section. `store.rows_of` creates the datasets directory on first write rather than returning an empty list.
+- **The few-shot memory exists.** Set the embedding backend the memory needs and prove the collections come into
+  being on the next clean answer; the grounding receipt already says when they cannot (§3.43).
+- **Three joins.** The receipt's model id (`investigations.py:346` reads a property the provider lacks); the decision
+  record's trace id (`investigations.py:3528` mints a fresh uuid — carry the run's); the history row's `trace_id`
+  (column since #547, no writer — write it where the row is filed).
+- **The slashless model id.** `_fallback_model()` loses its default and fails loud like every other binding
+  (2026-08-15's directive); the ratchet's pattern learns the slashless form so it cannot return.
+- **Why every call is unpriced.** `obs/usage.py` reads the provider's catalogue and the bound model still prices at
+  nothing; measure the lookup, fix the gap if it is ours, and say in `/obs/usage-summary` when it is the provider's.
+
+**Receipt:** `GET /learning/datasets` shows a version for every kind with its row count; `search_sql_examples_checked`
+reads clean on a live answer and the collection holds a point; one query joins a chat turn's history row to its trace;
+`test_no_model_id_ships_in_the_product` fails on the old literal and passes after. **Falsifier:** if bronze yields
+fewer than ten rows from 821 completed chat turns, the constraint is that envelopes exist only since 2026-09-23 and
+the tier reads envelopes — TJ-2 then derives "guards clean" from the audit and guard tables for older turns, or the
+arc accepts accrual from now and says so.
+
+#### TJ-2 · One record per run: the trajectory (about a week, free)
+
+> **Premise.** The step object exists only in memory (`LoopStep`, `tool_loop.py:50-75`, returned and dropped).
+> Arguments appear only in the live stream, truncated to 400 characters; results and the model's words between calls
+> are never stored; the run-level records are seventeen stores whose trace id reaches only the observability tables.
+> The diagram's bottom strip — state, action, observation, outcome, reward, one format — does not exist here.
+
+- **A `step` event on `session_events`, no new store.** Per loop step: index, tool, the work-artifact fields always
+  (SQL, row count, error, guard fires, elapsed, ok), the payload fields by the lawful-lane law (arguments, result
+  digest, the model's text) — written from the one seam every loop passes (`run_tool_loop`), so the analyst, the
+  conversation and the explorer's steps land the same way, and the explorer's own step log becomes a reader of this
+  record rather than a second writer. The per-event write stays under E1's 5 ms p95 bar or it batches.
+- **`trajectory_of(trace_id)`** in code and `GET /traces/{id}/trajectory` on the wire: the question, the steps in
+  order, the answer (the envelope), the execution rows from `audit_log`, the guard rows, the decisions, and the reward
+  fields — human verdict, re-check state, execution outcome — joined at read. Payload fields withheld on an ungated
+  read exactly as `/learning/decisions` withholds `context`. **The exporters read this and nothing else**, so a
+  training row carries the context the model saw (the review's own condition, `ENGINE_REVIEW_ANSWERS` §1).
+- **One id for a deep run.** The investigation id is the trace id on every writer, and the history row carries it
+  (TJ-1); `eval_runs.trace_id` is set when the harness drives the real path, so a gym rollout is a trajectory too.
+- **`guard_verdicts` says which of its two meanings a row has** — `phase` for the execution phase, a new `action` for
+  the rewrite kind — as audit.db migration 4, numbered off the LIVE `PRAGMA user_version` (3 on 2026-09-19) and
+  rehearsed on a `.backup` first, portable SQL, one statement per execute. The quick path stops labelling its E1
+  fires `deep`.
+- **Retention follows the reward.** A run with a human verdict pins (MI-2, unchanged); a run the gym produced is
+  exported into the content-addressed dataset plane and its events may sweep; a run with only a machine label
+  neither pins nor is lost, because its label is re-derivable from the unbounded tables.
+
+**Receipt:** ONE SQL query, held as a test, walks question → steps → SQL → guard → verdict for each of four run
+kinds — a chat turn, a deep run, a scheduled brief's investigation, and an automation's `investigate` step — the MI-1
+receipt extended to the whole record. The route returns the same trajectory for a run the user just made, arguments
+withheld, then shown inside an opened capture window. A mutation test: remove the step write and the walk fails.
+**Falsifier:** if any run kind cannot be walked after the wave, the wave is not done; if the step write cannot meet
+the latency bar even batched, the payload fields move to the window only and this section says so.
+
+#### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit)
+
+> **Premise.** Nothing attaches a number to a live run: `earned_confidence` exists on 5 of 1,113 runs and measures
+> coverage, not correctness; the decision corpus's outcome is `ok` on 188 of 188 because it records that the tool did
+> not raise; a verdict copies itself onto every decision in the run; no person labels a step. §3.9's law is that
+> reward integrity precedes optimisation and that the verifier is hand-audited on 50–100 real outputs first.
+
+- **The run label, deterministic, from what is already recorded.** Positive when the statement ran without error,
+  returned rows, no guard fired except lint, the re-check found the number stable, the headline did not contradict
+  the rows, and no person rejected it. Negative on an error, a fan-out or grain fire, a contradiction, a changed
+  re-check, or a reject. Everything else unlabeled — never `ok`. The tiers the exporters already name (gold, silver,
+  bronze, repair) read this one function, `guards_clean`'s successor, so the training corpus and the few-shot memory
+  cannot disagree about what clean means.
+- **Step credit, narrow on purpose.** A reject or a correction marks only the steps whose statement is the verdict's
+  `sql_source`, or the single distinct statement when there is exactly one (the `verdictSql.ts` rule, server-side);
+  every other step stays unlabeled. A positive run does not mark its steps positive — a right answer does not prove
+  each pick was right (MI-3a's rule, kept). `decision_record.outcome` gains the value `unlabeled` as its default;
+  `confidence` is NULL, not 0.0, when no probability was given.
+- **The audit sheet.** Before any consumer reads the bronze label, a person audits 50–100 bronze rows and the sheet
+  is committed beside the census: the label's precision, the failure classes, and the rule changes they forced.
+  ⚑ the user's sitting.
+
+**Receipt:** the label's live distribution published in this section (positive, negative, unlabeled, per run kind);
+`corpus_yield` reads *discriminating* on live rows; the audit sheet with a precision. **Falsifier:** if the label is
+constant on live traffic it is a finding, not a dataset, and TJ-5 is the only source of a negative class; if bronze
+precision on the audit is under 0.8, bronze is not fuel and MI-4's SFT corpus is silver, gold and gym only.
+
+#### TJ-4 · Labels where readers already are (days, free; ⚑ a Slack app scope)
+
+> **Premise.** The funnel, not the plumbing, has been MI's constraint since MI-3: 5 verdicts, 0 chat feedback events,
+> 0 marks on 30 departure decisions. The chat's 👍 landed with #547. The two surfaces where answers are actually read
+> — Slack and the Departures screen — have no verdict door at all; neither the mention bot nor `slackbots/` handles
+> a reaction.
+
+- **A reaction is a verdict.** ✅ and ❌ on a delivered answer in Slack record accept and reject on the turn the
+  message was filed from, through the same `record_verdict` every other door uses — evicting or pinning as verdicts
+  do. Needs the app's `reactions:read` scope and a `reaction_added` subscription, which only the app's owner grants
+  (⚑). Law 8 holds: the message still carries no receipt; the reaction needs none.
+- **A mark on the Departures screen** is the verdict door `routers/departures.py:99` already exposes, put where the
+  row is; each mark feeds probation precision and the verdict store at once.
+- **Correction from Slack is not built:** a typed correction needs the SQL beside it, and the chat has that door.
+
+**Receipt:** a verdict recorded from a reaction on theLook shows in `/learning/summary` within the minute and the
+turn's few-shot points are evicted or kept accordingly; a mark on a held departure moves probation precision.
+**Falsifier:** if after 30 days verdicts per delivered answer stay under one in twenty, the funnel is not where the
+volume is and the gym carries the whole load — record the rate and move on; do not build a nag.
+
+#### TJ-5 · The gym: problems with known answers, K rollouts each, every candidate kept (two weeks; ⚑ model runs)
+
+> **Premise.** This is the crux. At the measured ask rate the gates are unreachable by use; the diagram's boxes 1, 2,
+> 4 and 5 done offline on the local warehouses are how a one-operator instance produces graded trajectories in the
+> thousands. Three things make it cheap here: the declared ontology compiles reference SQL with no model (22 of 26
+> hand-written object queries compile and every one that compiles answers right, §3.15); samples, LuxExperience and
+> Superstore are local DuckDB files, so execution is free; and the harness can already drive the real answer path
+> in-process. Two things keep it honest: synthetic is fuel and never golden, and the pre-training falsifier below is
+> free.
+
+- **TJ-5a · Problems (no model).** A problem is (question, connection, reference SQL, reference result signature,
+  difficulty band). Sources, in order of trust: the declared measures, rules, processes and promises compiled through
+  the object door — thin today (LuxExperience 18 shipped declarations, Olist 3, theLook 2, samples 2) and growing with
+  every declaration a person makes; the 139 hand-written pairs, the 24 Superstore cases and the 26 object queries, as
+  reference SQL with the golden tenth held out by question; the 270 pack patterns that carry a SQL template, bound to
+  each connection where the template compiles; and the paraphrase set (77) with surface perturbations
+  (`aughor/evals/perturb.py`) for the wording. A model-written paraphrase is allowed only through the door MI-3 allows
+  synthetic SQL through — scored, spot-checked by a person on a sample, and marked as such.
+- **TJ-5b · Rollouts (⚑).** K runs per problem through `ask_target` on the real path, varying temperature and, where
+  more than one binding is configured, the model; every candidate stored as a trajectory (TJ-2) with `source=gym`,
+  scored by execution match against the reference on the ONE comparator, its guard fires and repairs kept. Local
+  warehouses first; theLook only in a small batch until a local copy of it is measured to exist.
+- **TJ-5c · Selection.** Correct candidates become SFT rows carrying the context the model saw; a wrong and a right
+  candidate on one question become a preference pair; a wrong candidate's repair chain becomes repair pairs. Dedupe
+  by content hash (MI-3); difficulty band recorded; a curriculum is left for MI-4 to choose over, not built here.
+- **TJ-5d · The router's label rides along.** A gym problem's compile shape implies a treatment — one compiled
+  statement reads as `single_query`, a process or promise question as `multi_query` — so CP-2 gains, on gym rows only,
+  the label it said it could not have; reported apart from live rows and never merged with them.
+
+**What a batch costs, in tokens (from `/obs/usage-summary`, 2026-09-24 — an estimate from measured per-call means,
+not a measurement of the gym):**
+
+| Per rollout on the quick path | Tokens |
+|---|---|
+| `sql.writer:write`, one call | ~3,300 prompt |
+| `sql.writer:fix`, up to two model attempts | ~1,300 prompt each |
+| narration | not run in the gym |
+
+So a first batch of 500 problems at K = 4 is on the order of 10 to 12 million prompt tokens on the quick path; a
+converse-path batch is three to four times that (20,242 tokens per turn, measured 2026-09-18). On the `:free` tier
+the cost is rate, not money. The user names the ceiling (§6 item 32 d).
+
+**Receipt:** a problem set with compiled references on at least three connections, produced with no model call, its
+counts by source in this section; one batch on `samples`; the gate report moving from 0 to a measured count of SFT
+and preference rows with `source=gym`; and **the pre-training falsifier: the gym corpus, offered as few-shot examples
+to the live path, lifts held-out execution accuracy on the hand-written pairs against the same run without them —
+paired, n ≥ 50, the interval excluding zero** (item 19's A/B reported t = 1.49 on n = 58 and was rightly not
+graduated; the same bar applies). **Falsifier:** if the gym's rows do not lift held-out accuracy as context, they
+will not lift it as weights, which is the weaker signal — MI-4 does not start on them, and the problem source is
+re-measured before another batch is bought.
+
+#### TJ-6 · Serving a student — the binding MI-4 needs (a day or two; ⚑ a decision)
+
+> **Premise.** A fine-tuned model can be served today through Ollama or LM Studio at a local URL, and likely as a
+> Together id; a rented endpoint that wants a key cannot be bound, because only those two backends take a base URL
+> and both send a dummy key. MI-4 says "one more OpenAI-compatible binding"; it does not exist.
+
+A generic OpenAI-compatible backend: base URL and key from env, model id from config, capabilities interrogated from
+its `/models` as every other backend's are, no id in code; and the `model_adapter` artifact record MI-4 names, so
+adapter → dataset hash → source runs is two joins. **Recommended: DEFER** until MI-4 chooses rented serving; the
+local door is open now. **Receipt when built:** the golden suite run through the seam against an Ollama-served open
+model, the receipt naming the binding. **Falsifier:** none — it is plumbing, and it ships only when something
+consumes it.
+
+#### Then MI-4 · MI-5 · MI-6 — unchanged, in §3.9
+
+MI-4 starts at its gates and not before. What this arc changes about them is only *how the rows arrive* and *what a
+row carries*: the source of every row (human, gym, bronze, repair) is on the row, the golden set is human-written and
+keyed on the question, the bronze verifier has its audit sheet, and the cascade's savings premise is re-measured in
+tokens at MI-4's pre-check. Box 11 — behaviour cloning of tool choice, then RL — is JD-6 and MI-6, which this arc
+gives a corpus and does not build.
+
+**The diagram's boxes, and which wave answers each:**
+
+| Box | Wave |
+|---|---|
+| 1 Data and problem source | TJ-5a |
+| 2 Rollout engine · 8 Agent rollout | TJ-5b (the live loop already is box 8) |
+| 3 Reasoning trajectory · 10 Trajectory processing · the unified store | TJ-2, TJ-3 |
+| 4 · 9 Verification and reward | TJ-3, TJ-4 (deterministic; no model judge, by decision) |
+| 5 Selection and transformation | TJ-1, TJ-5c |
+| 6 · 11 Training engines | MI-4 to MI-6, JD-6 (§3.9, §3.20) |
+| 7 Environment and tools | live; TJ-5 uses it |
+| Shared strip | live; TJ-1 prices the calls, TJ-6 adds the binding |
+
+**Sequencing and sizes.** TJ-0 done. **TJ-1 → TJ-2 → TJ-3**, with **TJ-4** beside TJ-3 (independent, and it
+starts the 30-day clock its falsifier needs). **TJ-5** after TJ-2 and TJ-3, because a rollout with no record and no
+label is exhaust; 5a is free and can start any time. **TJ-6** when MI-4's serving choice is made. Sizes: TJ-1 a day;
+TJ-2 a week; TJ-3 two to three days plus one audit sitting; TJ-4 one to two days plus the Slack scope; TJ-5 two weeks
+plus the batches. If the gym works, the 1,000-pair gate is a matter of batches, the guard-days gate passes by itself
+around 2026-10-03, and the 150-golden gate is the slowest — it is human-written by law, so it grows only with TJ-4
+and with people declaring terms. This order is a recommendation; the user ranks the waves in `PENDING.md`.
+
+**Non-goals for the whole arc:** a model judge over live traffic (dropped 2026-09-06; the rewards here are
+deterministic) · a hosted plane (Arc MT, §6 item 17) · a GPU fleet, weights in the repo or installer, online learning
+(§8) · a foreign RL runtime chosen now (MI-6 chooses at its trigger) · harm and jailbreak classifiers (owed
+elsewhere) · a curriculum (recorded, not built) · a training row that carries a payload outside the annex.
+
+**Falsifiers — this arc is droppable by measurement.** If TJ-1 to TJ-4 run for 30 days and the gym's first batch
+fails the pre-training falsifier, the distillation premise is unproven HERE — stop at the trajectory record, which is
+independently worth having (the audit surface, CP-2's corpus, and the exporters' one source of truth), and say so in
+this section rather than leaving TJ-5 reading as merely unstarted — §3.9's own falsifier, one wave earlier. If the
+step record cannot meet the session log's latency bar even batched, the payload fields retreat to the capture
+window. If pricing cannot be completed for the bound model, every saving stays in tokens and MI-4's 2× pre-check is
+answered in tokens too.
+
+**What each wave must show before the next starts:** a live receipt, a mutation test on every new guard and label,
+and this section updated the same day — a prose claim in §3 rots silently (§7).
+
+---
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -9513,6 +9856,9 @@ the browser** · **measure the premise before building.**
 > same session — *"yes to all four"*. (a) adopt, (b) the shadow wave runs first, (c) a low-confidence treatment
 > may ask ONE clarifying question, (d) a model-scored `stakes` may TIGHTEN the departure gate and never loosen
 > it. **Back to zero open.**
+> **Amended 2026-09-25:** item 32 (Arc TJ — trajectories) arrived at the user's *"build a detailed roadmap for this
+> one"*, on the trajectory-based learning diagram; its census was taken first (TJ-0) and the arc is drafted on it.
+> **OPEN with recommendations**, six clauses; TJ-1 and TJ-2 are free and wait on none of them. Open: 32.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -10111,6 +10457,47 @@ the browser** · **measure the premise before building.**
     Not part of this item: pricing the unpriced calls. CP-0 found `cost_is_complete: false` with 107 of 111 calls
     unpriced over 24 h, so this arc may state savings in TOKENS only. That is a limit on the claim, not a clause
     to decide.
+32. ⭕ **DRAFTED 2026-09-25 (the user, on the trajectory diagram: *"I want to know where we are realistically and how we
+    can reach the most mature phase from here... go all in!"*, then *"build a detailed roadmap for this one"*) — Arc TJ,
+    trajectories (§3.47). The census (TJ-0, `docs/TRAJECTORY_CENSUS_2026-09-25.md`) was taken BEFORE the arc was
+    written; several of its rows corrected standing prose. Six clauses, OPEN with recommendations. None blocks TJ-1 or
+    TJ-2, which are free and touch no policy.**
+    **(a) Adopt the arc as §3.47, ending where MI-4 begins?** *Recommended: yes.* MI-4 has waited on its gates since
+    2026-09-03 with the exporters reading 0 rows; this is the half that fills them, and it is measured to be volume,
+    labels and one store rather than code. Adopting changes nothing about §3.9's gates or laws.
+    **(b) The step record's payload class.** A step's tool, SQL, counts, errors, guards and outcome are work artifacts,
+    stored always. Its free-text arguments and the model's words between calls are payloads. *Recommended:* store the
+    payload fields only inside an open capture window or where §6 item 7's annex is on, and withhold them on ungated
+    reads exactly as `/learning/decisions` withholds `context` — the alternative (always, org-scoped) makes every
+    trajectory a payload store and moves §6.4's break-glass onto the busiest table.
+    **(c) A Slack reaction is a verdict?** ✅ and ❌ on a delivered answer record accept and reject on its turn. Needs the
+    app's `reactions:read` scope and a `reaction_added` subscription, which only the app's owner grants (⚑).
+    *Recommended: yes* — it is the reader's own act on the message they read, it carries no receipt (law 8 holds), and
+    it is the one door on the surface where answers are actually read.
+    **(d) The gym's spend (⚑ money).** *Recommended:* a first batch on `samples` — local DuckDB, free execution — of
+    about 500 problems at K = 4 under a ceiling of 12 million prompt tokens, reported in tokens, the `:free` tier
+    acceptable at rate cost; theLook only in a small batch until a local copy is measured to exist. The pre-training
+    falsifier (TJ-5) decides whether a second batch is bought.
+    **(e) The keyed OpenAI-compatible binding (TJ-6).** *Recommended: DEFER* until MI-4 chooses rented serving; the
+    local door through Ollama or LM Studio is open today and the hosted plane is not on the plan (item 17).
+    **(f) The bronze audit (⚑ the user's time).** §3.9 requires a hand audit of 50–100 outputs before a verifier's
+    signal is consumed. *Recommended:* the user, one sitting, on the first bronze export from TJ-1, with the sheet
+    committed beside the census; until it exists bronze is reported and never read.
+    Not part of this item: MI-4's gates and recipe (§3.9, unchanged), and a model judge over live traffic (dropped
+    2026-09-06; the rewards here are deterministic).
+33. ⭕ **DRAFTED 2026-09-25 (the user, on a held Slack post: *"user needs to know where to troubleshoot such issues..
+    otherwise its a wall that it hits.."*, and on Spotlight: *"I like your path.. go ahead"*) — SP-15, the platform
+    explains what is on screen (§3.11). The wall is closed on the departures screen today (a remedy per held guard,
+    with doors); the wave makes the same knowledge reachable by sentence. Three clauses, OPEN with recommendations.**
+    **(a) Adopt SP-15 as drafted?** *Recommended: yes.* It reuses SP-4's tools and the roster's standing laws; no new
+    store, nothing spends.
+    **(b) The corpus's first shelf.** *Recommended:* the departure laws, the glossary and the §3 one-paragraph
+    summaries of active arcs — prose the repo already maintains — served through `platform_help`'s alias resolution;
+    KI's document lane indexes it only when aliases stop being enough. Not the whole roadmap: ten thousand lines of
+    history is not help.
+    **(c) Which objects `explain` covers first.** *Recommended:* departure, automation, metric — the three a held send
+    points at — then agent and analysis.
+    Not part of this item: a model judge over answers, and cross-user "who changed this" (waits on sign-in, PENDING).
 
 ---
 

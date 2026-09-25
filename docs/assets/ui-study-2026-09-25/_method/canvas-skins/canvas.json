@@ -1,0 +1,186 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "AgentOps-Dark.dc.html": {
+      "h": 900,
+      "title": "4 \u00b7 Agent Ops overview \u2014 dark",
+      "w": 1440,
+      "x": 3040,
+      "y": 0,
+      "is_interactive": true
+    },
+    "AgentOps-Light.dc.html": {
+      "h": 900,
+      "title": "5 \u00b7 Agent Ops overview \u2014 light",
+      "w": 1440,
+      "x": 3040,
+      "y": 1020,
+      "is_interactive": true
+    },
+    "Briefing-Dark.dc.html": {
+      "h": 900,
+      "title": "2 \u00b7 Briefing \u2014 dark",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Briefing-Light.dc.html": {
+      "h": 900,
+      "title": "3 \u00b7 Briefing \u2014 light",
+      "w": 1440,
+      "x": 1520,
+      "y": 1020
+    },
+    "Main.dc.html": {
+      "h": 1250,
+      "title": "1 \u00b7 Tokens \u2014 dark after Databricks, light after Excel",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Piece-6qz0.dc.html": {
+      "frameless": true,
+      "h": 19,
+      "title": "Text",
+      "w": 410,
+      "x": 2492,
+      "y": 913
+    },
+    "Piece-jsm0.dc.html": {
+      "frameless": true,
+      "h": 19,
+      "title": "Div (2)",
+      "w": 437,
+      "x": 3437,
+      "y": -44
+    },
+    "Piece-kuib.dc.html": {
+      "frameless": true,
+      "h": 19,
+      "title": "Div",
+      "w": 437,
+      "x": 1902,
+      "y": -80
+    },
+    "Agent-Dark.dc.html": {
+      "x": 4560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "6 \u00b7 The agent's own page \u2014 dark",
+      "is_interactive": true
+    },
+    "Agent-Light.dc.html": {
+      "x": 4560,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "7 \u00b7 The agent's own page \u2014 light",
+      "is_interactive": true
+    },
+    "Agent-Runs-Dark.dc.html": {
+      "x": 6080,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "8 \u00b7 The agent's Runs tab \u2014 dark",
+      "is_interactive": true
+    },
+    "Agent-Runs-Light.dc.html": {
+      "x": 6080,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "9 \u00b7 The agent's Runs tab \u2014 light",
+      "is_interactive": true
+    },
+    "Agent-Setup-Dark.dc.html": {
+      "x": 7600,
+      "y": 0,
+      "w": 1440,
+      "h": 1180,
+      "title": "10 \u00b7 The agent's Setup tab \u2014 dark",
+      "is_interactive": true
+    },
+    "Agent-Setup-Light.dc.html": {
+      "x": 7600,
+      "y": 1300,
+      "w": 1440,
+      "h": 1180,
+      "title": "11 \u00b7 The agent's Setup tab \u2014 light",
+      "is_interactive": true
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-25T08:54:38Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "calls": {
+      "fill": "orange",
+      "text": "Next: wave UI-6 of the study writes these tokens into tokens-v2.css and INSTRUMENT.md and moves the body size to 14 px; \u00a74.5 and UI-6's receipt move with it. Not started \u2014 the token files are dirty in another session's branch, so the lift waits for that to land.",
+      "w": 520,
+      "x": 9120,
+      "y": 0
+    },
+    "kept": {
+      "fill": "gray",
+      "text": "Kept from earlier decisions: verdict-first Briefing, no numbered gutters (Excel's row numbers are NOT adopted), 28 px rail rows and a collapsible rail, press scale on the primary only, the chart palette and its CVD order untouched (lint:palette), no LLM-judge evals, no merging of run planes.",
+      "w": 520,
+      "x": 9120,
+      "y": 560
+    },
+    "new": {
+      "fill": "green",
+      "text": "Decided 2026-09-25: body text 14 px \u00b7 figures in Inter with tabular numerals, mono only for SQL and ids \u00b7 light keeps Excel green for its own state (selection, active tab, the primary) and blue for links; dark stays blue \u00b7 NO definition bar \u00b7 NO status bar \u00b7 sentence-case 12 px labels \u00b7 light chrome is Excel grey #F3F3F3. On Agent Ops the click on an agent opens that agent's own page (boards 6 and 7); nothing opens inside the overview.",
+      "w": 680,
+      "x": 760,
+      "y": 1370
+    },
+    "shared": {
+      "fill": "blue",
+      "text": "One layout, two skins. Every screen is the same region stack in both themes \u2014 topbar 48 \u00b7 rail 248 \u00b7 header 44 \u00b7 context bar or toolbar 36 \u00b7 layer tabs 36 \u00b7 body \u00b7 inspector 400 on the Briefing, a details rail 360 on the agent's page \u2014 and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px.",
+      "w": 700,
+      "x": 0,
+      "y": 1370
+    },
+    "title": {
+      "kind": "title1",
+      "maxW": 9040,
+      "text": "Aughor \u2014 two skins, one layout: Databricks dark \u00b7 Excel light (mockup, 2026-09-25)",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "agent": {
+      "x": 9120,
+      "y": 1020,
+      "w": 520,
+      "fill": "teal",
+      "text": "Boards 6\u201311: the agent's own page \u2014 Overview (6\u20137), Runs (8\u20139), Setup (10\u201311). Drawn from the agent model as it is in code \u2014 purpose, instructions, connection and schema scope, bound documents, packs, tool grants (a grant is permission to PROPOSE, never to execute), owner, enabled, the last golden-suite evaluation (the pass chip: measured against the agent's own reference SQL, never a judge), revisions. The runs, the holds and the figures are illustrative and add up across the boards (7 days 61.4K tokens, 30 days 131.6K). Play: click The Look Analyst on board 4 or 5; the tabs move between Overview, Runs and Setup; the breadcrumb comes back."
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Briefing-Dark.dc.html",
+    "Briefing-Light.dc.html",
+    "AgentOps-Dark.dc.html",
+    "AgentOps-Light.dc.html",
+    "Piece-kuib.dc.html",
+    "Piece-6qz0.dc.html",
+    "Piece-jsm0.dc.html",
+    "Agent-Dark.dc.html",
+    "Agent-Light.dc.html",
+    "Agent-Runs-Dark.dc.html",
+    "Agent-Runs-Light.dc.html",
+    "Agent-Setup-Dark.dc.html",
+    "Agent-Setup-Light.dc.html"
+  ],
+  "pages": [],
+  "title": "Aughor Two Skins"
+}

@@ -781,7 +781,11 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
               <Icon name="node" size={24} />
             </div>
             <p className="text-sm text-zinc-400">
-              {error ?? "No ontology data available."}
+              {/* Loading and "no connection yet" are not the empty state: a cold load used to say
+                  "No ontology data available." for a connection with seven entities (§2.1). */}
+              {error ?? (loading ? "Loading the ontology…"
+                : !selectedConnId ? "Finding your connection…"
+                : "No ontology data available.")}
             </p>
             {/* PX rule — the empty state names the door rather than describing the
                 absence. Two doors, because there are two reasons to be here: the

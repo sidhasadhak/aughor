@@ -152,7 +152,7 @@ export function AgenticOpsWorkspace({
     setCreateSignal(n => n + 1);
   }, [onLayerChange]);
 
-  const openTraceForInvestigation = useCallback((invId: string) => {
+  const openAnalysisTrace = useCallback((invId: string) => {
     setTraceFocus({ investigationId: invId });
     onLayerChange("activity");
   }, [onLayerChange]);
@@ -163,12 +163,9 @@ export function AgenticOpsWorkspace({
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Agent Ops views"
+      title="Agent Ops"
       badges={{ attention, departures: departuresOwed }}
-      headerControls={
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />
-        </div>
-      }
+      toolbar={<RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />}
       headerTrailing={
         // `default`, not a hand-rolled blue: `--primary` IS `--blue3`, so the design
         // system's own CTA variant is the blue this asks for — and it brings the hover
@@ -184,7 +181,7 @@ export function AgenticOpsWorkspace({
       renderLayer={id => {
         if (id === "agents") return (
           <AgenticAgentsPanel workspaceId={workspaceId} workspaceName={workspaceName}
-            focusAgent={agentFocus} onOpenTrace={openTraceForInvestigation} range={range}
+            focusAgent={agentFocus} onOpenTrace={openAnalysisTrace} range={range}
             createSignal={createSignal}
             // DS-5 — a node on an agent's Map opens the surface that owns it. The chains
             // live one layer over, so that one is a layer switch; the rest belong to the
@@ -211,7 +208,8 @@ export function AgenticOpsWorkspace({
         );
         if (id === "departures") return (
           // Hub-wide, like the map: every departure the platform recorded, any connection.
-          <DeparturesPanel />
+          <DeparturesPanel onOpenAutomation={() => onLayerChange("automations")}
+            onOpenTrace={openAnalysisTrace} />
         );
         if (id === "hub") return (
           // No connId on purpose: this layer IS the hub-wide answer ("every automation

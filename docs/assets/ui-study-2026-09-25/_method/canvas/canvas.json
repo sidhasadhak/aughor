@@ -1,0 +1,22 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-09-25T00:26:21Z"},
+  "title": "Aughor Layout Grammar",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 900, "title": "1 · The shell and the region stack"},
+    "Briefing.dc.html": {"x": 1520, "y": 0, "w": 1440, "h": 900, "title": "2 · Briefing at 1440, inspector open"},
+    "Home.dc.html": {"x": 3040, "y": 0, "w": 1440, "h": 900, "title": "3 · Home, returning"},
+    "Narrow.dc.html": {"x": 0, "y": 1020, "w": 1024, "h": 768, "title": "4 · Agent Ops at 1024 — the grammar holds"},
+    "Overlays.dc.html": {"x": 1104, "y": 1020, "w": 1440, "h": 900, "title": "5 · What floats, slides or pops"}
+  },
+  "order": ["Main.dc.html", "Briefing.dc.html", "Home.dc.html", "Narrow.dc.html", "Overlays.dc.html"],
+  "notes": {
+    "title": {"x": 0, "y": -300, "text": "Aughor — the layout grammar (UI/UX study, 2026-09-25)", "kind": "title1", "maxW": 4480},
+    "regions": {"x": 4560, "y": 0, "w": 520, "text": "Regions, top to bottom: header 44 (title · one status chip · one primary) → context bar 36 (connection, schema, range, period) → layer tabs 36 (scroll + More) → toolbar 36 (search, filters, count) → body → inspector 400–480. Every row is optional. Every row has one job. Never two segmented controls in one row. Board 1 measures them; boards 2–4 apply them.", "fill": "blue"},
+    "overlays": {"x": 2624, "y": 1020, "w": 520, "text": "Five things may float or slide: inspector (non-modal, beside the page, URL-addressable), slide-over (modal, every create/edit form), popover (a fact: why this number, an id's hover card, the Needs-you tray), dialog (destructive confirms), toast. One overlay layer at a time; Esc closes; focus returns; motion 160/260 ms ease-out; reduced motion ends on the finished frame.", "fill": "gray"},
+    "tokens": {"x": 2624, "y": 1400, "w": 520, "text": "Instrument's tokens are kept as they are: ground #181818, chrome #1c1b1a, inset #211e1c, rules #23211f / #2c2928, text #e9ecee / #99a2a8 / #7c878d, blue #4c9ad6, green #3eab82, amber #b88d30. What changes is the reading size — 13 px body, 12 px meta, 11 px only for mono labels and ids — and the 26 px control height everywhere.", "fill": "green"}
+  },
+  "designSystems": []
+}

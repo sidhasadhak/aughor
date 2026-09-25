@@ -234,6 +234,35 @@ def _seed(n_profile: int, n_automation: int):
     c.close()
 
 
+def test_fleet_rows_carry_success_and_mean_duration(client):
+    """The Roster's columns (2026-09-25): a charter row says how many runs SUCCEEDED and
+    how long a run took on average, from its own started_at → finished_at. A failed run
+    took time too, so it counts in the mean; a charter with nothing finished in the
+    window reads None for the duration, never 0."""
+    import sqlite3
+
+    from aughor.kernel.ledger import Ledger
+
+    led = Ledger.default()
+    now = datetime.now(timezone.utc)
+    c = sqlite3.connect(led.path)
+    c.execute("DELETE FROM jobs")
+    for jid, state, secs in (("d-1", "SUCCEEDED", 60), ("d-2", "SUCCEEDED", 120), ("d-3", "FAILED", 30)):
+        start = now - timedelta(minutes=10)
+        c.execute("INSERT INTO jobs (id, kind, state, created_at, started_at, finished_at)"
+                  " VALUES (?,?,?,?,?,?)",
+                  (jid, "profile", state, _iso(start), _iso(start),
+                   _iso(start + timedelta(seconds=secs))))
+    c.commit()
+    c.close()
+    body = client.get("/control-room/fleet?range=1h").json()
+    row = next(r for r in body["rows"] if r["kind"] == "charter" and "profile" in r["job_kinds"])
+    assert (row["runs"], row["succeeded"], row["failed"]) == (3, 2, 1)
+    assert row["avg_duration_ms"] == 70_000, "(60 + 120 + 30) s / 3 — the failed run counts"
+    idle = next(r for r in body["rows"] if r["kind"] == "charter" and r["runs"] == 0)
+    assert idle["succeeded"] == 0 and idle["avg_duration_ms"] is None
+
+
 def test_runs_tile_equals_the_agent_jobs_it_links_to(client):
     """THE ratchet. 3 agent runs and 40 runner ticks must read as 3, with the 40 named."""
     _seed(n_profile=3, n_automation=40)

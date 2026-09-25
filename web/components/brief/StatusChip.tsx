@@ -7,9 +7,11 @@
  * class bundle. Callers keep a thin semantic map (their status → a hue + a label); the
  * classes live only here.
  *
- * Drawn as the Instrument badge (INSTRUMENT.md §5): an 11px mono rectangle at 3px —
- * tint 1, border 2, text 4 of its hue. `soft` is the callout form of the same hue: tint and
- * border, with the text in --t1.
+ * Drawn as the Instrument badge (INSTRUMENT.md §5): a 12px rectangle at 3px — tint 1,
+ * border 2, text 4 of its hue. Two skins (2026-09-25): in dark it is a bordered pill, like a
+ * Du Bois tag; in light the border goes and it is a cell fill, like Excel's Good / Bad /
+ * Neutral styles (the `aug-chip` rule at the end of globals.css). `soft` is the callout form
+ * of the same hue: tint and border, with the text in --t1.
  */
 import type React from "react";
 
@@ -68,9 +70,9 @@ export function StatusChip({
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-[5px] aug-fs-xs font-mono font-normal leading-[1.45] px-[7px] py-[2px] rounded-[var(--r1)] border ${chipTone(hue, strength).chip} ${className}`}
+      className={`aug-chip inline-flex items-center gap-[5px] aug-fs-sm font-medium leading-[1.45] px-[7px] py-[2px] rounded-[var(--r1)] border ${chipTone(hue, strength).chip} ${className}`}
     >
-      {icon != null && <span className="font-mono">{icon}</span>}
+      {icon != null && <span>{icon}</span>}
       {children}
     </span>
   );

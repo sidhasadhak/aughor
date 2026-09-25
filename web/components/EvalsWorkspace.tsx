@@ -69,6 +69,7 @@ export function EvalsWorkspace({ connId, workspaceId, layer, onLayerChange }: Pr
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Evals views"
+      title="Evals"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "runs") return <EvalRunPanel connId={connId} workspaceId={workspaceId} />;

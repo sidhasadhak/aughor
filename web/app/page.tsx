@@ -1,4 +1,5 @@
 "use client";
+import { connectionLabel } from "@/lib/names";
 import { ErrorState } from "@/components/ui/states";
 
 import { useEffect, useRef, useState } from "react";
@@ -9,7 +10,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ThreadsRail } from "@/components/ThreadsRail";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { AuthControl } from "@/components/AuthControl";
-import { applyTheme } from "@/lib/themeSwitch";
+import { applyDensity, applyTheme } from "@/lib/themeSwitch";
 import { useNavCollapsed } from "@/components/shell/useNavCollapsed";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { installAuthFetch } from "@/lib/auth";
@@ -161,6 +162,9 @@ type NavTab =
   | "settings";
 
 type Theme = "dark" | "light";
+/** The reading density (the study §4.5): comfortable is the default — 14px text, 32px rows;
+ *  compact is 13px text and 26px rows for a reader who wants more on screen. */
+type Density = "comfortable" | "compact";
 type AskMode = "ask" | "investigate";
 
 // ── Icon primitives ────────────────────────────────────────────────────────────
@@ -743,6 +747,9 @@ function HomeScreen({
 function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, workspaceId }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void; onOpenMachineView?: () => void; workspaceId?: string }) {
   const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string; connection_id?: string; canvas_id?: string | null }>>([]);
   const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
+  // A run card names its connection, never its id (the study §2.6: `Agentic · 8233e4fd`).
+  const [conns, setConns] = useState<Connection[]>([]);
+  useEffect(() => { getConnections().then(setConns).catch(() => {}); }, []);
 
   useEffect(() => {
     let alive = true;
@@ -838,7 +845,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
                         {plainSubtitle(a.question)}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
-                        {isChat ? "Chat" : "Agentic"}{a.connection_id ? ` · ${a.connection_id}` : ""}
+                        {isChat ? "Chat" : "Agentic"}{a.connection_id ? ` · ${connectionLabel(a.connection_id, conns)}` : ""}
                       </div>
                     </div>
                   </div>
@@ -866,7 +873,11 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
 
 // ── Settings screen ────────────────────────────────────────────────────────────
 
-function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme: Theme; setTheme: (t: Theme) => void; workspaceId?: string; workspaceName?: string }) {
+function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, workspaceName }: { theme: Theme; setTheme: (t: Theme) => void; density: Density; setDensity: (d: Density) => void; workspaceId?: string; workspaceName?: string }) {
+  const densities: Array<{ id: Density; label: string; desc: string }> = [
+    { id: "comfortable", label: "Comfortable", desc: "14 px text, 32 px rows — the default" },
+    { id: "compact",     label: "Compact",     desc: "13 px text, 26 px rows — more on screen" },
+  ];
   const modes: Array<{ id: Theme; icon: string; label: string; desc: string }> = [
     { id: "dark",  icon: "moon", label: "Dark",  desc: "Navy backgrounds, light text" },
     { id: "light", icon: "sun",  label: "Light", desc: "White backgrounds, dark text" },
@@ -935,6 +946,29 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
                     </div>
                   )}
                 </button>
+              ))}
+            </div>
+            <div className="aug-label" style={{ margin: "20px 0 12px" }}>Density</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              {densities.map(d => (
+                <Button key={d.id} variant="ghost" size="sm" onClick={() => setDensity(d.id)}
+                  aria-pressed={density === d.id}
+                  style={{
+                    flex: 1, height: "auto", display: "flex", alignItems: "center", gap: 12,
+                    padding: "12px 14px", borderRadius: "var(--r3)", textAlign: "left", justifyContent: "flex-start",
+                    background: density === d.id ? "var(--bg-sel)" : "var(--bg-2)",
+                    border: `1px solid ${density === d.id ? "var(--accent)" : "var(--b1)"}`,
+                  }}>
+                  <div>
+                    <div className="aug-fs-chrome" style={{ fontWeight: 600, color: density === d.id ? "var(--accent-text)" : "var(--t1)", marginBottom: 2 }}>{d.label}</div>
+                    <div className="aug-fs-sm" style={{ fontWeight: 400, color: "var(--t3)" }}>{d.desc}</div>
+                  </div>
+                  {density === d.id && (
+                    <div style={{ marginLeft: "auto", flexShrink: 0 }}>
+                      <NavIcon name="check" size={13} color="var(--accent)" />
+                    </div>
+                  )}
+                </Button>
               ))}
             </div>
           </div>
@@ -1265,6 +1299,7 @@ function DeleteConnModal({
 const LAST_CONN_KEY = "aughor_last_conn";
 const LAST_WS_KEY = "aughor_last_workspace";
 const THEME_KEY = "aughor_theme";
+const DENSITY_KEY = "aughor_density";
 
 /** S1 — the URL is the router. Every screen in the NavTab union is addressable
  *  as `?tab=<id>` (+ `&conn=<id>` for the bound connection), so screens are
@@ -1310,9 +1345,53 @@ const RAIL_TAB_FOR_DATA_LAYER: Record<DataLayer, NavTab> = {
 
 /** Resolve a URL tab id to what should actually render: a workspace tab, plus the
  *  layer inside it. Returns the tab unchanged when it is not a layer alias. */
-function resolveDeepLinkTab(t: NavTab): { tab: NavTab; dataLayer: DataLayer | null } {
-  const layer = DATA_LAYER_FOR_TAB[t];
-  return layer ? { tab: "data", dataLayer: layer } : { tab: t, dataLayer: null };
+/** The other rail ids that are LAYERS of a workspace — module scope for the same reason as
+ *  DATA_LAYER_FOR_TAB: on a COLD LOAD `?tab=spend` or `?tab=security` set a tab with no render
+ *  branch and painted a blank pane with no header (docs/UI_UX_STUDY_2026-09-25.md §2.1, fig. 6);
+ *  only navigate() knew the aliases. One table each, read by navigate() AND the URL boundary. */
+const OPS_LAYER_FOR_TAB: Partial<Record<NavTab, OpsLayer>> = {
+  monitors: "monitors",
+  actions:  "actions",
+  integrations: "integrations",
+  spend: "spend",
+  security: "security",
+};
+const INTEL_LAYER_FOR_TAB: Partial<Record<NavTab, IntelLayer>> = {
+  briefing:    "briefing",
+  ontology:    "ontology",
+  "intel-hub": "hub",
+  intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
+  "org-intel":  "org",
+};
+const AGENTIC_LAYER_FOR_TAB: Partial<Record<NavTab, AgentsLayer>> = {
+  fleet: "fleet",
+  agents: "agents",
+  "control-room": "fleet",
+};
+
+type ResolvedTab = {
+  tab: NavTab;
+  dataLayer: DataLayer | null;
+  opsLayer: OpsLayer | null;
+  intelLayer: IntelLayer | null;
+  agentsLayer: AgentsLayer | null;
+  /** `?tab=activity` is the Security & Audit layer on its activity lens. */
+  secLens: "activity" | null;
+};
+
+function resolveDeepLinkTab(t: NavTab): ResolvedTab {
+  const none: ResolvedTab = { tab: t, dataLayer: null, opsLayer: null, intelLayer: null, agentsLayer: null, secLens: null };
+  const data = DATA_LAYER_FOR_TAB[t];
+  if (data) return { ...none, tab: "data", dataLayer: data };
+  if (t === "activity") return { ...none, tab: "operations", opsLayer: "security", secLens: "activity" };
+  const ops = OPS_LAYER_FOR_TAB[t];
+  if (ops) return { ...none, tab: "operations", opsLayer: ops };
+  if (t === "intelligence") return { ...none, tab: "intelligence", intelLayer: "briefing" };
+  const intel = INTEL_LAYER_FOR_TAB[t];
+  if (intel) return { ...none, tab: "intelligence", intelLayer: intel };
+  const agentic = AGENTIC_LAYER_FOR_TAB[t];
+  if (agentic) return { ...none, tab: "agentic-ops", agentsLayer: agentic };
+  return none;
 }
 
 function tabFromUrl(): NavTab | null {
@@ -1355,6 +1434,7 @@ export default function Home() {
   // the `?table=` entity link.
   const [tab, setTab] = useState<NavTab>("home");
   const [theme, setThemeState] = useState<Theme>("dark");
+  const [density, setDensityState] = useState<Density>("comfortable");
   const [rawSelectedConn, setSelectedConn] = useState("");
 
   const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number } | undefined>(undefined);
@@ -1413,6 +1493,10 @@ export default function Home() {
     if (resolved) {
       setTab(resolved.tab);
       if (resolved.dataLayer) setDataLayer(resolved.dataLayer);
+      if (resolved.opsLayer) setOpsLayer(resolved.opsLayer);
+      if (resolved.intelLayer) setIntelLayer(resolved.intelLayer);
+      if (resolved.agentsLayer) setAgentsLayer(resolved.agentsLayer);
+      if (resolved.secLens) setSecLens(resolved.secLens);
       // `?tab=builder` MEANT the visual builder. The workbench now defaults to SQL,
       // so the intent has to be carried explicitly — the resolver rewrites the query
       // string, so the workbench cannot read it back for itself.
@@ -1472,10 +1556,14 @@ export default function Home() {
       // Validated against the same set the deep-link reader uses — an event is
       // untrusted input like any other, and an unknown id must be ignored, not routed to.
       if (!detail?.tab || !VALID_TABS.has(detail.tab as NavTab)) return;
-      const { tab: next, dataLayer } = resolveDeepLinkTab(detail.tab as NavTab);
+      const r = resolveDeepLinkTab(detail.tab as NavTab);
       if (detail.params?.conn) setSelectedConn(detail.params.conn);
-      if (dataLayer) setDataLayer(dataLayer);
-      setTab(next);
+      if (r.dataLayer) setDataLayer(r.dataLayer);
+      if (r.opsLayer) setOpsLayer(r.opsLayer);
+      if (r.intelLayer) setIntelLayer(r.intelLayer);
+      if (r.agentsLayer) setAgentsLayer(r.agentsLayer);
+      if (r.secLens) setSecLens(r.secLens);
+      setTab(r.tab);
     };
     window.addEventListener(NAVIGATE_EVENT, onNavigate);
     return () => window.removeEventListener(NAVIGATE_EVENT, onNavigate);
@@ -1548,6 +1636,10 @@ export default function Home() {
         const r = resolveDeepLinkTab(t);
         setTab(r.tab);
         if (r.dataLayer) setDataLayer(r.dataLayer);
+        if (r.opsLayer) setOpsLayer(r.opsLayer);
+        if (r.intelLayer) setIntelLayer(r.intelLayer);
+        if (r.agentsLayer) setAgentsLayer(r.agentsLayer);
+        if (r.secLens) setSecLens(r.secLens);
         const l = layerFromUrl();
         if (l) applyLayerFor(r.tab, l);
       }
@@ -1628,6 +1720,11 @@ export default function Home() {
     const initial: Theme = saved || "dark";
     setThemeState(initial);
     applyTheme(initial);
+    // Density rides the same two homes as the theme: this browser first, the user's store second.
+    const savedDensity = typeof window !== "undefined" ? localStorage.getItem(DENSITY_KEY) as Density | null : null;
+    const initialDensity: Density = savedDensity === "compact" ? "compact" : "comfortable";
+    setDensityState(initialDensity);
+    applyDensity(initialDensity);
     const syncStoredTheme = () => {
       getMyPreferences()
         .then(({ preferences }) => {
@@ -1637,6 +1734,12 @@ export default function Home() {
             setThemeState(stored);
             applyTheme(stored);
             if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, stored);
+          }
+          const storedDensity = preferences.density;
+          if (storedDensity === "compact" || storedDensity === "comfortable") {
+            setDensityState(storedDensity);
+            applyDensity(storedDensity);
+            if (typeof window !== "undefined") localStorage.setItem(DENSITY_KEY, storedDensity);
           }
         })
         // An unreachable store leaves the cached theme standing — cosmetic, never blocking.
@@ -1664,6 +1767,12 @@ export default function Home() {
     // browser. Fire-and-forget: the visible change already happened above.
     putMyPreference("theme", t).catch(() => {});
   };
+  const setDensity = (d: Density) => {
+    setDensityState(d);
+    applyDensity(d);
+    if (typeof window !== "undefined") localStorage.setItem(DENSITY_KEY, d);
+    putMyPreference("density", d).catch(() => {});   // the store already knows the key
+  };
 
   // S1 — the `?conn=` a deep link arrived with, read at the first client render. The URL-sync
   // effect rewrites `conn` from state in the first commit and the connection list lands a beat
@@ -1671,6 +1780,13 @@ export default function Home() {
   // remembered connection won, and a shared link opened on the reader's last data, not its own.
   const deepLinkConn = useRef<string | null>(
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("conn") : null);
+  // The context state the study asked for (§2.1): a screen never paints its EMPTY state while
+  // the workspace and its connections are still resolving. `contextReady` is false until both
+  // lists have answered — either way — and every empty state that depends on a connection
+  // reads it, so a cold load says "finding your connections", never "no connection selected".
+  const [connsLoaded, setConnsLoaded] = useState(false);
+  const [wsLoaded, setWsLoaded] = useState(false);
+  const contextReady = connsLoaded && wsLoaded;
   useEffect(() => {
     getConnections()
       .then(conns => {
@@ -1682,7 +1798,8 @@ export default function Home() {
         const pick = [fromUrl, saved].find(id => id && conns.find(c => c.id === id));
         setSelectedConn(pick || (conns[0]?.id ?? ""));
       })
-      .catch(err => console.error("[Aughor] failed to load connections:", err));
+      .catch(err => console.error("[Aughor] failed to load connections:", err))
+      .finally(() => setConnsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -1701,7 +1818,8 @@ export default function Home() {
         const valid = saved && ws.find(w => w.id === saved);
         setSelectedWorkspace(valid ? saved : (ws[0]?.id ?? ""));
       })
-      .catch(err => console.error("[Aughor] failed to load workspaces:", err));
+      .catch(err => console.error("[Aughor] failed to load workspaces:", err))
+      .finally(() => setWsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -1863,35 +1981,21 @@ export default function Home() {
   // The four former Intelligence tabs are now layers of one unified workspace.
   // Translate any legacy navigation (StatCards, command palette, search) into
   // the `intelligence` tab opened at the matching layer.
-  const LEGACY_INTEL_LAYER: Partial<Record<NavTab, IntelLayer>> = {
-    briefing:    "briefing",
-    ontology:    "ontology",
-    "intel-hub": "hub",
-    intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
-    "org-intel":  "org",
-  };
+  // Module-level (see OPS_LAYER_FOR_TAB and friends) because the URL boundary reads the
+  // same aliases on a cold load — two copies would be the drift these tables prevent.
+  const LEGACY_INTEL_LAYER = INTEL_LAYER_FOR_TAB;
 
   // The three Operations rail items are now layers of one Operations workspace (REC-U5).
-  const LEGACY_OPS_LAYER: Partial<Record<NavTab, OpsLayer>> = {
-    monitors: "monitors",
-    actions:  "actions",
-    integrations: "integrations",
-    spend: "spend",
-    security: "security",
-  };
+  const LEGACY_OPS_LAYER = OPS_LAYER_FOR_TAB;
 
   // The three Data rail items are now layers of one Data workspace (REC-U5).
   // Module-level (see DATA_LAYER_FOR_TAB) because the URL boundary needs it too — it
   // is a constant, and two copies would be the drift this map exists to prevent.
   const LEGACY_DATA_LAYER = DATA_LAYER_FOR_TAB;
 
-  // Fleet / Agents / Control Room merged into ONE Agentic Ops workspace — the
-  // legacy rail ids and deep links land on the matching layer.
-  const LEGACY_AGENTIC_LAYER: Partial<Record<NavTab, AgentsLayer>> = {
-    fleet: "fleet",
-    agents: "agents",
-    "control-room": "fleet",
-  };
+  // The legacy rail ids and deep links land on the matching Agent Ops layer — the one
+  // table the cold-load resolver above also reads.
+  const LEGACY_AGENTIC_LAYER = AGENTIC_LAYER_FOR_TAB;
 
   const handleNavigate = (t: NavTab) => {
     // Always dismiss any floating overlays when the user navigates.
@@ -2251,6 +2355,7 @@ export default function Home() {
                   connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name, schema_name: c.schema_name ?? null }))}
                   onConnectionChange={setSelectedConn}
                   workspaceId={selectedWorkspace}
+                  contextReady={contextReady}
                 />
               </ErrorBoundary>
             )}
@@ -2417,7 +2522,7 @@ export default function Home() {
             {/* ── SETTINGS ── */}
             {tab === "settings" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <SettingsScreen theme={theme} setTheme={setTheme} workspaceId={selectedWorkspace} workspaceName={activeWs?.name} />
+                <SettingsScreen theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} workspaceId={selectedWorkspace} workspaceName={activeWs?.name} />
               </div>
             )}
 

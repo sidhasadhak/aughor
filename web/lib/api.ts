@@ -6816,6 +6816,8 @@ export interface UserAgent {
   id: string;
   name: string;
   instructions: string;
+  /** One line on what the agent is for; "" when its author left it blank. */
+  purpose?: string;
   connection_id: string;
   schema_scope: string;
   doc_ids: string[];
@@ -7782,6 +7784,10 @@ export interface FleetCharterRow {
   spend_source: "job_metering";
   runs: number;
   failed: number;
+  /** Runs that finished SUCCEEDED in the window; for a custom agent, traces with no failed call. */
+  succeeded?: number;
+  /** Mean run duration in the window, ms — null when nothing finished with both timestamps. */
+  avg_duration_ms?: number | null;
   orphaned: number;
   tokens: number;
   queries: number;
@@ -7806,6 +7812,10 @@ export interface FleetPersonaRow {
   spend: { measured: true; calls: number; total_tokens: number; failure_rate: number | null };
   runs: number;
   failed: number;
+  /** Runs that finished SUCCEEDED in the window; for a custom agent, traces with no failed call. */
+  succeeded?: number;
+  /** Mean run duration in the window, ms — null when nothing finished with both timestamps. */
+  avg_duration_ms?: number | null;
   orphaned: number;
   tokens: number;
   queries: number;
@@ -7829,6 +7839,10 @@ export interface FleetRunnerRow {
   spend_source: "job_metering";
   runs: number;
   failed: number;
+  /** Runs that finished SUCCEEDED in the window; for a custom agent, traces with no failed call. */
+  succeeded?: number;
+  /** Mean run duration in the window, ms — null when nothing finished with both timestamps. */
+  avg_duration_ms?: number | null;
   orphaned: number;
   tokens: number;
   queries: number;

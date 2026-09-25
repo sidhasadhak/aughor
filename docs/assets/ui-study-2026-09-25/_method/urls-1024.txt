@@ -1,0 +1,6 @@
+intelligence-1024|http://localhost:3000/?tab=intelligence&conn=8233e4fd
+agentic-ops-1024|http://localhost:3000/?tab=agentic-ops
+catalog-1024|http://localhost:3000/?tab=catalog&conn=8233e4fd
+query-1024|http://localhost:3000/?tab=query&conn=8233e4fd
+spend-1024|http://localhost:3000/?tab=spend
+home-1024|http://localhost:3000/?tab=home

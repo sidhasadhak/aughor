@@ -1,5 +1,9 @@
 "use client";
 
+import { destinationLabel } from "@/lib/names";
+import { requestTab } from "@/lib/navigate";
+import { askSpotlight } from "@/lib/commandRegistry";
+import { HOLD_LEAD, remedyFor, type RemedyDoor } from "@/lib/departureRemedies";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -32,7 +36,14 @@ const FILTERS: { id: DepartureFilter; label: string }[] = [
  * a declarer marking an automation still on probation, and an owner choosing between two
  * readings of a metric that disagreed. Hub-wide by definition, like the Hub map beside it.
  */
-export function DeparturesPanel() {
+/** The screens a remedy can open — handed down by the workspace, which owns the layers. */
+interface Doors {
+  onOpenAutomation?: () => void;
+  onOpenTrace?: (analysisId: string) => void;
+}
+
+export function DeparturesPanel({ onOpenAutomation, onOpenTrace }: Doors = {}) {
+  const doors: Doors = { onOpenAutomation, onOpenTrace };
   const [rows, setRows] = useState<Departure[]>([]);
   const [summary, setSummary] = useState<DepartureSummary | null>(null);
   const [absent, setAbsent] = useState(false);
@@ -149,7 +160,7 @@ export function DeparturesPanel() {
             </TableHeader>
             <TableBody>
               {shown.map(d => (
-                <DepartureRow key={d.id} departure={d} open={openId === d.id}
+                <DepartureRow key={d.id} departure={d} open={openId === d.id} doors={doors}
                   focused={focusId === d.id}
                   onToggle={() => setOpenId(openId === d.id ? "" : d.id)}
                   onChanged={load} />
@@ -162,12 +173,13 @@ export function DeparturesPanel() {
   );
 }
 
-function DepartureRow({ departure: d, open, focused, onToggle, onChanged }: {
+function DepartureRow({ departure: d, open, focused, onToggle, onChanged, doors }: {
   departure: Departure;
   open: boolean;
   focused: boolean;
   onToggle: () => void;
   onChanged: () => void;
+  doors: Doors;
 }) {
   const owed = owes(d);
   return (
@@ -183,7 +195,7 @@ function DepartureRow({ departure: d, open, focused, onToggle, onChanged }: {
             {sourceName(d)}
           </div>
           <div className="aug-fs-xs" style={{ color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {kindLabel(d.kind)}{d.target ? ` → ${d.target}` : ""}
+            {kindLabel(d.kind)}{d.target ? <> → <span title={d.target}>{destinationLabel(d.target).label}</span></> : ""}
           </div>
         </TableCell>
         <TableCell>
@@ -208,7 +220,7 @@ function DepartureRow({ departure: d, open, focused, onToggle, onChanged }: {
       {open && (
         <TableRow>
           <TableCell colSpan={5} style={{ background: "var(--bg-1)", whiteSpace: "normal" }}>
-            <DepartureDetail departure={d} onChanged={onChanged} />
+            <DepartureDetail departure={d} onChanged={onChanged} doors={doors} />
           </TableCell>
         </TableRow>
       )}
@@ -216,11 +228,42 @@ function DepartureRow({ departure: d, open, focused, onToggle, onChanged }: {
   );
 }
 
-function DepartureDetail({ departure: d, onChanged }: { departure: Departure; onChanged: () => void }) {
+function DepartureDetail({ departure: d, onChanged, doors }: {
+  departure: Departure; onChanged: () => void; doors: Doors;
+}) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const owed = owes(d);
   const guards = guardRows(d);
+  const analysisId = d.investigation_id;   // the wire field, read once
+  // The wall, and the way past it: for every guard that held or asked, what it means, what
+  // to change, and the screens that hold the fix (asked for 2026-09-25).
+  const remedies = guards
+    .filter(g => g.outcome === "held" || g.outcome === "asked")
+    .map(g => ({ ...g, remedy: remedyFor(g.guard) }))
+    .filter((g): g is typeof g & { remedy: NonNullable<ReturnType<typeof remedyFor>> } => g.remedy !== null);
+  const door = (kind: RemedyDoor, guardLabel: string, summary: string) => {
+    if (kind === "automation") {
+      if (!doors.onOpenAutomation || !d.automation_id) return null;
+      return <Button key={kind} variant="outline" size="xs" onClick={doors.onOpenAutomation}
+        title={d.automation_name ? `Automations · ${d.automation_name}` : undefined}>Open Automations</Button>;
+    }
+    if (kind === "analysis") {
+      if (!doors.onOpenTrace || !analysisId) return null;
+      return <Button key={kind} variant="outline" size="xs"
+        onClick={() => doors.onOpenTrace?.(analysisId)}>Open the analysis</Button>;
+    }
+    if (kind === "semantic") {
+      return <Button key={kind} variant="outline" size="xs"
+        onClick={() => requestTab("semantic", d.conn_id ? { conn: d.conn_id } : undefined)}>Open the Semantic Layer</Button>;
+    }
+    // The palette, with THIS hold in the question — the handoff SP-15 makes structural.
+    return <Button key={kind} variant="ghost" size="xs"
+      onClick={() => askSpotlight(
+        `A departure was held by the ${guardLabel} guard: ${summary}. What does that mean, and what `
+        + `should I change so the next run sends? (departure ${d.id}`
+        + (d.automation_name ? `, automation "${d.automation_name}"` : "") + ")")}>Ask Spotlight about this hold</Button>;
+  };
 
   const act = async (run: () => Promise<string>) => {
     setBusy(true);
@@ -307,6 +350,28 @@ function DepartureDetail({ departure: d, onChanged }: { departure: Departure; on
               <li key={i} className="aug-fs-sm" style={{ color: "var(--t1)" }}>{r}</li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {remedies.length > 0 && (
+        <section aria-label="What to do next">
+          <div className="aug-label" style={{ marginBottom: 4 }}>What to do next</div>
+          {d.state === "held" && (
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8 }}>{HOLD_LEAD}</div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {remedies.map(g => (
+              <div key={g.guard}>
+                <div className="aug-fs-sm" style={{ color: "var(--t1)" }}>
+                  <span style={{ fontWeight: 500 }}>{g.label}</span> — {g.remedy.meaning}
+                </div>
+                <div className="aug-fs-sm" style={{ color: "var(--t2)", marginTop: 2 }}>{g.remedy.action}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                  {g.remedy.doors.map(kind => door(kind, g.label, g.summary))}
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

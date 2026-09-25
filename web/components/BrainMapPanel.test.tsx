@@ -53,7 +53,10 @@ describe("BrainMapPanel", () => {
     render(<BrainMapPanel connectionId="c1" />);
     await waitFor(() => expect(screen.getByTestId("brain-map")).toBeTruthy());
     expect(screen.getByTestId("brain-box-visibility").textContent).toContain("the denominator is unknown");
-    expect(screen.getByTestId("brain-box-facts").textContent).toContain("GET /graph");
+    // The door (a route) rides the box's tooltip since the ids-as-names movement (study §9.5);
+    // the face carries the name and the count.
+    expect(screen.getByTestId("brain-box-facts").getAttribute("title")).toBe("GET /graph");
+    expect(screen.getByTestId("brain-box-facts").textContent).not.toContain("GET /graph");
     expect(screen.getByText(/it replaced/).textContent).toContain("AVG(total_amount)");
   });
 });

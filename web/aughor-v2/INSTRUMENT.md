@@ -9,8 +9,8 @@ plus what adopting it decided. Where it says MUST, a reviewer rejects the diff.
 ## 0. The thesis
 
 Aughor's product is a claim about a number, and the interface's whole job is to make that
-claim checkable at a glance. Everything structural is monochrome on warm paper — the paper
-is warm, the ink and the encoding are not. There is **one plane, not a stack of cards**:
+claim checkable at a glance. Everything structural is monochrome on its skin's ground —
+navy in dark, a white grid on grey chrome in light; the ink and the encoding carry no brand. There is **one plane, not a stack of cards**:
 hierarchy comes from hairlines and the honest weight of type. **Colour is a data type.**
 Density is a feature: a screen carries 3–5× what a consumer app carries and still feels
 calm. The answer to a crowded screen is better hierarchy at the same density, never more
@@ -34,7 +34,7 @@ glow and lift, and two component layers for one class is one too many.
 
 ## 2. Hard constraints
 
-**Type.** Root 13px. Six steps and no others — `11 · 12 · 13 · 15 · 18 · 22` (`aug-fs-xs … aug-fs-display`);
+**Type.** Root 14px, the reading size; 13 is chrome. Seven steps and no others — `11 · 12 · 13 · 14 · 15 · 18 · 22` (`aug-fs-xs … aug-fs-display`);
 28px exists in exactly one place, an icon in an empty state (`aug-fs-glyph`, `.aug-empty-glyph`).
 11 is the floor. Inter for UI text; **JetBrains Mono for every figure, id, timestamp, metric,
 table or column name, and code**, always tabular (`.aug-num`). Line heights 1.45 at 11/18,
@@ -61,19 +61,31 @@ spring, no overshoot. Every animation's reduced-motion fallback is its **finishe
 
 ## 3. Tokens
 
-41 distinct colour values per theme; an alias is a real `var()`, never a duplicated hex.
-Values live in `tokens-v2.css` — read it, not a copy.
+An alias is a real `var()`, never a duplicated hex. Values live in `tokens-v2.css` — read it,
+not a copy.
 
-- **Surfaces** `--bg-0` canvas · `--bg-1` chrome · `--bg-2` = `--bg-1` (no cards) · `--bg-3`
-  inset / input / code well · `--bg-4` pressed · `--bg-hover` = `--bg-3` · `--bg-nav` = `--bg-0` ·
-  `--bg-sel` · `--scrim` · `--code-bg`. `--bg-canvas` (the Data Canvas ground) = `--bg-0`.
+**Two skins (2026-09-25).** Dark follows the Du Bois greys and blues (the study §9's dark reference); light follows
+Excel — grey chrome, a white grid, Excel green for the app's own state and blue for links,
+Excel's Good / Bad / Neutral fills for state on a value. The values and their measured
+contrast are in `docs/UI_UX_STUDY_2026-09-25.md` §9.2; the rules that differ between the
+skins beyond tokens are at the end of `app/globals.css` and in §4 item 5 below. Three names
+were added: `--primary-hover`, `--accent`, `--accent-text`.
+
+- **Surfaces** `--bg-0` the page · `--bg-1` chrome · `--bg-2` a card: `--bg-1` in dark (one step
+  up), `--bg-0` in light (a box drawn by its border) · `--bg-3` inset / input · `--bg-4` pressed ·
+  `--bg-hover` · `--bg-nav` = `--bg-1` (the rail sits on chrome) · `--bg-sel` the selection tint ·
+  `--scrim` · `--code-bg`. `--bg-canvas` (the Data Canvas ground) = `--bg-0`.
 - **Lines** `--b0` the row rule, the workhorse · `--b1` default border · `--b2` input border,
   strong divider · `--b3` hover border · `--bfocus` = `--blue3`.
 - **Text** `--t1` primary · `--t2` secondary · `--t3` captions and meta · `--t4` **never text** —
   ticks, rules, gutter numerals.
 - **Intent** `--blueN --grnN --vioN --ambN --redN --cynN`: 1 tint · 2 border · 3 the colour ·
   4 text · 5 aliases 4. Cyan has no tint or border of its own (`--cyn1` = `--bg-3`, `--cyn2` = `--b2`).
-- **Solid** `--blue-solid`, `--blue-solid-hover` (white label, AA), `--vio-solid` = `--vio3`.
+- **Solid** `--primary` / `--primary-hover` the one filled button (white label, AA): blue in dark,
+  Excel green in light · `--blue-solid`, `--blue-solid-hover` stay blue in both · `--vio-solid` = `--vio3`.
+- **Accent** `--accent` / `--accent-text` the skin's own selection colour — the active tab's
+  underline, the rail's active bar, the active segment's text in light: `--blue3` / `--blue4` in
+  dark, Excel green `#107C41` / `#0C5E32` in light. A link is `--blue3` in both.
 - **Charts** `--chart-1..6` = blue3 · grn3 · vio3 · amb3 · cyn3 · red3, in that order (the order
   is the colour-blindness guarantee — do not reorder); `--chart-7` the kind accent;
   `--chart-deemph`; `--chart-axis/grid/tick` = `--b2/--b0/--t4`; thresholds warn = amb3,
@@ -112,6 +124,23 @@ for emphasis.
    ticks and rules (including `--chart-tick`, as the design aliases it).
 4. **Sign-diverging chart colour** reads `--grn3` for positive and `--red3` for negative:
    `--chart-threshold-target` means a plan-target line now, so it no longer doubles as "good".
+5. **The two skins and the reading size (2026-09-25).** The user's calls, taken the same day
+   on the mockups in `docs/UI_UX_STUDY_2026-09-25.md` §9.4: body text is **14 px** (the root,
+   `.aug-text-ui`, `.aug-text-prose`, `.aug-text-h3`, table cells); chrome stays 13
+   (`.aug-fs-chrome`, the rail, tabs, buttons, inputs, segments) — the scale is
+   11 · 12 · 13 · 14 · 15 · 18 · 22. **Figures are set in Inter with tabular numerals**
+   (`.aug-num`, the tiles, the range keys); mono is for ids, identifiers and code only.
+   **Section labels are 12 px semibold sentence case** (`.aug-label`, the rail's groups, table
+   headers, kinds and eyebrows) — never tracked mono caps. Table rows are 32 px on a 30 px
+   header. Light keeps Excel green for its own state and blue for links; dark stays blue. The
+   four rules that differ between the skins beyond tokens: light draws gridlines both ways and
+   dark hairline rows; light's active segment is the green tint with green text and dark's the
+   pressed fill; state on a value is a cell fill in light and a bordered pill in dark; a
+   selected tile carries a 2 px green outline in light and a blue edge in dark (the last two
+   live in `StatusChip` and `StatTile`). No definition bar, no status bar: both were drawn and
+   refused. The Agent Ops range moved from the header to the toolbar row under it
+   (`Workspace.toolbar`, `.aug-toolbar`, 36 px). The light kind accent moved `#B73BCD → #DC1E98`:
+   the old value sat 5.0 ΔE from the new blue under CVD, and the gate wants 6 from all six.
 
 ## 5. Components (class → primitive)
 
@@ -124,19 +153,19 @@ for emphasis.
   `sm`, `lg` 26; `xs` 22; icon sizes square at 26/22.
 - **Fields** — `.aug-input` `.aug-select` `.aug-textarea`, `<Input> <Textarea> <SelectTrigger>`:
   height 28, radius 4, `--bg-3`, `--b2` → `--b3` on hover, error `--red2` border with `--red4`
-  text (`.aug-field-error`), placeholder `--t3` and never italic; a figure is mono (`.aug-input-figure`).
+  text (`.aug-field-error`), placeholder `--t3` and never italic; a figure is tabular Inter (`.aug-input-figure`).
 - **Selection** — `.aug-tabs`/`.aug-tab` (2px `--blue3` underline, 600 when active) and
   `.aug-segmented`/`.aug-seg-item` (`--bg-4` selected, `--b2` dividers). `<Tabs>` `line` and
   `default`. Never both in one header. Every workspace layer switcher is segmented.
 - **Badge** — `.aug-badge-{blue,green,amber,red,violet,cyan,neutral}` (`.aug-tag-*` alias):
-  11px mono, `2px 7px`, radius 3, tint 1 · border 2 · text 4.
+  11px, `2px 7px`, radius 3, tint 1 · border 2 · text 4.
 - **Callout** — `.aug-callout-{blue,green,amber,red,violet}` + `.aug-callout-kind`: radius 4,
   tint 1, border 2, a 3px left rule in hue 3. Never an icon in a circle.
 - **Status dot** — `.aug-dot-{live,idle,waiting,failed,analysing}`, 7px; live and analysing pulse.
 - **Progress** — `.aug-progress`, `<Progress>`: a 3px rule, never a ring; print the figure beside it.
-- **Table** — `.aug-dt`, `<Table>`: sticky 22px header on `--bg-1`, `--b2` underline, 11px mono
+- **Table** — `.aug-dt`, `<Table>`: sticky 30px header on `--bg-1`, `--b1` underline, 12px semibold sentence case
   uppercase labels in `--t3`; 24px rows ruled `--b0`; hover `--bg-hover`, selected `--bg-sel`;
-  numeric cells `.num` — right-aligned, mono, tabular.
+  numeric cells `.num` — right-aligned, tabular Inter.
 - **Overlay** — the only three things that float: `.aug-popover`/`.aug-tooltip` (`--bg-3`,
   `--b2`, radius 4, `--shadow-sm`), `.aug-toast` (`--bg-1`, 3px left rule in its hue, radius 6,
   `--shadow-md`), `.aug-dialog` (`--bg-1`, `--b2`, radius 6, `--shadow-md`, over `--scrim`).
@@ -185,7 +214,7 @@ loops stop. The ⌘K palette has no entrance at all — it is summoned from the 
 skills): the Primary alone gets a press scale, and dense controls keep the background step; the
 Briefing enters verdict → numbers → cards once a session (`components/brief/firstOpen.ts`), never on
 Reload or Regenerate; depth stays a hairline, not a shadow — a card is the page's own plane, and on
-`#101010` a drop shadow would not show.
+`#11171C` (the canvas since the 2026-09-25 skin; `#181818` and `#101010` before it) a drop shadow would not show.
 
 ## 8. Icons and density
 
@@ -314,7 +343,7 @@ said "Building ontology…" over a read that never builds; it now says what is h
 ## 10. Self-check before a screen ships
 
 1. Every font size is 11/12/13/15/18/22. 2. Every colour is a `var(--token)`. 3. Every figure
-is mono, tabular, right-aligned in tables. 4. Every figure reaches its receipt. 5. Every hue on
+is tabular Inter, right-aligned in tables; mono is for ids and code only. 4. Every figure reaches its receipt. 5. Every hue on
 screen can be named as a state. 6. Every interactive element has the 2px ring. 7. Every radius
 is 3, 4 or 6 — or round on something round. 8. Empty, loading, error and partial all exist.
 9. Every animation's reduced-motion frame is its finished frame. 10. Nothing floats that is not

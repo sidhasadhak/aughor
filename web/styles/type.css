@@ -1,11 +1,16 @@
 /* ── Aughor Type Scale · Instrument ─────────────────────────────────────────
-   Six steps and no others — 11 · 12 · 13 · 15 · 18 · 22 — calibrated to a 13px root.
+   Seven steps and no others — 11 · 12 · 13 · 14 · 15 · 18 · 22 — on a 14px root since
+   2026-09-25 (the user: body 13 → 14). 14 is the READING size: body, prose, table cells,
+   the claim in a state row. 13 is CHROME: the rail, tabs, buttons, inputs, segments.
    11px is the absolute floor. 28px exists in exactly one place: an icon rendered in an
-   empty state (.aug-fs-glyph / .aug-empty-glyph). Two families: Inter for UI text,
-   JetBrains Mono for every figure, id, timestamp, metric, table or column name, and code.
+   empty state (.aug-fs-glyph / .aug-empty-glyph). Two families, one job each: Inter for
+   every word AND every figure (with tabular numerals, so decimal points still stack);
+   JetBrains Mono only for what is an identifier or code — an id, a table or column name,
+   SQL, a log. Neither Du Bois nor Excel sets a number in mono, and neither shouts a
+   label in tracked caps: section labels are 12px semibold sentence case.
 
-   Line heights are the spec's: 1.45 at 11 and 18, 1.55 at 12, 1.7 at 13 (1.8 in prose),
-   1.5 at 15, 1.0 at 22.
+   Line heights are the spec's: 1.45 at 11 and 18, 1.55 at 12, 1.7 at 13 and 14 (1.8 in
+   prose), 1.5 at 15, 1.0 at 22.
 
    Usage:
      <h2 className="aug-text-h2">What moved</h2>
@@ -30,7 +35,7 @@
 }
 
 .aug-text-h3 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.5;
   color: var(--t1);
@@ -38,14 +43,14 @@
 
 /* ── Body ── */
 .aug-text-ui {
-  font-size: 13px;   /* base UI size */
+  font-size: 14px;   /* the reading size */
   line-height: 1.7;
   color: var(--t1);
 }
 
 /* Prose — the Briefing and a finished deep analysis only: a real measure and 1.8 leading. */
 .aug-text-prose {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.8;
   max-width: var(--shell-measure);
   color: var(--t1);
@@ -73,9 +78,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Every figure: mono, tabular, so decimal points stack down a column. */
+/* Every figure: the UI face with tabular numerals, so decimal points stack down a column. */
 .aug-num {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
@@ -86,10 +90,11 @@
    changing an element's colour or weight. */
 .aug-fs-xs      { font-size: 11px; }  /* labels, captions, meta (the floor) */
 .aug-fs-sm      { font-size: 12px; }  /* secondary text, buttons, inputs */
-.aug-fs-ui      { font-size: 13px; }  /* base UI text */
+.aug-fs-chrome  { font-size: 13px; }  /* chrome: the rail, tabs, buttons, inputs */
+.aug-fs-ui      { font-size: 14px; }  /* the reading size */
 .aug-fs-h2      { font-size: 15px; }  /* subheadings */
 .aug-fs-h1      { font-size: 18px; }  /* headings, the verdict sentence */
-.aug-fs-display { font-size: 22px; }  /* hero stat numbers — mono only, never words */
+.aug-fs-display { font-size: 22px; }  /* hero stat numbers — tabular figures, never words */
 .aug-fs-glyph   { font-size: 28px; }  /* an ICON rendered as text in an empty state —
                                          the only step above --display. */
 
@@ -100,19 +105,19 @@
 :root {
   --aug-fs-xs:      11px;
   --aug-fs-sm:      12px;
-  --aug-fs-ui:      13px;
+  --aug-fs-chrome:  13px;
+  --aug-fs-ui:      14px;
   --aug-fs-h2:      15px;
   --aug-fs-h1:      18px;
   --aug-fs-display: 22px;
   --aug-fs-glyph:   28px;
 }
 
-/* ── Section label ── 11px mono uppercase, tracked. --t2: a label is read, so it clears AA. */
+/* ── Section label ── 12px semibold, sentence case, no tracking (2026-09-25: neither
+   reference shouts). --t2: a label is read, so it clears AA. */
 .aug-label {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
   color: var(--t2);
 }

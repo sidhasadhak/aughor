@@ -11,7 +11,7 @@
  * compiler refuses says why and is not followed, a refused metric shows no number, and an action
  * is OFFERED here, never run from here (acting on objects is ON-4).
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useReducer, useState } from "react";
 import Link from "next/link";
 
 import { SqlResultTable } from "@/components/AugTable";
@@ -23,7 +23,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
-import { displayCellValue, formatCount, formatMetricValue, relTime } from "@/lib/format";
+import { displayCellValue, formatCount, formatMetricValue, formatMoney, formatTableNumber, relTime } from "@/lib/format";
+import { currencyFromColumn, currencySymbol, effectiveCurrencySymbol, isMoneyColumn, orgSettingsSnapshot, setOrgSettingsCache, subscribeOrgSettings } from "@/lib/orgSettings";
+import { getOrgSettings } from "@/lib/api";
 import { declaredActionsHref, objectHref } from "@/lib/objectLinks";
 import {
   getLinkedObjects,
@@ -61,6 +63,56 @@ function errorText(e: unknown): string {
 /** SQL NULL arrives as the text "NULL" on the display path — no value, never the word (PENDING item 25). */
 function cellText(value: unknown): string {
   return value == null || value === "NULL" ? "—" : displayCellValue(value);
+}
+
+// ── One currency per page ─────────────────────────────────────────────────────────
+// A metric or property is MONEY when its declared unit says so (an ISO code, a symbol, the
+// word), or when its name reads as money the way a column's does. Its currency is the one it
+// DECLARES — a unit or a name suffix like `_chf` — else the organisation's reporting currency,
+// and when the organisation has declared none the figure carries no symbol and the card says so
+// once. Before this the page printed `114.98999977111816 USD` beside `114.99 EUR` and `114.99 $`
+// for one value: three readings of one number (docs/UI_UX_STUDY_2026-09-25.md §2.6).
+const ISO_CODE_RE = /\b(USD|EUR|GBP|CHF|JPY|CNY|INR|AUD|CAD|SEK|NOK|DKK|SGD|HKD|NZD|BRL|ZAR|MXN|PLN|AED)\b/i;
+const MONEY_UNIT_RE = /[$€£¥₹]|\b(?:currency|money)\b/i;
+// A bare symbol in a unit is a declaration too: `$` says USD as plainly as the code does.
+const SYMBOL_CODE: Record<string, string> = { "$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR" };
+
+function moneyOf(unit: string | null | undefined, name: string): { money: boolean; code: string | null } {
+  const u = (unit || "").trim();
+  const iso = u.match(ISO_CODE_RE);
+  if (iso) return { money: true, code: iso[1].toUpperCase() };
+  const sym = u.match(/[$€£¥₹]/);
+  if (sym) return { money: true, code: SYMBOL_CODE[sym[0]] ?? null };
+  if (MONEY_UNIT_RE.test(u)) return { money: true, code: currencyFromColumn(name) };
+  if (!u && isMoneyColumn(name)) return { money: true, code: currencyFromColumn(name) };
+  return { money: false, code: null };
+}
+
+/** The symbol a money figure wears: its own currency's, else the organisation's — "" when neither. */
+function moneySymbol(code: string | null): string {
+  return code ? currencySymbol(code) : effectiveCurrencySymbol();
+}
+
+/** Re-render when the organisation's settings land or change. The object page is its own route,
+ *  outside the shell that loads them, so it loads them itself the first time it needs them. */
+function useOrgSettingsTick(): void {
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const off = subscribeOrgSettings(tick);
+    if (!orgSettingsSnapshot()) getOrgSettings().then(setOrgSettingsCache).catch(() => {});
+    return off;
+  }, []);
+}
+
+/** The one line a card says about currency, or null when it has nothing to say: which currency
+ *  the organisation reports in when a figure fell back to it, or that none is declared. */
+function currencyNote(items: { unit?: string | null; name: string }[]): string | null {
+  const fallbacks = items.filter(it => { const m = moneyOf(it.unit, it.name); return m.money && !m.code; });
+  if (fallbacks.length === 0) return null;
+  const code = orgSettingsSnapshot()?.currency_code || "";
+  return code
+    ? `Money is shown in ${code}, the organisation's reporting currency.`
+    : "The organisation has not declared a reporting currency, so these amounts carry no symbol.";
 }
 
 /** "a customer", "an order" — the noun as a sentence reads it. */
@@ -256,9 +308,11 @@ function Withdraw({ editId, what, connectionId, reload }: {
 function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
   // A property that names another object — an order's customer_id — opens that object.
   const objectColumns = useObjectKeyColumns(scope.connectionId);
+  useOrgSettingsTick();
+  const note = currencyNote(page.properties.map(p => ({ unit: p.unit, name: p.name })));
   return (
     <Section title="Properties"
-      description={propertiesSummary(page)}>
+      description={note ? `${propertiesSummary(page)} ${note}` : propertiesSummary(page)}>
       <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) minmax(0, 1fr)", columnGap: 16, rowGap: 6, margin: 0 }}>
         {page.properties.map((p) => {
           const isKey = p.name.toLowerCase() === page.key.toLowerCase();
@@ -279,8 +333,8 @@ function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scop
                     style={{ ...MONO, color: "var(--blue3)" }} title={`Open ${named} ${String(p.value)}`}>
                     {String(p.value)}
                   </Link>
-                ) : cellText(p.value)}
-                {p.unit && p.value != null && <span style={{ color: "var(--t3)" }}> {p.unit}</span>}
+                ) : propertyText(p)}
+                {p.unit && p.value != null && !moneyOf(p.unit, p.name).money && <span style={{ color: "var(--t3)" }}> {p.unit}</span>}
                 {p.formula && (
                   <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", ...MONO }}
                     title={p.formula.kind === "computed" ? "A computed property the builder verified — evaluated for this object"
@@ -518,9 +572,22 @@ function CitationsCard({ page, citations, unread }: { page: ObjectPage; citation
   );
 }
 
+/** A property's value as a reader reads it: money with its symbol to the cent, any other number
+ *  in full with separators, everything else as the cell shows it. */
+function propertyText(p: { value: unknown; unit: string; name: string }): string {
+  if (p.value == null || p.value === "NULL" || p.value === "") return "—";
+  const n = typeof p.value === "number" ? p.value : (typeof p.value === "string" && /^-?\d+(?:\.\d+)?$/.test(p.value.trim()) ? Number(p.value) : NaN);
+  if (!Number.isFinite(n)) return cellText(p.value);
+  const m = moneyOf(p.unit, p.name);
+  return m.money ? formatMoney(n, moneySymbol(m.code)) : formatTableNumber(n);
+}
+
 function MetricsCard({ page, metrics }: { page: ObjectPage; metrics: ObjectMetric[] }) {
+  useOrgSettingsTick();
+  const note = currencyNote(metrics.map(m => ({ unit: m.unit, name: m.metric })));
+  const base = `Verified metrics, compiled with this ${page.type_name.toLowerCase()} as the filter.`;
   return (
-    <Section title="Metrics" description={`Verified metrics, compiled with this ${page.type_name.toLowerCase()} as the filter.`}>
+    <Section title="Metrics" description={note ? `${base} ${note}` : base}>
       {metrics.length === 0 ? (
         <EmptyState variant="inline" title="No verified metric reaches this object." />
       ) : metrics.map((m, i) => (
@@ -547,11 +614,17 @@ function MetricValue({ metric }: { metric: ObjectMetric }) {
     );
   }
   const n = typeof metric.value === "number" ? metric.value : Number(metric.value);
-  const text = metric.value == null || metric.value === "" ? "—" : Number.isFinite(n) ? formatMetricValue(n) : cellText(metric.value);
+  const m = moneyOf(metric.unit, metric.metric);
+  const text = metric.value == null || metric.value === "" ? "—"
+    : !Number.isFinite(n) ? cellText(metric.value)
+    : m.money ? formatMoney(n, moneySymbol(m.code))
+    : formatMetricValue(n);
+  // A figure is set in the UI face with tabular numerals (2026-09-25), never mono; a money
+  // figure carries its symbol, so the unit text is only for what is not money.
   return (
-    <span className="aug-fs-ui" style={{ ...MONO, color: "var(--t1)", fontWeight: 600, whiteSpace: "nowrap" }}>
+    <span className="aug-fs-ui aug-num" style={{ color: "var(--t1)", fontWeight: 600, whiteSpace: "nowrap" }}>
       {text}
-      {metric.unit && <span className="aug-fs-xs" style={{ color: "var(--t3)", fontWeight: 400 }}> {metric.unit}</span>}
+      {metric.unit && !m.money && <span className="aug-fs-xs" style={{ color: "var(--t3)", fontWeight: 400 }}> {metric.unit}</span>}
     </span>
   );
 }
