@@ -10,9 +10,9 @@
  *
  * Instrument (2026-09-13): the six series ARE the six intent hues — blue interactive,
  * green passed, violet analysis, amber waiting, cyan no-state, red adverse — so a red line
- * and an adverse figure are the same red. Three of the design's dark hues and one light
- * hue were moved the minimum the validator needed (see the tokens-v2.css header); the
- * rest are the design's hexes.
+ * and an adverse figure are the same red. Re-skinned 2026-09-25 (dark after Databricks,
+ * light after Excel; tokens-v2.css header): the hues moved with the intent tokens, the
+ * ORDER did not, and dark amber moved once more for the band (#DE7921 → #D57420).
  *
  * CHART_KIND_ACCENT (--chart-7) is deliberately NOT part of CHART_SERIES: adding it there
  * would raise every chart's series count and stop the "Other" fold at seven instead of six.
@@ -29,8 +29,8 @@ export type ChartMode = "light" | "dark";
 
 /** The six categorical series slots, per mode — mirrors --chart-1..6. */
 export const CHART_SERIES: Record<ChartMode, string[]> = {
-  light: ["#1C6FB5", "#14795A", "#5F45A8", "#8F5A08", "#00819C", "#B32639"],
-  dark: ["#4C9AD6", "#3EAB82", "#8B7DC8", "#B88D30", "#32A6B2", "#D45B6A"],
+  light: ["#0F6CBD", "#1E7B45", "#6B3FA0", "#B25E00", "#00819C", "#C50F1F"],
+  dark: ["#4299E0", "#3CAA60", "#9C7BDD", "#D57420", "#32A6B2", "#E65B77"],
 };
 
 /**
@@ -44,7 +44,7 @@ export const CHART_SERIES: Record<ChartMode, string[]> = {
  * see the note in tokens-v2.css and the gate that enforces it.
  */
 export const CHART_KIND_ACCENT: Record<ChartMode, string> = {
-  light: "#B73BCD",
+  light: "#DC1E98",
   dark: "#9B2378",
 };
 
@@ -56,19 +56,19 @@ export const CHART_DEEMPH: Record<ChartMode, string> = {
   dark: "#4E5A6A",
 };
 
-/** The surface charts render on — the validator's contrast reference. Mirrors --bg-2,
- *  which is --bg-1: there are no cards, so a chart sits on the page's own plane. */
+/** The surface charts render on — the validator's contrast reference. Mirrors --bg-2:
+ *  in dark a card one step above the page (--bg-1), in light the page itself (--bg-0). */
 export const CHART_SURFACE: Record<ChartMode, string> = {
-  light: "#FDFBF7",
-  dark: "#141312",
+  light: "#FFFFFF",
+  dark: "#1F272D",
 };
 
 /** Sign-diverging pair (change metrics: positive/negative). Sign is a good/bad meaning,
  *  not a series identity, so it wears the intent hues that carry those meanings: green
  *  for passed, red for adverse. Mirrors --grn3 / --chart-threshold-crit (= --red3). */
 export const CHART_SIGN: Record<ChartMode, { pos: string; neg: string }> = {
-  light: { pos: "#14795A", neg: "#B32639" },
-  dark: { pos: "#3EAB82", neg: "#D45B6A" },
+  light: { pos: "#1E7B45", neg: "#C50F1F" },
+  dark: { pos: "#3CAA60", neg: "#E65B77" },
 };
 
 const cssVar = (name: string): string =>

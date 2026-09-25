@@ -98,7 +98,7 @@
 html, body {
   height: 100%;
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 14px;   /* the reading size (2026-09-25); chrome stays 13 */
   background: var(--bg-0);
   color: var(--t1);
   line-height: 1.5;
@@ -170,8 +170,8 @@ a:hover { color: var(--blue4); }
   border-radius: var(--r2);
   background: var(--bg-3);
   border: 1px solid var(--b2);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.45;
   color: var(--t1);
   cursor: pointer;
@@ -216,8 +216,8 @@ a:hover { color: var(--blue4); }
   align-items: center;
   justify-content: center;
   background: var(--b2);
-  font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 600;
   line-height: 1;
   color: var(--t1);
 }
@@ -241,12 +241,9 @@ a:hover { color: var(--blue4); }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: .14em;
-  text-transform: uppercase;
+  padding: 6px 14px 4px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--t3);
 }
 .aug-nav-item {
@@ -258,7 +255,7 @@ a:hover { color: var(--blue4); }
   height: 28px;
   flex-shrink: 0;
   padding: 0 14px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1;
   color: var(--t2);
@@ -271,7 +268,7 @@ a:hover { color: var(--blue4); }
 }
 /* Hover is a fill and nothing else — no bar, no weight — so it is never mistaken for active. */
 .aug-nav-item:hover { background: var(--bg-hover); color: var(--t1); }
-/* Active: one item in the whole rail — --bg-sel, weight 500, a 2px --blue3 bar at the edge. */
+/* Active: one item in the whole rail — --bg-sel, weight 500, a 2px --accent bar at the edge. */
 .aug-nav-item[aria-current="page"],
 .aug-nav-item.active { background: var(--bg-sel); color: var(--t1); font-weight: 500; }
 .aug-nav-item[aria-current="page"]::before,
@@ -282,7 +279,7 @@ a:hover { color: var(--blue4); }
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--blue3);
+  background: var(--accent);
 }
 /* A full-bleed row clips an outset ring against the rail's edge. */
 .aug-nav-item:focus-visible { outline-offset: -2px; }
@@ -291,10 +288,10 @@ a:hover { color: var(--blue4); }
   padding: 0 6px;
   border-radius: var(--r1);
   background: var(--bg-3);
-  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.45;
   color: var(--t3);
+  font-variant-numeric: tabular-nums;
 }
 .aug-nav-badge-waiting { background: var(--amb1); color: var(--amb4); }
 /* The rail's own toggle, at its head. Left-aligned with every other icon rather than
@@ -338,7 +335,7 @@ a:hover { color: var(--blue4); }
   padding-left: 12px;
   border-left: 1px solid var(--b1);
 }
-.aug-activity-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; color: var(--t3); }
+.aug-activity-label { font-size: 12px; font-weight: 600; color: var(--t3); }
 .aug-activity-ticks { display: flex; align-items: flex-end; gap: 3px; height: 16px; flex: none; }
 .aug-activity-tick { width: 3px; min-height: 2px; background: var(--b3); }
 .aug-activity-status {
@@ -346,13 +343,12 @@ a:hover { color: var(--blue4); }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--t2);
 }
 
-/* The theme toggle in the topbar: a mono segmented pair. */
-.aug-seg-item-mono { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; }
+/* The theme toggle in the topbar: a small segmented pair. */
+.aug-seg-item-mono { font-size: 12px; padding: 3px 8px; }
 
 /* A group header's count: amber when something inside is waiting on a human, neutral when it is
    only a count. It resets the header's tracking and case — a figure is never letter-spaced. */
@@ -362,12 +358,12 @@ a:hover { color: var(--blue4); }
   border-radius: var(--r1);
   border: 1px solid var(--b2);
   background: var(--bg-3);
-  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.45;
   letter-spacing: 0;
   text-transform: none;
   color: var(--t3);
+  font-variant-numeric: tabular-nums;
 }
 .aug-nav-group-badge-waiting { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
 
@@ -382,8 +378,8 @@ a:hover { color: var(--blue4); }
   background: var(--bg-1);
   border-bottom: 1px solid var(--b1);
 }
-.aug-content-title { font-size: 13px; font-weight: 600; color: var(--t1); white-space: nowrap; }
-.aug-content-meta { font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
+.aug-content-title { font-size: 15px; font-weight: 600; color: var(--t1); white-space: nowrap; }
+.aug-content-meta { font-size: 12px; color: var(--t3); white-space: nowrap; }
 
 /* ── Selection — tabs underline, segmented fills; never both in one header ── */
 .aug-tabs { display: flex; align-items: flex-end; gap: 18px; border-bottom: 1px solid var(--b1); }
@@ -393,7 +389,7 @@ a:hover { color: var(--blue4); }
   gap: 7px;
   padding: 0 0 7px;
   margin-bottom: -1px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   color: var(--t2);
   background: none;
@@ -404,12 +400,11 @@ a:hover { color: var(--blue4); }
 }
 .aug-tab:hover { color: var(--t1); }
 .aug-tab[aria-selected="true"],
-.aug-tab.active { color: var(--t1); font-weight: 600; border-bottom-color: var(--blue3); }
+.aug-tab.active { color: var(--t1); font-weight: 600; border-bottom-color: var(--accent); }
 .aug-tab-badge {
   padding: 0 6px;
   border-radius: var(--r1);
   background: var(--bg-3);
-  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 400;
   line-height: 1.45;
@@ -432,8 +427,8 @@ a:hover { color: var(--blue4); }
   gap: 6px;
   height: auto;
   min-height: 0;
-  padding: 3px 10px;
-  font-size: 12px;
+  padding: 4px 12px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1.45;
   white-space: nowrap;
@@ -502,11 +497,11 @@ a:hover { color: var(--blue4); }
   transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
 .aug-btn:hover, .aug-btn:active { background: var(--bg-4); border-color: var(--b3); }
-.aug-btn-primary { background: var(--blue-solid); border-color: var(--blue-solid); color: #fff; }
-.aug-btn-primary:hover { background: var(--blue-solid-hover); border-color: var(--blue-solid-hover); }
+.aug-btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.aug-btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .aug-btn-primary:active {
-  background: color-mix(in srgb, var(--blue-solid) 86%, black);
-  border-color: color-mix(in srgb, var(--blue-solid) 86%, black);
+  background: color-mix(in srgb, var(--primary) 86%, black);
+  border-color: color-mix(in srgb, var(--primary) 86%, black);
 }
 .aug-btn-ghost { background: transparent; border-color: var(--b2); color: var(--t2); }
 .aug-btn-ghost:hover { background: var(--bg-3); border-color: var(--b3); color: var(--t1); }
@@ -555,33 +550,30 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
   cursor: not-allowed;
 }
 /* A value that is a figure is set in mono. */
-.aug-input-figure { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.aug-input-figure { font-variant-numeric: tabular-nums; }
 .aug-field-error { font-size: 11px; line-height: 1.45; color: var(--red4); }
 
-/* ── Table — dense 24px rows, sticky header on --bg-1 ─────────────────────── */
-.aug-dt { width: 100%; border-collapse: collapse; font-size: 12px; }
+/* ── Table — 32px rows, 13px cells, sticky sentence-case header on --bg-1 ───── */
+.aug-dt { width: 100%; border-collapse: collapse; font-size: 13px; }
 .aug-dt thead th {
   position: sticky;
   top: 0;
   z-index: 2;
-  height: 22px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 12px;
   text-align: left;
   white-space: nowrap;
   background: var(--bg-1);
-  border-bottom: 1px solid var(--b2);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  border-bottom: 1px solid var(--b1);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--t3);
+  color: var(--t2);
 }
 .aug-dt tbody td {
-  height: 24px;
-  padding: 0 10px;
+  height: 32px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--b0);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--t1);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -590,7 +582,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-dt tbody tr:hover td { background: var(--bg-hover); }
 .aug-dt tbody tr[aria-selected="true"] td,
 .aug-dt tbody tr.selected td { background: var(--bg-sel); }
-.aug-dt .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.aug-dt .num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ── Code — on --code-bg, one step below the canvas, never in a tinted box ── */
 .aug-code {
@@ -630,11 +622,8 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
   color: var(--t1);
 }
 .aug-callout-kind {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: .08em;
-  text-transform: uppercase;
 }
 .aug-callout-blue   { background: var(--blue1); border-color: var(--blue2); border-left-color: var(--blue3); }
 .aug-callout-green  { background: var(--grn1);  border-color: var(--grn2);  border-left-color: var(--grn3); }
@@ -745,17 +734,14 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-partial { border-color: var(--amb2); border-left-color: var(--amb3); background: var(--amb1); }
 .aug-state-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .aug-state-kind {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: .08em;
-  text-transform: uppercase;
   color: var(--red4);
 }
 .aug-partial .aug-state-kind { color: var(--amb4); }
-.aug-state-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
+.aug-state-meta { margin-left: auto; font-size: 12px; color: var(--t3); white-space: nowrap; }
 .aug-partial .aug-state-meta { color: var(--amb4); }
-.aug-state-claim { font-size: 13px; line-height: 1.6; color: var(--t1); }
+.aug-state-claim { font-size: 14px; line-height: 1.6; color: var(--t1); }
 .aug-state-what { font-size: 12px; line-height: 1.6; color: var(--t1); }
 .aug-state-detail { font-size: 12px; line-height: 1.6; color: var(--t2); }
 .aug-state-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
@@ -784,9 +770,9 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 /* Beside a partial answer: one bar per attributed driver, the unattributed remainder hatched. */
 .aug-partial-bars { display: flex; flex-direction: column; gap: 5px; }
 .aug-partial-bar { display: flex; align-items: center; gap: 8px; }
-.aug-partial-bar-label { width: 64px; flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aug-partial-bar-label { width: 64px; flex: none; font-size: 12px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aug-partial-bar-fill { height: 7px; flex: none; background: var(--chart-deemph); }
-.aug-partial-bar-value { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); font-variant-numeric: tabular-nums; }
+.aug-partial-bar-value { margin-left: auto; font-size: 12px; color: var(--t3); font-variant-numeric: tabular-nums; }
 .aug-partial-bar-unknown .aug-partial-bar-value { color: var(--amb4); }
 /* Unknown-not-zero: the hatch is the one grammar for a magnitude nobody could attribute. */
 .aug-hatch { background: repeating-linear-gradient(90deg, var(--amb3) 0 4px, transparent 4px 8px); }
@@ -843,7 +829,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
    always printed beside it, because a bar alone cannot be cited. At or above 0.86 green, from
    0.5 amber, below 0.5 red — and below 0.5 Aughor does not lead with it. */
 .aug-confidence { display: inline-flex; align-items: center; gap: 9px; }
-.aug-confidence-value { min-width: 30px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.aug-confidence-value { min-width: 30px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .aug-confidence-bar { width: 78px; height: 3px; flex: none; overflow: hidden; border-radius: var(--r1); background: var(--bg-4); }
 .aug-confidence-fill { height: 100%; transition: width var(--dur-3) var(--ease-out); }
 .aug-confidence-note { font-size: 11px; color: var(--t2); }
@@ -869,7 +855,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-why-key { color: var(--t3); }
 .aug-why-value { color: var(--t1); text-align: right; font-variant-numeric: tabular-nums; }
 .aug-why-actions { display: flex; gap: 12px; margin-top: 1px; padding-top: 6px; border-top: 1px solid var(--b1); }
-.aug-why-action { padding: 0; border: none; background: none; font-family: var(--font-mono); font-size: 11px; color: var(--blue3); cursor: pointer; }
+.aug-why-action { padding: 0; border: none; background: none; font-size: 12px; color: var(--blue3); cursor: pointer; }
 .aug-why-action:hover { color: var(--blue4); }
 
 /* ── Motion ────────────────────────────────────────────────────────────────
@@ -999,11 +985,10 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-brief-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-bottom: 8px; }
 .aug-brief-meta {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--font-mono); font-size: 11px; color: var(--t3);
+  font-size: 12px; color: var(--t3);
 }
 .aug-brief-eyebrow {
-  font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em;
-  text-transform: uppercase; color: var(--t3); white-space: nowrap;
+  font-size: 12px; font-weight: 600; color: var(--t3); white-space: nowrap;
 }
 .aug-brief-eyebrow-row { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 8px; }
 .aug-brief-eyebrow-row > .aug-brief-meta { margin-left: auto; }
@@ -1167,7 +1152,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-approval:last-child { padding-bottom: 0; border-bottom: 0; }
 .aug-approval-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .aug-approval-head > .aug-brief-meta { margin-left: auto; }
-.aug-approval-kind { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--amb4); }
+.aug-approval-kind { font-size: 12px; font-weight: 600; color: var(--amb4); }
 .aug-approval-why { font-size: 12px; line-height: 1.55; color: var(--t1); }
 .aug-approval-params { font-family: var(--font-mono); font-size: 11px; color: var(--t3); word-break: break-all; }
 .aug-actions-perm { margin: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -1182,10 +1167,45 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-graph-rail { width: 300px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
 .aug-graph-warn { display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--b0); }
 .aug-graph-warn:last-of-type { padding-bottom: 0; border-bottom: 0; }
-.aug-graph-warn-kind { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); white-space: nowrap; }
+.aug-graph-warn-kind { font-size: 12px; font-weight: 600; color: var(--t3); white-space: nowrap; }
 .aug-graph-warn-ask { color: var(--amb4); }
 .aug-graph-warn-bad { color: var(--red4); }
 .aug-graph-warn-why { font-size: 12px; line-height: 1.55; color: var(--t2); }
 
 /* ── Ontology (Aughor Intelligence · 03) — the card's physical table beside its business name ── */
 .aug-entity-card-table { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+
+/* ── Two skins (2026-09-25) — the rules that differ between them beyond the tokens ──
+   Dark follows Databricks, light follows Excel (INSTRUMENT.md §4 item 5, the study §9.3).
+   1 · Light draws gridlines both ways, like a sheet; dark keeps hairline rows. */
+[data-theme="light"] .aug-dt { border: 1px solid var(--b1); }
+[data-theme="light"] .aug-dt thead th,
+[data-theme="light"] .aug-dt tbody td { border-right: 1px solid var(--b0); }
+[data-theme="light"] .aug-dt thead th:last-child,
+[data-theme="light"] .aug-dt tbody td:last-child { border-right: none; }
+/* 2 · Light's selection is its own green: the active segment is the green tint with green
+       text (dark keeps the pressed fill), and the rail's active item reads in green over the
+       same tint. The active tab's underline and the rail's bar read --accent in both skins. */
+[data-theme="light"] .aug-seg-item[aria-selected="true"],
+[data-theme="light"] .aug-seg-item[aria-pressed="true"],
+[data-theme="light"] .aug-seg-item.active { background: var(--bg-sel); color: var(--accent-text); }
+[data-theme="light"] .aug-nav-item[aria-current="page"],
+[data-theme="light"] .aug-nav-item.active { color: var(--accent-text); }
+/* 3 · state on a value as a cell fill (light) or a bordered pill (dark), and 4 · the selected
+       tile's 2px outline (light) or blue edge (dark), belong to StatusChip and StatTile. */
+
+/* ── Toolbar · 36 — the row under a workspace's header for what SCOPES the view: a range,
+   a filter, a search. One row, never beside the layer switcher (the study §2.3: the Agent
+   Ops range drew UNDER its tabs at 1024 when it lived in the header). */
+.aug-toolbar {
+  height: var(--shell-toolbar);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--b0);
+  background: var(--bg-0);
+  font-size: 12px;
+  color: var(--t2);
+}

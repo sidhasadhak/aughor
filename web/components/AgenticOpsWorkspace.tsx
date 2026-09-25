@@ -164,11 +164,7 @@ export function AgenticOpsWorkspace({
       onLayerChange={onLayerChange}
       ariaLabel="Agent Ops views"
       badges={{ attention, departures: departuresOwed }}
-      headerControls={
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />
-        </div>
-      }
+      toolbar={<RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />}
       headerTrailing={
         // `default`, not a hand-rolled blue: `--primary` IS `--blue3`, so the design
         // system's own CTA variant is the blue this asks for — and it brings the hover

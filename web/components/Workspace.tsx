@@ -30,6 +30,11 @@ type WorkspaceProps<L extends string> = {
    *  ACTION rather than a filter, and an action does not belong in the middle of a row
    *  of view controls. */
   headerTrailing?: React.ReactNode;
+  /** Optional toolbar — the 36px row UNDER the header for what SCOPES the view: a range,
+   *  a filter, a search. One row of its own, so it never competes with the layer
+   *  switcher for the header's width (at 1024 the Agent Ops range used to draw under
+   *  the switcher). Rendered only when given. */
+  toolbar?: React.ReactNode;
   /** Render the body of a layer. Called only for visited layers (keep-alive). */
   renderLayer: (id: L) => React.ReactNode;
   /** Optional live counts shown as a chip on a layer's switcher tab (e.g. the
@@ -57,7 +62,7 @@ type WorkspaceProps<L extends string> = {
  * switches. Layers that have never been visited aren't mounted at all.
  */
 export function Workspace<L extends string>({
-  layers, layer, onLayerChange, ariaLabel, headerControls, headerTrailing,
+  layers, layer, onLayerChange, ariaLabel, headerControls, headerTrailing, toolbar,
   renderLayer, badges, headerless,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
@@ -130,6 +135,8 @@ export function Workspace<L extends string>({
         )}
       </div>
       )}
+
+      {toolbar && <div className="aug-toolbar">{toolbar}</div>}
 
       {/* Layered body — visited layers stay mounted; only the active one shows. */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>

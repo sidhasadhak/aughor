@@ -3,7 +3,7 @@
 /**
  * StatTile — the canonical KPI stat-tile spec.
  *
- * ONE tile shape for a metric-at-a-glance: a section-label caption, a big mono figure,
+ * ONE tile shape for a metric-at-a-glance: a section-label caption, a big tabular figure,
  * an optional period-delta badge whose COLOUR is favorability-aware (a rising CAC is red
  * even though it's "up"), an optional trend sparkline, and an optional one-word caption.
  * Optionally expandable (a ⤢ affordance + an open accent border) for a master-detail drill.
@@ -99,13 +99,13 @@ export function StatTile({
           {open ? "×" : "⤢"}
         </span>
       )}
-      <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+      <div className="aug-fs-display aug-num" style={{ color: "var(--t1)", fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1 }}>
         {value}
       </div>
       {!footer && delta && delta.sign !== 0 && (
         <span style={{
           alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 3,
-          fontSize: 11, fontWeight: 600, fontFamily: "var(--font-mono)",
+          fontSize: 11, fontWeight: 600, fontVariantNumeric: "tabular-nums",
           color: deltaColor, background: deltaBg, padding: "1px 6px", borderRadius: "var(--r1)",
         }}>
           {delta.sign > 0 ? "↑" : "↓"} {delta.text}

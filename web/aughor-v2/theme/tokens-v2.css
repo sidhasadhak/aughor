@@ -2,82 +2,101 @@
    AUGHOR — INSTRUMENT · the active token set
    ────────────────────────────────────────────────────────────────────────────
    The design system the product runs on: the Claude Design project "Aughor Design
-   System", adopted 2026-09-13. The spec, in this codebase's names, is
-   web/aughor-v2/INSTRUMENT.md. Imported after styles/tokens.css, whose Tailwind and
-   shadcn bridges read every primitive below through var(), so the values here restyle
-   the whole app at once.
+   System", adopted 2026-09-13 and re-skinned 2026-09-25 (the user: "tokens, colours,
+   design layout more like Databricks for dark and more like Excel for light — they are
+   so easy to read and interact with"). The spec, in this codebase's names, is
+   web/aughor-v2/INSTRUMENT.md; the study that measured the old values and drew the new
+   ones is docs/UI_UX_STUDY_2026-09-25.md §9. Imported after styles/tokens.css, whose
+   Tailwind and shadcn bridges read every primitive below through var(), so the values
+   here restyle the whole app at once.
 
-   The thesis: Aughor's product is a claim about a number, and the interface's whole job
-   is to make that claim checkable at a glance. Everything structural is monochrome on
-   warm paper — the paper is warm, the ink and the encoding are not. One plane, not a
-   stack of cards: hierarchy comes from hairlines and the honest weight of type. Colour
-   is a data type.
+   The thesis holds: Aughor's product is a claim about a number, and the interface's
+   job is to make that claim checkable at a glance. Hierarchy comes from lines and the
+   honest weight of type. Colour is a data type. What changed is the ground each skin
+   stands on:
 
-   Names are frozen; values moved. 41 distinct colour values per theme. An alias is a
-   real var() to another token, never a duplicated hex, which is how the count holds:
-     · bg-2 aliases bg-1 (there are no cards), bg-hover aliases bg-3, bg-nav aliases bg-0
+     DARK follows Databricks (Du Bois): cool navy greys — 900 #11171C for the page, 800
+     #1F272D for every surface that sits on it (chrome, the rail, a card), 500 #92A4B3
+     for secondary text; borders you can see (#3F5162); ONE blue for everything
+     interactive — 400 #8ACAFF links and link text, 500 #4299E0 marks and the active
+     tab, 600 #2272B4 the filled button. A card is one step lighter than the page.
+
+     LIGHT follows Excel: a white grid on grey chrome (#F3F3F3), near-black text,
+     gridlines both ways (#E1E1E1). Excel green #107C41 is the app's OWN state — the
+     selection edge, the active tab, the filled button — and blue #0F6CBD is only a
+     link. State on a value is a cell fill, Excel's own: Good #C6EFCE/#006100 · Bad
+     #FFC7CE/#9C0006 · Neutral #FFEB9C/#9C5700. A card is a box drawn by its border.
+
+   Names are frozen; values moved. Three names are new: --primary-hover (the filled
+   button's hover, beside --primary), and --accent / --accent-text (the skin's own
+   selection colour: dark = blue3 / blue4, light = Excel green). An alias is a real
+   var() to another token, never a duplicated hex:
+     · bg-2 aliases bg-1 in dark (a card sits one step up) and bg-0 in light (a card is
+       the page, boxed by its border); bg-nav aliases bg-1 (the rail sits on chrome)
      · every step 5 aliases its step 4 — 1 tint · 2 border · 3 the colour · 4 text
      · chart-1..6 ARE the six intent hues, so a red line and an adverse figure are the
        same red; chart-axis, chart-grid and chart-tick alias b2, b0 and t4
      · cyan is series duty only: its tint and border alias bg-3 and b2
 
-   Three decisions, taken when this set was adopted:
-     1. The design's hues were held to lint:palette, not the gate to the hues. Four
-        failed a hard check — dark grn3, amb3 and cyn3 left the lightness band or sat
-        under the chroma floor, grn3 sat at normal-vision ΔE 15.0 from blue3, and light
-        cyn3 sat under the chroma floor. Each moved the minimum the validator needed:
-        dark grn3 ΔE 0.9, amb3 ΔE 4.3, cyn3 ΔE 1.1; light cyn3 ΔE 3.3. Every other
-        value is the design's hex.
-     2. chart-7 stays a separately validated KIND accent rather than aliasing vio3: the
-        automation canvas shows all seven step kinds at once, and a seventh kind in
-        chart-3's colour cannot be told from the third.
-     3. t3 and t4 are the design's, dimmer than the ramp they replace, and t4 carries no
-        text: every text colour that was t4 moved to t3. t4 is for ticks and rules.
+   Every text token clears 4.5:1 on the surface it sits on, in both skins (the study's
+   canvas generator prints the table; the tightest pair is light amber text on its
+   tint, 4.66:1). The six series hold lint:palette's band, chroma floor and CVD order
+   with one move: dark amb3 #DE7921 sat at OKLCH L 0.677, above the 0.67 band, and
+   moved to #D57420 (L 0.656). The chart palette's ORDER is untouched.
+
+   The 2026-09-22 "+8 RGB" lift of the warm charcoal set is superseded by this skin,
+   not layered under it.
    ════════════════════════════════════════════════════════════════════════════ */
 
 /* ── DARK · the default, rendered before the theme attribute is stamped ─────── */
 :root {
-  /* surfaces — 7 values, 4 aliases */
-  --bg-0: #101010;          /* canvas */
-  --bg-1: #141312;          /* chrome: topbar, content header */
-  --bg-2: var(--bg-1);      /* a "card" is the same plane, by design */
-  --bg-3: #191614;          /* inset, input, code well — a notch under b0 so rules stay visible */
-  --bg-4: #232019;          /* pressed */
-  --bg-hover: var(--bg-3);  /* row and nav hover */
-  --bg-nav: var(--bg-0);    /* the rail sits level with the page */
-  --bg-sel: #2A2119;        /* selected row, active nav */
+  /* surfaces */
+  --bg-0: #11171C;          /* the page — Du Bois 900 */
+  --bg-1: #1F272D;          /* chrome: topbar, rail, content header, a table's header row — 800 */
+  --bg-2: var(--bg-1);      /* a card: one step lighter than the page */
+  --bg-3: #11171C;          /* inset, input, code well: the page colour, boxed by --b2 */
+  --bg-4: #2B3844;          /* pressed, the active segment */
+  --bg-hover: #26313A;      /* row and nav hover */
+  --bg-nav: var(--bg-1);    /* the rail sits on chrome */
+  --bg-sel: #142E45;        /* selected row, active nav: a navy tint */
   --bg-canvas: var(--bg-0); /* the Data Canvas ground: no tinted ground on chrome */
-  --scrim: rgba(8, 7, 6, .72);
-  --code-bg: #0C0B0B;       /* SQL, logs, pre */
+  --scrim: rgba(6, 10, 14, .72);
+  --code-bg: #0B1116;       /* SQL, logs, pre — one step under the page */
 
-  /* lines — 4 values; b0 is the row rule and carries most of the structure */
-  --b0: #1B1917;
-  --b1: #242120;
-  --b2: #322D29;
-  --b3: #453E37;
+  /* lines — b0 is the row rule and carries most of the structure; b2 is a border you can see */
+  --b0: #253039;
+  --b1: #2F3C47;
+  --b2: #3F5162;
+  --b3: #5F7281;
   --bfocus: var(--blue3);
 
-  /* text — 4 values; t3 is captions and meta, t4 is never text */
-  --t1: #E9ECEE;
-  --t2: #99A2A8;
-  --t3: #6D767C;
-  --t4: #545C62;
+  /* text — t3 is captions and meta (4.96:1 on chrome); t4 is never text */
+  --t1: #E8ECF0;
+  --t2: #92A4B3;
+  --t3: #8496A4;
+  --t4: #5F7281;
 
   /* intent — 1 tint · 2 border · 3 the colour · 4 text · 5 aliases 4
      blue interactive · green guard passed, healthy, live · violet deep analysis ·
      amber waiting on a human · red adverse figure, failed run, refusal · cyan no state */
-  --blue1: #0E2130; --blue2: #163C56; --blue3: #4C9AD6; --blue4: #7BB8E4; --blue5: var(--blue4);
-  --grn1:  #0C2A20; --grn2:  #134838; --grn3:  #3EAB82; --grn4:  #6BC9A6; --grn5:  var(--grn4);
-  --vio1:  #1A1832; --vio2:  #2C2852; --vio3:  #8B7DC8; --vio4:  #ADA2DC; --vio5:  var(--vio4);
-  --amb1:  #2A2310; --amb2:  #4C4018; --amb3:  #B88D30; --amb4:  #DCB667; --amb5:  var(--amb4);
-  --red1:  #2C1418; --red2:  #502229; --red3:  #D45B6A; --red4:  #E68792; --red5:  var(--red4);
+  --blue1: #0E2A44; --blue2: #1F4A75; --blue3: #4299E0; --blue4: #8ACAFF; --blue5: var(--blue4);
+  --grn1:  #14331F; --grn2:  #1F5A33; --grn3:  #3CAA60; --grn4:  #8DDDA8; --grn5:  var(--grn4);
+  --vio1:  #2A2140; --vio2:  #4A3B70; --vio3:  #9C7BDD; --vio4:  #C0A9EE; --vio5:  var(--vio4);
+  --amb1:  #3A2A10; --amb2:  #6B4A1A; --amb3:  #D57420; --amb4:  #F2BE88; --amb5:  var(--amb4);
+  --red1:  #3B1A21; --red2:  #6E2536; --red3:  #E65B77; --red4:  #F792A6; --red5:  var(--red4);
   --cyn1:  var(--bg-3); --cyn2: var(--b2); --cyn3: #32A6B2; --cyn4: #6FC5CE; --cyn5: var(--cyn4);
 
-  /* solid — the one filled button; a white label clears AA on it in both themes */
-  --blue-solid:       #1F6CB0;
-  --blue-solid-hover: #2680CE;
+  /* solid — the one filled button; a white label clears AA on it in both skins */
+  --blue-solid:       #2272B4;
+  --blue-solid-hover: #2A82C8;
   --vio-solid:        var(--vio3);
   --primary:          var(--blue-solid);
+  --primary-hover:    var(--blue-solid-hover);
+
+  /* accent — the skin's own selection colour: the active tab's underline, the rail's
+     active bar, the selected cell's edge. Dark is blue, like everything clickable. */
+  --accent:      var(--blue3);
+  --accent-text: var(--blue4);
 
   /* charts — the six intent hues in CVD order. The ORDER is the colour-blindness
      guarantee: consecutive slots separate on lightness as well as hue. Do not reorder.
@@ -88,7 +107,7 @@
   --chart-4: var(--amb3);
   --chart-5: var(--cyn3);
   --chart-6: var(--red3);
-  --chart-7: #9B2378;       /* the KIND accent, not a series: min 15.5 CVD / 17.5 normal vs the six */
+  --chart-7: #9B2378;       /* the KIND accent, not a series: validated against the six by the gate */
   --chart-deemph: #4E5A6A;  /* the only chart-only value: context series, the Other fold */
   --chart-axis: var(--b2);
   --chart-grid: var(--b0);
@@ -133,52 +152,61 @@
   --ease-flow: var(--ease-inout);
   --ease-spring: var(--ease-out);
 
-  /* the design system's own names, so CSS written against INSTRUMENT.md pastes in */
-  --fs-11: 11px; --fs-12: 12px; --fs-13: 13px; --fs-15: 15px; --fs-18: 18px; --fs-22: 22px;
+  /* the design system's own names, so CSS written against INSTRUMENT.md pastes in.
+     14 is the reading size (body, prose, table cells); 13 is chrome. */
+  --fs-11: 11px; --fs-12: 12px; --fs-13: 13px; --fs-14: 14px; --fs-15: 15px; --fs-18: 18px; --fs-22: 22px;
   --r-3: var(--r1); --r-4: var(--r2); --r-6: var(--r3);
   --shell-sidebar: var(--sidebar);
   --shell-topbar: var(--topbar);
   --shell-header: 44px;
+  --shell-toolbar: 36px;
   --shell-gutter: 44px;
   --shell-measure: 700px;
 }
 
-/* ── LIGHT · designed, not inverted. A shorter usable range, so b2 steps further from
-   b1 than it does in dark, and every hue darkens rather than inverting. The aliases in
-   the dark block resolve against these values on their own. ─────────────────── */
+/* ── LIGHT · after Excel. Designed, not inverted: grey chrome, a white grid, near-black
+   text, and the app's own state in Excel green while blue stays a link. The aliases in
+   the dark block resolve against these values on their own; --bg-2 is re-declared
+   because a light card is the page, boxed by its border, not a step up from it. ── */
 [data-theme="light"] {
-  --bg-0: #EDE8DF;
-  --bg-1: #FDFBF7;
-  --bg-3: #F5F1E9;
-  --bg-4: #EAE4D9;
-  --bg-sel: #E4EFF9;        /* a cool tint on warm paper, so selection reads at once */
-  --scrim: rgba(26, 24, 20, .32);
-  --code-bg: #FAF7F1;
+  --bg-0: #FFFFFF;          /* the page and the grid */
+  --bg-1: #F3F3F3;          /* chrome: topbar, rail, content header, a table's header row */
+  --bg-2: var(--bg-0);      /* a card: a box drawn by its border on the page */
+  --bg-3: #FFFFFF;          /* inset, input: white, boxed by --b2 */
+  --bg-4: #E6E6E6;          /* pressed */
+  --bg-hover: #EBEBEB;
+  --bg-sel: #E6F2EB;        /* the green tint: selected row, active nav, the active segment */
+  --scrim: rgba(31, 31, 31, .32);
+  --code-bg: #FAFAFA;
 
-  --b0: #EEE9E0;
-  --b1: #E1DACF;
-  --b2: #CFC6B8;
-  --b3: #B2A897;
+  --b0: #E1E1E1;            /* the gridline */
+  --b1: #D4D4D4;
+  --b2: #C4C4C4;
+  --b3: #8A8A8A;
 
-  --t1: #12171A;
-  --t2: #59636A;
-  --t3: #77828A;
-  --t4: #929BA1;
+  --t1: #1F1F1F;
+  --t2: #424242;
+  --t3: #616161;            /* 5.58:1 on chrome, 6.19:1 on the page */
+  --t4: #8A8A8A;
 
-  --blue1: #E8F1F8; --blue2: #C2DAEE; --blue3: #1C6FB5; --blue4: #17558B;
-  --grn1:  #E5F3ED; --grn2:  #BCDFCF; --grn3:  #14795A; --grn4:  #106044;
-  --vio1:  #EFEBF9; --vio2:  #D2C8ED; --vio3:  #5F45A8; --vio4:  #4A3487;
-  --amb1:  #FAF0DF; --amb2:  #EFD9AE; --amb3:  #8F5A08; --amb4:  #834900;
-  --red1:  #FBEAEC; --red2:  #F1C3C9; --red3:  #B32639; --red4:  #931F32;
+  --blue1: #DDEBF7; --blue2: #9DC3E6; --blue3: #0F6CBD; --blue4: #0B5394;
+  --grn1:  #C6EFCE; --grn2:  #8FD3A8; --grn3:  #1E7B45; --grn4:  #006100;   /* Excel's Good */
+  --vio1:  #EADDF7; --vio2:  #C9A9EA; --vio3:  #6B3FA0; --vio4:  #4B2C7F;
+  --amb1:  #FFEB9C; --amb2:  #E6C35C; --amb3:  #B25E00; --amb4:  #9C5700;   /* Excel's Neutral */
+  --red1:  #FFC7CE; --red2:  #F09AA5; --red3:  #C50F1F; --red4:  #9C0006;   /* Excel's Bad */
   --cyn3:  #00819C; --cyn4:  #0B616C;
 
-  --blue-solid:       #1C6FB5;
-  --blue-solid-hover: #175C97;   /* light darkens on hover; dark lightens */
+  --blue-solid:       #0F6CBD;   /* blue stays a link's colour; the filled button is --primary */
+  --blue-solid-hover: #0B5A9E;
+  --primary:          #107C41;   /* Excel green: the filled button (5.27:1 under white) */
+  --primary-hover:    #0F703B;   /* light darkens on hover; dark lightens */
+  --accent:           #107C41;   /* the selection edge, the active tab, the rail's active bar */
+  --accent-text:      #0C5E32;   /* 6.86:1 on the green tint */
 
-  --chart-7: #B73BCD;       /* the KIND accent: min 6.7 CVD / 17.1 normal vs the six */
+  --chart-7: #DC1E98;       /* the KIND accent: #B73BCD sat 5.0 ΔE from the new blue under CVD; this clears 6 */
   --chart-deemph: #AEB5BA;
 
-  /* warm-black at a third of dark's opacity; on paper a --b1 rule does more than any shadow */
-  --shadow-sm: 0 1px 2px rgba(18, 23, 26, .08);
-  --shadow-md: 0 1px 2px rgba(18, 23, 26, .08), 0 6px 16px rgba(18, 23, 26, .06);
+  /* near-black at a third of dark's opacity; on the grid a --b1 rule does more than any shadow */
+  --shadow-sm: 0 1px 2px rgba(31, 31, 31, .10);
+  --shadow-md: 0 1px 2px rgba(31, 31, 31, .10), 0 6px 16px rgba(31, 31, 31, .08);
 }

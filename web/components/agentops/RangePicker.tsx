@@ -1,16 +1,17 @@
 "use client";
 
 /**
- * The surface's one range control, rendered into `Workspace.headerControls` — the slot the
- * shell has always had for exactly this and that Agent Ops never used.
+ * The surface's one range control, rendered into `Workspace.toolbar` — the 36px row under the
+ * header for what SCOPES the view. It lived in the header until 2026-09-25, where at 1024px it
+ * drew under the layer switcher (docs/UI_UX_STUDY_2026-09-25.md §2.3).
  *
  * When a brush is active the picker says so and offers to clear it, rather than silently
  * showing "24h" selected while the panels below draw forty minutes. A control that lies
  * about the window is worse than no control.
  *
  * Drawn as the segmented control (INSTRUMENT.md §5), the same grammar as the layer switcher
- * beside it: --bg-4 fills the selected range and --b2 hairlines divide the rest. The keys are
- * figures, so they are set in mono.
+ * beside it: the selected range is filled and --b2 hairlines divide the rest. The keys are
+ * figures, set like every figure in the UI face with tabular numerals.
  */
 import { Button } from "@/components/ui/button";
 
@@ -33,7 +34,7 @@ export function RangePicker({ range, onKey, onClearBrush }: {
               onClick={() => onKey(k)}
               title={RANGE_LABELS[k]}
               aria-pressed={on}
-              className="aug-seg-item aug-mono">
+              className="aug-seg-item aug-num">
               {k}
             </Button>
           );

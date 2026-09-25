@@ -674,3 +674,20 @@ tint (dark). Kept as decided: the verdict-first Briefing; no numbered gutters �
 6. Sentence-case 12 px semibold labels in place of 11 px mono caps — delegated; **sentence case** it is (neither
    reference uses mono labels).
 7. Light chrome: Excel grey `#F3F3F3` — **yes.**
+
+### 9.5 · Implemented — the first movement (2026-09-25, on `claude/arc-tj-trajectories`)
+
+The token lift and the reading size are on the live app. `web/aughor-v2/theme/tokens-v2.css` carries both skins
+(§9.2's values; dark `--amb3` `#D57420` and light `--chart-7` `#DC1E98` are the two moves `lint:palette` asked for —
+the amber for the lightness band, the kind accent for 6 ΔE from the new blue under CVD). `styles/type.css` puts body
+at 14 and chrome at 13 (`.aug-fs-chrome`), figures in Inter with tabular numerals (`.aug-num`), and labels at 12 px
+semibold sentence case. `app/globals.css` re-dresses the rail (13 px items, sentence-case groups), tabs and
+segments (13 px, 28 px targets), tables (32 px rows, a 30 px sentence-case header, figures in Inter), kinds, metas
+and eyebrows, and ends with the skin rules — light gridlines both ways, the green tint and green text for light's
+active segment and rail item — and the new `.aug-toolbar` row. `Workspace.toolbar` carries the Agent Ops range under
+the header instead of beside the layer switcher (§2.3's HIGH). The filled button reads `--primary`, so it is Excel
+green in light and Databricks blue in dark. Seven gates, `tsc --noEmit` and the web suite pass.
+
+Not yet, in order: state as a cell fill in light and a pill in dark (`StatusChip`); the selected tile's outline
+(`StatTile`); the Briefing's formatted figures and named ids (UI-3); the header diet and the context bar (UI-2); the
+agent page's Overview, Runs and Setup as drawn (boards 6–11) over `AgenticAgentsPanel`.

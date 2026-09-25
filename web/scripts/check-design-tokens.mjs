@@ -51,7 +51,7 @@ const EXTS = [".tsx", ".ts"];
 const OUT_OF_SCOPE = ["components/charts/vega"];
 
 /** The steps in styles/type.css. Keep the two in lockstep. */
-const SCALE = new Set([11, 12, 13, 15, 18, 22, 28]);
+const SCALE = new Set([11, 12, 13, 14, 15, 18, 22, 28]);
 
 /** One-way ratchet: raw on-scale font-size literals still awaiting an aug-fs-* class.
  *  LOWER this as they are converted; never raise it. */
