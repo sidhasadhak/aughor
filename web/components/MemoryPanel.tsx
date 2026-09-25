@@ -11,6 +11,7 @@
    an export of memory itself (the export here is the training corpus, and it writes), and the
    design's "effect on behaviour" figures (nothing measures them). Each source loads on its own, so
    a failed summary no longer hides the readings. Org-wide; reads /learning/*. */
+import { connectionLabel } from "@/lib/names";
 import React, { useCallback, useEffect, useState } from "react";
 import { compactNumber, countNoun, formatCount, formatTimestamp, pct, relTime } from "@/lib/format";
 import {
@@ -57,6 +58,10 @@ function trendSub(trend?: { week: string; acceptance_rate: number }[]): string |
 }
 
 export function MemoryPanel() {
+  // Connections by name: the ledger's CONNECTION column and the trusted queries' scope line
+  // read `theLook`, never `8233e4fd` (lib/names.ts).
+  const [conns, setConns] = useState<Connection[]>([]);
+  useEffect(() => { getConnections().then(setConns).catch(() => {}); }, []);
   const [summary, setSummary] = useState<LearningSummary | null>(null);
   const [summaryState, setSummaryState] = useState<"loading" | "ready" | "failed">("loading");
   // S5 cited memory — the readings themselves: remembered, cited, revocable.
@@ -167,7 +172,7 @@ export function MemoryPanel() {
                             {r.resolved_sql && <span className="aug-ledger-query">{r.resolved_sql}</span>}
                           </td>
                           <td className="aug-memory-source">{SOURCE_LABEL[r.resolution_source] ?? r.resolution_source}</td>
-                          <td className="aug-memory-conn" title={r.connection_id}>{r.connection_id || "—"}</td>
+                          <td className="aug-memory-conn" title={r.connection_id}>{connectionLabel(r.connection_id, conns) || "—"}</td>
                           <td className="num" title={r.last_used_at ? `last served ${formatTimestamp(r.last_used_at)}` : "not served yet"}>
                             {compactNumber(r.use_count)}×
                           </td>
@@ -205,7 +210,7 @@ export function MemoryPanel() {
             {/* PX-4 — the closed loop's WRITE half. The flywheel moves by grading, and
                 until this section grading had no door: the panel could show trusted
                 queries and could not author, promote, or retire one. */}
-            <TrustedGovernance rows={trustedRows} onChanged={reloadTrusted} />
+            <TrustedGovernance rows={trustedRows} onChanged={reloadTrusted} connections={conns} />
           </div>
         </section>
 
@@ -328,8 +333,8 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
-function TrustedGovernance({ rows, onChanged }: {
-  rows: TrustedQueryRow[]; onChanged: () => void;
+function TrustedGovernance({ rows, onChanged, connections }: {
+  rows: TrustedQueryRow[]; onChanged: () => void; connections: Connection[];
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState("");
@@ -380,7 +385,7 @@ function TrustedGovernance({ rows, onChanged }: {
                 {q.question}
               </span>
               <span className="aug-fs-xs" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
-                {q.connection_id} · v{q.version}
+                {connectionLabel(q.connection_id, connections)} · v{q.version}
               </span>
               <Button variant="ghost" size="xs" className="h-auto px-1 py-0.5 aug-fs-xs font-normal"
                 onClick={() => setOpen(o => o === q.id ? null : q.id)}>

@@ -1,4 +1,5 @@
 "use client";
+import { connectionLabel } from "@/lib/names";
 import { ErrorState } from "@/components/ui/states";
 
 import { useEffect, useRef, useState } from "react";
@@ -743,6 +744,9 @@ function HomeScreen({
 function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, workspaceId }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void; onOpenMachineView?: () => void; workspaceId?: string }) {
   const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string; connection_id?: string; canvas_id?: string | null }>>([]);
   const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
+  // A run card names its connection, never its id (the study §2.6: `Agentic · 8233e4fd`).
+  const [conns, setConns] = useState<Connection[]>([]);
+  useEffect(() => { getConnections().then(setConns).catch(() => {}); }, []);
 
   useEffect(() => {
     let alive = true;
@@ -838,7 +842,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
                         {plainSubtitle(a.question)}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
-                        {isChat ? "Chat" : "Agentic"}{a.connection_id ? ` · ${a.connection_id}` : ""}
+                        {isChat ? "Chat" : "Agentic"}{a.connection_id ? ` · ${connectionLabel(a.connection_id, conns)}` : ""}
                       </div>
                     </div>
                   </div>
@@ -1310,9 +1314,53 @@ const RAIL_TAB_FOR_DATA_LAYER: Record<DataLayer, NavTab> = {
 
 /** Resolve a URL tab id to what should actually render: a workspace tab, plus the
  *  layer inside it. Returns the tab unchanged when it is not a layer alias. */
-function resolveDeepLinkTab(t: NavTab): { tab: NavTab; dataLayer: DataLayer | null } {
-  const layer = DATA_LAYER_FOR_TAB[t];
-  return layer ? { tab: "data", dataLayer: layer } : { tab: t, dataLayer: null };
+/** The other rail ids that are LAYERS of a workspace — module scope for the same reason as
+ *  DATA_LAYER_FOR_TAB: on a COLD LOAD `?tab=spend` or `?tab=security` set a tab with no render
+ *  branch and painted a blank pane with no header (docs/UI_UX_STUDY_2026-09-25.md §2.1, fig. 6);
+ *  only navigate() knew the aliases. One table each, read by navigate() AND the URL boundary. */
+const OPS_LAYER_FOR_TAB: Partial<Record<NavTab, OpsLayer>> = {
+  monitors: "monitors",
+  actions:  "actions",
+  integrations: "integrations",
+  spend: "spend",
+  security: "security",
+};
+const INTEL_LAYER_FOR_TAB: Partial<Record<NavTab, IntelLayer>> = {
+  briefing:    "briefing",
+  ontology:    "ontology",
+  "intel-hub": "hub",
+  intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
+  "org-intel":  "org",
+};
+const AGENTIC_LAYER_FOR_TAB: Partial<Record<NavTab, AgentsLayer>> = {
+  fleet: "fleet",
+  agents: "agents",
+  "control-room": "fleet",
+};
+
+type ResolvedTab = {
+  tab: NavTab;
+  dataLayer: DataLayer | null;
+  opsLayer: OpsLayer | null;
+  intelLayer: IntelLayer | null;
+  agentsLayer: AgentsLayer | null;
+  /** `?tab=activity` is the Security & Audit layer on its activity lens. */
+  secLens: "activity" | null;
+};
+
+function resolveDeepLinkTab(t: NavTab): ResolvedTab {
+  const none: ResolvedTab = { tab: t, dataLayer: null, opsLayer: null, intelLayer: null, agentsLayer: null, secLens: null };
+  const data = DATA_LAYER_FOR_TAB[t];
+  if (data) return { ...none, tab: "data", dataLayer: data };
+  if (t === "activity") return { ...none, tab: "operations", opsLayer: "security", secLens: "activity" };
+  const ops = OPS_LAYER_FOR_TAB[t];
+  if (ops) return { ...none, tab: "operations", opsLayer: ops };
+  if (t === "intelligence") return { ...none, tab: "intelligence", intelLayer: "briefing" };
+  const intel = INTEL_LAYER_FOR_TAB[t];
+  if (intel) return { ...none, tab: "intelligence", intelLayer: intel };
+  const agentic = AGENTIC_LAYER_FOR_TAB[t];
+  if (agentic) return { ...none, tab: "agentic-ops", agentsLayer: agentic };
+  return none;
 }
 
 function tabFromUrl(): NavTab | null {
@@ -1413,6 +1461,10 @@ export default function Home() {
     if (resolved) {
       setTab(resolved.tab);
       if (resolved.dataLayer) setDataLayer(resolved.dataLayer);
+      if (resolved.opsLayer) setOpsLayer(resolved.opsLayer);
+      if (resolved.intelLayer) setIntelLayer(resolved.intelLayer);
+      if (resolved.agentsLayer) setAgentsLayer(resolved.agentsLayer);
+      if (resolved.secLens) setSecLens(resolved.secLens);
       // `?tab=builder` MEANT the visual builder. The workbench now defaults to SQL,
       // so the intent has to be carried explicitly — the resolver rewrites the query
       // string, so the workbench cannot read it back for itself.
@@ -1472,10 +1524,14 @@ export default function Home() {
       // Validated against the same set the deep-link reader uses — an event is
       // untrusted input like any other, and an unknown id must be ignored, not routed to.
       if (!detail?.tab || !VALID_TABS.has(detail.tab as NavTab)) return;
-      const { tab: next, dataLayer } = resolveDeepLinkTab(detail.tab as NavTab);
+      const r = resolveDeepLinkTab(detail.tab as NavTab);
       if (detail.params?.conn) setSelectedConn(detail.params.conn);
-      if (dataLayer) setDataLayer(dataLayer);
-      setTab(next);
+      if (r.dataLayer) setDataLayer(r.dataLayer);
+      if (r.opsLayer) setOpsLayer(r.opsLayer);
+      if (r.intelLayer) setIntelLayer(r.intelLayer);
+      if (r.agentsLayer) setAgentsLayer(r.agentsLayer);
+      if (r.secLens) setSecLens(r.secLens);
+      setTab(r.tab);
     };
     window.addEventListener(NAVIGATE_EVENT, onNavigate);
     return () => window.removeEventListener(NAVIGATE_EVENT, onNavigate);
@@ -1548,6 +1604,10 @@ export default function Home() {
         const r = resolveDeepLinkTab(t);
         setTab(r.tab);
         if (r.dataLayer) setDataLayer(r.dataLayer);
+        if (r.opsLayer) setOpsLayer(r.opsLayer);
+        if (r.intelLayer) setIntelLayer(r.intelLayer);
+        if (r.agentsLayer) setAgentsLayer(r.agentsLayer);
+        if (r.secLens) setSecLens(r.secLens);
         const l = layerFromUrl();
         if (l) applyLayerFor(r.tab, l);
       }
@@ -1671,6 +1731,13 @@ export default function Home() {
   // remembered connection won, and a shared link opened on the reader's last data, not its own.
   const deepLinkConn = useRef<string | null>(
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("conn") : null);
+  // The context state the study asked for (§2.1): a screen never paints its EMPTY state while
+  // the workspace and its connections are still resolving. `contextReady` is false until both
+  // lists have answered — either way — and every empty state that depends on a connection
+  // reads it, so a cold load says "finding your connections", never "no connection selected".
+  const [connsLoaded, setConnsLoaded] = useState(false);
+  const [wsLoaded, setWsLoaded] = useState(false);
+  const contextReady = connsLoaded && wsLoaded;
   useEffect(() => {
     getConnections()
       .then(conns => {
@@ -1682,7 +1749,8 @@ export default function Home() {
         const pick = [fromUrl, saved].find(id => id && conns.find(c => c.id === id));
         setSelectedConn(pick || (conns[0]?.id ?? ""));
       })
-      .catch(err => console.error("[Aughor] failed to load connections:", err));
+      .catch(err => console.error("[Aughor] failed to load connections:", err))
+      .finally(() => setConnsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -1701,7 +1769,8 @@ export default function Home() {
         const valid = saved && ws.find(w => w.id === saved);
         setSelectedWorkspace(valid ? saved : (ws[0]?.id ?? ""));
       })
-      .catch(err => console.error("[Aughor] failed to load workspaces:", err));
+      .catch(err => console.error("[Aughor] failed to load workspaces:", err))
+      .finally(() => setWsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -1863,22 +1932,12 @@ export default function Home() {
   // The four former Intelligence tabs are now layers of one unified workspace.
   // Translate any legacy navigation (StatCards, command palette, search) into
   // the `intelligence` tab opened at the matching layer.
-  const LEGACY_INTEL_LAYER: Partial<Record<NavTab, IntelLayer>> = {
-    briefing:    "briefing",
-    ontology:    "ontology",
-    "intel-hub": "hub",
-    intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
-    "org-intel":  "org",
-  };
+  // Module-level (see OPS_LAYER_FOR_TAB and friends) because the URL boundary reads the
+  // same aliases on a cold load — two copies would be the drift these tables prevent.
+  const LEGACY_INTEL_LAYER = INTEL_LAYER_FOR_TAB;
 
   // The three Operations rail items are now layers of one Operations workspace (REC-U5).
-  const LEGACY_OPS_LAYER: Partial<Record<NavTab, OpsLayer>> = {
-    monitors: "monitors",
-    actions:  "actions",
-    integrations: "integrations",
-    spend: "spend",
-    security: "security",
-  };
+  const LEGACY_OPS_LAYER = OPS_LAYER_FOR_TAB;
 
   // The three Data rail items are now layers of one Data workspace (REC-U5).
   // Module-level (see DATA_LAYER_FOR_TAB) because the URL boundary needs it too — it
@@ -2251,6 +2310,7 @@ export default function Home() {
                   connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name, schema_name: c.schema_name ?? null }))}
                   onConnectionChange={setSelectedConn}
                   workspaceId={selectedWorkspace}
+                  contextReady={contextReady}
                 />
               </ErrorBoundary>
             )}

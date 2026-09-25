@@ -92,6 +92,9 @@ type Props = {
   /** Active workspace — threaded to the Briefing so a workspace-scoped currency/industry
    *  override wins in the backend (override-wins over the app default). */
   workspaceId?: string;
+  /** False while the shell is still resolving the workspace and its connections. An empty
+   *  state renders only once this is true; before that the screen says it is finding them. */
+  contextReady?: boolean;
 };
 
 /**
@@ -105,7 +108,7 @@ type Props = {
  * scope (connection + schema pickers, the five panels, the icon set); the shell owns
  * the header chrome, the perspective switcher, and the keep-alive layered body.
  */
-export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, canvasId, workspaceId, initialGraphTable }: Props) {
+export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, canvasId, workspaceId, initialGraphTable, contextReady = true }: Props) {
   // Shared schema scope — one selector that filters Briefing, Hub, and Domains
   // together (a connection can expose several schemas; a canvas is already scoped).
   const [schemas, setSchemas]               = useState<string[]>([]);
@@ -236,10 +239,16 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           // what is happening and, when nothing is coming, where the door is.
           : (
             <SharedEmptyState icon="brief"
-              title={connectionId ? "Reading this connection's schemas…" : "No connection selected"}>
+              title={connectionId ? "Reading this connection's schemas…"
+                : !contextReady ? "Finding your connections…"
+                : "No connection selected"}>
               {connectionId
                 ? "The briefing opens once its schema scope settles — a cold catalog can take a few seconds."
-                : "Briefings are per connection. Pick one above, or add a connection from the Catalog."}
+                : !contextReady
+                ? "The workspace and its connections are still loading."
+                : showConnPicker
+                ? "Briefings are per connection. Choose one in the bar above."
+                : "Briefings are per connection. Add one from the Catalog, then come back here."}
             </SharedEmptyState>
           );
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
@@ -248,7 +257,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "memory")   return <MemoryPanel />;
         if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;
-        if (id === "brain")    return <BrainMapPanel connectionId={connectionId} workspaceId={workspaceId} />;
+        if (id === "brain")    return <BrainMapPanel connectionId={connectionId} workspaceId={workspaceId} contextReady={contextReady} />;
         return <OrgIntelPanel />; // "org"
       }}
     />

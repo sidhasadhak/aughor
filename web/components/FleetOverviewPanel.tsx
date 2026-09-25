@@ -29,6 +29,7 @@
  * that is not metered at all each say so in their own words rather than rendering a 0 or a
  * dash that reads as "nothing happened".
  */
+import { needsYouTitle } from "@/lib/names";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ActivityChart, colorFor } from "@/components/agentops/ActivityChart";
@@ -279,7 +280,14 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                       {row.since_basis === "started_at" && " *"}
                     </span>
         </div>
-                  <div className="aug-text-ui" style={{ fontWeight: 600 }}>{row.title}</div>
+                  {/* The API composes `<action key>: <reasoning>`; the reader gets the names the
+                      key joins on one line and the sentence under it (lib/names.ts). */}
+                  {(() => { const t = needsYouTitle(row.title); return (
+                    <div title={row.title}>
+                      <div className="aug-text-ui" style={{ fontWeight: 600 }}>{t.subject ?? t.body}</div>
+                      {t.subject && t.body && <div className="aug-fs-sm" style={{ color: "var(--t2)", marginTop: 2 }}>{t.body}</div>}
+                    </div>
+                  ); })()}
                   <div style={{ display: "flex", gap: 6 }}>
                     {/* DS-8 — an automation's approval resolves through the same proposal
                         the agent's does, so it gets the same two buttons. Before the pause

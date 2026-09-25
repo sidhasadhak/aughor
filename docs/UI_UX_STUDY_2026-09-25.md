@@ -717,5 +717,27 @@ filters the view (the Agent Ops range). Measured at 1024: the Intelligence heade
 controls with the rightmost at 1201 px; all nine layers fit their row with no overflow; the page has no horizontal
 scroll. The Briefing's explorer strip lost its last tracked-caps label and keeps its status on one line.
 
-Not yet, in order: ids as names outside the Briefing (`Agentic · 8233e4fd` on Agent runs, the audit's dunder
-kinds, `GET /graph` on the Brain map); the density preference; the cold-load empty states of §2.1 (UI-1).
+**The fourth movement, the same day: ids as names, and nothing paints before it knows what it is showing.**
+`web/lib/names.ts` is the one name resolver §2.6 asked for — pure, beside `format.ts`: a connection id renders as its
+name (a labelled `connection 8233e4fd` until the list answers, never the bare hash), a dunder caller as its roster
+name and its job (`__brief_metric_move__` → Briefer · metric move check; `cb2_review` → Curator · measurement;
+`card:…` → You · a pinned card; any other dunder as words), a departure's `sb_…:#channel` as `#channel`, and the
+needs-you title the API composes (`monitor:X+automation:X: …`) as the names it joins on one line with the sentence
+under it. Routed through it: the run cards, the audit's AGENT and CONNECTION cells and its title, the Memory ledger
+and the trusted queries' scope, Departures, the Attention rows and the Overview's needs-you cards; the Brain map's
+`GET /graph` doors moved to each box's tooltip; the packs line reads `0 metrics · 0 roles · 0 evals`.
+
+§2.1's root cause was two things. `?tab=spend` and `?tab=security` (and the other rail ids that are layers) had no
+render branch on a cold load — only `navigate()` knew the aliases — so the pane painted blank with no header;
+`resolveDeepLinkTab` now reads the same module-level tables navigate() does, for Operations, Intelligence and Agent
+Ops as it already did for Data. And no screen had a state for "still resolving": the shell now carries
+`contextReady` (both the connections and the workspaces have answered, either way) and every empty state that
+depends on a connection reads it — the Briefing says "Finding your connections…" and its picker is in the context
+bar; the Brain map says "Finding your connection…"; the Ontology says it is loading rather than "No ontology data
+available."; the Roster says "Loading agents…" until both lists answer. "Pick one above" is gone from the copy.
+The seven cold captures re-taken on fresh profiles at 14 s are in `cold-after-2026-09-25/`: Spend and Security
+render their workspace, the Briefing and the Ontology show skeletons with the picker present, the Roster lists both
+agents, the SQL editor opens on the URL's connection, the Brain map is reading its stores.
+
+Not yet: the density preference; the Evidence ledger's specification rows (§2.6 MEDIUM); the object page's three
+currencies for one value (§2.6 HIGH, `ObjectView.tsx`).

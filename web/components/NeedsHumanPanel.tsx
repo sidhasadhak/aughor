@@ -11,6 +11,8 @@
  * agent alerts acknowledge inline; paused runs and automation approvals also
  * deep-link to their native surfaces, where resume/inspection already work.
  */
+import { connectionLabel, needsYouTitle } from "@/lib/names";
+import { getConnections as listConnectionsForNames, type Connection as ConnectionForNames } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -59,6 +61,9 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   onOpenInvestigation?: (invId: string) => void;
   onOpenAutomations?: () => void;
 }) {
+  // Connections by name for the row's scope line (lib/names.ts).
+  const [conns, setConns] = useState<ConnectionForNames[]>([]);
+  useEffect(() => { listConnectionsForNames().then(setConns).catch(() => {}); }, []);
   const [data, setData] = useState<NeedsHuman | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -149,11 +154,11 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                 <StatusChip hue={chip.hue} strength="soft">{chip.label}</StatusChip>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis",
-                    whiteSpace: "nowrap" }}>{row.title}</div>
+                    whiteSpace: "nowrap" }} title={row.title}>{needsYouTitle(row.title).display}</div>
                   <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 2 }}>
                     waiting {relTime(row.since)}
                     {row.since_basis === "started_at" && " (since start — pause event aged out)"}
-                    {row.connection_id ? ` · ${row.connection_id}` : ""}
+                    {row.connection_id ? ` · ${connectionLabel(row.connection_id, conns)}` : ""}
                   </div>
                   {proposalId && (
                     <div style={{ marginTop: 8 }}>

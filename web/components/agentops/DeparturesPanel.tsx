@@ -1,5 +1,6 @@
 "use client";
 
+import { destinationLabel } from "@/lib/names";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -183,7 +184,7 @@ function DepartureRow({ departure: d, open, focused, onToggle, onChanged }: {
             {sourceName(d)}
           </div>
           <div className="aug-fs-xs" style={{ color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {kindLabel(d.kind)}{d.target ? ` → ${d.target}` : ""}
+            {kindLabel(d.kind)}{d.target ? <> → <span title={d.target}>{destinationLabel(d.target).label}</span></> : ""}
           </div>
         </TableCell>
         <TableCell>

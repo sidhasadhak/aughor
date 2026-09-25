@@ -121,7 +121,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
         <ErrorState kind="Agent action failed" what={error} style={{ margin: "12px 20px 0" }} />
       )}
       {selected == null ? (
-        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName}
+        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded}
           onOpen={setSelected} onCreate={() => setSelected({ kind: "hire" })} />
       ) : selected.kind === "hire" ? (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -147,7 +147,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
         <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t3)" }}>Loading the agent…</div>
       ) : (
         // The selection names an agent the lists no longer hold (deleted elsewhere): the index.
-        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName}
+        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded}
           onOpen={setSelected} onCreate={() => setSelected({ kind: "hire" })} />
       )}
     </div>
@@ -155,8 +155,11 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
 }
 
 /** The index — every agent, one row each, kind-labelled. A row opens the agent's page. */
-function AgentIndex({ personas, charters, workspaceName, onOpen, onCreate }: {
+function AgentIndex({ personas, charters, workspaceName, loaded, onOpen, onCreate }: {
   personas: UserAgent[]; charters: AgentRosterEntry[]; workspaceName?: string;
+  /** False until both lists have answered: the "no custom agents yet" copy is an EMPTY state,
+   *  and a cold load used to show it while two agents existed (the study §2.1, fig. 7). */
+  loaded: boolean;
   onOpen: (s: Selection) => void; onCreate: () => void;
 }) {
   return (
@@ -168,7 +171,10 @@ function AgentIndex({ personas, charters, workspaceName, onOpen, onCreate }: {
             <span style={{ flex: 1 }} />
             <Button variant="secondary" size="xs" onClick={onCreate}>+ Create agent</Button>
           </div>
-          {personas.length === 0 && (
+          {!loaded && personas.length === 0 && (
+            <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "0 0 10px" }}>Loading agents…</div>
+          )}
+          {loaded && personas.length === 0 && (
             <div style={{ padding: "0 0 10px" }}>
               <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 6px" }}>
                 No custom agents yet. An agent is a scope and a stance — where it may look,
@@ -196,6 +202,9 @@ function AgentIndex({ personas, charters, workspaceName, onOpen, onCreate }: {
           <div className="aug-label" style={{ marginBottom: 8 }}>
             Charters {workspaceName ? `· ${workspaceName}` : "· Org"}
           </div>
+          {!loaded && charters.length === 0 && (
+            <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "0 0 10px" }}>Loading charters…</div>
+          )}
           {charters.map(c => (
             <RosterRow key={c.id} name={c.name} kind="charter"
               enabled={c.governance.enabled} sub={c.role} reserved={c.reserved}

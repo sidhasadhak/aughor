@@ -13,7 +13,12 @@ import { ErrorState } from "@/components/ui/states";
 import { getBrainMap, type BrainMap } from "@/lib/api";
 import { boxFigure, edgeLines, recentFacts, vaultColumns } from "@/lib/brainMap";
 
-export function BrainMapPanel({ connectionId, workspaceId }: { connectionId?: string | null; workspaceId?: string }) {
+export function BrainMapPanel({ connectionId, workspaceId, contextReady = true }: {
+  connectionId?: string | null; workspaceId?: string;
+  /** False while the shell is still resolving the workspace and its connections: the map
+   *  then says it is finding the connection, never that there is none to pick. */
+  contextReady?: boolean;
+}) {
   const [map, setMap] = useState<BrainMap | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +34,9 @@ export function BrainMapPanel({ connectionId, workspaceId }: { connectionId?: st
   }, [connectionId, workspaceId]);
 
   if (!connectionId) {
-    return <EmptyState variant="inline" title="The brain map is per connection. Pick one above." />;
+    return contextReady
+      ? <EmptyState variant="inline" title="The brain map is per connection. Choose one in the bar above." />
+      : <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: 16 }}>Finding your connection…</div>;
   }
   if (error) return <ErrorState kind="Brain map unavailable" what={error} means="No store was changed; reload to try again." />;
   if (!map) return <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: 16 }}>Reading every store…</div>;
@@ -46,14 +53,14 @@ export function BrainMapPanel({ connectionId, workspaceId }: { connectionId?: st
           <section key={vault.id} aria-label={vault.title} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div className="aug-label">{vault.title}</div>
             {vault.boxes.map((box) => (
-              <div key={box.id} data-testid={`brain-box-${box.id}`}
+              <div key={box.id} data-testid={`brain-box-${box.id}`} title={box.door}
                 style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", background: "var(--bg-2)", padding: 10 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                   <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 600, flex: 1 }}>{box.title}</span>
                   <span className="aug-fs-h2" style={{ color: "var(--t1)" }}>{boxFigure(box)}</span>
                 </div>
                 <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 4, lineHeight: 1.5 }}>{box.line}</div>
-                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4, fontFamily: "var(--font-mono)" }}>{box.door}</div>
+                {/* The door (a route) is for a developer: it rides the box's tooltip, not its face. */}
               </div>
             ))}
           </section>
