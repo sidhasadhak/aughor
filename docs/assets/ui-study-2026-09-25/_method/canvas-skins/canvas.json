@@ -1,0 +1,94 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-09-25T08:54:38Z"
+  },
+  "title": "Aughor Two Skins",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1250,
+      "title": "1 \u00b7 Tokens \u2014 dark after Databricks, light after Excel"
+    },
+    "Briefing-Dark.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "2 \u00b7 Briefing \u2014 dark"
+    },
+    "Briefing-Light.dc.html": {
+      "x": 1520,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "3 \u00b7 Briefing \u2014 light"
+    },
+    "AgentOps-Dark.dc.html": {
+      "x": 3040,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "4 \u00b7 Agent Ops overview \u2014 dark"
+    },
+    "AgentOps-Light.dc.html": {
+      "x": 3040,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "5 \u00b7 Agent Ops overview \u2014 light"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Briefing-Dark.dc.html",
+    "Briefing-Light.dc.html",
+    "AgentOps-Dark.dc.html",
+    "AgentOps-Light.dc.html"
+  ],
+  "notes": {
+    "title": {
+      "x": 0,
+      "y": -300,
+      "text": "Aughor \u2014 two skins, one layout: Databricks dark \u00b7 Excel light (mockup, 2026-09-25)",
+      "kind": "title1",
+      "maxW": 4480
+    },
+    "shared": {
+      "x": 0,
+      "y": 1370,
+      "w": 700,
+      "fill": "blue",
+      "text": "One layout, two skins. Every screen is the same region stack in both themes \u2014 topbar 48 \u00b7 rail 248 \u00b7 header 44 \u00b7 definition bar 36 \u00b7 layer tabs 36 \u00b7 toolbar 36 \u00b7 body \u00b7 inspector 400 \u00b7 status bar 26 \u2014 and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px."
+    },
+    "new": {
+      "x": 760,
+      "y": 1370,
+      "w": 680,
+      "fill": "green",
+      "text": "Two regions are new and come from Excel. The DEFINITION BAR (Name box \u00b7 fx \u00b7 one line): whatever is selected \u2014 a tile, a row, an agent \u2014 states what it is and where it comes from, the way a formula bar shows the cell. The STATUS BAR: Ready, the scope, what is withheld (cost unpriced), the selection's figure, and the density switch. Both are the same in dark; only the dress changes."
+    },
+    "calls": {
+      "x": 4560,
+      "y": 0,
+      "w": 520,
+      "fill": "orange",
+      "text": "Your calls, in order of how much they change: (1) body text 13 \u2192 14 px; (2) figures in Inter tabular, mono only for SQL and ids; (3) light accent = Excel green for selection, active tab and the primary, blue stays the link \u2014 or blue for everything like dark; (4) the definition bar as a standing region; (5) the status bar as a standing region; (6) sentence-case labels instead of mono caps; (7) whether chrome in light is Excel grey #F3F3F3 or white with rules."
+    },
+    "kept": {
+      "x": 4560,
+      "y": 560,
+      "w": 520,
+      "fill": "gray",
+      "text": "Kept from earlier decisions: verdict-first Briefing, no numbered gutters (Excel's row numbers are NOT adopted), 28 px rail rows and a collapsible rail, press scale on the primary only, the chart palette and its CVD order untouched (lint:palette), no LLM-judge evals, no merging of run planes."
+    }
+  },
+  "designSystems": []
+}

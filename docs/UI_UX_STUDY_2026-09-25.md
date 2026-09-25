@@ -574,3 +574,93 @@ Intelligence and Agent Ops layer, the Evals layers, `/chat`, and six screens at 
 (https://claude.ai/artifact/7uAuvqMjwVScM9ZdYFPFda — private until shared): the shell with its regions measured, the
 Briefing redrawn at 1440 with the inspector open, Home for a returning person, Agent Ops at 1024 with the grammar
 holding, and the overlay kit. Each board carries an "annotate" tweak that hides the spec labels.
+
+## 9 · Theme direction — Databricks for dark, Excel for light (proposed 2026-09-25, awaiting the user's opinion)
+
+The ask that followed the study: *"tokens, colours, design layout to be more like Databricks for dark and more like
+Excel for light — they are so easy to read and interact with."* Drawn as five artboards on the Design canvas **"Aughor
+Two Skins"** (https://claude.ai/artifact/XvA4nrhaGxTLjSWLs5VCc3 — private until shared): the two token sets side by
+side with their contrast measured, then the Briefing and the Agent Ops overview in each skin. Sources in
+`docs/assets/ui-study-2026-09-25/_method/canvas-skins/`: `gen.py` builds every board from ONE layout and two token
+dicts, so the dark and light screens differ by tokens and four skin rules and by nothing else. Nothing below is
+written into `INSTRUMENT.md` or `tokens-v2.css`; that is wave UI-6 of §5 once the calls in §9.4 are made.
+
+### 9.1 · What each reference actually does for the reader
+
+**Databricks (Du Bois).** Cool navy greys, not warm charcoal: 900 `#11171C` for the page, 800 `#1F272D` for every
+surface that sits on it, 500 `#92A4B3` for secondary text. Borders you can see (`#3F5162`). One blue for everything
+interactive — 400 `#8ACAFF` links, 500 `#4299E0` marks and the active tab, 600 `#2272B4` the one filled button — so
+"you can click this" is never in doubt. Tags as bordered pills; tabs as text with a 2 px underline; 13 px base with
+40 px table rows.
+
+**Excel.** A white grid on grey chrome (`#F3F3F3`); near-black text; gridlines both ways (`#E1E1E1`) so every value
+has a box; figures right-aligned with fixed decimals. Green is the app's own state — the selected cell's thick border,
+the active sheet tab, the primary — and blue is only a link. State on a value is a cell fill, not a badge: Good
+`#C6EFCE`/`#006100`, Bad `#FFC7CE`/`#9C0006`, Neutral `#FFEB9C`/`#9C5700`. Two regions do most of the "easy to
+interact with": the formula bar, which states the selected cell's definition, and the status bar, which says Ready
+and the selection's aggregates. Cell text is ~14.7 px.
+
+### 9.2 · Proposed tokens — INSTRUMENT's names, new values
+
+| Token | Dark now | Dark proposed | Light now | Light proposed |
+|---|---|---|---|---|
+| `--bg-0` page | `#181818` | `#11171C` | `#EDE8DF` | `#FFFFFF` |
+| `--bg-1` chrome | `#1C1B1A` | `#1F272D` | `#FDFBF7` | `#F3F3F3` |
+| `--bg-2` card | = bg-1 | `#1F272D` — a card is one step lighter than the page | = bg-1 | `#FFFFFF` — a box drawn by its border |
+| `--bg-3` input, inset | `#211E1C` | `#11171C` | `#F5F1E9` | `#FFFFFF` |
+| `--bg-hover` | = bg-3 | `#26313A` | = bg-3 | `#EBEBEB` |
+| `--bg-sel` | `#322921` | `#142E45` | `#E4EFF9` | `#E6F2EB` |
+| `--code-bg` | `#141313` | `#0B1116` | `#FAF7F1` | `#FAFAFA` |
+| `--b0` row rule, gridline | `#23211F` | `#253039` | `#EEE9E0` (1.01:1 measured) | `#E1E1E1` (1.31:1) |
+| `--b1` panel edge | `#2C2928` | `#2F3C47` | `#E1DACF` | `#D4D4D4` |
+| `--b2` control border | `#3A3531` | `#3F5162` | `#CFC6B8` | `#C4C4C4` |
+| `--b3` strong | `#4D463F` | `#5F7281` | `#B2A897` | `#8A8A8A` |
+| `--t1` | `#E9ECEE` | `#E8ECF0` | `#12171A` | `#1F1F1F` |
+| `--t2` | `#99A2A8` | `#92A4B3` | `#59636A` | `#424242` |
+| `--t3` captions, the floor | `#7C878D` | `#8496A4` (4.96:1 on chrome) | `#77828A` (3.22:1 measured) | `#616161` (5.58:1 on chrome) |
+| `--t4` never text | `#545C62` | `#5F7281` | `#929BA1` | `#8A8A8A` |
+| blue 1 · 2 · 3 · 4 | `#0E2130 #163C56 #4C9AD6 #7BB8E4` | `#0E2A44 #1F4A75 #4299E0 #8ACAFF` | `#E8F1F8 #C2DAEE #1C6FB5 #17558B` | `#DDEBF7 #9DC3E6 #0F6CBD #0B5394` |
+| green | `#0C2A20 #134838 #3EAB82 #6BC9A6` | `#14331F #1F5A33 #3CAA60 #8DDDA8` | `#E5F3ED #BCDFCF #14795A #106044` | `#C6EFCE #8FD3A8 #1E7B45 #006100` |
+| amber | `#2A2310 #4C4018 #B88D30 #DCB667` | `#3A2A10 #6B4A1A #DE7921 #F2BE88` | `#FAF0DF #EFD9AE #8F5A08 #834900` | `#FFEB9C #E6C35C #B25E00 #9C5700` |
+| red | `#2C1418 #502229 #D45B6A #E68792` | `#3B1A21 #6E2536 #E65B77 #F792A6` | `#FBEAEC #F1C3C9 #B32639 #931F32` | `#FFC7CE #F09AA5 #C50F1F #9C0006` |
+| violet | `#1A1832 #2C2852 #8B7DC8 #ADA2DC` | `#2A2140 #4A3B70 #9C7BDD #C0A9EE` | `#EFEBF9 #D2C8ED #5F45A8 #4A3487` | `#EADDF7 #C9A9EA #6B3FA0 #4B2C7F` |
+| `--primary` the filled button | `#1F6CB0` | `#2272B4` (5.08:1 under white) | `#1C6FB5` | `#107C41` Excel green (5.27:1) |
+| selection edge, active tab | blue3 | `#4299E0` | blue3 | `#107C41` |
+| link | blue3 | `#8ACAFF` | blue3 | `#0F6CBD` |
+
+Every text role clears 4.5:1 on the surface it sits on, in both sets; `gen.py` prints the table (the tightest pair is
+light amber text on its tint, 4.66:1). Cyan, `--chart-1…7` and `--chart-deemph` are untouched: the chart palette is
+validated by `lint:palette` and its CVD order is a guarantee, so it moves only through that gate. Geometry stays
+3 · 4 · 6; light uses 3, dark 4.
+
+### 9.3 · What changes in the layout, and what does not
+
+The region stack of §4.3 holds in both skins — topbar 48 · rail 248 · header 44 · layer tabs 36 · toolbar 36 · body
+· inspector 400 · status — with two regions borrowed from Excel:
+
+- **The definition bar** (36 px, between the header and the layer tabs; it replaces §4.3's context bar on any page
+  that has a selection): a Name box, *fx*, and one line stating what the selected thing is and where it comes from —
+  a tile's SQL and table, an agent's bundle and connection, a row's source. It is the formula bar for a number: the
+  provenance invariant given a fixed place on every screen.
+- **The status bar** (26 px, bottom): Ready · the scope and its freshness · what is withheld and why ("cost unpriced:
+  7 models without a price", "Explorer stopped short, earlier findings kept") · the selection's figure · the density
+  switch. "Withheld is said" gets a permanent address.
+
+Rows 34 px, controls 28 px (from 26), body 14 px (from 13; §4.5 and UI-6's receipt move with it if decision 1 is
+taken). Four skin rules, and only four: gridlines both ways (light) against hairline rows (dark); layer tabs as sheet
+tabs (light) against text with a 2 px blue underline (dark); state on a value as Good/Bad/Neutral cell fills (light)
+against bordered pills (dark); the selection as a 2 px green outline plus tint (light) against a blue edge plus navy
+tint (dark). Kept as decided: the verdict-first Briefing; no numbered gutters — Excel's row numbers are not adopted;
+28 px rail rows and the collapsible rail; press scale on the primary only; PX-6; the chart palette.
+
+### 9.4 · Decisions that are the user's
+
+1. Body text 13 → 14 px (Databricks 13, Excel ~14.7).
+2. Figures in Inter with tabular numerals; mono only for SQL and ids. Neither reference sets a number in mono.
+3. The light accent: Excel green for selection, active tab and the primary, blue kept for links — or blue for all of
+   it, as in dark. Green then carries two meanings in light (the app's own state and "verified"), which Excel gets
+   away with because one is chrome and the other is a cell fill.
+4. The definition bar as a standing region.
+5. The status bar as a standing region.
+6. Sentence-case 12 px semibold labels in place of 11 px mono caps (neither reference uses mono labels).
+7. Light chrome: Excel grey `#F3F3F3`, or white with rules.
