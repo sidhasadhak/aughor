@@ -46,7 +46,12 @@ import {
   type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
 } from "@/lib/api";
 import { evalChip } from "@/lib/agentEval";
-import { compactNumber, countNoun, formatCount, formatTimestamp } from "@/lib/format";
+import { compactNumber, countNoun, formatCount, formatDateTime, formatTimestamp, pct } from "@/lib/format";
+import { fmtMs } from "@/lib/cost";
+import { getFleetOverview } from "@/lib/api";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 
 type Selection =
@@ -121,7 +126,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
         <ErrorState kind="Agent action failed" what={error} style={{ margin: "12px 20px 0" }} />
       )}
       {selected == null ? (
-        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded}
+        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded} range={range}
           onOpen={setSelected} onCreate={() => setSelected({ kind: "hire" })} />
       ) : selected.kind === "hire" ? (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -147,7 +152,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
         <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t3)" }}>Loading the agent…</div>
       ) : (
         // The selection names an agent the lists no longer hold (deleted elsewhere): the index.
-        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded}
+        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded} range={range}
           onOpen={setSelected} onCreate={() => setSelected({ kind: "hire" })} />
       )}
     </div>
@@ -155,27 +160,57 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
 }
 
 /** The index — every agent, one row each, kind-labelled. A row opens the agent's page. */
-function AgentIndex({ personas, charters, workspaceName, loaded, onOpen, onCreate }: {
+/** One agent's figures for the range — a row of the fold the Overview reads, by the same id. */
+type Figures = Awaited<ReturnType<typeof getFleetOverview>>["rows"][number];
+
+function AgentIndex({ personas, charters, workspaceName, loaded, range, onOpen, onCreate }: {
   personas: UserAgent[]; charters: AgentRosterEntry[]; workspaceName?: string;
   /** False until both lists have answered: the "no custom agents yet" copy is an EMPTY state,
    *  and a cold load used to show it while two agents existed (the study §2.1, fig. 7). */
   loaded: boolean;
+  /** The surface's shared window — every figure on a row follows it. */
+  range?: TimeRange;
   onOpen: (s: Selection) => void; onCreate: () => void;
 }) {
+  // The row figures (asked for 2026-09-25: runs, success rate, mean run time, tokens, last
+  // run) come from the fold the Overview already reads — ONE read, keyed by the same ids,
+  // over the same range. Null until it answers, so a row shows "…" and never a 0 it has not
+  // measured; {} after a failure, so every figure reads "—".
+  const [fold, setFold] = useState<Record<string, Figures> | null>(null);
+  const rangeKey = range ? `${range.key}|${range.since ?? ""}|${range.until ?? ""}` : "24h||";
+  useEffect(() => {
+    let alive = true;
+    setFold(null);
+    getFleetOverview(range ? rangeParams(range) : { range: "24h" })
+      .then(d => { if (alive) setFold(Object.fromEntries(d.rows.map(r => [r.id, r]))); })
+      .catch(() => { if (alive) setFold({}); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey]);
+  const figuresFor = (id: string) => (fold === null ? undefined : (fold[id] ?? null));
+  // ONE table for both sections, so the columns sit on the same lines down the page and
+  // size to their content; each section is a group row inside it.
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
-      <div style={{ maxWidth: 760, display: "flex", flexDirection: "column", gap: 20 }}>
-        <section>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-            <span className="aug-label">Custom agents</span>
-            <span style={{ flex: 1 }} />
-            <Button variant="secondary" size="xs" onClick={onCreate}>+ Create agent</Button>
-          </div>
-          {!loaded && personas.length === 0 && (
-            <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "0 0 10px" }}>Loading agents…</div>
-          )}
+    <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px 16px" }}>
+      <Table className="aug-dt" style={{ maxWidth: 1280 }}>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Agent</TableHead>
+            <TableHead>Kind</TableHead>
+            <TableHead>Role</TableHead>
+            <TableHead className="num">Runs</TableHead>
+            <TableHead className="num">Success</TableHead>
+            <TableHead className="num">Avg run</TableHead>
+            <TableHead className="num">Tokens</TableHead>
+            <TableHead>Last run</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <GroupRow label="Custom agents" first
+            action={<Button variant="secondary" size="xs" onClick={onCreate}>+ Create agent</Button>} />
+          {!loaded && personas.length === 0 && <NoteRow>Loading agents…</NoteRow>}
           {loaded && personas.length === 0 && (
-            <div style={{ padding: "0 0 10px" }}>
+            <NoteRow>
               <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 6px" }}>
                 No custom agents yet. An agent is a scope and a stance — where it may look,
                 and how it should think.
@@ -189,31 +224,57 @@ function AgentIndex({ personas, charters, workspaceName, loaded, onOpen, onCreat
                     "Help me create my first agent: walk me through it, then draft it "
                     + "and stage it for my approval.")}>Ask Spotlight to draft one</Button>
               </div>
-            </div>
+            </NoteRow>
           )}
           {personas.map(p => (
             <RosterRow key={p.id} name={p.name} kind="persona" enabled={p.enabled}
+              role={p.purpose || (p.schema_scope ? `Scoped to ${p.schema_scope}` : "Any schema")}
               sub={evalChip(p.last_eval, p.eval_basis)?.label}
-              active={false}
+              figures={figuresFor(p.id)}
               onClick={() => onOpen({ kind: "persona", id: p.id })} />
           ))}
-        </section>
-        <section>
-          <div className="aug-label" style={{ marginBottom: 8 }}>
-            Charters {workspaceName ? `· ${workspaceName}` : "· Org"}
-          </div>
-          {!loaded && charters.length === 0 && (
-            <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "0 0 10px" }}>Loading charters…</div>
-          )}
+          <GroupRow label={`Charters ${workspaceName ? `· ${workspaceName}` : "· Org"}`} />
+          {!loaded && charters.length === 0 && <NoteRow>Loading charters…</NoteRow>}
           {charters.map(c => (
             <RosterRow key={c.id} name={c.name} kind="charter"
-              enabled={c.governance.enabled} sub={c.role} reserved={c.reserved}
-              active={false}
+              enabled={c.governance.enabled} role={c.role} reserved={c.reserved}
+              figures={figuresFor(c.id)}
               onClick={() => onOpen({ kind: "charter", id: c.id })} />
           ))}
-        </section>
-      </div>
+        </TableBody>
+      </Table>
     </div>
+  );
+}
+
+const ROSTER_COLUMNS = 8;
+
+/** A section's heading inside the Roster's one table: the label, and the section's action. */
+function GroupRow({ label, action, first }: { label: string; action?: React.ReactNode; first?: boolean }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={ROSTER_COLUMNS}
+        style={{ background: "transparent", height: "auto", borderBottom: "none",
+          padding: first ? "12px 12px 4px" : "24px 12px 4px" }}>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <span className="aug-label">{label}</span>
+          <span style={{ flex: 1 }} />
+          {action}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/** A section's loading or empty copy, as one full-width row — never a 0 in a figure cell. */
+function NoteRow({ children }: { children: React.ReactNode }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={ROSTER_COLUMNS} className="aug-fs-sm"
+        style={{ background: "transparent", height: "auto", color: "var(--t3)", padding: "6px 12px 10px" }}>
+        {children}
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -235,29 +296,73 @@ function PageHeader({ onBack, title, chips, actions }: {
   );
 }
 
-function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
-  name: string; kind: "charter" | "persona"; enabled: boolean; sub?: string;
-  active: boolean; reserved?: boolean; onClick: () => void;
+function RosterRow({ name, kind, enabled, role, sub, reserved, figures, onClick }: {
+  name: string; kind: "charter" | "persona"; enabled: boolean;
+  /** What the agent is for — a charter's role, a custom agent's purpose or scope. */
+  role: string;
+  /** A second line under the name — a custom agent's goldens, when it has any. */
+  sub?: string; reserved?: boolean;
+  /** undefined = the fold has not answered yet; null = it answered and holds no row for this id. */
+  figures: Figures | null | undefined;
+  onClick: () => void;
 }) {
+  const f = figures;
+  const waiting = f === undefined;
+  const dash = <span style={{ color: "var(--t3)" }}>—</span>;
+  const dots = <span style={{ color: "var(--t3)" }} title="Loading this range…">…</span>;
+  // A custom agent's work is CALLS in the session log (`spend_source`); a charter's is jobs.
+  // Success = the runs the agent finished well, over the runs the agent finished: a charter's
+  // succeeded + failed jobs — an orphaned run was interrupted by a restart, an infrastructure
+  // fact the tiles also keep out of the error rate — or a custom agent's traces. Runs that
+  // ended another way are named in the tooltip, never folded into either side.
+  const fromCalls = f?.spend_source === "session_log";
+  const done = f ? (fromCalls ? f.runs : (f.succeeded ?? 0) + f.failed) : 0;
+  const interrupted = f && !fromCalls ? f.orphaned : 0;
+  const cell = (render: (row: Figures) => React.ReactNode) => (waiting ? dots : f ? render(f) : dash);
   return (
-    <Button variant="ghost" size="sm" onClick={onClick}
-      style={{ display: "block", width: "100%", height: "auto", textAlign: "left",
-        padding: "7px 10px", marginBottom: 2, whiteSpace: "normal",
-        opacity: reserved ? 0.55 : 1,
-        background: active ? "var(--bg-sel)" : undefined }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden",
-          textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{name}</span>
-        <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">
-          {kind === "persona" ? "custom" : kind}
-        </StatusChip>
-        {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
-      </span>
-      {sub && (
-        <span style={{ display: "block", fontSize: 11, color: "var(--t2)", marginTop: 2,
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</span>
-      )}
-    </Button>
+    <TableRow onClick={onClick} tabIndex={0} role="link" title={`Open ${name}`}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+      style={{ cursor: "pointer", opacity: reserved ? 0.55 : 1 }}>
+      <TableCell>
+        <div className="aug-text-ui" style={{ fontWeight: 500, overflow: "hidden",
+          textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+        {sub && (
+          <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 2,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
+        )}
+      </TableCell>
+      <TableCell>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">
+            {kind === "persona" ? "custom" : kind}
+          </StatusChip>
+          {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
+        </span>
+      </TableCell>
+      <TableCell><span style={{ color: "var(--t2)" }}>{role}</span></TableCell>
+      <TableCell className="num">{cell(r => (r.runs ? formatCount(r.runs) : dash))}</TableCell>
+      <TableCell className="num">{cell(r => (done ? (
+        <span title={(fromCalls
+          ? `${r.succeeded ?? 0} of ${done} answers had no failed call`
+          : `${r.succeeded ?? 0} of ${done} finished runs succeeded`)
+          + (interrupted ? ` · ${interrupted} interrupted by a restart` : "")}>{pct((r.succeeded ?? 0) / done, 0)}</span>
+      ) : r.runs ? (
+        <span style={{ color: "var(--t3)" }}
+          title={`${r.runs} runs, none finished on its own`
+            + (interrupted ? ` · ${interrupted} interrupted by a restart` : "")}>—</span>
+      ) : dash))}</TableCell>
+      <TableCell className="num">{cell(r => (r.avg_duration_ms != null ? (
+        <span title={fromCalls
+          ? "Model time across the answer's calls — SQL and tools add to it"
+          : "Mean of each run's own start to finish"}>{fmtMs(r.avg_duration_ms)}</span>
+      ) : dash))}</TableCell>
+      <TableCell className="num">{cell(r => (r.tokens > 0 ? (
+        <span title={`${formatCount(r.tokens)} tokens in the range`}>{compactNumber(r.tokens)}</span>
+      ) : dash))}</TableCell>
+      <TableCell>{cell(r => (r.last_run_at ? (
+        <span className="aug-num" title={r.last_run_at} style={{ whiteSpace: "nowrap" }}>{formatDateTime(r.last_run_at)}</span>
+      ) : dash))}</TableCell>
+    </TableRow>
   );
 }
 

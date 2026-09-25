@@ -478,6 +478,19 @@ export function formatTimestamp(
 }
 
 /**
+ * A moment as `YYYY-MM-DD HH:mm` in the reader's own time — the ledger-column form
+ * (tabular, sortable by eye) where `formatTimestamp` is the receipt form. "—" for empty;
+ * the raw input for an unparseable value.
+ */
+export function formatDateTime(v: string | number | Date | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
  * d3-time-format spec for a temporal (continuous) axis at the detected grain.
  * Shows the year on every tick only when the range spans multiple years.
  */
