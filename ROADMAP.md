@@ -8912,7 +8912,7 @@ answered in tokens too.
 **What each wave must show before the next starts:** a live receipt, a mutation test on every new guard and label,
 and this section updated the same day — a prose claim in §3 rots silently (§7).
 
-### 3.48 · Arc BR — the Briefing as a dated delivery: any range, every figure with its as-of, one Briefing where there are three (DRAFTED 2026-09-26 at the user's direction — §6 item 34, **OPEN with recommendations**; the survey BR-0 was MEASURED first, 2026-09-25 UTC, read-only, no model call and no warehouse query; nothing built)
+### 3.48 · Arc BR — the Briefing as a dated delivery: any range, every figure with its as-of, one Briefing where there are three (DRAFTED 2026-09-26 at the user's direction — §6 item 34, **all eight clauses DECIDED the same day**; the survey BR-0 was MEASURED first, 2026-09-25 UTC, read-only, no model call and no warehouse query; **BR-1 to BR-5 BUILT 2026-09-26** on `claude/arc-br-briefing`, each with a live receipt on theLook; BR-6 and BR-7 **paused at the user's word** — *"Pause after BR-5 is done"*; BR-8 on its trigger)
 
 > **Origin.** The user, 2026-09-25, on the Briefing's *Standing · Day · Week · Month · Year* switch: *"What is it
 > that Day / Month / Year supposed to deliver diffetently in the Briefing?"* — then three questions: is the Briefing
@@ -8963,13 +8963,52 @@ it; it is kept as *"17–26 August, as of 26 September"*. *August, asked on 15 S
 a preset; *2025* is the Year recipe, built once when the year settled. (The query count is an estimate from the
 survey, not a measurement.)
 
+**Status 2026-09-26 — the user's eight answers, and five waves built.** Asked one by one (*"Ask me each one"*):
+(a) adopt — yes; (b) who sets a metric's dates — **"AI sets them; a person corrects"**, built as rule and measurement
+rather than a model's guess, so no model authors a definition: the date column settling already reads, the kind read
+off the metric's own formula, a cohort's maturity measured from its rows, each recorded with its rule and marked *set
+automatically* until a person confirms or corrects it; (c) the Day is what is new since yesterday — yes; (d) the
+Briefing opens on the Day and the standing view is *What we know* — yes; (e) the daily automation is replaced and paused
+after seven delivered mornings — yes; (f) a run stopped on its time budget — **continued automatically after a day**
+(not the recommendation; it spends); (g) a custom range — **built without asking** (not the recommendation); (h)
+theLook's `return_rate` approved — yes (done on the scratch copy through the platform's own propose-and-approve doors;
+**the live install's metric is still draft**, owed). Scope *"BR-1 to BR-7, in order"*, paid receipts *"run them when
+reached"*, a sale dated by *order placed*. Built on `claude/arc-br-briefing`, driven live on theLook through a scratch
+API and web server on copies of `data/` (the user's own API and web untouched):
+
+- **BR-1** (`06ec008c`) — an alias is not a date (`period_split`); an unsettled table raises the lag (theLook reads **15
+  days, beyond horizon**, naming `events`, `inventory_items`, `order_items`) and is read twice as far back; a run its
+  budget stopped is continued a day later and the Briefing says when (*"it continues by itself after 2026-09-25
+  20:42"*). The switch label and the headline label BR-1 drafted were superseded by BR-3's page and BR-7's scope.
+- **BR-2** (`4624a850`, `4c65509c`) — the time fields, the rule-based setter, the compiler and the editor's Dates
+  section. 17–26 August compiled on BigQuery equals hand-written SQL to the unit: revenue **$136,923.03**, units sold
+  **2,762**, return rate as of 25 September **0.142857**. The first live run showed why tests were not proof — the
+  profile keys columns flat, the fixtures nested them, every metric fell to its table's main date and units sold read
+  **−12% instead of +11%** (the narrator's headline flipped with the fix). `return_rate`: *"Cohort — tied to
+  created_at, completed by returned_at, settles after 8 days"* (95% of 3,861 returns within 8 days).
+- **BR-3** (`4624a850`, `c524208c`) — any range, presets and a custom range on their own row; the page reads the range;
+  a share's change in points (*"a 0.8 point improvement"* where the build before wrote *"a 6% improvement"*).
+- **BR-4** (`fc15f1d7`) — the recipes; the page lands on the Day. theLook's Day, 2026-09-10: revenue $19,365 against
+  $14,438, each figure **Provisional** (an unsettled table), early read 11–24 September, moves led by
+  `product_department` Women (+56 units) and `status` Complete (+$2,805), five categories *too few to call*. Two
+  defects only a live Day showed: *"Shorts"* headlined on a comparison of 7 rows (now thin by both sides), and the
+  table said Final beside prose that said nothing was.
+- **BR-5** — a brief subscription can post as a Slack bot to a channel, carry the Briefing's scope, and pause the
+  automation it replaces after seven delivered mornings. Dry run on the copy (`POST …/test?dry_run=true`, nothing
+  sent): the first showed **6 lines held** — a snapshot built before the segment queries were kept, and *"lifting total
+  revenue"* held for a causal claim with no licence; every recipe now says no figure caused another, and the rebuilt
+  Day departs with **0 held**. The receipt that counts — seven mornings in `#aughor_canvas` — starts once the branch is
+  deployed and the subscription is created on the live install.
+- **BR-6, BR-7** — not started: paused at the user's word. **BR-8** — on its trigger.
+
 **Laws that bind every BR wave (standing, not per-wave):**
 
 - **Withheld is said.** An unmeasured metric, a provisional figure, a cell too thin to call, a range touching days
   that have not settled, a section the recipe could not fill — each says so on the tile and in the prose. A Briefing
   that silently narrows teaches its reader the data does not exist.
-- **A person declares a metric's time semantics; a model may propose them.** A proposed date column is a draft until
-  someone approves it, like every metric field today (draft → proposed → approved). No model authors provenance.
+- **The platform sets a metric's time semantics by rule and measurement; a person confirms or corrects them** (§6 item
+  34(b), decided 2026-09-26). Every field records the rule that set it; a confirmed or corrected one is the person's
+  and is never re-derived. No model authors a definition — the rules can say which rule they applied.
 - **Compile, never cut.** A figure for a range comes from a definition that says how to measure it for a range. The
   text-cutting path (`sql/trend_window.period_split`) stays only for metrics with no declaration, labelled as such,
   and is retired when the last headline metric is declared.
@@ -9015,7 +9054,7 @@ they outrun the horizon; §3.27's switch reads as re-scoping the Briefing and re
 Daily Briefing still live on 2 doors"* (2026-09-02) — still live, and dark on Slack since 2026-09-19. Pointers to
 this section sit at the ends of §3.23 and §3.27.
 
-#### BR-1 · Say what is true, and fix what is broken (free, about a day, no decision)
+#### BR-1 · Say what is true, and fix what is broken (free, about a day, no decision) — ✅ BUILT 2026-09-26
 
 > **Premise.** Four defects and a silence, each measured in BR-0. None needs a decision; one fix that would spend
 > (re-arming the stopped exploration) is §6 item 34(f), and this wave only says it.
@@ -9042,7 +9081,7 @@ this section sit at the ends of §3.23 and §3.27.
 labelled switch in both skins; every fix mutation-tested. **Falsifier:** none — these are defects; the wave is done
 when each is closed or its line here says why not.
 
-#### BR-2 · Metrics that know their dates (three to five days, free; ⚑ a person declares)
+#### BR-2 · Metrics that know their dates (three to five days, free; set by rule, a person corrects) — ✅ BUILT 2026-09-26
 
 > **Premise.** `MetricDefinition` has a SQL expression, tables, dimensions, filters, a unit, `additivity` and a
 > target — and no date. A period Briefing therefore measures a metric by finding a date inside a model-written chart
@@ -9080,7 +9119,7 @@ the cohort test fails; filter a stock by the range instead of taking its level a
 **Falsifier:** if the fields stay empty on theLook for 30 days after the editor shows them, declaration — not code —
 is the constraint; the arc stops after BR-1 and says so here, and the Curator's proposals become the next question.
 
-#### BR-3 · One control: any range, the four periods as presets (two to three days, free)
+#### BR-3 · One control: any range, the four periods as presets (two to three days, free) — ✅ BUILT 2026-09-26
 
 > **Premise.** The window model knows one thing: the most recent complete period relative to today
 > (`automations/temporal.complete_period`). *"17–26 August, asked on 26 September"*, *"August, asked on 15
@@ -9111,7 +9150,7 @@ byte-for-byte as §3.27's period Briefing. **Falsifier:** if a person cannot tel
 covers and whether it is final, the control has failed whatever its tests say — checked on screenshots in both skins
 at 1024 px, the UI study's bar.
 
-#### BR-4 · Each horizon a different job: the recipes (about a week; ⚑ a paid narrator receipt)
+#### BR-4 · Each horizon a different job: the recipes (about a week; ⚑ a paid narrator receipt) — ✅ BUILT 2026-09-26; the reader's receipt owed
 
 > **Premise.** §3.27's period Briefing is the standing Briefing's machinery pointed at fewer days: the same narrator
 > shape, the same candidates filtered by date. The user's own reading of Day — *"when I use a click on the day period
@@ -9144,7 +9183,7 @@ beside the standing one names a move only the dated one carries; the narrator's 
 per recipe. **Falsifier:** if the person cannot, the recipes are not earning their narrator calls — ship Measured and
 What moved without prose, and say so here.
 
-#### BR-5 · One Briefing, not three (a day or two plus seven mornings; ⚑ the automation is the user's)
+#### BR-5 · One Briefing, not three (a day or two plus seven mornings; ⚑ the automation is the user's) — ✅ BUILT 2026-09-26; seven mornings owed after deploy
 
 > **Premise.** Three things answer "what happened": the Briefing tab, the period Briefings, and *The Look – Daily
 > Briefing* — an automation running a deep analysis every morning since 2026-09-01, the only daily delivery on this
@@ -9166,7 +9205,7 @@ Departures screen; the Slack message and the Briefing tab show the same snapshot
 subscription is held on more mornings than the automation was in its last fourteen, the fold waits and the reason is
 named here.
 
-#### BR-6 · Every Briefing kept as of the day it was built (three to four days, free)
+#### BR-6 · Every Briefing kept as of the day it was built (three to four days, free) — ⏸ paused at the user's word
 
 > **Premise.** The period cache keeps one entry per scope and period and overwrites it when the window moves (§3.27).
 > "August, asked on 15 September" and "August, asked on 15 October" can differ — late rows, returns still arriving —
@@ -9188,7 +9227,7 @@ named here.
 version 2 with the change, and that morning's Day Briefing carries the revision; the equal-age comparison for a
 cohort equals hand SQL. Mutation test: overwrite instead of supersede and the history test fails.
 
-#### BR-7 · Findings that can be re-asked for any range (about a week, free; ⚑ its receipt needs an exploration run)
+#### BR-7 · Findings that can be re-asked for any range (about a week, free; ⚑ its receipt needs an exploration run) — ⏸ paused at the user's word
 
 > **Premise.** The explorer already thinks in cells — `metric × table × axis × cut` (`explorer/coverage_manifest.py:54`),
 > made into SQL with no model call (`explorer/manifest_query.py`) — and throws the cell away: a finding keeps its
@@ -10218,6 +10257,8 @@ the browser** · **measure the premise before building.**
 > the roadmap.."*, after their questions on the Briefing's Day, Month and Year and on arbitrary date ranges; its survey
 > was taken first (BR-0). **OPEN with recommendations**, eight clauses; BR-1 is free and waits on none of them.
 > Open: 32, 33, 34.
+> **Amended 2026-09-26, later:** item 34 decided clause by clause — (f) and (g) against the recommendation, (b) built as
+> rule and measurement so no model authors a definition. BR-1 to BR-5 built. Open: 32, 33.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -10857,7 +10898,7 @@ the browser** · **measure the premise before building.**
     **(c) Which objects `explain` covers first.** *Recommended:* departure, automation, metric — the three a held send
     points at — then agent and analysis.
     Not part of this item: a model judge over answers, and cross-user "who changed this" (waits on sign-in, PENDING).
-34. ⭕ **DRAFTED 2026-09-26 (the user, on the Briefing: *"the briefing is our highest valued delivery to a business
+34. ✅ **DECIDED 2026-09-26 — all eight clauses, asked one by one (answers in §3.48's status block: (a) yes, (b) the platform sets them — built by rule and measurement, (c) yes, (d) yes, (e) yes, (f) continue a budget-stopped run after a day, (g) build without asking, (h) yes). DRAFTED the same day (the user, on the Briefing: *"the briefing is our highest valued delivery to a business
     user"*; on arbitrary ranges: *"it should get enabled via may be a calendar, a data range selector module may be..
     […] Lets think through"*; and then *"Yes.. draft it all in the roadmap.."*) — Arc BR, the Briefing as a dated
     delivery (§3.48). The survey (BR-0) was taken BEFORE the arc was written; three of its rows correct standing prose

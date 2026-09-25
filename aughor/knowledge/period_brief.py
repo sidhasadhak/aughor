@@ -448,6 +448,22 @@ def build_period_briefing(conn_id: str, period: str, *, scope_key: str, domain_d
         period_note_today=today)
 
 
+def scope_inputs(conn_id: str, schema: Optional[str] = None) -> tuple[dict, Any]:
+    """The findings and business profile for a scope — the connection's findings, and the
+    SCHEMA's profile when one is named (Arc BR-5: a subscription and the Briefing tab share one
+    snapshot only if they read the same scope)."""
+    domain_data, profile = connection_inputs(conn_id)
+    if schema:
+        try:
+            from aughor.business_profile import store as _pstore
+            profile = _pstore.load(conn_id, schema) or profile
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "no profile for the schema; the connection's is used",
+                     counter="briefing.period.scope_profile")
+    return domain_data, profile
+
+
 def connection_inputs(conn_id: str) -> tuple[dict, Any]:
     """The connection-wide scope's findings and profile — what a subscription (which has no
     schema) briefs on. The same dispatch the Briefing route makes for "no schema selected"."""

@@ -5333,6 +5333,13 @@ export interface BriefSubscription {
    *  the Briefing written for its period. */
   content?: "alert_summary" | "briefing";
   trigger_id: string;
+  /** Arc BR-5 — a Slack bot and channel instead of a trigger; the scope; the automation it
+   *  replaces (paused after seven delivered mornings) and the mornings delivered so far. */
+  bot_id?: string;
+  channel?: string;
+  schema_name?: string;
+  supersedes?: string;
+  delivered?: number;
   enabled: boolean;
   created_at: string;
   updated_at: string;

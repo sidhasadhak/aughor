@@ -43,8 +43,8 @@ GUIDANCE = {
             "week earlier, with the segment that carried it; then what the days still settling suggest, "
             "saying plainly that they are early. End with the one thing to do first."),
     "week": ("This is the WEEK briefing, written for steering. Lead with what moved against the week "
-             "before and whether it is unusual against the weeks before that; name the segment behind each "
-             "move and what the platform already knows about it."),
+             "before and whether it is unusual against the weeks before that; name the segment each move "
+             "sits in and what the platform already knows about it."),
     "month": ("This is the MONTH briefing, written for review. Lead with each headline metric against the "
               "month before and the same month a year earlier, and against its target where one is declared; "
               "say which figures are still provisional and why."),
@@ -53,6 +53,12 @@ GUIDANCE = {
     "custom": ("This is a CUSTOM RANGE briefing, written for exploring. Lead with what the range shows "
                "against its comparison, then the segments behind the biggest move."),
 }
+
+#: Every recipe: a Briefing has no causal licence, and the departure gate holds a causal claim
+#: that has none (theLook's first Day send, 2026-09-26: "lifting total revenue" was held).
+NO_CAUSES = (" Say what moved, where and alongside what; never write that one figure caused, drove, "
+             "lifted or was behind another — nothing here has tested a cause.")
+GUIDANCE = {k: v + NO_CAUSES for k, v in GUIDANCE.items()}
 
 WORDS = {"day": "80-150", "week": "120-220", "month": "150-280", "year": "200-350", "custom": "120-250"}
 
@@ -129,6 +135,7 @@ def what_moved(metrics: list, spec: Any, run_sql: Callable[[str], tuple], *, dia
             if why:
                 skipped.append(f"{m.label or m.name} by {dim} ({why})")
                 continue
+            sql = mt.measure_sql(m, windows, dialect=dialect, by=dim)[0] or ""
             by: dict[str, dict] = {}
             for r in rows:
                 g = "(none)" if r["group"] is None else str(r["group"])
@@ -144,7 +151,7 @@ def what_moved(metrics: list, spec: Any, run_sql: Callable[[str], tuple], *, dia
                 n = min(int(cur.get("n") or 0), int(prev.get("n") or 0))
                 cell = {"metric": m.name, "name": m.label or m.name, "dimension": dim, "group": g,
                         "current": cv, "previous": pv, "n": n, "share": _share_metric(m),
-                        "unit": m.unit or ""}
+                        "unit": m.unit or "", "sql": sql}
                 if cell["share"]:
                     cell["change"] = None if cv is None or pv is None else (cv - pv) * 100
                     cell["score"] = abs(cell["change"] or 0) / 100
@@ -225,7 +232,8 @@ def early_read(metrics: list, spec: Any, run_sql: Callable[[str], tuple], *, dia
         if why or not rows or rows[0]["value"] is None:
             continue
         figures.append({"metric": m.name, "name": m.label or m.name, "unit": m.unit or "",
-                        "value": rows[0]["value"], "n": rows[0]["n"]})
+                        "value": rows[0]["value"], "n": rows[0]["n"],
+                        "sql": mt.measure_sql(m, [w], dialect=dialect)[0] or ""})
     return {"start": start.isoformat(), "end": (end - timedelta(days=1)).isoformat(), "figures": figures}
 
 

@@ -401,3 +401,97 @@ def resolve_for(conn_id: str, preset: Optional[str] = None, *, start: Optional[d
                  counter="briefing.range.fiscal")
     return resolve_range(preset, start=start, end=end, today=today, lag_days=lag,
                          lag_source=lag_source, still_moving=tuple(moving), fiscal_start_month=fiscal)
+
+
+# ── the send (Arc BR-5) ────────────────────────────────────────────────────────────────────
+
+def sheet_lines(brief: dict, currency_code: Optional[str] = None) -> list[tuple[str, list[str]]]:
+    """A range Briefing as the sections a send departs with, in order: its measured figures
+    with their status, what moved, the early read, what was not measured (one line per reason),
+    the alerts and records it cited, then the narrative. Each line is judged on its own."""
+    from aughor.briefing import recipes
+
+    block = brief.get("period") or {}
+    currency = currency_code or brief.get("currency_code")
+    sections: list[tuple[str, list[str]]] = []
+    measured = [metric_line(m, block, currency) for m in block.get("measured") or []]
+    if measured:
+        sections.append(("measured", measured))
+    moves = [recipes.move_line(c, block, currency) for c in block.get("moves") or []]
+    if moves:
+        sections.append(("moves", moves))
+    early = block.get("early") or {}
+    if early.get("figures"):
+        figs = "; ".join(f"{f['name']} {f.get('value_text') or f['value']}" for f in early["figures"])
+        sections.append(("early", [f"Still settling (early), {early['start']} to {early['end']}: {figs}."]))
+    by_reason: dict[str, list[str]] = {}
+    for u in block.get("unmeasured") or []:
+        by_reason.setdefault(u["reason"], []).append(u["name"])
+    if by_reason:
+        sections.append(("unmeasured", [f"Not measured: {', '.join(n)} — {r}." for r, n in by_reason.items()]))
+    cited = [(c.get("domain"), str(c.get("finding") or "").strip())
+             for c in brief.get("citations") or [] if str(c.get("finding") or "").strip()]
+    alerts = [text for domain, text in cited if domain == "Alerts"]
+    if alerts:
+        sections.append(("alerts", alerts))
+    records = [text for domain, text in cited if domain not in ("Alerts", "Key Metrics", "What moved")]
+    if records:
+        sections.append(("records", records))
+    paragraphs = [p.strip() for p in str(brief.get("narrative") or "").split("\n\n") if p.strip()]
+    if paragraphs:
+        sections.append(("narrative", paragraphs))
+    return sections
+
+
+def fresh_measurement(conn_id: str, brief: dict, *, runner: Optional[Callable[[], Any]] = None):
+    """Law 1's basis for a range send: every query the Briefing measured with — the headline
+    metrics, each segment breakdown, the early read — RE-RUN now, never the values it was
+    written from, with the changes between each figure and its comparison (a line that says
+    "+$2,805" states a difference of two measured values, and the difference is measured too)."""
+    from aughor.govern.departure import Measurement
+    from aughor.knowledge import period_brief
+
+    def _num(v) -> Optional[float]:
+        try:
+            return None if v is None else float(str(v).replace(",", "")) if isinstance(v, str) else float(v)
+        except (TypeError, ValueError):
+            return None
+
+    block = brief.get("period") or {}
+    sqls = {m.get("sql") for m in block.get("measured") or []}
+    sqls |= {c.get("sql") for c in block.get("moves") or []}
+    sqls |= {f.get("sql") for f in (block.get("early") or {}).get("figures") or []}
+    values: list[float] = []
+    try:
+        with (runner or (lambda: period_brief.connection_runner(conn_id, cached=False)))() as (run_sql, _d):
+            for sql in sorted(s for s in sqls if s):
+                cols, rows, error = run_sql(sql)
+                if error:
+                    continue
+                names = [str(c).lower() for c in cols or []]
+                vi = names.index("_v") if "_v" in names else None
+                gi = names.index("_g") if "_g" in names else None
+                wi = names.index("_w") if "_w" in names else 0
+                if vi is None:
+                    continue
+                by: dict = {}
+                for r in rows or []:
+                    cells = list(r.values()) if isinstance(r, dict) else list(r)
+                    v = _num(cells[vi])
+                    if v is None:
+                        continue
+                    values.append(v)
+                    by.setdefault(cells[gi] if gi is not None else None, {})[str(cells[wi])] = v
+                for w in by.values():
+                    for other in ("previous", "last_year"):
+                        if "current" in w and other in w:
+                            values += [w["current"] - w[other], abs(w["current"] - w[other])]
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the range's queries could not be re-run at departure; its lines hold",
+                 counter="briefing.range.remeasure")
+    return Measurement(source=f"the {str(block.get('label', '')).lower()} briefing's queries",
+                       values=values,
+                       measured_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                       as_of=str(block.get("last_day") or ""),
+                       definition="each approved metric compiled for the range from its definition")
