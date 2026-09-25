@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What floats, slides or pops</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#181818}
+:root{--bg0:#181818;--bg1:#1c1b1a;--bg3:#211e1c;--bg4:#2a2725;--sel:#2d2622;--b0:#23211f;--b1:#2c2928;--b2:#3a3532;--t1:#e9ecee;--t2:#99a2a8;--t3:#7c878d;--t4:#545c62;--blue:#4c9ad6;--grn:#3eab82;--amb:#b88d30;--red:#d2665c;--sans:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;--ann:#e0a84a}
+a{color:#4c9ad6}a:hover{color:#7bb8e6}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; padding: 32px 40px; display: flex; flex-direction: column; gap: 24px; background: var(--bg0); color: var(--t1); font-family: var(--sans); font-size: 13px; line-height: 1.5; overflow: hidden">
+
+  <div style="display: flex; align-items: baseline; gap: 16px">
+    <h1 style="margin: 0; font: 600 15px var(--sans)">What floats, slides or pops</h1>
+    <span style="font-size: 12px; color: var(--t2)">Five surfaces, each with one job. One layer at a time · Esc closes · focus returns · 160 ms for a popover, 260 ms for a panel, ease-out · reduced motion ends on the finished frame.</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 440px 520px 1fr; gap: 32px; align-items: start">
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--ann)">INSPECTOR · non-modal · 400–480 · docked ≥1440, overlay below · ?inspect=run:6981227c</div>
+      <aside aria-label="Run 6981227c" style="height: 560px; box-sizing: border-box; display: flex; flex-direction: column; border: 1px solid var(--b1); border-radius: 6px; background: var(--bg1); overflow: hidden">
+        <div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--b0)">
+          <span style="height: 20px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: 3px; border: 1px solid #245a45; background: #14261f; color: #6cc8a1; font: 400 11px var(--mono)">completed</span>
+          <span style="font: 600 13px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">What changed in theLook in the last day?</span>
+          <div style="flex-grow: 1"></div>
+          <button aria-label="Close" style="width: 26px; height: 26px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t2); font-size: 12px">Esc</button>
+        </div>
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 14px; font-size: 12px">
+          <div style="display: grid; grid-template-columns: 90px 1fr; gap: 6px 12px">
+            <div style="color: var(--t3)">Agent</div><div>The Look Analyst · deep analysis</div>
+            <div style="color: var(--t3)">Connection</div><div>theLook <span style="font-family: var(--mono); color: var(--t3)">· thelook</span></div>
+            <div style="color: var(--t3)">Started</div><div style="font-family: var(--mono); font-size: 11px">2026-09-24 09:03:25 · 10 m 07 s</div>
+            <div style="color: var(--t3)">Cost</div><div><span style="font-family: var(--mono)">80.7K</span> tokens · unpriced — a floor, not a total</div>
+          </div>
+          <div>
+            <div style="font: 500 11px var(--mono); letter-spacing: 0.06em; color: var(--t3); margin-bottom: 6px">VERDICT</div>
+            <p style="margin: 0; font-size: 13px; line-height: 1.6">September 16 flat at item grain; two date columns disagree on direction.</p>
+          </div>
+          <div>
+            <div style="font: 500 11px var(--mono); letter-spacing: 0.06em; color: var(--t3); margin-bottom: 6px">STEPS · 6</div>
+            <div style="display: flex; flex-direction: column">
+              <div style="display: grid; grid-template-columns: 20px 1fr 60px; gap: 8px; padding: 5px 0; border-top: 1px solid var(--b0)"><span style="font-family: var(--mono); color: var(--t3)">1</span><span>decompose — three sub-questions</span><span style="text-align: right; font-family: var(--mono); color: var(--t3)">2.1 s</span></div>
+              <div style="display: grid; grid-template-columns: 20px 1fr 60px; gap: 8px; padding: 5px 0; border-top: 1px solid var(--b0)"><span style="font-family: var(--mono); color: var(--t3)">2</span><span>run_sql — daily revenue, 14 days <span style="color: var(--t3)">· 14 rows</span></span><span style="text-align: right; font-family: var(--mono); color: var(--t3)">0.9 s</span></div>
+              <div style="display: grid; grid-template-columns: 20px 1fr 60px; gap: 8px; padding: 5px 0; border-top: 1px solid var(--b0)"><span style="font-family: var(--mono); color: var(--t3)">3</span><span>z_score — 2026-09-16 against 29 days <span style="color: var(--amb)">· guard: date boundary</span></span><span style="text-align: right; font-family: var(--mono); color: var(--t3)">1.4 s</span></div>
+              <div style="display: grid; grid-template-columns: 20px 1fr 60px; gap: 8px; padding: 5px 0; border-top: 1px solid var(--b0); border-bottom: 1px solid var(--b0)"><span style="font-family: var(--mono); color: var(--t3)">4</span><span>run_sql — by shipped_at <span style="color: var(--t3)">· 14 rows</span></span><span style="text-align: right; font-family: var(--mono); color: var(--t3)">0.8 s</span></div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px">
+            <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--sans)">Right</button>
+            <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--sans)">Correct…</button>
+            <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 500 12px var(--sans)">Wrong</button>
+            <div style="flex-grow: 1"></div>
+            <a href="#trace" style="font-size: 12px; text-decoration: none; align-self: center">Machine view →</a>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--ann)">SLIDE-OVER · modal · 520 (720 for a wizard) · every create or edit form · Esc asks when dirty</div>
+      <div style="height: 560px; box-sizing: border-box; display: flex; flex-direction: column; border: 1px solid var(--b2); border-radius: 6px; background: var(--bg1); box-shadow: 0 12px 32px rgba(0,0,0,0.45); overflow: hidden">
+        <div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 20px; border-bottom: 1px solid var(--b0)">
+          <span style="font: 600 13px var(--sans)">Declare an action</span>
+          <span style="font-size: 12px; color: var(--t3)">on theLook</span>
+          <div style="flex-grow: 1"></div>
+          <button aria-label="Close" style="width: 26px; height: 26px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t2); font-size: 12px">Esc</button>
+        </div>
+        <div style="flex-grow: 1; padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow: hidden">
+          <div style="display: flex; flex-direction: column; gap: 6px"><label for="an" style="font-size: 12px; color: var(--t2)">Name</label><input id="an" value="notify_ops" style="height: 28px; padding: 0 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 400 12px var(--mono)"></div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+            <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; color: var(--t2)">Kind</span><div role="group" aria-label="Kind" style="display: inline-flex; height: 26px; border: 1px solid var(--b2); border-radius: 4px; overflow: hidden; width: fit-content"><button style="height: 26px; padding: 0 10px; border: 0; background: var(--bg4); color: var(--t1); font: 500 12px var(--sans)">side effect</button><button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: transparent; color: var(--t2); font: 400 12px var(--sans)">annotate</button><button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: transparent; color: var(--t2); font: 400 12px var(--sans)">query</button></div></div>
+            <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; color: var(--t2)">Risk</span><div role="group" aria-label="Risk" style="display: inline-flex; height: 26px; border: 1px solid var(--b2); border-radius: 4px; overflow: hidden; width: fit-content"><button style="height: 26px; padding: 0 10px; border: 0; background: transparent; color: var(--t2); font: 400 12px var(--sans)">read only</button><button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: transparent; color: var(--t2); font: 400 12px var(--sans)">low</button><button style="height: 26px; padding: 0 10px; border: 0; border-left: 1px solid var(--b2); background: var(--bg4); color: var(--t1); font: 500 12px var(--sans)">high</button></div></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px"><label for="ad" style="font-size: 12px; color: var(--t2)">What it does, in a sentence</label><input id="ad" placeholder="Posts the order and its lines to the ops channel" style="height: 28px; padding: 0 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 400 12px var(--sans)"></div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div style="display: flex; align-items: baseline; gap: 8px"><span style="font-size: 12px; color: var(--t2)">Parameters</span><span style="font-size: 11px; color: var(--t3)">an object parameter names one object, read live</span></div>
+            <div style="display: grid; grid-template-columns: 1fr 100px 90px 26px; gap: 8px; align-items: center"><input aria-label="Parameter name" value="order" style="height: 28px; padding: 0 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font: 400 12px var(--mono)"><span style="height: 28px; display: flex; align-items: center; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font-size: 12px">object ▾</span><span style="height: 28px; display: flex; align-items: center; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); color: var(--t1); font-size: 12px">Order ▾</span><button aria-label="Remove parameter" style="width: 26px; height: 26px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t2)">×</button></div>
+            <button style="height: 26px; width: fit-content; padding: 0 8px; border-radius: 3px; border: 1px dashed var(--b2); background: transparent; color: var(--t2); font: 400 12px var(--sans)">+ Add a parameter</button>
+          </div>
+          <details style="font-size: 12px; color: var(--t2)"><summary style="cursor: pointer; color: var(--t1)">Criteria, the call it makes, the edit it writes</summary><div style="margin-top: 8px; color: var(--t3)">Shown when opened — three more sections, each with its own “+ Add”.</div></details>
+        </div>
+        <div style="height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 20px; border-top: 1px solid var(--b0)">
+          <span style="font-size: 12px; color: var(--t3)">Declaring never runs anything. Proposals wait in Needs you.</span>
+          <div style="flex-grow: 1"></div>
+          <button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t1); font: 500 12px var(--sans)">Cancel</button>
+          <button style="height: 26px; padding: 0 12px; border-radius: 3px; border: 0; background: var(--blue); color: #ffffff; font: 600 12px var(--sans)">Save action</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 24px">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--ann)">POPOVER · a fact · 160 ms · origin at the trigger</div>
+        <div style="width: 320px; padding: 12px 14px; box-sizing: border-box; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); box-shadow: 0 6px 20px rgba(0,0,0,0.4); display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; align-items: baseline; gap: 8px"><span style="font: 500 18px var(--mono)">$397,612.97</span><span style="font-size: 11px; color: var(--t3)">revenue · August 2026</span></div>
+          <div style="font: 400 11px/1.6 var(--mono); color: var(--t2); white-space: pre-wrap">SELECT SUM(sale_price) FROM order_items
+WHERE created_at BETWEEN '2026-08-01' AND '2026-08-31'</div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap"><span style="height: 20px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: 3px; border: 1px solid #245a45; background: #14261f; color: #6cc8a1; font: 400 11px var(--mono)">approved definition v1</span><span style="height: 20px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: 3px; border: 1px solid #245a45; background: #14261f; color: #6cc8a1; font: 400 11px var(--mono)">guards clean</span></div>
+          <a href="#receipt" style="font-size: 12px; text-decoration: none">Open the receipt →</a>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--ann)">HOVER CARD ON AN IDENTIFIER · the name shows, the key waits</div>
+        <div style="width: 320px; padding: 10px 14px; box-sizing: border-box; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); box-shadow: 0 6px 20px rgba(0,0,0,0.4); display: flex; flex-direction: column; gap: 4px">
+          <div style="display: flex; align-items: center; gap: 8px"><span style="font: 600 13px var(--sans)">theLook</span><span style="font-size: 11px; color: var(--t3)">BigQuery · 7 tables</span></div>
+          <div style="display: flex; align-items: center; gap: 8px"><span style="font: 400 11px var(--mono); color: var(--t3)">8233e4fd</span><button style="height: 20px; padding: 0 6px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t2); font: 400 11px var(--sans)">Copy</button><a href="#catalog" style="font-size: 12px; text-decoration: none; margin-left: auto">Open in Catalog →</a></div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--ann)">NEEDS-YOU TRAY · a topbar popover · counts, the oldest three, one door</div>
+        <div style="width: 360px; box-sizing: border-box; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg3); box-shadow: 0 6px 20px rgba(0,0,0,0.4); display: flex; flex-direction: column">
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--b0); font-size: 12px"><span>Proposals awaiting approval</span><span style="font-family: var(--mono); color: var(--amb)">1</span></div>
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--b0); font-size: 12px"><span>Sends held at the gate</span><span style="font-family: var(--mono); color: var(--amb)">13</span></div>
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--b0); font-size: 12px"><span>Automations on probation</span><span style="font-family: var(--mono); color: var(--t2)">2</span></div>
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--b0); font-size: 12px"><span>Recommendations to decide</span><span style="font-family: var(--mono); color: var(--t3)">0</span></div>
+          <div style="padding: 8px 14px; font-size: 12px; color: var(--t2)">Oldest: a Units Sold anomaly watch, waiting <span style="font-family: var(--mono)">27 h</span> for a channel</div>
+          <a href="#needs" style="display: block; padding: 8px 14px; border-top: 1px solid var(--b0); font-size: 12px; text-decoration: none">Open Needs you →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 32px; align-items: flex-end">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--ann)">TOAST · bottom-right · stays while it carries an action or an error</div>
+      <div role="status" style="width: 360px; padding: 10px 14px; box-sizing: border-box; border-radius: 6px; border: 1px solid var(--b2); border-left: 3px solid var(--grn); background: var(--bg1); box-shadow: 0 12px 32px rgba(0,0,0,0.45); display: flex; align-items: center; gap: 12px; font-size: 12px"><span style="flex-grow: 1">Monitor created — Units Sold, breach at 3σ, checked daily</span><a href="#monitor" style="text-decoration: none">Open</a></div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="font: 500 11px var(--mono); letter-spacing: 0.08em; color: var(--ann)">DIALOG · centred · destructive confirms and all-or-nothing approvals only</div>
+      <div role="dialog" aria-label="Accept the proposal" style="width: 420px; padding: 16px 20px; box-sizing: border-box; border-radius: 6px; border: 1px solid var(--b2); background: var(--bg1); box-shadow: 0 12px 32px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 10px"><div style="font: 600 13px var(--sans)">Accept the monitor and its chain?</div><div style="font-size: 12px; color: var(--t2); line-height: 1.6">One decision: accepting creates the monitor and saves the chain its breach fires — all or nothing. The deep analysis runs only when something moves.</div><div style="display: flex; gap: 8px; justify-content: flex-end"><button style="height: 26px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--b2); background: transparent; color: var(--t1); font: 500 12px var(--sans)">Not now</button><button style="height: 26px; padding: 0 12px; border-radius: 3px; border: 0; background: var(--blue); color: #ffffff; font: 600 12px var(--sans)">Accept</button></div></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

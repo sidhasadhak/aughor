@@ -543,6 +543,11 @@ element counts; computed token values and WCAG contrast in both themes.
 the dev server's live socket and must not be used; a stale `SingletonLock` from an interrupted run blocks the next
 one. The blank-pane result was re-taken at `--timeout=25000` and on a profile that had already loaded Home.
 
+**Method files** (`docs/assets/ui-study-2026-09-25/_method/`): `capture.sh` (the headless capture, one screen per
+call), `urls-1440.txt` and `urls-1024.txt` (every URL the study captured), `probe.js` (the DOM probe above, ready to
+paste or to run through Playwright's `page.evaluate`), and `canvas/` (the five artboards and the index of the
+"Aughor Layout Grammar" canvas, as `.dc.html` sources). The screenshot gate of §4.9 starts from these four files.
+
 **Figures** (`docs/assets/ui-study-2026-09-25/`, JPEG at 1280 wide from the 2× originals; every rail tab, every
 Intelligence and Agent Ops layer, the Evals layers, `/chat`, and six screens at 1024):
 
