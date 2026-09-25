@@ -152,7 +152,7 @@ export function AgenticOpsWorkspace({
     setCreateSignal(n => n + 1);
   }, [onLayerChange]);
 
-  const openTraceForInvestigation = useCallback((invId: string) => {
+  const openAnalysisTrace = useCallback((invId: string) => {
     setTraceFocus({ investigationId: invId });
     onLayerChange("activity");
   }, [onLayerChange]);
@@ -181,7 +181,7 @@ export function AgenticOpsWorkspace({
       renderLayer={id => {
         if (id === "agents") return (
           <AgenticAgentsPanel workspaceId={workspaceId} workspaceName={workspaceName}
-            focusAgent={agentFocus} onOpenTrace={openTraceForInvestigation} range={range}
+            focusAgent={agentFocus} onOpenTrace={openAnalysisTrace} range={range}
             createSignal={createSignal}
             // DS-5 — a node on an agent's Map opens the surface that owns it. The chains
             // live one layer over, so that one is a layer switch; the rest belong to the
@@ -208,7 +208,8 @@ export function AgenticOpsWorkspace({
         );
         if (id === "departures") return (
           // Hub-wide, like the map: every departure the platform recorded, any connection.
-          <DeparturesPanel />
+          <DeparturesPanel onOpenAutomation={() => onLayerChange("automations")}
+            onOpenTrace={openAnalysisTrace} />
         );
         if (id === "hub") return (
           // No connId on purpose: this layer IS the hub-wide answer ("every automation
