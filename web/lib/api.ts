@@ -5716,6 +5716,28 @@ export interface BriefingRangeMeasure {
   current_text?: string;
   previous_text?: string;
   last_year_text?: string;
+  /** Week recipe: the mean of the four weeks before the comparison week. */
+  norm?: number | null;
+  rel_norm?: number | null;
+  /** Month recipe: the metric's declared target, when it has one. */
+  target?: number | null;
+  vs_target?: number | null;
+}
+
+/** Arc BR-4 — a segment's move inside a metric (what moved). */
+export interface BriefingRangeMove {
+  metric: string;
+  name: string;
+  dimension: string;
+  group: string;
+  current: number | null;
+  previous: number | null;
+  change: number | null;
+  n: number;
+  share: boolean;
+  current_text?: string;
+  previous_text?: string;
+  change_text?: string;
 }
 
 export interface BriefingRangeBlock {
@@ -5739,6 +5761,15 @@ export interface BriefingRangeBlock {
   last_year_label: string | null;
   measured: BriefingRangeMeasure[];
   unmeasured: { name: string; reason: string }[];
+  /** Arc BR-4 — the recipe that wrote it, and its own sections. */
+  recipe?: "day" | "week" | "month" | "year" | "custom";
+  sections?: string[];
+  moves?: BriefingRangeMove[];
+  thin?: BriefingRangeMove[];
+  why?: { segment: string; dimension: string; domain: string; id: string | null; finding: string }[];
+  early?: { start: string | null; end: string | null;
+            figures: { metric: string; name: string; value: number; value_text?: string; n: number }[] } | null;
+  recipe_error?: string;
 }
 
 export function isRangeBlock(p: BriefingPeriodBlock | BriefingRangeBlock | undefined | null): p is BriefingRangeBlock {

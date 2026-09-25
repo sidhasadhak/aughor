@@ -251,7 +251,8 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
             "current": cur["value"], "previous": pv, "last_year": lv,
             "rel": None if (cur_partial or prev_partial) else _rel(cur["value"], pv),
             "rel_last_year": None if cur_partial else _rel(cur["value"], lv),
-            "status": mt.figure_status(m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days),
+            "status": mt.figure_status(m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days,
+                                       unsettled=bool({mt.bare_name(t) for t in m.tables} & set(spec.still_moving))),
             "current_partial": cur_partial, "previous_partial": prev_partial,
             "sql": mt.measure_sql(m, windows, dialect=dialect)[0] or "",
         })
@@ -327,14 +328,27 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
     from aughor.knowledge.briefing import get_briefing
     from aughor.orgsettings import resolve_currency
 
-    block = range_block(spec)
+    from aughor.briefing.recipes import SECTIONS, recipe_for
+
+    block = {**range_block(spec), "recipe": recipe_for(spec.preset),
+             "sections": list(SECTIONS[recipe_for(spec.preset)])}
     north = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
     currency = resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
 
     def measure() -> dict:
+        from aughor.briefing import recipes
         try:
             with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
                 got = measure_range(conn_id, spec, run_sql=run_sql, dialect=dialect, north_stars=north)
+                # Arc BR-4: the recipe's own sections — what moved, why, the Day's early read …
+                try:
+                    extra = recipes.apply(conn_id, spec, got, run_sql=run_sql, dialect=dialect,
+                                          domain_data=domain_data, currency=currency, block=block)
+                except Exception as exc:  # noqa: BLE001 — a section that fails never costs the figures
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "a recipe section failed; the Briefing keeps its measured figures",
+                             counter="briefing.range.recipe")
+                    extra = {"recipe_error": f"its recipe sections could not be built ({type(exc).__name__})"}
         except Exception as exc:  # noqa: BLE001
             from aughor.kernel.errors import tolerate
             tolerate(exc, "the range measurement could not open the connection",
@@ -352,7 +366,9 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
             for k in ("current", "previous", "last_year"):
                 m[f"{k}_text"] = (_share(m.get(k)) if m["unit"] == "ratio 0..1" and m.get(k) is not None
                                   else period_brief._fmt(m.get(k), m["name"], m["unit"], currency))
-        return {**got, "findings": range_findings(got["measured"], block, currency)}
+        candidates = extra.pop("candidates", {})
+        return {**got, **extra, "findings": range_findings(got["measured"], block, currency),
+                "candidates": candidates}
 
     candidates = period_brief.findings_in_window(domain_data, spec)
     alerts = period_brief.alert_findings(conn_id, spec)

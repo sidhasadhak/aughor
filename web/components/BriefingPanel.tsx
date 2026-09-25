@@ -70,7 +70,7 @@ import { Pending } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodMeasures, PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
-import { RangeControl, RangeFigures, RangeMeasures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
+import { RangeControl, RangeFigures, RangeMeasures, RangeSections, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
 import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
@@ -2322,7 +2322,10 @@ export function BriefingPanel({
   // Arc BR-3 — `briefing.ranges`: one control for any range, the standing view being what the
   // platform knows. The range scopes the page; off, the switch above is exactly §3.27's.
   const [rangesOn, setRangesOn]             = useState(false);
-  const [range, setRange]                   = useState<RangeChoice>({ preset: "standing" });
+  // §6 item 34(d): with ranges on, the Briefing OPENS on the Day; "What we know" is one click away.
+  const [chosen, setRange]                  = useState<RangeChoice | null>(null);
+  const range = useMemo<RangeChoice>(
+    () => chosen ?? (rangesOn ? { preset: "yesterday" } : { preset: "standing" }), [chosen, rangesOn]);
   useEffect(() => {
     let alive = true;
     getSystemFlags().then(f => {
@@ -3053,7 +3056,7 @@ export function BriefingPanel({
           )}
           {!narrativeLoading && hasNarrative && narrative?.period && (
             isRangeBlock(narrative.period)
-              ? <RangeMeasures block={narrative.period} />
+              ? <><RangeMeasures block={narrative.period} /><RangeSections block={narrative.period} /></>
               : <PeriodMeasures block={narrative.period} />
           )}
           {!narrativeLoading && hasNarrative && narrative && (

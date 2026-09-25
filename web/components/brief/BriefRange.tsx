@@ -195,3 +195,86 @@ export function RangeMeasures({ block }: { block: BriefingRangeBlock }) {
     </div>
   );
 }
+
+// ── Arc BR-4 — the recipe's own sections ─────────────────────────────────────────────────────
+
+const RECIPE_JOB: Record<string, string> = {
+  day: "The Day — for acting today", week: "The Week — for steering", month: "The Month — for review",
+  year: "The Year — for strategy", custom: "A custom range — for exploring",
+};
+
+export function RangeSections({ block }: { block: BriefingRangeBlock }) {
+  const moves = block.moves ?? [];
+  const thin = block.thin ?? [];
+  const why = block.why ?? [];
+  const early = block.early;
+  const provisional = block.measured.filter(m => m.status !== "final");
+  return (
+    <div className="aug-fs-sm" data-testid="range-sections" style={{ display: "grid", gap: 12, marginBottom: 14 }}>
+      {block.recipe && (
+        <div className="aug-label" style={{ color: "var(--t3)" }}>{RECIPE_JOB[block.recipe] ?? ""}</div>
+      )}
+      {early && early.start && early.figures.length > 0 && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 4 }}>Still settling — early read</div>
+          <div style={{ color: "var(--t2)" }}>
+            {early.start === early.end ? early.start : `${early.start} to ${early.end}`}:{" "}
+            {early.figures.map(f => `${f.name} ${f.value_text ?? ""}`).join(" · ")}
+            <span style={{ color: "var(--t3)" }}> — early: these days are still changing, so no figure here is final.</span>
+          </div>
+        </div>
+      )}
+      {moves.length > 0 && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 4 }}>What moved</div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ color: "var(--t3)", textAlign: "left" }}>
+                <th style={{ fontWeight: 500, padding: "2px 8px 2px 0" }}>Metric</th>
+                <th style={{ fontWeight: 500, padding: "2px 8px" }}>Segment</th>
+                <th style={{ fontWeight: 500, padding: "2px 8px" }}>This range</th>
+                <th style={{ fontWeight: 500, padding: "2px 8px" }}>Comparison</th>
+                <th style={{ fontWeight: 500, padding: "2px 0 2px 8px" }}>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {moves.map(c => (
+                <tr key={`${c.metric}:${c.dimension}:${c.group}`} style={{ borderTop: "1px solid var(--b1)" }}>
+                  <td style={{ padding: "4px 8px 4px 0", color: "var(--t1)" }}>{c.name}</td>
+                  <td style={{ padding: "4px 8px" }}>{c.dimension}: {c.group}</td>
+                  <td style={{ padding: "4px 8px" }}>{c.current_text ?? ""}</td>
+                  <td style={{ padding: "4px 8px", color: "var(--t2)" }}>{c.previous_text ?? ""}</td>
+                  <td style={{ padding: "4px 0 4px 8px", color: "var(--t2)" }}>{c.change_text ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {thin.length > 0 && (
+            <div style={{ color: "var(--t3)", marginTop: 4 }}>
+              Too few to call: {thin.map(c => `${c.dimension} ${c.group} (${c.n} rows)`).join(", ")}.
+            </div>
+          )}
+        </div>
+      )}
+      {why.length > 0 && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 4 }}>What we know about what moved</div>
+          <ul style={{ margin: 0, paddingLeft: 16, color: "var(--t2)" }}>
+            {why.map((w, i) => <li key={`${w.segment}:${i}`}><span style={{ color: "var(--t1)" }}>{w.segment}</span> — {w.finding}</li>)}
+          </ul>
+        </div>
+      )}
+      {(provisional.length > 0 || block.recipe_error) && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 4 }}>Data health</div>
+          <ul style={{ margin: 0, paddingLeft: 16, color: "var(--t3)" }}>
+            {provisional.map(m => (
+              <li key={m.metric}>{m.name} is {m.status === "to_date" ? "to date — the range is still under way" : "provisional — it can still change"}.</li>
+            ))}
+            {block.recipe_error && <li>{block.recipe_error}.</li>}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}

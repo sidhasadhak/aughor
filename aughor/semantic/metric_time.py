@@ -90,7 +90,7 @@ class Inference:
     reason: str = ""         # why not, when ``fields`` is None
 
 
-def _bare(name: str) -> str:
+def bare_name(name: str) -> str:
     return str(name or "").split(".")[-1].strip('`"[]').lower()
 
 
@@ -103,7 +103,7 @@ def _table_columns(profile_entry: dict, table: str) -> dict[str, str]:
         if not isinstance(prof, dict):
             continue
         owner = str(prof.get("table") or str(key).split(".", 1)[0]).lower()
-        if _bare(owner) != table:
+        if bare_name(owner) != table:
             continue
         name = str(prof.get("column") or str(key).split(".", 1)[-1]).lower()
         out[name] = str(prof.get("dtype") or "").lower()
@@ -192,7 +192,7 @@ def infer(metric: Any, profile_entry: dict, *, dialect: str = "duckdb") -> Infer
         return Inference(None, "its formula is a whole query, so its date must be set by a person")
     if not tables:
         return Inference(None, "it names no table")
-    table = _bare(tables[0])
+    table = bare_name(tables[0])
     time_cols = {c for c, d in _table_columns(profile_entry, table).items() if _is_time(d)}
     primary = _primary_date(profile_entry, table)
     if primary:
@@ -367,7 +367,8 @@ def measure_sql(metric: Any, windows: list[Window], *, dialect: str = "duckdb",
                 by: Optional[str] = None) -> tuple[Optional[str], str]:
     """One statement measuring ``metric`` for every window — ``_w`` (the window's label),
     ``_g`` (the group, when ``by``), ``_v`` (the value), ``_first`` / ``_last`` (the first and
-    last day its rows cover). ``(sql, "")`` or ``(None, why)``; never raises."""
+    last day its rows cover), ``_n`` (the rows behind it). ``(sql, "")`` or ``(None, why)``;
+    never raises."""
     import sqlglot
     from sqlglot import exp
 
@@ -413,7 +414,9 @@ def measure_sql(metric: Any, windows: list[Window], *, dialect: str = "duckdb",
             cols.append(exp.alias_(exp.column(by), "_g"))
         cols += [exp.alias_(exp.paren(value.copy()), "_v"),
                  exp.alias_(exp.Min(this=day.copy()), "_first"),
-                 exp.alias_(exp.Max(this=day.copy()), "_last")]
+                 exp.alias_(exp.Max(this=day.copy()), "_last"),
+                 # the rows behind the figure — a segment of a few rows is "too few to call"
+                 exp.alias_(exp.Count(this=exp.Star()), "_n")]
         q = exp.select(*cols).from_(_table(tables[0], dialect)).where(
             exp.and_(*[f.copy() for f in filters], when))
         if by:
@@ -448,8 +451,8 @@ def _as_date(v) -> Optional[date]:
 
 def run_measure(metric: Any, windows: list[Window], run_sql: RunSql, *, dialect: str = "duckdb",
                 by: Optional[str] = None) -> tuple[list[dict], str]:
-    """Measure ``metric`` for every window. ``([{"window", "group", "value", "first", "last"}],
-    "")`` or ``([], why)`` — a failed query is said with its error, never read as zero."""
+    """Measure ``metric`` for every window. ``([{"window", "group", "value", "first", "last",
+    "n"}], "")`` or ``([], why)`` — a failed query is said with its error, never read as zero."""
     sql, why = measure_sql(metric, windows, dialect=dialect, by=by)
     if sql is None:
         return [], why
@@ -462,22 +465,27 @@ def run_measure(metric: Any, windows: list[Window], run_sql: RunSql, *, dialect:
     out = []
     for r in rows or []:
         cells = list(r.values()) if isinstance(r, dict) else list(r)
-        if len(cells) < (5 if by else 4):
+        if len(cells) < (6 if by else 5):
             continue
         g = cells[1] if by else None
-        v, first, last = cells[-3], cells[-2], cells[-1]
+        v, first, last, n = cells[-4], cells[-3], cells[-2], cells[-1]
         out.append({"window": str(cells[0]), "group": g, "value": _num(v),
-                    "first": _as_date(first), "last": _as_date(last)})
+                    "first": _as_date(first), "last": _as_date(last), "n": int(_num(n) or 0)})
     return out, ""
 
 
-def figure_status(metric: Any, window: Window, *, as_of: date, lag_days: int) -> str:
+def figure_status(metric: Any, window: Window, *, as_of: date, lag_days: int,
+                  unsettled: bool = False) -> str:
     """``to_date`` when the window reaches ``as_of`` (a month still under way); ``final`` once
     its last day has settled — the connection's lag for its rows, and for a cohort its
     maturity too; otherwise ``provisional``. A cohort with no known maturity stays
-    provisional: nobody has measured when its outcome stops arriving."""
+    provisional: nobody has measured when its outcome stops arriving. So does a figure read
+    from a table the platform has not yet seen stop changing (``unsettled``) — its lag is a
+    floor, not a lag; theLook's Day said "Final" beside prose that said none was (2026-09-26)."""
     if window.end > as_of:
         return "to_date"
+    if unsettled:
+        return "provisional"
     settle = max(int(lag_days or 1), 1)
     if _get(metric, "time_kind") == "cohort":
         maturity = _get(metric, "settles_after_days")
