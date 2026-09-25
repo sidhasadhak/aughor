@@ -3779,6 +3779,20 @@ limb, three movements:
 per held guard, what it means, what to change, and doors to Automations, the analysis, the Semantic Layer and
 Spotlight (the question carries the guard's own sentence and the departure id, the handoff this wave makes
 structural).
+**Live before-receipt, 2026-09-25 — the wave's baseline.** The Ask door's question (*"A departure was held by the
+Re-measure guard: 1,648.08 … not in analysis ecb56660 … what should I change so the next run sends? (departure
+073097487898, automation "The Look - Daily Briefing")"*) reached Spotlight twice (session-log traces `09dc6168`,
+`c162e555`) and both turns ended in *"I ran out of steps before reaching an answer (8 tool calls)"*. The route, read
+from `session_events`: `platform_help` (twice — it holds no law) → `platform_traces` (twice) → `list_monitors` →
+`search_graph` → `list_tables` / `search_documents` → `platform_runs` → `platform_premortem`. Not one tool on the
+roster can read a departure, an automation's effects or a law, so a platform question was answered with data tools
+until the step budget ran out. The done-when below therefore has a number to beat: the same question in at most two
+tool calls (`explain(departure, id)` + `platform_help("re-measure")`), measured the same way.
+**Order of work (the user, 2026-09-25: *"Lets take this the next time.."*):** (1) `explain` over departures first —
+the store read exists (`get_departure`) and the remedy table exists (`web/lib/departureRemedies.ts`), so the tool is
+a reader plus the law's sentence; (2) law 1's text into `platform_help` under the aliases "re-measure", "remeasure",
+"held"; (3) the Ask door sends `{kind: "departure", id}` structurally, so the router never parses it from prose;
+then automations and metrics by the same three moves.
 **Done when:** "what is re-measure and how do I unblock it", asked in the palette from a held row, answers with law 1
 in its own words, THIS departure's ungrounded numerals, the automation by name, and offers the revise; measured like
 SP-M — the share of held rows whose Ask door was used, from the session log, no model.
