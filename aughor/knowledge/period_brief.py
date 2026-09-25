@@ -153,12 +153,14 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
     ]
     lag = int(block.get("lag_days") or 1)
     if lag > 1 and block.get("lag_source") == "beyond_horizon":
-        tables = ", ".join(block.get("still_moving") or []) or "a table"
+        moving = list(block.get("still_moving") or [])
+        tables, verb, it = (", ".join(moving) or "a table",
+                            *(("were", "them") if len(moving) > 1 else ("was", "it")))
         lines.append(
             f"The {block['period']} ends {lag} days before today ({today.isoformat()}) because "
-            f"{tables} was still changing {lag - 1} days after a day ended, and the platform has "
-            "not yet seen it stop: figures read from it may still move. Say so in one plain "
-            "sentence, and do not call any of its figures final.")
+            f"{tables} {verb} still changing {lag - 1} days after a day ended, and the platform has "
+            f"not yet seen {it} stop: figures read from {it} may still move. Say so in one plain "
+            "sentence, and do not call any of those figures final.")
     elif lag > 1:
         why = ("the platform measured" if block.get("lag_source") == "learned"
                else "this source is configured with")

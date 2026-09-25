@@ -155,7 +155,7 @@ def test_a_range_briefing_measures_the_approved_metrics_and_names_the_rest(con, 
     assert rev["status"] == "final" and rev["time_kind"] == "flow"
     assert rev["time_source"].startswith("set automatically: created_at is the main date of orders")
     assert {u["name"]: u["reason"] for u in block["unmeasured"]} == {
-        "Gross margin": "no approved definition — approve one in the Semantic Layer to measure it"}
+        "Gross margin": "no approved definition; approve one in the Semantic Layer to measure it"}
     system, user = narrator.calls[-1]
     assert "2026-08-17 to 2026-08-26 (10 days)" in user and "CUSTOM RANGE" in user
     assert briefing_mod._store().get("c1#range:custom:2026-08-17..2026-08-26")

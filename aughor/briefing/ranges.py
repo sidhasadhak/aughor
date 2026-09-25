@@ -259,7 +259,7 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     for ns in north_stars or []:
         ns_name = ns.get("name") if isinstance(ns, dict) else getattr(ns, "name", "")
         if ns_name and _norm(ns_name) not in seen:
-            unmeasured.append({"name": ns_name, "reason": "no approved definition — approve one in the "
+            unmeasured.append({"name": ns_name, "reason": "no approved definition; approve one in the "
                                                           "Semantic Layer to measure it"})
     return {"measured": measured, "unmeasured": unmeasured}
 

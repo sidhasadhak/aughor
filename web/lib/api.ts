@@ -5571,8 +5571,9 @@ export interface BriefingNarrativeResponse {
    *  otherwise a retained brief from a previous schema is undetectable. Absent on briefs
    *  cached before this field existed → the client falls back to not trusting them. */
   scope_key?: string;
-  /** Present only on a period brief (idea 3): the window it covers and what it measured. */
-  period?: BriefingPeriodBlock;
+  /** Present only on a period brief (idea 3), or a range brief (Arc BR-3 — `isRangeBlock`):
+   *  the window it covers and what it measured. */
+  period?: BriefingPeriodBlock | BriefingRangeBlock;
 }
 
 /** PENDING item 9 — the company-brain map: every store behind what Aughor knows, as a box with a
@@ -5673,6 +5674,106 @@ export interface BriefingPeriodBlock {
   still_moving?: string[];
   measured: BriefingPeriodMeasure[];
   unmeasured: { name: string; reason: string }[];
+}
+
+/** Arc BR-3 — a Briefing for any range (`briefing.ranges`). "standing" is the view of
+ *  everything the platform knows; the presets resolve on the server against the connection's
+ *  settling lag; "custom" carries its first and last day (inclusive, ISO). */
+export type RangePreset =
+  | "yesterday" | "last_week" | "last_month" | "last_year"
+  | "month_to_date" | "year_to_date" | "custom";
+
+export interface BriefingRange {
+  preset: RangePreset;
+  start?: string;
+  end?: string;
+}
+
+export interface BriefingRangeMeasure {
+  name: string;
+  metric: string;
+  unit: string;
+  time_kind: "flow" | "stock" | "cohort";
+  time_source?: string | null;
+  confirmed: boolean;
+  current: number | null;
+  previous: number | null;
+  last_year: number | null;
+  rel: number | null;
+  rel_last_year: number | null;
+  status: "final" | "provisional" | "to_date";
+  current_partial?: string | null;
+  previous_partial?: string | null;
+  current_text?: string;
+  previous_text?: string;
+  last_year_text?: string;
+}
+
+export interface BriefingRangeBlock {
+  period: string;
+  key: string;
+  preset: RangePreset;
+  label: string;
+  start: string;
+  end: string;
+  last_day: string;
+  previous_start: string;
+  previous_end: string;
+  last_year_start: string | null;
+  last_year_end: string | null;
+  as_of: string;
+  lag_days: number;
+  lag_source: "learned" | "beyond_horizon" | "default";
+  still_moving: string[];
+  covers: string;
+  compared_with: string;
+  last_year_label: string | null;
+  measured: BriefingRangeMeasure[];
+  unmeasured: { name: string; reason: string }[];
+}
+
+export function isRangeBlock(p: BriefingPeriodBlock | BriefingRangeBlock | undefined | null): p is BriefingRangeBlock {
+  return !!p && typeof (p as BriefingRangeBlock).key === "string";
+}
+
+function rangeQuery(range: BriefingRange, schema?: string, workspaceId?: string, refresh = false): string {
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  if (range.preset === "custom") {
+    if (range.start) q.set("start", range.start);
+    if (range.end) q.set("end", range.end);
+  } else {
+    q.set("preset", range.preset);
+  }
+  return q.toString();
+}
+
+/** A READ never builds: the range's Briefing as last built, or `built: false`. */
+export async function readRangeBriefing(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<BriefingNarrativeResponse & { built?: boolean }> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to read the briefing for this range");
+  }
+  return res.json();
+}
+
+/** Build (or return the fresh cached) Briefing for a range — runs its queries and one narrator call. */
+export async function buildRangeBriefing(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string, refresh = false,
+): Promise<BriefingNarrativeResponse> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing?${rangeQuery(range, schema, workspaceId, refresh)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to build the briefing for this range");
+  }
+  return res.json();
 }
 
 export async function generateBriefingNarrative(
