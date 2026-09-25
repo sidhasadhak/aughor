@@ -2,9 +2,14 @@
 import { ErrorState } from "@/components/ui/states";
 
 /**
- * Agentic Ops · Agents — ONE kind-labelled roster over both agent kinds, with a
- * master–detail body. Consolidates three surfaces that each held a slice of the
- * same question (AgentOverviewPanel, AgentsAdminPanel, page.tsx's AgentsPanel):
+ * Agentic Ops · Agents — ONE kind-labelled roster over both agent kinds. Since 2026-09-25
+ * (the user: "the click on the agent must go to that particular Agent") the roster is an
+ * INDEX and an agent is a PAGE: a breadcrumb back to the index, the name with its chips
+ * and actions, tabs (Overview · Runs · Map · Quality · Setup), and on Overview a details
+ * rail beside the body. Nothing opens inside the Overview layer; it opens here. The
+ * master–detail split it replaced kept a 268px list beside every agent and squeezed the
+ * agent's header into what was left. Consolidates three surfaces that each held a slice
+ * of the same question (AgentOverviewPanel, AgentsAdminPanel, page.tsx's AgentsPanel):
  *
  * - charter (built-in, job-metering spend): detail = identity read-out +
  *   GOVERNANCE (enabled / budget / model pin — the real knobs; there are no
@@ -86,16 +91,17 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
   const [selected, setSelected] = useState<Selection>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // True once both lists have answered (either way), so a focused agent that has not
+  // arrived yet reads as loading rather than as the index for a moment.
+  const [loaded, setLoaded] = useState(false);
   const reload = useCallback(() => {
-    getAgents(workspaceId).then(setCharters).catch(() => setCharters([]));
-    listUserAgents().then(setPersonas).catch(() => setPersonas([]));
+    Promise.allSettled([
+      getAgents(workspaceId).then(setCharters).catch(() => setCharters([])),
+      listUserAgents().then(setPersonas).catch(() => setPersonas([])),
+    ]).then(() => setLoaded(true));
   }, [workspaceId]);
 
   useEffect(() => { reload(); }, [reload]);
-  useEffect(() => {
-    setSelected(prev => prev ?? (personas[0] ? { kind: "persona", id: personas[0].id }
-      : charters[0] ? { kind: "charter", id: charters[0].id } : null));
-  }, [personas, charters]);
   useEffect(() => {
     if (focusAgent) setSelected({ kind: focusAgent.kind, id: focusAgent.id });
   }, [focusAgent]);
@@ -108,78 +114,114 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
   const persona = selected?.kind === "persona"
     ? personas.find(p => p.id === selected.id) : undefined;
 
+  const back = () => setSelected(null);
   return (
-    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-      {/* ── the one roster ── */}
-      <div style={{ width: 268, flexShrink: 0, borderRight: "1px solid var(--b1)",
-        overflowY: "auto", padding: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "2px 6px 8px" }}>
-          <span className="aug-label" style={{ color: "var(--t2)" }}>Custom agents</span>
-          <span style={{ flex: 1 }} />
-          <Button variant="secondary" size="xs"
-            onClick={() => setSelected({ kind: "hire" })}>+ Create agent</Button>
-        </div>
-        {personas.length === 0 && (
-          <div style={{ padding: "0 6px 10px" }}>
-            <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 6px" }}>
-              No custom agents yet. An agent is a scope and a stance — where it may look,
-              and how it should think.
-            </p>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <Button variant="secondary" size="xs"
-                onClick={() => setSelected({ kind: "hire" })}>Create your first agent</Button>
-              {/* SP-2 — the in-context summon: the question is met where it arises.
-                  The draft stages in the inbox; nothing is created until accepted. */}
-              <Button variant="ghost" size="xs"
-                onClick={() => askSpotlight(
-                  "Help me create my first agent: walk me through it, then draft it "
-                  + "and stage it for my approval.")}>Ask Spotlight to draft one</Button>
-            </div>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+      {error && (
+        <ErrorState kind="Agent action failed" what={error} style={{ margin: "12px 20px 0" }} />
+      )}
+      {selected == null ? (
+        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName}
+          onOpen={setSelected} onCreate={() => setSelected({ kind: "hire" })} />
+      ) : selected.kind === "hire" ? (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <PageHeader onBack={back} title="New agent" />
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <CreateAgentFlow
+              onCreated={a => { reload(); setSelected({ kind: "persona", id: a.id }); }}
+              onCancel={back} />
           </div>
-        )}
-        {personas.map(p => (
-          <RosterRow key={p.id} name={p.name} kind="persona" enabled={p.enabled}
-            sub={evalChip(p.last_eval, p.eval_basis)?.label}
-            active={selected?.kind === "persona" && selected.id === p.id}
-            onClick={() => setSelected({ kind: "persona", id: p.id })} />
-        ))}
-        <div className="aug-label" style={{ color: "var(--t2)", padding: "12px 6px 8px" }}>
-          Charters {workspaceName ? `· ${workspaceName}` : "· Org"}
         </div>
-        {charters.map(c => (
-          <RosterRow key={c.id} name={c.name} kind="charter"
-            enabled={c.governance.enabled} sub={c.role} reserved={c.reserved}
-            active={selected?.kind === "charter" && selected.id === c.id}
-            onClick={() => setSelected({ kind: "charter", id: c.id })} />
-        ))}
-      </div>
+      ) : persona ? (
+        <AgentDetail key={persona.id} agent={persona} onBack={back} onChanged={reload}
+          onDeleted={() => { setSelected(null); reload(); }}
+          onError={setError} onOpenTrace={onOpenTrace}
+          onOpenConnection={onOpenConnection}
+          onOpenAutomations={onOpenAutomations}
+          onOpenIntegrations={onOpenIntegrations}
+          onChatWithAgent={onChatWithAgent} />
+      ) : charter ? (
+        <CharterDetail key={charter.id} charter={charter} workspaceId={workspaceId} range={range}
+          onBack={back} onChanged={reload} onError={setError} />
+      ) : !loaded ? (
+        <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t3)" }}>Loading the agent…</div>
+      ) : (
+        // The selection names an agent the lists no longer hold (deleted elsewhere): the index.
+        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName}
+          onOpen={setSelected} onCreate={() => setSelected({ kind: "hire" })} />
+      )}
+    </div>
+  );
+}
 
-      {/* ── detail ── */}
-      <div style={{ flex: 1, overflowY: "auto" }}>
-        {error && (
-          <ErrorState kind="Agent action failed" what={error} style={{ margin: "12px 20px 0" }} />
-        )}
-        {selected?.kind === "hire" ? (
-          <CreateAgentFlow
-            onCreated={a => { reload(); setSelected({ kind: "persona", id: a.id }); }}
-            onCancel={() => setSelected(personas[0]
-              ? { kind: "persona", id: personas[0].id }
-              : charters[0] ? { kind: "charter", id: charters[0].id } : null)} />
-        ) : persona ? (
-          <AgentDetail key={persona.id} agent={persona} onChanged={reload}
-            onDeleted={() => { setSelected(null); reload(); }}
-            onError={setError} onOpenTrace={onOpenTrace}
-            onOpenConnection={onOpenConnection}
-            onOpenAutomations={onOpenAutomations}
-            onOpenIntegrations={onOpenIntegrations}
-            onChatWithAgent={onChatWithAgent} />
-        ) : charter ? (
-          <CharterDetail key={charter.id} charter={charter} workspaceId={workspaceId} range={range}
-            onChanged={reload} onError={setError} />
-        ) : (
-          <div style={{ padding: 24, fontSize: 12, color: "var(--t3)" }}>Select an agent.</div>
-        )}
+/** The index — every agent, one row each, kind-labelled. A row opens the agent's page. */
+function AgentIndex({ personas, charters, workspaceName, onOpen, onCreate }: {
+  personas: UserAgent[]; charters: AgentRosterEntry[]; workspaceName?: string;
+  onOpen: (s: Selection) => void; onCreate: () => void;
+}) {
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+      <div style={{ maxWidth: 760, display: "flex", flexDirection: "column", gap: 20 }}>
+        <section>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+            <span className="aug-label">Custom agents</span>
+            <span style={{ flex: 1 }} />
+            <Button variant="secondary" size="xs" onClick={onCreate}>+ Create agent</Button>
+          </div>
+          {personas.length === 0 && (
+            <div style={{ padding: "0 0 10px" }}>
+              <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 6px" }}>
+                No custom agents yet. An agent is a scope and a stance — where it may look,
+                and how it should think.
+              </p>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <Button variant="secondary" size="xs" onClick={onCreate}>Create your first agent</Button>
+                {/* SP-2 — the in-context summon: the question is met where it arises.
+                    The draft stages in the inbox; nothing is created until accepted. */}
+                <Button variant="ghost" size="xs"
+                  onClick={() => askSpotlight(
+                    "Help me create my first agent: walk me through it, then draft it "
+                    + "and stage it for my approval.")}>Ask Spotlight to draft one</Button>
+              </div>
+            </div>
+          )}
+          {personas.map(p => (
+            <RosterRow key={p.id} name={p.name} kind="persona" enabled={p.enabled}
+              sub={evalChip(p.last_eval, p.eval_basis)?.label}
+              active={false}
+              onClick={() => onOpen({ kind: "persona", id: p.id })} />
+          ))}
+        </section>
+        <section>
+          <div className="aug-label" style={{ marginBottom: 8 }}>
+            Charters {workspaceName ? `· ${workspaceName}` : "· Org"}
+          </div>
+          {charters.map(c => (
+            <RosterRow key={c.id} name={c.name} kind="charter"
+              enabled={c.governance.enabled} sub={c.role} reserved={c.reserved}
+              active={false}
+              onClick={() => onOpen({ kind: "charter", id: c.id })} />
+          ))}
+        </section>
       </div>
+    </div>
+  );
+}
+
+/** A detail page's own header: the breadcrumb back to the index, the name, its chips, and
+ *  its actions on one 44px row. Tabs sit under it (`.aug-tabs`), never inside it. */
+function PageHeader({ onBack, title, chips, actions }: {
+  onBack: () => void; title: string; chips?: React.ReactNode; actions?: React.ReactNode;
+}) {
+  return (
+    <div className="aug-page-header">
+      <Button variant="link" size="xs" onClick={onBack} style={{ padding: 0 }}
+        title="Back to every agent">Agents</Button>
+      <span aria-hidden style={{ color: "var(--t4)" }}>/</span>
+      <h1 className="aug-content-title" style={{ margin: 0 }}>{title}</h1>
+      {chips}
+      <span style={{ flex: 1 }} />
+      {actions}
     </div>
   );
 }
@@ -212,9 +254,9 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
 
 // ── custom-agent detail ───────────────────────────────────────────────────────────────
 
-function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
+function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace,
   onOpenConnection, onOpenAutomations, onOpenIntegrations, onChatWithAgent }: {
-  agent: UserAgent; onChanged: () => void; onDeleted: () => void;
+  agent: UserAgent; onBack: () => void; onChanged: () => void; onDeleted: () => void;
   onError: (e: string | null) => void;
   onOpenTrace?: (investigationId: string) => void;
   /** DS-5 — where the map's nodes lead. Optional: a destination this shell does not
@@ -224,11 +266,12 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
   onOpenIntegrations?: () => void;
   onChatWithAgent?: (agentId: string) => void;
 }) {
-  const [tab, setTab] = useState<"overview" | "map" | "benchmark" | "configure">("overview");
+  type Tab = "overview" | "runs" | "map" | "quality" | "setup";
+  const [tab, setTab] = useState<Tab>("overview");
   const [busy, setBusy] = useState(false);
-  // PX-5 — grounding is NAMED in the header, in the reader's words: the connection's
-  // NAME (an id like `baef6c3e` tells a reader nothing), the documents, the packs,
-  // the grants. One line, composed only of what this agent actually holds.
+  // PX-5 — grounding is NAMED, in the reader's words: the connection's NAME (an id like
+  // `baef6c3e` tells a reader nothing), the documents, the packs, the grants. One line,
+  // composed only of what this agent actually holds; the rail spells each one out.
   const [connName, setConnName] = useState<string>("");
   useEffect(() => {
     if (!agent.connection_id) { setConnName(""); return; }
@@ -253,61 +296,185 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
     finally { setBusy(false); }
   };
 
+  const chip = evalChip(agent.last_eval, agent.eval_basis);
+  // Overview · Runs · Map · Quality · Setup — "Quality", because the golden suite measures
+  // the agent against its own reference SQL (never a judge); "Setup", because that tab is
+  // where a person sets what the agent is. Both names are the mockup's (boards 6–11).
+  const TABS: { id: Tab; label: string }[] = [
+    { id: "overview", label: "Overview" }, { id: "runs", label: "Runs" }, { id: "map", label: "Map" },
+    { id: "quality", label: "Quality" }, { id: "setup", label: "Setup" },
+  ];
+
   return (
-    <div style={{ padding: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
-          <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}
-            data-testid="agent-grounding">
-            {grounding}
-          </div>
-        </div>
-        {(() => {
-          const chip = evalChip(agent.last_eval, agent.eval_basis);
-          return chip && (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <PageHeader onBack={onBack} title={agent.name}
+        chips={<>
+          <StatusChip hue="accent" strength="soft">custom agent</StatusChip>
+          {chip && (
             <span title={chip.detail}>
               <StatusChip hue={chip.hue} strength="soft">{chip.label}</StatusChip>
             </span>
-          );
-        })()}
-        <StatusChip hue={agent.enabled ? "positive" : "caution"} strength="soft">
-          {agent.enabled ? "active" : "paused"}
-        </StatusChip>
-        <Button variant="ghost" size="xs" disabled={busy} onClick={togglePause}>
-          {agent.enabled ? "Pause" : "Resume"}
-        </Button>
-        {/* PX-5 — the agent surface completed: this page could monitor and
-            benchmark the agent but not TALK to it. Chat leads. */}
-        {onChatWithAgent && (
-          <Button variant="default" size="xs" data-testid="agent-chat"
-            onClick={() => onChatWithAgent(agent.id)}>Chat</Button>
-        )}
-        <Button variant={tab === "overview" ? "secondary" : "ghost"} size="xs"
-          onClick={() => setTab("overview")}>Overview</Button>
-        {/* DS-5 — "Map", not "Design": that word is the automation card's button and the
-            automation canvas's own mode label, and this surface edits nothing. */}
-        <Button variant={tab === "map" ? "secondary" : "ghost"} size="xs"
-          onClick={() => setTab("map")}>Map</Button>
-        <Button variant={tab === "benchmark" ? "secondary" : "ghost"} size="xs"
-          onClick={() => setTab("benchmark")}>Benchmark</Button>
-        <Button variant={tab === "configure" ? "secondary" : "ghost"} size="xs"
-          onClick={() => setTab("configure")}>Configure</Button>
+          )}
+          <StatusChip hue={agent.enabled ? "positive" : "caution"} strength="soft">
+            {agent.enabled ? "active" : "paused"}
+          </StatusChip>
+        </>}
+        actions={<>
+          {/* PX-5 — the agent surface completed: this page could monitor and
+              benchmark the agent but not TALK to it. Chat leads. */}
+          {onChatWithAgent && (
+            <Button variant="default" size="xs" data-testid="agent-chat"
+              onClick={() => onChatWithAgent(agent.id)}>Chat</Button>
+          )}
+          <Button variant="ghost" size="xs" disabled={busy} onClick={togglePause}>
+            {agent.enabled ? "Pause" : "Resume"}
+          </Button>
+        </>} />
+      <div className="aug-tabs" role="tablist" aria-label="Agent views"
+        style={{ padding: "0 20px", flexShrink: 0 }}>
+        {TABS.map(t => (
+          <Button key={t.id} role="tab" aria-selected={tab === t.id} variant="ghost" size="sm"
+            className="aug-tab" onClick={() => setTab(t.id)}>{t.label}</Button>
+        ))}
       </div>
-      {tab === "overview" ? (
-        <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
-      ) : tab === "benchmark" ? (
-        <AgentBenchmark agent={agent} onChanged={onChanged} onError={onError} />
-      ) : tab === "map" ? (
-        <AgentMap agent={agent}
-          onOpenConnection={onOpenConnection}
-          onOpenAutomations={onOpenAutomations}
-          onOpenIntegrations={onOpenIntegrations} />
-      ) : (
-        <PersonaConfigure agent={agent} onChanged={onChanged}
-          onDeleted={onDeleted} onError={onError} />
-      )}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+        <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 20 }}>
+          {tab === "overview" ? (
+            <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
+          ) : tab === "runs" ? (
+            <PersonaRuns agent={agent} onOpenTrace={onOpenTrace} />
+          ) : tab === "quality" ? (
+            <AgentBenchmark agent={agent} onChanged={onChanged} onError={onError} />
+          ) : tab === "map" ? (
+            /* DS-5 — "Map", not "Design": that word is the automation card's button and the
+               automation canvas's own mode label, and this surface edits nothing. */
+            <AgentMap agent={agent}
+              onOpenConnection={onOpenConnection}
+              onOpenAutomations={onOpenAutomations}
+              onOpenIntegrations={onOpenIntegrations} />
+          ) : (
+            <PersonaConfigure agent={agent} onChanged={onChanged}
+              onDeleted={onDeleted} onError={onError} />
+          )}
+        </div>
+        {tab === "overview" && (
+          <AgentRail agent={agent} grounding={grounding} connName={connName}
+            onSetup={() => setTab("setup")} />
+        )}
+      </div>
     </div>
+  );
+}
+
+/** The page's details rail — what the agent IS, named (never an id where a name exists),
+ *  beside what it did. Setup edits it; this reads it. */
+function AgentRail({ agent, grounding, connName, onSetup }: {
+  agent: UserAgent; grounding: string; connName: string; onSetup: () => void;
+}) {
+  const [documents, setDocuments] = useState<DocumentEntry[]>([]);
+  const [packs, setPacks] = useState<PackSummary[]>([]);
+  useEffect(() => {
+    let alive = true;
+    listDocuments().then(d => { if (alive) setDocuments(d); }).catch(() => {});
+    getPacks().then(r => { if (alive) setPacks(r.packs || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const docName = (id: string) => {
+    const d = documents.find(x => x.doc_id === id);
+    return d ? (d.title || d.filename) : null;
+  };
+  const packName = (id: string) => packs.find(x => x.id === id)?.name ?? null;
+  // A bound thing whose name has not loaded yet reads as a count, never as its id.
+  const named = (ids: string[], name: (id: string) => string | null, noun: string) => {
+    if (ids.length === 0) return "none";
+    const names = ids.map(name);
+    return names.every(Boolean) ? names.join(", ") : countNoun(ids.length, noun);
+  };
+  const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
+    <div className="aug-rail-row"><span>{k}</span><span>{v}</span></div>
+  );
+  return (
+    <aside aria-label="Agent details" className="aug-rail">
+      <div className="aug-rail-head">
+        <span className="aug-text-h3">Details</span>
+        <span style={{ flex: 1 }} />
+        <Button variant="link" size="xs" onClick={onSetup} style={{ padding: 0 }}>Open Setup</Button>
+      </div>
+      <div className="aug-fs-sm" data-testid="agent-grounding"
+        style={{ color: "var(--t2)", marginBottom: 6, lineHeight: 1.5 }}>{grounding}</div>
+      <Row k="Connection" v={connName || <span style={{ color: "var(--t2)" }}>any — the asker&rsquo;s connection</span>} />
+      <Row k="Schema scope" v={agent.schema_scope || <span style={{ color: "var(--t2)" }}>all schemas</span>} />
+      <Row k="Documents" v={named(agent.doc_ids, docName, "document")} />
+      <Row k="Packs" v={named(agent.pack_ids, packName, "pack")} />
+      <Row k="May propose" v={agent.tool_grants.length ? (
+        <>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{agent.tool_grants.join(", ")}</span>
+          <span style={{ color: "var(--t3)" }}> · proposes, never executes</span>
+        </>
+      ) : <span style={{ color: "var(--t2)" }}>nothing — no grants</span>} />
+      <Row k="State" v={agent.enabled ? "enabled" : "paused — keeps its history, answers nothing"} />
+      <Row k="Owner" v={agent.owner || <span style={{ color: "var(--t2)" }}>unowned</span>} />
+      <Row k="History" v={`created ${formatTimestamp(agent.created_at, "short")} · updated ${formatTimestamp(agent.updated_at, "short")}`} />
+      <div className="aug-label" style={{ margin: "14px 0 6px" }}>Instructions</div>
+      {agent.instructions ? (
+        <div style={{ padding: "10px 12px", background: "var(--code-bg)", border: "1px solid var(--b1)",
+          borderRadius: "var(--r2)", fontSize: 13, color: "var(--t2)", lineHeight: 1.5,
+          whiteSpace: "pre-wrap" }}>
+          {agent.instructions}
+        </div>
+      ) : (
+        <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No instructions — the agent answers on the platform&rsquo;s defaults.</div>
+      )}
+    </aside>
+  );
+}
+
+/** The Runs tab — every run this agent made, as a ledger. Each question is a door to
+ *  its trace; nothing opens inside the ledger. */
+function PersonaRuns({ agent, onOpenTrace }: {
+  agent: UserAgent; onOpenTrace?: (invId: string) => void;
+}) {
+  const [obs, setObs] = useState<AgentObservability | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    getAgentObservability(agent.id)
+      .then(o => { if (alive) setObs(o); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [agent.id]);
+  if (loading) return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</div>;
+  const runs = obs?.runs ?? [];
+  if (runs.length === 0) {
+    return <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No runs yet for this agent.</div>;
+  }
+  return (
+    <table className="aug-dt" style={{ width: "100%" }}>
+      <thead>
+        <tr>
+          <th>Started</th><th>Question</th><th>Kind</th><th>Status</th>
+          <th className="num">Queries</th><th aria-label="Open"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {runs.map(r => (
+          <tr key={r.id}>
+            <td style={{ color: "var(--t2)" }}>{formatTimestamp(r.started_at, "short")}</td>
+            <td style={{ whiteSpace: "normal", maxWidth: 560 }}>{r.headline || r.question}</td>
+            <td><StatusChip hue="muted" strength="soft">{r.kind === "chat" ? "quick" : "deep"}</StatusChip></td>
+            <td><StatusChip hue={STATUS_HUE[r.status] ?? "muted"}>{r.status}</StatusChip></td>
+            <td className="num">{formatCount(r.query_count)}</td>
+            <td>
+              {onOpenTrace && r.kind !== "chat" && (
+                <Button variant="link" size="xs" onClick={() => onOpenTrace(r.id)}
+                  title="Open this run's trace" style={{ padding: 0 }}>Trace</Button>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -338,13 +505,6 @@ function PersonaOverview({ agent, onOpenTrace }: {
 
   return (
     <>
-      {agent.instructions && (
-        <div style={{ padding: "10px 14px", background: "var(--bg-2)",
-          border: "1px solid var(--b1)", borderRadius: "var(--r3)", fontSize: 12,
-          color: "var(--t2)", lineHeight: 1.5, marginBottom: 14, whiteSpace: "pre-wrap" }}>
-          {agent.instructions}
-        </div>
-      )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
         <Tile label="Runs" value={String(obs.run_count)}
           sub={runs.length ? `${deep} deep · ${quick} quick` : "none yet"} />
@@ -982,8 +1142,8 @@ export function AgentConfigHistory({ agent, onChanged, onError }: {
  *  budgets, model pin. Temperature/topP/tool toggles are deliberately absent —
  *  the transport pins temperature platform-wide and capabilities are
  *  governance, not UI switches. */
-function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
-  charter: AgentRosterEntry; workspaceId?: string;
+function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range }: {
+  charter: AgentRosterEntry; workspaceId?: string; onBack: () => void;
   onChanged: () => void; onError: (e: string | null) => void;
   range?: TimeRange;
 }) {
@@ -1020,31 +1180,30 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
 
   const gov = charter.governance;
   return (
-    <div style={{ padding: 20, maxWidth: 720 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>{charter.name}</div>
-          <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
-            charter · {charter.lane} · {charter.role}
-          </div>
-        </div>
-        {charter.reserved ? (
-          <StatusChip hue="muted" strength="soft">reserved — wiring soon</StatusChip>
-        ) : charter.lane === "background" ? (
-          <>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <PageHeader onBack={onBack} title={charter.name}
+        chips={<>
+          <StatusChip hue="info" strength="soft">charter</StatusChip>
+          {charter.reserved ? (
+            <StatusChip hue="muted" strength="soft">reserved — wiring soon</StatusChip>
+          ) : charter.lane === "background" ? (
             <StatusChip hue={gov.enabled ? "positive" : "caution"} strength="soft">
               {gov.enabled ? "active" : "paused"}
             </StatusChip>
-            <Button variant="ghost" size="xs" disabled={busy}
-              onClick={() => patch({ enabled: !gov.enabled })}>
-              {gov.enabled ? "Pause" : "Resume"}
-            </Button>
-          </>
-        ) : (
-          <StatusChip hue="muted" strength="soft">always on — user-initiated</StatusChip>
-        )}
-      </div>
-      <div style={{ fontSize: 12, color: "var(--t2)", marginBottom: 12 }}>{charter.goal}</div>
+          ) : (
+            <StatusChip hue="muted" strength="soft">always on — user-initiated</StatusChip>
+          )}
+        </>}
+        actions={!charter.reserved && charter.lane === "background" ? (
+          <Button variant="ghost" size="xs" disabled={busy}
+            onClick={() => patch({ enabled: !gov.enabled })}>
+            {gov.enabled ? "Pause" : "Resume"}
+          </Button>
+        ) : null} />
+    <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+    <div style={{ maxWidth: 720 }}>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 4 }}>{charter.lane} · {charter.role}</div>
+      <div style={{ fontSize: 13, color: "var(--t2)", marginBottom: 12 }}>{charter.goal}</div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
         {charter.job_kinds.map(k => <span key={k} className="aug-tag aug-tag-blue">{k}</span>)}
@@ -1093,6 +1252,8 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
           </div>
         </div>
       )}
+    </div>
+    </div>
     </div>
   );
 }

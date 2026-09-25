@@ -688,6 +688,18 @@ active segment and rail item — and the new `.aug-toolbar` row. `Workspace.tool
 the header instead of beside the layer switcher (§2.3's HIGH). The filled button reads `--primary`, so it is Excel
 green in light and Databricks blue in dark. Seven gates, `tsc --noEmit` and the web suite pass.
 
-Not yet, in order: state as a cell fill in light and a pill in dark (`StatusChip`); the selected tile's outline
-(`StatTile`); the Briefing's formatted figures and named ids (UI-3); the header diet and the context bar (UI-2); the
-agent page's Overview, Runs and Setup as drawn (boards 6–11) over `AgenticAgentsPanel`.
+**The second movement, the same day.** `StatusChip` is a 12 px Inter pill in dark and a borderless cell fill in light
+(the `aug-chip` rule); the open `StatTile` wears `--accent` on `--bg-sel`, with Excel's 2 px outline in light. **The
+agent's own page is live** (`AgenticAgentsPanel`): the Roster is an index — one row per agent, kind-labelled — and
+a row opens the agent as a page: a 44 px header with the breadcrumb back to Agents, the name, its chips (kind · the
+golden pass chip · active/paused) and its actions (Chat, Pause), then tabs Overview · Runs · Map · Quality · Setup
+(`.aug-tabs`, the accent underline), then the body. Overview keeps the honest run view and gains a 360 px details
+rail — connection, schema scope, documents and packs BY NAME (a count until the names load, never an id), what it
+may propose (never execute), state, owner, created/updated, the instructions. Runs is a `.aug-dt` ledger of every
+run with a Trace door per deep run. Quality is the golden suite (was "Benchmark"), Setup the form (was "Configure",
+with guardrails and the configuration history still inside it). Charters wear the same header. Nothing opens
+inside the Overview layer; the click on an agent arrives here. Not drawn from the mockup: the held-answers strip,
+a Revisions tab (history lives in Setup), a Departures tab.
+
+Not yet, in order: the Briefing's formatted figures and named ids (UI-3); the header diet and the context bar
+(UI-2); the Intelligence header's ten controls at 1024; the density preference.

@@ -62,15 +62,20 @@ export function StatTile({
   const fav = delta?.favorable;
   const deltaColor = fav == null ? "var(--t3)" : fav ? "var(--grn4)" : "var(--red4)";
   const deltaBg    = fav == null ? "var(--bg-3)" : fav ? "var(--grn1)" : "var(--red1)";
-  const border = `1px solid ${open ? accent : "var(--b1)"}`;
+  // The open tile wears the skin's own selection colour (INSTRUMENT.md §4 item 5): a blue
+  // edge on the navy tint in dark, and in light the green tint with Excel's 2px outline —
+  // the outline is the `.aug-tile[data-open]` rule at the end of globals.css.
+  const border = `1px solid ${open ? "var(--accent)" : "var(--b1)"}`;
   return (
     <div
+      className="aug-tile"
+      data-open={open ? "true" : undefined}
       onClick={onClick}
       title={title}
       style={{
         position: "relative", flex: `1 1 ${flexBasis}px`, minWidth,
         padding: "11px 13px", paddingLeft: accentBar ? 15 : 13,
-        borderRadius: "var(--r2)", background: open ? "var(--bg-3)" : "var(--bg-2)",
+        borderRadius: "var(--r2)", background: open ? "var(--bg-sel)" : "var(--bg-2)",
         // Explicit per-side borders (not the `border` shorthand) so React never warns about
         // mixing shorthand + longhand across rerenders.
         borderTop: border, borderRight: border, borderBottom: border, borderLeft: border,
