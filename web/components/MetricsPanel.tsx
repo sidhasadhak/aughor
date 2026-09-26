@@ -18,6 +18,7 @@ import {
   getMetricProposals,
   type CatalogueMetric,
   type MetricProposals,
+  type MetricStatementOption,
   type Metric,
   type MetricValidationResult,
   type MetricFreshnessResult,
@@ -499,11 +500,16 @@ export function MetricsPanel({ connId }: { connId?: string }) {
   // What the platform proposes for the definition being edited (the user, 2026-09-26: the
   // SQL field holds the whole runnable statement, and the dates are those of the table it
   // reads). Read for an EXISTING metric from the SQL in the field — so a FROM typed just now
-  // is what the dates follow — and, for a row stored as an expression, its one runnable
-  // statement goes into the field and is said to be proposed until it is saved; several
-  // (a column carried by two tables) are offered under the field for the person to pick.
+  // is what the dates follow — and, for a row stored as an expression, the runnable
+  // statement goes into the field and is said to be proposed until it is saved. When a
+  // column is carried by two tables the first (largest) is filled in and the others are
+  // offered as a switch — the field always holds something runnable (the user, 2026-09-26:
+  // "still cannot see the entire SQL"). Kept by metric name, so a proposal never outlives
+  // the row it was made for.
   const [proposals, setProposals] = useState<MetricProposals | null>(null);
-  const [proposed, setProposed] = useState<{ from: string; statement: string } | null>(null);
+  const [proposed, setProposed] = useState<{
+    metric: string; from: string; statement: string; options: MetricStatementOption[]; note: string;
+  } | null>(null);
   useEffect(() => {
     if (adding || !selected) { setProposals(null); setProposed(null); return; }
     const stored = metrics.find((m) => m.name === selected);
@@ -515,9 +521,9 @@ export function MetricsPanel({ connId }: { connId?: string }) {
           parseList(form.tables), parseList(form.filters), form.name || "value");
         if (!live) return;
         setProposals(r);
-        if (!isStatement(sql) && r.statements.length === 1) {
+        if (!isStatement(sql) && r.statements.length >= 1) {
           const statement = r.statements[0].statement;
-          setProposed({ from: sql, statement });
+          setProposed({ metric: selected, from: sql, statement, options: r.statements, note: r.statement_note });
           setForm((f) => (f.sql === sql ? { ...f, sql: statement } : f));
         }
       } catch { if (live) setProposals(null); }
@@ -706,20 +712,23 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 value={form.sql}
                 onChange={(e) => setForm({ ...form, sql: e.target.value })}
               />
-              {!adding && proposed && form.sql === proposed.statement && (
-                <p className="aug-fs-xs text-zinc-500" data-testid="metric-statement-proposed">
-                  Proposed by the platform from the stored expression — save to keep it.
-                </p>
-              )}
-              {!adding && proposals && proposals.statements.length > 1 && (
-                <div className="flex flex-wrap items-center gap-2" data-testid="metric-statement-options">
-                  <span className="aug-fs-xs text-zinc-500">{proposals.statement_note}</span>
-                  {proposals.statements.map((o) => (
-                    <Button key={o.table} size="sm" variant="secondary" title={o.why}
-                      onClick={() => { setProposed({ from: form.sql, statement: o.statement }); setForm({ ...form, sql: o.statement }); }}>
-                      over {o.table}
-                    </Button>
-                  ))}
+              {!adding && proposed && proposed.metric === selected && form.sql === proposed.statement && (
+                <div className="flex flex-col gap-1" data-testid="metric-statement-proposed">
+                  <p className="aug-fs-xs text-zinc-500">
+                    {proposed.options.length > 1 ? proposed.note : "Proposed by the platform from the stored expression"}
+                    {" — save to keep it."}
+                  </p>
+                  {proposed.options.length > 1 && (
+                    <div className="flex flex-wrap items-center gap-2" data-testid="metric-statement-options">
+                      <span className="aug-fs-xs text-zinc-500">Switch to:</span>
+                      {proposed.options.filter((o) => o.statement !== form.sql).map((o) => (
+                        <Button key={o.table} size="sm" variant="secondary" title={o.why}
+                          onClick={() => { setProposed({ ...proposed, statement: o.statement }); setForm({ ...form, sql: o.statement }); }}>
+                          over {o.table}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {!adding && proposals && proposals.statements.length === 0 && !isStatement(form.sql) && proposals.statement_note && (

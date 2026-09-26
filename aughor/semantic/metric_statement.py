@@ -189,9 +189,9 @@ def proposed_statements(sql: str, tables: Optional[list], filters: Optional[list
     A statement as written proposes nothing (``[]``, no note: it is one). An expression over
     a declared table is wrapped exactly as the value path runs it — ONE proposal. An
     expression naming no table is placed on every profiled table that carries every column
-    it references: one carrier is one proposal; several are several, and the note says so,
-    because a column carried by two tables is two different metrics and the person picks;
-    none is said."""
+    it references: one carrier is one proposal; several are several, largest table first, and
+    the note says so, because a column carried by two tables is two different metrics — the
+    first is filled in and the person may switch; none is said."""
     from aughor.semantic.metric_time import table_columns
 
     text = str(sql or "").strip()
@@ -208,9 +208,17 @@ def proposed_statements(sql: str, tables: Optional[list], filters: Optional[list
     profiled = list(((profile_entry or {}).get("tables") or {}).keys())
     if not profiled:
         return [], "this connection has no profile yet, so no table can be proposed"
+    tables_profiled = (profile_entry or {}).get("tables") or {}
+
+    def rows_of(t: str) -> int:
+        raw = str((tables_profiled.get(t) or {}).get("row_count") or "0") if isinstance(tables_profiled.get(t), dict) else "0"
+        return int(raw) if raw.lstrip("-").isdigit() else 0
     carriers = [t for t in profiled
                 if set(columns) <= {str(c).lower() for c in table_columns(profile_entry, bare(t))}]
-    carriers.sort(key=lambda t: t.lower())
+    # The largest table first: the finest grain is the likelier reading of an expression
+    # that names none (theLook's return rate is "the share of sold LINES sent back" —
+    # order_items, not orders). The field is filled with the first; the rest are offered.
+    carriers.sort(key=lambda t: (-rows_of(t), t.lower()))
     listed = ", ".join(columns)
     if not carriers:
         return [], f"no profiled table carries {listed}, so no table can be proposed"
@@ -220,7 +228,8 @@ def proposed_statements(sql: str, tables: Optional[list], filters: Optional[list
     if len(carriers) == 1:
         return options, ""
     return options, (f"{listed} {'is' if len(columns) == 1 else 'are'} carried by "
-                     f"{' and '.join(carriers)} — each table is a different metric, so pick one")
+                     f"{' and '.join(carriers)} — each table is a different metric; proposed over "
+                     f"{carriers[0]}, the largest — switch if that is the wrong one")
 
 
 def final_select(tree: Any):

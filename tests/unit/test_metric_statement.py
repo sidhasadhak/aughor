@@ -203,13 +203,17 @@ def test_the_platform_proposes_the_runnable_statement_for_an_expression():
     assert one[0]["statement"].startswith("SELECT (SUM(CASE WHEN returned_at") and one[0]["statement"].endswith("FROM order_items")
     assert one[0]["why"] == "returned_at is a column of order_items"
     # Two carriers (theLook: `orders` carries returned_at too): two proposals and the note says to pick.
-    two_tables = {"tables": {**PROFILE["tables"], "orders": {"primary_timestamp": "created_at"}},
+    # The largest table first (the finer grain): the field is filled with it, the other is offered.
+    two_tables = {"tables": {"order_items": {"primary_timestamp": "created_at", "row_count": 181000},
+                             "orders": {"primary_timestamp": "created_at", "row_count": 125000}},
                   "columns": {**PROFILE["columns"],
                               "orders.returned_at": {"table": "orders", "column": "returned_at", "dtype": "TIMESTAMP"}}}
     two, note = ms.proposed_statements(rr, [], [], "return_rate", two_tables)
     assert [o["table"] for o in two] == ["order_items", "orders"]
-    assert note == ("returned_at is carried by order_items and orders — each table is a different metric, "
-                    "so pick one")
+    assert note == ("returned_at is carried by order_items and orders — each table is a different metric; "
+                    "proposed over order_items, the largest — switch if that is the wrong one")
+    two_tables["tables"]["orders"]["row_count"] = 999999
+    assert [o["table"] for o in ms.proposed_statements(rr, [], [], "return_rate", two_tables)[0]] == ["orders", "order_items"]
     # What cannot be proposed is said, never guessed.
     assert ms.proposed_statements("COUNT(*)", [], [], "n", PROFILE)[0] == []
     assert "names no column" in ms.proposed_statements("COUNT(*)", [], [], "n", PROFILE)[1]
