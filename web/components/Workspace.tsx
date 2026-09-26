@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 /**
  * One perspective layer of a `<Workspace>` — an id, a switcher icon, a label,
- * and a one-line blurb shown in the header and the switcher tooltip.
+ * and a one-line blurb shown in the switcher tooltip.
  */
 export type WorkspaceLayer<L extends string> = { id: L; icon: string; label: string; blurb: string };
 
@@ -20,23 +20,12 @@ type WorkspaceProps<L extends string> = {
   /** Render a layer's switcher icon at a given size/colour — kept injectable so the
    *  primitive owns no icon set (each workspace brings its own). */
   renderIcon: (icon: string, size: number, color: string) => React.ReactNode;
-  /** The workspace's name, shown as the header's title ("Agent Ops", "Intelligence").
-   *  Without it the active layer's label stands in, which repeats the tab under it. */
-  title?: string;
-  /** Optional controls that SCOPE the view — a connection, a schema. Since 2026-09-25 they
-   *  render in the context bar, the 36px row under the header, never in the header itself:
-   *  the header carries the title and the one action, and nothing else. */
+  /** Optional controls that SCOPE the view — a connection, a schema. They render in the
+   *  context bar, the 36px row above the layer tabs. */
   headerControls?: React.ReactNode;
-  /** Optional controls pinned to the RIGHT of the header, after the switcher.
-   *  `headerControls` sits between the title and the switcher and is for things that
-   *  SCOPE the view — a range, a connection. This slot is for the one thing that is an
-   *  ACTION rather than a filter, and an action does not belong in the middle of a row
-   *  of view controls. */
-  headerTrailing?: React.ReactNode;
-  /** Optional toolbar — the 36px row UNDER the header for what SCOPES the view: a range,
-   *  a filter, a search. One row of its own, so it never competes with the layer
-   *  switcher for the header's width (at 1024 the Agent Ops range used to draw under
-   *  the switcher). Rendered only when given. */
+  /** Optional toolbar — the 36px row UNDER the layer tabs for what filters the view (a
+   *  range, a search), with the workspace's one action at its right end. Rendered only
+   *  when given. */
   toolbar?: React.ReactNode;
   /** Render the body of a layer. Called only for visited layers (keep-alive). */
   renderLayer: (id: L) => React.ReactNode;
@@ -44,18 +33,17 @@ type WorkspaceProps<L extends string> = {
    *  Attention layer's "needs a human" count). Zero/undefined renders nothing —
    *  a badge must mean something is actually waiting. */
   badges?: Partial<Record<L, number>>;
-  /** Drop the header row entirely. For the ONE workspace whose layers each already
-   *  have their own item in the left rail (Data: Catalog / SQL Editor / Semantic
-   *  Layer), the header is a second copy of a control the rail already provides —
-   *  a 44px band that repeats the rail's answer to "where am I". The other
+  /** Drop the layer-tab row. For the ONE workspace whose layers each already have
+   *  their own item in the left rail (Data: Catalog / SQL Editor / Semantic Layer), the
+   *  tabs are a second copy of a control the rail already provides. The other
    *  workspaces fold several rail items into fewer layers, or none at all, so their
-   *  switcher is the only way to reach a layer and the header stays. */
-  headerless?: boolean;
+   *  switcher is the only way to reach a layer and the tabs stay. */
+  hideTabs?: boolean;
 };
 
 /**
- * The one Workspace shell — the region stack (header 44 · context bar 36 · layer tabs 36 ·
- * toolbar 36) over a keep-alive layered body. Extracted from
+ * The one Workspace shell — the region stack (context bar 36 · layer tabs 36 · toolbar 36)
+ * over a keep-alive layered body. Extracted from
  * `IntelligenceWorkspace` so Intelligence / Canvas / Operations are all *instances* of
  * one shell rather than three hand-rolled copies of the same layer chrome (Part 2
  * Track B — "one shell").
@@ -65,8 +53,8 @@ type WorkspaceProps<L extends string> = {
  * switches. Layers that have never been visited aren't mounted at all.
  */
 export function Workspace<L extends string>({
-  layers, layer, onLayerChange, ariaLabel, title, headerControls, headerTrailing, toolbar,
-  renderLayer, badges, headerless,
+  layers, layer, onLayerChange, ariaLabel, headerControls, toolbar,
+  renderLayer, badges, hideTabs,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
   const [visited, setVisited] = useState<Set<L>>(() => new Set([layer]));
@@ -74,33 +62,17 @@ export function Workspace<L extends string>({
     setVisited(prev => (prev.has(layer) ? prev : new Set(prev).add(layer)));
   }, [layer]);
 
-  const active = layers.find(l => l.id === layer)!;
-
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-      {/* The region stack (docs/UI_UX_STUDY_2026-09-25.md §4.3, implemented 2026-09-25):
-          header 44 — the workspace's name and its ONE action;
+      {/* The region stack (docs/UI_UX_STUDY_2026-09-25.md §4.3):
           context bar 36 — what scopes the view (a connection, a schema), when there is one;
           layer tabs 36 — the perspectives, underlined, in a row that scrolls rather than clips;
-          toolbar 36 — what filters the view (a range, a search), when there is one.
-          The header used to hold the title, the scope pickers, the segmented switcher AND the
-          action in one 44px row: at 1024 the Intelligence header's tenth control sat at
-          1201px, and the Agent Ops range drew under its own tabs. One job per row. */}
-      {!headerless && (
-      <div className="aug-content-header" style={{ flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}>
-        <span className="aug-content-title" style={{ flexShrink: 0 }}>{title ?? active.label}</span>
-        <span style={{ flex: 1 }} />
-        {headerTrailing && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {headerTrailing}
-          </div>
-        )}
-      </div>
-      )}
-
+          toolbar 36 — what filters the view (a range, a search) and the one action.
+          No title row: the rail already says where the reader is, and a 44px band naming
+          the item they just clicked repeated it (removed 2026-09-26, per the user). */}
       {headerControls && <div className="aug-toolbar aug-context-bar">{headerControls}</div>}
 
-      {!headerless && (
+      {!hideTabs && (
       <div role="tablist" aria-label={ariaLabel} className="aug-layer-tabs">
         {layers.map(l => {
           const on = l.id === layer;

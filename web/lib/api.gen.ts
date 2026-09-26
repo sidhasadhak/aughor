@@ -3396,7 +3396,8 @@ export interface paths {
         /**
          * Get Summary
          * @description How many departures took each state, and how many a person still owes — the count
-         *     the departures screen and its badge show.
+         *     the departures screen and its badge show. ``ask_door`` (SP-15's measure) is the share
+         *     of held rows Spotlight was asked about from the row, read from the session log.
          */
         get: operations["get_summary_departures_summary_get"];
         put?: never;
@@ -7763,6 +7764,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/generate-sql": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Metric Sql
+         * @description The model writes the metric's statement from the definition in the editor — ONE model
+         *     call, on the person's click (the user, 2026-09-26: *"generate SQL query for metric …
+         *     right at the SQL statement input box … based on the metric in question"*). The
+         *     platform's own SQL writer over this connection's schema, framed for a governed metric
+         *     (`semantic.metric_author`); the answer is checked, never rewritten — a grouped, limited,
+         *     multi-column or unparsable query is served WITH the finding in `refused`, so the person
+         *     sees the text and the verdict together.
+         */
+        post: operations["generate_metric_sql_metrics_generate_sql_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Metric Proposals
+         * @description The platform's proposals for a definition, read from the profiler's latest entry (no
+         *     warehouse call). ``statements``: the runnable statement(s) for an expression written
+         *     before the rule — one when its table is declared or one profiled table carries its
+         *     columns, several when several do (the note says so; a person picks); ``[]`` for a
+         *     statement as written. ``candidates``: every date- or time-typed column of the tables
+         *     the statement reads, written as the grain, each table's main date first — only those
+         *     tables (the user, 2026-09-26: *"only when there are multiple date or timestamp columns
+         *     in the table proposed in the SQL statement, only then the user may choose"*). Each empty
+         *     list carries its reason.
+         */
+        post: operations["metric_proposals_metrics_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/{name}": {
         parameters: {
             query?: never;
@@ -11678,6 +11733,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/spotlight/uptake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Spotlight Uptake
+         * @description The two uptake meters, served — §7's standing lesson is that features stall at TESTED,
+         *     not LEVERAGED, and both of these were measured only by hand until they had a door.
+         *
+         *     `vocabulary` (SP-M, AV-M): of the streaming converse turns where answering in parts was
+         *     OFFERED, how many used it. `ask_door` (SP-15): of the held rows in the departures ledger,
+         *     how many Spotlight was asked about FROM the row. Each reports `measured: false` and a
+         *     `None` rate when its log could not be read — a failed probe is not a zero.
+         */
+        get: operations["spotlight_uptake_spotlight_uptake_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/suggestions": {
         parameters: {
             query?: never;
@@ -11915,6 +11996,35 @@ export interface paths {
          *     a deep run measured ~60% idle, which no single event in the log states.
          */
         get: operations["get_trace_summary_traces__trace_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/traces/{trace_id}/trajectory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trace Trajectory
+         * @description TJ-2 — one record per run, joined at read: the question, the loop's steps in order
+         *     (the `step` events), the answer rows with their re-checks and a person's verdict, the
+         *     statements that ran (`audit_log`), the guard fires, the picks (`decision_record`), and
+         *     the reward FIELDS — never a number: TJ-3 owns the label and it must take both values on
+         *     real traffic before anything reads it.
+         *
+         *     Served with the steps' payload fields WITHHELD, exactly as `/learning/decisions`
+         *     withholds `context`: a step's arguments and result excerpt are captured only under an
+         *     open prompt window and are a payload under §6 item 4. The key stays, empty, and
+         *     `payload_withheld` says why. A store that could not be read says so in its place.
+         */
+        get: operations["get_trace_trajectory_traces__trace_id__trajectory_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -12405,6 +12515,19 @@ export interface components {
             redirect_uri: string;
         };
         /**
+         * AskFocus
+         * @description SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
+         */
+        AskFocus: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "departure" | "automation" | "metric";
+        };
+        /**
          * AskRequest
          * @description The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
          *
@@ -12454,6 +12577,7 @@ export interface components {
              * @enum {string}
              */
             depth: "auto" | "quick" | "deep";
+            focus?: components["schemas"]["AskFocus"] | null;
             /**
              * History
              * @default []
@@ -13632,6 +13756,53 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * GenerateSqlRequest
+         * @description What the editor holds about the metric when the person asks the model to write its
+         *     statement. `definition` is the catalogue's definition when the row has one, else the
+         *     caveats the person wrote.
+         */
+        GenerateSqlRequest: {
+            /** Connection */
+            connection: string;
+            /**
+             * Definition
+             * @default
+             */
+            definition: string;
+            /**
+             * Dimensions
+             * @default []
+             */
+            dimensions: string[];
+            /**
+             * Filters
+             * @default []
+             */
+            filters: string[];
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Name */
+            name: string;
+            /**
+             * Tables
+             * @default []
+             */
+            tables: string[];
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /**
+             * Wrong Usage Examples
+             * @default []
+             */
+            wrong_usage_examples: string[];
+        };
         /** GoldenCreate */
         GoldenCreate: {
             /** Question */
@@ -14505,6 +14676,36 @@ export interface components {
              * @default
              */
             target: string;
+        };
+        /**
+         * ProposalsRequest
+         * @description What the metric editor sends to be offered what the platform proposes for a definition:
+         *     its runnable statement (when it was written as an expression) and the dates it could be
+         *     grained at.
+         */
+        ProposalsRequest: {
+            /** Connection */
+            connection: string;
+            /**
+             * Filters
+             * @default []
+             */
+            filters: string[];
+            /**
+             * Name
+             * @default value
+             */
+            name: string;
+            /**
+             * Sql
+             * @default
+             */
+            sql: string;
+            /**
+             * Tables
+             * @default []
+             */
+            tables: string[];
         };
         /** ProposeIn */
         ProposeIn: {
@@ -29869,6 +30070,74 @@ export interface operations {
             };
         };
     };
+    generate_metric_sql_metrics_generate_sql_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateSqlRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    metric_proposals_metrics_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_metric_metrics__name__put: {
         parameters: {
             query?: {
@@ -36884,6 +37153,26 @@ export interface operations {
             };
         };
     };
+    spotlight_uptake_spotlight_uptake_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_suggestions_suggestions_get: {
         parameters: {
             query?: {
@@ -37182,6 +37471,37 @@ export interface operations {
             query?: {
                 top?: number;
             };
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_trajectory_traces__trace_id__trajectory_get: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 trace_id: string;

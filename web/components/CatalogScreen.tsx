@@ -1245,13 +1245,7 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--bg-0)" }}>
-      {/* Header */}
       <div style={{ padding: "20px 28px 0", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-          <span style={{ color: "var(--t2)", display: "flex" }}><IcoCatalog color="var(--t2)" /></span>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--t1)", letterSpacing: "-0.01em" }}>Catalog</h1>
-        </div>
-
         {/* Chips + filter */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
           <div style={{ display: "flex", gap: 8 }}>

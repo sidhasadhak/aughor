@@ -26,6 +26,8 @@ export interface OpenInQueryRequest {
   connId?: string;
   /** Which workbench mode to land in. Omit to take the workbench's default. */
   mode?: QueryTargetMode;
+  /** SQL mode opens the query in a NEW tab; this names it. Omit for the default name. */
+  name?: string;
 }
 
 export type OpenInQuery = (req: OpenInQueryRequest) => void;

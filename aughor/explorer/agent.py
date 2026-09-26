@@ -655,6 +655,13 @@ class SchemaExplorer:
         self._status.queries_executed += 1
         if schema:
             sql = self._repair_contra_amount(sql)
+            keyed = self._order_keys_projected(sql)
+            if keyed:
+                from aughor.stats import stats as _s
+                _s.inc("explorer.order_keys_projected")
+                logger.info("[explorer:%s] projected the ORDER BY key(s) the result was ranked by "
+                            "but did not return", self.connection_id)
+                sql = keyed
         else:
             # PLATFORM SQL, written by this agent in DuckDB's dialect (the docstring above
             # says so: the profiling / percentile / catalog / join probes are built here from
@@ -730,6 +737,28 @@ class SchemaExplorer:
             tolerate(exc, "contra-unit classification is best-effort; the explorer "
                           "proceeds without the rate guard",
                      counter="explorer.contra_units")
+
+    def _order_keys_projected(self, sql: str) -> Optional[str]:
+        """``sql`` with the outer ORDER BY keys it ranks by but does not return added to its
+        SELECT list, when that rewrite exists and binds; else None.
+
+        A finding's SQL is its evidence: the Briefing re-runs it to draw the finding's chart.
+        ``SELECT category … ORDER BY total_profit DESC`` ranks by profit and returns names
+        only, so the chart had no measure (Table was its only option) and the interpreting
+        model had no figure to state. See ``aughor.sql.order_measure``.
+        """
+        if not sql:
+            return None
+        try:
+            from aughor.sql.order_measure import project_order_keys
+            rewritten = project_order_keys(sql, getattr(self._conn, "dialect", "duckdb"))
+            if rewritten and self._conn.dry_run(rewritten)[0]:
+                return rewritten
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "projecting ORDER BY keys is best-effort; the original SQL runs",
+                     counter="explorer.order_keys_projection_failed")
+        return None
 
     def _repair_contra_amount(self, sql: str) -> str:
         """Braces to `_contra_directive`'s belt: rewrite a generated aggregate that sums a
@@ -1868,6 +1897,10 @@ class SchemaExplorer:
             # symptom). Refresh (re-run below) only when the data actually moved.
             if self._activity_unchanged:
                 prior = self._read_prior_pinned(qi)
+                # A prior whose query ranks by a key it does not return is re-derived, not
+                # re-read: reading it back would carry its measureless evidence into every run.
+                if prior and self._order_keys_projected(prior.get("sql", "")):
+                    prior = None
                 if prior:
                     _pdoss = prior.pop("dossier", None) if isinstance(prior, dict) else None
                     if not prior.get("signature"):

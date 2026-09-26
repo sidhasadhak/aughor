@@ -41,7 +41,30 @@ def learning_summary(connection_id: Optional[str] = None):
         "trusted": {
             "queries": len(list_trusted(cid)),
         },
+        "few_shot": _few_shot_status(),
     }
+
+
+def _few_shot_status() -> dict:
+    """The few-shot memory's two collections, counted (TJ-1's receipt door: *"prove the
+    collections come into being on the next clean answer"*). Read in THIS process — the
+    local vector store has one writer — and honest about failure: a count that could not
+    be taken reads `None`, never 0."""
+    from aughor.tools.prior_analyses import INVESTIGATIONS_COLLECTION, SQL_EXAMPLES_COLLECTION
+    out: dict = {"backend": None, "model": None, "sql_examples": None, "investigations": None}
+    try:
+        from aughor.semantic.embedder import embed_backend, embed_model
+        out["backend"] = embed_backend()
+        out["model"] = embed_model(out["backend"])
+    except Exception as exc:  # noqa: BLE001 — an unconfigured embedder is a state, not a crash
+        out["note"] = f"embedder not configured: {type(exc).__name__}: {str(exc)[:160]}"
+    try:
+        from aughor.semantic.vector_store import collection_count
+        out["sql_examples"] = collection_count(SQL_EXAMPLES_COLLECTION)
+        out["investigations"] = collection_count(INVESTIGATIONS_COLLECTION)
+    except Exception as exc:  # noqa: BLE001
+        out["note"] = f"the vector store could not be counted: {type(exc).__name__}"
+    return out
 
 
 @router.get("/learning/trusted")
@@ -168,7 +191,16 @@ def get_dataset(name: str, version: Optional[int] = None):
     node = store.get(name, version=version)
     if node is None:
         return {"found": False, "name": name, "version": version}
-    return {"found": True, "dataset": node, "lineage": store.lineage_of(node["id"])}
+    # Said, never implied: a registry row whose bytes are gone is not an empty dataset.
+    state = store.bytes_state(node)
+    out = {"found": True, "dataset": node, "lineage": store.lineage_of(node["id"]),
+           "bytes": state}
+    if state != "present":
+        out["note"] = (f"the rows cannot be read back: the bytes are {state} "
+                       + ("(deleted on purpose; the lineage is kept)" if state == "purged"
+                          else "(the registry names a file that is not on disk — re-run "
+                               "the export; an unchanged corpus writes the same path)"))
+    return out
 
 
 @router.post("/learning/export", dependencies=[gate(Capability.SEMANTIC_EDIT)])

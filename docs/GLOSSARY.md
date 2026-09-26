@@ -38,6 +38,8 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Narrative** | The prose enrichment attached to a quick answer | insight (the `_InsightResult` sense) |
 | **takeaway** | The one-line summary of a single sub-question | insight (the per-subquestion sense) |
 | **Issue** | A diagnostic raised by a guard or validator | guard classes named `*Finding` |
+| **Statement** | A metric's SQL: a whole `SELECT` (CTEs allowed) that returns one row with the metric's value — every metric written since 2026-09-26 | "expression" or "formula" for a metric's SQL in anything a user reads |
+| **Grain** | The date a metric's row counts on, written `schema.table.column` — the table because a statement is cut to a range by filtering that table | "time column" in anything a user reads |
 | **Claim** | A statement a human has verified | — |
 | **Briefing** | The periodic narrative artifact, and its subscription | brief (as the artifact), digest, Intelligence Digest |
 | **What we know** | The Briefing's standing view: everything the platform has learned, not tied to dates (Arc BR, ROADMAP §3.48) | Standing, "history" (both survive as internal names only) |

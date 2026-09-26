@@ -125,7 +125,10 @@ def test_automation_steps_teach_staging_before_scheduling():
 # ── the roster ────────────────────────────────────────────────────────────────────
 
 def test_guide_roster_and_conversation_wiring():
+    # SP-15 added `explain` (the object on screen) beside the walkthroughs; it is
+    # declared FIRST because a question that names an object is answered from it.
     names = [t.name for t in guide.spotlight_guide_tools("c1")]
-    assert names == ["platform_guide"]
+    assert names == ["explain", "platform_guide"]
     from aughor.agent.converse_tools import converse_tools
-    assert "platform_guide" in {t.name for t in converse_tools("c1")}
+    conversational = {t.name for t in converse_tools("c1")}
+    assert {"platform_guide", "explain"} <= conversational

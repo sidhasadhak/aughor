@@ -408,16 +408,6 @@ export function DocumentUploader() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div>
-        <h2 className="aug-fs-ui font-semibold text-zinc-200">Documents</h2>
-        <p className="aug-fs-xs text-zinc-500 mt-0.5">
-          Upload a document in almost any format — it is converted to Markdown, kept as
-          you uploaded it, and made available as context to the Agent, the conversation
-          and anywhere else on the platform.
-        </p>
-      </div>
-
       {/* What the plane can actually do. Shown only when something is wrong or drifted —
           a banner that appears on every healthy load is a banner nobody reads. */}
       {status && !status.ready && (

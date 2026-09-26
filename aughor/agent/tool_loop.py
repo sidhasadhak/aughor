@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -166,11 +167,15 @@ def run_tool_loop(
     # formatting slip, and re-asking would spend the whole budget on silence.
     nudged = False
 
-    def _record(step: LoopStep) -> None:
-        """Append and announce, together. Three branches record a step and all three
-        must reach the caller — a progress seam that only reports the SUCCESSFUL
-        branch would show a turn recovering from nothing."""
+    def _record(step: LoopStep, *, result: Any = None, elapsed_ms: Optional[float] = None) -> None:
+        """Append, announce and RECORD, together. Four branches record a step and all
+        four must reach the caller — a progress seam that only reports the SUCCESSFUL
+        branch would show a turn recovering from nothing — and all four land in the
+        session log as one `step` event (TJ-2), so the trajectory a run leaves behind
+        has every step the loop took, not only the ones that ran a tool."""
         steps.append(step)
+        _emit_step(len(steps), step, result=result, elapsed_ms=elapsed_ms,
+                   site=site, conn_id=conn_id, trace_id=trace_id)
         if on_step is not None:
             on_step(step)
 
@@ -223,6 +228,7 @@ def run_tool_loop(
             history.extend(_exchange(call, f"No tool named {call.name!r}. Available: {offered}."))
             continue
 
+        _t0 = time.monotonic()
         try:
             result = spec.run(call.arguments)
             ok, payload = True, _as_text(result)
@@ -232,10 +238,12 @@ def run_tool_loop(
             # and discard every step already paid for.
             logger.warning("tool_loop: %s raised (%s)", call.name, str(exc)[:200])
             ok, payload = False, f"{type(exc).__name__}: {exc}"
+            result = None
         _record(LoopStep(tool=call.name, arguments=call.arguments, ok=ok,
                          detail="" if ok else payload,
                          result_chars=len(payload),
-                         prompt_chars=_history_chars(history)))
+                         prompt_chars=_history_chars(history)),
+                result=result, elapsed_ms=(time.monotonic() - _t0) * 1000.0)
         # One decision record per executed choice: the menu the model picked from, what
         # it picked, and whether the pick ran clean. The context is a routing glimpse
         # (step position, the previous pick and how it went, the question) — never tool
@@ -375,6 +383,56 @@ def _exchange(call, content: str) -> list[dict]:
         {"role": "assistant", "content": None, "tool_calls": [echoed]},
         {"role": "tool", "tool_call_id": call_id, "content": content},
     ]
+
+
+#: What a `step` event keeps of a tool's result by field. Work artifacts (§3.47's lawful
+#: lane): the statement, its count, its error, which guards fired — stored always. The
+#: rest of a result (rows, prose, the model's arguments) is payload: an excerpt only, and only
+#: while a capture window is open.
+_STEP_RESULT_EXCERPT = 400
+_STEP_ARGS_CAP = 2000
+
+
+def _emit_step(index: int, step: LoopStep, *, result: Any, elapsed_ms: Optional[float],
+               site: str, conn_id: str, trace_id: str) -> None:
+    """TJ-2 — one `step` event per loop step, from the one seam every loop passes.
+
+    The session log drops an event with no trace, so a loop run outside a bound run
+    (a bare unit test, a script) writes nothing and costs nothing. Best-effort like every
+    observation: a step that could not be recorded still happened."""
+    try:
+        from aughor.obs import prompt_window, session_log
+
+        r = result if isinstance(result, dict) else {}
+        guards = []
+        for receipt in (r.get("guard_receipts") or []):
+            if isinstance(receipt, dict):
+                guards.append(str(receipt.get("guard") or receipt.get("pattern") or "")[:80])
+        row_count = r.get("row_count")
+        if row_count is None and isinstance(r.get("rows"), list):
+            row_count = len(r["rows"])
+        payload: dict[str, Any] = {
+            "index": index, "site": site, "tool": step.tool, "ok": step.ok,
+            "sql": str(r.get("sql") or "")[:4000],
+            "error": (str(r.get("error") or "") if step.ok else str(step.detail or ""))[:1000],
+            "guards": guards, "result_chars": step.result_chars,
+            "captured": False,
+        }
+        # The payload fields, by the lawful lane: only under an open capture window. The
+        # window is not consumed here — its budget counts MODEL calls, and a step is not one.
+        if prompt_window.active():
+            payload["captured"] = True
+            payload["arguments"] = _as_text(step.arguments)[:_STEP_ARGS_CAP]
+            payload["result_excerpt"] = (_as_text(result) if result is not None
+                                        else str(step.detail or ""))[:_STEP_RESULT_EXCERPT]
+        session_log.emit(session_log.STEP, name=step.tool, trace_id=trace_id or "",
+                         ok=step.ok, duration_ms=elapsed_ms, conn_id=conn_id or None,
+                         row_count=(int(row_count) if isinstance(row_count, (int, float)) else None),
+                         payload=payload)
+    except Exception as exc:  # noqa: BLE001 — observation must never fail the observed
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a step that could not be recorded still happened; the turn goes on",
+                 counter="tool_loop.step_event")
 
 
 def _as_text(result: Any) -> str:

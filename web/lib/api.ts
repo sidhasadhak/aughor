@@ -1088,6 +1088,85 @@ export async function createMetric(m: Omit<Metric, never>): Promise<Metric> {
   return res.json();
 }
 
+/** One date a metric could be grained at, as the platform proposes it (2026-09-26):
+ *  `schema.table.column` as the table is written, the profiler's main date of each table
+ *  first — only the tables the statement itself reads. */
+export interface MetricDateCandidate {
+  grain: string;
+  table: string;
+  column: string;
+  type: string;
+  primary: boolean;
+}
+
+/** One runnable statement the platform proposes for a definition written as an expression:
+ *  the expression wrapped over `table` with the definition's filters, and why that table. */
+export interface MetricStatementOption {
+  table: string;
+  statement: string;
+  why: string;
+}
+
+/** What the platform proposes for a definition. `statements` is empty for a statement as
+ *  written, one entry when the table is known, several when several profiled tables carry
+ *  the expression's columns (`statement_note` says so — a person picks). `candidates` are
+ *  the dates on the statement's own tables; `note` says why the list is empty when it is. */
+export interface MetricProposals {
+  statements: MetricStatementOption[];
+  statement_note: string;
+  candidates: MetricDateCandidate[];
+  note: string;
+}
+
+export async function getMetricProposals(
+  connection: string, sql: string, tables: string[], filters: string[], name: string,
+): Promise<MetricProposals> {
+  const res = await fetch(`${getApiBase()}/metrics/proposals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection, sql, tables, filters, name }),
+  });
+  if (!res.ok) throw new Error("Failed to read the platform's proposals");
+  return res.json();
+}
+
+/** The metric's statement as the model wrote it from the editor's fields — one model call,
+ *  on the person's click. `note` says when the platform wrapped a bare aggregate over the
+ *  definition's table; `trace_id` joins the call's receipt. */
+export interface MetricSqlDraft {
+  sql: string;
+  /** What the platform's check found wrong with the text ("" when nothing): it is shown
+   *  beside the text, never instead of it. */
+  refused: string;
+  note: string;
+  model: string;
+  trace_id: string;
+}
+
+export interface MetricBrief {
+  name: string;
+  label: string;
+  definition: string;
+  unit: string;
+  tables: string[];
+  filters: string[];
+  dimensions: string[];
+  wrong_usage_examples: string[];
+}
+
+export async function generateMetricSql(connection: string, brief: MetricBrief): Promise<MetricSqlDraft> {
+  const res = await fetch(`${getApiBase()}/metrics/generate-sql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection, ...brief }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The statement could not be written");
+  }
+  return res.json();
+}
+
 export async function updateMetric(name: string, m: Metric): Promise<Metric> {
   const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}`, {
     method: "PUT",
@@ -4801,6 +4880,38 @@ export interface Departure {
   answer: string;
   answered_by: string;
   answered_at: string;
+  /** SP-15 — on a row that held or asked: the lead sentence and, per guard that held,
+   *  what it means, what to change and where. Served from ONE module beside the laws
+   *  (`aughor/govern/departure_remedies.py`), the same words Spotlight's `explain` cites.
+   *  Absent on a departed row, and on an API older than the wave. */
+  remedy?: DepartureRemedy;
+}
+
+/** The screens a remedy can open — handed down by the workspace, which owns the layers. */
+export type RemedyDoor = "automation" | "analysis" | "semantic" | "ask";
+
+export interface GuardRemedy {
+  guard: string;
+  label: string;
+  outcome: DepartureGuardOutcome;
+  /** The sentence the gate recorded for this guard on this departure. */
+  reason: string;
+  /** "law 1" … "law 8", or "" for a guard the docstring numbers no law for. */
+  law: string;
+  /** The law's own sentence, read from the gate module's docstring. */
+  law_sentence: string;
+  /** What the hold means, in the reader's words. */
+  meaning: string;
+  /** What to change, and that the next run is the send. */
+  action: string;
+  /** The screens that hold the fix, in the order to try them. */
+  doors: RemedyDoor[];
+}
+
+export interface DepartureRemedy {
+  /** The sentence every held row leads with — the wall, named. */
+  lead: string;
+  guards: GuardRemedy[];
 }
 
 export interface DepartureSummary {

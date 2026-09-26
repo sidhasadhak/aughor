@@ -15,7 +15,12 @@ import {
   transitionMetric,
   getMetricAudit,
   getDefinitionReport,
+  getMetricProposals,
+  generateMetricSql,
   type CatalogueMetric,
+  type MetricProposals,
+  type MetricStatementOption,
+  type MetricSqlDraft,
   type Metric,
   type MetricValidationResult,
   type MetricFreshnessResult,
@@ -133,10 +138,27 @@ function datesSentence(m: Metric): string {
   return `Flow — a row counts on the day of ${m.time_column}.`;
 }
 
-function DatesSection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
+/** A statement begins with SELECT or WITH; anything else is an expression written before the rule. */
+const isStatement = (sql: string) => /^\s*(select|with)\b/i.test(sql);
+
+function DatesSection({ metric, proposals, onChanged }: {
+  metric: Metric; proposals: MetricProposals | null; onChanged: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [kind, setKind] = useState(metric.time_kind ?? "flow");
   const [column, setColumn] = useState(metric.time_column ?? "");
+  // The platform's proposals for the grain (the user, 2026-09-26): the date or timestamp
+  // columns of the table the SQL statement reads — only those. One date is set for the
+  // person and said; several are a list beside the open input, and the person picks; none
+  // is said with the reason. The parent reads them from the SQL in the field.
+  const candidates = proposals?.candidates ?? [];
+  const candidatesNote = proposals?.note ?? "";
+  const grainList = `metric-grain-${metric.name}`;
+  const listed = candidates.length > 1;
+  const tablesRead = Array.from(new Set(candidates.map((c) => c.table))).join(", ");
+  // The one date is SET for the person — derived, so it follows the proposals as they arrive
+  // and yields to anything typed.
+  const shownColumn = column.trim() ? column : (candidates.length === 1 ? candidates[0].grain : "");
   const [outcome, setOutcome] = useState(metric.outcome_column ?? "");
   const [until, setUntil] = useState(metric.until_column ?? "");
   const [settles, setSettles] = useState(metric.settles_after_days != null ? String(metric.settles_after_days) : "");
@@ -190,26 +212,41 @@ function DatesSection({ metric, onChanged }: { metric: Metric; onChanged: () => 
               <option value="cohort">Cohort — completed by a later date</option>
             </select>
           </label>
-          <input className="aug-input aug-fs-xs" placeholder="Date column, e.g. created_at" value={column}
-            onChange={e => setColumn(e.target.value)} aria-label="Date column" />
+          <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined}
+            placeholder={listed ? "Date column — pick one of the proposals, or type schema.table.column" : "Date column — schema.table.column"}
+            value={shownColumn} onChange={e => setColumn(e.target.value)} aria-label="Date column" />
+          {listed && (
+            <datalist id={grainList}>
+              {candidates.map(c => (
+                <option key={c.grain} value={c.grain}>{c.primary ? `main date · ${c.type}` : c.type}</option>
+              ))}
+            </datalist>
+          )}
+          <p className="aug-fs-xs text-zinc-500" data-testid="metric-date-proposals">
+            {listed
+              ? `${candidates.length} dates on ${tablesRead} — pick one: ${candidates.map(c => c.grain).join(" · ")}`
+              : candidates.length === 1
+                ? `The only date on ${candidates[0].table} is ${candidates[0].grain} — set for you; change it here if that is wrong.`
+                : candidatesNote || "no proposals yet"}
+          </p>
           {kind === "cohort" && (
             <>
-              <input className="aug-input aug-fs-xs" placeholder="Completing date, e.g. returned_at" value={outcome}
+              <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
                 onChange={e => setOutcome(e.target.value)} aria-label="Completing date column" />
               <input className="aug-input aug-fs-xs" placeholder="Settles after (days)" value={settles}
                 onChange={e => setSettles(e.target.value)} aria-label="Settles after days" />
             </>
           )}
           {kind === "stock" && (
-            <input className="aug-input aug-fs-xs" placeholder="Counts until, e.g. sold_at" value={until}
+            <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
               onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
           )}
           <input className="aug-input aug-fs-xs" placeholder="Who is confirming" value={actor}
             onChange={e => setActor(e.target.value)} aria-label="Who is confirming the dates" />
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary" disabled={busy || !column.trim()}
+            <Button size="sm" variant="secondary" disabled={busy || !shownColumn.trim()}
               onClick={() => save({
-                time_kind: kind, time_column: column.trim(),
+                time_kind: kind, time_column: shownColumn.trim(),
                 outcome_column: kind === "cohort" ? outcome.trim() || null : null,
                 until_column: kind === "stock" ? until.trim() || null : null,
                 settles_after_days: kind === "cohort" && settles.trim() ? Number(settles) : null,
@@ -461,6 +498,64 @@ export function MetricsPanel({ connId }: { connId?: string }) {
   // side and materialised only when someone edits one.
   const [rows, setRows] = useState<CatalogueMetric[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+
+  // What the platform proposes for the definition being edited (the user, 2026-09-26: the
+  // SQL field holds the whole runnable statement, and the dates are those of the table it
+  // reads). Read for an EXISTING metric from the SQL in the field — so a FROM typed just now
+  // is what the dates follow — and, for a row stored as an expression, the runnable
+  // statement goes into the field and is said to be proposed until it is saved. When a
+  // column is carried by two tables the first (largest) is filled in and the others are
+  // offered as a switch — the field always holds something runnable (the user, 2026-09-26:
+  // "still cannot see the entire SQL"). Kept by metric name, so a proposal never outlives
+  // the row it was made for.
+  // The model writes the statement from the fields in the editor, on a click (the user,
+  // 2026-09-26): one model call, the result filled into the field and said to be the
+  // model's until saved. Kept apart from the platform's proposals above, which cost nothing.
+  const [writing, setWriting] = useState(false);
+  const [written, setWritten] = useState<MetricSqlDraft | null>(null);
+  const [writeError, setWriteError] = useState("");
+  const handleWriteSql = async () => {
+    if (!connId) { setWriteError("Pick a connection first — the statement is written over its schema."); return; }
+    if (!form.name.trim()) { setWriteError("Name the metric first — the name becomes the statement's column."); return; }
+    const row = rows.find((r) => r.name === form.name.trim());
+    setWriting(true); setWriteError("");
+    try {
+      const draft = await generateMetricSql(connId, {
+        name: form.name.trim(), label: form.label.trim(),
+        definition: (row?.definition || form.caveats).trim(), unit: form.unit.trim(),
+        tables: parseList(form.tables), filters: parseList(form.filters), dimensions: parseList(form.dimensions),
+        wrong_usage_examples: parseLines(form.wrong_usage_examples),
+      });
+      setWritten(draft);
+      setForm((f) => ({ ...f, sql: draft.sql }));
+    } catch (e: unknown) {
+      setWriteError(e instanceof Error ? e.message : "The statement could not be written");
+    } finally { setWriting(false); }
+  };
+  const [proposals, setProposals] = useState<MetricProposals | null>(null);
+  const [proposed, setProposed] = useState<{
+    metric: string; from: string; statement: string; options: MetricStatementOption[]; note: string;
+  } | null>(null);
+  useEffect(() => {
+    if (adding || !selected) { setProposals(null); setProposed(null); return; }
+    const stored = metrics.find((m) => m.name === selected);
+    const sql = form.sql;
+    let live = true;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await getMetricProposals(stored?.connection ?? connId ?? "*", sql,
+          parseList(form.tables), parseList(form.filters), form.name || "value");
+        if (!live) return;
+        setProposals(r);
+        if (!isStatement(sql) && r.statements.length >= 1) {
+          const statement = r.statements[0].statement;
+          setProposed({ metric: selected, from: sql, statement, options: r.statements, note: r.statement_note });
+          setForm((f) => (f.sql === sql ? { ...f, sql: statement } : f));
+        }
+      } catch { if (live) setProposals(null); }
+    }, 250);
+    return () => { live = false; clearTimeout(timer); };
+  }, [adding, selected, metrics, connId, form.sql, form.tables, form.filters, form.name]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [materialising, setMaterialising] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
@@ -510,19 +605,19 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 
   const startAdd = () => {
     setAdding(true); setSelected(null);
-    setForm(EMPTY_FORM); setError("");
+    setForm(EMPTY_FORM); setError(""); setWritten(null); setWriteError("");
     setValidationResult(null); setFreshnessResult(null);
   };
 
   const startEdit = (m: Metric) => {
     setAdding(false); setSelected(m.name);
-    setForm(metricToForm(m)); setError("");
+    setForm(metricToForm(m)); setError(""); setWritten(null); setWriteError("");
     setValidationResult(null); setFreshnessResult(null);
   };
 
   const cancelForm = () => {
     setAdding(false); setSelected(null);
-    setForm(EMPTY_FORM); setError("");
+    setForm(EMPTY_FORM); setError(""); setWritten(null); setWriteError("");
     setValidationResult(null); setFreshnessResult(null);
   };
 
@@ -636,13 +731,54 @@ export function MetricsPanel({ connId }: { connId?: string }) {
               />
             </Field>
 
-            <Field label="SQL Expression" required hint="Aggregate expression — no SELECT keyword">
+            <Field label="SQL statement" required hint="A whole SELECT — CTEs allowed — that returns one row with the metric's value">
               <textarea
                 className={`${inputCls} font-mono text-xs min-h-[72px] resize-y`}
-                placeholder="SUM(amount) FILTER (WHERE status = 'active')"
+                placeholder="SELECT SUM(amount) AS revenue FROM orders WHERE status = 'active'"
                 value={form.sql}
                 onChange={(e) => setForm({ ...form, sql: e.target.value })}
               />
+              <div className="flex flex-wrap items-center gap-2" data-testid="metric-statement-write">
+                <Button size="sm" variant="secondary" disabled={writing} onClick={handleWriteSql}
+                  title="One model call: the statement written from the name, label, definition, filters and tables above, over this connection's schema">
+                  {writing ? "Writing…" : "Generate from the definition"}
+                </Button>
+                <span className="aug-fs-xs text-zinc-500">one model call, from the fields above</span>
+              </div>
+              {written && form.sql === written.sql && (
+                <p className="aug-fs-xs text-zinc-500" data-testid="metric-statement-written">
+                  Written by the model{written.model ? ` (${written.model})` : ""} from the definition
+                  {written.note ? ` — ${written.note}` : ""} — check it, then save.
+                </p>
+              )}
+              {written && form.sql === written.sql && written.refused && (
+                <p className="aug-fs-xs text-amber-400" data-testid="metric-statement-refused">
+                  The platform could not accept it as a metric&apos;s statement: {written.refused} — fix it before saving.
+                </p>
+              )}
+              {writeError && <p className="aug-fs-xs text-red-400">{writeError}</p>}
+              {!adding && proposed && proposed.metric === selected && form.sql === proposed.statement && (
+                <div className="flex flex-col gap-1" data-testid="metric-statement-proposed">
+                  <p className="aug-fs-xs text-zinc-500">
+                    {proposed.options.length > 1 ? proposed.note : "Proposed by the platform from the stored expression"}
+                    {" — save to keep it."}
+                  </p>
+                  {proposed.options.length > 1 && (
+                    <div className="flex flex-wrap items-center gap-2" data-testid="metric-statement-options">
+                      <span className="aug-fs-xs text-zinc-500">Switch to:</span>
+                      {proposed.options.filter((o) => o.statement !== form.sql).map((o) => (
+                        <Button key={o.table} size="sm" variant="secondary" title={o.why}
+                          onClick={() => { setProposed({ ...proposed, statement: o.statement }); setForm({ ...form, sql: o.statement }); }}>
+                          over {o.table}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {!adding && proposals && proposals.statements.length === 0 && !isStatement(form.sql) && proposals.statement_note && (
+                <p className="aug-fs-xs text-amber-400">{proposals.statement_note}</p>
+              )}
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
@@ -862,7 +998,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
               <div className="aug-metric-governance">
                 <GovernanceSection metric={sm} onChanged={load} />
                 <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
-                  metric={sm} onChanged={load} />
+                  metric={sm} proposals={proposals} onChanged={load} />
               </div>
             ) : null;
           })()}

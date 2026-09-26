@@ -91,6 +91,10 @@ interface ChatBody {
    *  host tab; absent from every other caller). Forwarded verbatim; the backend
    *  caps and sanitizes it. */
   surface?: string;
+  /** SP-15 — the OBJECT the question was summoned from (a held row's "Ask Spotlight"),
+   *  structurally: kind + id, never parsed out of the prose. Forwarded verbatim; the
+   *  backend opens the turn on that object's live state. */
+  focus?: { kind: string; id: string } | null;
 }
 
 /**
@@ -257,6 +261,7 @@ function upstreamRequest(body: ChatBody): { url: string; payload: Record<string,
       mode: body.request_mode ?? null,
       purpose: body.purpose ?? "",
       surface: body.surface ?? "",
+      focus: body.focus ?? null,
     },
   };
 }

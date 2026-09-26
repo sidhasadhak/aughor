@@ -93,13 +93,15 @@ def _record_guard_verdict(guard: str, action: str, detail: str, before) -> None:
     """MI-1 — durable half of a guard receipt. Best-effort and trace-gated; never raises.
 
     A rewrite guard names no single column, so `subject` stays empty and the guard's own
-    name carries the meaning: `pattern` is the guard (``fanout_defan``), `phase` is what
-    it did (``rewrote_sql``). The E1 semantic checks fill `subject` because they ARE
-    about one column — the two families share a table, not a shape.
+    name carries the meaning: `pattern` is the guard (``fanout_defan``), `action` is what
+    it did (``rewrote_sql``) and `phase` is when — at execution. Until migration 4 the
+    action was written INTO `phase`, so the column meant two things (TJ-2). The E1
+    semantic checks fill `subject` because they ARE about one column — the two families
+    share a table, not a shape.
     """
     try:
         from aughor.security.audit import GuardVerdicts
-        GuardVerdicts.record(pattern=guard, phase=action, detail=detail,
+        GuardVerdicts.record(pattern=guard, phase="execute", action=action, detail=detail,
                              sql=str(before) if before is not None else "")
     except Exception as e:
         tolerate(e, "guard-verdict persistence is additive; the receipt still fanned out",

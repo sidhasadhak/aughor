@@ -277,9 +277,15 @@ def _retry_at_low_reasoning(exc: Exception, kwargs: dict, call) -> Optional[tupl
 
 
 def _fallback_model() -> str:
-    """Anthropic model used when the primary backend fails. Defaults to the
-    latest Opus; override with AUGHOR_FALLBACK_MODEL (e.g. claude-opus-4-6)."""
-    return os.getenv("AUGHOR_FALLBACK_MODEL", "claude-opus-4-8")
+    """The Anthropic model the fallback chain uses: ``AUGHOR_FALLBACK_MODEL``, else "".
+
+    No default. Every other binding fails loud when the operator named no model
+    (2026-08-15's directive: a model id in shipped code is a claim about another
+    vendor's catalogue this repo cannot keep true), and this one shipped a literal in the
+    one spelling the ratchet did not see — slashless — until the trajectory census
+    found it (TJ-1). "" means the anthropic hop is skipped like any unconfigured backend;
+    the primary's own dispatch refuses an empty model with its usual message."""
+    return (os.getenv("AUGHOR_FALLBACK_MODEL", "") or "").strip()
 
 
 # Order the fallback chain is tried in when the primary backend fails. Anthropic stays
@@ -2057,6 +2063,14 @@ class LLMProvider:
             self._client = build_client(role)
         else:
             raise ValueError(f"Unknown backend: {backend!r}. Use one of {', '.join(BACKENDS)}.")
+
+    @property
+    def model(self) -> str:
+        """The bound model id, "" when the role has none. Read-only: the binding is the
+        operator's (Settings › Models), never a caller's to reassign. TJ-1 — the answer
+        receipt stamps ``model.id`` from this property; before it existed the receipt read
+        a `.model` this class never had and 1,276 of 1,277 receipts carried null."""
+        return self._model
 
     @property
     def capability(self):

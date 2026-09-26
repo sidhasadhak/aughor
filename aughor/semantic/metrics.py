@@ -609,15 +609,8 @@ def value_query(metric: "MetricDefinition") -> str:
     revenue that includes cancelled orders is a different metric from the one Finance
     approved, and computing it without them would answer the wrong question precisely.
     """
-    expr = (metric.sql or "").strip()
-    if expr.lower().startswith("select"):
-        return expr
-    query = f"SELECT ({expr}) AS _v"
-    if metric.tables:
-        query += f" FROM {metric.tables[0]}"
-        if metric.filters:
-            query += " WHERE " + " AND ".join(metric.filters)
-    return query
+    from aughor.semantic.metric_statement import as_statement
+    return as_statement(metric.sql, list(metric.tables or []), list(metric.filters or []), "_v")
 
 
 def compute_value(metric: "MetricDefinition", db) -> MetricValue:
@@ -816,7 +809,11 @@ def _formula_columns(sql_expr: str) -> set[str]:
     try:
         import sqlglot
         from sqlglot import exp
-        tree = sqlglot.parse_one(f"SELECT {sql_expr}", read="duckdb")
+
+        from aughor.semantic.metric_statement import is_statement
+        # A statement parses as itself; an expression is a SELECT list without its SELECT.
+        tree = sqlglot.parse_one(sql_expr if is_statement(sql_expr) else f"SELECT {sql_expr}",
+                                 read="duckdb")
     except Exception:
         return set()
     if tree is None:
@@ -912,12 +909,16 @@ def _apply_ontology_overlay(
         if key in present:
             continue
         note = getattr(om, "verification_note", "") or ""
+        from aughor.semantic.metric_statement import as_statement
+        _tables = list(getattr(om, "tables", []) or [])
         out.append(MetricDefinition(
             name=om.id,
             label=om.display_name or om.id,
-            sql=om.formula_sql or "",
+            # A proposal is a statement (2026-09-26): the formula the ontology verified,
+            # wrapped over its table so a reader can run it as written.
+            sql=as_statement(om.formula_sql or "", _tables, [], om.id) if (om.formula_sql or "").strip() else "",
             unit=getattr(om, "unit", "") or "",
-            tables=list(getattr(om, "tables", []) or []),
+            tables=_tables,
             caveats=getattr(om, "description", "") or "",
             approved_by=("Human-curated" if note.startswith("human") else ""),
         ))

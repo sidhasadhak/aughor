@@ -94,7 +94,7 @@ def bare_name(name: str) -> str:
     return str(name or "").split(".")[-1].strip('`"[]').lower()
 
 
-def _table_columns(profile_entry: dict, table: str) -> dict[str, str]:
+def table_columns(profile_entry: dict, table: str) -> dict[str, str]:
     """column → declared type (lower-case), from the profiler's latest entry, whose columns are
     keyed FLAT as ``"table.column"`` (measured on theLook 2026-09-26 — a nested reading found
     none, and every metric fell back to its table's main date)."""
@@ -110,12 +110,12 @@ def _table_columns(profile_entry: dict, table: str) -> dict[str, str]:
     return out
 
 
-def _primary_date(profile_entry: dict, table: str) -> str:
+def primary_date(profile_entry: dict, table: str) -> str:
     tp = ((profile_entry or {}).get("tables") or {}).get(table) or {}
     return str(tp.get("primary_timestamp") or "").lower() if isinstance(tp, dict) else ""
 
 
-def _is_time(dtype: str) -> bool:
+def is_time(dtype: str) -> bool:
     return "date" in dtype or "time" in dtype
 
 
@@ -184,25 +184,57 @@ def infer(metric: Any, profile_entry: dict, *, dialect: str = "duckdb") -> Infer
     the table's main date — the one the platform reads to learn when its numbers settle."""
     import sqlglot
 
+    from aughor.semantic.metric_statement import final_select, is_statement, statement_tables
+
     sql = str(_get(metric, "sql") or "").strip()
     tables = list(_get(metric, "tables") or [])
     if not sql:
         return Inference(None, "it has no formula")
-    if sql.lower().startswith("select"):
-        return Inference(None, "its formula is a whole query, so its date must be set by a person")
-    if not tables:
-        return Inference(None, "it names no table")
-    table = bare_name(tables[0])
-    time_cols = {c for c, d in _table_columns(profile_entry, table).items() if _is_time(d)}
-    primary = _primary_date(profile_entry, table)
+    statement = is_statement(sql)
+    if statement:
+        # A statement (2026-09-26): the rules read its final SELECT's first expression as the
+        # formula and its WHERE as the filters, over the first table it reads; the date it
+        # sets is written as the grain, `table.column`, so the range cut knows which table
+        # to filter. Presence tests inside a CTE are not read — the proposals list is there
+        # for that, and a person picks.
+        try:
+            tree = sqlglot.parse_one(sql, read=dialect)
+        except Exception:  # noqa: BLE001
+            return Inference(None, "its statement does not parse")
+        sel = final_select(tree)
+        if sel is None:
+            return Inference(None, "its statement's outer query is not a SELECT")
+        read = statement_tables(sql, dialect)
+        tables = read or tables
+        if not tables:
+            return Inference(None, "it reads no table")
+        table_written = str(tables[0])
+        expressions = list(sel.expressions or [])
+        if not expressions:
+            return Inference(None, "its statement selects nothing")
+        expr = expressions[0].unalias() if hasattr(expressions[0], "unalias") else expressions[0]
+        where = sel.args.get("where")
+        filters = [where.this] if where is not None else []
+    else:
+        if not tables:
+            return Inference(None, "it names no table")
+        table_written = str(tables[0])
+        try:
+            expr = sqlglot.parse_one(sql, read=dialect)
+            filters = [sqlglot.parse_one(str(f), read=dialect)
+                       for f in (_get(metric, "filters") or []) if str(f).strip()]
+        except Exception:  # noqa: BLE001 — a formula the parser refuses is said, not guessed
+            return Inference(None, "its formula does not parse")
+    table = bare_name(table_written)
+    time_cols = {c for c, d in table_columns(profile_entry, table).items() if is_time(d)}
+    primary = primary_date(profile_entry, table)
     if primary:
         time_cols.add(primary)
-    try:
-        expr = sqlglot.parse_one(sql, read=dialect)
-        filters = [sqlglot.parse_one(str(f), read=dialect)
-                   for f in (_get(metric, "filters") or []) if str(f).strip()]
-    except Exception:  # noqa: BLE001 — a formula the parser refuses is said, not guessed
-        return Inference(None, "its formula does not parse")
+
+    def grain(col: str) -> str:
+        """A statement's date is written as its grain (`table.column`); an expression's stays
+        bare, on the definition's first table, as every reader has always read it."""
+        return f"{table_written}.{col}" if (statement and col) else col
     required: set[str] = set()
     empty: set[str] = set()
     for f in filters:
@@ -217,9 +249,9 @@ def infer(metric: Any, profile_entry: dict, *, dialect: str = "duckdb") -> Infer
         if not start:
             return Inference(None, f"it keeps rows where {until} is empty, but its table has no "
                                    "other date for a row to start counting from")
-        return _set("stock", start, f"set automatically: its filter keeps rows where {until} is "
-                                    f"empty, so it is a level — a row counts from {start} until "
-                                    f"{until}", until=until)
+        return _set("stock", grain(start), f"set automatically: its filter keeps rows where {until} is "
+                                           f"empty, so it is a level — a row counts from {start} until "
+                                           f"{until}", until=grain(until))
     ratio = _ratio(expr)
     if ratio is not None:
         num, den = ratio
@@ -227,23 +259,23 @@ def infer(metric: Any, profile_entry: dict, *, dialect: str = "duckdb") -> Infer
         anchor = sorted(required)[0] if required else primary
         if later and anchor and anchor not in later:
             outcome = sorted(later)[0]
-            return _set("cohort", anchor,
+            return _set("cohort", grain(anchor),
                         f"set automatically: its numerator counts rows that have {outcome} and its "
                         f"denominator counts every row, so it is tied to {anchor} and completed "
-                        f"by {outcome}", outcome=outcome)
+                        f"by {outcome}", outcome=grain(outcome))
     if required:
         col = sorted(required)[0]
-        return _set("flow", col, f"set automatically: its filter requires {col}, so a row counts "
-                                 f"on the day of {col}")
+        return _set("flow", grain(col), f"set automatically: its filter requires {col}, so a row counts "
+                                        f"on the day of {col}")
     counted = _presence_tests(expr, time_cols)
     if ratio is None and len(counted) == 1:
         col = next(iter(counted))
-        return _set("flow", col, f"set automatically: it counts rows that have {col}, so a row "
-                                 f"counts on the day of {col}")
+        return _set("flow", grain(col), f"set automatically: it counts rows that have {col}, so a row "
+                                        f"counts on the day of {col}")
     if primary:
-        return _set("flow", primary, f"set automatically: {primary} is the main date of {table} — "
-                                     "the one the platform reads to learn when the table's numbers "
-                                     "settle")
+        return _set("flow", grain(primary), f"set automatically: {primary} is the main date of {table} — "
+                                            "the one the platform reads to learn when the table's numbers "
+                                            "settle")
     return Inference(None, "its table has no date the profiler recognised")
 
 
@@ -254,8 +286,13 @@ def measure_maturity(metric: Any, run_sql: RunSql, *, dialect: str, today: date,
     days late is visible. Returns ``(days, how)`` or ``(None, why not)``."""
     from sqlglot import exp
 
-    anchor, outcome = _get(metric, "time_column"), _get(metric, "outcome_column")
+    from aughor.semantic.metric_statement import split_grain
+
+    grain_table, anchor = split_grain(_get(metric, "time_column"))
+    outcome = split_grain(_get(metric, "outcome_column"))[1]
     tables = list(_get(metric, "tables") or [])
+    if grain_table:
+        tables = [grain_table, *tables]                    # the grain names the table to read
     if _get(metric, "time_kind") != "cohort" or not (anchor and outcome and tables):
         return None, "it is not a cohort with an anchor and an outcome"
     lo, hi = today - timedelta(days=365), today - timedelta(days=120)
@@ -372,18 +409,23 @@ def measure_sql(metric: Any, windows: list[Window], *, dialect: str = "duckdb",
     import sqlglot
     from sqlglot import exp
 
+    from aughor.semantic.metric_statement import is_statement, split_grain
+
     if not windows:
         return None, "no window to measure"
     if not declared(metric):
         return None, "its dates are not set"
     formula = str(_get(metric, "sql") or "").strip()
     tables = list(_get(metric, "tables") or [])
-    if not formula or formula.lower().startswith("select") or not tables:
-        return None, "its formula is not an aggregate over a named table"
     kind = _get(metric, "time_kind")
-    time_col = str(_get(metric, "time_column"))
-    until = str(_get(metric, "until_column") or "")
-    outcome = str(_get(metric, "outcome_column") or "")
+    grain_table, time_col = split_grain(_get(metric, "time_column"))
+    until = split_grain(_get(metric, "until_column"))[1]
+    outcome = split_grain(_get(metric, "outcome_column"))[1]
+    if is_statement(formula):
+        return _measure_statement_sql(formula, kind, grain_table or (tables[0] if tables else ""),
+                                      time_col, until, outcome, windows, dialect=dialect, by=by)
+    if not formula or not tables:
+        return None, "its formula is not an aggregate over a named table"
     try:
         expr = sqlglot.parse_one(formula, read=dialect)
     except Exception:  # noqa: BLE001
@@ -421,6 +463,77 @@ def measure_sql(metric: Any, windows: list[Window], *, dialect: str = "duckdb",
             exp.and_(*[f.copy() for f in filters], when))
         if by:
             q = q.group_by(exp.column(by))
+        selects.append(q)
+    try:
+        stmt = reduce(lambda a, b: exp.union(a, b, distinct=False), selects)
+        return stmt.sql(dialect=dialect), ""
+    except Exception as exc:  # noqa: BLE001
+        return None, f"its query could not be built ({type(exc).__name__})"
+
+
+def _measure_statement_sql(statement: str, kind: str, grain_table: str, time_col: str, until: str,
+                           outcome: str, windows: list[Window], *, dialect: str,
+                           by: Optional[str]) -> tuple[Optional[str], str]:
+    """A STATEMENT measured for every window (2026-09-26): the table its grain names is
+    replaced, inside the statement, by itself filtered to the window — so the statement's own
+    arithmetic, CTEs and all, runs over one window's rows — and the statement stands as the
+    ``_v`` scalar beside ``_first`` / ``_last`` / ``_n`` read from the grain table under the
+    same filter. The same five columns the expression path returns, so `run_measure` reads
+    both alike.
+
+    What a statement cannot have: a segment (``by``) — the platform does not know where in
+    a whole query a group would go — and, for a stock, a level at a PAST date when the
+    statement itself tests its until column (the platform never rewrites what a statement
+    says; the grain's filter still bounds the rows). Both are said, never approximated."""
+    import sqlglot
+    from sqlglot import exp
+
+    from aughor.semantic.metric_statement import scoped_statement
+
+    if by:
+        return None, "a whole query cannot be cut by a segment — its segments are its own"
+    if not grain_table:
+        return None, "its date names no table and its definition names none"
+    if not time_col:
+        return None, "its dates are not set"
+    day = _day(exp.column(time_col))
+    selects = []
+    for w in windows:
+        if kind == "stock":
+            if not until:
+                return None, "a stock needs the column it counts until"
+            when = exp.and_(exp.LT(this=day.copy(), expression=_lit(w.end)),
+                            exp.paren(exp.or_(exp.Is(this=exp.column(until), expression=exp.Null()),
+                                              exp.GTE(this=_day(exp.column(until)), expression=_lit(w.end)))))
+        else:
+            when = exp.and_(exp.GTE(this=day.copy(), expression=_lit(w.start)),
+                            exp.LT(this=day.copy(), expression=_lit(w.end)))
+        rewrite = None
+        if kind == "cohort" and w.as_of is not None:
+            if not outcome:
+                return None, "a cohort needs the column that completes it"
+            rewrite = (lambda tree, _as_of=w.as_of: bound_outcome(tree, outcome, _as_of))
+        scoped, why, _n = scoped_statement(statement, grain_table, when, dialect=dialect, rewrite=rewrite)
+        if scoped is None:
+            return None, why
+        try:
+            inner = sqlglot.parse_one(scoped, read=dialect)
+        except Exception:  # noqa: BLE001
+            return None, "its scoped statement does not parse"
+        rows = (exp.select(exp.alias_(exp.Min(this=day.copy()), "_first"),
+                           exp.alias_(exp.Max(this=day.copy()), "_last"),
+                           exp.alias_(exp.Count(this=exp.Star()), "_n"))
+                .from_(_table(grain_table, dialect)).where(when.copy()))
+        q = exp.select(
+            exp.alias_(exp.Literal.string(w.label), "_w"),
+            exp.alias_(exp.Subquery(this=inner), "_v"),
+            exp.alias_(exp.Subquery(this=exp.select(exp.column("_first")).from_(
+                exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_first"),
+            exp.alias_(exp.Subquery(this=exp.select(exp.column("_last")).from_(
+                exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_last"),
+            exp.alias_(exp.Subquery(this=exp.select(exp.column("_n")).from_(
+                exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_n"),
+        )
         selects.append(q)
     try:
         stmt = reduce(lambda a, b: exp.union(a, b, distinct=False), selects)

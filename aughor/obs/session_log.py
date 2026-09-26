@@ -58,10 +58,16 @@ GUARDRAIL = "guardrail"
 #: metric for reasons unrelated to anything leaving the platform — and every future cap
 #: would trip at half its intended volume.
 EXTERNAL_CALL = "external_call"
+#: TJ-2 — one loop step of an agent turn, written from the one seam every tool loop passes
+#: (`agent/tool_loop.run_tool_loop`). The work-artifact fields (index, tool, ok, SQL, row
+#: count, error, guard fires, elapsed) are always present; the payload fields (the model's
+#: arguments, an excerpt of the tool's result) ride only while a prompt-capture window is
+#: open, and are withheld on an ungated read (`obs/trajectory.py`). §3.47's lawful lane.
+STEP = "step"
 
 EVENT_KINDS = (
     USER_REQUEST, TOOL_CALL, TOOL_CALL_RESULT, LLM_CALL,
-    FINAL_RESPONSE, EXECUTION_ERROR, GUARDRAIL,
+    FINAL_RESPONSE, EXECUTION_ERROR, GUARDRAIL, STEP,
 )
 
 # Cap free-text payload values (a question, a SQL string, an error). Matches the

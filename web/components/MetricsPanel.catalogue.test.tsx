@@ -36,6 +36,8 @@ vi.mock("@/lib/api", () => ({
   getMetricFreshness: vi.fn(),
   transitionMetric: vi.fn(),
   getMetricAudit: vi.fn(),
+  getMetricProposals: vi.fn(async () => ({ statements: [], statement_note: "", candidates: [], note: "" })),
+  generateMetricSql: vi.fn(),
 }));
 
 import { MetricsPanel } from "@/components/MetricsPanel";

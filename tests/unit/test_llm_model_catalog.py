@@ -305,13 +305,16 @@ def test_config_exposes_openrouter_to_the_ui(client):
 
 # ── the rot guard ─────────────────────────────────────────────────────────────
 
-#: A model id, in the two shapes this repo ever shipped: ``vendor/model`` and a
-#: ``:free`` / ``:cloud`` suffix. Kept narrow deliberately — this must fire on a
-#: returning list, not on every string containing a slash.
+#: A model id, in the three shapes this repo ever shipped: ``vendor/model``, a
+#: ``:free`` / ``:cloud`` suffix, and — found by the trajectory census on 2026-09-25,
+#: after a month of this guard passing — a vendor's own SLASHLESS id (``claude-opus-4-8``
+#: in `_fallback_model`'s default). Kept narrow deliberately — this must fire on a
+#: returning list, not on every string containing a slash or a dash.
 _MODEL_ID = re.compile(
     r'"[A-Za-z0-9._-]+:(?:free|cloud)"'
     r'|"(?:nvidia|google|openai|anthropic|meta-llama|deepseek|moonshotai|z-ai|qwen'
     r'|cohere|poolside|mistralai|together)/[A-Za-z0-9._:-]+"'
+    r'|"(?:claude|gpt|gemini|gemma|llama|mistral|mixtral|qwen|deepseek)-[A-Za-z0-9.-]*\d[A-Za-z0-9.-]*"'
 )
 
 
@@ -330,6 +333,11 @@ def test_no_model_id_ships_in_the_product():
     offenders: list[str] = []
     for path in sorted(root.rglob("*.py")):
         for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
+            # A comment ships nothing: the guard is over ids the product would SEND. The
+            # slashless pattern first fired on a comment recalling a retired keyword
+            # list; code and docstrings stay in scope.
+            if line.lstrip().startswith("#"):
+                continue
             if _MODEL_ID.search(line):
                 rel = path.relative_to(root.parent).as_posix()
                 offenders.append(f"{rel}:{i}: {line.strip()[:100]}")

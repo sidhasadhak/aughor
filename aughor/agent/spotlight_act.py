@@ -320,9 +320,10 @@ def _when_words(iso: str, tz: str = "") -> str:
             f"({dt:%H:%M} UTC)")
 
 
-def _resolve_automation(connection_id: str, ref: str):
+def resolve_automation(connection_id: str, ref: str):
     """An automation on THIS connection, by id or exact name — ``(automation, "")``
-    or ``(None, refusal)``. The binding law applied to a write's TARGET: a chain on
+    or ``(None, refusal)``. Public: SP-15's `explain` reads the same resolution, so the
+    Act and Guide limbs cannot disagree about which chain a name means. The binding law applied to a write's TARGET: a chain on
     another connection is refused with its home named, never silently acted on."""
     from aughor.automations.store import get_automation, list_automations
 
@@ -353,7 +354,7 @@ def _resolve_automation(connection_id: str, ref: str):
 
 def _resolve_agent(connection_id: str, ref: str):
     """An EXISTING agent on THIS connection (or unbound), by id or exact name —
-    ``(agent, "")`` or ``(None, refusal)``. The same binding law `_resolve_automation`
+    ``(agent, "")`` or ``(None, refusal)``. The same binding law `resolve_automation`
     applies to a write's target: an agent that belongs to another connection is
     refused with its home named, and an unknown name is a refusal, never an
     invitation to invent one."""
@@ -391,7 +392,7 @@ def pause_or_resume_automation(connection_id: str, args: dict, *, emit=None) -> 
     if action not in ("pause", "resume"):
         return {"staged": False,
                 "summary": f"unknown action {action!r} — this tool stages a pause or a resume"}
-    a, refusal = _resolve_automation(connection_id, str(args.get("automation") or ""))
+    a, refusal = resolve_automation(connection_id, str(args.get("automation") or ""))
     if a is None:
         return {"staged": False, "summary": f"Nothing staged: {refusal}"}
     until = str(args.get("until") or "").strip()
@@ -490,7 +491,7 @@ def edit_automation(connection_id: str, args: dict, *, emit=None) -> dict:
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.org.context import current_org_id
 
-    a, refusal = _resolve_automation(connection_id, str(args.get("automation") or ""))
+    a, refusal = resolve_automation(connection_id, str(args.get("automation") or ""))
     if a is None:
         return {"staged": False, "summary": f"Nothing staged: {refusal}"}
     reasoning = str(args.get("reasoning") or "edited from conversation")[:_MAX_REASON]

@@ -100,7 +100,8 @@ def ask_target(connection_id: str, *, depth: str = "quick",
                          depth=depth, schema_name=schema_name)
 
         async def _drain() -> dict:
-            seen: dict = {"sql": "", "columns": [], "rows": [], "headline": "", "error": ""}
+            seen: dict = {"sql": "", "columns": [], "rows": [], "headline": "", "error": "",
+                          "trace_id": ""}
             async for frame in build_ask_stream(req, None):
                 if not frame.startswith("data: "):
                     continue
@@ -116,7 +117,10 @@ def ask_target(connection_id: str, *, depth: str = "quick",
                              counter="evals.target.frame")
                     continue
                 kind = payload.get("type")
-                if kind == "sql":
+                if kind == "route":
+                    # TJ-2 — the run's trace id, so this rollout joins its trajectory.
+                    seen["trace_id"] = str(payload.get("trace_id") or "")
+                elif kind == "sql":
                     seen["sql"] = payload.get("sql", "")
                 elif kind == "columns":
                     seen["columns"] = payload.get("columns", []) or []
@@ -146,7 +150,8 @@ def ask_target(connection_id: str, *, depth: str = "quick",
         return EvalObservation(
             sql=seen["sql"], columns=seen["columns"], rows=seen["rows"],
             row_count=len(seen["rows"]), error=seen["error"],
-            narrative=seen["headline"], meta={"door": "ask", "depth": depth})
+            narrative=seen["headline"],
+            meta={"door": "ask", "depth": depth, "trace_id": seen["trace_id"]})
     return target
 
 

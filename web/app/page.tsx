@@ -591,10 +591,6 @@ function HomeScreen({
 
   return (
     <div className="aug-screen">
-      <div className="aug-content-header">
-        <span className="aug-content-title">Home</span>
-      </div>
-
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
 
         {/* WP-11 — ask-on-Home hero: the composer, front and centre. Shown once a connection
@@ -774,9 +770,8 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
 
   return (
     <div className="aug-screen">
-      <div className="aug-content-header">
-        <span className="aug-content-title">Recents</span>
-        <div className="aug-segmented" role="tablist" aria-label="Filter runs" style={{ marginLeft: 12 }}>
+      <div className="aug-toolbar">
+        <div className="aug-segmented" role="tablist" aria-label="Filter runs">
           {(["all", "investigation", "chat"] as const).map(f => (
             <button key={f} role="tab" aria-selected={filter === f} onClick={() => setFilter(f)} className="aug-seg-item">
               {f === "all" ? "All" : f === "investigation" ? "Agent" : "Chat"}
@@ -895,10 +890,6 @@ function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, wor
 
   return (
     <div className="aug-screen">
-      <div className="aug-content-header">
-        <span className="aug-content-title">Settings</span>
-      </div>
-
       {/* Sub-tab rail — grouped settings instead of one long scroll */}
       <div className="aug-tabs" role="tablist" aria-label="Settings sections" style={{ padding: "10px 16px 0", flexShrink: 0 }}>
         {SUBS.map(s => (
@@ -1437,7 +1428,7 @@ export default function Home() {
   const [density, setDensityState] = useState<Density>("comfortable");
   const [rawSelectedConn, setSelectedConn] = useState("");
 
-  const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number } | undefined>(undefined);
+  const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number; mode?: "visual" | "sql"; name?: string } | undefined>(undefined);
   const [activeCanvas, setActiveCanvas] = useState<Canvas | null>(null);
   const [initialCanvasInvId, setInitialCanvasInvId] = useState<string | null>(null);
   const [initialCanvasChatId, setInitialCanvasChatId] = useState<string | null>(null);
@@ -2070,11 +2061,12 @@ export default function Home() {
 
   // Open in the Query workbench — a query handed off from Insights / Deep Analysis.
   // Defaults the connection to the currently selected one (what the finding ran against).
-  // The workbench opens in Visual mode, which is where importRequest is handled (SE-1).
-  const handleOpenInQuery = ({ sql, connId, mode }: OpenInQueryRequest) => {
+  // A `mode: "sql"` request opens as a new SQL tab; any other lands in Visual mode, which
+  // is where QueryBuilder handles importRequest (SE-1).
+  const handleOpenInQuery = ({ sql, connId, mode, name }: OpenInQueryRequest) => {
     const c = connId || selectedConn;
     if (c && c !== selectedConn) setSelectedConn(c);
-    setBuilderImport({ connId: c, sql, nonce: Date.now() });
+    setBuilderImport({ connId: c, sql, nonce: Date.now(), mode, name });
     // A caller that names a mode gets it; one that does not leaves the workbench on
     // its own default rather than being silently forced into the visual composer.
     if (mode) setQueryInitialMode(mode);
@@ -2217,14 +2209,13 @@ export default function Home() {
 
             {/* ── CHAT (Investigate) ── always mounted so SSE streams survive tab switches */}
             <div style={{ flex: 1, flexDirection: "column", overflow: "hidden", background: "var(--bg-0)", display: tab === "chat" ? "flex" : "none" }}>
-                {/* Chat header */}
-                <div className="aug-content-header">
-                  <span className="aug-content-title">Investigate</span>
+                {/* Chat toolbar — what the conversation is scoped to (left), its actions (right) */}
+                <div className="aug-toolbar">
                   {activeCanvas ? (
                     <>
                       <span style={{
                         display: "inline-flex", alignItems: "center", gap: 5,
-                        padding: "2px 8px", borderRadius: "var(--r2)", marginLeft: 4,
+                        padding: "2px 8px", borderRadius: "var(--r2)",
                         background: "color-mix(in srgb, var(--blue4) 12%, transparent)",
                         border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
                         fontSize: 11, color: "var(--blue4)", fontWeight: 500,
@@ -2250,7 +2241,7 @@ export default function Home() {
                       </button>
                     </>
                   ) : selectedConn ? (
-                    <span className="aug-tag aug-tag-gray" style={{ marginLeft: 4 }}>
+                    <span className="aug-tag aug-tag-gray">
                       {connections.find(c => c.id === selectedConn)?.name ?? selectedConn}
                     </span>
                   ) : null}
@@ -2421,9 +2412,6 @@ export default function Home() {
             {/* ── PLAYBOOK ── */}
             {tab === "playbook" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <span className="aug-content-title">Playbook</span>
-                </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 0 16px" }}>
                   <PlaybookPanel />
                 </div>
@@ -2432,9 +2420,6 @@ export default function Home() {
 
             {tab === "documents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <span className="aug-content-title">Documents</span>
-                </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px" }}>
                   <DocumentUploader />
                 </div>
@@ -2444,10 +2429,7 @@ export default function Home() {
             {/* ── RECOMMENDATION INBOX ── */}
             {tab === "inbox" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <span className="aug-content-title">Recommendation Inbox</span>
-                </div>
-                <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 16px" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
                   <RecommendationInbox onOpenInvestigation={invId => { setSelectedHistoryInvId(invId); setTab("chat"); }} workspaceId={selectedWorkspace} />
                 </div>
               </div>
@@ -2456,12 +2438,6 @@ export default function Home() {
             {/* ── HEALTH SCORECARD ── */}
             {tab === "health" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <span className="aug-content-title">Health Scorecard</span>
-                  <span className="aug-content-meta">
-                    {connections.find(c => c.id === selectedConn)?.name ?? selectedConn}
-                  </span>
-                </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
                   <ProcessHealthPanel connectionId={selectedConn} onInvestigate={goToChat} />
                 </div>
@@ -2479,7 +2455,7 @@ export default function Home() {
                 ariaLabel="Data views"
                 // Catalog / SQL Editor / Semantic Layer are each their own rail item,
                 // so the switcher row repeated the rail. The rail is the switcher.
-                headerless
+                hideTabs
                 renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
                 renderLayer={id => {
                   if (id === "query") return (

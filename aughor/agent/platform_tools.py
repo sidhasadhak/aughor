@@ -619,6 +619,179 @@ _HELP_ALIASES = {
 }
 
 
+def _departure_shelf() -> tuple[dict[str, str], dict[str, str]]:
+    """SP-15 — the corpus's first shelf: the departure gate and its laws, as help topics.
+
+    One topic for the gate (``departures``) and one per guard, each built from the words
+    the repo already maintains — the law's sentence from the gate module's docstring and
+    the remedy from the module beside it — never a second telling. Aliases carry the
+    reader's spellings ("re-measure", "held", "hold") so *"what is re-measure"* answers
+    with law 1 and its remedy in one call, which the wave's baseline could not do in
+    eight (§3.11 SP-15)."""
+    from aughor.govern.departure import GUARD_LABELS, GUARDS
+    from aughor.govern.departure_remedies import HOLD_LEAD, REMEDIES, laws
+
+    told = laws()
+    topics: dict[str, str] = {}
+    aliases: dict[str, str] = {
+        "departure": "departures", "departure gate": "departures", "gate": "departures",
+        "held": "departures", "hold": "departures", "holds": "departures",
+        "the gate": "departures", "outbound": "departures", "send": "departures",
+    }
+    lines = []
+    for guard in GUARDS:
+        law = told.get(guard) or {}
+        remedy = REMEDIES.get(guard) or {}
+        label = GUARD_LABELS.get(guard, guard)
+        number = law.get("law") or "no number"
+        sentence = law.get("sentence") or ""
+        topics[guard] = (
+            f"{label} ({number}) — {sentence}\n\n"
+            f"What a hold by it means: {remedy.get('meaning', '')}\n\n"
+            f"What to do: {remedy.get('action', '')}"
+        ).strip()
+        lines.append(f"- {label} ({number}): {remedy.get('meaning', sentence)}")
+        aliases[label.lower()] = guard
+        aliases[label.lower().replace("-", "")] = guard
+        aliases[label.lower().replace("-", " ")] = guard
+    aliases.update({"re-measured": "remeasure", "remeasured": "remeasure",
+                    "measured": "remeasure", "claim": "claims", "claim types": "claims",
+                    "causal": "claims", "forecast": "claims", "stale": "freshness",
+                    "sla": "freshness", "draft metric": "definition",
+                    "unapproved": "definition", "probationary": "probation",
+                    "graduate": "probation", "graduation": "probation",
+                    "duplicate": "repeat", "noise": "repeat", "readings": "disagreement",
+                    "owner question": "disagreement", "quality tests": "tie_out",
+                    "computation error": "trust", "reframe": "trust"})
+    topics["departures"] = (
+        "The departure gate is content customs: every message that leaves the platform "
+        "— a Slack post, a scheduled briefing, a monitor alert, an Action Hub send — is "
+        "checked first, and every decision (departed or held) lands in the departures "
+        "ledger with its reasons. Ten guards run in order, each a law the receipt names:\n"
+        + "\n".join(lines)
+        + f"\n\n{HOLD_LEAD} The departures screen (Agent Ops › Departures) shows every "
+          "held row with what to change and doors to the fix; ask for one guard by name "
+          "for its law and remedy."
+    )
+    return topics, aliases
+
+
+_DEPARTURE_TOPICS, _DEPARTURE_ALIASES = _departure_shelf()
+_HELP_TOPICS.update(_DEPARTURE_TOPICS)
+_HELP_ALIASES.update(_DEPARTURE_ALIASES)
+#: The topics written by hand (and the departure shelf) — what a parsed shelf may never
+#: shadow. Snapshotted BEFORE the parsed shelves load, so a shelf built from a fixture
+#: tree in a test is judged against the same set as the one built from the checkout.
+_HAND_TOPICS = frozenset(_HELP_TOPICS)
+
+
+def _docs_root():
+    """The repo's `docs/` beside the package — present in a checkout, absent in a bare
+    install. A shelf whose source is absent is simply empty; `platform_help` then says
+    so for the words it would have known."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    return root if (root / "docs" / "GLOSSARY.md").exists() else None
+
+
+def _glossary_shelf(root) -> tuple[dict[str, str], dict[str, str]]:
+    """§6 item 33(b), the second shelf — the glossary, served, never retold.
+
+    `docs/GLOSSARY.md` is the authority for names (one word, one concept) and it is a
+    table per section: **Use this** · For · Don't use. Each row becomes a topic under the
+    term, and every "don't use" word becomes an ALIAS of the term it was retired for — so
+    *"what is an insight"* answers with **Finding** and says which word is retired. Read
+    from the file at import; the file is what the vocabulary ratchet enforces, so the
+    help cannot drift from the rule."""
+    import re
+    topics: dict[str, str] = {}
+    aliases: dict[str, str] = {}
+    if root is None:
+        return topics, aliases
+    section = ""
+    for line in (root / "docs" / "GLOSSARY.md").read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            section = line[3:].strip()
+            continue
+        m = re.match(r"^\|\s*\*\*(?P<term>[^*]+)\*\*\s*\|(?P<for>[^|]*)\|(?P<dont>[^|]*)\|\s*$", line)
+        if not m:
+            continue
+        term = m.group("term").strip()
+        meaning = re.sub(r"\s+", " ", m.group("for")).strip()
+        dont = re.sub(r"\s+", " ", m.group("dont").replace("**", "")).strip()
+        key = term.lower()
+        if not term or not meaning or key in _HAND_TOPICS or key in topics:
+            continue
+        text = f"{term} ({section.lower()}) — {meaning}."
+        if dont and dont != "—":
+            text += f" Not: {dont}."
+        topics[key] = text
+        # Retired spellings resolve to the word that replaced them — only single words or
+        # short phrases, never a parenthetical explanation.
+        for raw in re.split(r",|;", dont):
+            word = re.sub(r"[*`\"]", "", raw).strip().lower()
+            word = re.sub(r"\s*\(.*?\)\s*", " ", word).strip()
+            if word and word != "—" and 2 <= len(word) <= 32 and word not in _HAND_TOPICS \
+                    and word not in topics and word not in aliases and " as " not in word \
+                    and " in " not in word:
+                aliases[word] = key
+    return topics, aliases
+
+
+def _arc_shelf(root) -> tuple[dict[str, str], dict[str, str]]:
+    """The other half of the second shelf: each §3 arc's one-paragraph summary — its
+    header and the first paragraph of its origin block — under `arc <code>` and the code
+    itself. Not the whole roadmap: ten thousand lines of history is not help."""
+    import re
+    topics: dict[str, str] = {}
+    aliases: dict[str, str] = {}
+    if root is None or not (root / "ROADMAP.md").exists():
+        return topics, aliases
+    lines = (root / "ROADMAP.md").read_text(encoding="utf-8").splitlines()
+    header = re.compile(r"^### 3\.\d+ · Arc (?P<code>[A-Z]{2,3}) — (?P<title>.*)$")
+    i = 0
+    while i < len(lines):
+        m = header.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        code, title = m.group("code"), m.group("title")
+        title = re.sub(r"\s*\((?:adopted|drafted|DRAFTED|built|DROPPED).*$", "", title).strip()
+        title = re.sub(r"\*\*", "", title)
+        j = i + 1
+        quote: list[str] = []
+        while j < len(lines) and not lines[j].startswith("### "):
+            if lines[j].startswith("> "):
+                body = lines[j][2:].strip()
+                if quote and not body:
+                    break                      # the origin block's first paragraph ends
+                if body:
+                    quote.append(body)
+            elif quote:
+                break
+            j += 1
+        summary = re.sub(r"\s+", " ", " ".join(quote))
+        summary = re.sub(r"\*\*Origin\.\*\*\s*", "", summary)
+        summary = re.sub(r"[*_`]", "", summary)
+        if len(summary) > 700:
+            summary = summary[:700].rsplit(" ", 1)[0] + " …"
+        key = f"arc {code.lower()}"
+        topics[key] = f"Arc {code} — {title}." + (f" {summary}" if summary else "")
+        if code.lower() not in _HAND_TOPICS and code.lower() not in topics:
+            aliases[code.lower()] = key
+        i = j
+    return topics, aliases
+
+
+_DOCS_ROOT = _docs_root()
+_GLOSSARY_TOPICS, _GLOSSARY_ALIASES = _glossary_shelf(_DOCS_ROOT)
+_ARC_TOPICS, _ARC_ALIASES = _arc_shelf(_DOCS_ROOT)
+_HELP_TOPICS.update(_GLOSSARY_TOPICS)
+_HELP_TOPICS.update(_ARC_TOPICS)
+for _alias, _topic in {**_GLOSSARY_ALIASES, **_ARC_ALIASES}.items():
+    _HELP_ALIASES.setdefault(_alias, _topic)       # a hand-written alias always wins
+
+
 def platform_help(connection_id: str, args: dict) -> dict:
     """What Aughor is and how to use it — curated text, no model, no network."""
     topic = str(args.get("topic") or "").strip().lower()
@@ -702,7 +875,10 @@ _HELP_PARAMS = {
     "properties": {"topic": {
         "type": "string",
         "description": "Optional topic: overview, connect, explore, briefing, "
-                       "analysis, monitors, packs, governance.",
+                       "analysis, monitors, packs, governance, departures (the "
+                       "departure gate), or one of its guards by name — re-measure, "
+                       "definition, trust, caveat, tie-out, freshness, claim type, "
+                       "disagreement, repeat, probation.",
     }},
 }
 
@@ -873,11 +1049,14 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
             name="platform_help",
             description=(
                 "What Aughor's pieces ARE — connecting a warehouse, exploration, "
-                "briefings, analysis modes, monitors, packs, governance. Use for "
-                "concept questions about the PRODUCT ('what can you do', 'what is a "
-                "briefing'), never for questions about the data. For a 'how do I…' "
-                "walkthrough grounded in this deployment's live state, use "
-                "platform_guide."
+                "briefings, analysis modes, monitors, packs, governance, and the "
+                "departure gate with each of its laws by guard name (re-measure, "
+                "definition, claim type, trust…: the law's sentence, what a hold "
+                "means, what to change). Use for concept questions about the PRODUCT "
+                "('what can you do', 'what is a briefing', 'what is re-measure'), "
+                "never for questions about the data. For a 'how do I…' walkthrough "
+                "grounded in this deployment's live state, use platform_guide; for "
+                "THIS departure, automation or metric by id, use explain."
             ),
             parameters=_HELP_PARAMS,
             run=lambda a: platform_help(connection_id, a),

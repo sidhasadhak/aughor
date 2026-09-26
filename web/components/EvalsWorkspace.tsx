@@ -58,7 +58,7 @@ type Props = {
 /**
  * The Evals workspace — the surface over Wave E's consolidated eval store (E3),
  * evaluator library (E2) and grid/fidelity harness (E4). An *instance* of the
- * generic `<Workspace>` shell: the shell owns the header + switcher + keep-alive;
+ * generic `<Workspace>` shell: the shell owns the switcher + keep-alive;
  * the panels bring their own bodies. Suites author what to measure; Runs shows a
  * measurement as a band (replicates + noise floor), never a single-run point.
  */
@@ -69,7 +69,6 @@ export function EvalsWorkspace({ connId, workspaceId, layer, onLayerChange }: Pr
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Evals views"
-      title="Evals"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "runs") return <EvalRunPanel connId={connId} workspaceId={workspaceId} />;

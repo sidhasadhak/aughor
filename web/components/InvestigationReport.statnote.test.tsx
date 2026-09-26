@@ -111,3 +111,25 @@ describe("the split is declared, not sniffed", () => {
     expect(screen.getByText(/z = 0\.4/)).toBeInTheDocument();
   });
 });
+
+/** A report can hold several phases of one KIND: scheduled runs routinely produce two or more
+ *  `decomposition` phases (26 of the last 100 reports, measured 2026-09-26). Keyed by `phase_id`,
+ *  React reported "two children with the same key" and could drop one. vitest.setup.ts fails this
+ *  test on a colliding key; the assertions check that no phase was dropped. */
+describe("phases that share a kind all render", () => {
+  it("renders both decomposition phases", () => {
+    const phase = (phase_id: string, phase_name: string) => ({
+      phase_id, phase_name, phase_icon: "", status: "complete", summary: `${phase_name}: what it found.`, findings: [],
+    });
+    render(<ReportView report={{
+      headline: "Revenue fell in the South", executive_summary: "", confidence: "MEDIUM",
+      phases: [
+        phase("decomposition", "Decomposition by region"),
+        phase("baseline", "Baseline"),
+        phase("decomposition", "Decomposition by channel"),
+      ],
+    } as never} />);
+    expect(screen.getByText(/Decomposition by region/)).toBeInTheDocument();
+    expect(screen.getByText(/Decomposition by channel/)).toBeInTheDocument();
+  });
+});

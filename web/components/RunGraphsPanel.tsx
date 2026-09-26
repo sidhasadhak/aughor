@@ -21,6 +21,7 @@ import {
   type InvestigationGraph, type InvestigationListRow,
 } from "@/lib/api";
 import { relTime } from "@/lib/format";
+import { withUniqueKeys } from "@/lib/listKeys";
 
 const PHASE_HUE: Record<string, "positive" | "negative" | "caution" | "muted"> = {
   complete: "positive", partial: "caution", skipped: "muted", error: "negative",
@@ -162,8 +163,9 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
 
               {graph.phases.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {graph.phases.map(p => (
-                    <div key={p.phase_id} style={{ display: "flex", alignItems: "center",
+                  {/* `phase_id` names the phase's KIND — a run can hold two of one kind. */}
+                  {withUniqueKeys(graph.phases, p => p.phase_id).map(([key, p]) => (
+                    <div key={key} style={{ display: "flex", alignItems: "center",
                       gap: 8, fontSize: 12 }}>
                       <StatusChip hue={PHASE_HUE[p.status] ?? "muted"} strength="soft">
                         {p.status}

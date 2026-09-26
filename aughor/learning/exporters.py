@@ -415,6 +415,32 @@ def _guards_clean(report: dict) -> bool:
     return guards_clean(report.get("envelope"))
 
 
+def _trajectory_clean(answer: dict) -> tuple[bool, dict]:
+    """TJ-2 — "guards clean" derived from the run's OWN record for a turn filed before
+    envelopes were (TJ-1's falsifier fired: 1 bronze row from 821 turns, because the tier
+    read envelopes and envelopes exist since 2026-09-23). A turn is clean by its trajectory
+    when every statement it ran came back without error and no guard fired on it; a turn
+    with no trace, or one whose stores could not be read, is NOT vouched for — the same
+    posture as `guards_clean` on a missing envelope. Returns the verdict and the compact
+    trajectory context a training row carries (the steps' tools and statements, the
+    guard fires, the execution outcome) — what the model saw, from the record itself."""
+    trace = str(answer.get("trace_id") or "")
+    if not trace:
+        return False, {}
+    from aughor.obs.trajectory import trajectory_of
+    t = trajectory_of(trace)
+    if t is None:
+        return False, {}
+    executions, guards, steps = t.get("executions"), t.get("guards"), t.get("steps") or []
+    if not isinstance(executions, list) or not isinstance(guards, list):
+        return False, {}                      # a store that could not be read vouches for nothing
+    ran_clean = bool(executions) and not any(x.get("error") for x in executions)
+    context = {"steps": [{"tool": st.get("tool"), "sql": st.get("sql") or ""} for st in steps][:12],
+               "guard_fires": [g.get("pattern") for g in guards][:12],
+               "execution": t["reward"]["execution"]}
+    return (ran_clean and not guards), context
+
+
 def _latest_recheck(report: dict) -> dict:
     checks = [c for c in (report.get("rechecks") or []) if isinstance(c, dict)]
     return checks[-1] if checks else {}
@@ -434,16 +460,31 @@ def export_bronze(name: str = "nl2sql-bronze", *, task: str = "nl2sql", limit: i
     # `accepted` means a person accepted THIS query — an accept whose posted SQL the answer never ran is not that
     accepted = {str(r.get("investigation_id")) for r in verdicts if r["verdict"] == "accept" and r["sql_ran"]}
     dialects = _dialects()
-    rows = [a for a in _answered_turns(limit)
-            if graded.get(a["id"]) not in ("reject", "correct") and a["report"].get("rows")
-            and _guards_clean(a["report"])
-            and not str(_latest_recheck(a["report"]).get("reason") or "").startswith("re-running its query failed")
-            and held.admits(a["question"], a["report"].get("sql") or "")]
+    rows, vouched = [], {}
+    for a in _answered_turns(limit):
+        if graded.get(a["id"]) in ("reject", "correct") or not a["report"].get("rows"):
+            continue
+        if str(_latest_recheck(a["report"]).get("reason") or "").startswith("re-running its query failed"):
+            continue
+        if not held.admits(a["question"], a["report"].get("sql") or ""):
+            continue
+        # The envelope vouches when there is one; a turn filed before envelopes were is
+        # vouched for by its own trajectory (TJ-2), or not at all.
+        if _guards_clean(a["report"]):
+            vouched[a["id"]] = ("envelope", {})
+        else:
+            clean, context = _trajectory_clean(a)
+            if not clean:
+                continue
+            vouched[a["id"]] = ("trajectory", context)
+        rows.append(a)
     examples = _dedupe([
         {"prompt": _scrub(a["question"]), "completion": _scrub(a["report"]["sql"]),
          "context": _context(a.get("connection_id") or "", a["report"]["sql"], dialects),
          "tier": "bronze", "accepted": a["id"] in accepted,
-         "rechecked": str(_latest_recheck(a["report"]).get("status") or ""), "task": task}
+         "rechecked": str(_latest_recheck(a["report"]).get("status") or ""), "task": task,
+         "vouched_by": vouched[a["id"]][0],
+         **({"trajectory": vouched[a["id"]][1]} if vouched[a["id"]][1] else {})}
         for a in rows
     ])
     return store.register(name, "sft_bronze", examples, task=task,

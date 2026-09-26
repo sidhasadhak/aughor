@@ -3779,11 +3779,89 @@ limb, three movements:
 per held guard, what it means, what to change, and doors to Automations, the analysis, the Semantic Layer and
 Spotlight (the question carries the guard's own sentence and the departure id, the handoff this wave makes
 structural).
+**Live before-receipt, 2026-09-25 — the wave's baseline.** The Ask door's question (*"A departure was held by the
+Re-measure guard: 1,648.08 … not in analysis ecb56660 … what should I change so the next run sends? (departure
+073097487898, automation "The Look - Daily Briefing")"*) reached Spotlight twice (session-log traces `09dc6168`,
+`c162e555`) and both turns ended in *"I ran out of steps before reaching an answer (8 tool calls)"*. The route, read
+from `session_events`: `platform_help` (twice — it holds no law) → `platform_traces` (twice) → `list_monitors` →
+`search_graph` → `list_tables` / `search_documents` → `platform_runs` → `platform_premortem`. Not one tool on the
+roster can read a departure, an automation's effects or a law, so a platform question was answered with data tools
+until the step budget ran out. The done-when below therefore has a number to beat: the same question in at most two
+tool calls (`explain(departure, id)` + `platform_help("re-measure")`), measured the same way.
+**Order of work (the user, 2026-09-25: *"Lets take this the next time.."*):** (1) `explain` over departures first —
+the store read exists (`get_departure`) and the remedy table exists (`web/lib/departureRemedies.ts`), so the tool is
+a reader plus the law's sentence; (2) law 1's text into `platform_help` under the aliases "re-measure", "remeasure",
+"held"; (3) the Ask door sends `{kind: "departure", id}` structurally, so the router never parses it from prose;
+then automations and metrics by the same three moves.
 **Done when:** "what is re-measure and how do I unblock it", asked in the palette from a held row, answers with law 1
 in its own words, THIS departure's ungrounded numerals, the automation by name, and offers the revise; measured like
 SP-M — the share of held rows whose Ask door was used, from the session log, no model.
 **Cost:** a corpus loader over prose that already exists; one declared tool; three doors. No new store. ⚑ nothing
 spends: every read is local.
+**Status 2026-09-26 — the order of work's three moves BUILT (`claude/clean-panels-evidence-keys`), plus
+automations and metrics as `explain` kinds; the second shelf and the measure followed the same day (below).**
+- **The corpus knows the laws — from the gate's own text.** `govern/departure_remedies.py` holds the remedy table
+  (moved out of `web/lib/departureRemedies.ts`, which is deleted) and READS each law's sentence from
+  `govern/departure.py`'s module docstring by regex — parsed, never copied, and a test mutates the docstring to
+  prove the words come from it; a bullet the parser cannot find is a failing test for all ten guards.
+  `platform_help` grew a `departures` topic and one per guard, built from that module at import; aliases carry the
+  reader's spellings. Proved: `platform_help("re-measure")` → topic `remeasure`, law 1's sentence, "What to do:
+  … ask for it in the automation's question".
+- **`explain` — one declared read, on every transport.** `agent/spotlight_explain.py`, declared first in the Guide
+  limb so the parity ratchet carries it to conversation, `/spotlight/tools` and the MCP server unchanged. Kinds:
+  departure (state, automation, analysis id, every guard's outcome and recorded sentence in the gate's order, the
+  remedy with each law, an offer), automation (`_resolve_automation` by id or exact name; triggers, steps with
+  their questions, last run, the five newest departures), metric (lifecycle, definition, tests, freshness SLA;
+  a draft says it cannot back a departing number). Every offer names a roster tool or the screen that holds the
+  act (SP-4's law, pinned): `edit_automation` for schedule · name · enabled, the Automations canvas for the
+  question — the "revise the question in place" the draft promised is NOT a chat door today and the tool says so.
+  Proved on a read-only copy of the live ledger: `explain(departure, 073097487898)` answers *held by re-measure ·
+  1,648.08, 1,151.01, 23,776.00, 4,702.23 not in analysis ecb56660 · law 1 · The Look - Daily Briefing · offer
+  edit_automation*; `explain(automation, 3440db08…)` lists its schedule, the investigate step's question, and
+  five recent departures, all held.
+- **The door on the row is structural.** `askSpotlight(question, focus)` parks `{kind: "departure", id}` beside
+  the question; the palette sends it as `focus` on the `/ask` body (`AskFocus`, typed client regenerated); the
+  chat proxy forwards it; `_focus_prose_for` runs `explain` ONCE before the loop and hands the result to the
+  conversation as a named tool result ("do not call explain again for this object"). The id never rides in the
+  prose. The departures screen now reads its remedies from the served row (`remedy` on every held row from
+  `GET /departures`) — one module, three readers.
+- **✅ The live re-ask, 2026-09-26 15:12Z (the user: *"Restart and re-ask"*; API restarted through
+  `scripts/restart_api.py`, pid 80037).** The held row's question, sent to `/ask` with
+  `focus={departure, 073097487898}`, trace `9ebb4e3f`: **one turn, four tool calls, a complete answer** —
+  against the baseline's eight calls and no answer, twice. The calls, from the session log:
+  `platform_help("re-measure")` → `explain(automation, 3440db08…)` → `explain(metric, revenue)` → `present`.
+  **The departure itself was never re-read**: the focus prose carried it, so the object cost 0 calls; the two
+  `explain` calls enriched the answer with the automation's own question and the metric's lifecycle, and
+  `present` is the answer in parts, not a read. The answer states law 1 in its own words, names the four
+  ungrounded numerals and the analysis, names the automation, gives the two levers (the question on the
+  Automations canvas; the writer's instruction), warns from the automation's five held departures that the
+  next hold would be `trust`/`definition` because `revenue` is a draft metric with no tests, and ends on the
+  offer (`edit_automation`; the question edit and the metric approval named as the acts that unblock the send).
+  Its own trajectory is readable at `GET /traces/9ebb4e3f/trajectory`: 18 events, 4 steps, 4 decisions joined
+  by one trace, the answer row `526bd191`, reward fields unlabeled, payloads withheld. And the measure moved:
+  `ask_door` read 0 of 18 before and **1 of 18 (0.056)** after.
+- **Later, 15:50Z — agent and analysis as `explain` kinds (item 33(c)'s "then"), and the meters served.**
+  `explain(agent)` reads a custom agent by id or exact name: scope, documents, grants, the evaluation in the
+  guide's OWN sentence (`spotlight_guide.eval_sentence`, one source for both readers), recent runs; offer
+  `propose_agent_grant`, the Agents screen for instructions and the Prove step. `explain(analysis)` reads a run:
+  kind, status, question, queries, confidence, re-checks, verdict, the departures that cite it, and its
+  trajectory's address; the offer names the conversation and Agent runs. Proved live on the restarted API
+  (pid 83404): `explain(analysis, ecb56660)` → *deep analysis, complete, confidence MEDIUM, guards not vouched
+  for, 1 departure cites it, 1 held*; `explain(agent, "Anomaly Scout")` → *enabled, bound to theLook, never
+  evaluated — its Prove step is still open, 0 recent runs*. `GET /spotlight/uptake` serves SP-M's vocabulary
+  meter — which had NO route since it shipped — beside the Ask door's: live, **answers in parts 4 of 22
+  converse turns (0.182)**, the Ask door 1 of 18.
+- **Later the same day — the second shelf and the measure, BUILT.** Item 33(b)'s shelf: `platform_help` now
+  reads `docs/GLOSSARY.md` (39 terms served under their own word, and 63 retired spellings resolving to the word
+  that replaced them — *"what is an insight"* answers with **Finding** and says the word is retired) and each §3
+  arc's header plus the first paragraph of its origin block (17 arcs, under `arc <code>` and the code) — parsed
+  from the files the ratchet enforces, never retold; a checkout without `docs/` has empty shelves and says so
+  per word. A hand-written alias always outranks a parsed one. The measure: `GET /departures/summary` carries
+  `ask_door` — held rows in the ledger, how many Spotlight was asked about FROM the row (the request event now
+  records `focus`), the share, by day; unreadable reports `measured: false`, never zero
+  (`obs/ask_door_uptake.py`). Live: 18 held rows (the ledger, 2026-09-26 midday) and 0 asked from the row — by
+  construction, since no request event could carry `focus` before this code; the first reading that means
+  anything comes after the restart.
 
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
@@ -8722,6 +8800,46 @@ fewer than ten rows from 821 completed chat turns, the constraint is that envelo
 the tier reads envelopes — TJ-2 then derives "guards clean" from the audit and guard tables for older turns, or the
 arc accepts accrual from now and says so.
 
+**Status 2026-09-26 — BUILT in part (`claude/clean-panels-evidence-keys`); one tap waits on the operator.**
+- **The exporters ran once, through the live API (the one writer).** `POST /learning/export` and
+  `POST /learning/export/decisions`, 2026-09-26 12:16Z. Gate report before → after: sft 0 → 0 · dpo 0 → 0 ·
+  golden 5 → 5 · guard days 22 of 30 · **bronze 0 → 1** · repairs 0 → 0 · **choice 0 → 211** (analyst.tool 138,
+  converse.tool 73) · **choice_golden 0 → 26**. `data/datasets/` came back with seven snapshots (the golden set's
+  5 rows read again). **The falsifier fired:** bronze yielded 1 row from 821 completed turns — envelopes exist
+  only since 2026-09-23, so bronze accrues from now; TJ-2 decides whether older turns are graded from the audit
+  and guard tables. The exporters still have no loop: run by hand until TJ-2.
+- **Three joins, re-measured first.** (1) The receipt's model id — `LLMProvider` had `_model` and no property;
+  `model` is now a read-only property and the receipt stamps it (defect 1 closed). (2) The decision record's
+  trace — was a fresh uuid per turn; it is now the run's ambient trace (`current_trace_id()`, the id
+  `build_ask_stream` binds and the history row carries), a fresh id only when none is bound; a test drives
+  `_stream_converse` under `bind_trace` and reads the id `converse` received (defect 2 closed). (3) The history
+  row's `trace_id` — **already written**: `db/history.py` fills it from the ambient trace since #547, and every row
+  since then carries one (5 of 5 since 2026-09-25; the census counted 1,113 rows written before the writer). No
+  change; the census row is corrected here.
+- **The slashless model id.** `_fallback_model()` lost its default (`""`, skipped like any unconfigured backend);
+  the ratchet's pattern learned vendor-prefixed slashless ids (`claude-…`, `gpt-…`, `gemini-…`, …), mutation-
+  tested against the removed literal, and skips comment lines (its first new hit was a comment recalling a
+  retired keyword list — a comment ships nothing). Defect 4 closed.
+- **Why every call was unpriced — measured.** 83 of 83 calls on 2026-09-25, all `openrouter /
+  deepseek/deepseek-v4.1-flash`, a model whose rate OpenRouter publishes and `llm/models.py` already converts to
+  USD per 1M. `refresh_catalogue_prices` HAD NO CALLER. `/obs/usage-summary` now consults the catalogue at most
+  hourly before pricing and says whose gap an unpriced call is (`pricing.unpriced_means`); the suite is kept
+  offline from the fetch (`AUGHOR_LLM_MODEL_FETCH=0` by default in conftest). The live number moves on restart.
+- **A registry row whose bytes are gone says so.** `store.bytes_state` → present · purged · missing, served on
+  `GET /learning/datasets/{name}` with the remedy (re-run the export; an unchanged corpus writes the same path).
+  Defect 9 closed at the cause, not by the directory's return.
+- **The embedding backend — decided (the user: *"Ollama, local"*), and it answers.** Ollama is up with
+  `nomic-embed-text` pulled; after the restart `GET /knowledge/status` reads `embedder: ollama /
+  nomic-embed-text, ok, dim 768`. **✅ The collections' receipt, 15:52Z (the user: *"Lets do: … the few-shot
+  collections' receipt"*):** `GET /learning/summary` gained `few_shot` — backend, model and both collections'
+  point counts, taken in the serving process (a count that cannot be taken reads `None`). Before: `sql_examples
+  0 · investigations 0`. One clean quick answer on the local Superstore connection (*"How many orders are there in
+  total?"* → 5,009 distinct orders over 9,994 lines, no caveat, no guard receipt, trace `bfcc1220`, answer
+  `26f29ef0a578`). After: **`sql_examples 1`** — the collection came into being on the next clean answer, as
+  the wave said it would; `investigations` stays 0 until a deep run indexes itself. Also live after the
+  restart: `/obs/usage-summary` over 24 h reads **110 calls, 0 unpriced, $0.3111, cost_is_complete: true**
+  (458 catalogue rows loaded) — the unpriced 83 of 83 is closed at the cause. TJ-1 is complete.
+
 #### TJ-2 · One record per run: the trajectory (about a week, free)
 
 > **Premise.** The step object exists only in memory (`LoopStep`, `tool_loop.py:50-75`, returned and dropped).
@@ -8755,6 +8873,49 @@ receipt extended to the whole record. The route returns the same trajectory for 
 withheld, then shown inside an opened capture window. A mutation test: remove the step write and the walk fails.
 **Falsifier:** if any run kind cannot be walked after the wave, the wave is not done; if the step write cannot meet
 the latency bar even batched, the payload fields move to the window only and this section says so.
+
+**Status 2026-09-26 — the record and the read BUILT (`claude/clean-panels-evidence-keys`); three bullets open.**
+- **The `step` event exists, from the one seam.** `run_tool_loop` records every step it takes — a tool that
+  ran, one that raised, a hallucinated name, a silent turn — as one `session_events` row of kind `step`
+  (`_emit_step`): index, site, tool, ok, elapsed, the statement, its row count, its error, which guards fired,
+  result chars — always; the model's arguments and a 400-character excerpt of the result only while a prompt-capture
+  window is open (`captured: true`), and a step never spends the window's budget (it counts model calls). No
+  trace bound, nothing written — the session log's own law. The converse body's `tool_call_result` relay stays
+  (SP-M's meter reads it); folding it into the step record is the next touch.
+- **`trajectory_of(trace_id)` and `GET /traces/{id}/trajectory`.** `obs/trajectory.py` walks the run's trace
+  across the stores that already carry it — the request event, the `step` rows, the history row(s) with their
+  envelope, re-checks and a person's verdict (`db/history.by_trace`, by `trace_id` OR by id, so a deep run whose
+  id is its trace joins too), the statements (`AuditLogger.recent(trace_id=…)`, new filter), the guard fires,
+  the picks (`decisions.list_for_trace`) — and the reward FIELDS (human verdict · re-check · execution outcome ·
+  guard fires · `label: "unlabeled"`); never a number, TJ-3's. Step payloads are withheld on the ungated route
+  exactly as `/learning/decisions` withholds `context`, served on `gated=True`. A store that cannot be read says
+  `{"unavailable": …}` in its place, and the counts read `None` for it, never zero.
+- **One id for a rollout.** The `route` receipt now carries `trace_id` (the ambient run trace); `ask_target`
+  keeps it in `meta`; the runner writes it into the `trace.observation` score's detail per case, and binds a
+  trace of its own (`eval-…`) around a run when none is ambient, so `eval_runs.trace_id` is no longer '' —
+  the census's defect 13, measured 36 of 36 empty.
+- **The three bullets, built later the same day (the user: *"ask the questions then and proceed"*).**
+  (1) `guard_verdicts` says which meaning a row has: audit.db **migration 4** adds `action`, moves the hook's
+  words out of `phase` (`repaired_sql` 335 · `flagged` 28 on the live store) and reads `execute` for their
+  phase; `_record_guard_verdict` writes `action=` and `phase="execute"` apart from now on; the quick body's E1
+  fires are labelled `quick`, not `deep` (the census's defect 5). Numbered off the LIVE `user_version` (3),
+  **rehearsed on a `.backup` of the live file first**: 3 → 4, 335 + 28 rows moved, the seven real phases
+  untouched, idempotent on a second open. It applies to the live store at the restart below. (2) The
+  explorer's step log writes the same record: `EpisodeCollector.add` emits one `step` event per turn
+  (site `explorer`, the statement, the phase, the episode id; the think and the observation only under a
+  capture window) under the exploration job's bound trace — the JSONL file stays for its readers until they
+  read the log. (3) The bronze tier vouches for a turn by its own trajectory: a chat answer filed before
+  envelopes were (the falsifier's population) is in when every statement its trace ran came back clean and
+  no guard fired on it (`_trajectory_clean`), and the row says `vouched_by: trajectory` and carries the
+  compact context — steps, guard fires, execution; an envelope, when there is one, still decides first.
+  `recent_chat_answers` carries `trace_id` for it.
+- **Live, after the restart (15:10Z):** migration 4 applied to the live store on its first open
+  (`migrations[audit]: applied [(4, …)] → user_version=4`; read back: 335 `repaired_sql` + 28 `flagged` moved
+  to `action` with `phase = execute`, the seven real phases untouched — byte-for-byte the rehearsal). The
+  bronze export re-run on the new rule registered v2 with **still 1 row**: the trajectory rule vouches for
+  nothing older, because every turn before #547's writer has no trace and every turn since 09-23 has an
+  envelope — the falsifier's answer stands, bronze accrues from now. The re-ask's turn is the first live
+  trajectory: `GET /traces/9ebb4e3f/trajectory` walks its 4 steps and 4 decisions.
 
 #### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit)
 
@@ -9119,6 +9280,60 @@ the cohort test fails; filter a stock by the range instead of taking its level a
 **Falsifier:** if the fields stay empty on theLook for 30 days after the editor shows them, declaration — not code —
 is the constraint; the arc stops after BR-1 and says so here, and the Curator's proposals become the next question.
 
+**2026-09-26, later — two calls from the user on the metric editor, BUILT the same day (`claude/clean-panels-evidence-keys`).**
+On the field's *"Aggregate expression — no SELECT keyword"*: *"not every metric is SUM or AVG or COUNT of
+something.. it can be pre-assessed SELECT statements with multiple CTEs that user may enter. But our job is to
+propose those nonetheless (with select statement). Remove this condition and let every metric have mandatorily a
+SELECT statement."* On the date field: *"a combination of a list and an open input. List should be our proposal of
+what date/timestamp should the metric be grained at in a format schema.table.column_name."*
+- **A metric's SQL is a statement.** `semantic/metric_statement.py` names the two words: a *statement* is a whole
+  `SELECT` (CTEs allowed) returning one row with the value; a *grain* is `schema.table.column`, the date a row
+  counts on, naming the TABLE because that is how a statement is cut to a range — every reference to the grain's
+  table inside the statement is replaced by that table filtered to the window, so the statement's own arithmetic,
+  CTEs and all, runs over one window's rows. The doors (`POST`/`PUT /metrics`) refuse a new bare aggregate with
+  the rule in words; a row written before the rule keeps its expression until its formula is edited (confirming
+  its dates must not refuse an approved metric). Every proposal writer emits a statement — the catalogue's
+  materialise, the intake's import, the ontology's verified metrics, the demo seeds — by wrapping an aggregate
+  over its first table with its filters, exactly as the value path always ran it. Measured before building: the
+  value path already ran a statement verbatim; the range cut (`measure_sql`) refused one, the date rule refused
+  one, and the two monitor series paths skip one (unchanged: a statement has no day to replay by).
+- **The range cut, over statements.** `_measure_statement_sql`: the grain's table substituted per window; the
+  statement stands as the `_v` scalar; `_first`/`_last`/`_n` read from the grain table under the same filter; a
+  cohort's as-of bound applied by the same `bound_outcome` rewrite over the whole tree. Proved on DuckDB: a CTE'd
+  revenue statement and the expression it replaces measure the same 180.0 / 60.0 on the same rows, and the cohort
+  statement the same 1/3. What a statement cannot have is SAID: a segment (`by`) — its segments are its own; a
+  grain whose table it does not read; a stock's level at a past date when the statement tests its until column
+  itself (the platform never rewrites what a statement says).
+- **The rule reads statements.** `infer` takes the final SELECT's first expression as the formula and its WHERE as
+  the filters, over the first table the statement reads, and writes the date it sets AS THE GRAIN
+  (`table.column`); an expression's date stays bare. A presence test inside a CTE is not read — the proposals list
+  is there for that.
+- **The proposals.** `POST /metrics/proposals` (connection, sql, tables, filters, name) → `statements` and
+  `candidates`, each empty list with its reason, from the profiler's latest entry (no warehouse call). The user's
+  correction after the first cut (2026-09-26): *"the entire SQL along with select and from statement — that is the
+  formula should be readily runnable — should be in the SQL Statement input field. And only when there are multiple
+  Date or timestamp columns in the table proposed in the SQL statement, only then the user may confirm or choose
+  from those columns and only such columns appear in the list along with a free Text field."* So: `statements` is
+  the runnable statement for a row written as an expression — one when its table is declared or one profiled table
+  carries its columns, several when several do (theLook's draft `return_rate`: `returned_at` is on `order_items`
+  AND `orders`, each a different metric, so the editor offers both and a person picks); the editor fills the
+  single proposal into the SQL field and says it is proposed until saved. `candidates` are the dates on the
+  statement's OWN tables only — the first cut's fallback (every profiled table's main date when the SQL named no
+  table) is gone; with one date the editor sets it and says so, with several it shows the list beside the open
+  input, with none it says why. A `WITH … SELECT` no longer trips the report's "no FROM clause" defect.
+- **Written by the model, on a click.** `POST /metrics/generate-sql` (connection + the editor's fields) → the
+  statement the platform's own SQL writer (`sql.writer`, dialect rules per execution mode) writes from the metric in
+  question — `semantic.metric_author.framing`: the label, definition, filters (applied), tables, dimensions (not
+  grouped by), wrong readings (not computed), and the rules that make it a metric's statement (one row, one column
+  named after the metric, no GROUP BY / LIMIT / date filter). ONE model call per click, bound to a fresh trace the
+  response carries. The answer is checked, never rewritten: grouped, limited or multi-column is refused with the
+  reason and the model's text; a bare aggregate is wrapped over the definition's table as the value path runs it, and
+  the note says so. The editor's "Generate from the definition" button sits under the SQL field and fills it, said as
+  the model's until saved (the user, 2026-09-26: *"generate SQL query for metric … right at the SQL statement input
+  box … based on the metric in question"*).
+- **Receipt owed:** the editor screenshot on theLook with its proposals, and one metric saved as a statement with a
+  grain and measured for a range on the live Briefing (`return_rate` is the candidate: a draft, dateless today).
+
 #### BR-3 · One control: any range, the four periods as presets (two to three days, free) — ✅ BUILT 2026-09-26
 
 > **Premise.** The window model knows one thing: the most recent complete period relative to today
@@ -9227,7 +9442,7 @@ named here.
 version 2 with the change, and that morning's Day Briefing carries the revision; the equal-age comparison for a
 cohort equals hand SQL. Mutation test: overwrite instead of supersede and the history test fails.
 
-#### BR-7 · Findings that can be re-asked for any range (about a week, free; ⚑ its receipt needs an exploration run) — ⏸ paused at the user's word
+#### BR-7 · Findings that can be re-asked for any range (about a week, free; ⚑ its receipt needs an exploration run) — ⏸ paused at the user's word 2026-09-25; **pause LIFTED 2026-09-26 by the user's screenshot — built as part of BR-9**
 
 > **Premise.** The explorer already thinks in cells — `metric × table × axis × cut` (`explorer/coverage_manifest.py:54`),
 > made into SQL with no model call (`explorer/manifest_query.py`) — and throws the cell away: a finding keeps its
@@ -9289,6 +9504,54 @@ collective view · re-running every finding's SQL each day (BR-0: it would not w
 and says so. If BR-4's reader cannot name a move the dated Briefing carries that the standing one lacks, the recipes
 ship without prose. If a custom range cannot be built inside a minute on theLook by compilation, BR-8 moves ahead of
 BR-4.
+
+#### BR-9 · The whole page adheres to the range (DRAFTED 2026-09-26 from the user's screenshot; lifts BR-7's pause; about a day for the labels, then BR-7's week, then the re-rank)
+
+> **Origin.** The user, 2026-09-26, on a screenshot of the Briefing with *Week* selected: *"Clicking on Week/Month of
+> whatever the range.. I see only a few parts changing and not the whole briefing.. its wierd because the whole briefing
+> page needs to adhere to the range selected.. otherwise its quite useless.. So, if for the entire range the return rate
+> is at 10%.. then I click on e.g. Month then I should get return rate based on the last 30 days, right? And same when I
+> select custom range.. and then re-index on what to show based on the novelty, impact or whatever scorecard mechanism
+> we already have... so, its much bigger that what it is or got built.."*
+>
+> **Measured on the screenshot and the code, the same hour.** Under *Week* (17–23 August 2026 on theLook) the parts
+> that re-measure are the hero (*Units Sold 1,895, +4%*), the *Full synthesis* table and *What moved* — all through
+> §3.27's per-metric trend query cut to the window. The parts that do NOT: the **Key Metrics** row (*Return Rate
+> 10.0% · Gross Margin 51.9% · Sales Volume by Category 181.2K*), the **Findings** list (*7 of 12 · ranked by
+> novelty*) and the **cockpit** chart — every one of them the explorer's all-history findings (`getDomainInsights`,
+> `rankImpact = impact ?? novelty`), rendered under a range heading with **no label saying so**. That is BR-3's own
+> falsifier firing: *"if a person cannot tell from the page which days a figure covers … the control has failed
+> whatever its tests say."* BR-3's text promised *"anything still standing carries 'all findings, not this range'"*;
+> the Key Metrics row and the cockpit never got the label. And the reason Return Rate cannot be measured for a month
+> today is upstream of the page: **theLook's three metrics — `revenue`, `units_sold` (approved), `return_rate`
+> (draft) — declare no `time_column`**, so BR-2's compiler has nothing to cut a range with; the hero's Units Sold is
+> §3.27's trend query, not BR-2's. BR-2's rule ("set automatically by rule and corrected by a person") did not set them
+> on this connection, which is a finding against BR-2's receipt, recorded here.
+
+- **Withheld is said — first, and in a day.** Every figure and every list under a range heading is either measured for
+  that range or carries *"all history, not this range"* in the same type as its number: the Key Metrics row, the
+  findings list, the cockpit. Nothing else changes until this does; a page that shows 10.0% under *Week* without the
+  label teaches the reader a false number, and §7 has paid for that shape before.
+- **Key Metrics from the metrics, for the range.** The row reads the connection's APPROVED metrics that know their
+  dates, measured for the range by BR-2's compiler, each with its final / provisional / to-date label — not the
+  explorer's findings. Pre-check: run BR-2's rule on theLook and say what it set and what it could not (the rule
+  found nothing to set here: the metrics name no date column and their SQL is an expression over `order_items`);
+  a person declares the rest in the metric editor's governance column, `return_rate` included once it is approved.
+  A metric without a date stays on the standing view and says why.
+- **BR-7, un-paused and joined:** a finding keeps the explorer's cell, the approved metric it measures and the days
+  its data covered, so the findings list is RE-ASKED for the range through the compiler (no model) and re-ranked
+  by the scorecard the page already has — `impact`, else `novelty` — computed for the range, not for all history.
+  A finding whose cell cannot be re-asked (no metric, no date) is listed apart as *"about all history"*.
+- **The cockpit scopes.** Its saved cards carry a range-aware query or say they are standing.
+- **Custom ranges are the same path** — the presets are spellings of one resolver (BR-3), so *Month* and
+  *17–26 August* differ only in dates.
+
+**Done when:** with *Month* selected on theLook, Return Rate is the last settled month's return rate (hand SQL
+equal), the findings are the month's and their order is the month's impact, and nothing on the page shows an
+all-history figure under the range heading without saying so — checked on screenshots in both skins at 1024 px.
+**Falsifier:** BR-3's, unchanged — if a person cannot tell from the page which days a figure covers, the page has
+failed whatever its tests say. **Cost:** the labels a day; BR-7 about a week, no model; the re-rank a day or two;
+⚑ nothing spends but the narrator call a range Briefing already makes.
 
 **What each wave must show before the next starts:** a live receipt on theLook, a mutation test on every new guard,
 screenshots in both skins for any UI change, and this section updated the same day — a prose claim in §3 rots
@@ -10857,7 +11120,7 @@ the browser** · **measure the premise before building.**
     Not part of this item: pricing the unpriced calls. CP-0 found `cost_is_complete: false` with 107 of 111 calls
     unpriced over 24 h, so this arc may state savings in TOKENS only. That is a limit on the claim, not a clause
     to decide.
-32. ⭕ **DRAFTED 2026-09-25 (the user, on the trajectory diagram: *"I want to know where we are realistically and how we
+32. ✅ **DECIDED 2026-09-26 — all six clauses adopted as recommended, asked together and answered in one word (*"Adopt all six as recommended"*): (a) yes, (b) payload fields only under a capture window or the annex — as built in TJ-2 the same day, (c) reactions as verdicts — yes, the owner's scope still to grant (⚑), (d) the gym's first batch on samples at K = 4 under 12M prompt tokens — adopted, and it still RUNS only on the user's word, (e) the keyed binding deferred, (f) the user audits the first bronze export in one sitting. DRAFTED 2026-09-25 (the user, on the trajectory diagram: *"I want to know where we are realistically and how we
     can reach the most mature phase from here... go all in!"*, then *"build a detailed roadmap for this one"*) — Arc TJ,
     trajectories (§3.47). The census (TJ-0, `docs/TRAJECTORY_CENSUS_2026-09-25.md`) was taken BEFORE the arc was
     written; several of its rows corrected standing prose. Six clauses, OPEN with recommendations. None blocks TJ-1 or
@@ -10885,7 +11148,7 @@ the browser** · **measure the premise before building.**
     committed beside the census; until it exists bronze is reported and never read.
     Not part of this item: MI-4's gates and recipe (§3.9, unchanged), and a model judge over live traffic (dropped
     2026-09-06; the rewards here are deterministic).
-33. ⭕ **DRAFTED 2026-09-25 (the user, on a held Slack post: *"user needs to know where to troubleshoot such issues..
+33. ✅ **DECIDED 2026-09-26 — all three clauses adopted AS BUILT (*"Adopt"*): (a) yes, (b) the first shelf (the laws) and the second (the glossary, the §3 summaries) are both served through `platform_help`'s aliases, (c) departure · automation · metric first — built; agent and analysis follow by the same three moves. DRAFTED 2026-09-25 (the user, on a held Slack post: *"user needs to know where to troubleshoot such issues..
     otherwise its a wall that it hits.."*, and on Spotlight: *"I like your path.. go ahead"*) — SP-15, the platform
     explains what is on screen (§3.11). The wall is closed on the departures screen today (a remedy per held guard,
     with doors); the wave makes the same knowledge reachable by sentence. Three clauses, OPEN with recommendations.**

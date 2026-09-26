@@ -327,6 +327,26 @@ def get_trace_summary(trace_id: str, top: int = 8):
     return build_summary(trace_id, events, top_n=max(1, min(top, 50)))
 
 
+@router.get("/traces/{trace_id}/trajectory")
+def get_trace_trajectory(trace_id: str):
+    """TJ-2 — one record per run, joined at read: the question, the loop's steps in order
+    (the `step` events), the answer rows with their re-checks and a person's verdict, the
+    statements that ran (`audit_log`), the guard fires, the picks (`decision_record`), and
+    the reward FIELDS — never a number: TJ-3 owns the label and it must take both values on
+    real traffic before anything reads it.
+
+    Served with the steps' payload fields WITHHELD, exactly as `/learning/decisions`
+    withholds `context`: a step's arguments and result excerpt are captured only under an
+    open prompt window and are a payload under §6 item 4. The key stays, empty, and
+    `payload_withheld` says why. A store that could not be read says so in its place.
+    """
+    from aughor.obs.trajectory import trajectory_of
+    out = trajectory_of(trace_id, org_id=current_org_id() or None, gated=False)
+    if out is None:
+        raise HTTPException(status_code=404, detail="No events or answers carry this trace")
+    return {"measured": True, **out}
+
+
 @router.get("/traces/{trace_id}/spans/{span_id}")
 def get_trace_span(trace_id: str, span_id: str):
     """One span's input and output — the paged drill-down the summary points at.
@@ -611,8 +631,11 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
     is served from the Migration 10 column — it has been written since the failover work
     and read by nothing, so this is its first reader.
     """
-    from aughor.obs.usage import price_for, rollup
+    from aughor.obs.usage import ensure_catalogue_prices, price_for, rollup
     win = resolve_window(range, since=since, until=until)
+    # TJ-1 — ask the provider's catalogue for rates (at most hourly) BEFORE pricing: the
+    # refresh had no caller, so every call on this instance priced at nothing.
+    catalogue_rows = ensure_catalogue_prices()
     rows = Ledger.default().session_events(
         kind=session_log.LLM_CALL, org_id=current_org_id() or None,
         since=win.since, until=win.until, limit=max(100, min(int(scan), 50000)))
@@ -656,6 +679,12 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
         "cost_usd": round(cost, 4),
         "unpriced_calls": unpriced,
         "cost_is_complete": unpriced == 0,
+        # Whose gap an unpriced call is. Declared prices and the provider's own catalogue
+        # were both consulted; what is still unpriced has no published rate — the
+        # provider's silence, not this platform's.
+        "pricing": {"catalogue_consulted": True, "catalogue_rows_loaded": catalogue_rows,
+                    "unpriced_means": ("no declared price and none published in the "
+                                       "provider's model catalogue")},
         "calls_without_usage": no_usage,
         "usage_coverage": round(1 - no_usage / len(rows), 3) if rows else None,
         # A rate whose denominator is invisible gets read as "right now". Both halves ship.

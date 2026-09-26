@@ -141,8 +141,138 @@ def materialise_metric(conn_id: str, name: str, schema: Optional[str] = None,
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+#: 2026-09-26, the user: *"let every metric have mandatorily a SELECT statement"*. A row
+#: written before the rule keeps its expression until its FORMULA is edited — confirming its
+#: dates or changing its label must not refuse a metric someone already approved.
+_STATEMENT_RULE = ("A metric's SQL is a whole SELECT statement (CTEs allowed) that returns one row "
+                   "with the metric's value — for example: SELECT SUM(amount) AS revenue FROM orders "
+                   "WHERE status = 'active'. An aggregate expression without SELECT is no longer "
+                   "accepted.")
+
+
+def _require_statement(sql: str, existing) -> None:
+    from aughor.semantic.metric_statement import is_statement
+    if is_statement(sql):
+        return
+    if existing is not None and (sql or "").strip() == (existing.sql or "").strip():
+        return
+    raise HTTPException(status_code=422, detail=_STATEMENT_RULE)
+
+
+class ProposalsRequest(BaseModel):
+    """What the metric editor sends to be offered what the platform proposes for a definition:
+    its runnable statement (when it was written as an expression) and the dates it could be
+    grained at."""
+    connection: str
+    sql: str = ""
+    tables: list[str] = []
+    filters: list[str] = []
+    name: str = "value"
+
+
+@router.post("/metrics/proposals")
+def metric_proposals(req: ProposalsRequest):
+    """The platform's proposals for a definition, read from the profiler's latest entry (no
+    warehouse call). ``statements``: the runnable statement(s) for an expression written
+    before the rule — one when its table is declared or one profiled table carries its
+    columns, several when several do (the note says so; a person picks); ``[]`` for a
+    statement as written. ``candidates``: every date- or time-typed column of the tables
+    the statement reads, written as the grain, each table's main date first — only those
+    tables (the user, 2026-09-26: *"only when there are multiple date or timestamp columns
+    in the table proposed in the SQL statement, only then the user may choose"*). Each empty
+    list carries its reason."""
+    from aughor.semantic.metric_statement import date_candidates, proposed_statements, statement_tables
+    from aughor.tools.profile_cache import latest_profile_entry
+    try:
+        profile = latest_profile_entry(req.connection)
+    except Exception as exc:  # noqa: BLE001 — a failed read is said, not an empty list
+        why = f"the profile could not be read ({type(exc).__name__})"
+        return {"statements": [], "statement_note": why, "candidates": [], "note": why}
+    if not profile:
+        why = ("this connection has no profile yet — explore it first, then the platform can "
+               "propose its tables and dates")
+        return {"statements": [], "statement_note": why, "candidates": [], "note": why}
+    statements, statement_note = proposed_statements(req.sql, req.tables, req.filters, req.name, profile)
+    candidates = date_candidates(req.sql, req.tables, profile)
+    read = statement_tables(req.sql) or [t for t in req.tables if str(t).strip()]
+    if candidates:
+        note = ""
+    elif not read:
+        note = "the statement names no table, so there is no date to propose — the FROM comes first"
+    else:
+        note = f"no date or timestamp column was profiled on {', '.join(read)}"
+    return {"statements": statements, "statement_note": statement_note,
+            "candidates": candidates, "note": note}
+
+
+class GenerateSqlRequest(BaseModel):
+    """What the editor holds about the metric when the person asks the model to write its
+    statement. `definition` is the catalogue's definition when the row has one, else the
+    caveats the person wrote."""
+    connection: str
+    name: str
+    label: str = ""
+    definition: str = ""
+    unit: str = ""
+    tables: list[str] = []
+    filters: list[str] = []
+    dimensions: list[str] = []
+    wrong_usage_examples: list[str] = []
+
+
+@router.post("/metrics/generate-sql", dependencies=[gate(Capability.METRICS_DEFINE)])
+async def generate_metric_sql(req: GenerateSqlRequest):
+    """The model writes the metric's statement from the definition in the editor — ONE model
+    call, on the person's click (the user, 2026-09-26: *"generate SQL query for metric …
+    right at the SQL statement input box … based on the metric in question"*). The
+    platform's own SQL writer over this connection's schema, framed for a governed metric
+    (`semantic.metric_author`); the answer is checked, never rewritten — a grouped, limited,
+    multi-column or unparsable query is served WITH the finding in `refused`, so the person
+    sees the text and the verdict together."""
+    from uuid import uuid4
+
+    from aughor.db.connection import open_connection_for
+    from aughor.semantic.metric_author import MetricBrief, write_statement
+    from aughor.telemetry import bind_trace
+
+    if not req.name.strip():
+        raise HTTPException(status_code=422, detail="Name the metric first — the name becomes the statement's column.")
+    try:
+        db = open_connection_for(req.connection)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    brief = MetricBrief(name=req.name.strip(), label=req.label, definition=req.definition, unit=req.unit,
+                        tables=list(req.tables), filters=list(req.filters), dimensions=list(req.dimensions),
+                        wrong_usage=list(req.wrong_usage_examples))
+    trace_id = uuid4().hex
+    loop = asyncio.get_running_loop()
+
+    def _work():
+        try:
+            with bind_trace(trace_id):
+                return write_statement(brief, db)
+        finally:
+            try:
+                db.close()
+            except Exception as exc:  # noqa: BLE001 — a close that fails is logged, not raised over the answer
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "metrics.generate_sql.close", counter="metrics.generate_sql")
+
+    try:
+        out = await loop.run_in_executor(None, _work)
+    except Exception as e:  # noqa: BLE001 — the model or the warehouse failing is said with its text
+        raise HTTPException(status_code=502, detail=f"The statement could not be written: {e}")
+    if not out["sql"]:
+        raise HTTPException(status_code=422, detail=f"No statement written: {out['refused']}.")
+    # The model's text is served even when the check found it wanting — `refused` says what,
+    # and the editor shows both; hiding the text behind a refusal was the first cut's mistake.
+    return {"sql": out["sql"], "refused": out["refused"], "note": out["note"],
+            "model": out["model"], "trace_id": trace_id}
+
+
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def create_metric(req: MetricRequest):
+    _require_statement(req.sql, None)
     # G1: declared LOW — auto-allowed and AUDITED, so defining a governed metric leaves a
     # trail. The approval question belongs to the approve transition, not to authoring.
     from aughor import govern
@@ -182,6 +312,7 @@ def update_metric(name: str, req: MetricRequest):
         # per-connection formula would arrive already stamped `approved` by whoever
         # approved the house default. Treat it as a new definition at this scope.
         existing = None
+    _require_statement(req.sql, existing)
     data = {**req.model_dump(), "name": name}
     # Arc BR-2: the time fields are kept unless this edit SENT them — an editor that does not
     # know them must not erase what the platform set — and a sent correction is a person's.

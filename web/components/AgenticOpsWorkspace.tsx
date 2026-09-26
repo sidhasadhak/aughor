@@ -163,20 +163,20 @@ export function AgenticOpsWorkspace({
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Agent Ops views"
-      title="Agent Ops"
       badges={{ attention, departures: departuresOwed }}
-      toolbar={<RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />}
-      headerTrailing={
-        // `default`, not a hand-rolled blue: `--primary` IS `--blue3`, so the design
-        // system's own CTA variant is the blue this asks for — and it brings the hover
-        // and focus states an inline `background` would silently drop.
+      toolbar={<>
+        <RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />
+        {/* The one action, at the right end of the filter row. `default`, not a hand-rolled
+            blue: `--primary` IS `--blue3`, so the design system's own CTA variant is the blue
+            this asks for — and it brings the hover and focus states an inline `background`
+            would silently drop. */}
         <Button variant="default" size="xs"
           title="Create a custom agent — a scope and a stance"
           onClick={() => { onLayerChange("agents"); setCreateSignal(n => n + 1); }}
-          style={{ whiteSpace: "nowrap" }}>
+          style={{ whiteSpace: "nowrap", marginLeft: "auto" }}>
           + Create agent
         </Button>
-      }
+      </>}
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "agents") return (
