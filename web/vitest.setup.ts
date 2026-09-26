@@ -14,6 +14,30 @@ afterEach(() => {
 });
 
 /**
+ * A list keyed by something that repeats only WARNS in React ("Encountered two children with
+ * the same key"): the page still renders, a row may be dropped or doubled, and the dev overlay
+ * shows the error to whoever opens that screen with that data. This repo shipped that bug at
+ * least seven times, fixed one field at a time. So a component test that renders a duplicate
+ * key fails, whatever else it asserts. The rule and the helper: web/AGENTS.md, lib/listKeys.ts.
+ */
+const duplicateKeys: string[] = [];
+const consoleError = console.error.bind(console);
+console.error = (...args: unknown[]) => {
+  if (typeof args[0] === "string" && args[0].includes("Encountered two children with the same key")) {
+    duplicateKeys.push(args.map(String).join(" ").slice(0, 240));
+  }
+  consoleError(...args);
+};
+afterEach(() => {
+  if (!duplicateKeys.length) return;
+  const found = duplicateKeys.splice(0);
+  throw new Error(
+    "This test rendered a list with duplicate React keys — key it with withUniqueKeys() "
+    + `(lib/listKeys.ts), or by a real id:\n${found.join("\n")}`,
+  );
+});
+
+/**
  * A jsdom test that forgets to mock a fetching module does NOT fail: `getApiBase()` answers
  * `http://localhost:8000`, so the call reaches whatever platform the developer happens to be running and reads —
  * or WRITES — their live data. Measured, not theorised: a component test of the ontology map wrote a card layout

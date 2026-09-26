@@ -36,6 +36,7 @@ import { TrendStrip } from "@/components/brief/Sparkline";
 import { Icon } from "@/components/ui/icon";
 import { QuestionFrame } from "@/components/QuestionFrame";
 import type { OntologyFrame, RuleOuts } from "@/lib/types";
+import { withUniqueKeys } from "@/lib/listKeys";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -452,7 +453,8 @@ export function InvestigationReportView({
       <div className="flex flex-col gap-4 pt-1">
         <QuestionFrame frame={frame} />
         {streamingReport && <BriefProse text={streamingReport} />}
-        {phases.map(phase => <StreamingPhaseCard key={phase.phase_id} phase={phase} />)}
+        {/* `phase_id` names the phase's KIND — a run can hold two of one kind. */}
+        {withUniqueKeys(phases, p => p.phase_id).map(([key, phase]) => <StreamingPhaseCard key={key} phase={phase} />)}
       </div>
     );
   }
@@ -511,8 +513,9 @@ export function InvestigationReportView({
 
       <QuestionFrame frame={report.frame ?? frame} />
 
-      {analysisPhases.map(phase => (
-        <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} />
+      {/* `phase_id` names the phase's KIND — a report can hold two `decomposition` phases. */}
+      {withUniqueKeys(analysisPhases, p => p.phase_id).map(([key, phase]) => (
+        <PhaseSection key={key} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} />
       ))}
 
       {/* Bottom line — a short closing summary that lands the answer at the END of the

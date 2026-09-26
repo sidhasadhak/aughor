@@ -4,6 +4,18 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# React list keys are identities, not kinds
+
+A key must be unique among its siblings. A field that names a kind or a display text —
+`phase_id`, `type`, `kind`, `domain`, `status`, `name`, `label` — is not an identity, however
+it is spelled: a report can hold two `decomposition` phases and an aggregate the same metric
+name twice, and React then drops or doubles a row while the dev overlay shows "Encountered two
+children with the same key". Key a list by a real id, or with `withUniqueKeys()`
+(`lib/listKeys.ts`), which keeps each first key and suffixes the repeats. `npm test` enforces
+it twice: `lib/listKeys.test.ts` fails a new list keyed bare by such a field (a one-way
+baseline — lower it when you convert one), and `vitest.setup.ts` fails any component test that
+renders a duplicate key.
+
 # Tests
 
 `npm test` runs two vitest projects:
