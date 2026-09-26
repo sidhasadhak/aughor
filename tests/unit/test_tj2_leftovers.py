@@ -162,8 +162,12 @@ def test_bronze_vouches_for_an_envelope_less_turn_by_its_own_trajectory(tmp_path
     _turn_without_envelope("how many traceless?", "SELECT 4 AS traceless", trace="")
 
     assert {a["id"]: a["trace_id"] for a in recent_chat_answers("0000")}[clean] == "tj2-b-clean"
+    # The history store is shared across the suite, so other tests' turns ride the same
+    # export: membership is the claim, never the whole set.
     rows = {r["prompt"]: r for r in store.rows_of(exporters.export_bronze(name="bronze-tj2"))}
-    assert set(rows) == {"how many clean?"}
+    assert "how many clean?" in rows
+    for out in ("how many fired?", "how many failed?", "how many traceless?"):
+        assert out not in rows, out
     row = rows["how many clean?"]
     assert row["vouched_by"] == "trajectory"
     assert row["trajectory"] == {"steps": [], "guard_fires": [], "execution": "ok"}
