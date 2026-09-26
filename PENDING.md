@@ -14,7 +14,7 @@ claim rots silently. If measuring shows an item was already done, tick it and sa
 
 ---
 
-## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON; 16–31 added 2026-09-24; 32–37 added 2026-09-25 from Arc TJ, unranked against the rest)
+## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON; 16–31 added 2026-09-24; 32–37 added 2026-09-25 from Arc TJ, unranked against the rest; 38–45 added 2026-09-26 from Arc BR, likewise unranked)
 
 Ranked by how many answers or people each one improves, and whether it unblocks others.
 Items 11–15 were drawn from the ontology arc at the user's direction ("an important part of the core engine") and are
@@ -81,11 +81,40 @@ because they are free, then the gym. Their rank against 1–31 is the user's; th
 36. [ ] ⚑ **The gym** (TJ-5) — problems with known answers from the declared ontology's compiler, the 139 hand-written pairs, the pack templates and the paraphrase set, with no model; K rollouts per problem through the real answer path on the local warehouses, every candidate kept and scored by execution match on one comparator; correct ones to SFT, wrong-versus-right to preference pairs, repairs to repair pairs; the router's label rides along. Paid model runs under a ceiling in tokens; before any training, the corpus must lift held-out accuracy as few-shot context (paired, n ≥ 50, interval excluding zero). *Two weeks plus the batches.*
 37. [ ] ⚑ **Serving a student** (TJ-6) — a generic OpenAI-compatible binding with a base URL and a key, and the adapter artifact record; recommended deferred until MI-4 chooses rented serving, since Ollama serves a fine-tune locally today. *A day or two, when wanted.*
 
+Fifth build order (2026-09-26, the user: *"Yes.. draft it all in the roadmap.."*, after their questions on the
+Briefing's Day, Month and Year and on arbitrary date ranges): 38–45 are Arc BR's waves (ROADMAP §3.48) in the arc's own
+order — the defects first because they are free, then metrics that know their dates, which everything after needs.
+Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the eight calls the arc needs are §6 item 34.
+
+38. [ ] **Say what is true, and fix what is broken** (BR-1, §3.48) — the period split takes the alias `bucket` as proof of a date (theLook's Inventory Sell-Through was cut on `product_department` and refused by BigQuery); the learned lag ignores tables still moving at the 14-day horizon (theLook reads 13 days while `order_items` has not settled); an exploration stopped on its time budget is never re-armed and the Briefing does not say so; the period switch changes one card while the page reads as changed; the 10.03% return-rate headline counts cancelled and processing lines against its own metric's note. Fix, label, mutation-test. *About a day.* *Built 2026-09-26 on `claude/arc-br-briefing` (BR-1, `06ec008c`), in review; tick on merge.*
+39. [ ] ⚑ **Metrics that know their dates** (BR-2) — an approved metric declares the date that puts a row in a range, its kind (flow, stock or cohort) and, for a cohort, when it matures; one compiler measures any metric for any range, each figure final, provisional or to date; the Briefing's headline metrics become the approved ones. theLook first — `revenue`, `units_sold`, and the draft `return_rate` (the user's to approve). A person declares; a model may only propose. *Three to five days plus the declarations.* *Built 2026-09-26 on `claude/arc-br-briefing` (BR-2), in review — set by rule, a person corrects (§6 item 34(b)); theLook's live `return_rate` is still draft (approved on the scratch copy only).*
+40. [ ] **One control: any range, the four periods as presets** (BR-3) — Yesterday · Last week · Last month · Last year · Month to date · Year to date · Custom…, in the Agent Ops range grammar with two native date inputs; comparisons shifted by whole weeks so the weekday mix matches, and 52 weeks back for last year; the whole page scopes to the range or says it does not; a read never builds. *Two to three days.* *Built 2026-09-26 on `claude/arc-br-briefing` (BR-3), in review.*
+41. [ ] ⚑ **Each horizon a different job** (BR-4) — Day to act, Week to steer, Month to review, Year for strategy, a custom range to explore, each a recipe of the same sections (Measured · What moved · Why · Alerts · Revisions · Actions · Data health); the standing view becomes the reference the recipes explain from. The receipt is a person naming a move only the dated Briefing carries — a paid narrator run. *About a week.* *Built 2026-09-26 on `claude/arc-br-briefing` (BR-4), in review; the reader's receipt is owed.*
+42. [ ] ⚑ **One Briefing, not three** (BR-5) — the Day Briefing becomes the Briefer's morning job and a brief subscription to the channel "The Look – Daily Briefing" posts to; the automation (dark on Slack since 2026-09-19) is paused, not deleted, after seven delivered mornings. The automation is the user's. *A day or two plus seven mornings.* *Built 2026-09-26 on `claude/arc-br-briefing` (BR-5), in review; dry run departs with 0 held; the seven mornings start after deploy, once the subscription is created live.*
+43. [ ] **Every Briefing kept as of the day it was built** (BR-6) — versions instead of overwrites; provisional figures re-measured as they mature, a change of 5% or more becoming a revision in the next Day Briefing; a young figure compared with its comparison at the same age. *Three to four days.* *Paused 2026-09-26 at the user's word (*"Pause after BR-5 is done"*).*
+44. [ ] **Findings that can be re-asked for any range** (BR-7) — a finding keeps the explorer's cell, the approved metric it measures and the days its data covered, so a range Briefing includes findings about the range whenever they were recorded; a finding computing a defined quantity uses the definition. ⚑ Its receipt needs an exploration run. *About a week.* *Paused 2026-09-26 at the user's word.*
+45. [ ] **The daily ledger** (BR-8) — each morning, every approved metric's parts per day and breakdown, generalising the settling readings, so a range is a sum and "what we knew on a date" is a query; built only on its trigger (a custom range slower than a minute on a real warehouse, or a revision that needs a past reading). *About two weeks, when triggered.*
+
 Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
 ---
 
 ## Everything pending, by arc
+
+### Briefing — Arc BR (§3.48; drafted 2026-09-26, §6 item 34 open)
+- [x] BR-0 the survey — measured 2026-09-25 (UTC), read-only; the rows that corrected standing prose are recorded in §3.48, with pointers at the ends of §3.23 and §3.27.
+- [ ] BR-1 say what is true, fix what is broken — see top item 38.
+- [ ] ⚑ BR-2 metrics that know their dates — see top item 39.
+- [ ] BR-3 one control, any range — see top item 40.
+- [ ] ⚑ BR-4 each horizon a different job — see top item 41.
+- [ ] ⚑ BR-5 one Briefing, not three — see top item 42.
+- [ ] BR-6 every Briefing kept as of the day it was built — see top item 43.
+- [ ] BR-7 findings that can be re-asked for any range — see top item 44.
+- [ ] BR-8 the daily ledger — see top item 45; on its trigger.
+- [x] §6 item 34's eight clauses — decided 2026-09-26, clause by clause; the answers are in §3.48's status block.
+- [ ] ⚑ Approve theLook's `return_rate` on the LIVE install (decided in §6 item 34(h); done only on the scratch copy).
+- [ ] ⚑ Create theLook's Day subscription on the live install after deploy — Slack bot `sb_e2d5c528af66` to `#aughor_canvas`, scope `thelook`, replacing "The Look – Daily Briefing" — and turn `briefing.ranges` on; the seven mornings are BR-5's receipt.
+- [ ] ⚑ theLook has no approved AOV — "The Look – Daily Briefing" was held on 2026-09-22 and 09-23 for stating `aov` without one (and on 09-24 and 09-25 for figures its analysis never measured). The gate is right; the fixes are a definition for AOV and BR-5.
 
 ### Trajectories — Arc TJ (§3.47; drafted 2026-09-25, §6 item 32 open)
 - [x] TJ-0 the census — measured 2026-09-25, [docs/TRAJECTORY_CENSUS_2026-09-25.md](docs/TRAJECTORY_CENSUS_2026-09-25.md); the corrections it made to standing prose are recorded in §3.47.

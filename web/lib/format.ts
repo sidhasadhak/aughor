@@ -250,6 +250,14 @@ export function countNoun(n: number, singular: string, plural?: string): string 
   return `${formatCount(n)} ${n === 1 ? singular : (plural ?? `${singular}s`)}`;
 }
 
+/** A change between two SHARES (0..1) in percentage points: 0.151 → 0.143 is "-0.8 pts" — never
+ *  "-5.6%", which reads a rate's move as a percent of a percent (Arc BR, 2026-09-25). */
+export function formatPoints(from: number | null | undefined, to: number | null | undefined, digits = 1): string {
+  if (from === null || from === undefined || to === null || to === undefined || isNaN(from) || isNaN(to)) return "";
+  const p = ((to - from) * 100).toFixed(digits);
+  return `${to - from >= 0 ? "+" : ""}${p} pts`;
+}
+
 /** Signed variance percent for scorecards: +12.5% / -3.0%. Input is a ratio. */
 export function formatVariance(ratio: number | null | undefined, digits = 1): string {
   if (ratio === null || ratio === undefined || isNaN(ratio)) return "";

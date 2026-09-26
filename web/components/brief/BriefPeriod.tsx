@@ -41,7 +41,7 @@ export function PeriodSwitch({ value, onChange, disabled }: {
 }
 
 /** The sentence shown when a period has nothing to brief on: which period, and why. */
-export function periodUnavailable(block: BriefingPeriodBlock | undefined): string {
+export function periodUnavailable(block: Pick<BriefingPeriodBlock, "covers" | "unmeasured"> | undefined): string {
   if (!block) return "Nothing to brief on for this period.";
   const reasons = block.unmeasured.map((u) => `${u.name}: ${u.reason}`).join("; ");
   return `Nothing to brief on for ${block.covers}` + (reasons ? ` — ${reasons}.` : ": no metric moved and nothing was recorded.");
@@ -67,8 +67,12 @@ export function PeriodMeasures({ block }: { block: BriefingPeriodBlock }) {
       </div>
       {block.lag_days > 1 && (
         <div style={{ color: "var(--t3)", marginBottom: 6 }}>
-          Ends {block.lag_days} days before today: newer days are still settling
-          {block.lag_source === "learned" ? ", a lag the platform measured" : ""}.
+          {block.lag_source === "beyond_horizon"
+            ? <>Ends {block.lag_days} days before today: {(block.still_moving ?? []).join(", ") || "a table"}{" "}
+                {(block.still_moving ?? []).length > 1 ? "were" : "was"} still changing {block.lag_days - 1} days
+                after a day ended, so their figures may still move.</>
+            : <>Ends {block.lag_days} days before today: newer days are still settling
+                {block.lag_source === "learned" ? ", a lag the platform measured" : ""}.</>}
         </div>
       )}
       {block.measured.length > 0 && (

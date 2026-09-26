@@ -40,6 +40,9 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Issue** | A diagnostic raised by a guard or validator | guard classes named `*Finding` |
 | **Claim** | A statement a human has verified | — |
 | **Briefing** | The periodic narrative artifact, and its subscription | brief (as the artifact), digest, Intelligence Digest |
+| **What we know** | The Briefing's standing view: everything the platform has learned, not tied to dates (Arc BR, ROADMAP §3.48) | Standing, "history" (both survive as internal names only) |
+| **Range** | The days a Briefing covers: a preset — Day, Week, Month, Year, Month to date, Year to date — or a custom first and last day | window (in anything a reader sees) |
+| **Final · Provisional · To date** | A figure's status: its days (and, for a cohort, its outcome) have settled; have not yet; the range is still under way | preliminary, estimate, partial |
 | **Run** | One execution of anything | session, episode (a step *inside* a run is a **step**) |
 | **Trace** | The telemetry kept ABOUT one run — the `session_events` it wrote, reconstructed | run (a trace is the record, not the execution) |
 | **Trajectory** | One run's trace with its steps' tool, arguments and results, its answer, and the reward attached to it — the one record the exporters read (Arc TJ, ROADMAP §3.47). A trace without a reward is not a trajectory | episode; rollout (a rollout is the act of producing one or more trajectories for one problem, not the record) |

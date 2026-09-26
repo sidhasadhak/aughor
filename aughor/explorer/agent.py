@@ -1005,6 +1005,9 @@ class SchemaExplorer:
         """
         logger.info(f"[explorer:{self.connection_id}] Starting (domain_intel_only={domain_intel_only})")
         _loop = asyncio.get_running_loop()
+        # A new run is not the stopped one: only THIS run's own budget stop may re-stamp it,
+        # or a later failure of another kind would be continued as if it were a budget stop.
+        self._state.pop("stopped_on_budget_at", None)
         try:
             tp, cp, jmap = await _loop.run_in_executor(None, self._load_profiler_data)
             if not tp:
@@ -1212,6 +1215,9 @@ class SchemaExplorer:
                     f"cancelled ({_stop.reason} exceeded) — progress saved"
                     if isinstance(_stop, _BudgetExceeded)
                     else "cancelled (budget exceeded or stopped) — progress saved")
+            if isinstance(_stop, _BudgetExceeded):
+                # the continuous loop continues a budget stop a day later (explorer/continuous.py)
+                self._state["stopped_on_budget_at"] = datetime.now(timezone.utc).isoformat()
             self._journal("exploration.phase", {"phase": "failed", "reason": "cancelled"})
             self._save_state()
             logger.info(f"[explorer:{self.connection_id}] Cancelled, progress saved")

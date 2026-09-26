@@ -81,13 +81,16 @@ def refusal(period: str) -> Optional[str]:
 # ── the window ─────────────────────────────────────────────────────────────────────────────
 
 def resolve_window(conn_id: str, period: str, *, workspace_id: Optional[str] = None,
-                   today: Optional[date] = None) -> tuple[PeriodWindow, str]:
-    """The window this connection's ``period`` brief covers, and where its lag came from
-    (``"learned"`` — idea 4's settling verdict — or ``"default"``, one day)."""
-    learned = None
+                   today: Optional[date] = None) -> tuple[PeriodWindow, str, list[str]]:
+    """The window this connection's ``period`` brief covers, where its lag came from
+    (``"learned"`` — idea 4's settling verdict; ``"beyond_horizon"`` — a table was still
+    moving at the oldest age read, so the lag is a floor; or ``"default"``, one day), and the
+    tables still moving."""
+    learned, source, moving = None, None, []
     try:
-        from aughor.settling.store import learned_lag_days
-        learned = learned_lag_days(conn_id)
+        from aughor.settling.store import connection_lag
+        lag = connection_lag(conn_id)
+        learned, source, moving = lag["days"], lag["source"], list(lag["still_moving"])
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the learned lag is unreadable; the brief anchors on the one-day default",
@@ -102,7 +105,7 @@ def resolve_window(conn_id: str, period: str, *, workspace_id: Optional[str] = N
                  counter="briefing.period.fiscal")
     today = today or datetime.now(timezone.utc).date()
     window = complete_period(period, today, resolve_lag({}, learned), fiscal_start_month=fiscal)
-    return window, ("learned" if learned else "default")
+    return window, (source if learned and source else "default"), moving
 
 
 def _d(d: date) -> str:
@@ -127,13 +130,13 @@ def phrases(window: PeriodWindow) -> tuple[str, str]:
             f"the fiscal year before, {_d(window.previous_start)} to {_d(prev_last)}")
 
 
-def window_block(window: PeriodWindow, lag_source: str) -> dict:
+def window_block(window: PeriodWindow, lag_source: str, still_moving: Optional[list] = None) -> dict:
     """The period block every period brief carries: what it covers, why it ends where it
     does, and (filled on a build) what was measured and what could not be."""
     covers, against = phrases(window)
     return {**window.to_dict(), "label": LABEL[window.period], "covers": covers,
             "compared_with": against, "lag_source": lag_source,
-            "measured": [], "unmeasured": []}
+            "still_moving": list(still_moving or []), "measured": [], "unmeasured": []}
 
 
 def period_note(block: dict, today: Optional[date] = None) -> str:
@@ -149,7 +152,16 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
         "place there, and do not compare it with any period other than the one named.",
     ]
     lag = int(block.get("lag_days") or 1)
-    if lag > 1:
+    if lag > 1 and block.get("lag_source") == "beyond_horizon":
+        moving = list(block.get("still_moving") or [])
+        tables, verb, it = (", ".join(moving) or "a table",
+                            *(("were", "them") if len(moving) > 1 else ("was", "it")))
+        lines.append(
+            f"The {block['period']} ends {lag} days before today ({today.isoformat()}) because "
+            f"{tables} {verb} still changing {lag - 1} days after a day ended, and the platform has "
+            f"not yet seen {it} stop: figures read from {it} may still move. Say so in one plain "
+            "sentence, and do not call any of those figures final.")
+    elif lag > 1:
         why = ("the platform measured" if block.get("lag_source") == "learned"
                else "this source is configured with")
         lines.append(
@@ -199,7 +211,7 @@ def _as_date(cell) -> Optional[date]:
         return None
 
 
-def _partial(first, last, start: date, end: date, slack: int) -> Optional[str]:
+def partial_span(first, last, start: date, end: date, slack: int) -> Optional[str]:
     """``"<first> to <last>"`` when the rows cover less of the window than the slack allows."""
     lo, hi = _as_date(first), _as_date(last)
     if lo is None or hi is None:
@@ -246,8 +258,8 @@ def measure_period(metrics: list, run_sql: Callable[[str], tuple], window: Perio
         slack = _COVERAGE_SLACK.get(window.period, 0)
         current, c_first, c_last = got["current"]
         previous, p_first, p_last = got.get("previous", (None, None, None))
-        current_partial = _partial(c_first, c_last, window.start, window.end, slack)
-        previous_partial = (_partial(p_first, p_last, window.previous_start, window.previous_end, slack)
+        current_partial = partial_span(c_first, c_last, window.start, window.end, slack)
+        previous_partial = (partial_span(p_first, p_last, window.previous_start, window.previous_end, slack)
                             if previous is not None else None)
         rel = ((current - previous) / abs(previous)
                if previous not in (None, 0) and not (current_partial or previous_partial) else None)
@@ -397,8 +409,9 @@ def build_period_briefing(conn_id: str, period: str, *, scope_key: str, domain_d
     dialect)`` and defaults to the connection's own. Cached per scope and period, and rebuilt
     whenever the window moves, so yesterday's daily brief is never served as today's."""
     from aughor.knowledge.briefing import get_briefing
-    window, lag_source = resolve_window(conn_id, period, workspace_id=workspace_id, today=today)
-    block = window_block(window, lag_source)
+    window, lag_source, still_moving = resolve_window(conn_id, period, workspace_id=workspace_id,
+                                                      today=today)
+    block = window_block(window, lag_source, still_moving)
     metrics = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
     from aughor.orgsettings import resolve_currency
     currency = resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
@@ -433,6 +446,22 @@ def build_period_briefing(conn_id: str, period: str, *, scope_key: str, domain_d
         force_refresh=force_refresh, scope_key=scope_key, profile=profile,
         workspace_id=workspace_id, col_types=col_types, period=block, period_measure=measure,
         period_note_today=today)
+
+
+def scope_inputs(conn_id: str, schema: Optional[str] = None) -> tuple[dict, Any]:
+    """The findings and business profile for a scope — the connection's findings, and the
+    SCHEMA's profile when one is named (Arc BR-5: a subscription and the Briefing tab share one
+    snapshot only if they read the same scope)."""
+    domain_data, profile = connection_inputs(conn_id)
+    if schema:
+        try:
+            from aughor.business_profile import store as _pstore
+            profile = _pstore.load(conn_id, schema) or profile
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "no profile for the schema; the connection's is used",
+                     counter="briefing.period.scope_profile")
+    return domain_data, profile
 
 
 def connection_inputs(conn_id: str) -> tuple[dict, Any]:

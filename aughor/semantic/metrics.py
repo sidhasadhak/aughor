@@ -126,6 +126,26 @@ class MetricDefinition(BaseModel):
     wrong_usage_examples: list[str] = Field(default_factory=list, description="Anti-patterns with explanations — injected as NEVER rules")
     approved_by: Optional[str] = Field(default=None, description="Who approved this definition, e.g. 'Finance'")
     approved_at: Optional[str] = Field(default=None, description="ISO date of approval, e.g. '2026-01-15'")
+    # Time semantics (Arc BR-2, ROADMAP §3.48) — how the metric is measured for a date range.
+    # Empty = not known; `aughor/semantic/metric_time.py` sets them automatically by rule and
+    # measurement (the user's call, §6 item 34(b)) and records where they came from, and a
+    # person corrects them. Nothing reads them while they are empty.
+    time_column: Optional[str] = Field(
+        default=None, description="The date that puts a row in a range, e.g. 'created_at'")
+    time_kind: Optional[str] = Field(
+        default=None, description="'flow' (adds up over a range), 'stock' (a level at a date) or "
+                                  "'cohort' (tied to one date, completed by a later event)")
+    outcome_column: Optional[str] = Field(
+        default=None, description="A cohort's completing event, e.g. 'returned_at'")
+    until_column: Optional[str] = Field(
+        default=None, description="A stock's end: a row counts until this date, e.g. 'sold_at'")
+    settles_after_days: Optional[int] = Field(
+        default=None, description="A cohort's maturity: days until its outcome stops arriving")
+    time_source: Optional[str] = Field(
+        default=None, description="Where the time fields came from, in words")
+    time_confirmed_by: Optional[str] = Field(
+        default=None, description="The person who confirmed or corrected them; empty = set "
+                                  "automatically and not yet confirmed")
     # Governance lifecycle (B-8) — propose → review → approve → version → audit.
     status: str = Field(default="draft", description="Lifecycle: draft|proposed|approved|deprecated")
     version: int = Field(default=0, description="Revision counter — bumps on each approval")

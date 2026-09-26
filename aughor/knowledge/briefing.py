@@ -667,6 +667,14 @@ def generate_narrative(
         _system = _SYSTEM_PERIOD.format(label=str(period.get("label", "")).lower(),
                                         period=period.get("period", "period"),
                                         words=_PERIOD_WORDS.get(period.get("period"), "120-250"))
+        if period.get("recipe"):
+            # Arc BR-4: a range Briefing is written by its horizon's recipe
+            from aughor.briefing.recipes import GUIDANCE, WORDS
+            recipe = period["recipe"]
+            _system = _SYSTEM_PERIOD.format(label=str(period.get("label", "")).lower(),
+                                            period=period.get("period", "period"),
+                                            words=WORDS.get(recipe, "120-250"))
+            _system += GUIDANCE.get(recipe, "") + "\n"
         if multi_schema:
             _system += ("- The findings come from SEPARATE, UNRELATED businesses (see the Business tag): "
                         "never connect findings across businesses; say what moved in each on its own.\n")
@@ -836,6 +844,17 @@ def peek_briefing(scope_key: str) -> dict[str, Any] | None:
         return None
 
 
+def peek_entry(key: str) -> dict[str, Any] | None:
+    """The cached entry under ``key`` exactly as stored — READ ONLY, never generates, and
+    unlike ``peek_briefing`` returns an entry with no narrative too (a range whose figures were
+    measured and whose period was quiet is still a Briefing)."""
+    try:
+        entry = _store().get(key)
+        return entry if isinstance(entry, dict) else None
+    except Exception:
+        return None
+
+
 def get_briefing(
     connection_id: str,
     domain_data: dict[str, list[dict]],
@@ -878,7 +897,8 @@ def get_briefing(
     """
     key = scope_key or connection_id
     if period is not None:
-        key = f"{key}#{period.get('period')}"
+        # a range Briefing (Arc BR-3) carries its own key, so two custom ranges never share one
+        key = f"{key}#{period.get('key') or period.get('period')}"
     pre_decision = None
     if not force_refresh:
         try:
@@ -905,9 +925,15 @@ def get_briefing(
                                         "reason": f"the measurement failed ({type(_pe).__name__})"}]}
         period = {**period, "measured": list(measured.get("measured") or []),
                   "unmeasured": list(measured.get("unmeasured") or [])}
+        # Arc BR-4: a range recipe's own sections ride the block too (moves, why, early read …)
+        period.update({k: v for k, v in measured.items()
+                       if k not in ("findings", "candidates", "measured", "unmeasured")})
         if measured.get("findings"):
             domain_data = {**domain_data, "Key Metrics": list(measured["findings"])
                            + list(domain_data.get("Key Metrics", []))}
+        for dom, rows in (measured.get("candidates") or {}).items():
+            if rows:
+                domain_data = {**domain_data, dom: list(rows) + list(domain_data.get(dom, []))}
 
     # Cache miss → fold in north-star metric moves (the biggest KPI swings) as candidates.
     if metric_moves is not None:

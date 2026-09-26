@@ -97,7 +97,9 @@ def hold_lines(brief, conn_id: str) -> tuple:
 
 _SHEET_TITLES = {"measured": "Headline metrics", "unmeasured": "Not measured",
                  "alerts": "Alerts in this {period}", "records": "Recorded in this {period}",
-                 "narrative": "The briefing"}
+                 "narrative": "The briefing",
+                 # Arc BR-4/5 — a range recipe's own sections
+                 "moves": "What moved", "early": "Still settling — early read"}
 
 
 def render_period_markdown(block: dict, sections: list, cut: int) -> str:
@@ -134,8 +136,11 @@ def build_period_departure(sub: BriefSubscription, *, runner=None) -> dict:
     monitor's declared readings, every line for trust, definition and claim type. Returns
     ``{"brief", "summary", "markdown", "held_lines"}``."""
     from aughor.govern.departure import line_holds
+    from aughor.kernel.flags import flag_enabled
     from aughor.knowledge import period_brief
 
+    if flag_enabled("briefing.ranges"):
+        return _build_range_departure(sub, runner=runner)
     domain_data, profile = period_brief.connection_inputs(sub.conn_id)
     brief = period_brief.build_period_briefing(
         sub.conn_id, sub.period, scope_key=sub.conn_id, domain_data=domain_data,
@@ -164,6 +169,101 @@ def build_period_departure(sub: BriefSubscription, *, runner=None) -> dict:
             "markdown": render_period_markdown(block, kept, len(held))}
 
 
+def _build_range_departure(sub: BriefSubscription, *, runner=None) -> dict:
+    """Arc BR-5 — with briefing.ranges on, a subscription's period is read as its preset and
+    sent as the RANGE Briefing its recipe writes (the Day: what is new since yesterday), for the
+    subscription's scope — the same snapshot the Briefing tab shows. Judged line by line: every
+    figure, segment move and narrative paragraph against the queries RE-RUN at the send."""
+    from aughor.briefing import ranges
+    from aughor.govern.departure import line_holds
+    from aughor.knowledge import period_brief
+
+    domain_data, profile = period_brief.scope_inputs(sub.conn_id, sub.schema_name or None)
+    spec, why = ranges.resolve_for(sub.conn_id, ranges.PERIOD_PRESET.get(sub.period, "yesterday"),
+                                   workspace_id=sub.workspace_id or None)
+    if spec is None:
+        raise ValueError(f"the range cannot be read: {why}")
+    scope_key = f"{sub.conn_id}:{sub.schema_name}" if sub.schema_name else sub.conn_id
+    brief = ranges.build_range_briefing(sub.conn_id, spec, scope_key=scope_key, domain_data=domain_data,
+                                        profile=profile, workspace_id=sub.workspace_id or None,
+                                        runner=runner)
+    block = brief.get("period") or {}
+    measurement = ranges.fresh_measurement(sub.conn_id, brief, runner=runner)
+    kept: list = []
+    held: list[str] = []
+    for kind, lines in ranges.sheet_lines(brief):
+        passing = []
+        for line in lines:
+            why_held = line_holds(line, conn_id=sub.conn_id, declared=kind == "alerts",
+                                  measurement=(measurement if kind in ("measured", "moves", "early", "narrative")
+                                               else None))
+            if why_held:
+                held.append(f"“{line[:80]}”: {why_held[0]}")
+            else:
+                passing.append(line)
+        if passing:
+            kept.append((kind, passing))
+    measured = next((len(items) for kind, items in kept if kind == "measured"), 0)
+    tail = " · ".join(bit for bit in (
+        f"{measured} headline metric{'s' if measured != 1 else ''} measured" if measured else "",
+        f"{len(held)} held at departure" if held else "") if bit) or "nothing measured"
+    return {"brief": brief, "held_lines": held,
+            "summary": f"{block.get('label', '')} Briefing — {block.get('covers', '')} — {tail}",
+            "markdown": render_period_markdown(block, kept, len(held))}
+
+
+def preview_subscription(sub: BriefSubscription) -> dict:
+    """Arc BR-5 — what a send WOULD post, built and judged line by line exactly as a send is, and
+    not sent. The whole-message gate records a departure, so it runs at the real send only."""
+    try:
+        built = build_period_departure(sub)
+    except Exception as exc:  # noqa: BLE001 — a preview that fails says why
+        return {"status": "failed", "error": str(exc), "sent": False}
+    return {"status": "preview", "sent": False, "summary": built["summary"],
+            "markdown": built["markdown"], "held_lines": built["held_lines"],
+            "note": "not sent: built and judged line by line; the whole-message gate runs at the send"}
+
+
+def _bot_outcome(ok: bool, info: dict) -> tuple:
+    """A Slack post's answer as (status, http, error). An uncertain post is not a failure: saying
+    "failed" would license a retry of a message that may already have arrived."""
+    if ok:
+        return "ok", 200, None
+    if info.get("uncertain"):
+        return "uncertain", None, "post timed out — it may have arrived, so it is not retried"
+    return "failed", None, f"Slack refused the post: {info.get('error', 'unknown')}"
+
+
+def _supersede(sub: BriefSubscription) -> str:
+    """Arc BR-5 — pause (never delete) the automation this subscription replaces, once it has
+    delivered SUPERSEDE_AFTER mornings (§6 item 34(e)). Returns the automation id, or "" when
+    there is nothing to pause. A pause has an end; this one is far off, and says why."""
+    from aughor.automations.store import get_automation, pause_automation
+    from aughor.briefing.models import SUPERSEDE_AFTER
+
+    if not sub.supersedes or int(sub.delivered or 0) < SUPERSEDE_AFTER:
+        return ""
+    replaced = get_automation(sub.supersedes)
+    if replaced is None or str(getattr(replaced, "paused_until", "") or "") >= _SUPERSEDED_UNTIL:
+        return ""
+    pause_automation(replaced.id, _SUPERSEDED_UNTIL)
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("brief.superseded_automation",
+                              {"subscription_id": sub.id, "subscription": sub.name,
+                               "automation_id": replaced.id, "automation": replaced.name,
+                               "delivered": sub.delivered},
+                              conn_id=sub.conn_id)
+    except Exception:
+        logger.debug("brief.superseded_automation emit failed", exc_info=True)
+    return replaced.id
+
+
+#: How far a superseded automation is paused: indefinitely, but as a PAUSE — its run history
+#: keeps saying why nothing fires, and a person can lift it.
+_SUPERSEDED_UNTIL = "9999-12-31T00:00:00Z"
+
+
 def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dict:
     """Build + send the brief for *sub*. Records last_sent_at/status when persist.
 
@@ -179,8 +279,10 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
     result = {"status": "failed", "http_status": None, "error": None,
               "summary": None, "markdown": None}
 
-    trigger = get_trigger(sub.trigger_id)
-    if trigger is None:
+    trigger = None if sub.bot_id else get_trigger(sub.trigger_id)
+    if sub.bot_id and sub.content != "briefing":
+        result["error"] = "a Slack-bot subscription sends the Briefing (content 'briefing')"
+    elif trigger is None and not sub.bot_id:
         result["error"] = "Delivery trigger not found"
     elif sub.content == "briefing":
         _deliver_period(sub, trigger, result)
@@ -230,6 +332,9 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
         sub.last_sent_at = _now()
         sub.last_status = result["status"]
         sub.last_error = result["error"]
+        if result["status"] == "ok":
+            sub.delivered = int(sub.delivered or 0) + 1
+            result["superseded"] = _supersede(sub)
         try:
             save_subscription(sub)
         except Exception as exc:
@@ -286,6 +391,21 @@ def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
         if verdict.held:
             result["status"] = "held"
             result["error"] = f"held at departure — {verdict.reason_sentence()}"
+            return
+        if sub.bot_id:
+            # Arc BR-5 — AS the bot, the way an automation's slack_post posts, the receipt on the
+            # message (HB-2 law 8); sent here, in the function that asked the gate above
+            from aughor.slackbots.post import post_as_bot
+            from aughor.slackbots.store import get_bot_decrypted
+            bot = get_bot_decrypted(sub.bot_id)
+            if bot is None or not bot.enabled:
+                result["error"] = (f"unknown Slack bot: {sub.bot_id}" if bot is None
+                                   else f"Slack bot '{bot.name}' is disabled")
+                return
+            receipt = verdict.receipt_line()
+            text = built["markdown"]
+            ok, info = post_as_bot(bot.bot_token, sub.channel, f"{text}\n\n{receipt}" if receipt else text)
+            result["status"], result["http_status"], result["error"] = _bot_outcome(ok, info)
             return
         log = fire_action(trigger, ActionPayload(
             investigation_id=f"brief:{sub.id}", rec_index=0, recommendation=built["summary"],

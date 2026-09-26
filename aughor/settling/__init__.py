@@ -8,4 +8,4 @@ settled days and call newer ones what they are: still settling. A person's expli
 `observation_lag_days` on a step still wins over the learned value.
 """
 from aughor.settling.learn import Observation, SettlingVerdict, settle_lag  # noqa: F401
-from aughor.settling.store import learned_lag_days, summary, verdicts  # noqa: F401
+from aughor.settling.store import connection_lag, learned_lag_days, summary, verdicts  # noqa: F401

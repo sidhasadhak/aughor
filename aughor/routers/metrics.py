@@ -72,6 +72,14 @@ class MetricRequest(BaseModel):
     wrong_usage_examples: list[str] = []
     approved_by: Optional[str] = None
     approved_at: Optional[str] = None
+    # Arc BR-2 — a person's correction of the time fields; sending them stamps the editor
+    # as the one who confirmed them (`time_confirmed_by`).
+    time_column: Optional[str] = None
+    time_kind: Optional[str] = None
+    outcome_column: Optional[str] = None
+    until_column: Optional[str] = None
+    settles_after_days: Optional[int] = None
+    time_confirmed_by: Optional[str] = None
 
 
 @router.get("/metrics")
@@ -175,6 +183,13 @@ def update_metric(name: str, req: MetricRequest):
         # approved the house default. Treat it as a new definition at this scope.
         existing = None
     data = {**req.model_dump(), "name": name}
+    # Arc BR-2: the time fields are kept unless this edit SENT them — an editor that does not
+    # know them must not erase what the platform set — and a sent correction is a person's.
+    from aughor.semantic.metric_time import TIME_FIELDS, merge_time_edit
+    try:
+        data.update(merge_time_edit(existing, req.model_dump(include=set(TIME_FIELDS) & req.model_fields_set)))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     audit = None
     if existing is not None:
         # Governance state is owned by the transition workflow (B-8), not by edits —

@@ -38,8 +38,13 @@ const ADJECTIVE: Record<BriefSubscription["period"], string> = {
 
 /** A row's description. An alert-summary row reads exactly as it always has. */
 function describe(s: BriefSubscription): string {
-  if (s.content === "briefing") return `${ADJECTIVE[s.period]} briefing`;
-  return s.period === "week" ? "weekly brief" : "daily brief";
+  const what = s.content === "briefing" ? `${ADJECTIVE[s.period]} briefing`
+    : s.period === "week" ? "weekly brief" : "daily brief";
+  // Arc BR-5 — where it goes when it is not a trigger, and what it replaces
+  const via = s.bot_id ? ` · Slack bot to ${s.channel ?? ""}` : "";
+  const replaces = s.supersedes
+    ? ` · replaces an automation, paused after 7 delivered mornings (${s.delivered ?? 0} so far)` : "";
+  return `${what}${via}${replaces}`;
 }
 
 const field: React.CSSProperties = {

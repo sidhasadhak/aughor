@@ -20,7 +20,7 @@ import { GuardChip } from "@/components/ui/trust";
  */
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
+import { formatDateTime, formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
 import {
   runDirectQuery,
   getDomainInsights,
@@ -71,6 +71,8 @@ import { Pending } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodMeasures, PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
+import { RangeControl, RangeFigures, RangeMeasures, RangeSections, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
+import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { claimBriefingEntrance } from "@/components/brief/firstOpen";
@@ -1492,7 +1494,7 @@ interface MoverTile {
 
 function VerdictHero({
   narrative, headline, domainCount, totalInsights, synthesizedAt,
-  onInvestigate, controls, actions, scope, movers,
+  onInvestigate, controls, actions, scope, movers, figures, stats,
   connectionId, onEvidence, vizConfigFor, onVizConfigChange,
 }: {
   narrative:     BriefingNarrativeResponse | null;
@@ -1509,6 +1511,10 @@ function VerdictHero({
   /** "Numbers that moved" — figures extracted from this cycle's findings; each tile
    *  opens its finding in place. Empty/absent → the row is omitted. */
   movers?:       MoverTile[];
+  /** Arc BR-3 — a range's measured figures, in place of the standing movers. */
+  figures?:      ReactNode;
+  /** Arc BR-3 — a range's one-line proof, in place of the standing counts. */
+  stats?:        string;
   /** Everything a tile needs to expand in place into its finding's detail. */
   connectionId?: string;
   onEvidence?:   (ins: ExplorationInsight, domain: string) => void;
@@ -1574,20 +1580,25 @@ function VerdictHero({
               className="aug-tag aug-tag-green">
               ✓ Grounded &amp; guarded
             </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
-              <HeroStatPill value={domainCount} label={domainCount === 1 ? "domain" : "domains"} />
-              <HeroDivider />
-              <HeroStatPill value={totalInsights} label={totalInsights === 1 ? "finding" : "findings"} />
-              <HeroDivider />
-              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{timeAgo(synthesizedAt)}</span>
-            </span>
+            {stats ? (
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{stats}</span>
+            ) : (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+                <HeroStatPill value={domainCount} label={domainCount === 1 ? "domain" : "domains"} />
+                <HeroDivider />
+                <HeroStatPill value={totalInsights} label={totalInsights === 1 ? "finding" : "findings"} />
+                <HeroDivider />
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{timeAgo(synthesizedAt)}</span>
+              </span>
+            )}
           </div>
         </div>
 
         {/* "Numbers that moved" — a 4-up row of key figures pulled from this cycle's
             findings; each tile is one click from its ledger row (the "every number one click
             from its why" guarantee). Not north-star KPIs — cycle-specific movers. */}
-        {movers && movers.length > 0 && (
+        {figures}
+        {!figures && movers && movers.length > 0 && (
           <div data-brief-movers style={{ marginTop: 18 }}>
             <div className="aug-label" style={{ marginBottom: 8, color: "var(--t3)" }}>Numbers that moved</div>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, movers.length)}, minmax(0, 1fr))`, gap: 12 }}>
@@ -2318,9 +2329,20 @@ export function BriefingPanel({
   const [periodsOn, setPeriodsOn]           = useState(false);
   // A period with nothing to brief on is a statement about the period, not a failure.
   const [periodNote, setPeriodNote]         = useState<string | null>(null);
+  // Arc BR-3 — `briefing.ranges`: one control for any range, the standing view being what the
+  // platform knows. The range scopes the page; off, the switch above is exactly §3.27's.
+  const [rangesOn, setRangesOn]             = useState(false);
+  // §6 item 34(d): with ranges on, the Briefing OPENS on the Day; "What we know" is one click away.
+  const [chosen, setRange]                  = useState<RangeChoice | null>(null);
+  const range = useMemo<RangeChoice>(
+    () => chosen ?? (rangesOn ? { preset: "yesterday" } : { preset: "standing" }), [chosen, rangesOn]);
   useEffect(() => {
     let alive = true;
-    getSystemFlags().then(f => { if (alive) setPeriodsOn(!!f["briefing.by_period"]?.value); }).catch(() => {});
+    getSystemFlags().then(f => {
+      if (!alive) return;
+      setPeriodsOn(!!f["briefing.by_period"]?.value);
+      setRangesOn(!!f["briefing.ranges"]?.value);
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
   // The scope this panel is currently rendering. Mirrors the server's `scope_key` EXACTLY
@@ -2410,7 +2432,15 @@ export function BriefingPanel({
     // a new schema's verdict (the two are separate state; only the hero re-derived).
     setNarrative(null);
     try {
-      const result = canvasId
+      const onRange = rangesOn && !canvasId && range.preset !== "standing";
+      const readRange = async () => {
+        // A READ never builds: the snapshot when there is one; otherwise it is built — the
+        // user's call (§6 item 34(g)): a custom range is built without asking.
+        const r = range as BriefingRange;
+        const snap = forceRefresh ? null : await readRangeBriefing(connectionId, r, schema, workspaceId);
+        return snap && snap.built ? snap : buildRangeBriefing(connectionId, r, schema, workspaceId, forceRefresh);
+      };
+      const result = onRange ? await readRange() : canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
         : period === "history"
           // the standing brief is requested exactly as it always was
@@ -2433,7 +2463,7 @@ export function BriefingPanel({
     } finally {
       if (myReq === reqSeq.current) setNarrativeLoading(false);
     }
-  }, [connectionId, canvasId, schema, workspaceId, narrativeScope, period]);
+  }, [connectionId, canvasId, schema, workspaceId, narrativeScope, period, rangesOn, range]);
 
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
   // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to
@@ -2591,12 +2621,12 @@ export function BriefingPanel({
     // fetch, so we never issue an unscoped briefing request that then races the scoped one.
     if (!canvasId && !schemaReady) return;
     // the version on screen is part of what was fetched: switching period re-fetches
-    const fetchKey = `${narrativeScope}#${period}`;
+    const fetchKey = `${narrativeScope}#${rangesOn ? JSON.stringify(range) : period}`;
     if (fetchKey === fetchedScope.current) return;
     fetchedScope.current = fetchKey;
     generateNarrative(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, canvasId, schema, schemaReady, narrativeScope, period]);
+  }, [connectionId, canvasId, schema, schemaReady, narrativeScope, period, rangesOn, range]);
 
   // Poll explorer status — canvas-scoped when a canvasId is set (#7), so the control
   // bar + empty-state reflect the *canvas* explorer's phase, not the connection's.
@@ -2739,6 +2769,11 @@ export function BriefingPanel({
 
   const hasPatterns    = scopedPatterns.length > 0;
   const hasNarrative   = !!narrative?.narrative;
+  // Arc BR-3 — the range on screen, when the Briefing is a range's; the page reads it.
+  const rangeBlock     = hasNarrative && isRangeBlock(narrative?.period) ? narrative!.period as BriefingRangeBlock : null;
+  // A range is chosen but its Briefing is not on screen yet (building, or refused): the hero
+  // must not fall back to the standing view's figures, which read as this range's.
+  const rangePending   = rangesOn && !canvasId && range.preset !== "standing" && !rangeBlock;
   const isEmpty        = !briefing || briefing.totalInsights === 0;
 
   // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
@@ -2818,7 +2853,9 @@ export function BriefingPanel({
               <span className="aug-fs-xs" title="The last run stopped short; earlier findings are kept"
                 style={{ color: "var(--t3)", flex: "1 1 0", minWidth: 0, overflow: "hidden",
                          textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                · the last run stopped short; earlier findings are kept
+                {explorerStatus.continues_at
+                  ? `· the last run stopped on its time limit; it continues by itself after ${formatDateTime(explorerStatus.continues_at)}`
+                  : "· the last run stopped short; earlier findings are kept"}
               </span>
             )}
             {/* No run counters here: queries_executed is the CURRENT run's number while
@@ -2899,7 +2936,7 @@ export function BriefingPanel({
               >{explorerPending === "Refreshing…" ? "Refreshing…" : "Restart"}</Button>
             </>
           )}
-          {periodsOn && !canvasId && (
+          {!rangesOn && periodsOn && !canvasId && (
             <PeriodSwitch value={period} onChange={setPeriod} disabled={narrativeLoading} />
           )}
           {/* PX-6 — the scheduled-delivery door (five wrappers, zero callers until now). */}
@@ -2907,6 +2944,14 @@ export function BriefingPanel({
             onClick={() => setShowSchedule(s => !s)}>Schedule</Button>
         </div>
       </div>
+
+      {/* Arc BR-3 — the range scopes the whole page, so it gets its own row: in the explorer's
+          control bar it squeezed the run status out of sight at 1440px (2026-09-26). */}
+      {rangesOn && !canvasId && (
+        <div style={{ paddingBottom: 4 }}>
+          <RangeControl value={range} onChange={setRange} disabled={narrativeLoading} />
+        </div>
+      )}
 
       {showSchedule && <BriefSchedule connId={connectionId} />}
 
@@ -2928,13 +2973,17 @@ export function BriefingPanel({
           finding + proof stats + the primary action, ahead of the full prose. */}
       <VerdictHero
         narrative={hasNarrative ? narrative : null}
-        headline={briefing.headline}
+        headline={rangeBlock || rangePending ? null : briefing.headline}
         domainCount={briefing.domainCount}
         totalInsights={briefing.totalInsights}
         synthesizedAt={briefing.synthesizedAt}
         scope={schema}
         onInvestigate={onInvestigate}
-        movers={movers}
+        movers={rangePending ? [] : movers}
+        figures={rangeBlock ? <RangeFigures block={rangeBlock} /> : undefined}
+        stats={rangeBlock ? rangeStats(rangeBlock)
+          : rangePending ? (narrativeLoading ? "measuring this range…" : "this range has no briefing yet")
+          : undefined}
         connectionId={connectionId}
         onEvidence={openEvidence}
         vizConfigFor={vizConfigFor}
@@ -2961,7 +3010,7 @@ export function BriefingPanel({
             </button>
           </>
         }
-        actions={briefing.headline && (
+        actions={!rangeBlock && !rangePending && briefing.headline && (
           <FindingActions
             insight={briefing.headline.insight} domain={briefing.headline.domain}
             connectionId={connectionId} canvasId={canvasId} schema={schema} triggers={triggers}
@@ -2984,6 +3033,12 @@ export function BriefingPanel({
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             quick answers, scoped to this brief and its schema
           </span>
+        </div>
+      )}
+
+      {rangeBlock && (
+        <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+          Below: what we know — every finding the platform has recorded, not only {rangeBlock.covers}.
         </div>
       )}
 
@@ -3019,7 +3074,9 @@ export function BriefingPanel({
             <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{periodNote}</div>
           )}
           {!narrativeLoading && hasNarrative && narrative?.period && (
-            <PeriodMeasures block={narrative.period} />
+            isRangeBlock(narrative.period)
+              ? <><RangeMeasures block={narrative.period} /><RangeSections block={narrative.period} /></>
+              : <PeriodMeasures block={narrative.period} />
           )}
           {!narrativeLoading && hasNarrative && narrative && (
             <NarrativeCard
