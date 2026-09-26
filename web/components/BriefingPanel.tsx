@@ -66,6 +66,7 @@ import {
   type RevalidateResult,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
+import { useOpenInQuery } from "@/lib/openInQuery";
 import { Pending } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
@@ -751,10 +752,11 @@ function DomainTag({ domain }: { domain: string }) {
 }
 
 // ── Scope chips ─────────────────────────────────────────────────────────────────
-/** A filter row that scopes the brief's narrative layer to one domain. "All" clears the
- *  scope; each domain chip carries its finding count + colour dot. The schema/connection
- *  scope is handled upstream by the workspace header — these chips scope *within* the
- *  brief, by domain, so the reader can focus the supporting signals + patterns on one area.
+/** The filter on the Findings line that scopes the brief's narrative layer to one domain.
+ *  "All" clears the scope; each domain chip carries its finding count + colour dot. The
+ *  schema/connection scope is handled upstream by the workspace's context bar — these chips
+ *  scope *within* the brief, by domain, so the reader can focus the supporting signals +
+ *  patterns on one area.
  *  Built on <Button> (the canonical system) styled as the app's FilterChip pill. */
 function ScopeChip({ label, dot, count, active, onClick }: {
   label: string; dot?: string; count: number; active: boolean; onClick: () => void;
@@ -784,11 +786,8 @@ function ScopeChips({ domains, total, active, onChange }: {
   active:   string | null;
   onChange: (domain: string | null) => void;
 }) {
-  // Nothing to scope when the brief spans a single domain.
-  if (domains.length < 2) return null;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "center", marginTop: 6, marginBottom: 14 }}>
-      <span className="aug-label" style={{ marginRight: 2 }}>Scope</span>
+    <div role="group" aria-label="Scope" style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "center" }}>
       <ScopeChip label="All" count={total} active={active == null} onClick={() => onChange(null)} />
       {domains.map(d => (
         <ScopeChip
@@ -1266,6 +1265,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
   onClose: () => void;
   connectionId?: string;
 }) {
+  const openInQuery = useOpenInQuery();
   // K3 Trust Receipt — provenance from the kernel ledger (job + lineage edges).
   const [receipt, setReceipt] = useState<InsightReceipt | null>(null);
   useEffect(() => {
@@ -1338,7 +1338,23 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
           {dossier && <RevalidateRow dossier={dossier} connectionId={connectionId} insightId={insight.id} />}
 
           <div>
-            <div className="aug-label" style={{ marginBottom: 6 }}>Source query — the data behind this claim</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <span className="aug-label">Source query — the data behind this claim</span>
+              {insight.sql && openInQuery && (
+                <Button variant="ghost" size="xs" style={{ marginLeft: "auto" }}
+                  title="Open this query in a new SQL Editor tab, on the connection it ran against"
+                  onClick={() => {
+                    const words = insight.finding.split(/\s+/);
+                    openInQuery({
+                      sql: insight.sql, connId: connectionId, mode: "sql",
+                      name: `Evidence: ${words.slice(0, 5).join(" ")}${words.length > 5 ? "…" : ""}`,
+                    });
+                    onClose();
+                  }}>
+                  <Icon name="sql" size={12} /> Open in SQL Editor
+                </Button>
+              )}
+            </div>
             <pre style={{
               margin: 0, padding: "12px 14px", borderRadius: "var(--r2)",
               background: "var(--bg-2)", border: "1px solid var(--b1)",
@@ -1509,7 +1525,6 @@ function VerdictHero({
   const title   = theme || finding || "Intelligence briefing";
   // When the AI theme is the headline, the top finding becomes the supporting lead.
   const lead    = theme ? finding : undefined;
-  const isVerdict = !!narrative;
 
   return (
     // Flat panel in the shared card language (was a gradient + glow + shadow hero). Prominence now
@@ -1522,12 +1537,6 @@ function VerdictHero({
             Intelligence briefing{scope ? <span style={{ color: "var(--t3)" }}>{"  ·  "}{scope}</span> : null}
           </span>
           {controls && <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>}
-        </div>
-
-        {/* verdict badge — dot + label (dots, not boxes, like the report surfaces) */}
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
-          <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: "var(--blue4)" }} />
-          <span className="aug-label" style={{ color: "var(--blue4)" }}>{isVerdict ? "Verdict" : "Top finding"}</span>
         </div>
 
         {/* the ONE verdict — 24px (the moved-numbers row below now shares the hero's weight) */}
@@ -1647,15 +1656,15 @@ function VerdictHero({
 }
 
 // ── Findings — the bulletin ledger (Direction B) ────────────────────────────────
-/** The narrative layer's reading surface: every finding is ONE scannable row — novelty
- *  + domain, the statement with its figures inline, and the extracted key figure right-
- *  aligned. The eye scans a single left edge instead of a card mosaic; a row's grounded
- *  chart is fetched lazily only when it's expanded, so collapsed rows cost zero chart
- *  requests. Replaces the uniform exhibit-card grid. */
+/** The narrative layer's reading surface: every finding is ONE scannable row — the
+ *  statement with its figures inline, and the extracted key figure right-aligned. The eye
+ *  scans a single left edge instead of a card mosaic; a row's grounded chart is fetched
+ *  lazily only when it's expanded, so collapsed rows cost zero chart requests. Replaces
+ *  the uniform exhibit-card grid. */
 const LEDGER_DEFAULT = 7;     // first paint: seven rows ≈ the height of one row of old cards
 const LEDGER_STEP    = 12;    // each "Show next" click
 const LEDGER_CHART_H = 190;   // expanded-row chart height
-const LEDGER_COLS    = "128px 1fr 150px 20px";   // [domain | statement | key figure | chevron]
+const LEDGER_COLS    = "1fr 150px 20px";         // [statement | key figure | chevron]
 
 /** Wrap the numeric tokens in a finding statement in bold mono, so figures read as figures
  *  without the backend having to mark them up. Pure formatting of already-grounded text. */
@@ -1770,7 +1779,6 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
 }) {
   const { insight, domain } = signal;
   const fig = extractKeyFigure(insight.finding);
-  const hot = insight.novelty >= 5;      // Notable/High → amber novelty dot; else quiet --b3
   const [hover, setHover] = useState(false);
 
   return (
@@ -1780,12 +1788,6 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
       <div role="button" tabIndex={0} onClick={onToggle}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
         style={{ display: "grid", gridTemplateColumns: LEDGER_COLS, gap: 14, alignItems: "center", padding: "13px 18px", cursor: "pointer" }}>
-        {/* domain — novelty dot + domain-colour dot + name */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <span title={`Novelty ${insight.novelty.toFixed(1)} / 10`} style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: hot ? "var(--amb4)" : "var(--b3)", flex: "none" }} />
-          <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: domainColor(domain), flex: "none" }} />
-          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{domain}</span>
-        </div>
         {/* statement — figures bold mono inline; trust caveat inline amber */}
         <div style={{ fontSize: 13, lineHeight: 1.45, color: "var(--t1)", minWidth: 0,
           display: "-webkit-box", WebkitLineClamp: expanded ? 99 : 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
@@ -1818,8 +1820,10 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
   );
 }
 
-function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange }: {
+function FindingsLedger({ signals, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange }: {
   signals:        SynthesisSignal[];
+  /** The scope chips — drawn on the ledger's own line, after its label. */
+  filter?:        ReactNode;
   connectionId:   string;
   onInvestigate:  (q: string, insightId?: string) => void;
   onEvidence:     (ins: ExplorationInsight, domain: string) => void;
@@ -1859,7 +1863,9 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scro
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, shown]);
 
-  if (signals.length === 0) return null;
+  // Under a scope chip the list can be empty (its findings are the verdict and the moved
+  // numbers above), and the line must still render: it carries the chip that leads back out.
+  if (signals.length === 0 && !filter) return null;
   const top = signals.slice(0, shown);
   const remaining = signals.length - top.length;
   const domainsInList = [...new Set(signals.map(s => s.domain))];
@@ -1872,53 +1878,57 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scro
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" as const, gap: "8px 12px", marginBottom: 10 }}>
         <span className="aug-label" style={{ color: "var(--t2)" }}>Findings</span>
-        <span className="aug-fs-xs" style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", color: "var(--t3)" }}>
-          {Math.min(shown, signals.length)} of {signals.length} shown · ranked by novelty
-        </span>
+        {filter}
       </div>
-      <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
-        {top.map(sig => {
-          const ident = signalIdentity(sig.insight);
-          return (
-            <LedgerRow key={ident} signal={sig} connectionId={connectionId}
-              expanded={expandedId === ident}
-              onToggle={() => setExpandedId(id => (id === ident ? null : ident))}
-              onInvestigate={onInvestigate} onEvidence={onEvidence}
-              rowRef={el => { if (el) rowRefs.current.set(ident, el); else rowRefs.current.delete(ident); }}
-              vizConfig={vizConfigFor?.(sig.insight.id) ?? null}
-              onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(sig.insight.id, c) : undefined} />
-          );
-        })}
-        {/* footer — Show next N · count · jump to domain (replaces the removed sticky nav rail) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 18px", background: "var(--bg-1)", fontSize: 12, color: "var(--t3)" }}>
-          {remaining > 0 ? (
-            <Button variant="ghost" size="xs" onClick={() => setShown(s => s + LEDGER_STEP)}
-              style={{ color: "var(--t2)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
-              Show next {Math.min(LEDGER_STEP, remaining)}
-            </Button>
-          ) : <span style={{ color: "var(--t3)" }}>All findings shown</span>}
-          <span style={{ color: "var(--t3)" }}>· {Math.min(shown, signals.length)} of {signals.length}</span>
-          <div style={{ marginLeft: "auto", position: "relative" }}>
-            <Button variant="ghost" size="xs" onClick={() => setJumpOpen(o => !o)}
-              style={{ color: "var(--t3)", fontSize: 12, padding: "2px 6px" }}>
-              jump to domain ▾
-            </Button>
-            {jumpOpen && (
-              <div style={{ position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 20, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 170, overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
-                {domainsInList.map(d => (
-                  <Button key={d} variant="ghost" size="xs" onClick={() => jumpTo(d)}
-                    className="w-full justify-start h-auto"
-                    style={{ gap: 8, padding: "7px 11px", fontSize: 12, color: "var(--t2)" }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: domainColor(d), flex: "none" }} />{d}
-                  </Button>
-                ))}
-              </div>
-            )}
+      {signals.length === 0 ? (
+        <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "4px 2px" }}>
+          Every finding in this scope is already shown above.
+        </div>
+      ) : (
+        <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
+          {top.map(sig => {
+            const ident = signalIdentity(sig.insight);
+            return (
+              <LedgerRow key={ident} signal={sig} connectionId={connectionId}
+                expanded={expandedId === ident}
+                onToggle={() => setExpandedId(id => (id === ident ? null : ident))}
+                onInvestigate={onInvestigate} onEvidence={onEvidence}
+                rowRef={el => { if (el) rowRefs.current.set(ident, el); else rowRefs.current.delete(ident); }}
+                vizConfig={vizConfigFor?.(sig.insight.id) ?? null}
+                onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(sig.insight.id, c) : undefined} />
+            );
+          })}
+          {/* footer — Show next N · count · jump to domain (replaces the removed sticky nav rail) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 18px", background: "var(--bg-1)", fontSize: 12, color: "var(--t3)" }}>
+            {remaining > 0 ? (
+              <Button variant="ghost" size="xs" onClick={() => setShown(s => s + LEDGER_STEP)}
+                style={{ color: "var(--t2)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
+                Show next {Math.min(LEDGER_STEP, remaining)}
+              </Button>
+            ) : <span style={{ color: "var(--t3)" }}>All findings shown</span>}
+            <span style={{ color: "var(--t3)" }}>· {Math.min(shown, signals.length)} of {signals.length} · ranked by novelty</span>
+            <div style={{ marginLeft: "auto", position: "relative" }}>
+              <Button variant="ghost" size="xs" onClick={() => setJumpOpen(o => !o)}
+                style={{ color: "var(--t3)", fontSize: 12, padding: "2px 6px" }}>
+                jump to domain ▾
+              </Button>
+              {jumpOpen && (
+                <div style={{ position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 20, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 170, overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
+                  {domainsInList.map(d => (
+                    <Button key={d} variant="ghost" size="xs" onClick={() => jumpTo(d)}
+                      className="w-full justify-start h-auto"
+                      style={{ gap: 8, padding: "7px 11px", fontSize: 12, color: "var(--t2)" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: domainColor(d), flex: "none" }} />{d}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -2977,14 +2987,23 @@ export function BriefingPanel({
         </div>
       )}
 
-      {/* ── Scope chips ── focus the narrative layer (signals + patterns) on one domain. */}
-      <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 18, marginTop: 16 }}>
+        {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
+              card to expand its trend. Under the brief and above its findings. Renders a
+              define-CTA (not nothing) when none are set. */}
+        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope} />
 
-      {/* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
-          impact-ordered and scoped by the chips; keyed by scope so it resets on a scope change. */}
-      <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
-        onInvestigate={onInvestigate} onEvidence={openEvidence} scrollRef={scrollRef}
-        vizConfigFor={vizConfigFor} onVizConfigChange={saveVizConfigFor} />
+        {/* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
+            impact-ordered; the scope chips (focus signals + patterns on one domain) share its
+            line. Keyed by scope so it resets on a scope change. */}
+        <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
+          // Nothing to scope when the brief spans a single domain.
+          filter={briefing.domains.length > 1
+            ? <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
+            : undefined}
+          onInvestigate={onInvestigate} onEvidence={openEvidence} scrollRef={scrollRef}
+          vizConfigFor={vizConfigFor} onVizConfigChange={saveVizConfigFor} />
+      </div>
 
       {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
           The hero above already carries the conclusion, so this card hides its header. */}
@@ -3023,7 +3042,7 @@ export function BriefingPanel({
         </div>
       )}
 
-      {/* ── Standing layer ── the cockpit + KPIs, marked off from this cycle's narrative by a
+      {/* ── Standing layer ── the cockpit, marked off from this cycle's narrative by a
             single violet rule (violet = user/pinned, already the system's semantic). The layer
             is ALWAYS present now — even with no pins — so the cockpit teaches itself (empty
             state) instead of vanishing. The cycle's findings read above in the ledger; the
@@ -3038,10 +3057,6 @@ export function BriefingPanel({
           onPinned={() => setPinnedRefresh(n => n + 1)}
           onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
           onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
-
-        {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
-              card to expand its trend. Renders a define-CTA (not nothing) when none are set. */}
-        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope} />
       </div>
 
       {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),

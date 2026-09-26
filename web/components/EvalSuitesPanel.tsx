@@ -132,11 +132,11 @@ export function EvalSuitesPanel({ connId, onLayerChange }: Props) {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-0)", color: "var(--t1)" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px 12px", borderBottom: "1px solid var(--bg-3)" }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: view === "list" ? "var(--t1)" : "var(--t3)" }}>
-          {view === "list" ? "Eval suites"
-            : view === "form" ? "New suite"
-            : detail?.name ?? "Suite"}
-        </div>
+        {view !== "list" && (
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t3)" }}>
+            {view === "form" ? "New suite" : detail?.name ?? "Suite"}
+          </div>
+        )}
         <div style={{ flex: 1 }} />
         {view === "list" && (
           <Button variant="ghost" className="h-auto" onClick={openCreate} style={{ fontSize: 12, padding: "5px 12px" }}>

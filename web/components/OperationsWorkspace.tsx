@@ -78,7 +78,7 @@ type Props = {
  * The Operations workspace — folds the three formerly-separate Operations tabs
  * (Monitors / Action Hub / Security & Audit) into one perspective-switched surface,
  * an *instance* of the generic `<Workspace>` shell (Part 2 REC-U5). The panels bring
- * their own bodies; the shell owns the header + switcher + keep-alive.
+ * their own bodies; the shell owns the switcher + keep-alive.
  */
 export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange, secLens, onSecLensChange }: Props) {
   return (
@@ -87,7 +87,6 @@ export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange,
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Operations views"
-      title="Operations"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "monitors")    return <MonitorsPanel connId={connId} workspaceId={workspaceId} />;

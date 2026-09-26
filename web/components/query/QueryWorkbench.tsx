@@ -120,12 +120,15 @@ function useSchemaMap(connId: string) {
   }, [data, loading]);
 }
 
+/** A query handed to the workbench from elsewhere; `nonce` makes each hand-off distinct. */
+type ImportRequest = { connId: string; sql: string; nonce: number; mode?: QueryMode; name?: string };
+
 function WorkbenchInner({
   initialConnId, onOpenCanvas, importRequest, connections, initialMode, workspaceId,
 }: {
   initialConnId?: string;
   onOpenCanvas?: (canvas: Canvas) => void;
-  importRequest?: { connId: string; sql: string; nonce: number };
+  importRequest?: ImportRequest;
   connections?: Connection[];
   /** Set by a legacy `?tab=builder` deep link, which meant the visual builder. */
   initialMode?: QueryMode;
@@ -186,13 +189,24 @@ function WorkbenchInner({
     if (!connId || !list.some(c => c.id === connId)) setConnId(list[0].id);
   }, [connections, connId]);
 
-  // An imported query (from Insights / Deep Analysis) lands in VISUAL mode, because
-  // `importRequest` is QueryBuilder's existing contract and QueryBuilder is what knows
-  // how to load, re-point and run it. Routing imports to the SQL editor instead would
-  // be a behaviour change dressed as a refactor; it belongs with SE-2's extraction.
+  // An imported query lands where its caller asked. `mode: "sql"` (a finding's evidence, a
+  // chat answer's SQL) opens as a NEW tab in the SQL editor, on the connection it ran
+  // against; anything else lands in VISUAL mode, QueryBuilder's existing contract. The
+  // connection and the tab are set in the SAME effect so SqlMode sees both in one render:
+  // its tab restore (keyed on connId) must run before the new tab is appended, or the
+  // switch would replace the tab set and the imported query would vanish.
+  const [pendingOpen, setPendingOpen] = useState<{ sql: string; name?: string; nonce: number }>();
   useEffect(() => {
-    if (importRequest?.sql) setMode("visual");
+    if (!importRequest?.sql) return;
+    if (importRequest.mode === "sql") {
+      if (importRequest.connId) setConnId(importRequest.connId);
+      setMode("sql");
+      setPendingOpen({ sql: importRequest.sql, name: importRequest.name, nonce: importRequest.nonce });
+    } else {
+      setMode("visual");
+    }
   }, [importRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  const visualImport = importRequest?.mode === "sql" ? undefined : importRequest;
 
   const { map: schema, railTables, joins, schemas, loading: schemaLoading } = useSchemaMap(connId);
 
@@ -532,7 +546,7 @@ function WorkbenchInner({
                 connId={connId}
                 onConnIdChange={setConnId}
                 onOpenCanvas={onOpenCanvas}
-                importRequest={importRequest}
+                importRequest={visualImport}
                 onRailBinding={setRailBinding}
                 onSavedBinding={bindVisual}
                 onSavableChange={savableVisual}
@@ -545,6 +559,7 @@ function WorkbenchInner({
                 toolbar={sharedControls}
                 schemaControl={schemaControl}
                 pendingInsert={pendingInsert}
+                pendingOpen={pendingOpen}
                 connId={connId}
                 engine={engine}
                 schema={schema}
@@ -587,7 +602,7 @@ function WorkbenchInner({
 export function QueryWorkbench(props: {
   initialConnId?: string;
   onOpenCanvas?: (canvas: Canvas) => void;
-  importRequest?: { connId: string; sql: string; nonce: number };
+  importRequest?: ImportRequest;
   connections?: Connection[];
   initialMode?: QueryMode;
   /** Scopes the workspace-wide catalog tree the SQL rail browses — the same argument

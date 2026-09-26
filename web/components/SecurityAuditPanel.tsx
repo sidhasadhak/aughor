@@ -578,7 +578,6 @@ export function SecurityAuditPanel({
         gap: 12,
         flexShrink: 0,
       }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Security &amp; Audit</span>
         {connId && (
           <span className="aug-fs-sm" title={connId} style={{ color: "var(--t3)" }}>
             {connectionLabel(connId, connections)}

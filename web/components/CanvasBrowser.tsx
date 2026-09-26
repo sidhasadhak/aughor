@@ -358,35 +358,10 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
   return (
     <div className="aug-screen">
 
-      {/* ── Page header ── */}
-      <div style={{
-        padding: "28px 32px 0",
-        display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-        flexShrink: 0,
-      }}>
-        <div>
-          <h1 style={{
-            fontSize: 22, fontWeight: 700, color: "var(--t1)",
-            letterSpacing: "-.02em", margin: 0, lineHeight: 1.2,
-          }}>Data Canvas</h1>
-          <p style={{ fontSize: 12, color: "var(--t3)", margin: "5px 0 0", lineHeight: 1.5 }}>
-            Curated table sets you can run scoped intelligence and Agent runs on.
-          </p>
-        </div>
-        <Button
-          onClick={onNew}
-          variant="default" size="sm"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, marginTop: 4 }}
-        >
-          <Icon name={PLUS_ICON} size={12} color="currentColor" />
-          New
-        </Button>
-      </div>
-
-      {/* ── Search ── */}
-      <div style={{ padding: "20px 32px 0", flexShrink: 0 }}>
+      {/* ── Search + New ── */}
+      <div style={{ padding: "20px 32px 0", flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{
-          display: "flex", alignItems: "center", gap: 10,
+          flex: 1, display: "flex", alignItems: "center", gap: 10,
           padding: "8px 14px",
           background: "var(--bg-2)", border: "1px solid var(--b1)",
           borderRadius: "var(--r2)", transition: "border-color .1s",
@@ -411,6 +386,14 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             </button>
           )}
         </div>
+        <Button
+          onClick={onNew}
+          variant="default" size="sm"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}
+        >
+          <Icon name={PLUS_ICON} size={12} color="currentColor" />
+          New
+        </Button>
       </div>
 
       {/* ── Filter chips ── */}

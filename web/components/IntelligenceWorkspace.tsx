@@ -218,7 +218,6 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Intelligence layers"
-      title="Intelligence"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       headerControls={headerControls}
       renderLayer={id => {

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { getApiBase } from "@/lib/config";
-import { Icon } from "@/components/ui/icon";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -219,13 +218,9 @@ export function ActionHubPanel() {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 20px", height: 44, borderBottom: "1px solid var(--b1)", background: "var(--bg-1)", flexShrink: 0 }}>
-        <span style={{ color: "var(--t3)", flexShrink: 0, display: "inline-flex" }}>
-          <Icon name="bolt" size={14} />
-        </span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Notifications</span>
-        <div style={{ display: "flex", gap: 4, marginLeft: 12 }}>
+      {/* Toolbar — the view switch (left) and the one action (right) */}
+      <div className="aug-toolbar">
+        <div style={{ display: "flex", gap: 4 }}>
           {(["triggers", "logs"] as const).map(v => (
             <button key={v} onClick={() => setView(v)} style={{
               padding: "3px 10px", borderRadius: "var(--r2)", fontSize: 11, cursor: "pointer",

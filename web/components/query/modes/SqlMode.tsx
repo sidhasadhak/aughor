@@ -91,6 +91,7 @@ export function SqlMode({
   toolbar,
   schemaControl,
   pendingInsert,
+  pendingOpen,
 }: {
   connId: string;
   engine: EngineHint | null;
@@ -118,6 +119,10 @@ export function SqlMode({
    *  React's rather than the DOM's: this effect is declared after the tab-restore
    *  effect, so its `setTabs` updater sees the restored tabs. */
   pendingInsert?: { text: string; nonce: number };
+  /** A query handed over from elsewhere (a finding's evidence, a chat answer), opened as a
+   *  NEW tab so the tab in progress is never overwritten. Same ordering contract as
+   *  `pendingInsert`: the workbench switches the connection in the same render. */
+  pendingOpen?: { sql: string; name?: string; nonce: number };
   /** Controls the WORKBENCH owns (connection, saved state, panel toggle). They ride
    *  the TAB STRIP, right-aligned — the same position Visual mode puts them in, which
    *  is the point: they used to sit top-LEFT in Visual and on the RUN BAR in SQL, so
@@ -285,6 +290,17 @@ export function SqlMode({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingInsert?.nonce]);
+
+  // Declared after the tab restore for the same reason as the insert above: the new tab
+  // is appended to the tabs the restore just installed for this connection.
+  useEffect(() => {
+    const sql = pendingOpen?.sql;
+    if (!sql?.trim()) return;
+    const t = { ...newTab(pendingOpen?.name), sql };
+    setTabs(prev => [...prev, t]);
+    setActiveId(t.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpen?.nonce]);
 
   // Debounced persist — the editor fires onChange per keystroke.
   useEffect(() => {

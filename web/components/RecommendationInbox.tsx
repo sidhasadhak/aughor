@@ -372,36 +372,28 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-200">Recommendation Inbox</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Track outcomes of Aughor&apos;s recommendations across deep analyses
-          </p>
+      {/* Filter */}
+      <div className="flex items-center gap-2">
+        <div className="flex rounded-[var(--r3)] border border-zinc-700 overflow-hidden aug-fs-xs">
+          {(["pending", "all"] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-2.5 py-1 capitalize transition ${
+                filter === f
+                  ? "bg-zinc-700 text-zinc-200"
+                  : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-2">
-          {pendingCount > 0 && (
-            <span className="aug-fs-xs font-mono px-2 py-0.5 rounded-[var(--r-chip)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
-              {pendingCount} pending
-            </span>
-          )}
-          <div className="flex rounded-[var(--r3)] border border-zinc-700 overflow-hidden aug-fs-xs">
-            {(["pending", "all"] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-2.5 py-1 capitalize transition ${
-                  filter === f
-                    ? "bg-zinc-700 text-zinc-200"
-                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        </div>
+        {pendingCount > 0 && (
+          <span className="aug-fs-xs font-mono px-2 py-0.5 rounded-[var(--r-chip)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
+            {pendingCount} pending
+          </span>
+        )}
       </div>
 
       {/* Summary — real counts across all loaded investigations */}

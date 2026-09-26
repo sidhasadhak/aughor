@@ -856,16 +856,8 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
       {/* Faded placeholder styling for all inputs in this panel */}
       <style>{`.sl-in::placeholder{color:var(--t4,#666);opacity:1}`}</style>
 
-      {/* Header */}
+      {/* Scope + tabs */}
       <div style={{ padding: "16px 24px 0", borderBottom: "1px solid var(--b0)" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", margin: 0 }}>Semantic Layer</h2>
-          <span style={{ fontSize: 11, color: "var(--t3)" }}>The shared meaning the AI uses to read your data</span>
-        </div>
-        <p style={{ fontSize: 11, color: "var(--t3)", margin: "0 0 12px" }}>
-          Annotations, business knowledge, metric definitions, and SQL-quality benchmarks — injected directly into every AI prompt.
-        </p>
-
         {/* Scope bar — org-level: choose ANY connection / schema / table */}
         <div style={{ marginBottom: 12 }}>
           <ScopeBar
