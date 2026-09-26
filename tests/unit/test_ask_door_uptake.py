@@ -95,3 +95,11 @@ def test_the_ask_door_records_the_focus_on_its_request_event():
     reqs = Ledger.default().session_events(kind=session_log.USER_REQUEST, limit=50)
     mine = [r for r in reqs if (r.get("payload") or {}).get("question") == "why held?"]
     assert mine and mine[0]["payload"]["focus"] == {"kind": "departure", "id": "held-q"}
+
+
+def test_both_meters_are_served_on_one_spotlight_route():
+    """SP-M's vocabulary meter had no route at all; it and the Ask door's share one door now."""
+    body = client.get("/spotlight/uptake").json()
+    assert set(body) == {"vocabulary", "ask_door"}
+    assert {"turns", "in_parts", "rate", "by_day", "measured"} <= set(body["vocabulary"])
+    assert {"held", "asked", "rate", "measured"} <= set(body["ask_door"])

@@ -124,3 +124,22 @@ def test_a_converse_turns_decision_records_carry_the_runs_own_trace(monkeypatch)
     seen.clear()
     asyncio.run(_drain())
     assert seen["trace_id"] and seen["trace_id"] != "run-tj1-abc"
+
+
+def test_the_learning_summary_counts_the_few_shot_memory(monkeypatch):
+    """The receipt door for the memory's collections — counted in the serving process, and a
+    count that could not be taken reads None, never 0."""
+    from fastapi.testclient import TestClient
+
+    from aughor.api import app
+    monkeypatch.setenv("AUGHOR_EMBED_BACKEND", "ollama")
+    monkeypatch.setattr("aughor.semantic.vector_store.collection_count",
+                        lambda name: {"aughor_sql_examples": 3, "aughor_investigations": 1}[name])
+    body = TestClient(app).get("/learning/summary").json()["few_shot"]
+    assert body == {"backend": "ollama", "model": "nomic-embed-text", "sql_examples": 3, "investigations": 1}
+
+    def _down(name):
+        raise RuntimeError("locked")
+    monkeypatch.setattr("aughor.semantic.vector_store.collection_count", _down)
+    body = TestClient(app).get("/learning/summary").json()["few_shot"]
+    assert body["sql_examples"] is None and "could not be counted" in body["note"]

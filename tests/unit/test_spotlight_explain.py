@@ -175,3 +175,68 @@ def test_the_ask_body_accepts_a_focus_and_refuses_an_unknown_kind():
     assert req.focus.kind == "departure" and req.focus.id == "d1"
     with pytest.raises(ValueError):
         AskRequest(question="q", focus={"kind": "widget", "id": "d1"})
+
+
+# ── agent and analysis (the two kinds §6 item 33(c) named next) ──────────────────────
+
+def test_an_agent_answers_with_its_scope_grants_evaluation_and_runs(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from aughor.agent import spotlight_explain as ex
+    from aughor.agent.spotlight_guide import eval_sentence
+    agent = NS(id="ag-1", name="Returns analyst", purpose="watch returns", instructions="Be terse.",
+               connection_id="c1", schema_scope="", doc_ids=["d1", "d2"], pack_ids=["retail"],
+               tool_grants=["notify.slack"], workspace_id="", owner="user:amit", enabled=True,
+               last_eval={"passed": 4, "total": 5}, eval_basis="stale", created_at="2026-09-01", updated_at="2026-09-20")
+    monkeypatch.setattr("aughor.custom_agents.store.get_agent", lambda ref: agent if ref == "ag-1" else None)
+    monkeypatch.setattr("aughor.custom_agents.store.list_agents", lambda: [agent])
+    monkeypatch.setattr("aughor.db.history.list_investigations_for_agent",
+                        lambda agent_id, limit=50: [{"id": "r1", "kind": "chat", "status": "complete",
+                                                     "question": "how many returns?", "started_at": "2026-09-25"}])
+    out = ex.explain_object("c1", {"kind": "agent", "id": "Returns analyst"})     # by exact name
+    assert out["found"] and out["id"] == "ag-1" and out["documents"] == 2 and out["tool_grants"] == ["notify.slack"]
+    assert out["evaluation"] == eval_sentence(agent) and "configuration changed since" in out["evaluation"]
+    assert out["recent_runs"] == [{"id": "r1", "kind": "chat", "status": "complete",
+                                   "question": "how many returns?", "started_at": "2026-09-25"}]
+    assert out["offer"]["tool"] == "propose_agent_grant" and "Agents screen" in out["offer"]["sentence"]
+    assert out["summary"].startswith('Agent "Returns analyst" is enabled, bound to connection c1; 2 documents, 1 grant;')
+    missing = ex.explain_object("c1", {"kind": "agent", "id": "ghost"})
+    assert missing["found"] is False and "Returns analyst" in missing["summary"]
+
+
+def test_an_analysis_answers_with_its_run_its_verdict_and_the_departures_that_cite_it():
+    from aughor.agent import spotlight_explain as ex
+    from aughor.db.history import complete_investigation, create_investigation
+    from aughor.feedback.verdicts import record_verdict
+    inv_id = create_investigation("why did returns rise?", "c1")
+    complete_investigation(inv_id, {"headline": "Returns rose 12% on footwear", "confidence": 0.8,
+                                    "executive_summary": "Footwear drove it.", "recommendations": [{"a": 1}],
+                                    "data_gaps": []},
+                           [{"id": f"h{i}"} for i in range(3)],
+                           [{"sql": f"SELECT {i}", "row_count": 1} for i in range(7)],
+                           skip_index=True)
+    record_verdict("c1", inv_id, "accept", note="right")
+    record_departure(id="dep-cites", org_id="default", kind="briefing", state="held", conn_id="c1",
+                     automation_id="a1", automation_name="Daily", actor="automation:a1", target="sb:#c",
+                     reasons='["held"]', checks="{}", guards='{"remeasure": "held"}', text_preview="x",
+                     investigation_id=inv_id)
+    out = ex.explain_object("c1", {"kind": "analysis", "id": inv_id})
+    assert out["found"] and out["analysis_kind"] == "deep analysis" and out["status"] == "complete"
+    assert out["queries"] == 7 and out["hypotheses"] == 3 and out["confidence"] == 0.8
+    assert out["headline"] == "Returns rose 12% on footwear" and out["recommendations"] == 1
+    assert out["verdict"]["verdict"] == "accept"
+    assert [d["id"] for d in out["departures"]] == ["dep-cites"] and out["departures"][0]["state"] == "held"
+    assert out["trace_id"] == inv_id                              # a deep run's id is its trace
+    assert f"/traces/{inv_id}/trajectory" in out["offer"]["sentence"] and out["offer"]["tool"] == ""
+    assert "1 departure cites it, 1 held" in out["summary"]
+    assert ex.explain_object("c1", {"kind": "analysis", "id": "nope"})["found"] is False
+
+
+def test_every_kind_is_declared_and_the_new_offers_exist_on_the_roster():
+    from aughor.agent import spotlight_explain as ex
+    from aughor.agent.converse_tools import converse_tools
+    roster = {t.name for t in converse_tools("c1")}
+    listed = {t["name"]: t for t in client.get("/spotlight/tools").json()["tools"]}
+    assert listed["explain"]["parameters"]["properties"]["kind"]["enum"] == ["departure", "automation", "metric", "agent", "analysis"]
+    assert set(ex.KINDS) == set(ex._EXPLAINERS)
+    assert "propose_agent_grant" in roster

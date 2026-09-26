@@ -44,6 +44,25 @@ def _tolerate(exc: Exception, why: str, counter: str) -> None:
     tolerate(exc, why, counter=counter)
 
 
+def eval_sentence(a) -> str:
+    """One agent's evaluation state in the reader's words — the SAME sentence the guide's
+    grounding and SP-15's `explain(agent)` give, so the two cannot disagree about whether
+    a pass chip is about the agent as configured now (H6's label)."""
+    ev = a.last_eval or {}
+    basis = a.eval_basis
+    if not ev or basis == "none":
+        return "never evaluated — its Prove step is still open"
+    passed, total = int(ev.get("passed") or 0), int(ev.get("total") or 0)
+    if basis == "current":
+        return (f"{passed}/{total} golden questions passing, measured on the "
+                f"configuration running now")
+    if basis == "stale":
+        return (f"{passed}/{total} golden questions passing — but the "
+                f"configuration changed since; re-run the suite to re-earn it")
+    return (f"{passed}/{total} golden questions passing, measured before "
+            f"revision tracking — it cannot be tied to today's configuration")
+
+
 def _agents_grounding() -> dict | None:
     """The asker's own agents with their evaluation state — or None when unreadable."""
     try:
@@ -57,22 +76,9 @@ def _agents_grounding() -> dict | None:
     rows = []
     evaluated = 0
     for a in agents[:_MAX_ROWS]:
-        ev = a.last_eval or {}
-        basis = a.eval_basis
-        if not ev or basis == "none":
-            line = "never evaluated — its Prove step is still open"
-        else:
+        line = eval_sentence(a)
+        if a.last_eval and a.eval_basis != "none":
             evaluated += 1
-            passed, total = int(ev.get("passed") or 0), int(ev.get("total") or 0)
-            if basis == "current":
-                line = (f"{passed}/{total} golden questions passing, measured on the "
-                        f"configuration running now")
-            elif basis == "stale":
-                line = (f"{passed}/{total} golden questions passing — but the "
-                        f"configuration changed since; re-run the suite to re-earn it")
-            else:
-                line = (f"{passed}/{total} golden questions passing, measured before "
-                        f"revision tracking — it cannot be tied to today's configuration")
         from aughor.agent.spotlight_text import NAME_CLIP, clip
         rows.append({"name": clip(a.name, NAME_CLIP), "enabled": a.enabled,
                      "evaluation": line})

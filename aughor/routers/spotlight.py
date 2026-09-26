@@ -43,6 +43,23 @@ def list_spotlight_tools(connection_id: str = ""):
                        "parameters": t.parameters} for t in tools]}
 
 
+@router.get("/spotlight/uptake")
+def spotlight_uptake():
+    """The two uptake meters, served — §7's standing lesson is that features stall at TESTED,
+    not LEVERAGED, and both of these were measured only by hand until they had a door.
+
+    `vocabulary` (SP-M, AV-M): of the streaming converse turns where answering in parts was
+    OFFERED, how many used it. `ask_door` (SP-15): of the held rows in the departures ledger,
+    how many Spotlight was asked about FROM the row. Each reports `measured: false` and a
+    `None` rate when its log could not be read — a failed probe is not a zero.
+    """
+    from aughor.obs.ask_door_uptake import ask_door_uptake
+    from aughor.obs.vocabulary_uptake import vocabulary_uptake
+    from aughor.org.context import current_org_id
+    org = current_org_id() or None
+    return {"vocabulary": vocabulary_uptake(org_id=org), "ask_door": ask_door_uptake(org_id=org)}
+
+
 class SpotlightCall(BaseModel):
     """One tool invocation. `connection_id` is the binding conversation supplies by
     closure; an outside transport must say it out loud."""

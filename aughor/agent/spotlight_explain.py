@@ -19,6 +19,7 @@ holds it instead of posing as a door (SP-4's law).
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from aughor.agent.spotlight_text import clip
 from aughor.agent.tool_loop import ToolSpec
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 #: The kinds `explain` covers, in the order §6 item 33 chose them — the three a held send
 #: points at. Agent and analysis follow by the same three moves.
-KINDS: tuple[str, ...] = ("departure", "automation", "metric")
+KINDS: tuple[str, ...] = ("departure", "automation", "metric", "agent", "analysis")
 
 _MAX_RECENT = 5
 _PREVIEW = 400
@@ -270,10 +271,154 @@ def _explain_metric(connection_id: str, name: str) -> dict:
     return out
 
 
+# ── agent ─────────────────────────────────────────────────────────────────────────────
+
+def _explain_agent(connection_id: str, ref: str) -> dict:
+    from aughor.agent.spotlight_guide import eval_sentence
+    from aughor.custom_agents.store import get_agent, list_agents
+
+    a = get_agent(ref)
+    if a is None:
+        matches = [x for x in list_agents() if x.name == ref]
+        if len(matches) == 1:
+            a = matches[0]
+        elif len(matches) > 1:
+            return {"found": False, "kind": "agent", "id": ref,
+                    "summary": f"{len(matches)} agents are named {clip(ref, 60)!r} — use an id: "
+                               + ", ".join(x.id for x in matches)}
+    if a is None:
+        known = ", ".join(sorted(clip(x.name, 40) for x in list_agents())[:12]) or "(none)"
+        return {"found": False, "kind": "agent", "id": ref,
+                "summary": f"No agent named {clip(ref, 60)!r}; the agents here are: {known}."}
+    runs = _agent_runs(a.id)
+    out = {
+        "found": True, "kind": "agent", "id": a.id, "name": a.name,
+        "purpose": clip(a.purpose or "", _PREVIEW), "instructions": clip(a.instructions or "", _PREVIEW),
+        "connection_id": a.connection_id or "", "schema_scope": a.schema_scope or "",
+        "documents": len(a.doc_ids or []), "packs": list(a.pack_ids or []),
+        "tool_grants": list(a.tool_grants or []), "enabled": bool(a.enabled),
+        "owner": a.owner or "", "workspace_id": a.workspace_id or "",
+        "evaluation": eval_sentence(a), "eval_basis": a.eval_basis,
+        "recent_runs": runs,
+        "created_at": a.created_at or "", "updated_at": a.updated_at or "",
+    }
+    out["offer"] = {
+        "tool": "propose_agent_grant", "agent": a.id,
+        "sentence": (f"A declared action can be added to \"{clip(a.name, 60)}\"'s grants by sentence with "
+                     "propose_agent_grant (staged for approval); its instructions, documents and golden "
+                     "questions are edited on the Agents screen, where the Prove step re-runs its suite."),
+    }
+    out["summary"] = (
+        f"Agent \"{clip(a.name, 60)}\" is {'enabled' if a.enabled else 'disabled'}"
+        + (f", bound to connection {a.connection_id}" if a.connection_id else ", unbound (answers on the ask's connection)")
+        + f"; {out['documents']} document{'s' if out['documents'] != 1 else ''}, "
+        f"{len(out['tool_grants'])} grant{'s' if len(out['tool_grants']) != 1 else ''}; {out['evaluation']}; "
+        f"{len(runs)} recent run{'s' if len(runs) != 1 else ''}."
+    )
+    return out
+
+
+def _agent_runs(agent_id: str) -> list[dict]:
+    try:
+        from aughor.db.history import list_investigations_for_agent
+        rows = list_investigations_for_agent(agent_id, limit=_MAX_RECENT)
+    except Exception as exc:  # noqa: BLE001 — a store down says so, never an empty list
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "explain: the agent's runs could not be read", counter="spotlight_explain.agent_runs")
+        return [{"unavailable": "the run history could not be read"}]
+    out = []
+    for r in rows[:_MAX_RECENT]:
+        out.append({"id": r.get("id"), "kind": r.get("kind"), "status": r.get("status"),
+                    "question": clip(str(r.get("question") or ""), 120),
+                    "started_at": r.get("started_at") or ""})
+    return out
+
+
+# ── analysis ──────────────────────────────────────────────────────────────────────────
+
+def _explain_analysis(connection_id: str, inv_id: str) -> dict:
+    from aughor.db.history import get_investigation
+    from aughor.govern.departure_store import list_departures
+
+    row = get_investigation(inv_id)
+    if row is None:
+        return {"found": False, "kind": "analysis", "id": inv_id,
+                "summary": f"No analysis {inv_id!r} is in the run history."}
+    report = row.get("report") if isinstance(row.get("report"), dict) else {}
+    kind = str(row.get("kind") or "investigation")
+    envelope = report.get("envelope") if isinstance(report.get("envelope"), dict) else None
+    rechecks = [c for c in (report.get("rechecks") or []) if isinstance(c, dict)]
+    departures = [
+        {"id": d.get("id"), "state": d.get("state"), "when": d.get("ts"),
+         "target": d.get("target") or "", "automation": d.get("automation_name") or ""}
+        for d in list_departures(limit=500) if str(d.get("investigation_id") or "") == str(row.get("id"))
+    ][:_MAX_RECENT]
+    out = {
+        "found": True, "kind": "analysis", "id": row.get("id"),
+        "analysis_kind": "quick answer" if kind == "chat" else "deep analysis",
+        "status": row.get("status") or "", "question": clip(str(row.get("question") or ""), _PREVIEW),
+        "connection_id": row.get("connection_id") or "", "agent_id": row.get("agent_id") or "",
+        "started_at": row.get("started_at") or "", "completed_at": row.get("completed_at") or "",
+        "headline": clip(str(row.get("headline") or report.get("headline") or ""), _PREVIEW),
+        "sql": clip(str(report.get("sql") or ""), _SQL_PREVIEW),
+        "queries": int(row.get("query_count") or 0),
+        "hypotheses": int(row.get("hypothesis_count") or 0),
+        "confidence": report.get("confidence"),
+        "executive_summary": clip(str(report.get("executive_summary") or ""), _PREVIEW),
+        "recommendations": len(report.get("recommendations") or []) if isinstance(report.get("recommendations"), list) else 0,
+        "data_gaps": len(report.get("data_gaps") or []) if isinstance(report.get("data_gaps"), list) else 0,
+        "guards_clean": _guards_clean(envelope),
+        "rechecks": [{"at": c.get("at") or c.get("checked_at"), "status": c.get("status")} for c in rechecks][-3:],
+        "verdict": _latest_verdict(str(row.get("id") or "")),
+        "departures": departures,
+        "trace_id": row.get("trace_id") or (row.get("id") if kind != "chat" else ""),
+        "error": row.get("error") or "",
+    }
+    out["offer"] = {
+        "tool": "",
+        "sentence": ("Ask a follow-up about it in this conversation, or open it under Agent runs; a "
+                     "re-run on a schedule is the automation's, on the Automations canvas."
+                     + (f" Its full record is at /traces/{out['trace_id']}/trajectory." if out["trace_id"] else "")),
+    }
+    held = [d for d in departures if d["state"] != "departed"]
+    out["summary"] = (
+        f"{out['analysis_kind'].capitalize()} {out['id']} ({out['status']}): \"{clip(out['question'], 80)}\""
+        + (f" — {out['queries']} quer{'ies' if out['queries'] != 1 else 'y'}" if out["queries"] else "")
+        + (f", confidence {out['confidence']}" if out["confidence"] not in (None, "") else "")
+        + (f"; guards {'clean' if out['guards_clean'] else 'not vouched for'}" if envelope is not None else "; no envelope")
+        + (f"; {len(departures)} departure{'s' if len(departures) != 1 else ''} cite{'' if len(departures) != 1 else 's'} it"
+           + (f", {len(held)} held" if held else "") if departures else "")
+        + "."
+    )
+    return out
+
+
+def _guards_clean(envelope) -> Optional[bool]:
+    if envelope is None:
+        return None
+    from aughor.answer.envelope import guards_clean
+    return bool(guards_clean(envelope))
+
+
+def _latest_verdict(inv_id: str) -> Optional[dict]:
+    if not inv_id:
+        return None
+    try:
+        from aughor.feedback.verdicts import latest_verdict
+        v = latest_verdict(inv_id)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "explain: the verdict store could not be read", counter="spotlight_explain.verdict")
+        return {"unavailable": "verdicts could not be read"}
+    return {k: v.get(k) for k in ("verdict", "note", "created_at") if k in v} if v else None
+
+
 _EXPLAINERS = {
     "departure": _explain_departure,
     "automation": _explain_automation,
     "metric": _explain_metric,
+    "agent": _explain_agent,
+    "analysis": _explain_analysis,
 }
 
 
@@ -283,10 +428,11 @@ _EXPLAIN_PARAMS = {
     "type": "object",
     "properties": {
         "kind": {"type": "string", "enum": list(KINDS),
-                 "description": "What the id names: departure, automation or metric."},
+                 "description": "What the id names: departure, automation, metric, agent or analysis."},
         "id": {"type": "string",
                "description": "The object's id as the screen shows it — a departure id, an "
-                              "automation id or exact name, or a metric's name."},
+                              "automation or agent id or exact name, a metric's name, or an "
+                              "analysis (run) id."},
     },
     "required": ["kind", "id"],
 }
@@ -301,9 +447,11 @@ def spotlight_explain_tools(connection_id: str, *, session_id: str = "") -> list
                 "The live state of ONE object on screen, by kind and id — a departure "
                 "(why the gate held or passed it: every guard's outcome, the law behind "
                 "each, what a hold means and what to change), an automation (its "
-                "triggers, steps, last run and recent departures) or a metric (its "
-                "lifecycle, definition and tests). Call it FIRST when the question names "
-                "a departure, a held message, an automation or a metric by id or name, "
+                "triggers, steps, last run and recent departures), a metric (its "
+                "lifecycle, definition and tests), an agent (its scope, grants, evaluation "
+                "and recent runs) or an analysis (a run: its question, status, queries, "
+                "confidence, re-checks, verdict and the departures that cite it). Call it "
+                "FIRST when the question names one of these by id or name, "
                 "and cite its fields — the remedy text is the same the screen shows. "
                 "For what a law or concept IS in general use platform_help; END your "
                 "answer with the offer the result names — its tool is on your roster, "
