@@ -7764,6 +7764,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/generate-sql": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Metric Sql
+         * @description The model writes the metric's statement from the definition in the editor — ONE model
+         *     call, on the person's click (the user, 2026-09-26: *"generate SQL query for metric …
+         *     right at the SQL statement input box … based on the metric in question"*). The
+         *     platform's own SQL writer over this connection's schema, framed for a governed metric
+         *     (`semantic.metric_author`); the answer is checked, never rewritten — a grouped, limited
+         *     or multi-column query is refused with the reason and the model's text.
+         */
+        post: operations["generate_metric_sql_metrics_generate_sql_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/proposals": {
         parameters: {
             query?: never;
@@ -13729,6 +13754,53 @@ export interface components {
             name: string;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * GenerateSqlRequest
+         * @description What the editor holds about the metric when the person asks the model to write its
+         *     statement. `definition` is the catalogue's definition when the row has one, else the
+         *     caveats the person wrote.
+         */
+        GenerateSqlRequest: {
+            /** Connection */
+            connection: string;
+            /**
+             * Definition
+             * @default
+             */
+            definition: string;
+            /**
+             * Dimensions
+             * @default []
+             */
+            dimensions: string[];
+            /**
+             * Filters
+             * @default []
+             */
+            filters: string[];
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Name */
+            name: string;
+            /**
+             * Tables
+             * @default []
+             */
+            tables: string[];
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /**
+             * Wrong Usage Examples
+             * @default []
+             */
+            wrong_usage_examples: string[];
         };
         /** GoldenCreate */
         GoldenCreate: {
@@ -29976,6 +30048,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_metric_sql_metrics_generate_sql_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateSqlRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

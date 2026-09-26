@@ -205,6 +205,71 @@ def metric_proposals(req: ProposalsRequest):
             "candidates": candidates, "note": note}
 
 
+class GenerateSqlRequest(BaseModel):
+    """What the editor holds about the metric when the person asks the model to write its
+    statement. `definition` is the catalogue's definition when the row has one, else the
+    caveats the person wrote."""
+    connection: str
+    name: str
+    label: str = ""
+    definition: str = ""
+    unit: str = ""
+    tables: list[str] = []
+    filters: list[str] = []
+    dimensions: list[str] = []
+    wrong_usage_examples: list[str] = []
+
+
+@router.post("/metrics/generate-sql", dependencies=[gate(Capability.METRICS_DEFINE)])
+async def generate_metric_sql(req: GenerateSqlRequest):
+    """The model writes the metric's statement from the definition in the editor — ONE model
+    call, on the person's click (the user, 2026-09-26: *"generate SQL query for metric …
+    right at the SQL statement input box … based on the metric in question"*). The
+    platform's own SQL writer over this connection's schema, framed for a governed metric
+    (`semantic.metric_author`); the answer is checked, never rewritten — a grouped, limited
+    or multi-column query is refused with the reason and the model's text."""
+    from uuid import uuid4
+
+    from aughor.db.connection import open_connection_for
+    from aughor.semantic.metric_author import MetricBrief, write_statement
+    from aughor.telemetry import bind_trace
+
+    if not req.name.strip():
+        raise HTTPException(status_code=422, detail="Name the metric first — the name becomes the statement's column.")
+    try:
+        db = open_connection_for(req.connection)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    brief = MetricBrief(name=req.name.strip(), label=req.label, definition=req.definition, unit=req.unit,
+                        tables=list(req.tables), filters=list(req.filters), dimensions=list(req.dimensions),
+                        wrong_usage=list(req.wrong_usage_examples))
+    trace_id = uuid4().hex
+    loop = asyncio.get_running_loop()
+
+    def _work():
+        try:
+            with bind_trace(trace_id):
+                return write_statement(brief, db)
+        finally:
+            try:
+                db.close()
+            except Exception as exc:  # noqa: BLE001 — a close that fails is logged, not raised over the answer
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "metrics.generate_sql.close", counter="metrics.generate_sql")
+
+    try:
+        out = await loop.run_in_executor(None, _work)
+    except Exception as e:  # noqa: BLE001 — the model or the warehouse failing is said with its text
+        raise HTTPException(status_code=502, detail=f"The statement could not be written: {e}")
+    if not out["sql"]:
+        raw = (out.get("raw") or "").strip()
+        detail = f"No statement written: {out['refused']}."
+        if raw:
+            detail += f" The model wrote: {raw[:400]}"
+        raise HTTPException(status_code=422, detail=detail)
+    return {"sql": out["sql"], "note": out["note"], "model": out["model"], "trace_id": trace_id}
+
+
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def create_metric(req: MetricRequest):
     _require_statement(req.sql, None)

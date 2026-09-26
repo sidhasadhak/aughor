@@ -16,9 +16,11 @@ import {
   getMetricAudit,
   getDefinitionReport,
   getMetricProposals,
+  generateMetricSql,
   type CatalogueMetric,
   type MetricProposals,
   type MetricStatementOption,
+  type MetricSqlDraft,
   type Metric,
   type MetricValidationResult,
   type MetricFreshnessResult,
@@ -506,6 +508,30 @@ export function MetricsPanel({ connId }: { connId?: string }) {
   // offered as a switch — the field always holds something runnable (the user, 2026-09-26:
   // "still cannot see the entire SQL"). Kept by metric name, so a proposal never outlives
   // the row it was made for.
+  // The model writes the statement from the fields in the editor, on a click (the user,
+  // 2026-09-26): one model call, the result filled into the field and said to be the
+  // model's until saved. Kept apart from the platform's proposals above, which cost nothing.
+  const [writing, setWriting] = useState(false);
+  const [written, setWritten] = useState<MetricSqlDraft | null>(null);
+  const [writeError, setWriteError] = useState("");
+  const handleWriteSql = async () => {
+    if (!connId) { setWriteError("Pick a connection first — the statement is written over its schema."); return; }
+    if (!form.name.trim()) { setWriteError("Name the metric first — the name becomes the statement's column."); return; }
+    const row = rows.find((r) => r.name === form.name.trim());
+    setWriting(true); setWriteError("");
+    try {
+      const draft = await generateMetricSql(connId, {
+        name: form.name.trim(), label: form.label.trim(),
+        definition: (row?.definition || form.caveats).trim(), unit: form.unit.trim(),
+        tables: parseList(form.tables), filters: parseList(form.filters), dimensions: parseList(form.dimensions),
+        wrong_usage_examples: parseLines(form.wrong_usage_examples),
+      });
+      setWritten(draft);
+      setForm((f) => ({ ...f, sql: draft.sql }));
+    } catch (e: unknown) {
+      setWriteError(e instanceof Error ? e.message : "The statement could not be written");
+    } finally { setWriting(false); }
+  };
   const [proposals, setProposals] = useState<MetricProposals | null>(null);
   const [proposed, setProposed] = useState<{
     metric: string; from: string; statement: string; options: MetricStatementOption[]; note: string;
@@ -579,19 +605,19 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 
   const startAdd = () => {
     setAdding(true); setSelected(null);
-    setForm(EMPTY_FORM); setError("");
+    setForm(EMPTY_FORM); setError(""); setWritten(null); setWriteError("");
     setValidationResult(null); setFreshnessResult(null);
   };
 
   const startEdit = (m: Metric) => {
     setAdding(false); setSelected(m.name);
-    setForm(metricToForm(m)); setError("");
+    setForm(metricToForm(m)); setError(""); setWritten(null); setWriteError("");
     setValidationResult(null); setFreshnessResult(null);
   };
 
   const cancelForm = () => {
     setAdding(false); setSelected(null);
-    setForm(EMPTY_FORM); setError("");
+    setForm(EMPTY_FORM); setError(""); setWritten(null); setWriteError("");
     setValidationResult(null); setFreshnessResult(null);
   };
 
@@ -712,6 +738,20 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 value={form.sql}
                 onChange={(e) => setForm({ ...form, sql: e.target.value })}
               />
+              <div className="flex flex-wrap items-center gap-2" data-testid="metric-statement-write">
+                <Button size="sm" variant="secondary" disabled={writing} onClick={handleWriteSql}
+                  title="One model call: the statement written from the name, label, definition, filters and tables above, over this connection's schema">
+                  {writing ? "Writing…" : "Generate from the definition"}
+                </Button>
+                <span className="aug-fs-xs text-zinc-500">one model call, from the fields above</span>
+              </div>
+              {written && form.sql === written.sql && (
+                <p className="aug-fs-xs text-zinc-500" data-testid="metric-statement-written">
+                  Written by the model{written.model ? ` (${written.model})` : ""} from the definition
+                  {written.note ? ` — ${written.note}` : ""} — check it, then save.
+                </p>
+              )}
+              {writeError && <p className="aug-fs-xs text-red-400">{writeError}</p>}
               {!adding && proposed && proposed.metric === selected && form.sql === proposed.statement && (
                 <div className="flex flex-col gap-1" data-testid="metric-statement-proposed">
                   <p className="aug-fs-xs text-zinc-500">

@@ -1130,6 +1130,40 @@ export async function getMetricProposals(
   return res.json();
 }
 
+/** The metric's statement as the model wrote it from the editor's fields — one model call,
+ *  on the person's click. `note` says when the platform wrapped a bare aggregate over the
+ *  definition's table; `trace_id` joins the call's receipt. */
+export interface MetricSqlDraft {
+  sql: string;
+  note: string;
+  model: string;
+  trace_id: string;
+}
+
+export interface MetricBrief {
+  name: string;
+  label: string;
+  definition: string;
+  unit: string;
+  tables: string[];
+  filters: string[];
+  dimensions: string[];
+  wrong_usage_examples: string[];
+}
+
+export async function generateMetricSql(connection: string, brief: MetricBrief): Promise<MetricSqlDraft> {
+  const res = await fetch(`${getApiBase()}/metrics/generate-sql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection, ...brief }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The statement could not be written");
+  }
+  return res.json();
+}
+
 export async function updateMetric(name: string, m: Metric): Promise<Metric> {
   const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}`, {
     method: "PUT",

@@ -9321,6 +9321,16 @@ what date/timestamp should the metric be grained at in a format schema.table.col
   statement's OWN tables only — the first cut's fallback (every profiled table's main date when the SQL named no
   table) is gone; with one date the editor sets it and says so, with several it shows the list beside the open
   input, with none it says why. A `WITH … SELECT` no longer trips the report's "no FROM clause" defect.
+- **Written by the model, on a click.** `POST /metrics/generate-sql` (connection + the editor's fields) → the
+  statement the platform's own SQL writer (`sql.writer`, dialect rules per execution mode) writes from the metric in
+  question — `semantic.metric_author.framing`: the label, definition, filters (applied), tables, dimensions (not
+  grouped by), wrong readings (not computed), and the rules that make it a metric's statement (one row, one column
+  named after the metric, no GROUP BY / LIMIT / date filter). ONE model call per click, bound to a fresh trace the
+  response carries. The answer is checked, never rewritten: grouped, limited or multi-column is refused with the
+  reason and the model's text; a bare aggregate is wrapped over the definition's table as the value path runs it, and
+  the note says so. The editor's "Generate from the definition" button sits under the SQL field and fills it, said as
+  the model's until saved (the user, 2026-09-26: *"generate SQL query for metric … right at the SQL statement input
+  box … based on the metric in question"*).
 - **Receipt owed:** the editor screenshot on theLook with its proposals, and one metric saved as a statement with a
   grain and measured for a range on the live Briefing (`return_rate` is the candidate: a draft, dateless today).
 
