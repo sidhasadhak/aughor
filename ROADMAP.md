@@ -9388,7 +9388,7 @@ named here.
 version 2 with the change, and that morning's Day Briefing carries the revision; the equal-age comparison for a
 cohort equals hand SQL. Mutation test: overwrite instead of supersede and the history test fails.
 
-#### BR-7 · Findings that can be re-asked for any range (about a week, free; ⚑ its receipt needs an exploration run) — ⏸ paused at the user's word
+#### BR-7 · Findings that can be re-asked for any range (about a week, free; ⚑ its receipt needs an exploration run) — ⏸ paused at the user's word 2026-09-25; **pause LIFTED 2026-09-26 by the user's screenshot — built as part of BR-9**
 
 > **Premise.** The explorer already thinks in cells — `metric × table × axis × cut` (`explorer/coverage_manifest.py:54`),
 > made into SQL with no model call (`explorer/manifest_query.py`) — and throws the cell away: a finding keeps its
@@ -9450,6 +9450,54 @@ collective view · re-running every finding's SQL each day (BR-0: it would not w
 and says so. If BR-4's reader cannot name a move the dated Briefing carries that the standing one lacks, the recipes
 ship without prose. If a custom range cannot be built inside a minute on theLook by compilation, BR-8 moves ahead of
 BR-4.
+
+#### BR-9 · The whole page adheres to the range (DRAFTED 2026-09-26 from the user's screenshot; lifts BR-7's pause; about a day for the labels, then BR-7's week, then the re-rank)
+
+> **Origin.** The user, 2026-09-26, on a screenshot of the Briefing with *Week* selected: *"Clicking on Week/Month of
+> whatever the range.. I see only a few parts changing and not the whole briefing.. its wierd because the whole briefing
+> page needs to adhere to the range selected.. otherwise its quite useless.. So, if for the entire range the return rate
+> is at 10%.. then I click on e.g. Month then I should get return rate based on the last 30 days, right? And same when I
+> select custom range.. and then re-index on what to show based on the novelty, impact or whatever scorecard mechanism
+> we already have... so, its much bigger that what it is or got built.."*
+>
+> **Measured on the screenshot and the code, the same hour.** Under *Week* (17–23 August 2026 on theLook) the parts
+> that re-measure are the hero (*Units Sold 1,895, +4%*), the *Full synthesis* table and *What moved* — all through
+> §3.27's per-metric trend query cut to the window. The parts that do NOT: the **Key Metrics** row (*Return Rate
+> 10.0% · Gross Margin 51.9% · Sales Volume by Category 181.2K*), the **Findings** list (*7 of 12 · ranked by
+> novelty*) and the **cockpit** chart — every one of them the explorer's all-history findings (`getDomainInsights`,
+> `rankImpact = impact ?? novelty`), rendered under a range heading with **no label saying so**. That is BR-3's own
+> falsifier firing: *"if a person cannot tell from the page which days a figure covers … the control has failed
+> whatever its tests say."* BR-3's text promised *"anything still standing carries 'all findings, not this range'"*;
+> the Key Metrics row and the cockpit never got the label. And the reason Return Rate cannot be measured for a month
+> today is upstream of the page: **theLook's three metrics — `revenue`, `units_sold` (approved), `return_rate`
+> (draft) — declare no `time_column`**, so BR-2's compiler has nothing to cut a range with; the hero's Units Sold is
+> §3.27's trend query, not BR-2's. BR-2's rule ("set automatically by rule and corrected by a person") did not set them
+> on this connection, which is a finding against BR-2's receipt, recorded here.
+
+- **Withheld is said — first, and in a day.** Every figure and every list under a range heading is either measured for
+  that range or carries *"all history, not this range"* in the same type as its number: the Key Metrics row, the
+  findings list, the cockpit. Nothing else changes until this does; a page that shows 10.0% under *Week* without the
+  label teaches the reader a false number, and §7 has paid for that shape before.
+- **Key Metrics from the metrics, for the range.** The row reads the connection's APPROVED metrics that know their
+  dates, measured for the range by BR-2's compiler, each with its final / provisional / to-date label — not the
+  explorer's findings. Pre-check: run BR-2's rule on theLook and say what it set and what it could not (the rule
+  found nothing to set here: the metrics name no date column and their SQL is an expression over `order_items`);
+  a person declares the rest in the metric editor's governance column, `return_rate` included once it is approved.
+  A metric without a date stays on the standing view and says why.
+- **BR-7, un-paused and joined:** a finding keeps the explorer's cell, the approved metric it measures and the days
+  its data covered, so the findings list is RE-ASKED for the range through the compiler (no model) and re-ranked
+  by the scorecard the page already has — `impact`, else `novelty` — computed for the range, not for all history.
+  A finding whose cell cannot be re-asked (no metric, no date) is listed apart as *"about all history"*.
+- **The cockpit scopes.** Its saved cards carry a range-aware query or say they are standing.
+- **Custom ranges are the same path** — the presets are spellings of one resolver (BR-3), so *Month* and
+  *17–26 August* differ only in dates.
+
+**Done when:** with *Month* selected on theLook, Return Rate is the last settled month's return rate (hand SQL
+equal), the findings are the month's and their order is the month's impact, and nothing on the page shows an
+all-history figure under the range heading without saying so — checked on screenshots in both skins at 1024 px.
+**Falsifier:** BR-3's, unchanged — if a person cannot tell from the page which days a figure covers, the page has
+failed whatever its tests say. **Cost:** the labels a day; BR-7 about a week, no model; the re-rank a day or two;
+⚑ nothing spends but the narrator call a range Briefing already makes.
 
 **What each wave must show before the next starts:** a live receipt on theLook, a mutation test on every new guard,
 screenshots in both skins for any UI change, and this section updated the same day — a prose claim in §3 rots
