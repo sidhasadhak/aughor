@@ -43,8 +43,11 @@ def test_the_figure_is_the_value_the_total_or_the_mean_for_a_rate():
     assert rk.figure_of(["n"], [[42]], []) == (42.0, "value", "n", 1)
     assert rk.figure_of(["status", "order_count"], [["a", 2], ["b", 3]], []) == (5.0, "total", "order_count", 2)
     assert rk.figure_of(["cat", "return_rate"], [["a", 0.1], ["b", 0.3]], ["return_rate"]) == (0.2, "mean", "return_rate", 2)
-    # A declared measure wins over the first numeric column.
-    assert rk.figure_of(["cat", "sold", "returned"], [["a", 10, 1]], ["returned"]) == (1.0, "value", "returned", 1)
+    # A declared measure wins; undeclared, the LAST numeric column is the finding's figure (theLook's
+    # return-rate finding: `category, sold_lines, returned_lines, return_rate`).
+    assert rk.figure_of(["cat", "sold", "returned"], [["a", 10, 1]], ["sold"]) == (10.0, "value", "sold", 1)
+    assert rk.figure_of(["cat", "sold_lines", "returned_lines", "return_rate"], [["a", 10, 1, 0.1], ["b", 20, 4, 0.2]], []) \
+        == (0.15000000000000002, "mean", "return_rate", 2)
     assert rk.figure_of(["cat"], [["a"], ["b"]], []) == (None, "", "", 2)
     assert rk.figure_of([], [], []) == (None, "", "", 0)
 

@@ -1909,7 +1909,9 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
   onVizConfigChange?: (insightId: string, c: VizConfig) => void;
 }) {
   const reaskById  = useMemo(() => new Map((reask?.reasked ?? []).map(r => [r.id, r] as const)), [reask]);
-  const apartById  = useMemo(() => new Map((reask?.apart ?? []).map(a => [a.id, a.why] as const)), [reask]);
+  // An id two schemas share can be re-asked in one and apart in the other; the page keys by
+  // id, so the re-asked figure wins and the row never says both.
+  const apartById  = useMemo(() => new Map((reask?.apart ?? []).filter(a => !reaskById.has(a.id)).map(a => [a.id, a.why] as const)), [reask, reaskById]);
   const signals    = useMemo(() => (reask ? orderByReask(given, findingId, reaskById) : given), [given, reask, reaskById]);
   const [shown, setShown]           = useState(LEDGER_DEFAULT);
   const [expandedId, setExpandedId] = useState<string | null>(null);   // one row open at a time

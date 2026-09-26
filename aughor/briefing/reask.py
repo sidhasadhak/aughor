@@ -52,8 +52,8 @@ def _num(v: Any) -> Optional[float]:
 
 def figure_of(columns: list, rows: list, measures: list) -> tuple[Optional[float], str, str, int]:
     """``(value, how, measure, n_rows)`` for a re-asked result: the measure column is the first
-    declared measure present, else the first numeric column that is not the first column of
-    a multi-column result; one row → its value; several → the total, or the mean when the
+    declared measure present, else the last numeric column of a multi-column result (never
+    its first, the dimension); one row → its value; several → the total, or the mean when the
     measure reads as a rate. ``how`` is "value" | "total" | "mean" | "" (nothing numeric)."""
     cols = [str(c) for c in (columns or [])]
     if not cols or not rows:
@@ -61,7 +61,10 @@ def figure_of(columns: list, rows: list, measures: list) -> tuple[Optional[float
     declared = [bare(m) for m in (measures or [])]
     idx = next((i for i, c in enumerate(cols) if bare(c) in declared), None)
     if idx is None:
-        candidates = range(len(cols)) if len(cols) == 1 else range(1, len(cols))
+        # No declared measure names a column: the LAST numeric column, never the first — the
+        # derived figure a finding is about comes last (`category, sold_lines, returned_lines,
+        # return_rate`; measured live on theLook, where the first numeric was `sold_lines`).
+        candidates = range(len(cols)) if len(cols) == 1 else range(len(cols) - 1, 0, -1)
         idx = next((i for i in candidates if any(_num(r[i]) is not None for r in rows if i < len(r))), None)
     if idx is None:
         return None, "", "", len(rows)
