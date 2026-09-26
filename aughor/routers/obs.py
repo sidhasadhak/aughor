@@ -327,6 +327,26 @@ def get_trace_summary(trace_id: str, top: int = 8):
     return build_summary(trace_id, events, top_n=max(1, min(top, 50)))
 
 
+@router.get("/traces/{trace_id}/trajectory")
+def get_trace_trajectory(trace_id: str):
+    """TJ-2 — one record per run, joined at read: the question, the loop's steps in order
+    (the `step` events), the answer rows with their re-checks and a person's verdict, the
+    statements that ran (`audit_log`), the guard fires, the picks (`decision_record`), and
+    the reward FIELDS — never a number: TJ-3 owns the label and it must take both values on
+    real traffic before anything reads it.
+
+    Served with the steps' payload fields WITHHELD, exactly as `/learning/decisions`
+    withholds `context`: a step's arguments and result excerpt are captured only under an
+    open prompt window and are a payload under §6 item 4. The key stays, empty, and
+    `payload_withheld` says why. A store that could not be read says so in its place.
+    """
+    from aughor.obs.trajectory import trajectory_of
+    out = trajectory_of(trace_id, org_id=current_org_id() or None, gated=False)
+    if out is None:
+        raise HTTPException(status_code=404, detail="No events or answers carry this trace")
+    return {"measured": True, **out}
+
+
 @router.get("/traces/{trace_id}/spans/{span_id}")
 def get_trace_span(trace_id: str, span_id: str):
     """One span's input and output — the paged drill-down the summary points at.

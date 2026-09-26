@@ -528,6 +528,34 @@ def recent_chat_answers(since_iso: str, *, limit: int = 200) -> list[dict]:
     return out
 
 
+def by_trace(trace_id: str, *, limit: int = 20) -> list[dict]:
+    """TJ-2 — every history row a run wrote, oldest first: the chat turn(s) answered under
+    this trace, or the deep run whose id IS the trace (the deep path mints its trace from
+    the investigation id). Each row carries its parsed report so a reader can take the
+    answer, the envelope and the re-checks from one read."""
+    if not trace_id:
+        return []
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    try:
+        rows = c.execute(
+            "SELECT * FROM investigations WHERE trace_id = ? OR id = ? "
+            "ORDER BY started_at ASC LIMIT ?", (trace_id, trace_id, max(1, int(limit)))).fetchall()
+    finally:
+        c.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        for field in ("report_json", "hypotheses_json", "query_history_json"):
+            raw = d.pop(field, None)
+            try:
+                d[field[:-5]] = json.loads(raw) if raw else None
+            except (TypeError, ValueError):
+                d[field[:-5]] = None
+        out.append(d)
+    return out
+
+
 def get_chat_answer(inv_id: str) -> Optional[dict]:
     """One chat answer as ``recent_chat_answers`` shapes it, or None."""
     c = _conn()

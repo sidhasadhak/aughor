@@ -3799,8 +3799,7 @@ SP-M — the share of held rows whose Ask door was used, from the session log, n
 **Cost:** a corpus loader over prose that already exists; one declared tool; three doors. No new store. ⚑ nothing
 spends: every read is local.
 **Status 2026-09-26 — the order of work's three moves BUILT (`claude/clean-panels-evidence-keys`), plus
-automations and metrics as `explain` kinds; the glossary and the §3 summaries (item 33(b)'s second shelf) are NOT
-built and stay open.**
+automations and metrics as `explain` kinds; the second shelf and the measure followed the same day (below).**
 - **The corpus knows the laws — from the gate's own text.** `govern/departure_remedies.py` holds the remedy table
   (moved out of `web/lib/departureRemedies.ts`, which is deleted) and READS each law's sentence from
   `govern/departure.py`'s module docstring by regex — parsed, never copied, and a test mutates the docstring to
@@ -3829,8 +3828,18 @@ built and stay open.**
 - **Receipt owed, ⚑ one model call:** the done-when's live re-ask — the same question from the held row, in the
   palette, must answer with law 1, THIS departure's numerals, the automation by name and the offer, in ≤ 2 tool
   calls (the focus prose makes the expected count 0). The serving API (pid 69688) predates this code; the
-  re-ask waits on a restart at the user's word. SP-M's uptake measure (held rows whose Ask door was used) is not
-  yet built.
+  re-ask waits on a restart at the user's word.
+- **Later the same day — the second shelf and the measure, BUILT.** Item 33(b)'s shelf: `platform_help` now
+  reads `docs/GLOSSARY.md` (39 terms served under their own word, and 63 retired spellings resolving to the word
+  that replaced them — *"what is an insight"* answers with **Finding** and says the word is retired) and each §3
+  arc's header plus the first paragraph of its origin block (17 arcs, under `arc <code>` and the code) — parsed
+  from the files the ratchet enforces, never retold; a checkout without `docs/` has empty shelves and says so
+  per word. A hand-written alias always outranks a parsed one. The measure: `GET /departures/summary` carries
+  `ask_door` — held rows in the ledger, how many Spotlight was asked about FROM the row (the request event now
+  records `focus`), the share, by day; unreadable reports `measured: false`, never zero
+  (`obs/ask_door_uptake.py`). Live: 18 held rows (the ledger, 2026-09-26 midday) and 0 asked from the row — by
+  construction, since no request event could carry `focus` before this code; the first reading that means
+  anything comes after the restart.
 
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
@@ -8835,6 +8844,31 @@ receipt extended to the whole record. The route returns the same trajectory for 
 withheld, then shown inside an opened capture window. A mutation test: remove the step write and the walk fails.
 **Falsifier:** if any run kind cannot be walked after the wave, the wave is not done; if the step write cannot meet
 the latency bar even batched, the payload fields move to the window only and this section says so.
+
+**Status 2026-09-26 — the record and the read BUILT (`claude/clean-panels-evidence-keys`); three bullets open.**
+- **The `step` event exists, from the one seam.** `run_tool_loop` records every step it takes — a tool that
+  ran, one that raised, a hallucinated name, a silent turn — as one `session_events` row of kind `step`
+  (`_emit_step`): index, site, tool, ok, elapsed, the statement, its row count, its error, which guards fired,
+  result chars — always; the model's arguments and a 400-character excerpt of the result only while a prompt-capture
+  window is open (`captured: true`), and a step never spends the window's budget (it counts model calls). No
+  trace bound, nothing written — the session log's own law. The converse body's `tool_call_result` relay stays
+  (SP-M's meter reads it); folding it into the step record is the next touch.
+- **`trajectory_of(trace_id)` and `GET /traces/{id}/trajectory`.** `obs/trajectory.py` walks the run's trace
+  across the stores that already carry it — the request event, the `step` rows, the history row(s) with their
+  envelope, re-checks and a person's verdict (`db/history.by_trace`, by `trace_id` OR by id, so a deep run whose
+  id is its trace joins too), the statements (`AuditLogger.recent(trace_id=…)`, new filter), the guard fires,
+  the picks (`decisions.list_for_trace`) — and the reward FIELDS (human verdict · re-check · execution outcome ·
+  guard fires · `label: "unlabeled"`); never a number, TJ-3's. Step payloads are withheld on the ungated route
+  exactly as `/learning/decisions` withholds `context`, served on `gated=True`. A store that cannot be read says
+  `{"unavailable": …}` in its place, and the counts read `None` for it, never zero.
+- **One id for a rollout.** The `route` receipt now carries `trace_id` (the ambient run trace); `ask_target`
+  keeps it in `meta`; the runner writes it into the `trace.observation` score's detail per case, and binds a
+  trace of its own (`eval-…`) around a run when none is ambient, so `eval_runs.trace_id` is no longer '' —
+  the census's defect 13, measured 36 of 36 empty.
+- **Open (this wave, not built):** the exporters still read the stores directly rather than `trajectory_of`;
+  `guard_verdicts` still carries two meanings in `phase` (audit.db migration 4, numbered off the LIVE
+  `user_version`, rehearsed on a `.backup` first — a restart-time migration the operator should see coming);
+  the explorer's step log is still a second writer.
 
 #### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit)
 

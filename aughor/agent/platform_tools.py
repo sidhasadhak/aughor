@@ -679,6 +679,117 @@ def _departure_shelf() -> tuple[dict[str, str], dict[str, str]]:
 _DEPARTURE_TOPICS, _DEPARTURE_ALIASES = _departure_shelf()
 _HELP_TOPICS.update(_DEPARTURE_TOPICS)
 _HELP_ALIASES.update(_DEPARTURE_ALIASES)
+#: The topics written by hand (and the departure shelf) — what a parsed shelf may never
+#: shadow. Snapshotted BEFORE the parsed shelves load, so a shelf built from a fixture
+#: tree in a test is judged against the same set as the one built from the checkout.
+_HAND_TOPICS = frozenset(_HELP_TOPICS)
+
+
+def _docs_root():
+    """The repo's `docs/` beside the package — present in a checkout, absent in a bare
+    install. A shelf whose source is absent is simply empty; `platform_help` then says
+    so for the words it would have known."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    return root if (root / "docs" / "GLOSSARY.md").exists() else None
+
+
+def _glossary_shelf(root) -> tuple[dict[str, str], dict[str, str]]:
+    """§6 item 33(b), the second shelf — the glossary, served, never retold.
+
+    `docs/GLOSSARY.md` is the authority for names (one word, one concept) and it is a
+    table per section: **Use this** · For · Don't use. Each row becomes a topic under the
+    term, and every "don't use" word becomes an ALIAS of the term it was retired for — so
+    *"what is an insight"* answers with **Finding** and says which word is retired. Read
+    from the file at import; the file is what the vocabulary ratchet enforces, so the
+    help cannot drift from the rule."""
+    import re
+    topics: dict[str, str] = {}
+    aliases: dict[str, str] = {}
+    if root is None:
+        return topics, aliases
+    section = ""
+    for line in (root / "docs" / "GLOSSARY.md").read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            section = line[3:].strip()
+            continue
+        m = re.match(r"^\|\s*\*\*(?P<term>[^*]+)\*\*\s*\|(?P<for>[^|]*)\|(?P<dont>[^|]*)\|\s*$", line)
+        if not m:
+            continue
+        term = m.group("term").strip()
+        meaning = re.sub(r"\s+", " ", m.group("for")).strip()
+        dont = re.sub(r"\s+", " ", m.group("dont").replace("**", "")).strip()
+        key = term.lower()
+        if not term or not meaning or key in _HAND_TOPICS or key in topics:
+            continue
+        text = f"{term} ({section.lower()}) — {meaning}."
+        if dont and dont != "—":
+            text += f" Not: {dont}."
+        topics[key] = text
+        # Retired spellings resolve to the word that replaced them — only single words or
+        # short phrases, never a parenthetical explanation.
+        for raw in re.split(r",|;", dont):
+            word = re.sub(r"[*`\"]", "", raw).strip().lower()
+            word = re.sub(r"\s*\(.*?\)\s*", " ", word).strip()
+            if word and word != "—" and 2 <= len(word) <= 32 and word not in _HAND_TOPICS \
+                    and word not in topics and word not in aliases and " as " not in word \
+                    and " in " not in word:
+                aliases[word] = key
+    return topics, aliases
+
+
+def _arc_shelf(root) -> tuple[dict[str, str], dict[str, str]]:
+    """The other half of the second shelf: each §3 arc's one-paragraph summary — its
+    header and the first paragraph of its origin block — under `arc <code>` and the code
+    itself. Not the whole roadmap: ten thousand lines of history is not help."""
+    import re
+    topics: dict[str, str] = {}
+    aliases: dict[str, str] = {}
+    if root is None or not (root / "ROADMAP.md").exists():
+        return topics, aliases
+    lines = (root / "ROADMAP.md").read_text(encoding="utf-8").splitlines()
+    header = re.compile(r"^### 3\.\d+ · Arc (?P<code>[A-Z]{2,3}) — (?P<title>.*)$")
+    i = 0
+    while i < len(lines):
+        m = header.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        code, title = m.group("code"), m.group("title")
+        title = re.sub(r"\s*\((?:adopted|drafted|DRAFTED|built|DROPPED).*$", "", title).strip()
+        title = re.sub(r"\*\*", "", title)
+        j = i + 1
+        quote: list[str] = []
+        while j < len(lines) and not lines[j].startswith("### "):
+            if lines[j].startswith("> "):
+                body = lines[j][2:].strip()
+                if quote and not body:
+                    break                      # the origin block's first paragraph ends
+                if body:
+                    quote.append(body)
+            elif quote:
+                break
+            j += 1
+        summary = re.sub(r"\s+", " ", " ".join(quote))
+        summary = re.sub(r"\*\*Origin\.\*\*\s*", "", summary)
+        summary = re.sub(r"[*_`]", "", summary)
+        if len(summary) > 700:
+            summary = summary[:700].rsplit(" ", 1)[0] + " …"
+        key = f"arc {code.lower()}"
+        topics[key] = f"Arc {code} — {title}." + (f" {summary}" if summary else "")
+        if code.lower() not in _HAND_TOPICS and code.lower() not in topics:
+            aliases[code.lower()] = key
+        i = j
+    return topics, aliases
+
+
+_DOCS_ROOT = _docs_root()
+_GLOSSARY_TOPICS, _GLOSSARY_ALIASES = _glossary_shelf(_DOCS_ROOT)
+_ARC_TOPICS, _ARC_ALIASES = _arc_shelf(_DOCS_ROOT)
+_HELP_TOPICS.update(_GLOSSARY_TOPICS)
+_HELP_TOPICS.update(_ARC_TOPICS)
+for _alias, _topic in {**_GLOSSARY_ALIASES, **_ARC_ALIASES}.items():
+    _HELP_ALIASES.setdefault(_alias, _topic)       # a hand-written alias always wins
 
 
 def platform_help(connection_id: str, args: dict) -> dict:

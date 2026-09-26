@@ -5496,6 +5496,14 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     _route_ev["history_turns"] = len(_hist)
     _route_ev["history_chars"] = len(build_history_section(_hist)) if _hist else 0
     _route_ev["history_reconstructed"] = bool(_hist) and not bool(_client_history)
+    # TJ-2 — the run's trace id, on the receipt the client already reads: it is the key
+    # `GET /traces/{id}/trajectory` walks, and the eval harness records it per case so a
+    # rollout is a trajectory too. "" when no trace is bound (the wrapper binds one).
+    try:
+        from aughor.telemetry import current_trace_id as _ambient
+        _route_ev["trace_id"] = _ambient() or ""
+    except Exception:  # noqa: BLE001 — a receipt field, never a dependency
+        _route_ev["trace_id"] = ""
     yield _sse("route", _route_ev)
 
     if _use_analyst:
@@ -5659,7 +5667,8 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
     stream = stream_with_session_log(
         stream, question=req.question, conn_id=conn_id, door="ask", depth=req.depth,
         canvas_id=req.canvas_id or "", schema=req.schema_name or "",
-        purpose=req.purpose or "", agent_id=req.agent_id or "")
+        purpose=req.purpose or "", agent_id=req.agent_id or "",
+        focus=req.focus.model_dump() if getattr(req, "focus", None) else None)
     # ambient session + asker → trace attribution (RC-4: the asker is why LF-2's
     # user field was empty on every headless door — nobody was setting it)
     stream = _stream_with_session(req.session_id, stream, req.principal_ref or "")
@@ -5871,7 +5880,7 @@ _SESSION_LOG_SNIFF = ('"start"', '"error"', '"headline"', '"receipt_id"')
 async def stream_with_session_log(
     stream: AsyncGenerator[str, None], *, question: str, conn_id: str,
     door: str = "ask", depth: str = "", canvas_id: str = "", schema: str = "",
-    purpose: str = "", agent_id: str = "",
+    purpose: str = "", agent_id: str = "", focus: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """Record the run in the session log (flag ``obs.session_log``).
 
@@ -5917,7 +5926,10 @@ async def stream_with_session_log(
         session_log.emit(
             session_log.USER_REQUEST, name=door, trace_id=run_id, conn_id=conn_id,
             payload={"question": question, "depth": depth, "canvas_id": canvas_id,
-                     "schema": schema, "purpose": purpose, "agent_id": agent_id},
+                     "schema": schema, "purpose": purpose, "agent_id": agent_id,
+                     # SP-15 — the object the palette was summoned from ({kind, id}), so
+                     # the Ask door's uptake is a reading of the log, not a guess.
+                     **({"focus": focus} if focus else {})},
         )
         try:
             async for event in stream:

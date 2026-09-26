@@ -397,6 +397,29 @@ def list_decisions(site: Optional[str] = None, limit: int = 50) -> list[dict]:
     return out
 
 
+def list_for_trace(trace_id: str, *, limit: int = 200) -> list[dict]:
+    """TJ-2 — the picks one run made, oldest first, options decoded. Joins on the run's
+    ambient trace (the same id the session log, the history row and the audit rows carry
+    since TJ-1), or on `inv_id` for a deep run whose id is its trace."""
+    if not trace_id:
+        return []
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM decision_record WHERE trace_id = ? OR inv_id = ? "
+                "ORDER BY ts ASC, rowid ASC LIMIT ?",
+                (trace_id, trace_id, max(1, min(int(limit), 2000)))).fetchall()
+        finally:
+            conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["options"] = json.loads(d.get("options") or "[]")
+        out.append(d)
+    return out
+
+
 def list_for_export(site: str, limit: int = 100000) -> list[dict]:
     """Every trainable row for one site, oldest first: a listed option was chosen and
     the menu had a real choice in it (two options minimum — jevlike's own floor)."""

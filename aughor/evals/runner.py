@@ -184,14 +184,24 @@ def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
     if config_extra:
         config.update(config_extra)
 
+    # TJ-2 — a run carries a trace of its own: the ambient one when a caller bound it,
+    # else one minted here. `eval_runs.trace_id` was '' on all 36 runs of the census
+    # because nothing ever bound one around a harness run.
     trace_id = ""
+    _bound = None
     try:
         from aughor import telemetry
         trace_id = telemetry.current_trace_id()
+        if not trace_id:
+            import uuid as _uuid
+            trace_id = f"eval-{_uuid.uuid4().hex[:12]}"
+            _bound = telemetry.bind_trace(trace_id)
+            _bound.__enter__()
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "eval run: ambient trace unavailable; run recorded uncorrelated",
                  counter="evals.trace")
+        _bound = None
 
     run_id = store.start_run(suite_id, iterations=iterations, config=config,
                              trace_id=trace_id) if persist else "dry"
@@ -227,11 +237,26 @@ def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
     except BaseException:
         if persist:
             store.finish_run(run_id, status=store.FAILED, summary=summary.to_dict())
+        _unbind(_bound)
         raise
 
     if persist:
         store.finish_run(run_id, status=store.SUCCEEDED, summary=summary.to_dict())
+    _unbind(_bound)
     return summary
+
+
+def _unbind(bound) -> None:
+    """Release the trace `run_suite` bound for itself (a no-op when the caller's own
+    trace was ambient). Tolerated: a trace that would not unbind must not fail a run
+    that finished."""
+    if bound is None:
+        return
+    try:
+        bound.__exit__(None, None, None)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "eval run: the run's trace did not unbind", counter="evals.trace")
 
 
 @dataclass
@@ -517,7 +542,10 @@ def _run_case(run_id: str, case_row: dict, target: Target, *, iterations: int,
                 detail={"sql": (obs.sql or "")[:4000],
                         "columns": list(obs.columns or [])[:64],
                         "row_count": int(obs.row_count or 0),
-                        "narrative": (obs.narrative or "")[:600]}))
+                        "narrative": (obs.narrative or "")[:600],
+                        # TJ-2 — the case's own trace (the real path binds one per
+                        # ask), so `GET /traces/{id}/trajectory` walks this rollout.
+                        "trace_id": str((obs.meta or {}).get("trace_id") or "")}))
         except Exception as exc:
             # A target that blows up is a failed case, not a failed run — one bad
             # case must not cost you the other 52 results.

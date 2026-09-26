@@ -75,8 +75,11 @@ def get_departures(state: Optional[str] = Query(default=None),
 @router.get("/departures/summary")
 def get_summary():
     """How many departures took each state, and how many a person still owes — the count
-    the departures screen and its badge show."""
-    return summary_counts()
+    the departures screen and its badge show. ``ask_door`` (SP-15's measure) is the share
+    of held rows Spotlight was asked about from the row, read from the session log."""
+    from aughor.obs.ask_door_uptake import ask_door_uptake
+    from aughor.org.context import current_org_id
+    return {**summary_counts(), "ask_door": ask_door_uptake(org_id=current_org_id() or None)}
 
 
 @router.get("/departures/{departure_id}")

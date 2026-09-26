@@ -154,6 +154,7 @@ class AuditLogger:
         verdict: str | None = None,
         label: str | None = None,
         org_id: str | None = None,
+        trace_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return recent records, newest first. Optional filters by connection/verdict/label
         (``label`` matches the ``hypothesis_id`` column — the surface that issued the SQL,
@@ -178,6 +179,9 @@ class AuditLogger:
             if connection_id:
                 clauses.append("connection_id = ?")
                 params.append(connection_id)
+            if trace_id:
+                clauses.append("trace_id = ?")
+                params.append(trace_id)
             if verdict:
                 clauses.append("verdict = ?")
                 params.append(verdict)
