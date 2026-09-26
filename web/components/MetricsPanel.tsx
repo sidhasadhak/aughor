@@ -15,9 +15,9 @@ import {
   transitionMetric,
   getMetricAudit,
   getDefinitionReport,
-  getMetricDateCandidates,
+  getMetricProposals,
   type CatalogueMetric,
-  type MetricDateCandidate,
+  type MetricProposals,
   type Metric,
   type MetricValidationResult,
   type MetricFreshnessResult,
@@ -135,25 +135,27 @@ function datesSentence(m: Metric): string {
   return `Flow — a row counts on the day of ${m.time_column}.`;
 }
 
-function DatesSection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
+/** A statement begins with SELECT or WITH; anything else is an expression written before the rule. */
+const isStatement = (sql: string) => /^\s*(select|with)\b/i.test(sql);
+
+function DatesSection({ metric, proposals, onChanged }: {
+  metric: Metric; proposals: MetricProposals | null; onChanged: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [kind, setKind] = useState(metric.time_kind ?? "flow");
   const [column, setColumn] = useState(metric.time_column ?? "");
-  // The platform's proposals for the grain — a list beside an open input (asked for
-  // 2026-09-26): every date or timestamp column of the tables the statement reads, as
-  // `schema.table.column`, the main date first. Read when the editor opens; empty with the
-  // reason when the connection was never profiled.
-  const [candidates, setCandidates] = useState<MetricDateCandidate[]>([]);
-  const [candidatesNote, setCandidatesNote] = useState("");
+  // The platform's proposals for the grain (the user, 2026-09-26): the date or timestamp
+  // columns of the table the SQL statement reads — only those. One date is set for the
+  // person and said; several are a list beside the open input, and the person picks; none
+  // is said with the reason. The parent reads them from the SQL in the field.
+  const candidates = proposals?.candidates ?? [];
+  const candidatesNote = proposals?.note ?? "";
   const grainList = `metric-grain-${metric.name}`;
-  useEffect(() => {
-    if (!editing) return;
-    let live = true;
-    getMetricDateCandidates(metric.connection ?? "*", metric.sql, metric.tables ?? [])
-      .then(r => { if (live) { setCandidates(r.candidates); setCandidatesNote(r.note); } })
-      .catch(() => { if (live) setCandidatesNote("the proposals could not be read"); });
-    return () => { live = false; };
-  }, [editing, metric.connection, metric.sql, metric.tables, metric.name]);
+  const listed = candidates.length > 1;
+  const tablesRead = Array.from(new Set(candidates.map((c) => c.table))).join(", ");
+  // The one date is SET for the person — derived, so it follows the proposals as they arrive
+  // and yields to anything typed.
+  const shownColumn = column.trim() ? column : (candidates.length === 1 ? candidates[0].grain : "");
   const [outcome, setOutcome] = useState(metric.outcome_column ?? "");
   const [until, setUntil] = useState(metric.until_column ?? "");
   const [settles, setSettles] = useState(metric.settles_after_days != null ? String(metric.settles_after_days) : "");
@@ -207,37 +209,41 @@ function DatesSection({ metric, onChanged }: { metric: Metric; onChanged: () => 
               <option value="cohort">Cohort — completed by a later date</option>
             </select>
           </label>
-          <input className="aug-input aug-fs-xs" list={grainList}
-            placeholder="Date column — pick a proposal, or type schema.table.column" value={column}
-            onChange={e => setColumn(e.target.value)} aria-label="Date column" />
-          <datalist id={grainList}>
-            {candidates.map(c => (
-              <option key={c.grain} value={c.grain}>{c.primary ? `main date · ${c.type}` : c.type}</option>
-            ))}
-          </datalist>
-          <p className="aug-fs-xs text-zinc-500">
-            {candidates.length > 0
-              ? `${candidates.length} proposal${candidates.length === 1 ? "" : "s"}: ${candidates.map(c => c.grain).join(" · ")}`
-              : candidatesNote || "no proposals yet"}
+          <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined}
+            placeholder={listed ? "Date column — pick one of the proposals, or type schema.table.column" : "Date column — schema.table.column"}
+            value={shownColumn} onChange={e => setColumn(e.target.value)} aria-label="Date column" />
+          {listed && (
+            <datalist id={grainList}>
+              {candidates.map(c => (
+                <option key={c.grain} value={c.grain}>{c.primary ? `main date · ${c.type}` : c.type}</option>
+              ))}
+            </datalist>
+          )}
+          <p className="aug-fs-xs text-zinc-500" data-testid="metric-date-proposals">
+            {listed
+              ? `${candidates.length} dates on ${tablesRead} — pick one: ${candidates.map(c => c.grain).join(" · ")}`
+              : candidates.length === 1
+                ? `The only date on ${candidates[0].table} is ${candidates[0].grain} — set for you; change it here if that is wrong.`
+                : candidatesNote || "no proposals yet"}
           </p>
           {kind === "cohort" && (
             <>
-              <input className="aug-input aug-fs-xs" list={grainList} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
+              <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
                 onChange={e => setOutcome(e.target.value)} aria-label="Completing date column" />
               <input className="aug-input aug-fs-xs" placeholder="Settles after (days)" value={settles}
                 onChange={e => setSettles(e.target.value)} aria-label="Settles after days" />
             </>
           )}
           {kind === "stock" && (
-            <input className="aug-input aug-fs-xs" list={grainList} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
+            <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
               onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
           )}
           <input className="aug-input aug-fs-xs" placeholder="Who is confirming" value={actor}
             onChange={e => setActor(e.target.value)} aria-label="Who is confirming the dates" />
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary" disabled={busy || !column.trim()}
+            <Button size="sm" variant="secondary" disabled={busy || !shownColumn.trim()}
               onClick={() => save({
-                time_kind: kind, time_column: column.trim(),
+                time_kind: kind, time_column: shownColumn.trim(),
                 outcome_column: kind === "cohort" ? outcome.trim() || null : null,
                 until_column: kind === "stock" ? until.trim() || null : null,
                 settles_after_days: kind === "cohort" && settles.trim() ? Number(settles) : null,
@@ -489,6 +495,35 @@ export function MetricsPanel({ connId }: { connId?: string }) {
   // side and materialised only when someone edits one.
   const [rows, setRows] = useState<CatalogueMetric[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+
+  // What the platform proposes for the definition being edited (the user, 2026-09-26: the
+  // SQL field holds the whole runnable statement, and the dates are those of the table it
+  // reads). Read for an EXISTING metric from the SQL in the field — so a FROM typed just now
+  // is what the dates follow — and, for a row stored as an expression, its one runnable
+  // statement goes into the field and is said to be proposed until it is saved; several
+  // (a column carried by two tables) are offered under the field for the person to pick.
+  const [proposals, setProposals] = useState<MetricProposals | null>(null);
+  const [proposed, setProposed] = useState<{ from: string; statement: string } | null>(null);
+  useEffect(() => {
+    if (adding || !selected) { setProposals(null); setProposed(null); return; }
+    const stored = metrics.find((m) => m.name === selected);
+    const sql = form.sql;
+    let live = true;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await getMetricProposals(stored?.connection ?? connId ?? "*", sql,
+          parseList(form.tables), parseList(form.filters), form.name || "value");
+        if (!live) return;
+        setProposals(r);
+        if (!isStatement(sql) && r.statements.length === 1) {
+          const statement = r.statements[0].statement;
+          setProposed({ from: sql, statement });
+          setForm((f) => (f.sql === sql ? { ...f, sql: statement } : f));
+        }
+      } catch { if (live) setProposals(null); }
+    }, 250);
+    return () => { live = false; clearTimeout(timer); };
+  }, [adding, selected, metrics, connId, form.sql, form.tables, form.filters, form.name]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [materialising, setMaterialising] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
@@ -671,6 +706,25 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 value={form.sql}
                 onChange={(e) => setForm({ ...form, sql: e.target.value })}
               />
+              {!adding && proposed && form.sql === proposed.statement && (
+                <p className="aug-fs-xs text-zinc-500" data-testid="metric-statement-proposed">
+                  Proposed by the platform from the stored expression — save to keep it.
+                </p>
+              )}
+              {!adding && proposals && proposals.statements.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2" data-testid="metric-statement-options">
+                  <span className="aug-fs-xs text-zinc-500">{proposals.statement_note}</span>
+                  {proposals.statements.map((o) => (
+                    <Button key={o.table} size="sm" variant="secondary" title={o.why}
+                      onClick={() => { setProposed({ from: form.sql, statement: o.statement }); setForm({ ...form, sql: o.statement }); }}>
+                      over {o.table}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              {!adding && proposals && proposals.statements.length === 0 && !isStatement(form.sql) && proposals.statement_note && (
+                <p className="aug-fs-xs text-amber-400">{proposals.statement_note}</p>
+              )}
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
@@ -890,7 +944,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
               <div className="aug-metric-governance">
                 <GovernanceSection metric={sm} onChanged={load} />
                 <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
-                  metric={sm} onChanged={load} />
+                  metric={sm} proposals={proposals} onChanged={load} />
               </div>
             ) : null;
           })()}

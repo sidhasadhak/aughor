@@ -9308,12 +9308,19 @@ what date/timestamp should the metric be grained at in a format schema.table.col
   the filters, over the first table the statement reads, and writes the date it sets AS THE GRAIN
   (`table.column`); an expression's date stays bare. A presence test inside a CTE is not read — the proposals list
   is there for that.
-- **The proposals.** `POST /metrics/date-candidates` (connection, sql, tables) → every date- or time-typed column
-  of every table the statement reads, written as the grain, each table's main date first, from the profiler's
-  latest entry (no warehouse call); a never-profiled connection gets `[]` and the reason. The editor's date field
-  is a native `<input list>` over a `<datalist>` of them — a list beside an open input — and the cohort's and
-  stock's second columns share the list; the proposals are also printed under the field. The SQL field reads
-  *"SQL statement — a whole SELECT, CTEs allowed, that returns one row with the metric's value"*.
+- **The proposals.** `POST /metrics/proposals` (connection, sql, tables, filters, name) → `statements` and
+  `candidates`, each empty list with its reason, from the profiler's latest entry (no warehouse call). The user's
+  correction after the first cut (2026-09-26): *"the entire SQL along with select and from statement — that is the
+  formula should be readily runnable — should be in the SQL Statement input field. And only when there are multiple
+  Date or timestamp columns in the table proposed in the SQL statement, only then the user may confirm or choose
+  from those columns and only such columns appear in the list along with a free Text field."* So: `statements` is
+  the runnable statement for a row written as an expression — one when its table is declared or one profiled table
+  carries its columns, several when several do (theLook's draft `return_rate`: `returned_at` is on `order_items`
+  AND `orders`, each a different metric, so the editor offers both and a person picks); the editor fills the
+  single proposal into the SQL field and says it is proposed until saved. `candidates` are the dates on the
+  statement's OWN tables only — the first cut's fallback (every profiled table's main date when the SQL named no
+  table) is gone; with one date the editor sets it and says so, with several it shows the list beside the open
+  input, with none it says why. A `WITH … SELECT` no longer trips the report's "no FROM clause" defect.
 - **Receipt owed:** the editor screenshot on theLook with its proposals, and one metric saved as a statement with a
   grain and measured for a range on the live Briefing (`return_rate` is the candidate: a draft, dateless today).
 

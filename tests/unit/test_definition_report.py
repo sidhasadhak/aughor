@@ -212,6 +212,17 @@ def test_a_skipped_grain_check_says_it_was_skipped():
     assert ran.detail["grain_skipped_because"] == ""
 
 
+def test_a_with_statement_is_a_statement_and_names_no_missing_from():
+    """A metric's SQL is a statement, CTEs allowed (2026-09-26). The report used to test for
+    a leading SELECT only, so a `WITH … SELECT` was reported as having no FROM clause."""
+    cted = RETURN_RATE.model_copy(update={
+        "sql": "WITH r AS (SELECT returned_at FROM order_items) "
+               "SELECT SUM(CASE WHEN returned_at IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0) AS return_rate FROM r"})
+    codes = {f.code for f in declaration_claim(cted).findings}
+    assert "no_table_named" not in codes
+    assert "filters_silently_dropped" not in codes
+
+
 def test_a_definition_that_names_its_table_has_no_grain_finding():
     """The negative control. Without this, `undeclared_grain` could fire on everything and the
     tests above would still pass."""

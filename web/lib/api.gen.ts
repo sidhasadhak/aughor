@@ -7740,30 +7740,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/metrics/date-candidates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Metric Date Candidates
-         * @description The dates a metric could be grained at, as proposals — every date- or time-typed column
-         *     of every table its statement reads (or its definition names), written
-         *     ``schema.table.column``, each table's main date first (the user, 2026-09-26: *"a
-         *     combination of a list and an open input"*). Read from the profiler's latest entry, no
-         *     warehouse call; a connection never profiled gets an empty list AND the reason.
-         */
-        post: operations["metric_date_candidates_metrics_date_candidates_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/metrics/enforcement-rate": {
         parameters: {
             query?: never;
@@ -7782,6 +7758,34 @@ export interface paths {
         get: operations["metric_enforcement_rate_metrics_enforcement_rate_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Metric Proposals
+         * @description The platform's proposals for a definition, read from the profiler's latest entry (no
+         *     warehouse call). ``statements``: the runnable statement(s) for an expression written
+         *     before the rule — one when its table is declared or one profiled table carries its
+         *     columns, several when several do (the note says so; a person picks); ``[]`` for a
+         *     statement as written. ``candidates``: every date- or time-typed column of the tables
+         *     the statement reads, written as the grain, each table's main date first — only those
+         *     tables (the user, 2026-09-26: *"only when there are multiple date or timestamp columns
+         *     in the table proposed in the SQL statement, only then the user may choose"*). Each empty
+         *     list carries its reason.
+         */
+        post: operations["metric_proposals_metrics_proposals_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13368,24 +13372,6 @@ export interface components {
              */
             updated_at: string;
         };
-        /**
-         * DateCandidatesRequest
-         * @description What the metric editor sends to be offered the dates a definition could be grained at.
-         */
-        DateCandidatesRequest: {
-            /** Connection */
-            connection: string;
-            /**
-             * Sql
-             * @default
-             */
-            sql: string;
-            /**
-             * Tables
-             * @default []
-             */
-            tables: string[];
-        };
         /** DeltaStatusIn */
         DeltaStatusIn: {
             /** Status */
@@ -14617,6 +14603,36 @@ export interface components {
              * @default
              */
             target: string;
+        };
+        /**
+         * ProposalsRequest
+         * @description What the metric editor sends to be offered what the platform proposes for a definition:
+         *     its runnable statement (when it was written as an expression) and the dates it could be
+         *     grained at.
+         */
+        ProposalsRequest: {
+            /** Connection */
+            connection: string;
+            /**
+             * Filters
+             * @default []
+             */
+            filters: string[];
+            /**
+             * Name
+             * @default value
+             */
+            name: string;
+            /**
+             * Sql
+             * @default
+             */
+            sql: string;
+            /**
+             * Tables
+             * @default []
+             */
+            tables: string[];
         };
         /** ProposeIn */
         ProposeIn: {
@@ -29949,18 +29965,17 @@ export interface operations {
             };
         };
     };
-    metric_date_candidates_metrics_date_candidates_post: {
+    metric_enforcement_rate_metrics_enforcement_rate_get: {
         parameters: {
-            query?: never;
+            query?: {
+                connection_id?: string;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DateCandidatesRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -29982,17 +29997,18 @@ export interface operations {
             };
         };
     };
-    metric_enforcement_rate_metrics_enforcement_rate_get: {
+    metric_proposals_metrics_proposals_post: {
         parameters: {
-            query?: {
-                connection_id?: string;
-                limit?: number;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalsRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

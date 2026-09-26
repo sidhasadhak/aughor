@@ -134,25 +134,19 @@ def scoped_statement(sql: str, grain_table: str, predicate, *, dialect: str = "d
 def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
                     *, dialect: str = "duckdb") -> list[dict]:
     """The dates a metric could be grained at, as proposals: every date- or time-typed column
-    of every table the statement reads (or the definition names), written
+    of every table the statement reads (or, for an expression, the definition names), written
     ``schema.table.column`` as the table is written, the profiler's main date of each table
-    first. ``[]`` when the connection was never profiled — the caller says so."""
+    first. ``[]`` when the statement names no table or the connection was never profiled — the
+    caller says which. Only the statement's own tables are read (the user, 2026-09-26: *"only
+    when there are multiple date or timestamp columns in the table proposed in the SQL
+    statement, only then the user may choose, and only such columns appear in the list"*);
+    a date on some other table is not this metric's grain."""
     from aughor.semantic.metric_time import is_time, primary_date, table_columns
 
     seen: list[str] = []
     for t in statement_tables(sql, dialect) + [str(x).strip() for x in (tables or []) if str(x).strip()]:
         if bare(t) not in {bare(s) for s in seen}:
             seen.append(t)
-    if not seen:
-        # The statement names no table (theLook's draft `return_rate`, 2026-09-26: an
-        # expression with `tables: []`): propose every profiled table's main date, largest
-        # table first — the grain a person picks then NAMES the table the metric is cut by.
-        profiled = ((profile_entry or {}).get("tables") or {})
-        ranked = sorted((n for n, tp in profiled.items() if isinstance(tp, dict) and tp.get("primary_timestamp")),
-                        key=lambda n: (-int((profiled[n].get("row_count") or 0) if str(profiled[n].get("row_count") or "0").lstrip("-").isdigit() else 0), n))
-        return [{"grain": f"{n}.{profiled[n]['primary_timestamp']}", "table": n,
-                 "column": str(profiled[n]["primary_timestamp"]), "type": "timestamp", "primary": True,
-                 "fallback": True} for n in ranked]
     out: list[dict] = []
     for table in seen:
         columns = table_columns(profile_entry or {}, bare(table))
@@ -165,6 +159,68 @@ def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
             out.append({"grain": f"{table}.{column}", "table": table, "column": column,
                         "type": dtype, "primary": column == primary})
     return out
+
+
+def expression_columns(sql: str, dialect: str = "duckdb") -> list[str]:
+    """The bare column names an aggregate expression references, lowercase, in order of first
+    appearance; ``[]`` when it references none (``COUNT(*)``) or does not parse."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(str(sql or ""), read=dialect)
+    except Exception:  # noqa: BLE001
+        return []
+    if tree is None:
+        return []
+    out: list[str] = []
+    for c in tree.find_all(exp.Column):
+        name = str(c.name or "").lower()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def proposed_statements(sql: str, tables: Optional[list], filters: Optional[list], name: str,
+                        profile_entry: dict, *, dialect: str = "duckdb") -> tuple[list[dict], str]:
+    """The runnable statement(s) the platform proposes for a definition written before the
+    rule — *"our job is to propose those nonetheless (with select statement)"* (the user,
+    2026-09-26) — as ``[{"table", "statement", "why"}]`` and a note.
+
+    A statement as written proposes nothing (``[]``, no note: it is one). An expression over
+    a declared table is wrapped exactly as the value path runs it — ONE proposal. An
+    expression naming no table is placed on every profiled table that carries every column
+    it references: one carrier is one proposal; several are several, and the note says so,
+    because a column carried by two tables is two different metrics and the person picks;
+    none is said."""
+    from aughor.semantic.metric_time import table_columns
+
+    text = str(sql or "").strip()
+    if not text or is_statement(text):
+        return [], ""
+    declared = [str(t).strip() for t in (tables or []) if str(t).strip()]
+    if declared:
+        return [{"table": declared[0], "statement": as_statement(text, declared, filters, name),
+                 "why": f"the stored expression over {declared[0]}"
+                        + (" with its filters" if any(str(f).strip() for f in (filters or [])) else "")}], ""
+    columns = expression_columns(text, dialect)
+    if not columns:
+        return [], "the expression names no column, so no table can be proposed — write the FROM yourself"
+    profiled = list(((profile_entry or {}).get("tables") or {}).keys())
+    if not profiled:
+        return [], "this connection has no profile yet, so no table can be proposed"
+    carriers = [t for t in profiled
+                if set(columns) <= {str(c).lower() for c in table_columns(profile_entry, bare(t))}]
+    carriers.sort(key=lambda t: t.lower())
+    listed = ", ".join(columns)
+    if not carriers:
+        return [], f"no profiled table carries {listed}, so no table can be proposed"
+    options = [{"table": t, "statement": as_statement(text, [t], filters, name),
+                "why": f"{listed} {'is a column' if len(columns) == 1 else 'are columns'} of {t}"}
+               for t in carriers]
+    if len(carriers) == 1:
+        return options, ""
+    return options, (f"{listed} {'is' if len(columns) == 1 else 'are'} carried by "
+                     f"{' and '.join(carriers)} — each table is a different metric, so pick one")
 
 
 def final_select(tree: Any):

@@ -6,7 +6,8 @@ statement is cut to a range by substituting the grain's table, so a CTE'd statem
 expression it replaces measure the SAME number on the same rows, cohort bound included; what
 a statement cannot have is said; the rule sets a statement's dates as the grain; the doors
 refuse a new bare aggregate but keep an old one until its formula changes; the proposals
-door lists dates as `table.column`, the main date first.
+door offers the runnable statement for an expression and the dates on the statement's OWN
+tables only, the main date first.
 """
 from __future__ import annotations
 
@@ -173,7 +174,7 @@ def test_the_rule_sets_a_statements_dates_as_its_grain():
 
 # ── the proposals ─────────────────────────────────────────────────────────────────────
 
-def test_date_candidates_are_written_as_the_grain_with_the_main_date_first():
+def test_date_candidates_come_from_the_statements_own_tables_only():
     out = ms.date_candidates(RR_STMT["sql"], [], PROFILE)
     assert [c["grain"] for c in out] == ["order_items.created_at", "order_items.returned_at"]
     assert out[0]["primary"] is True and out[1]["type"] == "timestamp"
@@ -181,23 +182,59 @@ def test_date_candidates_are_written_as_the_grain_with_the_main_date_first():
     assert [c["grain"] for c in both] == ["inventory_items.created_at", "inventory_items.sold_at",
                                           "shop.order_items.created_at", "shop.order_items.returned_at"]
     assert ms.date_candidates("SELECT 1", [], {}) == []
-    # No table anywhere (theLook's draft return_rate): every profiled table's main date, as a fallback.
-    none = ms.date_candidates("SUM(CASE WHEN returned_at IS NOT NULL THEN 1 ELSE 0 END)", [],
-                              {**PROFILE, "tables": {"order_items": {"primary_timestamp": "created_at", "row_count": 10},
-                                                     "inventory_items": {"primary_timestamp": "created_at", "row_count": 99}}})
-    assert [(c["grain"], c["fallback"]) for c in none] == [("inventory_items.created_at", True), ("order_items.created_at", True)]
+    # No table anywhere (theLook's draft return_rate): NOTHING is proposed — the user, 2026-09-26:
+    # only the dates of "the table proposed in the SQL statement"; a first cut listed every
+    # profiled table's main date here and was corrected.
+    assert ms.date_candidates("SUM(CASE WHEN returned_at IS NOT NULL THEN 1 ELSE 0 END)", [], PROFILE) == []
 
 
-def test_the_candidates_door_lists_proposals_or_says_why_not(monkeypatch):
+def test_the_platform_proposes_the_runnable_statement_for_an_expression():
+    rr = "SUM(CASE WHEN returned_at IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0)"
+    # A statement as written proposes nothing: it is one.
+    assert ms.proposed_statements(RR_STMT["sql"], [], [], "return_rate", PROFILE) == ([], "")
+    # An expression over a declared table is wrapped as the value path runs it — one proposal.
+    one, note = ms.proposed_statements("SUM(cost)", ["inventory_items"], ["sold_at IS NOT NULL"], "cogs", PROFILE)
+    assert note == "" and [o["table"] for o in one] == ["inventory_items"]
+    assert one[0]["statement"] == "SELECT (SUM(cost)) AS cogs FROM inventory_items WHERE sold_at IS NOT NULL"
+    assert one[0]["why"] == "the stored expression over inventory_items with its filters"
+    # No table declared: the profiled table carrying every referenced column — one carrier, one proposal.
+    one, note = ms.proposed_statements(rr, [], [], "return_rate", PROFILE)
+    assert note == "" and [o["table"] for o in one] == ["order_items"]
+    assert one[0]["statement"].startswith("SELECT (SUM(CASE WHEN returned_at") and one[0]["statement"].endswith("FROM order_items")
+    assert one[0]["why"] == "returned_at is a column of order_items"
+    # Two carriers (theLook: `orders` carries returned_at too): two proposals and the note says to pick.
+    two_tables = {"tables": {**PROFILE["tables"], "orders": {"primary_timestamp": "created_at"}},
+                  "columns": {**PROFILE["columns"],
+                              "orders.returned_at": {"table": "orders", "column": "returned_at", "dtype": "TIMESTAMP"}}}
+    two, note = ms.proposed_statements(rr, [], [], "return_rate", two_tables)
+    assert [o["table"] for o in two] == ["order_items", "orders"]
+    assert note == ("returned_at is carried by order_items and orders — each table is a different metric, "
+                    "so pick one")
+    # What cannot be proposed is said, never guessed.
+    assert ms.proposed_statements("COUNT(*)", [], [], "n", PROFILE)[0] == []
+    assert "names no column" in ms.proposed_statements("COUNT(*)", [], [], "n", PROFILE)[1]
+    assert "no profiled table carries margin" in ms.proposed_statements("SUM(margin)", [], [], "m", PROFILE)[1]
+    assert "no profile yet" in ms.proposed_statements("SUM(margin)", [], [], "m", {})[1]
+
+
+def test_the_proposals_door_offers_statements_and_dates_or_says_why_not(monkeypatch):
     monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE if cid == "c1" else {})
-    body = client.post("/metrics/date-candidates", json={"connection": "c1", "sql": RR_STMT["sql"]}).json()
+    door = "/metrics/proposals"
+    body = client.post(door, json={"connection": "c1", "sql": RR_STMT["sql"], "name": "return_rate"}).json()
+    assert body["statements"] == [] and body["statement_note"] == ""
     assert [c["grain"] for c in body["candidates"]] == ["order_items.created_at", "order_items.returned_at"]
     assert body["note"] == ""
-    body = client.post("/metrics/date-candidates", json={"connection": "never", "sql": "SELECT 1"}).json()
-    assert body["candidates"] == [] and "no profile yet" in body["note"]
-    body = client.post("/metrics/date-candidates", json={"connection": "c1", "sql": "COUNT(*)"}).json()
-    assert [c["grain"] for c in body["candidates"]] == ["inventory_items.created_at", "order_items.created_at"]
-    assert "names no table" in body["note"]
+    body = client.post(door, json={"connection": "never", "sql": "SELECT 1"}).json()
+    assert body["candidates"] == [] and "no profile yet" in body["note"] and "no profile yet" in body["statement_note"]
+    # theLook's draft: an expression with no table — the statement is proposed, and there is no date
+    # until the FROM is written (the dates come from the statement's own table, never from elsewhere).
+    rr = "SUM(CASE WHEN returned_at IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0)"
+    body = client.post(door, json={"connection": "c1", "sql": rr, "name": "return_rate"}).json()
+    assert [o["table"] for o in body["statements"]] == ["order_items"]
+    assert body["candidates"] == [] and body["note"].startswith("the statement names no table")
+    # A statement over a table with no date: said.
+    body = client.post(door, json={"connection": "c1", "sql": "SELECT COUNT(*) AS n FROM products"}).json()
+    assert body["candidates"] == [] and body["note"] == "no date or timestamp column was profiled on products"
 
 
 # ── the doors ─────────────────────────────────────────────────────────────────────────

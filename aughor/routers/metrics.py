@@ -159,36 +159,50 @@ def _require_statement(sql: str, existing) -> None:
     raise HTTPException(status_code=422, detail=_STATEMENT_RULE)
 
 
-class DateCandidatesRequest(BaseModel):
-    """What the metric editor sends to be offered the dates a definition could be grained at."""
+class ProposalsRequest(BaseModel):
+    """What the metric editor sends to be offered what the platform proposes for a definition:
+    its runnable statement (when it was written as an expression) and the dates it could be
+    grained at."""
     connection: str
     sql: str = ""
     tables: list[str] = []
+    filters: list[str] = []
+    name: str = "value"
 
 
-@router.post("/metrics/date-candidates")
-def metric_date_candidates(req: DateCandidatesRequest):
-    """The dates a metric could be grained at, as proposals — every date- or time-typed column
-    of every table its statement reads (or its definition names), written
-    ``schema.table.column``, each table's main date first (the user, 2026-09-26: *"a
-    combination of a list and an open input"*). Read from the profiler's latest entry, no
-    warehouse call; a connection never profiled gets an empty list AND the reason."""
-    from aughor.semantic.metric_statement import date_candidates
+@router.post("/metrics/proposals")
+def metric_proposals(req: ProposalsRequest):
+    """The platform's proposals for a definition, read from the profiler's latest entry (no
+    warehouse call). ``statements``: the runnable statement(s) for an expression written
+    before the rule — one when its table is declared or one profiled table carries its
+    columns, several when several do (the note says so; a person picks); ``[]`` for a
+    statement as written. ``candidates``: every date- or time-typed column of the tables
+    the statement reads, written as the grain, each table's main date first — only those
+    tables (the user, 2026-09-26: *"only when there are multiple date or timestamp columns
+    in the table proposed in the SQL statement, only then the user may choose"*). Each empty
+    list carries its reason."""
+    from aughor.semantic.metric_statement import date_candidates, proposed_statements, statement_tables
     from aughor.tools.profile_cache import latest_profile_entry
     try:
         profile = latest_profile_entry(req.connection)
     except Exception as exc:  # noqa: BLE001 — a failed read is said, not an empty list
-        return {"candidates": [], "note": f"the profile could not be read ({type(exc).__name__})"}
+        why = f"the profile could not be read ({type(exc).__name__})"
+        return {"statements": [], "statement_note": why, "candidates": [], "note": why}
     if not profile:
-        return {"candidates": [], "note": "this connection has no profile yet — explore it "
-                                         "first, then the platform can propose its dates"}
-    out = date_candidates(req.sql, req.tables, profile)
-    if out and all(c.get("fallback") for c in out):
-        note = ("the statement names no table, so every profiled table's main date is listed — the "
-                "grain you pick names the table the metric is cut to a range by")
+        why = ("this connection has no profile yet — explore it first, then the platform can "
+               "propose its tables and dates")
+        return {"statements": [], "statement_note": why, "candidates": [], "note": why}
+    statements, statement_note = proposed_statements(req.sql, req.tables, req.filters, req.name, profile)
+    candidates = date_candidates(req.sql, req.tables, profile)
+    read = statement_tables(req.sql) or [t for t in req.tables if str(t).strip()]
+    if candidates:
+        note = ""
+    elif not read:
+        note = "the statement names no table, so there is no date to propose — the FROM comes first"
     else:
-        note = "" if out else "no date or timestamp column was profiled on the tables this statement reads"
-    return {"candidates": out, "note": note}
+        note = f"no date or timestamp column was profiled on {', '.join(read)}"
+    return {"statements": statements, "statement_note": statement_note,
+            "candidates": candidates, "note": note}
 
 
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])

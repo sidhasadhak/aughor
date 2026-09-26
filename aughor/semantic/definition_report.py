@@ -274,7 +274,9 @@ def declaration_claim(metric: Any, table_cols: Optional[Mapping[str, Sequence[st
     tables = tuple(getattr(metric, "tables", ()) or ())
     filters = tuple(getattr(metric, "filters", ()) or ())
     misuse = tuple(getattr(metric, "wrong_usage_examples", ()) or ())
-    is_full_select = sql.lower().startswith("select")
+    # A statement begins with SELECT or WITH — the CTE case the rule allows (2026-09-26).
+    from aughor.semantic.metric_statement import is_statement
+    is_full_select = is_statement(sql)
 
     if not tables and not is_full_select:
         findings.append(Finding(

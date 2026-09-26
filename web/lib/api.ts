@@ -1090,7 +1090,7 @@ export async function createMetric(m: Omit<Metric, never>): Promise<Metric> {
 
 /** One date a metric could be grained at, as the platform proposes it (2026-09-26):
  *  `schema.table.column` as the table is written, the profiler's main date of each table
- *  first. Proposals, not a closed list — the editor's input also takes anything typed. */
+ *  first — only the tables the statement itself reads. */
 export interface MetricDateCandidate {
   grain: string;
   table: string;
@@ -1099,17 +1099,34 @@ export interface MetricDateCandidate {
   primary: boolean;
 }
 
-/** The dates a definition could be grained at, from the profiler's latest entry. `note`
- *  says why the list is empty when it is (never profiled, nothing time-typed). */
-export async function getMetricDateCandidates(
-  connection: string, sql: string, tables: string[],
-): Promise<{ candidates: MetricDateCandidate[]; note: string }> {
-  const res = await fetch(`${getApiBase()}/metrics/date-candidates`, {
+/** One runnable statement the platform proposes for a definition written as an expression:
+ *  the expression wrapped over `table` with the definition's filters, and why that table. */
+export interface MetricStatementOption {
+  table: string;
+  statement: string;
+  why: string;
+}
+
+/** What the platform proposes for a definition. `statements` is empty for a statement as
+ *  written, one entry when the table is known, several when several profiled tables carry
+ *  the expression's columns (`statement_note` says so — a person picks). `candidates` are
+ *  the dates on the statement's own tables; `note` says why the list is empty when it is. */
+export interface MetricProposals {
+  statements: MetricStatementOption[];
+  statement_note: string;
+  candidates: MetricDateCandidate[];
+  note: string;
+}
+
+export async function getMetricProposals(
+  connection: string, sql: string, tables: string[], filters: string[], name: string,
+): Promise<MetricProposals> {
+  const res = await fetch(`${getApiBase()}/metrics/proposals`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ connection, sql, tables }),
+    body: JSON.stringify({ connection, sql, tables, filters, name }),
   });
-  if (!res.ok) throw new Error("Failed to read the date proposals");
+  if (!res.ok) throw new Error("Failed to read the platform's proposals");
   return res.json();
 }
 
