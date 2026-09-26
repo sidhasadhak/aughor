@@ -9608,7 +9608,7 @@ silently (§7).
 
 ---
 
-### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26)
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35)
 
 > **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
 > without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
@@ -11271,6 +11271,11 @@ the browser** · **measure the premise before building.**
     processing lines excluded, as its own note asks) so BR-2's first receipt measures a metric a person stands behind.
     Not part of this item: the ledger's home (BR-8, decided at its trigger), and a model judge of Briefings (dropped
     2026-09-06).
+35. ✅ **DECIDED 2026-09-26 — Arc GM adopted as drafted** (the user, on the gate-map study: *"adopt the Arc GM and commit
+    locally"*). The five waves stand in the order §3.49 gives them — GM-1 the door owns the dialect, GM-2 the census as
+    a ratchet, GM-3 the path as a receipt, GM-4 a guard that cannot run says so, GM-5 audit and redaction by what the
+    statement is — with the study's census as the migration list and its falsifier as the arc's. The hotfix that
+    prompted it (the monitor runner through `native_sql`, both paths) is already on the branch.
 
 ---
 
