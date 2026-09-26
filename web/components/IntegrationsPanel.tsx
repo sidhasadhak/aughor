@@ -23,13 +23,18 @@ import {
   beginIntegrationConnect, getIntegrationsCatalog, revokeIntegrationConnection,
   setupIntegrationApp,
   type IntegrationProvider,
+  deleteSlackBot,
+  getConnections,
   getSlackBots,
   getSupervisorKeyStatus,
   issueSupervisorKey,
   listUserAgents,
+  updateSlackBot,
+  type Connection,
   type SlackBotSummary,
   type UserAgent,
 } from "@/lib/api";
+import { bindingProblem, patchBodyFor, type SlackBotChanges } from "@/lib/slackBots";
 
 import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
 import { McpServersSection } from "@/components/McpServersSection";
@@ -60,6 +65,15 @@ export function IntegrationsPanel() {
   const [doorFor, setDoorFor] = useState<string | null>(null);
   const [bots, setBots] = useState<SlackBotSummary[]>([]);
   const [agents, setAgents] = useState<UserAgent[]>([]);
+  /** For the "asks on" choice — a bot's connection is what its @mentions run against. */
+  const [connections, setConnections] = useState<Connection[]>([]);
+  /** The record whose edit form is open, and the form's draft. One at a time. */
+  const [editBot, setEditBot] = useState<string | null>(null);
+  const [botDraft, setBotDraft] = useState({ name: "", agent_id: "", connection_id: "" });
+  /** The connection a NEW app asks on. Defaults to the chosen agent's own binding, which
+   *  is the pairing the ask door insists on; a bot created with none used to fall back to
+   *  the supervisor's default and be refused on every @mention. */
+  const [doorConnection, setDoorConnection] = useState("");
   /** Which agent the new app answers AS. Optional: a bot with none still posts, it just
    *  cannot answer an @mention as anybody. */
   const [doorAgent, setDoorAgent] = useState("");
@@ -77,12 +91,14 @@ export function IntegrationsPanel() {
       // Only when a provider actually routes to that door — an install with no Slack
       // provider should not be asking about Slack bots on every load.
       if (d.providers.some(p => p.alt_door === "slack_app")) {
-        const [b, a] = await Promise.all([
+        const [b, a, c] = await Promise.all([
           getSlackBots().catch(() => []),
           listUserAgents().catch(() => []),
+          getConnections().catch(() => []),
         ]);
         setBots(b);
         setAgents(a);
+        setConnections(c);
         setKeyIssued((await getSupervisorKeyStatus().catch(() => null))?.issued ?? false);
       }
     } catch (e) {
@@ -122,6 +138,29 @@ export function IntegrationsPanel() {
     setClientId(opening ? p.client_id : "");
     setClientSecret("");
     setCallback(opening ? (p.redirect_uri || redirectUri) : "");
+  };
+
+  /** One field changed on screen is the WHOLE plain record on the wire (`patchBodyFor`):
+   *  the server replaces what it is sent, and a partial body would blank the rest. */
+  const saveBot = async (bot: SlackBotSummary, changes: SlackBotChanges) => {
+    setBusy(bot.id); setError("");
+    try {
+      await updateSlackBot(bot.id, patchBodyFor(bot, changes));
+      setEditBot(null);
+      await load();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(""); }
+  };
+
+  const removeBot = async (bot: SlackBotSummary) => {
+    if (!window.confirm(
+      `Delete the Slack bot “${bot.name}”? Its tokens are removed and its socket closes. `
+      + "Automations that post as it will report \"unknown Slack bot\" until they are re-pointed.",
+    )) return;
+    setBusy(bot.id); setError("");
+    try { await deleteSlackBot(bot.id); await load(); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(""); }
   };
 
   const saveApp = async (provider: string) => {
@@ -276,9 +315,118 @@ export function IntegrationsPanel() {
                     {p.name}&apos;s OAuth needs an HTTPS callback and this deployment is
                     reached at <code>{redirectUri}</code>. A Slack <strong>app</strong>
                     {" "}needs none — it opens an outbound socket — so it works on a
-                    laptop with no tunnel. {bots.length > 0 && (
-                      <>Connected: {bots.map(b => b.name).join(", ")}.</>
-                    )}
+                    laptop with no tunnel.
+                  </div>
+                )}
+
+                {/* The records themselves — every field a person can change, changed
+                    here. Before this the page could only ADD a bot: fixing a record meant
+                    a shell PATCH, and a bot bound to the wrong connection sat answering
+                    "did not answer (HTTP 409)" in Slack with nothing on this screen
+                    saying why. */}
+                {p.alt_door === "slack_app" && bots.length > 0 && (
+                  <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
+                    paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {bots.map(b => {
+                      const agent = agents.find(a => a.id === b.agent_id);
+                      const connName = (id: string) =>
+                        connections.find(c => c.id === id)?.name || id;
+                      const problem = bindingProblem(b, agents, connName);
+                      const editing = editBot === b.id;
+                      return (
+                        <div key={b.id} style={{ border: "1px solid var(--b1)",
+                          borderRadius: "var(--r2)", padding: "8px 10px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8,
+                            flexWrap: "wrap" }}>
+                            <span className="aug-fs-ui" style={{ flex: 1 }}>
+                              <strong>{b.name}</strong>
+                              {!b.enabled && (
+                                <span className="aug-fs-xs" style={{ color: "var(--t3)",
+                                  marginLeft: 6 }}>paused</span>
+                              )}
+                            </span>
+                            <Button variant="ghost" size="xs" disabled={busy === b.id}
+                              onClick={() => {
+                                setEditBot(editing ? null : b.id);
+                                setBotDraft({ name: b.name, agent_id: b.agent_id,
+                                  connection_id: b.connection_id });
+                              }}>
+                              {editing ? "Cancel" : "Edit"}
+                            </Button>
+                            <Button variant="ghost" size="xs" disabled={busy === b.id}
+                              title={b.enabled
+                                ? "The supervisor closes this bot's socket on its next reconcile"
+                                : "The supervisor re-opens this bot's socket on its next reconcile"}
+                              onClick={() => saveBot(b, { enabled: !b.enabled })}>
+                              {b.enabled ? "Pause" : "Resume"}
+                            </Button>
+                            <Button variant="ghost" size="xs" disabled={busy === b.id}
+                              onClick={() => removeBot(b)}>
+                              Delete
+                            </Button>
+                          </div>
+                          <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
+                            lineHeight: 1.5 }}>
+                            Answers as {agent ? agent.name : "nobody — posting only"}
+                            {" · "}asks on {b.connection_id ? connName(b.connection_id) : "no connection"}
+                            {" · "}Slack member ID <code>{b.bot_user_id || "unknown"}</code>
+                          </div>
+                          {problem && (
+                            <div className="aug-fs-xs" style={{ color: "var(--amb4)",
+                              marginTop: 4, lineHeight: 1.5 }}>
+                              {problem}
+                            </div>
+                          )}
+                          {editing && (
+                            <div style={{ marginTop: 8, display: "flex",
+                              flexDirection: "column", gap: 6 }}>
+                              <input className="aug-fs-ui" style={inputStyle} value={botDraft.name}
+                                aria-label="Bot name"
+                                onChange={e => setBotDraft(d => ({ ...d, name: e.target.value }))} />
+                              <select className="aug-fs-ui" style={inputStyle}
+                                value={botDraft.agent_id} aria-label="Answers as agent"
+                                onChange={e => {
+                                  const chosen = agents.find(a => a.id === e.target.value);
+                                  setBotDraft(d => ({ ...d, agent_id: e.target.value,
+                                    // A bound agent brings its connection along — the
+                                    // pairing the ask door will insist on anyway.
+                                    connection_id: chosen?.connection_id || d.connection_id }));
+                                }}>
+                                <option value="">No agent — posting only</option>
+                                {agents.map(a => (
+                                  <option key={a.id} value={a.id}>{a.name}</option>
+                                ))}
+                              </select>
+                              <select className="aug-fs-ui" style={inputStyle}
+                                value={botDraft.connection_id} aria-label="Asks on connection"
+                                onChange={e => setBotDraft(d => ({ ...d,
+                                  connection_id: e.target.value }))}>
+                                <option value="">No connection</option>
+                                {botDraft.connection_id
+                                  && !connections.some(c => c.id === botDraft.connection_id) && (
+                                  <option value={botDraft.connection_id}>
+                                    {botDraft.connection_id} (not found)
+                                  </option>
+                                )}
+                                {connections.map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <Button variant="default" size="xs" disabled={busy === b.id}
+                                  onClick={() => saveBot(b, botDraft)}>
+                                  Save
+                                </Button>
+                                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                                  A new agent or connection re-opens the socket within
+                                  30 seconds; a rename does not.
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -342,7 +490,11 @@ export function IntegrationsPanel() {
                         </div>
                         <select className="aug-fs-ui" style={inputStyle} value={doorAgent}
                           aria-label="Answer as agent"
-                          onChange={e => setDoorAgent(e.target.value)}>
+                          onChange={e => {
+                            const chosen = agents.find(a => a.id === e.target.value);
+                            setDoorAgent(e.target.value);
+                            if (chosen?.connection_id) setDoorConnection(chosen.connection_id);
+                          }}>
                           <option value="">No agent — posting only</option>
                           {agents.map(a => (
                             <option key={a.id} value={a.id}>{a.name}</option>
@@ -350,17 +502,35 @@ export function IntegrationsPanel() {
                         </select>
                       </div>
                     )}
+                    <div style={{ marginBottom: 12 }}>
+                      <div className="aug-fs-xs" style={{ color: "var(--t3)",
+                        marginBottom: 4 }}>
+                        Asks on — the connection @mentions run against. When the agent is
+                        bound to a connection it must be that one, or answers are refused.
+                      </div>
+                      <select className="aug-fs-ui" style={inputStyle} value={doorConnection}
+                        aria-label="Asks on connection"
+                        onChange={e => setDoorConnection(e.target.value)}>
+                        <option value="">No connection — posting only</option>
+                        {connections.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <AgentSlackDoor
                       agentId={doorAgent}
                       agentName={agents.find(a => a.id === doorAgent)?.name || "Aughor"}
-                      connectionId=""
+                      connectionId={doorConnection}
                       heading="Add a Slack app"
                       intro={"No callback, no tunnel, no HTTPS: a Slack app opens an "
                         + "**outbound** socket to Slack, which is why it works from a "
                         + "laptop when OAuth cannot. Aughor renders the manifest; you "
                         + "create the app in Slack and paste three values back."}
                       skipLabel="Close"
-                      onDone={() => { setDoorFor(null); setDoorAgent(""); void load(); }}
+                      onDone={() => {
+                        setDoorFor(null); setDoorAgent(""); setDoorConnection("");
+                        void load();
+                      }}
                     />
                   </div>
                 )}
