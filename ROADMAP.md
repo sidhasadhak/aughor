@@ -9524,9 +9524,12 @@ BR-4.
 > change; a finding that cannot be re-asked is listed APART with why (no SQL, no date on its tables, a failed query,
 > no rows) — never silently left in the ranked list; at most 40 per range, the cap said; cached a quarter hour per
 > (scope, range). The ledger orders by the change, each row shows its figure for the range against the previous one,
-> and the apart rows say "about all history — why". (4) **The cockpit** says "all history, not this range"; a
-> range-aware card query is the step left. Receipt owed: the page under *Week* on theLook with `briefing.ranges` on
-> (the flag is the user's; item 2 of the day's list).
+> and the apart rows say "about all history — why". (4) **The cockpit scopes** — `POST /cards/{id}/run?preset|start&end`
+> cuts a card's saved SQL to the range the way a finding is re-asked (the main date of the first table it reads), and
+> `scoped` says what the number covers; a card whose tables have no date runs standing and says why; a range run
+> never rolls into the card's standing value history; the page passes its range to every card. Receipt: the page
+> under *Week* on theLook with `briefing.ranges` on (already on — the user's) — 17 of 23 findings re-asked in 32 s,
+> 2 apart with why, 4 duplicates asked once; the labels and the ledger's order seen live.
 
 
 > **Origin.** The user, 2026-09-26, on a screenshot of the Briefing with *Week* selected: *"Clicking on Week/Month of

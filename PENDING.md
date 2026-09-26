@@ -112,7 +112,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] BR-6 every Briefing kept as of the day it was built — see top item 43.
 - [x] BR-7 findings that can be re-asked for any range — see top item 44. Built 2026-09-26 inside BR-9: `GET /exploration/{conn}/findings/reask`, no model.
 - [ ] BR-8 the daily ledger — see top item 45; on its trigger.
-- [x] **BR-9 the whole page adheres to the range — see top item 46. Built 2026-09-26: the labels, the Key Metrics row for the range, BR-7's re-ask (no model); the cockpit says "all history" and its range-aware cards are the one step left. Receipt on theLook under Week owed once `briefing.ranges` is on.**
+- [x] **BR-9 the whole page adheres to the range — see top item 46. Built 2026-09-26: the labels, the Key Metrics row for the range, BR-7's re-ask (no model); the cockpit's cards run cut to the range and say what they cover. Seen live on theLook under Week.**
 - [x] §6 item 34's eight clauses — decided 2026-09-26, clause by clause; the answers are in §3.48's status block.
 - [ ] ⚑ Approve theLook's `return_rate` on the LIVE install (decided in §6 item 34(h); done only on the scratch copy).
 - [ ] ⚑ Create theLook's Day subscription on the live install after deploy — Slack bot `sb_e2d5c528af66` to `#aughor_canvas`, scope `thelook`, replacing "The Look – Daily Briefing" — and turn `briefing.ranges` on; the seven mornings are BR-5's receipt.

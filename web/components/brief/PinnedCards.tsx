@@ -3,8 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  deleteDashboardCard, listDashboardCards, runDashboardCard, pinInsightToDashboard,
+  deleteDashboardCard,
+  listDashboardCards,
+  runDashboardCard,
+  pinInsightToDashboard,
   type DashboardCard,
+  type BriefingRange,
 } from "@/lib/api";
 import { PinnedCardsCanvas, type CardState } from "@/components/brief/PinnedCardsCanvas";
 import { PinnedCardsGrid } from "@/components/brief/PinnedCardsGrid";
@@ -16,7 +20,10 @@ import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
  *  arranges. Each card's number is re-run through the guard battery on read. The brief's findings
  *  read separately in the narrative layer (the exhibit strip) — the cockpit is the surface the
  *  user curates, not a dump of the cycle's signals. Renders nothing until a card exists. */
-export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onPinned, onOpenSource, onEvidence }: {
+export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onPinned, onOpenSource, onEvidence, range }: {
+  /** BR-9 — the range the page is scoped to: each card runs cut to it (on its table's main
+   *  date) and says what it covers, or runs standing and says why. Null on the standing view. */
+  range?: BriefingRange | null;
   connectionId: string;
   schema?: string;
   refreshKey?: number;
@@ -41,6 +48,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
     try { localStorage.setItem(`aughor:cockpit-mode:${connectionId}`, m); } catch { /* private mode — mode just won't persist */ }
   }, [connectionId]);
 
+  const rangeKey = JSON.stringify(range ?? null);
   // User pins — fetched from the store, each re-run through the guard battery.
   useEffect(() => {
     if (!connectionId) return;
@@ -50,7 +58,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
         const list = await listDashboardCards({ scope: "connection", scopeRef: connectionId });
         const withRuns = await Promise.all(
           list.map(async (card: DashboardCard): Promise<CardState> => {
-            try { return { card, run: await runDashboardCard(card.id) }; }
+            try { return { card, run: await runDashboardCard(card.id, range) }; }
             catch { return { card, failed: true }; }
           }),
         );
@@ -62,7 +70,8 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
       }
     })();
     return () => { cancelled = true; };
-  }, [connectionId, refreshKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
+  }, [connectionId, refreshKey, rangeKey]);
 
   const remove = useCallback(async (id: string) => {
     try {
@@ -81,14 +90,14 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
 
   const refreshOne = useCallback(async (id: string) => {
     try {
-      const run = await runDashboardCard(id);
+      const run = await runDashboardCard(id, range);
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c)));
       toast.success("Card refreshed");
     } catch {
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, failed: true } : c)));
       toast.error("Couldn't refresh card", { description: "The query failed the trust guards or the source is unavailable." });
     }
-  }, []);
+  }, [range]);
 
   // One-click pin from the empty-state suggestions — the same guarded path as a finding's Pin.
   const pinSuggestion = useCallback(async (insightId: string) => {

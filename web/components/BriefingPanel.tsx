@@ -3208,13 +3208,14 @@ export function BriefingPanel({
       <div style={{ marginTop: 34, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
         <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
           Your cockpit
-          {/* BR-9 — the cards run their saved SQL over all history; under a range they say so. */}
-          {scopeNote ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--amb4)" }}>{` · ${scopeNote}`}</span> : null}
+          {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
+              could not be); the label names the range the cards were asked for. */}
+          {rangeSelected ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
         </div>
         {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
         <NewCardComposer connectionId={connectionId} schema={schema}
           onCreated={() => setPinnedRefresh(n => n + 1)} />
-        <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh}
+        <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh} range={rangeSelected ? range : null}
           suggestions={movers.slice(0, 3).map(m => ({ insightId: m.insightId, value: m.value, label: m.sublabel || m.domain }))}
           onPinned={() => setPinnedRefresh(n => n + 1)}
           onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}

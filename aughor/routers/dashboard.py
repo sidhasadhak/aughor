@@ -366,12 +366,43 @@ def graduate_card_route(card_id: str, req: GraduateCardRequest) -> dict:
 
 # ── Run / refresh a card's value ─────────────────────────────────────────────
 
+def _card_range(conn_id: str, preset: Optional[str], start: Optional[str], end: Optional[str],
+                workspace_id: Optional[str]):
+    """BR-9 — the range a card run asks for, resolved as the Briefing resolves its own; None
+    when none is asked; refused (404) with the flag off, (422) when it cannot be read."""
+    from datetime import date as _date
+
+    from aughor.briefing import ranges
+    from aughor.kernel.flags import flag_enabled
+
+    if not (preset or start or end):
+        return None
+    if not flag_enabled("briefing.ranges"):
+        raise HTTPException(status_code=404, detail="a card for a date range needs the 'briefing.ranges' flag")
+    try:
+        first = _date.fromisoformat(start) if start else None
+        last = _date.fromisoformat(end) if end else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="start and end are ISO days, e.g. 2026-08-17")
+    spec, why = ranges.resolve_for(conn_id, preset, start=first, end=last, workspace_id=workspace_id)
+    if spec is None:
+        raise HTTPException(status_code=422, detail=why)
+    return spec
+
+
 @router.post("/cards/{card_id}/run")
-def run_card_route(card_id: str) -> dict:
+def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[str] = None,
+                   end: Optional[str] = None, workspace_id: Optional[str] = None) -> dict:
     """Recompute a card's value NOW: re-run its SQL through the guard battery and return the
     current result. A single numeric cell is recorded as the card's latest value (rolling the
     previous one into prev_value) so a KPI can show a delta. Guard-on-read keeps a card honest
-    even if the underlying data drifted after it was pinned."""
+    even if the underlying data drifted after it was pinned.
+
+    BR-9 (2026-09-26): with a range (`preset`, or `start` and `end`) the card's SQL is cut to
+    it the way a finding is re-asked — the first table it reads that has a main date,
+    substituted by itself filtered to the window — and `scoped` says what the number covers;
+    a card whose tables have no date runs standing and `scoped` says why. A range run never
+    rolls into the card's standing value history."""
     from aughor.db.connection import open_connection_for
     from aughor.sql.executor import execute_guarded
     from aughor.util.time import now_iso
@@ -381,20 +412,40 @@ def run_card_route(card_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Card not found")
     if not (card.sql or "").strip():
         return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": None,
-                "refresh": card.refresh.model_dump()}
+                "refresh": card.refresh.model_dump(), "scoped": None}
+    spec = _card_range(card.connection_id, preset, start, end, workspace_id)
     try:
         db = open_connection_for(card.connection_id)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+    sql, scoped = card.sql, None
+    if spec is not None:
+        from aughor.briefing.ranges import phrases
+        from aughor.briefing.reask import grain_for
+        from aughor.semantic.metric_statement import scoped_statement
+        from aughor.semantic.metric_time import window_predicate
+        from aughor.tools.profile_cache import latest_profile_entry
+
+        dialect = str(getattr(db, "dialect", "") or "duckdb")
+        covers = phrases(spec)["covers"]
+        table, col, why = grain_for(card.sql, [], latest_profile_entry(card.connection_id) or {}, dialect)
+        cut = None
+        if table is not None:
+            cut, why, _ = scoped_statement(card.sql, table, window_predicate(col, spec.start, spec.end), dialect=dialect)
+        if cut is None:
+            scoped = {"covers": covers, "standing": True, "why": why, "grain": None}
+        else:
+            sql = cut
+            scoped = {"covers": covers, "standing": False, "why": "", "grain": f"{table}.{col}"}
     try:
-        result = execute_guarded(db, card.sql, query_id=f"card:{card_id}", schema=None)
+        result = execute_guarded(db, sql, query_id=f"card:{card_id}", schema=None)
     finally:
         try:
             db.close()
         except Exception as exc:
             tolerate(exc, "dashboard: connection close failed after card run", counter="dashboard.db_close")
-
-    scalar = _scalar(result)
+    # A range's figure is the range's; the tracked value and its history stay the standing card's.
+    scalar = None if (scoped is not None and not scoped["standing"]) else _scalar(result)
     if scalar is not None:
         hist = list(card.refresh.history or [])
         if not hist or hist[-1] != scalar:      # dedupe consecutive equals → a meaningful step series
@@ -412,4 +463,5 @@ def run_card_route(card_id: str) -> dict:
         "caveats": result.caveats or [],
         "error": result.error,
         "refresh": card.refresh.model_dump(),
+        "scoped": scoped,
     }

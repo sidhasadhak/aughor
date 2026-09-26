@@ -2177,6 +2177,12 @@ export interface paths {
          *     current result. A single numeric cell is recorded as the card's latest value (rolling the
          *     previous one into prev_value) so a KPI can show a delta. Guard-on-read keeps a card honest
          *     even if the underlying data drifted after it was pinned.
+         *
+         *     BR-9 (2026-09-26): with a range (`preset`, or `start` and `end`) the card's SQL is cut to
+         *     it the way a finding is re-asked — the first table it reads that has a main date,
+         *     substituted by itself filtered to the window — and `scoped` says what the number covers;
+         *     a card whose tables have no date runs standing and `scoped` says why. A range run never
+         *     rolls into the card's standing value history.
          */
         post: operations["run_card_route_cards__card_id__run_post"];
         delete?: never;
@@ -20887,7 +20893,12 @@ export interface operations {
     };
     run_card_route_cards__card_id__run_post: {
         parameters: {
-            query?: never;
+            query?: {
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                workspace_id?: string | null;
+            };
             header?: never;
             path: {
                 card_id: string;

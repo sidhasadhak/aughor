@@ -2184,6 +2184,9 @@ export interface CardRunResult {
   caveats: string[];
   error: string | null;
   refresh: DashboardCardRefresh;
+  /** BR-9 — present when the run asked for a range: what the number covers, or `standing`
+   *  with why the card's SQL could not be cut to it (no date on its tables). */
+  scoped?: { covers: string; standing: boolean; why: string; grain: string | null } | null;
 }
 
 /** Pin a briefing finding as a dashboard card (Door 1). The backend re-runs the finding's
@@ -2292,8 +2295,14 @@ export async function saveVizConfig(
 
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
-export async function runDashboardCard(cardId: string): Promise<CardRunResult> {
-  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`, { method: "POST" });
+export async function runDashboardCard(cardId: string, range?: BriefingRange | null): Promise<CardRunResult> {
+  const q = new URLSearchParams();
+  if (range) {
+    if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+    else q.set("preset", range.preset);
+  }
+  const qs = q.toString();
+  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/run${qs ? `?${qs}` : ""}`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh dashboard card");
   return res.json();
 }
