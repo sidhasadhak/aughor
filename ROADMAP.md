@@ -3840,6 +3840,17 @@ automations and metrics as `explain` kinds; the second shelf and the measure fol
   Its own trajectory is readable at `GET /traces/9ebb4e3f/trajectory`: 18 events, 4 steps, 4 decisions joined
   by one trace, the answer row `526bd191`, reward fields unlabeled, payloads withheld. And the measure moved:
   `ask_door` read 0 of 18 before and **1 of 18 (0.056)** after.
+- **Later, 15:50Z — agent and analysis as `explain` kinds (item 33(c)'s "then"), and the meters served.**
+  `explain(agent)` reads a custom agent by id or exact name: scope, documents, grants, the evaluation in the
+  guide's OWN sentence (`spotlight_guide.eval_sentence`, one source for both readers), recent runs; offer
+  `propose_agent_grant`, the Agents screen for instructions and the Prove step. `explain(analysis)` reads a run:
+  kind, status, question, queries, confidence, re-checks, verdict, the departures that cite it, and its
+  trajectory's address; the offer names the conversation and Agent runs. Proved live on the restarted API
+  (pid 83404): `explain(analysis, ecb56660)` → *deep analysis, complete, confidence MEDIUM, guards not vouched
+  for, 1 departure cites it, 1 held*; `explain(agent, "Anomaly Scout")` → *enabled, bound to theLook, never
+  evaluated — its Prove step is still open, 0 recent runs*. `GET /spotlight/uptake` serves SP-M's vocabulary
+  meter — which had NO route since it shipped — beside the Ask door's: live, **answers in parts 4 of 22
+  converse turns (0.182)**, the Ask door 1 of 18.
 - **Later the same day — the second shelf and the measure, BUILT.** Item 33(b)'s shelf: `platform_help` now
   reads `docs/GLOSSARY.md` (39 terms served under their own word, and 63 retired spellings resolving to the word
   that replaced them — *"what is an insight"* answers with **Finding** and says the word is retired) and each §3
@@ -8819,11 +8830,15 @@ arc accepts accrual from now and says so.
   Defect 9 closed at the cause, not by the directory's return.
 - **The embedding backend — decided (the user: *"Ollama, local"*), and it answers.** Ollama is up with
   `nomic-embed-text` pulled; after the restart `GET /knowledge/status` reads `embedder: ollama /
-  nomic-embed-text, ok, dim 768`. **Receipt still owed:** the few-shot memory's collections come into being on
-  the next CLEAN SQL answer (the re-ask was a platform question and ran no SQL), so
-  `search_sql_examples_checked` reading clean with a point waits on normal use — no second model call was
-  spent for it. Also live after the restart: `/obs/usage-summary` over 24 h reads **110 calls, 0 unpriced,
-  $0.3111, cost_is_complete: true** (458 catalogue rows loaded) — the unpriced 83 of 83 is closed at the cause.
+  nomic-embed-text, ok, dim 768`. **✅ The collections' receipt, 15:52Z (the user: *"Lets do: … the few-shot
+  collections' receipt"*):** `GET /learning/summary` gained `few_shot` — backend, model and both collections'
+  point counts, taken in the serving process (a count that cannot be taken reads `None`). Before: `sql_examples
+  0 · investigations 0`. One clean quick answer on the local Superstore connection (*"How many orders are there in
+  total?"* → 5,009 distinct orders over 9,994 lines, no caveat, no guard receipt, trace `bfcc1220`, answer
+  `26f29ef0a578`). After: **`sql_examples 1`** — the collection came into being on the next clean answer, as
+  the wave said it would; `investigations` stays 0 until a deep run indexes itself. Also live after the
+  restart: `/obs/usage-summary` over 24 h reads **110 calls, 0 unpriced, $0.3111, cost_is_complete: true**
+  (458 catalogue rows loaded) — the unpriced 83 of 83 is closed at the cause. TJ-1 is complete.
 
 #### TJ-2 · One record per run: the trajectory (about a week, free)
 
