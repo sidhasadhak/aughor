@@ -2177,6 +2177,12 @@ export interface paths {
          *     current result. A single numeric cell is recorded as the card's latest value (rolling the
          *     previous one into prev_value) so a KPI can show a delta. Guard-on-read keeps a card honest
          *     even if the underlying data drifted after it was pinned.
+         *
+         *     BR-9 (2026-09-26): with a range (`preset`, or `start` and `end`) the card's SQL is cut to
+         *     it the way a finding is re-asked — the first table it reads that has a main date,
+         *     substituted by itself filtered to the window — and `scoped` says what the number covers;
+         *     a card whose tables have no date runs standing and `scoped` says why. A range run never
+         *     rolls into the card's standing value history.
          */
         post: operations["run_card_route_cards__card_id__run_post"];
         delete?: never;
@@ -4676,6 +4682,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/findings/reask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reask Findings For Range
+         * @description BR-7, joined to BR-9: every explorer finding of this scope re-asked for the range — its own
+         *     SQL over the range and the previous range, cut on the main date of the first table it reads —
+         *     ranked by the size of the change; the ones that cannot be re-asked listed apart with why.
+         *     No model call. Refused like the range Briefing when `briefing.ranges` is off.
+         */
+        get: operations["reask_findings_for_range_exploration__conn_id__findings_reask_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/fix-all": {
         parameters: {
             query?: never;
@@ -6907,6 +6936,30 @@ export interface paths {
          *     re-ambiguates instead of inheriting a reading the user no longer stands behind.
          */
         delete: operations["delete_resolution_learning_resolutions__res_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/run-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Learning Run Labels
+         * @description TJ-3 — the run label's live distribution: the most recent completed runs with a
+         *     recorded trace, chat turns and deep runs alike, each labelled by the one rule
+         *     (`learning.reward.run_label`) from its own trajectory, and counted per run kind. `discriminating` is §3.47's falsifier read live: a label constant on real
+         *     traffic is a finding, not a dataset. ``rows=true`` returns the labelled rows — the audit
+         *     sheet a person fills before bronze is fuel.
+         */
+        get: operations["learning_run_labels_learning_run_labels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -20864,7 +20917,12 @@ export interface operations {
     };
     run_card_route_cards__card_id__run_post: {
         parameters: {
-            query?: never;
+            query?: {
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                workspace_id?: string | null;
+            };
             header?: never;
             path: {
                 card_id: string;
@@ -24853,6 +24911,44 @@ export interface operations {
             };
         };
     };
+    reask_findings_for_range_exploration__conn_id__findings_reask_get: {
+        parameters: {
+            query?: {
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                schema?: string | null;
+                workspace_id?: string | null;
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     fix_all_exploration__conn_id__fix_all_post: {
         parameters: {
             query?: {
@@ -28362,6 +28458,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    learning_run_labels_learning_run_labels_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+                rows?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

@@ -20,7 +20,7 @@ import { GuardChip } from "@/components/ui/trust";
  */
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { formatDateTime, formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
+import { compactNumber, formatDateTime, formatMetricValue, formatTimestamp, formatVariance, normalizeNumberPrecision, pct } from "@/lib/format";
 import {
   runDirectQuery,
   getDomainInsights,
@@ -64,6 +64,9 @@ import {
   insightKey,
   type FindingDossier,
   type RevalidateResult,
+  getFindingsReask,
+  type FindingsReask,
+  type FindingReask,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { useOpenInQuery } from "@/lib/openInQuery";
@@ -193,7 +196,7 @@ function NarrativeText({
   schema?: string;
 }) {
   const citationMap = Object.fromEntries(citations.map(c => [c.ref, c]));
-  // Every cited insight — a synthesized number may have come from any of them, so we
+  // Every cited finding — a synthesized number may have come from any of them, so we
   // ground against all (primary = nearest) rather than only the nearest citation.
   const allInsightIds = Array.from(new Set(citations.map(c => c.insight_id).filter(Boolean)));
   // Render-boundary backstop for float noise. Upstream (aughor/util/format.py) now rounds on
@@ -201,7 +204,7 @@ function NarrativeText({
   // correct prose synthesized before that landed, including anything still in the 2h cache.
   // Rounding only shortens a decimal run, so the GroundedNumber receipt still matches its cell.
   const parts = normalizeNumberPrecision(text).split(/(\[\d+\])/g);
-  // The insight a number is grounded against = the NEAREST citation marker (claims usually
+  // The finding a number is grounded against = the NEAREST citation marker (claims usually
   // precede their [N], so prefer the following marker, falling back to the preceding one).
   const markerRefAt = (i: number): string | null => {
     for (let d = 0; d < parts.length; d++) {
@@ -847,6 +850,39 @@ export function explorerPhaseLabel(
     : { text: "failed", tone: "bad" };
 }
 
+
+/** BR-9 — what a part of the page that is NOT measured for the selected range must say, in
+ *  the same type as its number: "all history, not 17–23 August" once the range Briefing is on
+ *  screen, "all history, not this range" while it is still pending. "" on the standing view,
+ *  where nothing is withheld. The user, 2026-09-26: *"the whole briefing page needs to adhere to
+ *  the range selected.. otherwise its quite useless"*; BR-3's falsifier: a person must be able
+ *  to tell from the page which days a figure covers. */
+export function rangeScopeNote(rangeSelected: boolean, block: { covers: string } | null | undefined): string {
+  if (!rangeSelected) return "";
+  return block ? `all history, not ${block.covers}` : "all history, not this range";
+}
+
+/** BR-7 — the ledger's order under a range: the findings re-asked for it first, by the size of
+ *  their change (an unknown change after a known one), then the ones that could not be
+ *  re-asked in their standing order (impact, else novelty). Pure, so the rule is testable. */
+export function orderByReask<T>(signals: T[], idOf: (t: T) => string, byId: Map<string, FindingReask>): T[] {
+  const rank = (t: T) => {
+    const r = byId.get(idOf(t));
+    if (!r) return [2, 0] as const;
+    return r.rel === null ? [1, 0] as const : [0, -Math.abs(r.rel)] as const;
+  };
+  return signals.map((t, i) => ({ t, i, k: rank(t) }))
+    .sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i)
+    .map(x => x.t);
+}
+
+/** A re-asked figure, shown as the range's number: a rate-looking measure in 0..1 as a
+ *  percentage, a large count compact, anything else plain. */
+export function fmtReask(v: number | null, measure: string): string {
+  if (v === null || !Number.isFinite(v)) return "—";
+  if (/rate|ratio|share|pct|percent|margin/i.test(measure) && v >= 0 && v <= 1) return pct(v, 1);
+  return Math.abs(v) >= 100000 ? compactNumber(v, 1) : formatMetricValue(v);
+}
 
 export function isDegenerateFinding(insight: ExplorationInsight): boolean {
   const f = (insight.finding || "").trim();
@@ -1777,8 +1813,12 @@ function FindingDetail({
   );
 }
 
-function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef, vizConfig, onVizConfigChange }: {
+function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef, vizConfig, onVizConfigChange, reask, apart }: {
   signal:        SynthesisSignal;
+  /** BR-7 — this finding's figure for the range on screen, when it was re-asked. */
+  reask?:        FindingReask | null;
+  /** BR-7 — why it could not be re-asked; the row then says it is about all history. */
+  apart?:        string;
   connectionId:  string;
   expanded:      boolean;
   onToggle:      () => void;
@@ -1809,12 +1849,26 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
         </div>
         {/* key figure — extracted scalar, right-aligned, over a mono sub-label */}
         <div style={{ textAlign: "right", minWidth: 0 }}>
-          {fig && (<>
+          {reask ? (<>
+            <div data-testid="ledger-reask" className="aug-fs-h2" style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {fmtReask(reask.current, reask.measure)}
+              {reask.previous !== null && <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{` vs ${fmtReask(reask.previous, reask.measure)}`}</span>}
+            </div>
+            <div className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+              title={`${reask.grain} · ${reask.rows_current} row(s) in the range, ${reask.rows_previous} before`}>
+              {reask.rel !== null ? `${formatVariance(reask.rel, 0)} · ` : ""}{reask.how === "value" ? "" : `${reask.how} of `}{reask.measure} · for the range
+            </div>
+          </>) : fig && (<>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {fig.value}{fig.secondary && <span style={{ color: "var(--t3)", fontSize: 12 }}>{fig.secondary}</span>}
             </div>
             {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
           </>)}
+          {apart && (
+            <div data-testid="ledger-apart" className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--amb4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={apart}>
+              about all history — {apart}
+            </div>
+          )}
         </div>
         {/* chevron */}
         <span aria-hidden style={{ color: "var(--t3)", fontSize: 12, textAlign: "center" }}>{expanded ? "▴" : "▾"}</span>
@@ -1831,8 +1885,17 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
   );
 }
 
-function FindingsLedger({ signals, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange }: {
+/** The finding's own id — the key the re-ask (BR-7) and the saved chart display are stored under. */
+const findingId = (s: SynthesisSignal) => s.insight.id;
+
+function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange, note, reask }: {
   signals:        SynthesisSignal[];
+  /** BR-9 — "all history, not <range>" when the page is scoped to a range these findings are
+   *  not re-asked for; "" on the standing view. Shown only while no re-ask is on screen. */
+  note?:          string;
+  /** BR-7 — the findings re-asked for the range: the ledger then orders by the change and each
+   *  row shows its figure for the range; the ones apart say why, about all history. */
+  reask?:         FindingsReask | null;
   /** The scope chips — drawn on the ledger's own line, after its label. */
   filter?:        ReactNode;
   connectionId:   string;
@@ -1840,11 +1903,16 @@ function FindingsLedger({ signals, filter, connectionId, onInvestigate, onEviden
   onEvidence:     (ins: ExplorationInsight, domain: string) => void;
   /** The ledger's own scroll container — so the jump menu scrolls the panel, not the app shell. */
   scrollRef?:     { current: HTMLDivElement | null };
-  /** Saved chart display per insight — so an edit survives collapsing the row (or opening
+  /** Saved chart display per finding — so an edit survives collapsing the row (or opening
    *  another, since the ledger is single-open and used to destroy the first row's edits). */
   vizConfigFor?:      (insightId: string) => VizConfig | null;
   onVizConfigChange?: (insightId: string, c: VizConfig) => void;
 }) {
+  const reaskById  = useMemo(() => new Map((reask?.reasked ?? []).map(r => [r.id, r] as const)), [reask]);
+  // An id two schemas share can be re-asked in one and apart in the other; the page keys by
+  // id, so the re-asked figure wins and the row never says both.
+  const apartById  = useMemo(() => new Map((reask?.apart ?? []).filter(a => !reaskById.has(a.id)).map(a => [a.id, a.why] as const)), [reask, reaskById]);
+  const signals    = useMemo(() => (reask ? orderByReask(given, findingId, reaskById) : given), [given, reask, reaskById]);
   const [shown, setShown]           = useState(LEDGER_DEFAULT);
   const [expandedId, setExpandedId] = useState<string | null>(null);   // one row open at a time
   const [jumpOpen, setJumpOpen]     = useState(false);
@@ -1907,8 +1975,9 @@ function FindingsLedger({ signals, filter, connectionId, onInvestigate, onEviden
                 onToggle={() => setExpandedId(id => (id === ident ? null : ident))}
                 onInvestigate={onInvestigate} onEvidence={onEvidence}
                 rowRef={el => { if (el) rowRefs.current.set(ident, el); else rowRefs.current.delete(ident); }}
-                vizConfig={vizConfigFor?.(sig.insight.id) ?? null}
-                onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(sig.insight.id, c) : undefined} />
+                vizConfig={vizConfigFor?.(findingId(sig)) ?? null}
+                onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(findingId(sig), c) : undefined}
+                reask={reaskById.get(findingId(sig)) ?? null} apart={apartById.get(findingId(sig))} />
             );
           })}
           {/* footer — Show next N · count · jump to domain (replaces the removed sticky nav rail) */}
@@ -1919,7 +1988,17 @@ function FindingsLedger({ signals, filter, connectionId, onInvestigate, onEviden
                 Show next {Math.min(LEDGER_STEP, remaining)}
               </Button>
             ) : <span style={{ color: "var(--t3)" }}>All findings shown</span>}
-            <span style={{ color: "var(--t3)" }}>· {Math.min(shown, signals.length)} of {signals.length} · ranked by novelty</span>
+            {/* The ledger sorts by impact and falls back to novelty (rankImpact); the footer
+                used to say "novelty" alone. */}
+            <span style={{ color: "var(--t3)" }} data-testid="ledger-footer">
+              · {Math.min(shown, signals.length)} of {signals.length}
+              {reask
+                ? ` · re-asked for ${reask.covers} · ranked by the change against ${reask.compared_with}` +
+                  (reask.apart.length ? ` · ${reask.apart.length} about all history` : "") +
+                  (reask.capped ? ` · ${reask.capped} not re-asked (cap)` : "")
+                : " · ranked by impact, else novelty"}
+              {!reask && note ? <span style={{ color: "var(--amb4)" }}>{` · ${note}`}</span> : null}
+            </span>
             <div style={{ marginLeft: "auto", position: "relative" }}>
               <Button variant="ghost" size="xs" onClick={() => setJumpOpen(o => !o)}
                 style={{ color: "var(--t3)", fontSize: 12, padding: "2px 6px" }}>
@@ -2334,6 +2413,9 @@ export function BriefingPanel({
   const [rangesOn, setRangesOn]             = useState(false);
   // §6 item 34(d): with ranges on, the Briefing OPENS on the Day; "What we know" is one click away.
   const [chosen, setRange]                  = useState<RangeChoice | null>(null);
+  // BR-7 — the findings re-asked for the range on screen, keyed by that range so a stale
+  // answer never renders under a newer heading; null on the standing view.
+  const [reaskFor, setReaskFor]             = useState<{ key: string; data: FindingsReask } | null>(null);
   const range = useMemo<RangeChoice>(
     () => chosen ?? (rangesOn ? { preset: "yesterday" } : { preset: "standing" }), [chosen, rangesOn]);
   useEffect(() => {
@@ -2774,6 +2856,24 @@ export function BriefingPanel({
   // A range is chosen but its Briefing is not on screen yet (building, or refused): the hero
   // must not fall back to the standing view's figures, which read as this range's.
   const rangePending   = rangesOn && !canvasId && range.preset !== "standing" && !rangeBlock;
+  // BR-9 — every part below the hero that is not measured for the range says so.
+  const rangeSelected  = rangesOn && !canvasId && range.preset !== "standing";
+  const scopeNote      = rangeScopeNote(rangeSelected, rangeBlock);
+  // BR-7 — re-ask the findings for the range: their own SQL over it and the previous range,
+  // no model, once per range. The state is set only when the answer arrives, keyed by the
+  // range it answers; the render reads it only while that range is still the one on screen.
+  const rangeKey       = JSON.stringify(range);
+  useEffect(() => {
+    // `rangeSelected` already excludes the standing view, and TypeScript narrows `range`
+    // through that alias, so the call below receives a BriefingRange.
+    if (!rangeSelected) return;
+    let alive = true;
+    getFindingsReask(connectionId, range, schema, workspaceId)
+      .then(data => { if (alive) setReaskFor({ key: rangeKey, data }); })
+      .catch(() => { /* the ledger then stays in its standing order, under the scope note */ });
+    return () => { alive = false; };
+  }, [rangeSelected, connectionId, schema, range, rangeKey]);
+  const reask          = rangeSelected && reaskFor && reaskFor.key === rangeKey ? reaskFor.data : null;
   const isEmpty        = !briefing || briefing.totalInsights === 0;
 
   // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
@@ -3046,12 +3146,13 @@ export function BriefingPanel({
         {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
               card to expand its trend. Under the brief and above its findings. Renders a
               define-CTA (not nothing) when none are set. */}
-        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope} />
+        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope}
+          rangeBlock={rangeBlock} note={scopeNote} />
 
         {/* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
             impact-ordered; the scope chips (focus signals + patterns on one domain) share its
             line. Keyed by scope so it resets on a scope change. */}
-        <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
+        <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId} note={scopeNote} reask={reask}
           // Nothing to scope when the brief spans a single domain.
           filter={briefing.domains.length > 1
             ? <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
@@ -3105,11 +3206,16 @@ export function BriefingPanel({
             state) instead of vanishing. The cycle's findings read above in the ledger; the
             cockpit is the surface the user curates, not a dump of the brief. */}
       <div style={{ marginTop: 34, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
-        <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>Your cockpit</div>
+        <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
+          Your cockpit
+          {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
+              could not be); the label names the range the cards were asked for. */}
+          {rangeSelected ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
+        </div>
         {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
         <NewCardComposer connectionId={connectionId} schema={schema}
           onCreated={() => setPinnedRefresh(n => n + 1)} />
-        <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh}
+        <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh} range={rangeSelected ? range : null}
           suggestions={movers.slice(0, 3).map(m => ({ insightId: m.insightId, value: m.value, label: m.sublabel || m.domain }))}
           onPinned={() => setPinnedRefresh(n => n + 1)}
           onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}

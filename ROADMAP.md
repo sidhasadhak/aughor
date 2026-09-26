@@ -8917,7 +8917,21 @@ the latency bar even batched, the payload fields move to the window only and thi
   envelope — the falsifier's answer stands, bronze accrues from now. The re-ask's turn is the first live
   trajectory: `GET /traces/9ebb4e3f/trajectory` walks its 4 steps and 4 decisions.
 
-#### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit)
+#### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit) — ✅ the label BUILT 2026-09-26; step credit and the audit sitting open
+
+> **Status 2026-09-26.** `learning/reward.py::run_label` is the one rule: positive when every statement ran without
+> error and returned rows, no guard fired but lint, the re-check (when one ran) found the number unchanged and nobody
+> rejected it; negative on an error, a fan-out or grain fire, a changed re-check or a reject; unlabeled otherwise and by
+> default — a store that could not be read, a caveating guard, a guard whose action was never recorded, no rows,
+> nothing ran — each with its reason. The trajectory's `reward` block carries the label and the reasons; the bronze
+> tier's "clean" IS the label's positive (`exporters._trajectory_clean`), so the corpus and the memory cannot disagree;
+> `tool_loop` writes `unlabeled`, not `ok`, on a step that merely did not raise. `GET /learning/run-labels?days&limit&rows`
+> publishes the live distribution and reads the falsifier (`discriminating`); `scripts/tj3_audit_sheet.py` writes the
+> audit sheet from the serving API. NOT built, said in the door's `note`: step credit (a reject still closes every
+> decision of its run — the decision row carries no statement to match a verdict's `sql_source` against), a NULL
+> confidence (the column is NOT NULL, a rebuild), and the headline-against-rows check (not recorded on a chat answer;
+> the evidence says `contradiction: None`). ⚑ The audit is the user's sitting.
+
 
 > **Premise.** Nothing attaches a number to a live run: `earned_confidence` exists on 5 of 1,113 runs and measures
 > coverage, not correctness; the decision corpus's outcome is `ok` on 188 of 188 because it records that the tool did
@@ -8944,7 +8958,17 @@ the latency bar even batched, the payload fields move to the window only and thi
 constant on live traffic it is a finding, not a dataset, and TJ-5 is the only source of a negative class; if bronze
 precision on the audit is under 0.8, bronze is not fuel and MI-4's SFT corpus is silver, gold and gym only.
 
-#### TJ-4 · Labels where readers already are (days, free; ⚑ a Slack app scope)
+#### TJ-4 · Labels where readers already are (days, free; ⚑ a Slack app scope) — ✅ BUILT 2026-09-26; live once the owner grants the scope
+
+> **Status 2026-09-26.** The bot (`bots/slack/src/bot.ts`) remembers which messages carried which turn — the streamed
+> answer and its exhibits, by message id, and the thread's latest answer — and `onReaction` reads ✅ (`white_check_mark`,
+> `heavy_check_mark`) as accept and ❌ (`x`, `negative_squared_cross_mark`) as reject on that turn, through
+> `POST /verify/verdict` (`createVerdictPoster`, beside the arrival poster). A reaction removed changes nothing: a
+> verdict is not un-said by taking the emoji back. Law 8 holds: no message is posted back. The manifest the owner
+> installs now asks for `reactions:read` and subscribes to `reaction_added` — ⚑ the owner re-installs the app for the
+> handler to receive anything. The Departures screen marks any row that carried an answer, not only a probation send:
+> the same door, both ledgers at once. Correction from Slack stays unbuilt, as drafted.
+
 
 > **Premise.** The funnel, not the plumbing, has been MI's constraint since MI-3: 5 verdicts, 0 chat feedback events,
 > 0 marks on 30 departure decisions. The chat's 👍 landed with #547. The two surfaces where answers are actually read
@@ -9505,7 +9529,32 @@ and says so. If BR-4's reader cannot name a move the dated Briefing carries that
 ship without prose. If a custom range cannot be built inside a minute on theLook by compilation, BR-8 moves ahead of
 BR-4.
 
-#### BR-9 · The whole page adheres to the range (DRAFTED 2026-09-26 from the user's screenshot; lifts BR-7's pause; about a day for the labels, then BR-7's week, then the re-rank)
+#### BR-9 · The whole page adheres to the range (DRAFTED 2026-09-26 from the user's screenshot; lifts BR-7's pause — ✅ BUILT the same day: the labels, the Key Metrics row for the range, BR-7's re-ask; the cockpit says "all history" and its range-aware cards are the one step left)
+
+> **Status 2026-09-26 (built the same day, on the user's "Lets go for all 5").** Measured before building, against
+> the map of the page: the Key Metrics row was NOT the explorer's findings but the business profile's north-star SQL
+> over all history (`IndustryKpiStrip`, `POST /query/run`); the findings list was `getDomainInsights` all-history,
+> sorted by impact while its footer said "novelty"; the cockpit's cards re-run their saved SQL. Built: (1) **the
+> labels** — `rangeScopeNote` ("all history, not 17–23 August" once the range Briefing is on screen, "…not this
+> range" while pending, nothing on the standing view) on the Key Metrics header, the ledger footer and the cockpit's
+> label; the footer now says the sort it uses. (2) **Key Metrics for the range** — under a range the row leads with the
+> APPROVED metrics measured for it by BR-2's compiler (the server's formatted figures, each with its status), the ones
+> the hero does not already show (`rangeTop` shared, so no figure is on the page twice); the standing north stars
+> follow under the note. (3) **BR-7, un-paused and built without a model** — every finding keeps its own SQL and the
+> tables it read (measured live on theLook: 23 of 23; 7 single-figure, 16 grouped), so
+> `GET /exploration/{conn}/findings/reask?preset|start&end` runs each statement over the range and over the previous
+> range, the grain being the main date of the first table it reads (`scoped_statement` + `window_predicate`), reads
+> the figure (the one-row value; else the total, or the mean for a rate, of the measure column), and ranks by the
+> change; a finding that cannot be re-asked is listed APART with why (no SQL, no date on its tables, a failed query,
+> no rows) — never silently left in the ranked list; at most 40 per range, the cap said; cached a quarter hour per
+> (scope, range). The ledger orders by the change, each row shows its figure for the range against the previous one,
+> and the apart rows say "about all history — why". (4) **The cockpit scopes** — `POST /cards/{id}/run?preset|start&end`
+> cuts a card's saved SQL to the range the way a finding is re-asked (the main date of the first table it reads), and
+> `scoped` says what the number covers; a card whose tables have no date runs standing and says why; a range run
+> never rolls into the card's standing value history; the page passes its range to every card. Receipt: the page
+> under *Week* on theLook with `briefing.ranges` on (already on — the user's) — 17 of 23 findings re-asked in 32 s,
+> 2 apart with why, 4 duplicates asked once; the labels and the ledger's order seen live.
+
 
 > **Origin.** The user, 2026-09-26, on a screenshot of the Briefing with *Week* selected: *"Clicking on Week/Month of
 > whatever the range.. I see only a few parts changing and not the whole briefing.. its wierd because the whole briefing

@@ -722,6 +722,46 @@ def _range_briefing(conn_id: str, spec, *, schema: str | None, requested_schema:
     return {**result, "available": bool(result.get("narrative")), "scope_key": scope_key}
 
 
+#: BR-7 — re-asked findings per (connection, schema, range key, as_of), kept a quarter hour:
+#: a range's re-ask is two warehouse queries per finding, and the page asks once per range.
+_REASK_CACHE: dict[tuple, tuple[float, dict]] = {}
+_REASK_TTL_S = 15 * 60
+
+
+@router.get("/exploration/{conn_id}/findings/reask")
+def reask_findings_for_range(conn_id: str, preset: str | None = None, start: str | None = None,
+                             end: str | None = None, schema: str | None = None,
+                             workspace_id: str | None = None, refresh: bool = False):
+    """BR-7, joined to BR-9: every explorer finding of this scope re-asked for the range — its own
+    SQL over the range and the previous range, cut on the main date of the first table it reads —
+    ranked by the size of the change; the ones that cannot be re-asked listed apart with why.
+    No model call. Refused like the range Briefing when `briefing.ranges` is off."""
+    import time as _t
+
+    from aughor.briefing.reask import reask_findings
+    from aughor.knowledge import period_brief
+    from aughor.tools.profile_cache import latest_profile_entry
+
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
+    if spec is None:
+        raise HTTPException(status_code=422, detail="a range is required: preset=…, or start=… and end=…")
+    key = (conn_id, schema or "", spec.key, spec.as_of.isoformat())
+    hit = _REASK_CACHE.get(key)
+    if hit and not refresh and _t.monotonic() - hit[0] < _REASK_TTL_S:
+        return {**hit[1], "cached": True}
+    # The store keeps a plain list per domain; the `/domains` door wraps it in a block. Both read.
+    by_domain = _domain_insights_for(conn_id, schema)
+    findings = [{**f, "domain": dom} for dom, blk in (by_domain or {}).items()
+                for f in (blk if isinstance(blk, list) else ((blk or {}).get("insights") or []))
+                if isinstance(f, dict)]
+    profile = latest_profile_entry(conn_id) or {}
+    with period_brief.connection_runner(conn_id) as (run_sql, dialect):
+        out = reask_findings(findings, spec, run_sql=run_sql, dialect=dialect, profile_entry=profile)
+    out = {**out, "total": len(findings), "profiled": bool(profile), "cached": False}
+    _REASK_CACHE[key] = (_t.monotonic(), out)
+    return out
+
+
 @router.get("/exploration/{conn_id}/briefing")
 def read_briefing(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
                   period: str | None = None, preset: str | None = None,

@@ -12,7 +12,9 @@ import {
 import { describe, expect, it, type Mock } from "vitest";
 import type { Adapter } from "chat";
 
-import type { AnswerEnvelope, AskOptions, TurnArtifacts } from "./aughor.js";
+import type { Author, EmojiValue } from "chat";
+
+import type { AnswerEnvelope, AskOptions, TurnArtifacts, VerdictBody } from "./aughor.js";
 import { buildBot, stripMention, withoutTables } from "./bot.js";
 
 const THREAD = "slack:C1:1712.001";
@@ -483,5 +485,53 @@ describe("buildBot — the check verb (idea 7)", () => {
     expect(adapter).toHavePosted(THREAD, /Paste the memo after `check:`/);
     await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor check: 3 regions"));
     expect(adapter).toHavePosted(THREAD, /Not checked: nothing to check/);
+  });
+});
+
+describe("TJ-4 — a reaction is a verdict", () => {
+  const turnOf = (question: string, sessionId: string): TurnArtifacts => ({
+    investigationId: "inv-9", question, sessionId, columns: [], rows: [], chartType: "auto", chartConfig: {},
+  });
+  const reaction = (adapter: Adapter, rawEmoji: string, added = true, messageId = "msg-1") => ({
+    adapter, added, emoji: rawEmoji as unknown as EmojiValue, messageId, raw: {}, rawEmoji,
+    threadId: THREAD, user: { userId: "U1", userName: "amit", fullName: "Amit", isBot: false } as unknown as Author,
+  });
+  async function settle() { await new Promise(r => setTimeout(r, 10)); }
+
+  it("✅ records an accept on the turn the answer came from, ❌ a reject, a removed emoji nothing", async () => {
+    const adapter = mockAughorAdapter();
+    const verdicts: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
+    async function* ask(question: string, opts: AskOptions) {
+      opts.onTurn?.(turnOf(question, opts.sessionId));
+      yield "Nine orders.";
+    }
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), postVerdict });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+
+    bot.processReaction(reaction(adapter, "white_check_mark"));
+    await settle();
+    expect(verdicts).toEqual([{ investigationId: "inv-9", verdict: "accept",
+      note: "slack reaction :white_check_mark: by amit", headline: "how many orders?" }]);
+
+    bot.processReaction(reaction(adapter, "x", true, "some-other-message-in-the-thread"));
+    await settle();
+    expect(verdicts.map(v => v.verdict)).toEqual(["accept", "reject"]);
+
+    bot.processReaction(reaction(adapter, "white_check_mark", false));
+    bot.processReaction(reaction(adapter, "eyes"));
+    await settle();
+    expect(verdicts).toHaveLength(2);
+  });
+
+  it("a reaction on a thread the bot never answered records nothing", async () => {
+    const adapter = mockAughorAdapter();
+    const verdicts: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
+    const { ask } = fakeAsk(["Answer."]);
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), postVerdict });
+    bot.processReaction(reaction(adapter, "white_check_mark", true, "unknown"));
+    await settle();
+    expect(verdicts).toHaveLength(0);
   });
 });

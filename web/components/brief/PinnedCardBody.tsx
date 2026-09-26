@@ -191,6 +191,14 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
 
       {/* Footer — actions (never a drag target). */}
       <div className="nodrag" style={{ flex: "0 0 auto", padding: "5px 10px 7px", display: "flex", flexDirection: "column", gap: 4, borderTop: "1px solid color-mix(in srgb, var(--b1) 60%, transparent)" }}>
+        {/* BR-9 — what the number covers when the page is scoped to a range: the range itself,
+              or standing with why the card's SQL could not be cut to it. */}
+        {run?.scoped && (
+          <div data-testid="card-scoped" title={run.scoped.standing ? run.scoped.why : `cut on ${run.scoped.grain}`}
+            className="aug-fs-xs" style={{ color: run.scoped.standing ? "var(--amb4)" : "var(--t3)" }}>
+            {run.scoped.standing ? `all history, not ${run.scoped.covers} — ${run.scoped.why}` : `for ${run.scoped.covers}`}
+          </div>
+        )}
         {caveats.length > 0 && (
           <div title={caveats.join("; ")} className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
             {caveats.length} guard caveat{caveats.length > 1 ? "s" : ""}

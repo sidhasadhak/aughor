@@ -15,11 +15,11 @@
  * arrives, and the exhibits follow once the run has settled — and only when
  * there is something worth exhibiting.
  */
-import { Chat, StreamingPlan, type Adapter, type FileUpload, type StateAdapter, type Thread } from "chat";
+import { Chat, StreamingPlan, type Adapter, type FileUpload, type SentMessage, type StateAdapter, type Thread } from "chat";
 
 import { csvFilename, renderGrid, worthShowing, type Grid } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
-import type { ArrivalPoster, AskChunk, AskStream, FactChecker, TurnArtifacts } from "./aughor.js";
+import type { ArrivalPoster, AskChunk, AskStream, FactChecker, TurnArtifacts, VerdictPoster } from "./aughor.js";
 
 export const BOT_USERNAME = "aughor";
 
@@ -66,6 +66,7 @@ export function buildBot({
   state,
   postArrival,
   factCheck,
+  postVerdict,
 }: {
   ask: AskStream;
   /** Absent in tests that only care about the text half. */
@@ -76,6 +77,8 @@ export function buildBot({
   postArrival?: ArrivalPoster;
   /** Idea 7 — absent in tests that only exercise the ask half. */
   factCheck?: FactChecker;
+  /** TJ-4 — a reaction is a verdict; absent in tests that only exercise the ask half. */
+  postVerdict?: VerdictPoster;
 }): Chat {
   const bot = new Chat({
     userName: BOT_USERNAME,
@@ -84,6 +87,38 @@ export function buildBot({
     // debug shows every incoming envelope — the difference between "Slack never
     // sent the event" and "it arrived and nothing matched" is invisible at info.
     logger: (process.env.LOG_LEVEL as "debug" | "info" | undefined) ?? "info",
+  });
+
+  // TJ-4 — which message carried which turn. The streamed answer and its exhibits by
+  // message id, and the thread's latest answer as the fallback for a reaction on any
+  // other message in the thread. In memory and bounded: a restart forgets, and a
+  // reaction on a forgotten answer records nothing rather than a guess.
+  const byMessage = new Map<string, TurnArtifacts>();
+  const byThread = new Map<string, TurnArtifacts>();
+  const remember = (threadId: string, turn: TurnArtifacts | null, ...ids: (string | undefined)[]) => {
+    if (!turn?.investigationId) return;
+    for (const id of ids) if (id) byMessage.set(id, turn);
+    byThread.set(threadId, turn);
+    for (const m of [byMessage, byThread]) {
+      while (m.size > 500) { const first = m.keys().next().value; if (first === undefined) break; m.delete(first); }
+    }
+  };
+  const ACCEPT = new Set(["white_check_mark", "heavy_check_mark", "✅", "✔️"]);
+  const REJECT = new Set(["x", "negative_squared_cross_mark", "❌", "❎"]);
+  bot.onReaction(async (event) => {
+    // A verdict is not un-said by taking the emoji back; only an added ✅ / ❌ counts.
+    if (!event.added || !postVerdict) return;
+    const raw = String(event.rawEmoji ?? "").replace(/^:|:$/g, "");
+    const verdict = ACCEPT.has(raw) ? "accept" : REJECT.has(raw) ? "reject" : null;
+    if (!verdict) return;
+    const turn = byMessage.get(event.messageId) ?? byThread.get(event.threadId);
+    if (!turn) return;
+    const who = event.user?.userName || event.user?.userId || "someone";
+    // Law 8: the message carries no receipt and the reaction needs none — nothing is posted back.
+    await postVerdict({
+      investigationId: turn.investigationId, verdict,
+      note: `slack reaction :${raw}: by ${who}`, headline: turn.question,
+    });
   });
 
   bot.onNewMention(async (thread, message) => {
@@ -177,7 +212,10 @@ export function buildBot({
       { groupTasks: "plan" },
     ));
 
-    await postExhibits(thread, turn, renderChart);
+    // The streamed answer's post hands back the plan, not a message id, so the exhibits'
+    // message is the one remembered by id and the answer itself resolves by its thread.
+    const exhibit = await postExhibits(thread, turn, renderChart);
+    remember(thread.id, turn, exhibit?.id);
   });
 
   return bot;
@@ -280,8 +318,8 @@ async function postExhibits(
   thread: Pick<Thread, "post">,
   turn: TurnArtifacts | null,
   renderChart?: ChartRenderer,
-): Promise<void> {
-  if (!turn) return;
+): Promise<SentMessage | null> {
+  if (!turn) return null;
   const env = turn.envelope ?? null;
   const grid: Grid = env?.grid ?? { columns: turn.columns, rows: turn.rows };
   const chartType = env?.chart?.chart_type || turn.chartType || "auto";
@@ -311,6 +349,6 @@ async function postExhibits(
     });
   }
 
-  if (!markdown && files.length === 0) return;
-  await thread.post({ markdown, ...(files.length ? { files } : {}) });
+  if (!markdown && files.length === 0) return null;
+  return await thread.post({ markdown, ...(files.length ? { files } : {}) });
 }

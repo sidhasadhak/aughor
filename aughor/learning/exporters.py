@@ -434,8 +434,12 @@ def _trajectory_clean(answer: dict) -> tuple[bool, dict]:
     executions, guards, steps = t.get("executions"), t.get("guards"), t.get("steps") or []
     if not isinstance(executions, list) or not isinstance(guards, list):
         return False, {}                      # a store that could not be read vouches for nothing
-    ran_clean = bool(executions) and not any(x.get("error") for x in executions)
+    # TJ-3 (2026-09-26): "clean" is the run label's POSITIVE — one rule for every tier.
+    from aughor.learning.reward import run_label
+    verdict = run_label(t)
+    ran_clean = verdict["label"] == "positive"
     context = {"steps": [{"tool": st.get("tool"), "sql": st.get("sql") or ""} for st in steps][:12],
+               "label": verdict["label"], "reasons": verdict["reasons"],
                "guard_fires": [g.get("pattern") for g in guards][:12],
                "execution": t["reward"]["execution"]}
     return (ran_clean and not guards), context

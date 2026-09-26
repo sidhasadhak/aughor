@@ -2184,6 +2184,9 @@ export interface CardRunResult {
   caveats: string[];
   error: string | null;
   refresh: DashboardCardRefresh;
+  /** BR-9 — present when the run asked for a range: what the number covers, or `standing`
+   *  with why the card's SQL could not be cut to it (no date on its tables). */
+  scoped?: { covers: string; standing: boolean; why: string; grain: string | null } | null;
 }
 
 /** Pin a briefing finding as a dashboard card (Door 1). The backend re-runs the finding's
@@ -2292,8 +2295,17 @@ export async function saveVizConfig(
 
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
-export async function runDashboardCard(cardId: string): Promise<CardRunResult> {
-  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`, { method: "POST" });
+export async function runDashboardCard(cardId: string, range?: BriefingRange | null): Promise<CardRunResult> {
+  const q = new URLSearchParams();
+  if (range) {
+    if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+    else q.set("preset", range.preset);
+  }
+  // The path is one template and the query a plain suffix: the API-contract test reads the
+  // template as the route, and a conditional inside it read as "/run${qs".
+  const url = `${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`;
+  const qs = q.toString();
+  const res = await fetch(qs ? `${url}?${qs}` : url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh dashboard card");
   return res.json();
 }
@@ -5888,6 +5900,53 @@ export interface BriefingRangeBlock {
   early?: { start: string | null; end: string | null;
             figures: { metric: string; name: string; value: number; value_text?: string; n: number }[] } | null;
   recipe_error?: string;
+}
+
+/** BR-7 — one finding re-asked for a range: its own SQL over the range and the previous range,
+ *  the figure read from the result (`how`: the value of a one-row result, else the total or,
+ *  for a rate, the mean of `measure` over the rows). `rel` is the change, the range's scorecard. */
+export interface FindingReask {
+  id: string;
+  domain: string;
+  grain: string;
+  measure: string;
+  how: "value" | "total" | "mean" | "";
+  current: number | null;
+  previous: number | null;
+  rel: number | null;
+  rows_current: number;
+  rows_previous: number;
+  sql: string;
+}
+export interface FindingApart { id: string; domain: string; why: string }
+export interface FindingsReask {
+  covers: string;
+  compared_with: string;
+  key: string;
+  reasked: FindingReask[];
+  apart: FindingApart[];
+  capped: number;
+  /** Identical (id, SQL) pairs the aggregate view listed more than once — asked once. */
+  duplicates: number;
+  total: number;
+  profiled: boolean;
+  cached: boolean;
+}
+
+export async function getFindingsReask(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<FindingsReask> {
+  const q = new URLSearchParams();
+  if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+  else q.set("preset", range.preset);
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings/reask?${q}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The findings could not be re-asked for this range");
+  }
+  return res.json();
 }
 
 export function isRangeBlock(p: BriefingPeriodBlock | BriefingRangeBlock | undefined | null): p is BriefingRangeBlock {

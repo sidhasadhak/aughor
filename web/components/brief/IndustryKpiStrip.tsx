@@ -22,7 +22,8 @@
  */
 import { useEffect, useState } from "react";
 import NumberFlow from "@number-flow/react";
-import { getBusinessProfile, runDirectQuery, currencySymbol, type StatedRange } from "@/lib/api";
+import { getBusinessProfile, runDirectQuery, currencySymbol, type BriefingRangeBlock, type StatedRange } from "@/lib/api";
+import { RangeMeasureTile, rangeTop } from "@/components/brief/BriefRange";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
@@ -114,10 +115,14 @@ function KpiValue({ kpi }: { kpi: Kpi }) {
 }
 
 // ── Presentational view (no data fetching) — owns the expand/collapse UI state ──
-export function KpiStripView({ industry, period, kpis, scopeKey }: {
+export function KpiStripView({ industry, period, kpis, scopeKey, note }: {
   industry?: string; period?: string; kpis: Kpi[];
   /** Scope for persisting a KPI chart's display config (keyed `kpi:<name>` within it). */
   scopeKey?: string;
+  /** BR-9 — what these figures cover when the page is scoped to a range they are NOT measured
+   *  for ("all history, not 17–23 August"). Replaces the "vs <period>" word: the number's own
+   *  header says what it is, in the same type. */
+  note?: string;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const { configFor, save } = useVizConfigs(scopeKey ?? "");
@@ -129,7 +134,9 @@ export function KpiStripView({ industry, period, kpis, scopeKey }: {
       <div className="aug-label" style={{ marginBottom: 8 }}>
         Key Metrics
         {industry ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · ${industry}`}</span> : null}
-        {period ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · vs ${periodWord(period)}`}</span> : null}
+        {note
+          ? <span data-testid="kpi-strip-note" style={{ fontWeight: 400, color: "var(--amb4)" }}>{` · ${note}`}</span>
+          : period ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · vs ${periodWord(period)}`}</span> : null}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
         {kpis.map(k => {
@@ -203,10 +210,16 @@ function DefineKpiCta() {
 }
 
 // ── Live container ──────────────────────────────────────────────────────────────
-export function IndustryKpiStrip({ connectionId, schema, scopeKey }: {
+export function IndustryKpiStrip({ connectionId, schema, scopeKey, rangeBlock, note }: {
   connectionId: string; schema?: string;
   /** Passed straight through to the view so KPI chart edits persist per scope. */
   scopeKey?: string;
+  /** BR-9 — the range Briefing on screen, when there is one: the row then leads with the
+   *  APPROVED metrics measured for the range (those the hero does not already show), each
+   *  with its status; the standing north stars follow under `note`. */
+  rangeBlock?: BriefingRangeBlock | null;
+  /** BR-9 — "all history, not <range>" while a range is selected; "" on the standing view. */
+  note?: string;
 }) {
   const [industry, setIndustry] = useState("");
   const [period, setPeriod] = useState("");
@@ -261,6 +274,28 @@ export function IndustryKpiStrip({ connectionId, schema, scopeKey }: {
     return () => { alive = false; };
   }, [connectionId, schema, orgV]);
 
-  if (kpis.length > 0) return <KpiStripView industry={industry} period={period} kpis={kpis} scopeKey={scopeKey} />;
+  // The range's own row: every approved metric measured for it that the hero is not already
+  // showing. Nothing is formatted here — the server's text is the figure.
+  const inHero = new Set(rangeBlock ? rangeTop(rangeBlock).map(m => m.metric) : []);
+  const rest = rangeBlock ? rangeBlock.measured.filter(m => !inHero.has(m.metric)) : [];
+  const measuredRow = rangeBlock && rest.length > 0 ? (
+    <div data-testid="kpi-strip-measured" style={{ marginBottom: 14 }}>
+      <div className="aug-label" style={{ marginBottom: 8 }}>
+        Key Metrics<span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · measured for ${rangeBlock.covers}`}</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, rest.length)}, minmax(0, 1fr))`, gap: 12 }}>
+        {rest.map(m => <RangeMeasureTile key={m.metric} m={m} />)}
+      </div>
+    </div>
+  ) : null;
+  if (kpis.length > 0) {
+    return (
+      <div>
+        {measuredRow}
+        <KpiStripView industry={industry} period={period} kpis={kpis} scopeKey={scopeKey} note={note} />
+      </div>
+    );
+  }
+  if (measuredRow) return measuredRow;
   return noMetrics ? <DefineKpiCta /> : null;
 }
