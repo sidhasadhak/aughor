@@ -489,7 +489,7 @@ BASELINE: dict[str, int] = {
     # (GET /investigations, `investigation.*` events) and the header's Investigate door.
     # 2026-09-14: 573 → 583, a RAISE: the restored Briefing's Investigate doors (+15), less
     # the shell header's Investigate door that the restore took out (−5).
-    "investigation_in_web": 582,
+    "investigation_in_web": 581,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
