@@ -144,6 +144,24 @@ def test_the_connection_lag_is_the_slowest_table_and_none_until_learned(home):
     assert s["tables"][0]["days_observed"] == 4
 
 
+def test_a_table_still_moving_at_the_horizon_raises_the_lag_it_is_not_left_out(home):
+    """theLook 2026-09-25: orders settled at 13, order_items still moved at 14 — and the
+    connection read "13, learned". A table that has not stopped makes the lag a floor."""
+    for i in range(4):
+        day = D0 + timedelta(days=i)
+        for age in range(1, 13):
+            store.record_observations("c1", "orders", "created_at", day + timedelta(days=age),
+                                      {day.isoformat(): RAMP[age]})
+            store.record_observations("c1", "order_items", "created_at", day + timedelta(days=age),
+                                      {day.isoformat(): 100.0 * age})   # never stops
+    assert store.verdicts("c1")["order_items"].still_moving
+    lag = store.connection_lag("c1")
+    assert lag == {"days": 13, "source": "beyond_horizon", "still_moving": ["order_items"],
+                   "horizon": 12}
+    assert store.learned_lag_days("c1") == 13
+    assert store.summary("c1")["lag_source"] == "beyond_horizon"
+
+
 # ── the sampler ──────────────────────────────────────────────────────────────────
 
 def _fake_profiles(monkeypatch, tables: dict[str, dict]):
@@ -195,6 +213,29 @@ def test_a_reading_files_every_day_of_the_horizon_and_skips_a_failing_table(home
     assert obs["2026-09-09"] == 0.0 and "2026-09-30" not in obs and "2026-09-01" not in obs
     assert len(obs) == sampler.HORIZON_DAYS
     assert all(o.measured_on == today for o in store.observations("c1", "orders"))
+
+
+def test_a_table_still_moving_is_read_twice_as_far_back(home, monkeypatch):
+    _fake_profiles(monkeypatch, {"orders": {"primary_timestamp": "created_at", "row_count": 100},
+                                 "users": {"primary_timestamp": "created_at", "row_count": 50}})
+    for i in range(4):   # orders never stops moving; users has no readings yet
+        day = D0 + timedelta(days=i)
+        for age in range(1, 13):
+            store.record_observations("c1", "orders", "created_at", day + timedelta(days=age),
+                                      {day.isoformat(): 100.0 * age})
+    today = date(2026, 9, 23)
+    asked: dict[str, str] = {}
+
+    def run_sql(sql):
+        asked["orders" if '"orders"' in sql else "users"] = sql
+        return ["day", "n"], [], None
+
+    sampler.sample_connection("c1", run_sql, today=today)
+    wide = (today - timedelta(days=2 * sampler.HORIZON_DAYS)).isoformat()
+    short = (today - timedelta(days=sampler.HORIZON_DAYS)).isoformat()
+    assert f"DATE '{wide}'" in asked["orders"] and f"DATE '{short}'" in asked["users"]
+    read_today = [o for o in store.observations("c1", "orders") if o.measured_on == today]
+    assert len(read_today) == 2 * sampler.HORIZON_DAYS
 
 
 def test_the_daily_reading_runs_once_per_utc_day(monkeypatch):
@@ -312,7 +353,8 @@ def test_the_settling_door_serves_the_store_and_takes_a_reading(home, monkeypatc
     client = TestClient(app)
     empty = client.get("/settling/c1")
     assert empty.status_code == 200
-    assert empty.json() == {"connection_id": "c1", "tables": [], "learned_lag_days": None}
+    assert empty.json() == {"connection_id": "c1", "tables": [], "learned_lag_days": None,
+                            "lag_source": None, "still_moving": []}
 
     _fake_profiles(monkeypatch, {"orders": {"primary_timestamp": "created_at", "row_count": 100}})
     monkeypatch.setattr("aughor.db.measure.run_sql_for",

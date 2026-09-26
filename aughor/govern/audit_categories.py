@@ -93,6 +93,10 @@ AUDIT_TABLE_CATEGORY = "data_access"
 NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
     "agent.handoff", "api.started", "automation.run", "birth.done", "birth.step",
     "brief.delivered", "error.tolerated", "exploration.skipped", "explorer.resumed",
+    # Arc BR-5: a Day subscription pausing the automation it replaces after seven delivered
+    # mornings — a consequence of a decision already taken (§6 item 34(e)), shown on the
+    # automation itself (its pause and its run history), like explorer.resumed
+    "brief.superseded_automation",
     "investigation.dispatched", "investigations.swept", "job.foreign", "job.orphaned",
     "job.state", "monitor.alert", "node.span", "pack.status_changed", "phase_complete",
     "playbook.use", "store.wal_drift", "eval.graduation", "ontology.build",

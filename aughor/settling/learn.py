@@ -47,6 +47,9 @@ class SettlingVerdict:
     evidence_days: int = 0     # days that met the evidence bar
     horizon_days: int = 0      # the oldest age any day was read at
     tolerance: float = DEFAULT_TOLERANCE
+    #: Enough evidence, and a day was still moving at the oldest age read: the lag is at
+    #: least ``horizon_days + 1`` — unknown, but not small. Not the same as too little evidence.
+    still_moving: bool = False
 
     @property
     def learned(self) -> bool:
@@ -114,7 +117,8 @@ def settle_lag(observations: Iterable[Observation], *, tolerance: float = DEFAUL
             None,
             f"still moving at age {horizon} on {unsettled} of {len(qualifying)} days — "
             f"the observation horizon must grow before a lag can be named",
-            evidence_days=len(qualifying), horizon_days=horizon, tolerance=tolerance)
+            evidence_days=len(qualifying), horizon_days=horizon, tolerance=tolerance,
+            still_moving=True)
     lag = max(settle_ages)
     return SettlingVerdict(
         lag,

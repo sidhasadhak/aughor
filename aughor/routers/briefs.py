@@ -34,11 +34,36 @@ router = APIRouter(tags=["briefing"], dependencies=[Depends(_brief_owner_guard),
 class _SubscriptionBody(BaseModel):
     conn_id:    str
     name:       str
-    trigger_id: str
+    trigger_id: str = ""
+    # Arc BR-5 — a Slack bot and channel instead of a trigger; the Briefing's scope; the
+    # automation it replaces. Sent only by a client that knows them.
+    bot_id:     str = ""
+    channel:    str = ""
+    schema_name: str = ""
+    supersedes: str = ""
     period:     str = "week"        # "week" | "day" (+ "month" | "year" with briefing.by_period)
     send_cron:  str = ""            # optional explicit cron; derived from period if blank
     enabled:    bool = True
     content:    str = "alert_summary"      # "alert_summary" | "briefing" (briefing.by_period)
+
+
+def _validate_destination(body: "_SubscriptionBody") -> None:
+    """A subscription delivers through an Action Hub trigger or a Slack bot and channel, and
+    replaces only an automation of its own connection. Refused with the reason."""
+    from aughor.notifications.store import get_trigger
+    if body.bot_id:
+        from aughor.slackbots.store import get_bot
+        if get_bot(body.bot_id) is None:
+            raise HTTPException(status_code=400, detail="Slack bot not found")
+        if not body.channel.strip():
+            raise HTTPException(status_code=422, detail="a Slack bot needs a channel to post in")
+    elif not get_trigger(body.trigger_id):
+        raise HTTPException(status_code=400, detail="Delivery trigger not found — create an Action Hub trigger first")
+    if body.supersedes:
+        from aughor.automations.store import get_automation
+        replaced = get_automation(body.supersedes)
+        if replaced is None or replaced.conn_id != body.conn_id:
+            raise HTTPException(status_code=422, detail="the automation it replaces is not one of this connection's")
 
 
 def _validate_period(period: str, content: str = "alert_summary") -> None:
@@ -90,18 +115,16 @@ def list_brief_subscriptions(conn_id: Optional[str] = None):
 def create_briefing_subscription(body: _SubscriptionBody, request: Request):
     from aughor.briefing.models    import BriefSubscription
     from aughor.briefing.store     import save_subscription
-    from aughor.notifications.store    import get_trigger
     from aughor.security.authz   import check_owner, get_principal
 
     check_owner("connection", body.conn_id, get_principal(request))  # DATA-06: no cross-org subscribe
     _validate_period(body.period, body.content)
-    if not get_trigger(body.trigger_id):
-        raise HTTPException(status_code=400, detail="Delivery trigger not found — create an Action Hub trigger first")
-
+    _validate_destination(body)
     sub = BriefSubscription(
         conn_id=body.conn_id, name=body.name, trigger_id=body.trigger_id,
         period=body.period, send_cron=body.send_cron, enabled=body.enabled,
-        content=body.content,
+        content=body.content, bot_id=body.bot_id, channel=body.channel.strip(),
+        schema_name=body.schema_name, supersedes=body.supersedes,
     )
     saved = save_subscription(sub)
     # No scheduler sync: the automation heartbeat reads the subscription store live
@@ -143,6 +166,12 @@ def update_briefing_subscription(sub_id: str, body: _SubscriptionBody):
     existing.send_cron  = body.send_cron
     existing.enabled    = body.enabled
     existing.content    = body.content
+    # Arc BR-5 fields change only when SENT: an editor that does not know them keeps them
+    for k in ("bot_id", "channel", "schema_name", "supersedes"):
+        if k in body.model_fields_set:
+            setattr(existing, k, getattr(body, k))
+    if {"bot_id", "channel", "trigger_id", "supersedes"} & body.model_fields_set:
+        _validate_destination(_SubscriptionBody(**existing.model_dump(include=set(_SubscriptionBody.model_fields))))
     saved = save_subscription(existing)
     return saved.to_dict()
 
@@ -174,8 +203,17 @@ def delete_brief_subscription(sub_id: str):
 
 
 @router.post("/briefing/subscriptions/{sub_id}/test")
-def test_briefing_subscription(sub_id: str):
-    """Deliver the briefing immediately and return the outcome (status + preview)."""
+def test_briefing_subscription(sub_id: str, dry_run: bool = False):
+    """Deliver the briefing immediately and return the outcome (status + preview). With
+    ``dry_run`` (Arc BR-5) it is built and judged at the departure gate exactly as a send
+    would be, and NOT sent: the preview and the verdict, nothing leaves."""
+    if dry_run:
+        from aughor.briefing.delivery import preview_subscription
+        from aughor.briefing.store import get_subscription
+        sub = get_subscription(sub_id)
+        if sub is None:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        return preview_subscription(sub)
     from aughor.briefing.scheduler import trigger_now
     result = trigger_now(sub_id)
     if result is None:

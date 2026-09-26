@@ -114,6 +114,115 @@ function DefinitionReportBlock({ report }: { report: DefinitionReport }) {
   );
 }
 
+// ── Dates (Arc BR-2) ──────────────────────────────────────────────────────────────
+// How the metric is measured for a date range. The platform sets these by rule — the user's
+// call (ROADMAP §6 item 34(b)) — and says which rule; a person confirms or corrects them here,
+// and from then on the platform leaves them alone.
+
+const KIND_WORDS: Record<string, string> = {
+  flow: "adds up over a range", stock: "a level at a date", cohort: "tied to one date, completed by a later one",
+};
+
+function datesSentence(m: Metric): string {
+  if (!m.time_kind || !m.time_column) return "Not set — this metric cannot be measured for a date range yet.";
+  if (m.time_kind === "cohort") {
+    const settles = m.settles_after_days != null ? `, settles after ${m.settles_after_days} days` : ", settling time not yet measured";
+    return `Cohort — tied to ${m.time_column}, completed by ${m.outcome_column ?? "?"}${settles}.`;
+  }
+  if (m.time_kind === "stock") return `Stock — a row counts from ${m.time_column} until ${m.until_column ?? "?"}.`;
+  return `Flow — a row counts on the day of ${m.time_column}.`;
+}
+
+function DatesSection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [kind, setKind] = useState(metric.time_kind ?? "flow");
+  const [column, setColumn] = useState(metric.time_column ?? "");
+  const [outcome, setOutcome] = useState(metric.outcome_column ?? "");
+  const [until, setUntil] = useState(metric.until_column ?? "");
+  const [settles, setSettles] = useState(metric.settles_after_days != null ? String(metric.settles_after_days) : "");
+  const [actor, setActor] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const save = async (fields: Partial<Metric>) => {
+    setErr("");
+    if (!actor.trim()) { setErr("Enter who is confirming this."); return; }
+    setBusy(true);
+    try {
+      await updateMetric(metric.name, { ...metric, ...fields, time_confirmed_by: actor.trim() });
+      setEditing(false);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not save the dates");
+    } finally { setBusy(false); }
+  };
+
+  const confirmed = !!metric.time_confirmed_by;
+  return (
+    <div className="rounded-md border border-zinc-700 bg-zinc-800/40 p-3" data-testid="metric-dates">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-xs font-medium text-zinc-300">Dates</span>
+        {metric.time_kind && (
+          <span className="aug-fs-xs px-1.5 rounded border border-zinc-600 text-zinc-400">
+            {confirmed ? `confirmed by ${metric.time_confirmed_by}` : "set automatically"}
+          </span>
+        )}
+      </div>
+      <p className="aug-fs-xs text-zinc-300">{datesSentence(metric)}</p>
+      {metric.time_kind && (
+        <p className="aug-fs-xs text-zinc-500 mt-1">{KIND_WORDS[metric.time_kind] ?? ""}{metric.time_source ? ` · ${metric.time_source}` : ""}</p>
+      )}
+      {!editing ? (
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <input className="aug-input aug-fs-xs" placeholder="Who is confirming" value={actor}
+            onChange={e => setActor(e.target.value)} aria-label="Who is confirming the dates" />
+          {metric.time_kind && !confirmed && (
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => save({})}>Confirm</Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Correct…</Button>
+        </div>
+      ) : (
+        <div className="grid gap-2 mt-2">
+          <label className="aug-fs-xs text-zinc-400">Kind
+            <select className="aug-select aug-fs-xs ml-2" value={kind} onChange={e => setKind(e.target.value as "flow" | "stock" | "cohort")}>
+              <option value="flow">Flow — adds up over a range</option>
+              <option value="stock">Stock — a level at a date</option>
+              <option value="cohort">Cohort — completed by a later date</option>
+            </select>
+          </label>
+          <input className="aug-input aug-fs-xs" placeholder="Date column, e.g. created_at" value={column}
+            onChange={e => setColumn(e.target.value)} aria-label="Date column" />
+          {kind === "cohort" && (
+            <>
+              <input className="aug-input aug-fs-xs" placeholder="Completing date, e.g. returned_at" value={outcome}
+                onChange={e => setOutcome(e.target.value)} aria-label="Completing date column" />
+              <input className="aug-input aug-fs-xs" placeholder="Settles after (days)" value={settles}
+                onChange={e => setSettles(e.target.value)} aria-label="Settles after days" />
+            </>
+          )}
+          {kind === "stock" && (
+            <input className="aug-input aug-fs-xs" placeholder="Counts until, e.g. sold_at" value={until}
+              onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
+          )}
+          <input className="aug-input aug-fs-xs" placeholder="Who is confirming" value={actor}
+            onChange={e => setActor(e.target.value)} aria-label="Who is confirming the dates" />
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" disabled={busy || !column.trim()}
+              onClick={() => save({
+                time_kind: kind, time_column: column.trim(),
+                outcome_column: kind === "cohort" ? outcome.trim() || null : null,
+                until_column: kind === "stock" ? until.trim() || null : null,
+                settles_after_days: kind === "cohort" && settles.trim() ? Number(settles) : null,
+              })}>Save dates</Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+      {err && <p className="aug-fs-xs text-red-400 mt-1">{err}</p>}
+    </div>
+  );
+}
+
 function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
   const [actor, setActor] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -752,6 +861,8 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             return sm ? (
               <div className="aug-metric-governance">
                 <GovernanceSection metric={sm} onChanged={load} />
+                <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
+                  metric={sm} onChanged={load} />
               </div>
             ) : null;
           })()}

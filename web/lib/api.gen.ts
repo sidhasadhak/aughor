@@ -1649,7 +1649,9 @@ export interface paths {
         put?: never;
         /**
          * Test Briefing Subscription
-         * @description Deliver the briefing immediately and return the outcome (status + preview).
+         * @description Deliver the briefing immediately and return the outcome (status + preview). With
+         *     ``dry_run`` (Arc BR-5) it is built and judged at the departure gate exactly as a send
+         *     would be, and NOT sent: the preview and the verdict, nothing leaves.
          */
         post: operations["test_briefing_subscription_briefing_subscriptions__sub_id__test_post"];
         delete?: never;
@@ -4554,7 +4556,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read Briefing
+         * @description A READ never builds (Arc BR-3): the range's Briefing as it was last built, or
+         *     ``{"available": false, "built": false}`` with the range it would cover. Building is the
+         *     POST door's, or the schedule's.
+         */
+        get: operations["read_briefing_exploration__conn_id__briefing_get"];
         put?: never;
         /**
          * Generate Briefing
@@ -4562,7 +4570,9 @@ export interface paths {
          *
          *     ``period`` = ``day`` | ``week`` | ``month`` | ``year`` asks for the Briefing written for
          *     that period (idea 3, flag ``briefing.by_period``); absent or ``history`` is the standing
-         *     Briefing, exactly as before.
+         *     Briefing, exactly as before. With ``briefing.ranges`` on (Arc BR-3), ``preset`` (or
+         *     ``start`` and ``end``, both inclusive ISO days) asks for the Briefing of any range, and a
+         *     named ``period`` is read as its preset.
          */
         post: operations["generate_briefing_exploration__conn_id__briefing_post"];
         delete?: never;
@@ -14034,6 +14044,8 @@ export interface components {
             lineage: string[];
             /** Name */
             name: string;
+            /** Outcome Column */
+            outcome_column?: string | null;
             /** Owner */
             owner?: string | null;
             /**
@@ -14041,6 +14053,8 @@ export interface components {
              * @default []
              */
             quality_tests: string[];
+            /** Settles After Days */
+            settles_after_days?: number | null;
             /** Sql */
             sql: string;
             /**
@@ -14052,8 +14066,16 @@ export interface components {
             target_period?: string | null;
             /** Target Value */
             target_value?: number | null;
+            /** Time Column */
+            time_column?: string | null;
+            /** Time Confirmed By */
+            time_confirmed_by?: string | null;
+            /** Time Kind */
+            time_kind?: string | null;
             /** Unit */
             unit?: string | null;
+            /** Until Column */
+            until_column?: string | null;
             /** Warning Threshold */
             warning_threshold?: number | null;
             /**
@@ -16431,6 +16453,16 @@ export interface components {
         };
         /** _SubscriptionBody */
         _SubscriptionBody: {
+            /**
+             * Bot Id
+             * @default
+             */
+            bot_id: string;
+            /**
+             * Channel
+             * @default
+             */
+            channel: string;
             /** Conn Id */
             conn_id: string;
             /**
@@ -16451,11 +16483,24 @@ export interface components {
              */
             period: string;
             /**
+             * Schema Name
+             * @default
+             */
+            schema_name: string;
+            /**
              * Send Cron
              * @default
              */
             send_cron: string;
-            /** Trigger Id */
+            /**
+             * Supersedes
+             * @default
+             */
+            supersedes: string;
+            /**
+             * Trigger Id
+             * @default
+             */
             trigger_id: string;
         };
         /** _TestRequest */
@@ -19468,7 +19513,9 @@ export interface operations {
     };
     test_briefing_subscription_briefing_subscriptions__sub_id__test_post: {
         parameters: {
-            query?: never;
+            query?: {
+                dry_run?: boolean;
+            };
             header?: never;
             path: {
                 sub_id: string;
@@ -24359,6 +24406,44 @@ export interface operations {
             };
         };
     };
+    read_briefing_exploration__conn_id__briefing_get: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
+                period?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generate_briefing_exploration__conn_id__briefing_post: {
         parameters: {
             query?: {
@@ -24366,6 +24451,9 @@ export interface operations {
                 schema?: string | null;
                 workspace_id?: string | null;
                 period?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
             };
             header?: never;
             path: {

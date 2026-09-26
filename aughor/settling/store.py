@@ -83,17 +83,41 @@ def verdicts(connection_id: str) -> dict[str, SettlingVerdict]:
     return {t: settle_lag(observations(connection_id, t)) for t in tables(connection_id)}
 
 
-def learned_lag_days(connection_id: str) -> Optional[int]:
-    """The connection's lag: the LARGEST learned lag among its sampled tables, or None
-    when no table has earned a verdict yet. Conservative by construction — a briefing that
-    reads three tables waits for the slowest one."""
+def connection_lag(connection_id: str) -> dict:
+    """The connection's lag and where it came from: ``{"days", "source", "still_moving",
+    "horizon"}``. ``source`` is ``"learned"`` (every sampled table with enough evidence has
+    settled), ``"beyond_horizon"`` (a table was still moving at the oldest age read, so
+    ``days`` is a FLOOR — its horizon plus one — and the table is named), or ``None`` (no
+    table has earned a verdict yet, ``days`` is None).
+
+    Before 2026-09-25 a table still moving at the horizon was simply left out of the max:
+    theLook read "13 days, learned" while ``order_items`` — the table revenue and returns
+    come from — had not settled at 14 (Arc BR's survey, ROADMAP §3.48)."""
+    out: dict = {"days": None, "source": None, "still_moving": [], "horizon": 0}
     if not connection_id:
-        return None
+        return out
     try:
-        lags = [v.lag_days for v in verdicts(connection_id).values() if v.lag_days is not None]
+        vs = verdicts(connection_id)
     except Exception:
-        return None
-    return max(lags) if lags else None
+        return out
+    lags = [v.lag_days for v in vs.values() if v.lag_days is not None]
+    moving = sorted(t for t, v in vs.items() if v.still_moving)
+    floors = [vs[t].horizon_days + 1 for t in moving]
+    if not lags and not floors:
+        return out
+    out["days"] = max(lags + floors)
+    out["source"] = "beyond_horizon" if floors else "learned"
+    out["still_moving"] = moving
+    out["horizon"] = max((v.horizon_days for v in vs.values()), default=0)
+    return out
+
+
+def learned_lag_days(connection_id: str) -> Optional[int]:
+    """The connection's lag: the LARGEST learned lag among its sampled tables — and, for a
+    table still moving at the oldest age read, that age plus one (a floor, not a guess) — or
+    None when no table has earned a verdict yet. Conservative by construction: a briefing
+    that reads three tables waits for the slowest one, including one that has not stopped."""
+    return connection_lag(connection_id)["days"]
 
 
 def summary(connection_id: str) -> dict:
@@ -117,7 +141,10 @@ def summary(connection_id: str) -> dict:
                        for o in sorted(obs, key=lambda o: o.day)
                        if o.measured_on.isoformat() == last],
             "verdict": {"lag_days": v.lag_days, "reason": v.reason,
-                        "evidence_days": v.evidence_days, "horizon_days": v.horizon_days},
+                        "evidence_days": v.evidence_days, "horizon_days": v.horizon_days,
+                        "still_moving": v.still_moving},
         })
+    lag = connection_lag(connection_id)
     return {"connection_id": connection_id, "tables": rows,
-            "learned_lag_days": learned_lag_days(connection_id)}
+            "learned_lag_days": lag["days"], "lag_source": lag["source"],
+            "still_moving": lag["still_moving"]}
