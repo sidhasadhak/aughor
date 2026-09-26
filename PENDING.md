@@ -184,7 +184,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] The weekly count of new agents and automations is not shown in Agent Ops.
 - [ ] Answer buttons that open a screen or run a saved query wait on a deep-link registry.
 - [ ] Table-popularity data is collected, but the switch that would use it is off.
-- [ ] **SP-15 (drafted 2026-09-25, §6 item 33):** the Guide cannot explain the departure laws or the object on screen — `platform_help` knows eight topics and no law. The departures screen's "What to do next" (a remedy per held guard, with doors) shipped the same day on `claude/arc-tj-trajectories`; the corpus, the `explain` tool and the palette handoff are the wave.
+- [ ] **SP-15 (drafted 2026-09-25, §6 item 33):** the Guide cannot explain the departure laws or the object on screen — `platform_help` knows eight topics and no law. The departures screen's "What to do next" (a remedy per held guard, with doors) shipped the same day on `claude/arc-tj-trajectories`; the corpus, the `explain` tool and the palette handoff are the wave. Baseline measured 2026-09-25: the Ask door's question ran Spotlight out of 8 steps, twice, with no tool on the roster able to read a departure — the wave starts at `explain(departure)`.
 
 ### Machine intelligence — Arc MI (§3.9)
 - [ ] ⚑ Should cap hits, guardrail events, metric enforcement and budget overruns show in the governance feed? Today they do not.
