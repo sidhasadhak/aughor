@@ -323,6 +323,47 @@ export interface ArrivalResult {
 
 export type ArrivalPoster = (body: ArrivalBody) => Promise<ArrivalResult>;
 
+/** TJ-4 — a reaction is a verdict. ✅ / ❌ on an answer the bot posted record accept /
+ *  reject on the turn it came from, through the same door every other verdict uses
+ *  (`POST /verify/verdict`). The message carries no receipt and the reaction needs none. */
+export interface VerdictBody {
+  investigationId: string;
+  verdict: "accept" | "reject";
+  note?: string;
+  headline?: string;
+}
+export interface VerdictResult { ok: boolean; status: number; detail: string }
+export type VerdictPoster = (body: VerdictBody) => Promise<VerdictResult>;
+
+export function createVerdictPoster(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): VerdictPoster {
+  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {};
+  return async function postVerdict(body: VerdictBody): Promise<VerdictResult> {
+    try {
+      const res = await fetchImpl(`${base}/verify/verdict`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          connection_id: env.AUGHOR_CONNECTION_ID ?? "",
+          investigation_id: body.investigationId,
+          verdict: body.verdict,
+          note: body.note ?? "",
+          headline: body.headline ?? "",
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const detail = asText(payload.detail) || (res.ok ? "recorded" : `the verdict door said ${res.status}`);
+      return { ok: res.ok, status: res.status, detail };
+    } catch (err) {
+      return { ok: false, status: 0, detail: `could not reach the verdict door: ${String(err)}` };
+    }
+  };
+}
+
 export function createArrivalPoster(
   env: Env = process.env,
   fetchImpl: typeof fetch = fetch,

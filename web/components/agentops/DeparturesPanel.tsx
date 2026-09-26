@@ -283,11 +283,18 @@ function DepartureDetail({ departure: d, onChanged, doors }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "8px 4px 12px" }}>
-      {owed === "mark" && (
+      {/* TJ-4 — the mark is the verdict door put where the row is: a probation send asks
+            whether it was worth sending; any other departure that carried an answer asks
+            whether the answer was right. One mark feeds probation precision and the verdict
+            store at once (the door forwards when the row names its analysis). */}
+      {(owed === "mark" || (!!analysisId && !d.verdict)) && (
         <section aria-label="Mark this departure">
           <div className="aug-fs-sm" style={{ color: "var(--t1)", marginBottom: 6 }}>
-            This automation is on probation: its sends reach {d.addressed_to || "its declarer"} first.
-            Was this one worth sending?
+            {owed === "mark"
+              ? <>This automation is on probation: its sends reach {d.addressed_to || "its declarer"} first.
+                  Was this one worth sending?</>
+              : <>Was the answer this departure carried right? Your mark is a verdict on it — the same
+                  door the chat&apos;s thumbs and a Slack ✅ / ❌ use.</>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Button variant="secondary" size="xs" disabled={busy}

@@ -23,6 +23,7 @@ from __future__ import annotations
 #:   *_history         — read the thread the mention lives in, so follow-ups compose
 #:   im:history/write  — the same conversation in a DM
 #:   files:write       — RC-2's chart PNG and CSV
+#:   reactions:read    — TJ-4: ✅ / ❌ on an answer is a verdict on its turn (2026-09-26)
 BOT_SCOPES = [
     "app_mentions:read",
     "chat:write",
@@ -31,11 +32,14 @@ BOT_SCOPES = [
     "im:history",
     "im:write",
     "files:write",
+    "reactions:read",
 ]
 
 #: The events the transport handles. Anything else Slack could send is noise the bot
 #: would receive, log and drop — so it is not subscribed to.
-BOT_EVENTS = ["app_mention", "message.im"]
+#: `reaction_added` (TJ-4): the bot reads a reaction on its own answer as a verdict; a
+#: reaction removed is not subscribed — a verdict is not un-said by taking the emoji back.
+BOT_EVENTS = ["app_mention", "message.im", "reaction_added"]
 
 
 def render_manifest(*, name: str, description: str = "", agent_view: bool = False) -> dict:

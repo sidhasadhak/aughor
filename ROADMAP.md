@@ -8958,7 +8958,17 @@ the latency bar even batched, the payload fields move to the window only and thi
 constant on live traffic it is a finding, not a dataset, and TJ-5 is the only source of a negative class; if bronze
 precision on the audit is under 0.8, bronze is not fuel and MI-4's SFT corpus is silver, gold and gym only.
 
-#### TJ-4 · Labels where readers already are (days, free; ⚑ a Slack app scope)
+#### TJ-4 · Labels where readers already are (days, free; ⚑ a Slack app scope) — ✅ BUILT 2026-09-26; live once the owner grants the scope
+
+> **Status 2026-09-26.** The bot (`bots/slack/src/bot.ts`) remembers which messages carried which turn — the streamed
+> answer and its exhibits, by message id, and the thread's latest answer — and `onReaction` reads ✅ (`white_check_mark`,
+> `heavy_check_mark`) as accept and ❌ (`x`, `negative_squared_cross_mark`) as reject on that turn, through
+> `POST /verify/verdict` (`createVerdictPoster`, beside the arrival poster). A reaction removed changes nothing: a
+> verdict is not un-said by taking the emoji back. Law 8 holds: no message is posted back. The manifest the owner
+> installs now asks for `reactions:read` and subscribes to `reaction_added` — ⚑ the owner re-installs the app for the
+> handler to receive anything. The Departures screen marks any row that carried an answer, not only a probation send:
+> the same door, both ledgers at once. Correction from Slack stays unbuilt, as drafted.
+
 
 > **Premise.** The funnel, not the plumbing, has been MI's constraint since MI-3: 5 verdicts, 0 chat feedback events,
 > 0 marks on 30 departure decisions. The chat's 👍 landed with #547. The two surfaces where answers are actually read
