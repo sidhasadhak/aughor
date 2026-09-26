@@ -36,7 +36,34 @@ _MIGRATIONS = [
     # so no call site changes.
     Migration(3, "correlation key: trace_id on audit_log",
               lambda c: add_column_if_missing(c, "audit_log", "trace_id", "TEXT NOT NULL DEFAULT ''")),
+    # TJ-2 — `guard_verdicts.phase` carried two meanings: the execution phase on an E1
+    # row (`execute`, `validate`, `trust_scope`, `deep`, `eval`) and the ACTION on a
+    # rewrite-hook row (`repaired_sql` 335, `flagged` 28 on the live store, 2026-09-26).
+    # `action` takes the second meaning; the rows that carried it move, and read
+    # `execute` for their phase — the hook fires at execution. Portable SQL, one
+    # statement per execute, numbered off the LIVE user_version (3), rehearsed on a
+    # `.backup` first (§3.47 TJ-2).
+    Migration(4, "guard_verdicts.action: the rewrite kind leaves the phase column",
+              lambda c: _migrate_guard_action(c)),
 ]
+
+#: The words a guard receipt's `action` takes (`emit_guard_receipt`'s callers) — what the
+#: hook wrote into `phase` before migration 4 moved it. Declared beside the migration so
+#: the backfill reads the code's own vocabulary; `envelope.WARNING_ACTIONS` and the
+#: exporters' rewrite set are subsets of it.
+RECEIPT_ACTIONS: frozenset[str] = frozenset({
+    "rewrote_sql", "repaired_sql", "flagged", "caveated", "caveated_headline", "hinted",
+    "kept_original", "passed", "ok",
+})
+
+
+def _migrate_guard_action(c: sqlite3.Connection) -> None:
+    add_column_if_missing(c, "guard_verdicts", "action", "TEXT NOT NULL DEFAULT ''")
+    marks = ", ".join("?" for _ in RECEIPT_ACTIONS)
+    c.execute(f"UPDATE guard_verdicts SET action = phase WHERE action = '' AND phase IN ({marks})",
+              tuple(sorted(RECEIPT_ACTIONS)))
+    c.execute(f"UPDATE guard_verdicts SET phase = 'execute' WHERE action != '' AND phase IN ({marks})",
+              tuple(sorted(RECEIPT_ACTIONS)))
 
 
 def _connect() -> sqlite3.Connection:
@@ -265,8 +292,13 @@ class GuardVerdicts:
         detail: str = "",
         trace_id: str | None = None,
         org_id: str | None = None,
+        action: str = "",
     ) -> None:
         """Persist one guard fire. Best-effort; never raises.
+
+        `phase` is WHEN it fired (`execute`, `validate`, `quick`, `deep`, `eval`); `action`
+        is what a rewrite hook DID (`repaired_sql`, `flagged`, …) — two columns since
+        migration 4, one meaning each (TJ-2).
 
         **Written whether or not a trace is bound**, and the first version of this got
         that wrong. It dropped trace-less fires by analogy with the session log's law —
@@ -297,14 +329,14 @@ class GuardVerdicts:
                 ensure_once(c, _ensure_schema)
                 c.execute(
                     """INSERT INTO guard_verdicts
-                       (id, ts, trace_id, org_id, sql_digest, pattern, subject, phase, detail)
-                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                       (id, ts, trace_id, org_id, sql_digest, pattern, subject, phase, detail, action)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
                     (str(uuid.uuid4()),
                      time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                      trace_id,
                      org_id or current_org_id(),
                      (sql or "")[:120].replace("\n", " ").strip(),
-                     pattern, subject, phase, (detail or "")[:500]),
+                     pattern, subject, phase, (detail or "")[:500], action or ""),
                 )
                 c.commit()
             finally:

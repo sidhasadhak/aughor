@@ -166,7 +166,7 @@ def _guard_rows(trace_id: str, org_id: Optional[str]) -> list[dict]:
     rows = GuardVerdicts.recent(limit=500, trace_id=trace_id, org_id=org_id)
     rows.reverse()
     return [{"id": r.get("id"), "ts": r.get("ts"), "pattern": r.get("pattern"),
-             "subject": r.get("subject"), "phase": r.get("phase"),
+             "subject": r.get("subject"), "phase": r.get("phase"), "action": r.get("action") or "",
              "sql_digest": r.get("sql_digest"), "detail": r.get("detail")} for r in rows]
 
 

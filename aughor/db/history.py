@@ -512,7 +512,7 @@ def recent_chat_answers(since_iso: str, *, limit: int = 200) -> list[dict]:
     ensure_once(c, _ensure_schema)
     rows = c.execute(
         """SELECT id, question, connection_id, completed_at, session_id, agent_id, org_id,
-                  report_json
+                  trace_id, report_json
            FROM investigations
            WHERE kind = 'chat' AND status = 'complete' AND completed_at >= ?
            ORDER BY completed_at DESC LIMIT ?""", (since_iso, int(limit)),
@@ -523,7 +523,7 @@ def recent_chat_answers(since_iso: str, *, limit: int = 200) -> list[dict]:
         report = json.loads(r["report_json"] or "{}")
         if report.get("sql") and report.get("columns") and report.get("rows"):
             out.append({**{k: r[k] for k in ("id", "question", "connection_id", "completed_at",
-                                              "session_id", "agent_id", "org_id")},
+                                              "session_id", "agent_id", "org_id", "trace_id")},
                         "report": report})
     return out
 

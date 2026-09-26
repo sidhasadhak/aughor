@@ -124,7 +124,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] ⚑ TJ-4 labels where readers are — see top item 35.
 - [ ] ⚑ TJ-5 the gym — see top item 36.
 - [ ] ⚑ TJ-6 serving a student — see top item 37; recommended deferred.
-- [ ] ⚑ §6 item 32's six clauses — adopt; the payload class of a step; reactions as verdicts; the gym's ceiling; the keyed binding; who audits bronze.
+- [x] §6 item 32's six clauses — DECIDED 2026-09-26, all as recommended; the gym (d) and reactions (c) still wait on the user's word and the app owner's scope to RUN.
 - [~] The fifteen defects the census lists (its §10) — closed 2026-09-26: 1 (receipt model id), 2 (decision trace), 4 (slashless id), 9 (missing bytes now said); 3 (history trace) was already closed by #547's writer, the census counted older rows; open: 10 (collections, the operator's backend) and the rest close inside TJ-2; the stale docstrings and the README's two phantom files ride the next touch of their files.
 
 ### Central answer path — Arc CP (§3.22)

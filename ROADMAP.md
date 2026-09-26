@@ -8865,10 +8865,21 @@ the latency bar even batched, the payload fields move to the window only and thi
   keeps it in `meta`; the runner writes it into the `trace.observation` score's detail per case, and binds a
   trace of its own (`eval-…`) around a run when none is ambient, so `eval_runs.trace_id` is no longer '' —
   the census's defect 13, measured 36 of 36 empty.
-- **Open (this wave, not built):** the exporters still read the stores directly rather than `trajectory_of`;
-  `guard_verdicts` still carries two meanings in `phase` (audit.db migration 4, numbered off the LIVE
-  `user_version`, rehearsed on a `.backup` first — a restart-time migration the operator should see coming);
-  the explorer's step log is still a second writer.
+- **The three bullets, built later the same day (the user: *"ask the questions then and proceed"*).**
+  (1) `guard_verdicts` says which meaning a row has: audit.db **migration 4** adds `action`, moves the hook's
+  words out of `phase` (`repaired_sql` 335 · `flagged` 28 on the live store) and reads `execute` for their
+  phase; `_record_guard_verdict` writes `action=` and `phase="execute"` apart from now on; the quick body's E1
+  fires are labelled `quick`, not `deep` (the census's defect 5). Numbered off the LIVE `user_version` (3),
+  **rehearsed on a `.backup` of the live file first**: 3 → 4, 335 + 28 rows moved, the seven real phases
+  untouched, idempotent on a second open. It applies to the live store at the restart below. (2) The
+  explorer's step log writes the same record: `EpisodeCollector.add` emits one `step` event per turn
+  (site `explorer`, the statement, the phase, the episode id; the think and the observation only under a
+  capture window) under the exploration job's bound trace — the JSONL file stays for its readers until they
+  read the log. (3) The bronze tier vouches for a turn by its own trajectory: a chat answer filed before
+  envelopes were (the falsifier's population) is in when every statement its trace ran came back clean and
+  no guard fired on it (`_trajectory_clean`), and the row says `vouched_by: trajectory` and carries the
+  compact context — steps, guard fires, execution; an envelope, when there is one, still decides first.
+  `recent_chat_answers` carries `trace_id` for it.
 
 #### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit)
 
@@ -10971,7 +10982,7 @@ the browser** · **measure the premise before building.**
     Not part of this item: pricing the unpriced calls. CP-0 found `cost_is_complete: false` with 107 of 111 calls
     unpriced over 24 h, so this arc may state savings in TOKENS only. That is a limit on the claim, not a clause
     to decide.
-32. ⭕ **DRAFTED 2026-09-25 (the user, on the trajectory diagram: *"I want to know where we are realistically and how we
+32. ✅ **DECIDED 2026-09-26 — all six clauses adopted as recommended, asked together and answered in one word (*"Adopt all six as recommended"*): (a) yes, (b) payload fields only under a capture window or the annex — as built in TJ-2 the same day, (c) reactions as verdicts — yes, the owner's scope still to grant (⚑), (d) the gym's first batch on samples at K = 4 under 12M prompt tokens — adopted, and it still RUNS only on the user's word, (e) the keyed binding deferred, (f) the user audits the first bronze export in one sitting. DRAFTED 2026-09-25 (the user, on the trajectory diagram: *"I want to know where we are realistically and how we
     can reach the most mature phase from here... go all in!"*, then *"build a detailed roadmap for this one"*) — Arc TJ,
     trajectories (§3.47). The census (TJ-0, `docs/TRAJECTORY_CENSUS_2026-09-25.md`) was taken BEFORE the arc was
     written; several of its rows corrected standing prose. Six clauses, OPEN with recommendations. None blocks TJ-1 or
@@ -10999,7 +11010,7 @@ the browser** · **measure the premise before building.**
     committed beside the census; until it exists bronze is reported and never read.
     Not part of this item: MI-4's gates and recipe (§3.9, unchanged), and a model judge over live traffic (dropped
     2026-09-06; the rewards here are deterministic).
-33. ⭕ **DRAFTED 2026-09-25 (the user, on a held Slack post: *"user needs to know where to troubleshoot such issues..
+33. ✅ **DECIDED 2026-09-26 — all three clauses adopted AS BUILT (*"Adopt"*): (a) yes, (b) the first shelf (the laws) and the second (the glossary, the §3 summaries) are both served through `platform_help`'s aliases, (c) departure · automation · metric first — built; agent and analysis follow by the same three moves. DRAFTED 2026-09-25 (the user, on a held Slack post: *"user needs to know where to troubleshoot such issues..
     otherwise its a wall that it hits.."*, and on Spotlight: *"I like your path.. go ahead"*) — SP-15, the platform
     explains what is on screen (§3.11). The wall is closed on the departures screen today (a remedy per held guard,
     with doors); the wave makes the same knowledge reachable by sentence. Three clauses, OPEN with recommendations.**

@@ -93,7 +93,9 @@ def test_a_rewrite_receipt_persists_without_any_hook_registered():
                            before="SELECT 1", after="SELECT 2")
     rows = GuardVerdicts.recent(trace_id="trace-mi1-c")
     assert [r["pattern"] for r in rows] == ["fanout_defan"]
-    assert rows[0]["phase"] == "rewrote_sql"
+    # TJ-2, migration 4: what the hook DID is `action`; `phase` is when it fired. Until
+    # 2026-09-26 the action was written into `phase`, and this line pinned that.
+    assert (rows[0]["phase"], rows[0]["action"]) == ("execute", "rewrote_sql")
 
 
 # ── the run can say whose work it was ────────────────────────────────────────────────
