@@ -5914,6 +5914,8 @@ export interface FindingsReask {
   reasked: FindingReask[];
   apart: FindingApart[];
   capped: number;
+  /** Identical (id, SQL) pairs the aggregate view listed more than once — asked once. */
+  duplicates: number;
   total: number;
   profiled: boolean;
   cached: boolean;

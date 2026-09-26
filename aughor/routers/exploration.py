@@ -749,9 +749,11 @@ def reask_findings_for_range(conn_id: str, preset: str | None = None, start: str
     hit = _REASK_CACHE.get(key)
     if hit and not refresh and _t.monotonic() - hit[0] < _REASK_TTL_S:
         return {**hit[1], "cached": True}
+    # The store keeps a plain list per domain; the `/domains` door wraps it in a block. Both read.
     by_domain = _domain_insights_for(conn_id, schema)
     findings = [{**f, "domain": dom} for dom, blk in (by_domain or {}).items()
-                for f in ((blk or {}).get("insights") or []) if isinstance(f, dict)]
+                for f in (blk if isinstance(blk, list) else ((blk or {}).get("insights") or []))
+                if isinstance(f, dict)]
     profile = latest_profile_entry(conn_id) or {}
     with period_brief.connection_runner(conn_id) as (run_sql, dialect):
         out = reask_findings(findings, spec, run_sql=run_sql, dialect=dialect, profile_entry=profile)

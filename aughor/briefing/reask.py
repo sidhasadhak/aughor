@@ -84,16 +84,27 @@ def _rel(cur: Optional[float], prev: Optional[float]) -> Optional[float]:
 def reask_findings(findings: list[dict], spec: Any, *, run_sql: Callable[[str], tuple], dialect: str,
                    profile_entry: dict) -> dict:
     """Every finding re-asked for ``spec``'s range and its previous range. Returns
-    ``{"reasked": [...], "apart": [...], "capped": n}``; every finding lands in exactly one list,
-    ``reasked`` ordered by the size of the change (unknown change last)."""
+    ``{"reasked": [...], "apart": [...], "capped": n, "duplicates": n}``; every distinct finding
+    lands in exactly one list, ``reasked`` ordered by the size of the change (unknown change last)."""
     from aughor.briefing.ranges import phrases
     from aughor.semantic.metric_time import window_predicate
 
     words = phrases(spec)
     reasked: list[dict] = []
     apart: list[dict] = []
-    capped = max(0, len(findings) - MAX_REASKED)
-    for f in findings[:MAX_REASKED]:
+    # The aggregate view of a connection lists a pinned finding once per schema it appears in
+    # (measured on theLook: `pinned__2` twice); the same statement is re-asked once and said.
+    seen: set[tuple[str, str]] = set()
+    unique: list[dict] = []
+    for f in findings:
+        key = (str(f.get("id") or ""), str(f.get("sql") or "").strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(f)
+    duplicates = len(findings) - len(unique)
+    capped = max(0, len(unique) - MAX_REASKED)
+    for f in unique[:MAX_REASKED]:
         fid, domain = str(f.get("id") or ""), str(f.get("domain") or "")
         sql = str(f.get("sql") or "").strip()
         sig = f.get("signature") if isinstance(f.get("signature"), dict) else {}
@@ -136,4 +147,4 @@ def reask_findings(findings: list[dict], spec: Any, *, run_sql: Callable[[str], 
         })
     reasked.sort(key=lambda r: (r["rel"] is None, -abs(r["rel"] or 0.0)))
     return {"covers": words["covers"], "compared_with": words["compared_with"], "key": spec.key,
-            "reasked": reasked, "apart": apart, "capped": capped}
+            "reasked": reasked, "apart": apart, "capped": capped, "duplicates": duplicates}

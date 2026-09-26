@@ -63,6 +63,8 @@ def test_findings_are_re_asked_for_both_ranges_and_ranked_by_the_change():
         {"id": "f3", "domain": "Catalog", "sql": "SELECT COUNT(*) AS n FROM products", "signature": {"tables": ["products"]}},
         {"id": "f4", "domain": "Orders", "sql": "", "signature": {}},
         {"id": "f5", "domain": "Orders", "sql": "SELECT boom FROM orders", "signature": {"tables": ["orders"]}},
+        # The aggregate view lists a pinned finding once per schema: the same (id, SQL) is asked once, and said.
+        {"id": "f2", "domain": "Orders", "sql": "SELECT COUNT(*) AS n FROM orders", "signature": {"tables": ["orders"]}},
     ]
     run_sql, calls = _runner({"current": (["status", "order_count"], [["a", 6], ["b", 4]], None),
                               "previous": (["status", "order_count"], [["a", 4], ["b", 4]], None)})
@@ -78,8 +80,9 @@ def test_findings_are_re_asked_for_both_ranges_and_ranked_by_the_change():
     apart = {a["id"]: a["why"] for a in out["apart"]}
     assert apart["f3"] == "no date on products" and apart["f4"] == "it kept no SQL"
     assert apart["f5"].startswith("its query failed for current: boom failed")
-    # Every finding in exactly one list; two queries per re-asked finding, one for the failed one.
-    assert len(out["reasked"]) + len(out["apart"]) == len(findings)
+    # Every distinct finding in exactly one list; two queries per re-asked finding, one for the failed one.
+    assert out["duplicates"] == 1
+    assert len(out["reasked"]) + len(out["apart"]) == len(findings) - 1
     assert len(calls) == 2 * 2 + 1
 
 
@@ -97,7 +100,8 @@ def test_the_door_serves_the_re_ask_and_its_cache_and_refuses_without_a_range(mo
     monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (SPEC, ""))
     monkeypatch.setattr(ex, "_domain_insights_for", lambda cid, schema: {
         "Orders": {"insights": [{"id": "f2", "sql": "SELECT COUNT(*) AS n FROM orders", "signature": {"tables": ["orders"]}}]},
-        "Catalog": {"insights": [{"id": "f3", "sql": "SELECT COUNT(*) AS n FROM products", "signature": {"tables": ["products"]}}]}})
+        # The store's own shape is a plain list per domain; the served block wraps it. Both must read.
+        "Catalog": [{"id": "f3", "sql": "SELECT COUNT(*) AS n FROM products", "signature": {"tables": ["products"]}}]})
     monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE)
     seen = {"opened": 0}
 
