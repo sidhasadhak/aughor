@@ -183,9 +183,12 @@ def metric_date_candidates(req: DateCandidatesRequest):
         return {"candidates": [], "note": "this connection has no profile yet — explore it "
                                          "first, then the platform can propose its dates"}
     out = date_candidates(req.sql, req.tables, profile)
-    return {"candidates": out,
-            "note": "" if out else "no date or timestamp column was profiled on the tables this "
-                                   "statement reads"}
+    if out and all(c.get("fallback") for c in out):
+        note = ("the statement names no table, so every profiled table's main date is listed — the "
+                "grain you pick names the table the metric is cut to a range by")
+    else:
+        note = "" if out else "no date or timestamp column was profiled on the tables this statement reads"
+    return {"candidates": out, "note": note}
 
 
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])

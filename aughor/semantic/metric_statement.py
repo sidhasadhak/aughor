@@ -143,6 +143,16 @@ def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
     for t in statement_tables(sql, dialect) + [str(x).strip() for x in (tables or []) if str(x).strip()]:
         if bare(t) not in {bare(s) for s in seen}:
             seen.append(t)
+    if not seen:
+        # The statement names no table (theLook's draft `return_rate`, 2026-09-26: an
+        # expression with `tables: []`): propose every profiled table's main date, largest
+        # table first — the grain a person picks then NAMES the table the metric is cut by.
+        profiled = ((profile_entry or {}).get("tables") or {})
+        ranked = sorted((n for n, tp in profiled.items() if isinstance(tp, dict) and tp.get("primary_timestamp")),
+                        key=lambda n: (-int((profiled[n].get("row_count") or 0) if str(profiled[n].get("row_count") or "0").lstrip("-").isdigit() else 0), n))
+        return [{"grain": f"{n}.{profiled[n]['primary_timestamp']}", "table": n,
+                 "column": str(profiled[n]["primary_timestamp"]), "type": "timestamp", "primary": True,
+                 "fallback": True} for n in ranked]
     out: list[dict] = []
     for table in seen:
         columns = _table_columns(profile_entry or {}, bare(table))

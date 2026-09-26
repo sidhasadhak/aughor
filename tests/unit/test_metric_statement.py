@@ -181,6 +181,11 @@ def test_date_candidates_are_written_as_the_grain_with_the_main_date_first():
     assert [c["grain"] for c in both] == ["inventory_items.created_at", "inventory_items.sold_at",
                                           "shop.order_items.created_at", "shop.order_items.returned_at"]
     assert ms.date_candidates("SELECT 1", [], {}) == []
+    # No table anywhere (theLook's draft return_rate): every profiled table's main date, as a fallback.
+    none = ms.date_candidates("SUM(CASE WHEN returned_at IS NOT NULL THEN 1 ELSE 0 END)", [],
+                              {**PROFILE, "tables": {"order_items": {"primary_timestamp": "created_at", "row_count": 10},
+                                                     "inventory_items": {"primary_timestamp": "created_at", "row_count": 99}}})
+    assert [(c["grain"], c["fallback"]) for c in none] == [("inventory_items.created_at", True), ("order_items.created_at", True)]
 
 
 def test_the_candidates_door_lists_proposals_or_says_why_not(monkeypatch):
@@ -190,6 +195,9 @@ def test_the_candidates_door_lists_proposals_or_says_why_not(monkeypatch):
     assert body["note"] == ""
     body = client.post("/metrics/date-candidates", json={"connection": "never", "sql": "SELECT 1"}).json()
     assert body["candidates"] == [] and "no profile yet" in body["note"]
+    body = client.post("/metrics/date-candidates", json={"connection": "c1", "sql": "COUNT(*)"}).json()
+    assert [c["grain"] for c in body["candidates"]] == ["inventory_items.created_at", "order_items.created_at"]
+    assert "names no table" in body["note"]
 
 
 # ── the doors ─────────────────────────────────────────────────────────────────────────
