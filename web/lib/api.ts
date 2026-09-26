@@ -2301,8 +2301,11 @@ export async function runDashboardCard(cardId: string, range?: BriefingRange | n
     if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
     else q.set("preset", range.preset);
   }
+  // The path is one template and the query a plain suffix: the API-contract test reads the
+  // template as the route, and a conditional inside it read as "/run${qs".
+  const url = `${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`;
   const qs = q.toString();
-  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/run${qs ? `?${qs}` : ""}`, { method: "POST" });
+  const res = await fetch(qs ? `${url}?${qs}` : url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh dashboard card");
   return res.json();
 }
