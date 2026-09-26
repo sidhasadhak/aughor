@@ -9608,6 +9608,33 @@ silently (§7).
 
 ---
 
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26)
+
+> **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
+> without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
+> gates. This is critical because this overall flow, the robust mechanism, is the unique selling point of our
+> platform."* The study is `docs/GATE_MAP_STUDY_2026-09-26.md`: the doors as the code applies them, a census of the
+> 184 places SQL reaches a warehouse (150 real, ~40 in the bug class, read one by one), the live exposure (one door
+> = 99.9% of theLook's errors), the audit's two-way label problem, and the guards that fail open on native engines.
+
+- **GM-1 · the door owns the dialect.** `execute(label, sql, *, sql_dialect=None)`: `"duckdb"` from platform code
+  makes the base door translate for native engines where transpile engines already do; `native_sql` becomes the
+  door's own step. Migration by the census, bug class first. *Two days plus the migration.*
+- **GM-2 · the census is a ratchet.** `tests/unit/test_sql_door_census.py` over the same regex, holding
+  `docs/SQL_DOORS.json`: a new site must classify itself; `none` may only fall. *A day.*
+- **GM-3 · the path is a receipt.** `QueryResult.doors` — validated, audited or internal, row-filtered,
+  translated, guarded — carried by the envelope, shown by the trajectory's `step`, said by Spotlight's `explain`.
+  *A day.*
+- **GM-4 · a guard that cannot run says so.** The value-domain, grain, snapshot and ambiguity probes return a
+  typed "not checked on this engine" instead of None, and the caveat travels. *A day.*
+- **GM-5 · audit and redaction by what the statement is.** `internal=` on the call, set only by plumbing; the
+  hand-listed allowlist retires; the eleven audit gaps in the study close. *A day plus the retirement.*
+
+**Receipt:** the census ratchet at zero `none` sites; theLook's audit page with no dialect errors for a week; a
+Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
+dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
+
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
