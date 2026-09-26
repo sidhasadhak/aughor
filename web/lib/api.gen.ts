@@ -6941,6 +6941,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning/run-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Learning Run Labels
+         * @description TJ-3 — the run label's live distribution: the most recent completed runs with a
+         *     recorded trace, chat turns and deep runs alike, each labelled by the one rule
+         *     (`learning.reward.run_label`) from its own trajectory, and counted per run kind. `discriminating` is §3.47's falsifier read live: a label constant on real
+         *     traffic is a finding, not a dataset. ``rows=true`` returns the labelled rows — the audit
+         *     sheet a person fills before bronze is fuel.
+         */
+        get: operations["learning_run_labels_learning_run_labels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning/summary": {
         parameters: {
             query?: never;
@@ -28434,6 +28458,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    learning_run_labels_learning_run_labels_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+                rows?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

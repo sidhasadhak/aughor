@@ -93,7 +93,8 @@ def test_the_tool_loop_records_each_executed_choice_with_its_menu():
     run_tool_loop(LLMProvider(backend="faux", role="coder"), "sys", "how many orders?", tools)
 
     rows = decisions.list_for_export("converse.tool")
-    assert [(r["chosen"], r["outcome"]) for r in rows] == [("run_sql", "ok"), ("list_tables", "error")]
+    # TJ-3 (2026-09-26): a step that did not raise is `unlabeled`, never `ok` — liveness is not quality.
+    assert [(r["chosen"], r["outcome"]) for r in rows] == [("run_sql", "unlabeled"), ("list_tables", "error")]
     # The menu is sorted, so labels are stable regardless of roster assembly order.
     assert all(r["options"] == ["list_tables", "run_sql"] for r in rows)
     assert [r["label"] for r in rows] == [1, 0]

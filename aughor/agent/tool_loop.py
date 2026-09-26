@@ -257,7 +257,8 @@ def run_tool_loop(
                 f"step {len(steps)} | last {prev.tool + (' ok' if prev.ok else ' error') if prev else '(start)'}"
                 f" | {question}",
                 menu, chosen=call.name, source="llm",
-                outcome="ok" if ok else "error",
+                # TJ-3 (2026-09-26): "the tool did not raise" is liveness, not quality — unlabeled.
+                outcome="unlabeled" if ok else "error",
                 conn_id=conn_id, trace_id=trace_id, inv_id=inv_id,
                 prompt_fingerprint=prompt_fingerprint)
             # `history` has not had THIS step appended yet (that is the next line), so an

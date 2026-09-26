@@ -528,6 +528,31 @@ def recent_chat_answers(since_iso: str, *, limit: int = 200) -> list[dict]:
     return out
 
 
+def recent_runs(since_iso: str, *, limit: int = 200) -> list[dict]:
+    """TJ-3 — every completed run since ``since_iso`` that recorded a trace, chat turns and
+    deep runs alike, newest first: ``{id, kind, question, connection_id, completed_at,
+    trace_id, sql}`` — what the run label's distribution is read over."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    rows = c.execute(
+        """SELECT id, kind, question, connection_id, completed_at, trace_id, report_json
+           FROM investigations
+           WHERE status = 'complete' AND completed_at >= ? AND trace_id IS NOT NULL AND trace_id != ''
+           ORDER BY completed_at DESC LIMIT ?""", (since_iso, int(limit)),
+    ).fetchall()
+    c.close()
+    out = []
+    for r in rows:
+        try:
+            report = json.loads(r["report_json"] or "{}")
+        except (TypeError, ValueError):
+            report = {}
+        out.append({"id": r["id"], "kind": r["kind"] or "investigation", "question": r["question"],
+                    "connection_id": r["connection_id"], "completed_at": r["completed_at"],
+                    "trace_id": r["trace_id"], "sql": str((report or {}).get("sql") or "")[:2000]})
+    return out
+
+
 def by_trace(trace_id: str, *, limit: int = 20) -> list[dict]:
     """TJ-2 — every history row a run wrote, oldest first: the chat turn(s) answered under
     this trace, or the deep run whose id IS the trace (the deep path mints its trace from

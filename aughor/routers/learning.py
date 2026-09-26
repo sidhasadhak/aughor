@@ -67,6 +67,38 @@ def _few_shot_status() -> dict:
     return out
 
 
+@router.get("/learning/run-labels")
+def learning_run_labels(days: int = 30, limit: int = 100, rows: bool = False):
+    """TJ-3 — the run label's live distribution: the most recent completed runs with a
+    recorded trace, chat turns and deep runs alike, each labelled by the one rule
+    (`learning.reward.run_label`) from its own trajectory, and counted per run kind. `discriminating` is §3.47's falsifier read live: a label constant on real
+    traffic is a finding, not a dataset. ``rows=true`` returns the labelled rows — the audit
+    sheet a person fills before bronze is fuel."""
+    from datetime import datetime, timedelta, timezone
+
+    from aughor.db import history
+    from aughor.learning.reward import distribution, label_of_trace
+
+    since = (datetime.now(timezone.utc) - timedelta(days=max(1, int(days)))).isoformat()
+    runs = history.recent_runs(since, limit=max(1, min(int(limit), 500)))
+    labelled = []
+    for a in runs:
+        verdict = label_of_trace(a["trace_id"])
+        labelled.append({"trace_id": a["trace_id"], "id": a.get("id"), "kind": a.get("kind"),
+                         "question": a.get("question"), "connection_id": a.get("connection_id"),
+                         "completed_at": a.get("completed_at"), "sql": a.get("sql") or "", **verdict})
+    by_kind: dict[str, dict] = {}
+    for r in labelled:
+        k = by_kind.setdefault(str(r.get("kind") or "investigation"), {"positive": 0, "negative": 0, "unlabeled": 0})
+        k[r["label"]] = k.get(r["label"], 0) + 1
+    out = {"days": days, "asked": len(runs), **distribution(labelled), "by_kind": by_kind,
+           "note": ("step credit and a NULL confidence are not built: a reject still closes every decision "
+                    "of its run, and the headline-against-rows check is not recorded on a chat answer")}
+    if rows:
+        out["rows"] = labelled
+    return out
+
+
 @router.get("/learning/trusted")
 def learning_trusted(connection_id: Optional[str] = None):
     """The trusted assets themselves — curated queries injected authoritatively into prompts,

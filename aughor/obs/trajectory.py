@@ -179,9 +179,8 @@ def _decision_rows(trace_id: str) -> list[dict]:
 
 
 def _reward(answers: Any, executions: Any, guards: Any) -> dict:
-    """The reward FIELDS, never a number: TJ-3 owns the label, and it must take both
-    values on real traffic before anything reads it. Here: what a person said, what the
-    re-check found, and whether the statements ran."""
+    """The reward FIELDS, never a number, and TJ-3's label with its reasons — what a person
+    said, what the re-check found, whether the statements ran, what the rule made of it."""
     human = None
     recheck = None
     if isinstance(answers, list):
@@ -198,6 +197,9 @@ def _reward(answers: Any, executions: Any, guards: Any) -> dict:
             execution = "error"
         else:
             execution = "ok"
+    # TJ-3 (2026-09-26): the label itself, from the one rule every consumer reads.
+    from aughor.learning.reward import run_label
+    verdict = run_label({"answers": answers, "executions": executions, "guards": guards})
     return {"human_verdict": human, "recheck": recheck, "execution": execution,
             "guard_fires": (len(guards) if isinstance(guards, list) else None),
-            "label": "unlabeled"}
+            "label": verdict["label"], "reasons": verdict["reasons"]}

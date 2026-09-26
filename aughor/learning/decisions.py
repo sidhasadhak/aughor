@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS decision_record (
     chosen     TEXT NOT NULL DEFAULT '',
     source     TEXT NOT NULL DEFAULT 'llm', -- llm | rule | reflex
     confidence REAL NOT NULL DEFAULT 0.0,   -- the decider's own, 0.0 when it offers none
-    outcome    TEXT NOT NULL DEFAULT '',    -- '' unknown | ok | error | accepted | rejected
+    outcome    TEXT NOT NULL DEFAULT '',    -- '' unknown | unlabeled (TJ-3's default) | error | accepted | rejected | ok (pre-TJ-3 liveness)
     inv_id     TEXT NOT NULL DEFAULT ''     -- the investigation a human verdict arrives on
 );
 CREATE INDEX IF NOT EXISTS idx_decision_site ON decision_record (site, ts DESC);

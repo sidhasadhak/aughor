@@ -8917,7 +8917,21 @@ the latency bar even batched, the payload fields move to the window only and thi
   envelope — the falsifier's answer stands, bronze accrues from now. The re-ask's turn is the first live
   trajectory: `GET /traces/9ebb4e3f/trajectory` walks its 4 steps and 4 decisions.
 
-#### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit)
+#### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit) — ✅ the label BUILT 2026-09-26; step credit and the audit sitting open
+
+> **Status 2026-09-26.** `learning/reward.py::run_label` is the one rule: positive when every statement ran without
+> error and returned rows, no guard fired but lint, the re-check (when one ran) found the number unchanged and nobody
+> rejected it; negative on an error, a fan-out or grain fire, a changed re-check or a reject; unlabeled otherwise and by
+> default — a store that could not be read, a caveating guard, a guard whose action was never recorded, no rows,
+> nothing ran — each with its reason. The trajectory's `reward` block carries the label and the reasons; the bronze
+> tier's "clean" IS the label's positive (`exporters._trajectory_clean`), so the corpus and the memory cannot disagree;
+> `tool_loop` writes `unlabeled`, not `ok`, on a step that merely did not raise. `GET /learning/run-labels?days&limit&rows`
+> publishes the live distribution and reads the falsifier (`discriminating`); `scripts/tj3_audit_sheet.py` writes the
+> audit sheet from the serving API. NOT built, said in the door's `note`: step credit (a reject still closes every
+> decision of its run — the decision row carries no statement to match a verdict's `sql_source` against), a NULL
+> confidence (the column is NOT NULL, a rebuild), and the headline-against-rows check (not recorded on a chat answer;
+> the evidence says `contradiction: None`). ⚑ The audit is the user's sitting.
+
 
 > **Premise.** Nothing attaches a number to a live run: `earned_confidence` exists on 5 of 1,113 runs and measures
 > coverage, not correctness; the decision corpus's outcome is `ok` on 188 of 188 because it records that the tool did

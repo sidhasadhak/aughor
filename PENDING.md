@@ -122,7 +122,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] TJ-0 the census — measured 2026-09-25, [docs/TRAJECTORY_CENSUS_2026-09-25.md](docs/TRAJECTORY_CENSUS_2026-09-25.md); the corrections it made to standing prose are recorded in §3.47.
 - [x] TJ-1 open the taps — see top item 32. 2026-09-26: exporters run once (bronze 1 · choice 211 · choice_golden 26; the falsifier fired — envelopes since 09-23 only), three joins closed or found already closed, the slashless id gone and ratcheted, the catalogue consulted before pricing, missing bytes said, the embedding backend Ollama (the user's call) and the few-shot collection's first point taken live (0 → 1).
 - [~] TJ-2 one record per run — see top item 33; the record and the read are built, three bullets open.
-- [ ] TJ-3 a reward that takes both values — see top item 34.
+- [ ] TJ-3 a reward that takes both values — see top item 34. The label, its distribution door and the audit sheet built 2026-09-26; step credit, a NULL confidence and ⚑ the audit sitting remain.
 - [ ] ⚑ TJ-4 labels where readers are — see top item 35.
 - [ ] ⚑ TJ-5 the gym — see top item 36.
 - [ ] ⚑ TJ-6 serving a student — see top item 37; recommended deferred.

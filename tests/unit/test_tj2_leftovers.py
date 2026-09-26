@@ -170,7 +170,9 @@ def test_bronze_vouches_for_an_envelope_less_turn_by_its_own_trajectory(tmp_path
         assert out not in rows, out
     row = rows["how many clean?"]
     assert row["vouched_by"] == "trajectory"
-    assert row["trajectory"] == {"steps": [], "guard_fires": [], "execution": "ok"}
+    assert row["trajectory"] == {"steps": [], "guard_fires": [], "execution": "ok", "label": "positive",
+                                 "reasons": ["ran without error, returned rows, no guard but lint fired, the "
+                                             "re-check found it unchanged or did not run, nobody rejected it"]}
 
 
 def test_bronze_still_prefers_the_envelope_when_there_is_one(tmp_path, monkeypatch):
