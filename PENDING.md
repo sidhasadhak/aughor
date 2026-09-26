@@ -118,7 +118,7 @@ Just outside the list: the next industry package (insurance has public data to t
 
 ### Trajectories — Arc TJ (§3.47; drafted 2026-09-25, §6 item 32 open)
 - [x] TJ-0 the census — measured 2026-09-25, [docs/TRAJECTORY_CENSUS_2026-09-25.md](docs/TRAJECTORY_CENSUS_2026-09-25.md); the corrections it made to standing prose are recorded in §3.47.
-- [~] TJ-1 open the taps — see top item 32. 2026-09-26: exporters run once (bronze 1 · choice 211 · choice_golden 26; the falsifier fired — envelopes since 09-23 only), three joins closed or found already closed, the slashless id gone and ratcheted, the catalogue consulted before pricing, missing bytes said. ⚑ Waits on the operator: the embedding backend for the few-shot memory.
+- [~] TJ-1 open the taps — see top item 32. 2026-09-26: exporters run once (bronze 1 · choice 211 · choice_golden 26; the falsifier fired — envelopes since 09-23 only), three joins closed or found already closed, the slashless id gone and ratcheted, the catalogue consulted before pricing, missing bytes said. The embedding backend is Ollama (the user's call, running with `nomic-embed-text`); the collections' receipt waits on the next clean SQL answer.
 - [~] TJ-2 one record per run — see top item 33; the record and the read are built, three bullets open.
 - [ ] TJ-3 a reward that takes both values — see top item 34.
 - [ ] ⚑ TJ-4 labels where readers are — see top item 35.
@@ -213,7 +213,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] The weekly count of new agents and automations is not shown in Agent Ops.
 - [ ] Answer buttons that open a screen or run a saved query wait on a deep-link registry.
 - [ ] Table-popularity data is collected, but the switch that would use it is off.
-- [x] **SP-15 (drafted 2026-09-25, §6 item 33) — BUILT 2026-09-26 (`claude/clean-panels-evidence-keys`, unmerged):** `explain` (departure · automation · metric) on every transport; the departure laws in `platform_help` read from the gate's own docstring, with the remedy table moved server-side (`govern/departure_remedies.py`, served on every held row); the Ask door hands `{kind, id}` structurally and the turn opens on the object. The second shelf (glossary + arc summaries) and the Ask door's uptake measure (`ask_door` on `/departures/summary`) followed the same day. Still open: ⚑ the live re-ask receipt after a restart.
+- [x] **SP-15 (drafted 2026-09-25, §6 item 33) — BUILT 2026-09-26 (`claude/clean-panels-evidence-keys`, unmerged):** `explain` (departure · automation · metric) on every transport; the departure laws in `platform_help` read from the gate's own docstring, with the remedy table moved server-side (`govern/departure_remedies.py`, served on every held row); the Ask door hands `{kind, id}` structurally and the turn opens on the object. The second shelf (glossary + arc summaries) and the Ask door's uptake measure (`ask_door` on `/departures/summary`) followed the same day, and the live re-ask receipt landed after the restart: 4 tool calls and a complete answer against 8 and none (§3.11 SP-15's status). Open: agent and analysis as `explain` kinds; SP-M's own meter has no route.
 
 ### Machine intelligence — Arc MI (§3.9)
 - [ ] ⚑ Should cap hits, guardrail events, metric enforcement and budget overruns show in the governance feed? Today they do not.

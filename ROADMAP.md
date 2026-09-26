@@ -3825,10 +3825,21 @@ automations and metrics as `explain` kinds; the second shelf and the measure fol
   conversation as a named tool result ("do not call explain again for this object"). The id never rides in the
   prose. The departures screen now reads its remedies from the served row (`remedy` on every held row from
   `GET /departures`) — one module, three readers.
-- **Receipt owed, ⚑ one model call:** the done-when's live re-ask — the same question from the held row, in the
-  palette, must answer with law 1, THIS departure's numerals, the automation by name and the offer, in ≤ 2 tool
-  calls (the focus prose makes the expected count 0). The serving API (pid 69688) predates this code; the
-  re-ask waits on a restart at the user's word.
+- **✅ The live re-ask, 2026-09-26 15:12Z (the user: *"Restart and re-ask"*; API restarted through
+  `scripts/restart_api.py`, pid 80037).** The held row's question, sent to `/ask` with
+  `focus={departure, 073097487898}`, trace `9ebb4e3f`: **one turn, four tool calls, a complete answer** —
+  against the baseline's eight calls and no answer, twice. The calls, from the session log:
+  `platform_help("re-measure")` → `explain(automation, 3440db08…)` → `explain(metric, revenue)` → `present`.
+  **The departure itself was never re-read**: the focus prose carried it, so the object cost 0 calls; the two
+  `explain` calls enriched the answer with the automation's own question and the metric's lifecycle, and
+  `present` is the answer in parts, not a read. The answer states law 1 in its own words, names the four
+  ungrounded numerals and the analysis, names the automation, gives the two levers (the question on the
+  Automations canvas; the writer's instruction), warns from the automation's five held departures that the
+  next hold would be `trust`/`definition` because `revenue` is a draft metric with no tests, and ends on the
+  offer (`edit_automation`; the question edit and the metric approval named as the acts that unblock the send).
+  Its own trajectory is readable at `GET /traces/9ebb4e3f/trajectory`: 18 events, 4 steps, 4 decisions joined
+  by one trace, the answer row `526bd191`, reward fields unlabeled, payloads withheld. And the measure moved:
+  `ask_door` read 0 of 18 before and **1 of 18 (0.056)** after.
 - **Later the same day — the second shelf and the measure, BUILT.** Item 33(b)'s shelf: `platform_help` now
   reads `docs/GLOSSARY.md` (39 terms served under their own word, and 63 retired spellings resolving to the word
   that replaced them — *"what is an insight"* answers with **Finding** and says the word is retired) and each §3
@@ -8806,10 +8817,13 @@ arc accepts accrual from now and says so.
 - **A registry row whose bytes are gone says so.** `store.bytes_state` → present · purged · missing, served on
   `GET /learning/datasets/{name}` with the remedy (re-run the export; an unchanged corpus writes the same path).
   Defect 9 closed at the cause, not by the directory's return.
-- **⚑ Waits on the operator:** the few-shot memory's embedding backend — `AUGHOR_EMBED_BACKEND` is unset (defaults
-  to Ollama) and no Ollama answered on :11434 this session, so the two collections still cannot be created; a
-  local embedder or a keyed one is the user's call. **Receipt owed:** `search_sql_examples_checked` reading clean
-  with a point in the collection, after that choice.
+- **The embedding backend — decided (the user: *"Ollama, local"*), and it answers.** Ollama is up with
+  `nomic-embed-text` pulled; after the restart `GET /knowledge/status` reads `embedder: ollama /
+  nomic-embed-text, ok, dim 768`. **Receipt still owed:** the few-shot memory's collections come into being on
+  the next CLEAN SQL answer (the re-ask was a platform question and ran no SQL), so
+  `search_sql_examples_checked` reading clean with a point waits on normal use — no second model call was
+  spent for it. Also live after the restart: `/obs/usage-summary` over 24 h reads **110 calls, 0 unpriced,
+  $0.3111, cost_is_complete: true** (458 catalogue rows loaded) — the unpriced 83 of 83 is closed at the cause.
 
 #### TJ-2 · One record per run: the trajectory (about a week, free)
 
@@ -8880,6 +8894,13 @@ the latency bar even batched, the payload fields move to the window only and thi
   no guard fired on it (`_trajectory_clean`), and the row says `vouched_by: trajectory` and carries the
   compact context — steps, guard fires, execution; an envelope, when there is one, still decides first.
   `recent_chat_answers` carries `trace_id` for it.
+- **Live, after the restart (15:10Z):** migration 4 applied to the live store on its first open
+  (`migrations[audit]: applied [(4, …)] → user_version=4`; read back: 335 `repaired_sql` + 28 `flagged` moved
+  to `action` with `phase = execute`, the seven real phases untouched — byte-for-byte the rehearsal). The
+  bronze export re-run on the new rule registered v2 with **still 1 row**: the trajectory rule vouches for
+  nothing older, because every turn before #547's writer has no trace and every turn since 09-23 has an
+  envelope — the falsifier's answer stands, bronze accrues from now. The re-ask's turn is the first live
+  trajectory: `GET /traces/9ebb4e3f/trajectory` walks its 4 steps and 4 decisions.
 
 #### TJ-3 · A reward that takes both values (days, free; ⚑ one hand audit)
 
