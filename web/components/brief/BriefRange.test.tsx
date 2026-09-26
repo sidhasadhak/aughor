@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { BriefingRangeBlock } from "@/lib/api";
 
-import { RangeControl, RangeMeasures, rangeStats } from "./BriefRange";
+import { RangeControl, RangeMeasures, rangeStats, rangeTop } from "./BriefRange";
 
 // theLook, 17–26 August 2026 as built live on 2026-09-25 (Arc BR-3)
 const BLOCK: BriefingRangeBlock = {
@@ -60,5 +60,20 @@ describe("RangeControl", () => {
     expect(onChange).toHaveBeenCalledWith({ preset: "custom", start: "2026-08-17", end: "2026-08-26" });
     fireEvent.click(screen.getByText("Month"));
     expect(onChange).toHaveBeenLastCalledWith({ preset: "last_month" });
+  });
+});
+
+describe("rangeTop (BR-9 shares the hero's figures with the Key Metrics row)", () => {
+  const measure = (metric: string, rel: number | null) => ({
+    metric, name: metric, unit: "count", time_kind: "flow", time_source: null, confirmed: false,
+    current: 1, previous: 1, last_year: null, rel, rel_last_year: null, status: "final",
+    current_partial: false, previous_partial: false, sql: "", current_text: "1", previous_text: "1", last_year_text: null,
+  });
+  it("is the largest moves first, at most four, so the row can show the rest", () => {
+    const block = { measured: [measure("a", 0.1), measure("b", -0.5), measure("c", null), measure("d", 0.3), measure("e", 0.2)] };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(rangeTop(block as any).map(m => m.metric)).toEqual(["b", "d", "e", "a"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(rangeTop(block as any, 2).map(m => m.metric)).toEqual(["b", "d"]);
   });
 });

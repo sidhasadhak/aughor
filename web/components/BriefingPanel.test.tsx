@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { explorerPhaseLabel } from "@/components/BriefingPanel";
+import { explorerPhaseLabel, rangeScopeNote } from "@/components/BriefingPanel";
 
 describe("explorerPhaseLabel", () => {
   it("softens a failed run that LEFT WORK BEHIND", () => {
@@ -72,5 +72,16 @@ describe("explorerPhaseLabel", () => {
     const without = explorerPhaseLabel("failed", false);
     expect(withWork.text).not.toBe(without.text);
     expect(withWork.tone).not.toBe(without.tone);
+  });
+});
+
+describe("rangeScopeNote (BR-9)", () => {
+  it("says nothing on the standing view, where nothing is withheld", () => {
+    expect(rangeScopeNote(false, null)).toBe("");
+    expect(rangeScopeNote(false, { covers: "17–23 August 2026" })).toBe("");
+  });
+  it("names the range once its Briefing is on screen, and says 'this range' while pending", () => {
+    expect(rangeScopeNote(true, { covers: "17–23 August 2026" })).toBe("all history, not 17–23 August 2026");
+    expect(rangeScopeNote(true, null)).toBe("all history, not this range");
   });
 });

@@ -848,6 +848,17 @@ export function explorerPhaseLabel(
 }
 
 
+/** BR-9 — what a part of the page that is NOT measured for the selected range must say, in
+ *  the same type as its number: "all history, not 17–23 August" once the range Briefing is on
+ *  screen, "all history, not this range" while it is still pending. "" on the standing view,
+ *  where nothing is withheld. The user, 2026-09-26: *"the whole briefing page needs to adhere to
+ *  the range selected.. otherwise its quite useless"*; BR-3's falsifier: a person must be able
+ *  to tell from the page which days a figure covers. */
+export function rangeScopeNote(rangeSelected: boolean, block: { covers: string } | null | undefined): string {
+  if (!rangeSelected) return "";
+  return block ? `all history, not ${block.covers}` : "all history, not this range";
+}
+
 export function isDegenerateFinding(insight: ExplorationInsight): boolean {
   const f = (insight.finding || "").trim();
   if (!f) return true;
@@ -1831,8 +1842,11 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
   );
 }
 
-function FindingsLedger({ signals, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange }: {
+function FindingsLedger({ signals, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange, note }: {
   signals:        SynthesisSignal[];
+  /** BR-9 — "all history, not <range>" when the page is scoped to a range these findings are
+   *  not re-asked for (BR-7 is what re-asks them); "" on the standing view. */
+  note?:          string;
   /** The scope chips — drawn on the ledger's own line, after its label. */
   filter?:        ReactNode;
   connectionId:   string;
@@ -1919,7 +1933,12 @@ function FindingsLedger({ signals, filter, connectionId, onInvestigate, onEviden
                 Show next {Math.min(LEDGER_STEP, remaining)}
               </Button>
             ) : <span style={{ color: "var(--t3)" }}>All findings shown</span>}
-            <span style={{ color: "var(--t3)" }}>· {Math.min(shown, signals.length)} of {signals.length} · ranked by novelty</span>
+            {/* The ledger sorts by impact and falls back to novelty (rankImpact); the footer
+                used to say "novelty" alone. */}
+            <span style={{ color: "var(--t3)" }} data-testid="ledger-footer">
+              · {Math.min(shown, signals.length)} of {signals.length} · ranked by impact, else novelty
+              {note ? <span style={{ color: "var(--t2)" }}>{` · ${note}`}</span> : null}
+            </span>
             <div style={{ marginLeft: "auto", position: "relative" }}>
               <Button variant="ghost" size="xs" onClick={() => setJumpOpen(o => !o)}
                 style={{ color: "var(--t3)", fontSize: 12, padding: "2px 6px" }}>
@@ -2774,6 +2793,8 @@ export function BriefingPanel({
   // A range is chosen but its Briefing is not on screen yet (building, or refused): the hero
   // must not fall back to the standing view's figures, which read as this range's.
   const rangePending   = rangesOn && !canvasId && range.preset !== "standing" && !rangeBlock;
+  // BR-9 — every part below the hero that is not measured for the range says so.
+  const scopeNote      = rangeScopeNote(rangesOn && !canvasId && range.preset !== "standing", rangeBlock);
   const isEmpty        = !briefing || briefing.totalInsights === 0;
 
   // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
@@ -3046,12 +3067,13 @@ export function BriefingPanel({
         {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
               card to expand its trend. Under the brief and above its findings. Renders a
               define-CTA (not nothing) when none are set. */}
-        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope} />
+        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope}
+          rangeBlock={rangeBlock} note={scopeNote} />
 
         {/* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
             impact-ordered; the scope chips (focus signals + patterns on one domain) share its
             line. Keyed by scope so it resets on a scope change. */}
-        <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
+        <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId} note={scopeNote}
           // Nothing to scope when the brief spans a single domain.
           filter={briefing.domains.length > 1
             ? <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
@@ -3105,7 +3127,11 @@ export function BriefingPanel({
             state) instead of vanishing. The cycle's findings read above in the ledger; the
             cockpit is the surface the user curates, not a dump of the brief. */}
       <div style={{ marginTop: 34, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
-        <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>Your cockpit</div>
+        <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
+          Your cockpit
+          {/* BR-9 — the cards run their saved SQL over all history; under a range they say so. */}
+          {scopeNote ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--t2)" }}>{` · ${scopeNote}`}</span> : null}
+        </div>
         {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
         <NewCardComposer connectionId={connectionId} schema={schema}
           onCreated={() => setPinnedRefresh(n => n + 1)} />

@@ -93,11 +93,28 @@ function deltaOf(m: BriefingRangeMeasure): StatDelta | null {
   return { text, sign: Math.sign(m.rel), favorable: null };
 }
 
+/** The measured metrics that lead the hero: the largest moves first, at most `n`. Shared with
+ *  the Key Metrics row (BR-9), which shows the REST, so no figure is on the page twice. */
+export function rangeTop(block: BriefingRangeBlock, n = 4): BriefingRangeMeasure[] {
+  return [...block.measured]
+    .sort((a, b) => Math.abs(b.rel ?? 0) - Math.abs(a.rel ?? 0))
+    .slice(0, n);
+}
+
+/** One measured metric as a tile: the server's formatted value, its change against the
+ *  previous range, and its status — final, provisional or to date. */
+export function RangeMeasureTile({ m }: { m: BriefingRangeMeasure }) {
+  return (
+    <StatTile label={m.name} value={m.current_text ?? ""}
+      delta={deltaOf(m)}
+      caption={`${STATUS_LABEL[m.status]} · against ${m.previous_text ?? "no comparison"}`}
+      title={m.time_source ?? undefined} />
+  );
+}
+
 /** The range's headline figures — its measured metrics, largest move first. */
 export function RangeFigures({ block }: { block: BriefingRangeBlock }) {
-  const top = [...block.measured]
-    .sort((a, b) => Math.abs(b.rel ?? 0) - Math.abs(a.rel ?? 0))
-    .slice(0, 4);
+  const top = rangeTop(block);
   if (top.length === 0) return null;
   return (
     <div data-brief-range-figures style={{ marginTop: 18 }}>
@@ -105,12 +122,7 @@ export function RangeFigures({ block }: { block: BriefingRangeBlock }) {
         Measured for {block.covers}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, top.length)}, minmax(0, 1fr))`, gap: 12 }}>
-        {top.map(m => (
-          <StatTile key={m.metric} label={m.name} value={m.current_text ?? ""}
-            delta={deltaOf(m)}
-            caption={`${STATUS_LABEL[m.status]} · against ${m.previous_text ?? "no comparison"}`}
-            title={m.time_source ?? undefined} />
-        ))}
+        {top.map(m => <RangeMeasureTile key={m.metric} m={m} />)}
       </div>
     </div>
   );
