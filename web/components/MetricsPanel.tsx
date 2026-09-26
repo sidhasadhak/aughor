@@ -751,6 +751,11 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                   {written.note ? ` — ${written.note}` : ""} — check it, then save.
                 </p>
               )}
+              {written && form.sql === written.sql && written.refused && (
+                <p className="aug-fs-xs text-amber-400" data-testid="metric-statement-refused">
+                  The platform could not accept it as a metric&apos;s statement: {written.refused} — fix it before saving.
+                </p>
+              )}
               {writeError && <p className="aug-fs-xs text-red-400">{writeError}</p>}
               {!adding && proposed && proposed.metric === selected && form.sql === proposed.statement && (
                 <div className="flex flex-col gap-1" data-testid="metric-statement-proposed">

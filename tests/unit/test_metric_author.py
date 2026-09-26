@@ -66,7 +66,11 @@ def test_what_the_model_wrote_is_checked_not_rewritten():
     assert ma.check("SELECT country, SUM(x) AS n FROM t GROUP BY country", "n")[1] == "it groups rows — a metric's statement returns one row"
     assert ma.check("SELECT SUM(x) AS n FROM t LIMIT 10", "n")[1].startswith("it limits rows")
     assert ma.check("SELECT SUM(x) AS n, COUNT(*) AS c FROM t", "n")[1] == "it selects 2 columns — one column, n, is the metric's value"
-    assert ma.check("SELECT FROM WHERE", "n")[1] == "the model's statement does not parse"
+    assert ma.check("SELECT FROM WHERE", "n")[1].startswith("the model's statement does not parse as duckdb: ")
+    # BigQuery's backticks parse under BigQuery, not under DuckDB — the connection's dialect is the reader.
+    bq = "WITH s AS (SELECT session_id FROM `events`) SELECT COUNT(*) AS n FROM s"
+    assert ma.check(bq, "n", "bigquery")[1] == ""
+    assert ma.check(bq, "n", "duckdb")[1].startswith("the model's statement does not parse as duckdb")
 
 
 def test_write_statement_spends_the_writer_once_and_wraps_only_an_expression_with_a_table(monkeypatch):
@@ -80,9 +84,16 @@ def test_write_statement_spends_the_writer_once_and_wraps_only_an_expression_wit
     assert out["sql"] == ("SELECT (SUM(CASE WHEN returned_at IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*)) AS return_rate "
                           "FROM order_items WHERE status <> 'Cancelled'")
     assert out["note"].startswith("the model wrote an expression; wrapped over order_items")
-    # An expression with no table to wrap over: refused, the model's text kept.
+    # An expression with no table to wrap over: the text is handed back WITH the finding.
     out = ma.write_statement(ma.MetricBrief(name="n"), _Db(), writer=_Writer("COUNT(*)"))
-    assert out["sql"] == "" and out["refused"] == "the model wrote an expression, not a statement" and out["raw"] == "COUNT(*)"
+    assert out["sql"] == "COUNT(*)" and out["refused"] == "the model wrote an expression, not a statement"
+    # A grouped query: shown as written, the verdict beside it — never hidden, never rewritten.
+    out = ma.write_statement(BRIEF, _Db(), writer=_Writer("SELECT country, SUM(x) AS return_rate FROM order_items GROUP BY country;"))
+    assert out["sql"] == "SELECT country, SUM(x) AS return_rate FROM order_items GROUP BY country"
+    assert out["refused"] == "it groups rows — a metric's statement returns one row"
+    # Nothing at all: empty, said.
+    out = ma.write_statement(BRIEF, _Db(), writer=_Writer("   "))
+    assert out["sql"] == "" and out["refused"] == "the model returned no SQL"
 
 
 def test_the_door_writes_once_binds_a_trace_and_says_why_not(monkeypatch):
@@ -109,10 +120,14 @@ def test_the_door_writes_once_binds_a_trace_and_says_why_not(monkeypatch):
     assert r.json()["sql"] == seen["answer"] and r.json()["model"] == "coder-x"
     assert r.json()["trace_id"] == seen["trace"] and len(seen["trace"]) == 32
     assert "DEFINITION: The share of sold lines sent back." in seen["context"]
+    assert r.json()["refused"] == ""
     seen["answer"] = "SELECT country, SUM(r) AS return_rate FROM order_items GROUP BY country"
     r = client.post("/metrics/generate-sql", json=body)
-    assert r.status_code == 422
-    assert r.json()["detail"].startswith("No statement written: it groups rows — a metric's statement returns one row.")
-    assert "The model wrote: SELECT country" in r.json()["detail"]
+    assert r.status_code == 200
+    assert r.json()["sql"] == seen["answer"]
+    assert r.json()["refused"] == "it groups rows — a metric's statement returns one row"
+    seen["answer"] = ""
+    r = client.post("/metrics/generate-sql", json=body)
+    assert r.status_code == 422 and r.json()["detail"] == "No statement written: the model returned no SQL."
     assert client.post("/metrics/generate-sql", json={**body, "name": " "}).status_code == 422
     assert client.post("/metrics/generate-sql", json={**body, "connection": "nope"}).status_code == 404

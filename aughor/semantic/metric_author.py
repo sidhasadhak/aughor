@@ -59,6 +59,7 @@ def framing(brief: MetricBrief) -> tuple[str, str]:
         "3. No GROUP BY, no ORDER BY, no LIMIT, and no date or time filter — the platform cuts the statement to a date range itself.",
         "4. A ratio of aggregates is SUM(numerator) / NULLIF(SUM(denominator), 0), never AVG of a row-level ratio.",
         "5. Use only tables and columns that appear in the SCHEMA, with their exact names.",
+        "6. When the definition names tables, read THOSE tables; join another only when the definition needs it.",
     ]
     return question, "\n".join(lines)
 
@@ -75,8 +76,9 @@ def check(sql: Optional[str], name: str, dialect: str = "duckdb") -> tuple[Optio
     try:
         import sqlglot
         tree = sqlglot.parse_one(text, read=dialect)
-    except Exception:  # noqa: BLE001
-        return None, "the model's statement does not parse"
+    except Exception as exc:  # noqa: BLE001 — the parser's own words are the reason
+        first = str(exc).strip().splitlines()[0][:160] if str(exc).strip() else type(exc).__name__
+        return None, f"the model's statement does not parse as {dialect}: {first}"
     sel = final_select(tree)
     if sel is None:
         return None, "the model's outer query is not a SELECT"
@@ -92,8 +94,10 @@ def check(sql: Optional[str], name: str, dialect: str = "duckdb") -> tuple[Optio
 
 def write_statement(brief: MetricBrief, db: Any, *, writer: Any = None) -> dict:
     """One model call: the writer's SQL for ``brief`` over ``db``'s schema, checked. Returns
-    ``{"sql", "refused", "raw", "note", "model"}`` — ``sql`` empty when refused, with
-    ``refused`` saying why and ``raw`` the model's text."""
+    ``{"sql", "refused", "raw", "note", "model"}``. The model's text is ALWAYS handed back in
+    ``sql`` (the person asked to see it — 2026-09-26, on a refusal that hid it); ``refused``
+    says what the check found wrong with it, ``""`` when nothing; ``sql`` is empty only when
+    the model returned nothing."""
     if writer is None:
         from aughor.sql.writer import SqlWriter
         writer = SqlWriter(db)
@@ -108,6 +112,8 @@ def write_statement(brief: MetricBrief, db: Any, *, writer: Any = None) -> dict:
         why = ""
         note = (f"the model wrote an expression; wrapped over {tables[0]} with the definition's "
                 "filters, as the value path runs it")
+    elif statement is None and raw.strip():
+        statement = raw.strip().rstrip(";").strip()       # shown as written, with the verdict
     model = ""
     try:
         from aughor.llm.provider import get_provider

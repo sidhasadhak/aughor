@@ -226,8 +226,9 @@ async def generate_metric_sql(req: GenerateSqlRequest):
     call, on the person's click (the user, 2026-09-26: *"generate SQL query for metric …
     right at the SQL statement input box … based on the metric in question"*). The
     platform's own SQL writer over this connection's schema, framed for a governed metric
-    (`semantic.metric_author`); the answer is checked, never rewritten — a grouped, limited
-    or multi-column query is refused with the reason and the model's text."""
+    (`semantic.metric_author`); the answer is checked, never rewritten — a grouped, limited,
+    multi-column or unparsable query is served WITH the finding in `refused`, so the person
+    sees the text and the verdict together."""
     from uuid import uuid4
 
     from aughor.db.connection import open_connection_for
@@ -262,12 +263,11 @@ async def generate_metric_sql(req: GenerateSqlRequest):
     except Exception as e:  # noqa: BLE001 — the model or the warehouse failing is said with its text
         raise HTTPException(status_code=502, detail=f"The statement could not be written: {e}")
     if not out["sql"]:
-        raw = (out.get("raw") or "").strip()
-        detail = f"No statement written: {out['refused']}."
-        if raw:
-            detail += f" The model wrote: {raw[:400]}"
-        raise HTTPException(status_code=422, detail=detail)
-    return {"sql": out["sql"], "note": out["note"], "model": out["model"], "trace_id": trace_id}
+        raise HTTPException(status_code=422, detail=f"No statement written: {out['refused']}.")
+    # The model's text is served even when the check found it wanting — `refused` says what,
+    # and the editor shows both; hiding the text behind a refusal was the first cut's mistake.
+    return {"sql": out["sql"], "refused": out["refused"], "note": out["note"],
+            "model": out["model"], "trace_id": trace_id}
 
 
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])

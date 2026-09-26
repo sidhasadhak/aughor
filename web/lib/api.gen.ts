@@ -7779,8 +7779,9 @@ export interface paths {
          *     call, on the person's click (the user, 2026-09-26: *"generate SQL query for metric …
          *     right at the SQL statement input box … based on the metric in question"*). The
          *     platform's own SQL writer over this connection's schema, framed for a governed metric
-         *     (`semantic.metric_author`); the answer is checked, never rewritten — a grouped, limited
-         *     or multi-column query is refused with the reason and the model's text.
+         *     (`semantic.metric_author`); the answer is checked, never rewritten — a grouped, limited,
+         *     multi-column or unparsable query is served WITH the finding in `refused`, so the person
+         *     sees the text and the verdict together.
          */
         post: operations["generate_metric_sql_metrics_generate_sql_post"];
         delete?: never;

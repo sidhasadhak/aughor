@@ -1135,6 +1135,9 @@ export async function getMetricProposals(
  *  definition's table; `trace_id` joins the call's receipt. */
 export interface MetricSqlDraft {
   sql: string;
+  /** What the platform's check found wrong with the text ("" when nothing): it is shown
+   *  beside the text, never instead of it. */
+  refused: string;
   note: string;
   model: string;
   trace_id: string;
