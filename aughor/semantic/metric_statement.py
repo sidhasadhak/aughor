@@ -137,7 +137,7 @@ def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
     of every table the statement reads (or the definition names), written
     ``schema.table.column`` as the table is written, the profiler's main date of each table
     first. ``[]`` when the connection was never profiled — the caller says so."""
-    from aughor.semantic.metric_time import _is_time, _primary_date, _table_columns
+    from aughor.semantic.metric_time import is_time, primary_date, table_columns
 
     seen: list[str] = []
     for t in statement_tables(sql, dialect) + [str(x).strip() for x in (tables or []) if str(x).strip()]:
@@ -155,9 +155,9 @@ def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
                  "fallback": True} for n in ranked]
     out: list[dict] = []
     for table in seen:
-        columns = _table_columns(profile_entry or {}, bare(table))
-        primary = _primary_date(profile_entry or {}, bare(table))
-        rows = [(c, d) for c, d in columns.items() if _is_time(d)]
+        columns = table_columns(profile_entry or {}, bare(table))
+        primary = primary_date(profile_entry or {}, bare(table))
+        rows = [(c, d) for c, d in columns.items() if is_time(d)]
         if primary and primary not in {c for c, _ in rows}:
             rows.append((primary, columns.get(primary, "timestamp")))
         rows.sort(key=lambda cd: (cd[0] != primary, cd[0]))

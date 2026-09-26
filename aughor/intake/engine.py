@@ -92,11 +92,19 @@ def _plan_metrics(connection_id: str, rows: list[dict], refused: list[str]) -> l
             continue
         payload = {k: raw[k] for k in _METRIC_FIELDS if k in raw}
         payload["connection"] = str(raw.get("connection") or connection_id or "*")
+        # A proposal is a statement (2026-09-26), and so is the comparison: both sides are
+        # read as the statement they run as, so an identical re-import of an aggregate the
+        # store wrapped on accept — or a row written before the rule — plans `identical`.
+        from aughor.semantic.metric_statement import as_statement
+        payload["sql"] = as_statement(payload.get("sql"), list(payload.get("tables") or []),
+                                      list(payload.get("filters") or []), name)
         existing = get_metric(name, connection_id=payload["connection"])
         if existing is None:
             out.append(_cand("metric", "new", payload))
             continue
         live = existing.model_dump()
+        live["sql"] = as_statement(live.get("sql"), list(live.get("tables") or []),
+                                   list(live.get("filters") or []), name)
         differs = [k for k in payload
                    if k != "connection" and payload.get(k) != live.get(k)]
         if not differs:

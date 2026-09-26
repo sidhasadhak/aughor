@@ -94,7 +94,7 @@ def bare_name(name: str) -> str:
     return str(name or "").split(".")[-1].strip('`"[]').lower()
 
 
-def _table_columns(profile_entry: dict, table: str) -> dict[str, str]:
+def table_columns(profile_entry: dict, table: str) -> dict[str, str]:
     """column → declared type (lower-case), from the profiler's latest entry, whose columns are
     keyed FLAT as ``"table.column"`` (measured on theLook 2026-09-26 — a nested reading found
     none, and every metric fell back to its table's main date)."""
@@ -110,12 +110,12 @@ def _table_columns(profile_entry: dict, table: str) -> dict[str, str]:
     return out
 
 
-def _primary_date(profile_entry: dict, table: str) -> str:
+def primary_date(profile_entry: dict, table: str) -> str:
     tp = ((profile_entry or {}).get("tables") or {}).get(table) or {}
     return str(tp.get("primary_timestamp") or "").lower() if isinstance(tp, dict) else ""
 
 
-def _is_time(dtype: str) -> bool:
+def is_time(dtype: str) -> bool:
     return "date" in dtype or "time" in dtype
 
 
@@ -226,8 +226,8 @@ def infer(metric: Any, profile_entry: dict, *, dialect: str = "duckdb") -> Infer
         except Exception:  # noqa: BLE001 — a formula the parser refuses is said, not guessed
             return Inference(None, "its formula does not parse")
     table = bare_name(table_written)
-    time_cols = {c for c, d in _table_columns(profile_entry, table).items() if _is_time(d)}
-    primary = _primary_date(profile_entry, table)
+    time_cols = {c for c, d in table_columns(profile_entry, table).items() if is_time(d)}
+    primary = primary_date(profile_entry, table)
     if primary:
         time_cols.add(primary)
 
