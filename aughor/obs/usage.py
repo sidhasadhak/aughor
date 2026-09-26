@@ -162,6 +162,31 @@ def refresh_catalogue_prices(*, backends: Sequence[str] = ("openrouter",),
     return loaded
 
 
+#: When the catalogue was last consulted, monotonic seconds; 0.0 = never.
+_CATALOGUE_REFRESHED_AT = 0.0
+#: How stale the catalogue may be before a rollup asks the provider again. The picker's
+#: own cache decides whether that costs a request; this only decides whether to ask.
+CATALOGUE_MAX_AGE_S = 3600.0
+
+
+def ensure_catalogue_prices(*, max_age_s: float = CATALOGUE_MAX_AGE_S) -> int:
+    """Consult the provider's catalogue before a rollup — at most once per ``max_age_s``.
+
+    TJ-1's measurement: :func:`refresh_catalogue_prices` had no caller, so every call on
+    this instance priced at nothing — 83 of 83 on 2026-09-25, all on one OpenRouter model
+    whose rate the catalogue publishes. The readers of a cost (the Usage page, the
+    obs summary) now ask once an hour; a backend that cannot be reached still contributes
+    nothing and its models still say `unpriced`, which is the pre-existing, honest state.
+    Returns the rows loaded on this call (0 when the hour has not passed)."""
+    import time
+    global _CATALOGUE_REFRESHED_AT
+    now = time.monotonic()
+    if _CATALOGUE_REFRESHED_AT and (now - _CATALOGUE_REFRESHED_AT) < max_age_s:
+        return 0
+    _CATALOGUE_REFRESHED_AT = now
+    return refresh_catalogue_prices()
+
+
 @functools.lru_cache(maxsize=4096)
 def price_for(provider: str, model: str) -> Optional[Price]:
     """The price for a model, or ``None`` when nothing declares or publishes one.

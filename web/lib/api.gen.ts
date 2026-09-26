@@ -12405,6 +12405,19 @@ export interface components {
             redirect_uri: string;
         };
         /**
+         * AskFocus
+         * @description SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
+         */
+        AskFocus: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "departure" | "automation" | "metric";
+        };
+        /**
          * AskRequest
          * @description The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
          *
@@ -12454,6 +12467,7 @@ export interface components {
              * @enum {string}
              */
             depth: "auto" | "quick" | "deep";
+            focus?: components["schemas"]["AskFocus"] | null;
             /**
              * History
              * @default []

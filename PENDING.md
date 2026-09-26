@@ -74,7 +74,7 @@ diagram): 32–37 are Arc TJ's waves (ROADMAP §3.47) in the arc's own order —
 because they are free, then the gym. Their rank against 1–31 is the user's; the census behind them is
 [docs/TRAJECTORY_CENSUS_2026-09-25.md](docs/TRAJECTORY_CENSUS_2026-09-25.md), and the six calls the arc needs are §6 item 32.
 
-32. [ ] **Open the taps that exist** (TJ-1, §3.47) — the exporters #547 fixed have not been run since; the directory their files go in does not exist; the few-shot memory's collections were never created on this deployment (no embedding backend is set); the receipt's model id, the decision record's trace id and the history row's trace id are dead columns; a fallback model id is hardcoded in a form the ratchet does not see; every call is unpriced. Run, create, set, fix, and publish the gate report before and after. *About a day.*
+32. [~] **Open the taps that exist** (TJ-1, §3.47) — built 2026-09-26 except the embedding backend (the operator's); receipts in §3.47's TJ-1 status — — the exporters #547 fixed have not been run since; the directory their files go in does not exist; the few-shot memory's collections were never created on this deployment (no embedding backend is set); the receipt's model id, the decision record's trace id and the history row's trace id are dead columns; a fallback model id is hardcoded in a form the ratchet does not see; every call is unpriced. Run, create, set, fix, and publish the gate report before and after. *About a day.*
 33. [ ] **One record per run** (TJ-2) — a step event on the session log carrying tool, SQL, counts, errors and guard fires always, and the arguments and the model's words only under the capture window or the annex; one read that walks question → steps → SQL → guard → verdict for a chat turn, a deep run, a scheduled brief and an automation step; the exporters read it and nothing else; the guard table says which of its two meanings a row has. *About a week.*
 34. [ ] **A reward that takes both values** (TJ-3) — one deterministic run label (ran, rows, guards clean, re-check stable, no reject) with `unlabeled` as the default, step credit only to the statement a verdict names, confidence NULL when none was given; its live distribution published before anything reads it. ⚑ Then a person audits 50–100 bronze rows and the sheet is committed. *Two to three days plus one sitting.*
 35. [ ] ⚑ **Labels where readers already are** (TJ-4) — ✅ and ❌ on a Slack answer record a verdict on its turn (needs the app's `reactions:read` scope and a `reaction_added` subscription, the owner's); a mark on the Departures screen feeds probation precision and the verdict store at once. *One to two days.*
@@ -118,14 +118,14 @@ Just outside the list: the next industry package (insurance has public data to t
 
 ### Trajectories — Arc TJ (§3.47; drafted 2026-09-25, §6 item 32 open)
 - [x] TJ-0 the census — measured 2026-09-25, [docs/TRAJECTORY_CENSUS_2026-09-25.md](docs/TRAJECTORY_CENSUS_2026-09-25.md); the corrections it made to standing prose are recorded in §3.47.
-- [ ] TJ-1 open the taps — see top item 32.
+- [~] TJ-1 open the taps — see top item 32. 2026-09-26: exporters run once (bronze 1 · choice 211 · choice_golden 26; the falsifier fired — envelopes since 09-23 only), three joins closed or found already closed, the slashless id gone and ratcheted, the catalogue consulted before pricing, missing bytes said. ⚑ Waits on the operator: the embedding backend for the few-shot memory.
 - [ ] TJ-2 one record per run — see top item 33.
 - [ ] TJ-3 a reward that takes both values — see top item 34.
 - [ ] ⚑ TJ-4 labels where readers are — see top item 35.
 - [ ] ⚑ TJ-5 the gym — see top item 36.
 - [ ] ⚑ TJ-6 serving a student — see top item 37; recommended deferred.
 - [ ] ⚑ §6 item 32's six clauses — adopt; the payload class of a step; reactions as verdicts; the gym's ceiling; the keyed binding; who audits bronze.
-- [ ] The fifteen defects the census lists (its §10) — the dead joins, the slashless model id, the missing datasets directory and the uncreated collections close inside TJ-1 and TJ-2; the stale docstrings and the README's two phantom files ride the next touch of their files.
+- [~] The fifteen defects the census lists (its §10) — closed 2026-09-26: 1 (receipt model id), 2 (decision trace), 4 (slashless id), 9 (missing bytes now said); 3 (history trace) was already closed by #547's writer, the census counted older rows; open: 10 (collections, the operator's backend) and the rest close inside TJ-2; the stale docstrings and the README's two phantom files ride the next touch of their files.
 
 ### Central answer path — Arc CP (§3.22)
 - [ ] CP-1 shadow classification — built and live; every answered question gets a logged label (lookup · one query · several · investigation) that changes nothing yet, one model call per answer; needs about a week of rows before CP-2 can read them.
@@ -213,7 +213,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] The weekly count of new agents and automations is not shown in Agent Ops.
 - [ ] Answer buttons that open a screen or run a saved query wait on a deep-link registry.
 - [ ] Table-popularity data is collected, but the switch that would use it is off.
-- [ ] **SP-15 (drafted 2026-09-25, §6 item 33):** the Guide cannot explain the departure laws or the object on screen — `platform_help` knows eight topics and no law. The departures screen's "What to do next" (a remedy per held guard, with doors) shipped the same day on `claude/arc-tj-trajectories`; the corpus, the `explain` tool and the palette handoff are the wave. Baseline measured 2026-09-25: the Ask door's question ran Spotlight out of 8 steps, twice, with no tool on the roster able to read a departure — the wave starts at `explain(departure)`.
+- [x] **SP-15 (drafted 2026-09-25, §6 item 33) — BUILT 2026-09-26 (`claude/clean-panels-evidence-keys`, unmerged):** `explain` (departure · automation · metric) on every transport; the departure laws in `platform_help` read from the gate's own docstring, with the remedy table moved server-side (`govern/departure_remedies.py`, served on every held row); the Ask door hands `{kind, id}` structurally and the turn opens on the object. Still open: the glossary and §3 summaries shelf (33(b)); ⚑ the live re-ask receipt after a restart; SP-M's uptake measure.
 
 ### Machine intelligence — Arc MI (§3.9)
 - [ ] ⚑ Should cap hits, guardrail events, metric enforcement and budget overruns show in the governance feed? Today they do not.

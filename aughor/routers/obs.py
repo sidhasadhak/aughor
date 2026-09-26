@@ -611,8 +611,11 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
     is served from the Migration 10 column — it has been written since the failover work
     and read by nothing, so this is its first reader.
     """
-    from aughor.obs.usage import price_for, rollup
+    from aughor.obs.usage import ensure_catalogue_prices, price_for, rollup
     win = resolve_window(range, since=since, until=until)
+    # TJ-1 — ask the provider's catalogue for rates (at most hourly) BEFORE pricing: the
+    # refresh had no caller, so every call on this instance priced at nothing.
+    catalogue_rows = ensure_catalogue_prices()
     rows = Ledger.default().session_events(
         kind=session_log.LLM_CALL, org_id=current_org_id() or None,
         since=win.since, until=win.until, limit=max(100, min(int(scan), 50000)))
@@ -656,6 +659,12 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
         "cost_usd": round(cost, 4),
         "unpriced_calls": unpriced,
         "cost_is_complete": unpriced == 0,
+        # Whose gap an unpriced call is. Declared prices and the provider's own catalogue
+        # were both consulted; what is still unpriced has no published rate — the
+        # provider's silence, not this platform's.
+        "pricing": {"catalogue_consulted": True, "catalogue_rows_loaded": catalogue_rows,
+                    "unpriced_means": ("no declared price and none published in the "
+                                       "provider's model catalogue")},
         "calls_without_usage": no_usage,
         "usage_coverage": round(1 - no_usage / len(rows), 3) if rows else None,
         # A rate whose denominator is invisible gets read as "right now". Both halves ship.

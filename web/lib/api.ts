@@ -4801,6 +4801,38 @@ export interface Departure {
   answer: string;
   answered_by: string;
   answered_at: string;
+  /** SP-15 — on a row that held or asked: the lead sentence and, per guard that held,
+   *  what it means, what to change and where. Served from ONE module beside the laws
+   *  (`aughor/govern/departure_remedies.py`), the same words Spotlight's `explain` cites.
+   *  Absent on a departed row, and on an API older than the wave. */
+  remedy?: DepartureRemedy;
+}
+
+/** The screens a remedy can open — handed down by the workspace, which owns the layers. */
+export type RemedyDoor = "automation" | "analysis" | "semantic" | "ask";
+
+export interface GuardRemedy {
+  guard: string;
+  label: string;
+  outcome: DepartureGuardOutcome;
+  /** The sentence the gate recorded for this guard on this departure. */
+  reason: string;
+  /** "law 1" … "law 8", or "" for a guard the docstring numbers no law for. */
+  law: string;
+  /** The law's own sentence, read from the gate module's docstring. */
+  law_sentence: string;
+  /** What the hold means, in the reader's words. */
+  meaning: string;
+  /** What to change, and that the next run is the send. */
+  action: string;
+  /** The screens that hold the fix, in the order to try them. */
+  doors: RemedyDoor[];
+}
+
+export interface DepartureRemedy {
+  /** The sentence every held row leads with — the wall, named. */
+  lead: string;
+  guards: GuardRemedy[];
 }
 
 export interface DepartureSummary {

@@ -870,6 +870,12 @@ class ChatRequest(BaseModel):
     surface: str = ""
 
 
+class AskFocus(BaseModel):
+    """SP-15 — what is on screen when Spotlight is summoned: one object by kind and id."""
+    kind: Literal["departure", "automation", "metric"]
+    id: str
+
+
 class AskRequest(BaseModel):
     """The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
 
@@ -923,6 +929,12 @@ class AskRequest(BaseModel):
     # SP-2 (§3.11) — the product screen the question was summoned from (see
     # ChatRequest.surface; same contract, same non-authority).
     surface: str = ""
+    # SP-15 — the OBJECT the question was summoned from, structurally: a held row's
+    # "Ask Spotlight" hands its departure id here, never inside the prose, so the
+    # conversation opens on that object's live state (`explain`) instead of parsing an
+    # id out of a sentence and spending tool calls to find it. Non-authoritative like
+    # `surface`: an unknown kind or id simply contributes nothing.
+    focus: Optional["AskFocus"] = None
     # Pass-throughs preserved from the investigate path. `escalate` accepts the old wire
     # name `deep`; it is the dossier-escalation flag, not the `depth` knob above.
     escalate: bool = Field(default=False, alias="deep")
@@ -3523,9 +3535,14 @@ async def _stream_converse(
         # a conversational turn has no investigation id until `save_chat_turn` mints one
         # from the answer below — so the picks are recorded against the trace and stitched
         # to the investigation afterwards. Without it every converse decision is a row no
-        # verdict can ever close.
+        # verdict can ever close. TJ-1: it is the RUN's ambient trace (bound by
+        # `build_ask_stream`), the same id the session log and the history row carry —
+        # a fresh uuid here joined nothing on 188 of 188 rows (the census's defect 2).
+        # A fresh id only when no trace is bound, so a caller outside the door still
+        # gets rows a verdict can close.
         import uuid as _uuid
-        _decision_trace = _uuid.uuid4().hex
+        from aughor.telemetry import current_trace_id as _ambient_trace
+        _decision_trace = _ambient_trace() or _uuid.uuid4().hex
         try:
             result = converse(connection_id, question,
                               extra_context=_memory,
@@ -5085,6 +5102,40 @@ def _analyst_eligible(req, route) -> bool:
     return route.depth == "deep" or bool(req.escalate)
 
 
+def _joined(*parts: str) -> str:
+    return "\n\n".join(p for p in parts if p)
+
+
+def _focus_prose_for(req, conn_id: str) -> str:
+    """SP-15 — the object the palette was summoned from, explained for the conversation.
+
+    ONE body, two readers: this is the same `explain` the roster carries, run once before
+    the loop so the turn opens on the object's live state without spending a step to find
+    it (the baseline this wave beats: eight steps and no answer, twice). The result is
+    handed as a tool result — claims bound to it, the roster's law — and named as such so
+    the model cites it rather than restating it. Best-effort: an object that cannot be
+    read degrades the turn to a plain conversation, never fails it."""
+    focus = getattr(req, "focus", None)
+    if focus is None:
+        return ""
+    try:
+        from aughor.agent.spotlight_explain import explain_object
+        told = explain_object(conn_id, {"kind": focus.kind, "id": focus.id})
+    except Exception as exc:  # noqa: BLE001 — the focus is context, never a dependency
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "ask: the on-screen object could not be explained; the turn proceeds without it",
+                 counter="ask.focus_prose")
+        return ""
+    if not told.get("found"):
+        return ""
+    return ("## On screen\n"
+            f"The reader asked from {focus.kind} `{focus.id}`. Its live state, as the "
+            "`explain` tool returns it (cite these fields; do not call explain again for "
+            "this object):\n```json\n"
+            + json.dumps(told, ensure_ascii=False, default=str)[:6000]
+            + "\n```")
+
+
 async def _origin_prose_for(req, conn_id: str) -> str:
     """The origin finding a seeded/dossier turn carries, rendered for the conversation.
 
@@ -5503,8 +5554,10 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
                              session_id=req.session_id, canvas_id=req.canvas_id,
                              surface=req.surface,
                              # CI-4 — a seeded/dossier turn hands its finding to the
-                             # conversation instead of bypassing it.
-                             origin_prose=await _origin_prose_for(req, conn_id))
+                             # conversation instead of bypassing it; SP-15 — a turn
+                             # summoned from an object hands that object's live state.
+                             origin_prose=_joined(_focus_prose_for(req, conn_id),
+                                                  await _origin_prose_for(req, conn_id)))
             if _use_converse else
             _stream_chat(req.question, conn_id, req.history,
                          session_id=req.session_id, canvas_id=req.canvas_id,

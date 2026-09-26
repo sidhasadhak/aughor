@@ -164,6 +164,28 @@ def get_departure(departure_id: str) -> Optional[dict]:
             conn.close()
 
 
+#: Ledger columns stored as JSON text, and what each decodes to when it cannot.
+JSON_COLUMNS: dict[str, type] = {"reasons": list, "checks": dict, "guards": dict,
+                                 "receipt": dict, "question": dict, "numerals": list}
+
+
+def decode_row(row: dict) -> dict:
+    """One ledger row with its JSON columns decoded — the shape every reader (the doors,
+    Spotlight's `explain`) works on, so none re-decodes what the gate recorded. A column
+    that will not parse decodes to its empty shape, never to the raw text."""
+    import json
+    out = dict(row)
+    for column, empty in JSON_COLUMNS.items():
+        raw = out.get(column)
+        if isinstance(raw, str):
+            try:
+                decoded = json.loads(raw) if raw else empty()
+            except ValueError:
+                decoded = empty()
+            out[column] = decoded if isinstance(decoded, empty) else empty()
+    return out
+
+
 def summary_counts(since: str = "", *, org_id: str = "") -> dict:
     """How many departures took each state (optionally since an ISO time), and how many a
     person still owes — the number the departures screen's badge shows. ``org_id`` narrows it

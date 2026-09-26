@@ -3,14 +3,14 @@
 import { destinationLabel } from "@/lib/names";
 import { requestTab } from "@/lib/navigate";
 import { askSpotlight } from "@/lib/commandRegistry";
-import { HOLD_LEAD, remedyFor, type RemedyDoor } from "@/lib/departureRemedies";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   answerDeparture, getDepartureSummary, getDepartures, markDeparture,
-  type Departure, type DepartureSummary,
+  type Departure, type DepartureSummary, type RemedyDoor,
 } from "@/lib/api";
 import {
+  GUARD_LABEL,
   addressedText, departureFromUrl, filterDepartures, guardRows, kindLabel, outcomeColor,
   outcomeWord, owes, readingsOf, sourceName, stateHue, stateLabel, summaryLine, whenText,
   type DepartureFilter,
@@ -237,11 +237,11 @@ function DepartureDetail({ departure: d, onChanged, doors }: {
   const guards = guardRows(d);
   const analysisId = d.investigation_id;   // the wire field, read once
   // The wall, and the way past it: for every guard that held or asked, what it means, what
-  // to change, and the screens that hold the fix (asked for 2026-09-25).
-  const remedies = guards
-    .filter(g => g.outcome === "held" || g.outcome === "asked")
-    .map(g => ({ ...g, remedy: remedyFor(g.guard) }))
-    .filter((g): g is typeof g & { remedy: NonNullable<ReturnType<typeof remedyFor>> } => g.remedy !== null);
+  // to change, and the screens that hold the fix (asked for 2026-09-25). Served on the row
+  // (SP-15) from the one module beside the laws, so this screen, `platform_help` and
+  // Spotlight's `explain` read the same words; absent on a departed row and on an older API.
+  const remedy = d.remedy ?? null;
+  const remedies = remedy?.guards ?? [];
   const door = (kind: RemedyDoor, guardLabel: string, summary: string) => {
     if (kind === "automation") {
       if (!doors.onOpenAutomation || !d.automation_id) return null;
@@ -257,12 +257,15 @@ function DepartureDetail({ departure: d, onChanged, doors }: {
       return <Button key={kind} variant="outline" size="xs"
         onClick={() => requestTab("semantic", d.conn_id ? { conn: d.conn_id } : undefined)}>Open the Semantic Layer</Button>;
     }
-    // The palette, with THIS hold in the question — the handoff SP-15 makes structural.
+    // The palette, with THIS hold as its object: the departure id travels beside the
+    // question (SP-15), so the turn opens on this row's live state and the id is never
+    // parsed out of the prose.
     return <Button key={kind} variant="ghost" size="xs"
       onClick={() => askSpotlight(
         `A departure was held by the ${guardLabel} guard: ${summary}. What does that mean, and what `
-        + `should I change so the next run sends? (departure ${d.id}`
-        + (d.automation_name ? `, automation "${d.automation_name}"` : "") + ")")}>Ask Spotlight about this hold</Button>;
+        + `should I change so the next run sends?`
+        + (d.automation_name ? ` (automation "${d.automation_name}")` : ""),
+        { kind: "departure", id: d.id })}>Ask Spotlight about this hold</Button>;
   };
 
   const act = async (run: () => Promise<string>) => {
@@ -353,21 +356,21 @@ function DepartureDetail({ departure: d, onChanged, doors }: {
         </section>
       )}
 
-      {remedies.length > 0 && (
+      {remedy && remedies.length > 0 && (
         <section aria-label="What to do next">
           <div className="aug-label" style={{ marginBottom: 4 }}>What to do next</div>
           {d.state === "held" && (
-            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8 }}>{HOLD_LEAD}</div>
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8 }}>{remedy.lead}</div>
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {remedies.map(g => (
               <div key={g.guard}>
                 <div className="aug-fs-sm" style={{ color: "var(--t1)" }}>
-                  <span style={{ fontWeight: 500 }}>{g.label}</span> — {g.remedy.meaning}
+                  <span style={{ fontWeight: 500 }}>{GUARD_LABEL[g.guard] ?? g.label}</span> — {g.meaning}
                 </div>
-                <div className="aug-fs-sm" style={{ color: "var(--t2)", marginTop: 2 }}>{g.remedy.action}</div>
+                <div className="aug-fs-sm" style={{ color: "var(--t2)", marginTop: 2 }}>{g.action}</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                  {g.remedy.doors.map(kind => door(kind, g.label, g.summary))}
+                  {g.doors.map(kind => door(kind, GUARD_LABEL[g.guard] ?? g.label, g.reason))}
                 </div>
               </div>
             ))}

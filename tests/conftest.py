@@ -253,6 +253,10 @@ os.environ["AUGHOR_DOCUMENTS_DIR"] = os.path.join(_test_stores_dir, "documents")
 # Set here rather than fixed per-test because the damage is done by threads that
 # outlive the test that started them. Tests that want a tick call it directly.
 os.environ["AUGHOR_DISABLE_SCHEDULERS"] = "1"
+# TJ-1 — the usage summary now consults the provider's public model catalogue before
+# pricing a rollup; the suite never reaches a network. A test that exercises the fetch
+# sets "1" itself (test_llm_model_catalog.py does).
+os.environ.setdefault("AUGHOR_LLM_MODEL_FETCH", "0")
 
 # Layer 0.2 — the runtime LLM config (data/llm_config.json) was the LAST store tests
 # inherited from the developer's machine: it holds the operator's chosen backend AND

@@ -405,8 +405,11 @@ _GUIDE_PARAMS = {
 
 
 def spotlight_guide_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec]:
-    """SP-4's Guide roster — one tool, read-only; the offer is prose, never an act."""
-    return [
+    """SP-4's Guide roster — read-only; the offer is prose, never an act. SP-15 adds
+    `explain`, the read over the object on screen (`spotlight_explain`)."""
+    from aughor.agent.spotlight_explain import spotlight_explain_tools
+
+    return spotlight_explain_tools(connection_id, session_id=session_id) + [
         ToolSpec(
             name="platform_guide",
             description=(

@@ -18,7 +18,7 @@ import { type FuseResult, type FuseResultMatch } from "fuse.js";
 import { buildPaletteIndex } from "@/lib/paletteSearch";
 import { getApiBase } from "@/lib/config";
 import { useRichSchema } from "@/lib/schema-context";
-import { consumePendingAsk, useCommands, useRegisterCommands, type Command } from "@/lib/commandRegistry";
+import { consumePendingAsk, useCommands, useRegisterCommands, type AskFocus, type Command } from "@/lib/commandRegistry";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { newSessionId, projectThread } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
@@ -188,12 +188,15 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     streaming,
     transportError: status === "error" ? (error?.message ?? "The turn failed.") : null,
   }), [messages, streaming, status, error]);
-  const ask = useCallback((q: string) => {
+  const ask = useCallback((q: string, focus: AskFocus | null = null) => {
     const question = q.trim();
     if (!question || streaming) return;
     setMode("spotlight");
     setSpotQ(question);
-    void sendMessage({ text: question, metadata: { mode: "ask" } });
+    // SP-15 — a row's "Ask Spotlight" hands its object structurally: the backend opens
+    // the turn on that object's live state instead of parsing an id out of the prose.
+    void sendMessage({ text: question, metadata: { mode: "ask" } },
+                     focus ? { body: { focus } } : undefined);
   }, [streaming, sendMessage]);
   // A ref so the open-effect can consume a parked in-context question without
   // re-firing on every identity change of `ask`.
@@ -243,7 +246,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     // and go straight to the answer pane; the deterministic search stays the
     // default on every plain open.
     const seeded = consumePendingAsk();
-    if (seeded) setTimeout(() => askRef.current(seeded), 0);
+    if (seeded.question) setTimeout(() => askRef.current(seeded.question, seeded.focus), 0);
 
     // Fetch recent investigations
     fetch(`${getApiBase()}/investigations`)

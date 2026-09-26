@@ -91,19 +91,33 @@ export function useRegisterCommands(scopeId: string, commands: Command[]) {
 // props because the summoner and the palette share no ancestor closer than the
 // page shell.
 
-let pendingAsk = "";
+/** SP-15 — the object a question is summoned FROM, by kind and id. It travels beside the
+ *  question, never inside it: the backend opens the turn on the object's live state
+ *  (`explain`) instead of parsing an id out of a sentence and spending tool calls to find it. */
+export interface AskFocus {
+  kind: "departure" | "automation" | "metric";
+  id: string;
+}
 
-/** Summon the Spotlight overlay with a seeded question. */
-export function askSpotlight(question: string) {
-  pendingAsk = (question || "").trim();
+export interface PendingAsk {
+  question: string;
+  focus: AskFocus | null;
+}
+
+let pendingAsk: PendingAsk = { question: "", focus: null };
+
+/** Summon the Spotlight overlay with a seeded question — and, when a screen's row
+ *  summoned it, the object that row shows. */
+export function askSpotlight(question: string, focus: AskFocus | null = null) {
+  pendingAsk = { question: (question || "").trim(), focus };
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("aughor:ask-spotlight"));
   }
 }
 
-/** The parked question, cleared on read — the palette calls this on open. */
-export function consumePendingAsk(): string {
-  const q = pendingAsk;
-  pendingAsk = "";
-  return q;
+/** The parked question (and its object), cleared on read — the palette calls this on open. */
+export function consumePendingAsk(): PendingAsk {
+  const parked = pendingAsk;
+  pendingAsk = { question: "", focus: null };
+  return parked;
 }

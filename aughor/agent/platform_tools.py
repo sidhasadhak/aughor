@@ -619,6 +619,68 @@ _HELP_ALIASES = {
 }
 
 
+def _departure_shelf() -> tuple[dict[str, str], dict[str, str]]:
+    """SP-15 — the corpus's first shelf: the departure gate and its laws, as help topics.
+
+    One topic for the gate (``departures``) and one per guard, each built from the words
+    the repo already maintains — the law's sentence from the gate module's docstring and
+    the remedy from the module beside it — never a second telling. Aliases carry the
+    reader's spellings ("re-measure", "held", "hold") so *"what is re-measure"* answers
+    with law 1 and its remedy in one call, which the wave's baseline could not do in
+    eight (§3.11 SP-15)."""
+    from aughor.govern.departure import GUARD_LABELS, GUARDS
+    from aughor.govern.departure_remedies import HOLD_LEAD, REMEDIES, laws
+
+    told = laws()
+    topics: dict[str, str] = {}
+    aliases: dict[str, str] = {
+        "departure": "departures", "departure gate": "departures", "gate": "departures",
+        "held": "departures", "hold": "departures", "holds": "departures",
+        "the gate": "departures", "outbound": "departures", "send": "departures",
+    }
+    lines = []
+    for guard in GUARDS:
+        law = told.get(guard) or {}
+        remedy = REMEDIES.get(guard) or {}
+        label = GUARD_LABELS.get(guard, guard)
+        number = law.get("law") or "no number"
+        sentence = law.get("sentence") or ""
+        topics[guard] = (
+            f"{label} ({number}) — {sentence}\n\n"
+            f"What a hold by it means: {remedy.get('meaning', '')}\n\n"
+            f"What to do: {remedy.get('action', '')}"
+        ).strip()
+        lines.append(f"- {label} ({number}): {remedy.get('meaning', sentence)}")
+        aliases[label.lower()] = guard
+        aliases[label.lower().replace("-", "")] = guard
+        aliases[label.lower().replace("-", " ")] = guard
+    aliases.update({"re-measured": "remeasure", "remeasured": "remeasure",
+                    "measured": "remeasure", "claim": "claims", "claim types": "claims",
+                    "causal": "claims", "forecast": "claims", "stale": "freshness",
+                    "sla": "freshness", "draft metric": "definition",
+                    "unapproved": "definition", "probationary": "probation",
+                    "graduate": "probation", "graduation": "probation",
+                    "duplicate": "repeat", "noise": "repeat", "readings": "disagreement",
+                    "owner question": "disagreement", "quality tests": "tie_out",
+                    "computation error": "trust", "reframe": "trust"})
+    topics["departures"] = (
+        "The departure gate is content customs: every message that leaves the platform "
+        "— a Slack post, a scheduled briefing, a monitor alert, an Action Hub send — is "
+        "checked first, and every decision (departed or held) lands in the departures "
+        "ledger with its reasons. Ten guards run in order, each a law the receipt names:\n"
+        + "\n".join(lines)
+        + f"\n\n{HOLD_LEAD} The departures screen (Agent Ops › Departures) shows every "
+          "held row with what to change and doors to the fix; ask for one guard by name "
+          "for its law and remedy."
+    )
+    return topics, aliases
+
+
+_DEPARTURE_TOPICS, _DEPARTURE_ALIASES = _departure_shelf()
+_HELP_TOPICS.update(_DEPARTURE_TOPICS)
+_HELP_ALIASES.update(_DEPARTURE_ALIASES)
+
+
 def platform_help(connection_id: str, args: dict) -> dict:
     """What Aughor is and how to use it — curated text, no model, no network."""
     topic = str(args.get("topic") or "").strip().lower()
@@ -702,7 +764,10 @@ _HELP_PARAMS = {
     "properties": {"topic": {
         "type": "string",
         "description": "Optional topic: overview, connect, explore, briefing, "
-                       "analysis, monitors, packs, governance.",
+                       "analysis, monitors, packs, governance, departures (the "
+                       "departure gate), or one of its guards by name — re-measure, "
+                       "definition, trust, caveat, tie-out, freshness, claim type, "
+                       "disagreement, repeat, probation.",
     }},
 }
 
@@ -873,11 +938,14 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
             name="platform_help",
             description=(
                 "What Aughor's pieces ARE — connecting a warehouse, exploration, "
-                "briefings, analysis modes, monitors, packs, governance. Use for "
-                "concept questions about the PRODUCT ('what can you do', 'what is a "
-                "briefing'), never for questions about the data. For a 'how do I…' "
-                "walkthrough grounded in this deployment's live state, use "
-                "platform_guide."
+                "briefings, analysis modes, monitors, packs, governance, and the "
+                "departure gate with each of its laws by guard name (re-measure, "
+                "definition, claim type, trust…: the law's sentence, what a hold "
+                "means, what to change). Use for concept questions about the PRODUCT "
+                "('what can you do', 'what is a briefing', 'what is re-measure'), "
+                "never for questions about the data. For a 'how do I…' walkthrough "
+                "grounded in this deployment's live state, use platform_guide; for "
+                "THIS departure, automation or metric by id, use explain."
             ),
             parameters=_HELP_PARAMS,
             run=lambda a: platform_help(connection_id, a),

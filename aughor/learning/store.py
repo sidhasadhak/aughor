@@ -211,10 +211,28 @@ def get(name: str, version: Optional[int] = None,
         c.close()
 
 
+def bytes_state(node: dict) -> str:
+    """Whether a node's rows can be read back: ``present``, ``purged`` (deleted on
+    purpose, the lineage kept) or ``missing`` (the registry points at a file that is not
+    there — the datasets directory was removed under it). `rows_of` returns [] for both
+    of the last two, and a reader that only sees [] concludes the corpus is empty; the
+    golden set read as 0 of 5 on this instance until TJ-1 asked which (§3.47)."""
+    c = _connect()
+    try:
+        ensure_once(c, _ensure_schema)
+        blob = c.execute("SELECT uri, deleted_at FROM dataset_data WHERE hash=?",
+                         (node.get("data_id") or "",)).fetchone()
+    finally:
+        c.close()
+    if blob is None or blob["deleted_at"]:
+        return "purged"
+    return "present" if Path(blob["uri"]).exists() else "missing"
+
+
 def rows_of(node: dict) -> list[dict]:
     """Read a node's examples back. Empty when the bytes have been purged — the node and
     its lineage survive a purge on purpose, so this returning [] is a legitimate state and
-    not an error to raise on."""
+    not an error to raise on. `bytes_state` says WHICH empty a reader is looking at."""
     c = _connect()
     try:
         ensure_once(c, _ensure_schema)

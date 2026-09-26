@@ -18,7 +18,6 @@ question), so a reader never re-decodes what the gate recorded.
 """
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -30,6 +29,7 @@ from aughor.govern.departure import (
     answer_owner_question,
 )
 from aughor.govern.departure_store import (
+    decode_row,
     get_departure,
     list_departures,
     mark_departure,
@@ -39,24 +39,20 @@ from aughor.govern.departure_store import (
 
 router = APIRouter(tags=["departures"])
 
-#: Ledger columns stored as JSON text, and what each decodes to when it cannot.
-_JSON_COLUMNS = {"reasons": list, "checks": dict, "guards": dict, "receipt": dict,
-                 "question": dict, "numerals": list}
-
-
 def _served(row: Optional[dict]) -> Optional[dict]:
-    """One ledger row as the doors serve it: JSON columns decoded, never re-encoded."""
+    """One ledger row as the doors serve it: JSON columns decoded, never re-encoded.
+
+    A row that held or asked also carries ``remedy`` — the lead sentence and, per guard
+    that held, what it means, what to change and where (SP-15: the same words `explain`
+    and `platform_help` give, from ONE module beside the laws). A departed row carries
+    none: it has nothing to fix, and an absent key says so."""
     if row is None:
         return None
-    out = dict(row)
-    for column, empty in _JSON_COLUMNS.items():
-        raw = out.get(column)
-        if isinstance(raw, str):
-            try:
-                decoded = json.loads(raw) if raw else empty()
-            except ValueError:
-                decoded = empty()
-            out[column] = decoded if isinstance(decoded, empty) else empty()
+    from aughor.govern.departure_remedies import remedy_for_row
+    out = decode_row(row)
+    remedy = remedy_for_row(out)
+    if remedy is not None:
+        out["remedy"] = remedy
     return out
 
 

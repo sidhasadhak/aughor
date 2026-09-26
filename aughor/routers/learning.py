@@ -168,7 +168,16 @@ def get_dataset(name: str, version: Optional[int] = None):
     node = store.get(name, version=version)
     if node is None:
         return {"found": False, "name": name, "version": version}
-    return {"found": True, "dataset": node, "lineage": store.lineage_of(node["id"])}
+    # Said, never implied: a registry row whose bytes are gone is not an empty dataset.
+    state = store.bytes_state(node)
+    out = {"found": True, "dataset": node, "lineage": store.lineage_of(node["id"]),
+           "bytes": state}
+    if state != "present":
+        out["note"] = (f"the rows cannot be read back: the bytes are {state} "
+                       + ("(deleted on purpose; the lineage is kept)" if state == "purged"
+                          else "(the registry names a file that is not on disk — re-run "
+                               "the export; an unchanged corpus writes the same path)"))
+    return out
 
 
 @router.post("/learning/export", dependencies=[gate(Capability.SEMANTIC_EDIT)])

@@ -3798,6 +3798,39 @@ in its own words, THIS departure's ungrounded numerals, the automation by name, 
 SP-M — the share of held rows whose Ask door was used, from the session log, no model.
 **Cost:** a corpus loader over prose that already exists; one declared tool; three doors. No new store. ⚑ nothing
 spends: every read is local.
+**Status 2026-09-26 — the order of work's three moves BUILT (`claude/clean-panels-evidence-keys`), plus
+automations and metrics as `explain` kinds; the glossary and the §3 summaries (item 33(b)'s second shelf) are NOT
+built and stay open.**
+- **The corpus knows the laws — from the gate's own text.** `govern/departure_remedies.py` holds the remedy table
+  (moved out of `web/lib/departureRemedies.ts`, which is deleted) and READS each law's sentence from
+  `govern/departure.py`'s module docstring by regex — parsed, never copied, and a test mutates the docstring to
+  prove the words come from it; a bullet the parser cannot find is a failing test for all ten guards.
+  `platform_help` grew a `departures` topic and one per guard, built from that module at import; aliases carry the
+  reader's spellings. Proved: `platform_help("re-measure")` → topic `remeasure`, law 1's sentence, "What to do:
+  … ask for it in the automation's question".
+- **`explain` — one declared read, on every transport.** `agent/spotlight_explain.py`, declared first in the Guide
+  limb so the parity ratchet carries it to conversation, `/spotlight/tools` and the MCP server unchanged. Kinds:
+  departure (state, automation, analysis id, every guard's outcome and recorded sentence in the gate's order, the
+  remedy with each law, an offer), automation (`_resolve_automation` by id or exact name; triggers, steps with
+  their questions, last run, the five newest departures), metric (lifecycle, definition, tests, freshness SLA;
+  a draft says it cannot back a departing number). Every offer names a roster tool or the screen that holds the
+  act (SP-4's law, pinned): `edit_automation` for schedule · name · enabled, the Automations canvas for the
+  question — the "revise the question in place" the draft promised is NOT a chat door today and the tool says so.
+  Proved on a read-only copy of the live ledger: `explain(departure, 073097487898)` answers *held by re-measure ·
+  1,648.08, 1,151.01, 23,776.00, 4,702.23 not in analysis ecb56660 · law 1 · The Look - Daily Briefing · offer
+  edit_automation*; `explain(automation, 3440db08…)` lists its schedule, the investigate step's question, and
+  five recent departures, all held.
+- **The door on the row is structural.** `askSpotlight(question, focus)` parks `{kind: "departure", id}` beside
+  the question; the palette sends it as `focus` on the `/ask` body (`AskFocus`, typed client regenerated); the
+  chat proxy forwards it; `_focus_prose_for` runs `explain` ONCE before the loop and hands the result to the
+  conversation as a named tool result ("do not call explain again for this object"). The id never rides in the
+  prose. The departures screen now reads its remedies from the served row (`remedy` on every held row from
+  `GET /departures`) — one module, three readers.
+- **Receipt owed, ⚑ one model call:** the done-when's live re-ask — the same question from the held row, in the
+  palette, must answer with law 1, THIS departure's numerals, the automation by name and the offer, in ≤ 2 tool
+  calls (the focus prose makes the expected count 0). The serving API (pid 69688) predates this code; the
+  re-ask waits on a restart at the user's word. SP-M's uptake measure (held rows whose Ask door was used) is not
+  yet built.
 
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
@@ -8735,6 +8768,39 @@ reads clean on a live answer and the collection holds a point; one query joins a
 fewer than ten rows from 821 completed chat turns, the constraint is that envelopes exist only since 2026-09-23 and
 the tier reads envelopes — TJ-2 then derives "guards clean" from the audit and guard tables for older turns, or the
 arc accepts accrual from now and says so.
+
+**Status 2026-09-26 — BUILT in part (`claude/clean-panels-evidence-keys`); one tap waits on the operator.**
+- **The exporters ran once, through the live API (the one writer).** `POST /learning/export` and
+  `POST /learning/export/decisions`, 2026-09-26 12:16Z. Gate report before → after: sft 0 → 0 · dpo 0 → 0 ·
+  golden 5 → 5 · guard days 22 of 30 · **bronze 0 → 1** · repairs 0 → 0 · **choice 0 → 211** (analyst.tool 138,
+  converse.tool 73) · **choice_golden 0 → 26**. `data/datasets/` came back with seven snapshots (the golden set's
+  5 rows read again). **The falsifier fired:** bronze yielded 1 row from 821 completed turns — envelopes exist
+  only since 2026-09-23, so bronze accrues from now; TJ-2 decides whether older turns are graded from the audit
+  and guard tables. The exporters still have no loop: run by hand until TJ-2.
+- **Three joins, re-measured first.** (1) The receipt's model id — `LLMProvider` had `_model` and no property;
+  `model` is now a read-only property and the receipt stamps it (defect 1 closed). (2) The decision record's
+  trace — was a fresh uuid per turn; it is now the run's ambient trace (`current_trace_id()`, the id
+  `build_ask_stream` binds and the history row carries), a fresh id only when none is bound; a test drives
+  `_stream_converse` under `bind_trace` and reads the id `converse` received (defect 2 closed). (3) The history
+  row's `trace_id` — **already written**: `db/history.py` fills it from the ambient trace since #547, and every row
+  since then carries one (5 of 5 since 2026-09-25; the census counted 1,113 rows written before the writer). No
+  change; the census row is corrected here.
+- **The slashless model id.** `_fallback_model()` lost its default (`""`, skipped like any unconfigured backend);
+  the ratchet's pattern learned vendor-prefixed slashless ids (`claude-…`, `gpt-…`, `gemini-…`, …), mutation-
+  tested against the removed literal, and skips comment lines (its first new hit was a comment recalling a
+  retired keyword list — a comment ships nothing). Defect 4 closed.
+- **Why every call was unpriced — measured.** 83 of 83 calls on 2026-09-25, all `openrouter /
+  deepseek/deepseek-v4.1-flash`, a model whose rate OpenRouter publishes and `llm/models.py` already converts to
+  USD per 1M. `refresh_catalogue_prices` HAD NO CALLER. `/obs/usage-summary` now consults the catalogue at most
+  hourly before pricing and says whose gap an unpriced call is (`pricing.unpriced_means`); the suite is kept
+  offline from the fetch (`AUGHOR_LLM_MODEL_FETCH=0` by default in conftest). The live number moves on restart.
+- **A registry row whose bytes are gone says so.** `store.bytes_state` → present · purged · missing, served on
+  `GET /learning/datasets/{name}` with the remedy (re-run the export; an unchanged corpus writes the same path).
+  Defect 9 closed at the cause, not by the directory's return.
+- **⚑ Waits on the operator:** the few-shot memory's embedding backend — `AUGHOR_EMBED_BACKEND` is unset (defaults
+  to Ollama) and no Ollama answered on :11434 this session, so the two collections still cannot be created; a
+  local embedder or a keyed one is the user's call. **Receipt owed:** `search_sql_examples_checked` reading clean
+  with a point in the collection, after that choice.
 
 #### TJ-2 · One record per run: the trajectory (about a week, free)
 
