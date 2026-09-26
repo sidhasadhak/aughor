@@ -357,6 +357,14 @@ def _lit(d: date):
     return exp.Cast(this=exp.Literal.string(d.isoformat()), to=exp.DataType.build("date"))
 
 
+def window_predicate(column: str, start: date, end: date):
+    """``column`` (as a date) on or after ``start`` and before ``end`` — the one predicate every
+    window cut uses, public so a finding re-asked for a range (BR-7) cuts exactly as a metric does."""
+    from sqlglot import exp
+    return exp.and_(exp.GTE(this=_day(exp.column(column)), expression=_lit(start)),
+                    exp.LT(this=_day(exp.column(column)), expression=_lit(end)))
+
+
 def _table(name: str, dialect: str):
     from sqlglot import exp
     return exp.to_table(str(name), dialect=dialect)

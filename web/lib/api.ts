@@ -5890,6 +5890,51 @@ export interface BriefingRangeBlock {
   recipe_error?: string;
 }
 
+/** BR-7 — one finding re-asked for a range: its own SQL over the range and the previous range,
+ *  the figure read from the result (`how`: the value of a one-row result, else the total or,
+ *  for a rate, the mean of `measure` over the rows). `rel` is the change, the range's scorecard. */
+export interface FindingReask {
+  id: string;
+  domain: string;
+  grain: string;
+  measure: string;
+  how: "value" | "total" | "mean" | "";
+  current: number | null;
+  previous: number | null;
+  rel: number | null;
+  rows_current: number;
+  rows_previous: number;
+  sql: string;
+}
+export interface FindingApart { id: string; domain: string; why: string }
+export interface FindingsReask {
+  covers: string;
+  compared_with: string;
+  key: string;
+  reasked: FindingReask[];
+  apart: FindingApart[];
+  capped: number;
+  total: number;
+  profiled: boolean;
+  cached: boolean;
+}
+
+export async function getFindingsReask(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<FindingsReask> {
+  const q = new URLSearchParams();
+  if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+  else q.set("preset", range.preset);
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings/reask?${q}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The findings could not be re-asked for this range");
+  }
+  return res.json();
+}
+
 export function isRangeBlock(p: BriefingPeriodBlock | BriefingRangeBlock | undefined | null): p is BriefingRangeBlock {
   return !!p && typeof (p as BriefingRangeBlock).key === "string";
 }

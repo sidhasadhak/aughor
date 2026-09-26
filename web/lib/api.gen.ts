@@ -4676,6 +4676,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/findings/reask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reask Findings For Range
+         * @description BR-7, joined to BR-9: every explorer finding of this scope re-asked for the range — its own
+         *     SQL over the range and the previous range, cut on the main date of the first table it reads —
+         *     ranked by the size of the change; the ones that cannot be re-asked listed apart with why.
+         *     No model call. Refused like the range Briefing when `briefing.ranges` is off.
+         */
+        get: operations["reask_findings_for_range_exploration__conn_id__findings_reask_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/fix-all": {
         parameters: {
             query?: never;
@@ -24824,6 +24847,44 @@ export interface operations {
         parameters: {
             query?: {
                 schema?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reask_findings_for_range_exploration__conn_id__findings_reask_get: {
+        parameters: {
+            query?: {
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                schema?: string | null;
+                workspace_id?: string | null;
+                refresh?: boolean;
             };
             header?: never;
             path: {

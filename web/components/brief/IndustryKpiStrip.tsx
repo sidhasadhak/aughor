@@ -135,7 +135,7 @@ export function KpiStripView({ industry, period, kpis, scopeKey, note }: {
         Key Metrics
         {industry ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · ${industry}`}</span> : null}
         {note
-          ? <span data-testid="kpi-strip-note" style={{ fontWeight: 400, color: "var(--t2)" }}>{` · ${note}`}</span>
+          ? <span data-testid="kpi-strip-note" style={{ fontWeight: 400, color: "var(--amb4)" }}>{` · ${note}`}</span>
           : period ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · vs ${periodWord(period)}`}</span> : null}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>

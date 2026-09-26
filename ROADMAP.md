@@ -9505,7 +9505,29 @@ and says so. If BR-4's reader cannot name a move the dated Briefing carries that
 ship without prose. If a custom range cannot be built inside a minute on theLook by compilation, BR-8 moves ahead of
 BR-4.
 
-#### BR-9 · The whole page adheres to the range (DRAFTED 2026-09-26 from the user's screenshot; lifts BR-7's pause; about a day for the labels, then BR-7's week, then the re-rank)
+#### BR-9 · The whole page adheres to the range (DRAFTED 2026-09-26 from the user's screenshot; lifts BR-7's pause — ✅ BUILT the same day: the labels, the Key Metrics row for the range, BR-7's re-ask; the cockpit says "all history" and its range-aware cards are the one step left)
+
+> **Status 2026-09-26 (built the same day, on the user's "Lets go for all 5").** Measured before building, against
+> the map of the page: the Key Metrics row was NOT the explorer's findings but the business profile's north-star SQL
+> over all history (`IndustryKpiStrip`, `POST /query/run`); the findings list was `getDomainInsights` all-history,
+> sorted by impact while its footer said "novelty"; the cockpit's cards re-run their saved SQL. Built: (1) **the
+> labels** — `rangeScopeNote` ("all history, not 17–23 August" once the range Briefing is on screen, "…not this
+> range" while pending, nothing on the standing view) on the Key Metrics header, the ledger footer and the cockpit's
+> label; the footer now says the sort it uses. (2) **Key Metrics for the range** — under a range the row leads with the
+> APPROVED metrics measured for it by BR-2's compiler (the server's formatted figures, each with its status), the ones
+> the hero does not already show (`rangeTop` shared, so no figure is on the page twice); the standing north stars
+> follow under the note. (3) **BR-7, un-paused and built without a model** — every finding keeps its own SQL and the
+> tables it read (measured live on theLook: 23 of 23; 7 single-figure, 16 grouped), so
+> `GET /exploration/{conn}/findings/reask?preset|start&end` runs each statement over the range and over the previous
+> range, the grain being the main date of the first table it reads (`scoped_statement` + `window_predicate`), reads
+> the figure (the one-row value; else the total, or the mean for a rate, of the measure column), and ranks by the
+> change; a finding that cannot be re-asked is listed APART with why (no SQL, no date on its tables, a failed query,
+> no rows) — never silently left in the ranked list; at most 40 per range, the cap said; cached a quarter hour per
+> (scope, range). The ledger orders by the change, each row shows its figure for the range against the previous one,
+> and the apart rows say "about all history — why". (4) **The cockpit** says "all history, not this range"; a
+> range-aware card query is the step left. Receipt owed: the page under *Week* on theLook with `briefing.ranges` on
+> (the flag is the user's; item 2 of the day's list).
+
 
 > **Origin.** The user, 2026-09-26, on a screenshot of the Briefing with *Week* selected: *"Clicking on Week/Month of
 > whatever the range.. I see only a few parts changing and not the whole briefing.. its wierd because the whole briefing

@@ -102,6 +102,9 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # already speak 'findings' everywhere the word is theirs to choose.
          "aughor/agent/platform_tools.py",
          "tests/unit/test_platform_tools.py",
+         # BR-7's re-ask test (2026-09-26) constructs the same fake explorer states, keyed
+         # by the store's frozen `insights`; the module under test speaks 'findings'.
+         "tests/unit/test_briefing_reask.py",
          # CI-4's tests construct /ask request shapes carrying the frozen `insight_id`
          # field — the same reason test_converse_route_off_state is exempt.
          "tests/unit/test_ci4_depth_as_tool.py",
@@ -481,7 +484,7 @@ BASELINE: dict[str, int] = {
     # restored the Hub's domain rail on the Profile layer (ProfileLayer.tsx +28: the
     # domain-findings API by its own names). Code #498 removed came back by request;
     # renaming that API to dodge the pattern would only hide it from this test.
-    "insight": 1759,
+    "insight": 1757,   # 1759 → 1757 on 2026-09-26: three prose comments in BriefingPanel.tsx now say "finding"
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     # 2026-09-13: 602 → 573, measured. Instrument redrew the Briefing and deleted ProcessMapper.tsx;
