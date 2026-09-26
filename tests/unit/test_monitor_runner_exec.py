@@ -53,3 +53,38 @@ def test_scalar_handles_dict_rows():
 def test_scalar_none_on_error():
     db = ConnLike([], error="bad sql")
     assert _scalar(db, "SELECT nope") is None
+
+
+def test_query_hands_the_connection_native_sql():
+    """2026-09-26: theLook's Units Sold watch failed every minute on BigQuery with
+    "Invalid date: 'created_at'" — the series SQL double-quotes identifiers (DuckDB's
+    dialect, by design) and on BigQuery a double-quoted identifier is a string literal.
+    The runner translates through the one seam every platform read uses."""
+    import types
+    seen = {}
+
+    def rows(sql, label=""):
+        seen["sql"] = sql
+        return [("2026-09-01", 3.0)]
+    bq = types.SimpleNamespace(dialect="bigquery", writes_native_sql=True, rows=rows)
+    out = _query(bq, 'SELECT CAST("created_at" AS DATE) AS day, (COUNT(id)) AS value FROM inventory_items WHERE sold_at IS NOT NULL GROUP BY 1 ORDER BY 1')
+    assert out == [("2026-09-01", 3.0)]
+    assert '"created_at"' not in seen["sql"] and "`created_at`" in seen["sql"]
+    # DuckDB gets it as written.
+    duck = types.SimpleNamespace(dialect="duckdb", writes_native_sql=False, rows=rows)
+    _query(duck, 'SELECT CAST("created_at" AS DATE) AS day FROM t')
+    assert '"created_at"' in seen["sql"]
+
+
+def test_scalar_hands_the_connection_native_sql_too():
+    """The census after the anomaly fix found `_scalar` (threshold / any-change / trend
+    monitors) still sending DuckDB quoting to native engines."""
+    import types
+    seen = {}
+
+    def scalar(sql, label="", cast=float):
+        seen["sql"] = sql
+        return 1.0
+    bq = types.SimpleNamespace(dialect="bigquery", writes_native_sql=True, scalar=scalar)
+    assert _scalar(bq, 'SELECT COUNT(*) FROM "orders" WHERE "status" = \'x\'') == 1.0
+    assert "`orders`" in seen["sql"] and '"orders"' not in seen["sql"]
