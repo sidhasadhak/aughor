@@ -325,6 +325,11 @@ def _apply_metric(connection_id: str, payload: dict, actor: str) -> dict:
     merged = {**base, **{k: v for k, v in payload.items() if k in _METRIC_FIELDS},
               "name": name, "connection": conn}
     merged.setdefault("label", name.replace("_", " ").title())
+    # A proposal is a statement (2026-09-26): an imported aggregate is wrapped over its
+    # first table with its filters, so what the reviewer sees is what will run.
+    from aughor.semantic.metric_statement import as_statement
+    merged["sql"] = as_statement(merged.get("sql"), list(merged.get("tables") or []),
+                                 list(merged.get("filters") or []), name)
     # An import NEVER carries lifecycle: it lands as a fresh draft and is proposed by
     # the accepting human — the metrics workflow's own approve stays the second act.
     merged["status"], merged["version"] = "draft", int(base.get("version") or 0)

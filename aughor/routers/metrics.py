@@ -141,8 +141,56 @@ def materialise_metric(conn_id: str, name: str, schema: Optional[str] = None,
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+#: 2026-09-26, the user: *"let every metric have mandatorily a SELECT statement"*. A row
+#: written before the rule keeps its expression until its FORMULA is edited — confirming its
+#: dates or changing its label must not refuse a metric someone already approved.
+_STATEMENT_RULE = ("A metric's SQL is a whole SELECT statement (CTEs allowed) that returns one row "
+                   "with the metric's value — for example: SELECT SUM(amount) AS revenue FROM orders "
+                   "WHERE status = 'active'. An aggregate expression without SELECT is no longer "
+                   "accepted.")
+
+
+def _require_statement(sql: str, existing) -> None:
+    from aughor.semantic.metric_statement import is_statement
+    if is_statement(sql):
+        return
+    if existing is not None and (sql or "").strip() == (existing.sql or "").strip():
+        return
+    raise HTTPException(status_code=422, detail=_STATEMENT_RULE)
+
+
+class DateCandidatesRequest(BaseModel):
+    """What the metric editor sends to be offered the dates a definition could be grained at."""
+    connection: str
+    sql: str = ""
+    tables: list[str] = []
+
+
+@router.post("/metrics/date-candidates")
+def metric_date_candidates(req: DateCandidatesRequest):
+    """The dates a metric could be grained at, as proposals — every date- or time-typed column
+    of every table its statement reads (or its definition names), written
+    ``schema.table.column``, each table's main date first (the user, 2026-09-26: *"a
+    combination of a list and an open input"*). Read from the profiler's latest entry, no
+    warehouse call; a connection never profiled gets an empty list AND the reason."""
+    from aughor.semantic.metric_statement import date_candidates
+    from aughor.tools.profile_cache import latest_profile_entry
+    try:
+        profile = latest_profile_entry(req.connection)
+    except Exception as exc:  # noqa: BLE001 — a failed read is said, not an empty list
+        return {"candidates": [], "note": f"the profile could not be read ({type(exc).__name__})"}
+    if not profile:
+        return {"candidates": [], "note": "this connection has no profile yet — explore it "
+                                         "first, then the platform can propose its dates"}
+    out = date_candidates(req.sql, req.tables, profile)
+    return {"candidates": out,
+            "note": "" if out else "no date or timestamp column was profiled on the tables this "
+                                   "statement reads"}
+
+
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def create_metric(req: MetricRequest):
+    _require_statement(req.sql, None)
     # G1: declared LOW — auto-allowed and AUDITED, so defining a governed metric leaves a
     # trail. The approval question belongs to the approve transition, not to authoring.
     from aughor import govern
@@ -182,6 +230,7 @@ def update_metric(name: str, req: MetricRequest):
         # per-connection formula would arrive already stamped `approved` by whoever
         # approved the house default. Treat it as a new definition at this scope.
         existing = None
+    _require_statement(req.sql, existing)
     data = {**req.model_dump(), "name": name}
     # Arc BR-2: the time fields are kept unless this edit SENT them — an editor that does not
     # know them must not erase what the platform set — and a sent correction is a person's.

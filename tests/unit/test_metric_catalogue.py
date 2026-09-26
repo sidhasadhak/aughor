@@ -177,7 +177,9 @@ class TestMaterialise:
         # formula stored verbatim — which is a governed definition nobody can run. The
         # copy exists to be edited and executed, so it carries the column this connection
         # bound. (Bare, not quoted: a double-quoted identifier is a STRING on BigQuery.)
-        assert saved["sql"] == "SUM(margin)"
+        # …and, since 2026-09-26, as a STATEMENT: the bound formula wrapped over its table,
+        # so what the editor opens on is what will run.
+        assert saved["sql"].startswith("SELECT (SUM(margin)) AS gross_margin_rate")
         assert "{{role" not in saved["sql"]
         assert m.name == "gross_margin_rate"
 

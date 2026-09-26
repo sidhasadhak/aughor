@@ -1088,6 +1088,31 @@ export async function createMetric(m: Omit<Metric, never>): Promise<Metric> {
   return res.json();
 }
 
+/** One date a metric could be grained at, as the platform proposes it (2026-09-26):
+ *  `schema.table.column` as the table is written, the profiler's main date of each table
+ *  first. Proposals, not a closed list — the editor's input also takes anything typed. */
+export interface MetricDateCandidate {
+  grain: string;
+  table: string;
+  column: string;
+  type: string;
+  primary: boolean;
+}
+
+/** The dates a definition could be grained at, from the profiler's latest entry. `note`
+ *  says why the list is empty when it is (never profiled, nothing time-typed). */
+export async function getMetricDateCandidates(
+  connection: string, sql: string, tables: string[],
+): Promise<{ candidates: MetricDateCandidate[]; note: string }> {
+  const res = await fetch(`${getApiBase()}/metrics/date-candidates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection, sql, tables }),
+  });
+  if (!res.ok) throw new Error("Failed to read the date proposals");
+  return res.json();
+}
+
 export async function updateMetric(name: string, m: Metric): Promise<Metric> {
   const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}`, {
     method: "PUT",

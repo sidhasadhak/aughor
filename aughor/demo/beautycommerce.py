@@ -242,8 +242,10 @@ def _seed_metrics() -> int:
                          tables=["beauty.reviews"], dimensions=["product_id"], unit="stars",
                          owner="Product team", target_value=4.2),
     ]
+    from aughor.semantic.metric_statement import as_statement
     for m in metrics:
-        save_metric(m)
+        # A proposal is a statement (2026-09-26): the seed's aggregate, wrapped over its table.
+        save_metric(m.model_copy(update={"sql": as_statement(m.sql, m.tables, m.filters, m.name)}))
     return len(metrics)
 
 

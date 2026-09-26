@@ -35,10 +35,18 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
+def _stmt(expr: str) -> str:
+    """A statement, since 2026-09-26 — the doors refuse a bare aggregate. These tests are
+    about WHICH connection a definition governs, so each formula is wrapped the same way."""
+    return f"SELECT {expr} AS revenue FROM order_items"
+
+
 def _body(**over):
-    b = {"name": "revenue", "label": "Revenue", "sql": "SUM(sale_price)",
+    b = {"name": "revenue", "label": "Revenue", "sql": _stmt("SUM(sale_price)"),
          "tables": ["order_items"]}
     b.update(over)
+    if not b["sql"].lower().startswith(("select", "with")):
+        b["sql"] = _stmt(b["sql"])
     return b
 
 
@@ -51,8 +59,8 @@ def test_two_connections_each_keep_their_own_revenue(client):
 
     seen_a = client.get("/metrics?connection_id=conn_a").json()
     seen_b = client.get("/metrics?connection_id=conn_b").json()
-    assert [m["sql"] for m in seen_a if m["name"] == "revenue"] == ["SUM(sale_price)"]
-    assert [m["sql"] for m in seen_b if m["name"] == "revenue"] == ["SUM(gmv_eur)"]
+    assert [m["sql"] for m in seen_a if m["name"] == "revenue"] == [_stmt("SUM(sale_price)")]
+    assert [m["sql"] for m in seen_b if m["name"] == "revenue"] == [_stmt("SUM(gmv_eur)")]
 
 
 def test_the_same_connection_still_refuses_a_duplicate(client):
@@ -125,7 +133,7 @@ def test_a_scoped_metric_shadows_the_global_one(client):
     client.post("/metrics", json=_body(connection="conn_a", sql="SUM(sale_price)"))  # scoped
     seen = [m for m in client.get("/metrics?connection_id=conn_a").json()
             if m["name"] == "revenue"]
-    assert [m["sql"] for m in seen] == ["SUM(sale_price)"]
+    assert [m["sql"] for m in seen] == [_stmt("SUM(sale_price)")]
 
 
 def test_approval_is_scoped_to_the_connection_it_governs(client):
@@ -149,7 +157,7 @@ def test_approval_is_scoped_to_the_connection_it_governs(client):
     # …and the house default is untouched by a transition aimed elsewhere.
     house = [m for m in client.get("/metrics").json()
              if m["name"] == "revenue" and m["connection"] == GLOBAL_CONNECTION]
-    assert house and house[0]["sql"] == "SUM(global_amount)"
+    assert house and house[0]["sql"] == _stmt("SUM(global_amount)")
 
 
 def test_a_transition_for_a_connection_with_no_definition_is_a_404(client):

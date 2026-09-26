@@ -3396,7 +3396,8 @@ export interface paths {
         /**
          * Get Summary
          * @description How many departures took each state, and how many a person still owes — the count
-         *     the departures screen and its badge show.
+         *     the departures screen and its badge show. ``ask_door`` (SP-15's measure) is the share
+         *     of held rows Spotlight was asked about from the row, read from the session log.
          */
         get: operations["get_summary_departures_summary_get"];
         put?: never;
@@ -7739,6 +7740,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/date-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Metric Date Candidates
+         * @description The dates a metric could be grained at, as proposals — every date- or time-typed column
+         *     of every table its statement reads (or its definition names), written
+         *     ``schema.table.column``, each table's main date first (the user, 2026-09-26: *"a
+         *     combination of a list and an open input"*). Read from the profiler's latest entry, no
+         *     warehouse call; a connection never profiled gets an empty list AND the reason.
+         */
+        post: operations["metric_date_candidates_metrics_date_candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/enforcement-rate": {
         parameters: {
             query?: never;
@@ -11678,6 +11703,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/spotlight/uptake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Spotlight Uptake
+         * @description The two uptake meters, served — §7's standing lesson is that features stall at TESTED,
+         *     not LEVERAGED, and both of these were measured only by hand until they had a door.
+         *
+         *     `vocabulary` (SP-M, AV-M): of the streaming converse turns where answering in parts was
+         *     OFFERED, how many used it. `ask_door` (SP-15): of the held rows in the departures ledger,
+         *     how many Spotlight was asked about FROM the row. Each reports `measured: false` and a
+         *     `None` rate when its log could not be read — a failed probe is not a zero.
+         */
+        get: operations["spotlight_uptake_spotlight_uptake_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/suggestions": {
         parameters: {
             query?: never;
@@ -11915,6 +11966,35 @@ export interface paths {
          *     a deep run measured ~60% idle, which no single event in the log states.
          */
         get: operations["get_trace_summary_traces__trace_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/traces/{trace_id}/trajectory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trace Trajectory
+         * @description TJ-2 — one record per run, joined at read: the question, the loop's steps in order
+         *     (the `step` events), the answer rows with their re-checks and a person's verdict, the
+         *     statements that ran (`audit_log`), the guard fires, the picks (`decision_record`), and
+         *     the reward FIELDS — never a number: TJ-3 owns the label and it must take both values on
+         *     real traffic before anything reads it.
+         *
+         *     Served with the steps' payload fields WITHHELD, exactly as `/learning/decisions`
+         *     withholds `context`: a step's arguments and result excerpt are captured only under an
+         *     open prompt window and are a payload under §6 item 4. The key stays, empty, and
+         *     `payload_withheld` says why. A store that could not be read says so in its place.
+         */
+        get: operations["get_trace_trajectory_traces__trace_id__trajectory_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -13287,6 +13367,24 @@ export interface components {
              * @default
              */
             updated_at: string;
+        };
+        /**
+         * DateCandidatesRequest
+         * @description What the metric editor sends to be offered the dates a definition could be grained at.
+         */
+        DateCandidatesRequest: {
+            /** Connection */
+            connection: string;
+            /**
+             * Sql
+             * @default
+             */
+            sql: string;
+            /**
+             * Tables
+             * @default []
+             */
+            tables: string[];
         };
         /** DeltaStatusIn */
         DeltaStatusIn: {
@@ -29851,6 +29949,39 @@ export interface operations {
             };
         };
     };
+    metric_date_candidates_metrics_date_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DateCandidatesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     metric_enforcement_rate_metrics_enforcement_rate_get: {
         parameters: {
             query?: {
@@ -36898,6 +37029,26 @@ export interface operations {
             };
         };
     };
+    spotlight_uptake_spotlight_uptake_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_suggestions_suggestions_get: {
         parameters: {
             query?: {
@@ -37196,6 +37347,37 @@ export interface operations {
             query?: {
                 top?: number;
             };
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_trajectory_traces__trace_id__trajectory_get: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 trace_id: string;

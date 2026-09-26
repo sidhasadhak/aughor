@@ -55,8 +55,9 @@ def test_the_rules_set_the_dates_a_person_would():
     assert "tied to created_at and completed by returned_at" in rr["time_source"]
     stock = mt.infer(ON_HAND, PROFILE).fields
     assert (stock["time_kind"], stock["time_column"], stock["until_column"]) == ("stock", "created_at", "sold_at")
-    whole = mt.infer({**REVENUE, "sql": "SELECT SUM(sale_price) FROM order_items"}, PROFILE)
-    assert whole.fields is None and "set by a person" in whole.reason
+    # A statement is read too (2026-09-26): its date is written as the grain, `table.column`.
+    whole = mt.infer({**REVENUE, "sql": "SELECT SUM(sale_price) FROM order_items"}, PROFILE).fields
+    assert (whole["time_kind"], whole["time_column"]) == ("flow", "order_items.created_at")
 
 
 @pytest.fixture

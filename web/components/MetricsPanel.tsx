@@ -15,7 +15,9 @@ import {
   transitionMetric,
   getMetricAudit,
   getDefinitionReport,
+  getMetricDateCandidates,
   type CatalogueMetric,
+  type MetricDateCandidate,
   type Metric,
   type MetricValidationResult,
   type MetricFreshnessResult,
@@ -137,6 +139,21 @@ function DatesSection({ metric, onChanged }: { metric: Metric; onChanged: () => 
   const [editing, setEditing] = useState(false);
   const [kind, setKind] = useState(metric.time_kind ?? "flow");
   const [column, setColumn] = useState(metric.time_column ?? "");
+  // The platform's proposals for the grain — a list beside an open input (asked for
+  // 2026-09-26): every date or timestamp column of the tables the statement reads, as
+  // `schema.table.column`, the main date first. Read when the editor opens; empty with the
+  // reason when the connection was never profiled.
+  const [candidates, setCandidates] = useState<MetricDateCandidate[]>([]);
+  const [candidatesNote, setCandidatesNote] = useState("");
+  const grainList = `metric-grain-${metric.name}`;
+  useEffect(() => {
+    if (!editing) return;
+    let live = true;
+    getMetricDateCandidates(metric.connection ?? "*", metric.sql, metric.tables ?? [])
+      .then(r => { if (live) { setCandidates(r.candidates); setCandidatesNote(r.note); } })
+      .catch(() => { if (live) setCandidatesNote("the proposals could not be read"); });
+    return () => { live = false; };
+  }, [editing, metric.connection, metric.sql, metric.tables, metric.name]);
   const [outcome, setOutcome] = useState(metric.outcome_column ?? "");
   const [until, setUntil] = useState(metric.until_column ?? "");
   const [settles, setSettles] = useState(metric.settles_after_days != null ? String(metric.settles_after_days) : "");
@@ -190,18 +207,29 @@ function DatesSection({ metric, onChanged }: { metric: Metric; onChanged: () => 
               <option value="cohort">Cohort — completed by a later date</option>
             </select>
           </label>
-          <input className="aug-input aug-fs-xs" placeholder="Date column, e.g. created_at" value={column}
+          <input className="aug-input aug-fs-xs" list={grainList}
+            placeholder="Date column — pick a proposal, or type schema.table.column" value={column}
             onChange={e => setColumn(e.target.value)} aria-label="Date column" />
+          <datalist id={grainList}>
+            {candidates.map(c => (
+              <option key={c.grain} value={c.grain}>{c.primary ? `main date · ${c.type}` : c.type}</option>
+            ))}
+          </datalist>
+          <p className="aug-fs-xs text-zinc-500">
+            {candidates.length > 0
+              ? `${candidates.length} proposal${candidates.length === 1 ? "" : "s"}: ${candidates.map(c => c.grain).join(" · ")}`
+              : candidatesNote || "no proposals yet"}
+          </p>
           {kind === "cohort" && (
             <>
-              <input className="aug-input aug-fs-xs" placeholder="Completing date, e.g. returned_at" value={outcome}
+              <input className="aug-input aug-fs-xs" list={grainList} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
                 onChange={e => setOutcome(e.target.value)} aria-label="Completing date column" />
               <input className="aug-input aug-fs-xs" placeholder="Settles after (days)" value={settles}
                 onChange={e => setSettles(e.target.value)} aria-label="Settles after days" />
             </>
           )}
           {kind === "stock" && (
-            <input className="aug-input aug-fs-xs" placeholder="Counts until, e.g. sold_at" value={until}
+            <input className="aug-input aug-fs-xs" list={grainList} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
               onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
           )}
           <input className="aug-input aug-fs-xs" placeholder="Who is confirming" value={actor}
@@ -636,10 +664,10 @@ export function MetricsPanel({ connId }: { connId?: string }) {
               />
             </Field>
 
-            <Field label="SQL Expression" required hint="Aggregate expression — no SELECT keyword">
+            <Field label="SQL statement" required hint="A whole SELECT — CTEs allowed — that returns one row with the metric's value">
               <textarea
                 className={`${inputCls} font-mono text-xs min-h-[72px] resize-y`}
-                placeholder="SUM(amount) FILTER (WHERE status = 'active')"
+                placeholder="SELECT SUM(amount) AS revenue FROM orders WHERE status = 'active'"
                 value={form.sql}
                 onChange={(e) => setForm({ ...form, sql: e.target.value })}
               />

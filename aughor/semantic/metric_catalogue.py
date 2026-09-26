@@ -440,11 +440,14 @@ def materialise(connection_id: str, name: str, schema_name: Optional[str] = None
                 f"connection has not bound — binding the ROLE is not enough, every "
                 f"attribute the formula names needs a column")
 
+    from aughor.semantic.metric_statement import as_statement
     metric = MetricDefinition(
         name=normalize_name(entry.name),
         connection=connection_id,
         label=entry.label or entry.name,
-        sql=sql,
+        # Every proposal is a statement (2026-09-26): a catalogue formula written as an
+        # aggregate is wrapped over its first table, so the editor opens on runnable SQL.
+        sql=as_statement(sql, list(entry.tables), [], normalize_name(entry.name)),
         tables=list(entry.tables),
         dimensions=list(entry.dimensions),
         unit=entry.unit or None,

@@ -9280,6 +9280,43 @@ the cohort test fails; filter a stock by the range instead of taking its level a
 **Falsifier:** if the fields stay empty on theLook for 30 days after the editor shows them, declaration — not code —
 is the constraint; the arc stops after BR-1 and says so here, and the Curator's proposals become the next question.
 
+**2026-09-26, later — two calls from the user on the metric editor, BUILT the same day (`claude/clean-panels-evidence-keys`).**
+On the field's *"Aggregate expression — no SELECT keyword"*: *"not every metric is SUM or AVG or COUNT of
+something.. it can be pre-assessed SELECT statements with multiple CTEs that user may enter. But our job is to
+propose those nonetheless (with select statement). Remove this condition and let every metric have mandatorily a
+SELECT statement."* On the date field: *"a combination of a list and an open input. List should be our proposal of
+what date/timestamp should the metric be grained at in a format schema.table.column_name."*
+- **A metric's SQL is a statement.** `semantic/metric_statement.py` names the two words: a *statement* is a whole
+  `SELECT` (CTEs allowed) returning one row with the value; a *grain* is `schema.table.column`, the date a row
+  counts on, naming the TABLE because that is how a statement is cut to a range — every reference to the grain's
+  table inside the statement is replaced by that table filtered to the window, so the statement's own arithmetic,
+  CTEs and all, runs over one window's rows. The doors (`POST`/`PUT /metrics`) refuse a new bare aggregate with
+  the rule in words; a row written before the rule keeps its expression until its formula is edited (confirming
+  its dates must not refuse an approved metric). Every proposal writer emits a statement — the catalogue's
+  materialise, the intake's import, the ontology's verified metrics, the demo seeds — by wrapping an aggregate
+  over its first table with its filters, exactly as the value path always ran it. Measured before building: the
+  value path already ran a statement verbatim; the range cut (`measure_sql`) refused one, the date rule refused
+  one, and the two monitor series paths skip one (unchanged: a statement has no day to replay by).
+- **The range cut, over statements.** `_measure_statement_sql`: the grain's table substituted per window; the
+  statement stands as the `_v` scalar; `_first`/`_last`/`_n` read from the grain table under the same filter; a
+  cohort's as-of bound applied by the same `bound_outcome` rewrite over the whole tree. Proved on DuckDB: a CTE'd
+  revenue statement and the expression it replaces measure the same 180.0 / 60.0 on the same rows, and the cohort
+  statement the same 1/3. What a statement cannot have is SAID: a segment (`by`) — its segments are its own; a
+  grain whose table it does not read; a stock's level at a past date when the statement tests its until column
+  itself (the platform never rewrites what a statement says).
+- **The rule reads statements.** `infer` takes the final SELECT's first expression as the formula and its WHERE as
+  the filters, over the first table the statement reads, and writes the date it sets AS THE GRAIN
+  (`table.column`); an expression's date stays bare. A presence test inside a CTE is not read — the proposals list
+  is there for that.
+- **The proposals.** `POST /metrics/date-candidates` (connection, sql, tables) → every date- or time-typed column
+  of every table the statement reads, written as the grain, each table's main date first, from the profiler's
+  latest entry (no warehouse call); a never-profiled connection gets `[]` and the reason. The editor's date field
+  is a native `<input list>` over a `<datalist>` of them — a list beside an open input — and the cohort's and
+  stock's second columns share the list; the proposals are also printed under the field. The SQL field reads
+  *"SQL statement — a whole SELECT, CTEs allowed, that returns one row with the metric's value"*.
+- **Receipt owed:** the editor screenshot on theLook with its proposals, and one metric saved as a statement with a
+  grain and measured for a range on the live Briefing (`return_rate` is the candidate: a draft, dateless today).
+
 #### BR-3 · One control: any range, the four periods as presets (two to three days, free) — ✅ BUILT 2026-09-26
 
 > **Premise.** The window model knows one thing: the most recent complete period relative to today
