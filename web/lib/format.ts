@@ -145,7 +145,11 @@ export function formatMetricValue(n: number | null | undefined): string {
   if (a >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
   if (a >= 1e3) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (Number.isInteger(n)) return String(n);
-  return n.toFixed(4).replace(/\.?0+$/, "");
+  // Four decimals on a figure of ordinary size is float noise wearing a business face: a
+  // re-asked finding read "9.6983 vs 14.0688" on the Briefing. Two decimals is as much
+  // precision as such a figure carries. BELOW one it is kept at four, because a small rate
+  // (0.0034) rounded to two decimals is not less precise, it is gone.
+  return (Math.abs(n) >= 1 ? n.toFixed(2) : n.toFixed(4)).replace(/\.?0+$/, "");
 }
 
 /**

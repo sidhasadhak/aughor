@@ -1634,9 +1634,14 @@ function VerdictHero({
             findings; each tile is one click from its ledger row (the "every number one click
             from its why" guarantee). Not north-star KPIs — cycle-specific movers. */}
         {figures}
-        {!figures && movers && movers.length > 0 && (
+        {/* Under a range these are the RE-ASKED findings (period-scoped values), beside the
+            governed figures rather than instead of them; on the standing view they are the
+            cycle's own movers, as before. */}
+        {movers && movers.length > 0 && (
           <div data-brief-movers style={{ marginTop: 18 }}>
-            <div className="aug-label" style={{ marginBottom: 8, color: "var(--t3)" }}>Numbers that moved</div>
+            <div className="aug-label" style={{ marginBottom: 8, color: "var(--t3)" }}>
+              {figures ? "What this period's findings found" : "Numbers that moved"}
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, movers.length)}, minmax(0, 1fr))`, gap: 12 }}>
               {movers.slice(0, 4).map(d => (
                 <StatTile
@@ -2826,6 +2831,7 @@ export function BriefingPanel({
     return out;
   }, [briefing]);
 
+
   // The moved-number tiles and the ledger were reading the SAME ranked list, so the tiles WERE the ledger's
   // first rows — every "Number that moved" printed twice on one screen. The tiles win: they lead
   // the page and (since #190) expand in place into the same detail the ledger row offers, so
@@ -2875,6 +2881,49 @@ export function BriefingPanel({
   }, [rangeSelected, connectionId, schema, range, rangeKey]);
   const reask          = rangeSelected && reaskFor && reaskFor.key === rangeKey ? reaskFor.data : null;
   const isEmpty        = !briefing || briefing.totalInsights === 0;
+
+  // BR-7's re-ask, as TILES. Under a range the hero showed the governed figures and nothing
+  // else: `movers` was suppressed by `!figures`, so a period read as a metrics table while the
+  // standing view read as insight (the user, 2026-09-28: *"the cards should form based on the
+  // findings for that period ... each period must generate equally strong insights if not
+  // more"*). Simply un-suppressing the standing movers would have been worse than the gap —
+  // their values are ALL-HISTORY prose, and printing them under a range heading is the exact
+  // mislabelling BR-9 went and fixed.
+  //
+  // So these are built from the re-ask: the same findings, valued by their OWN SQL over this
+  // range and the one before it, which is what `reask.reasked` already carries. Ordered by the
+  // size of the move, because under a range "what moved" is the question. The insight rides
+  // along untouched, so a tile still expands into its ledger row's detail — the "every number
+  // one click from its why" guarantee holds.
+  const rangeMovers = useMemo<MoverTile[]>(() => {
+    if (!briefing || !reask) return [];
+    const byId = new Map(reask.reasked.map(r => [r.id, r] as const));
+    const seen = new Set<string>();
+    const scored: { tile: MoverTile; size: number }[] = [];
+    for (const s of dedupeSignals([...briefing.signals, ...briefing.allSignals])) {
+      const r = byId.get(findingId(s));
+      if (!r || r.current === null) continue;
+      const ident = signalIdentity(s.insight);
+      if (seen.has(ident)) continue;
+      seen.add(ident);
+      scored.push({
+        // Biggest move first; a finding this range could not move (`rel` null) scores 0 and
+        // sorts last rather than being dropped — it is still a finding about this range.
+        size: Math.abs(r.rel ?? 0),
+        tile: {
+          ident, insightId: s.insight.id,
+          value: fmtReask(r.current, r.measure),
+          secondary: r.previous !== null ? ` vs ${fmtReask(r.previous, r.measure)}` : undefined,
+          sublabel: r.how === "value" ? r.measure : `${r.how} of ${r.measure}`,
+          label: normalizeNumberPrecision(s.insight.finding),
+          domain: s.domain, accent: domainColor(s.domain),
+          insight: s.insight,
+        },
+      });
+    }
+    scored.sort((a, b) => b.size - a.size);
+    return scored.slice(0, 6).map(x => x.tile);
+  }, [briefing, reask]);
 
   // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
   // moved-number tile details). Scoped exactly like the narrative, so one schema's edits never show
@@ -3079,7 +3128,10 @@ export function BriefingPanel({
         synthesizedAt={briefing.synthesizedAt}
         scope={schema}
         onInvestigate={onInvestigate}
-        movers={rangePending ? [] : movers}
+        // Under a range the tiles are the RE-ASKED findings, whose values belong to THAT range;
+        // the standing view keeps its own movers. While a range's re-ask is still in flight the
+        // row stays empty rather than showing all-history numbers under a range heading.
+        movers={rangePending ? [] : (rangeSelected ? rangeMovers : movers)}
         figures={rangeBlock ? <RangeFigures block={rangeBlock} /> : undefined}
         stats={rangeBlock ? rangeStats(rangeBlock)
           : rangePending ? (narrativeLoading ? "measuring this range…" : "this range has no briefing yet")
