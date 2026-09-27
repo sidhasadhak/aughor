@@ -208,6 +208,39 @@ def _rel(cur: Optional[float], prev: Optional[float]) -> Optional[float]:
     return (cur - prev) / abs(prev)
 
 
+def equal_age(metric: Any, status: str) -> dict:
+    """Is this figure's comparison read at the same age as the figure itself? (BR-6)
+
+    `RangeSpec.windows` gives every comparison its OWN as-of — August read on 15 September is
+    14 days old, so July is read at 14 days too — and `metric_time.measure_sql` bounds a
+    COHORT's outcome to that as-of. Proven 2026-09-27: all three windows come back 14 days old.
+    So a cohort is already compared at equal age, and a settled figure needs no bound at all:
+    both periods have stopped moving.
+
+    What is left is the case §3.48 names and nothing said out loud. A **flow** figure that is
+    still provisional — theLook restates its recent days for eight — is compared with a period
+    that has finished restating. Its rows arrive late with no outcome date, so there is nothing
+    to bound; the honest reading needs BR-8's daily readings, which do not exist yet. Until
+    then the comparison SAYS it is not at equal age rather than letting a reader take a
+    difference of maturity for a move. The number is still shown: a stated caveat beside a
+    figure is worth more than a blank.
+    """
+    if status == "final":
+        return {"equal": True, "why": ""}
+    kind = str(_get_kind(metric) or "")
+    if kind == "cohort":
+        return {"equal": True, "why": ""}
+    label = getattr(metric, "label", "") or getattr(metric, "name", "") or "this figure"
+    return {"equal": False, "why": (
+        f"{label} is still {'to date' if status == 'to_date' else 'provisional'}, and what it is "
+        "compared with has settled — part of any difference is the difference in age, not a move. "
+        "Comparing them at the same age needs a daily reading this source does not keep yet.")}
+
+
+def _get_kind(metric: Any) -> str:
+    return str(getattr(metric, "time_kind", "") or "")
+
+
 def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tuple], dialect: str,
                   north_stars: Optional[list] = None) -> dict:
     """Every approved metric measured for the range and its comparisons. Returns ``{"measured",
@@ -254,6 +287,11 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
             "status": mt.figure_status(m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days,
                                        unsettled=bool({mt.bare_name(t) for t in m.tables} & set(spec.still_moving))),
             "current_partial": cur_partial, "previous_partial": prev_partial,
+            # BR-6 — said, never implied: a provisional flow figure against a settled comparison
+            # is not a fair move, and the reader is told so beside the number.
+            "equal_age": equal_age(m, mt.figure_status(
+                m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days,
+                unsettled=bool({mt.bare_name(t) for t in m.tables} & set(spec.still_moving)))),
             "sql": mt.measure_sql(m, windows, dialect=dialect)[0] or "",
         })
     seen = {_norm(m.name) for m in approved} | {_norm(m.label) for m in approved}

@@ -116,6 +116,16 @@ def tick_once() -> dict[str, int]:
     except Exception as exc:
         logger.warning("automation heartbeat could not re-check past answers: %s", exc)
         counts["rechecks"] = 0
+    # BR-6 — the same recall for BRIEFINGS, beside the answers one and behind the same switch.
+    # A Briefing's figures are the ones likeliest to move: it is written about the most recent
+    # complete period, which is exactly the period still filling. After the settling reading,
+    # for the same reason the answers pass is.
+    try:
+        from aughor.briefing.recall import run_recall_daily
+        counts["briefing_recall"] = run_recall_daily()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not re-measure past Briefings: %s", exc)
+        counts["briefing_recall"] = 0
     return counts
 
 
