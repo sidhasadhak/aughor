@@ -81,3 +81,90 @@ class TestTheCatalogueDoor:
         assert res.status_code == 201
         assert res.json()["connection"] == "conn1"
         assert res.json()["status"] == "draft", "never approved straight out of the catalogue"
+
+
+# ── the save door binds what it stores ───────────────────────────────────────
+# Measured on theLook 2026-09-27: `_require_statement` asks only whether the text LOOKS
+# like a statement, so two definitions were saved AND APPROVED as the organisation's
+# revenue — one naming a column the warehouse does not have, one a paren short of
+# parsing. Both then held every Slack send that stated revenue, telling the reader the
+# NUMBER was untrustworthy when it was the DEFINITION that was broken.
+
+class _StubConn:
+    """A warehouse that refuses what it cannot bind, like a real one."""
+    dialect = "bigquery"
+
+    def __init__(self, bad_column: str = "total_amount"):
+        self._bad = bad_column
+        self.asked: list[str] = []
+
+    def dry_run(self, sql):
+        self.asked.append(sql)
+        if self._bad in sql:
+            return False, f"Unrecognized name: {self._bad} at [1:13]"
+        return True, ""
+
+    def close(self):
+        pass
+
+
+def _binds(sql, conn=None, existing=None, connection="8233e4fd"):
+    """Call the door's check with a stub warehouse; returns the HTTPException or None."""
+    from fastapi import HTTPException
+    from aughor.routers import metrics as mod
+    import aughor.db.connection as dbmod
+    real = dbmod.open_connection_for
+    dbmod.open_connection_for = lambda c: (conn if conn is not None else _StubConn())
+    try:
+        mod._require_binds(sql, connection, "revenue", ["order_items"],
+                           ["status <> 'Cancelled'"], existing)
+        return None
+    except HTTPException as exc:
+        return exc
+    finally:
+        dbmod.open_connection_for = real
+
+
+def test_the_paren_short_definition_is_refused_without_a_warehouse():
+    """The one that shipped: `SELECT (SUM(sale_price) AS revenue ...` — two opens, one
+    close. A parse error needs no connection and cannot be a false alarm."""
+    exc = _binds("SELECT (SUM(sale_price) AS revenue FROM order_items "
+                 "WHERE status <> 'Cancelled'")
+    assert exc is not None and exc.status_code == 422
+    assert "does not parse" in exc.detail
+
+
+def test_a_column_the_warehouse_does_not_have_is_refused_in_its_own_words():
+    """The other one: `SUM(total_amount)` on a warehouse that carries money on the item."""
+    conn = _StubConn()
+    exc = _binds("SELECT (SUM(total_amount)) AS revenue FROM order_items", conn=conn)
+    assert exc is not None and exc.status_code == 422
+    assert "Unrecognized name: total_amount" in exc.detail   # the ENGINE's words, not ours
+    assert conn.asked, "the warehouse must actually have been asked"
+
+
+def test_a_definition_the_warehouse_accepts_saves():
+    assert _binds("SELECT (SUM(sale_price)) AS revenue FROM order_items") is None
+
+
+def test_an_unreachable_warehouse_does_not_block_the_author():
+    """Fail OPEN on infrastructure: an author must not be blocked by something they
+    cannot see. It is counted, so 'checked and fine' never reads like 'never checked'."""
+    from aughor.stats import stats
+
+    class _Dead:
+        def dry_run(self, sql):
+            raise RuntimeError("socket closed")
+        def close(self):
+            pass
+
+    before = stats.snapshot()["counters"].get("metrics.save_unchecked", 0)
+    assert _binds("SELECT (SUM(total_amount)) AS revenue FROM order_items", conn=_Dead()) is None
+    assert stats.snapshot()["counters"].get("metrics.save_unchecked", 0) == before + 1
+
+
+def test_an_untouched_formula_is_not_rechecked():
+    """A save that only edits a caveat must not fail because a table was dropped later."""
+    class _Existing:
+        sql = "SELECT (SUM(total_amount)) AS revenue FROM order_items"
+    assert _binds(_Existing.sql, existing=_Existing()) is None
