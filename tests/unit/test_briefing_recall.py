@@ -181,3 +181,15 @@ def test_an_over_cap_metric_is_not_reported_as_undefined(monkeypatch):
     for name in cut:
         assert "cap" in reasons.get(name, ""), f"{name} was cut by the cap and must say so"
         assert "no approved definition" not in reasons.get(name, "")
+
+
+# ── a headline figure is not six significant figures ──────────────────────────
+
+def test_a_plain_magnitude_is_rounded_not_shown_to_float_noise():
+    """theLook's ship-to-delivery lead time read "1.95529" days on the Briefing: `:g` gives six
+    significant figures, which is right for a count and wrong for anything measured."""
+    from aughor.knowledge.metric_moves import format_value
+
+    assert format_value(1.9552912223133716, "Lead Time", "days, roughly 0-30", "$") == "1.96"
+    assert format_value(6951.0, "Units Sold", "count", "$") == "6951"      # a count stays whole
+    assert format_value(0.10027334196518486, "Return rate", "ratio 0..1", "$") == "10%"

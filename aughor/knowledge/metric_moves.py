@@ -143,7 +143,15 @@ def format_value(value: float, name: str, unit: str, sym: str) -> str:
     if _CUR_UNIT.search(unit) or (_CUR_NAME.search(f"{name} {_unit_head(unit)}")
                                   and not _RATIO_UNIT.search(unit) and not _MULTIPLE.search(name)):
         return f"{sym}{value:,.0f}" if abs(value) >= 10 else f"{sym}{value:,.2f}"
-    return f"{value:g}"
+    # Everything else: a count, a duration, a plain magnitude. `:g` gives six significant
+    # figures, which is right for a count and wrong for anything measured — theLook's
+    # ship-to-delivery lead time read "1.95529" days on the Briefing, five decimals of float
+    # noise presented as a business figure. An integral value stays an integer (a count is not
+    # "6951.00"); anything else is rounded to two decimals, which is as much precision as a
+    # headline figure can carry honestly.
+    if value == int(value):
+        return f"{int(value):g}"
+    return f"{round(value, 2):g}"
 
 
 def _fmt_numeric(value: float, name: str, unit: str, sym: str) -> float:
