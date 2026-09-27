@@ -51,7 +51,7 @@ FLAG = "briefing.by_period"
 LABEL = {"day": "Daily", "week": "Weekly", "month": "Monthly", "year": "Yearly"}
 
 #: How many headline metrics are measured per brief — the standing brief's own cap.
-MAX_METRICS = 8
+MAX_METRICS = 12
 
 #: A move smaller than this is reported as steady rather than as a change of that size: the
 #: same threshold the standing brief uses to decide a trend is material.

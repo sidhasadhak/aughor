@@ -41,7 +41,13 @@ LABEL = {"yesterday": "Daily", "last_week": "Weekly", "last_month": "Monthly", "
 #: The longest custom range; a longer question is the Year recipe's, or Ask's.
 MAX_RANGE_DAYS = 3 * 366
 #: The most headline metrics measured per Briefing — the standing Briefing's own cap.
-MAX_METRICS = 8
+#: Raised from 8 to 12 on 2026-09-27: theLook had ten approved definitions and the Briefing
+#: measured seven, so three were silently reported as having "no approved definition" — the
+#: cap's overflow falls through to the north-star loop, which cannot tell "over the cap" from
+#: "never approved" and says the second. Twelve covers a connection that has governed its
+#: headline set without inviting a Briefing that measures everything; the cost is per metric
+#: per window (three windows), so each one past the cap is three more warehouse queries.
+MAX_METRICS = 12
 #: How many days a window's rows may start late or end early before its value stops being
 #: that window's (§3.27's slack, by length).
 def _slack(days: int) -> int:
