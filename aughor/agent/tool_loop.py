@@ -68,11 +68,12 @@ class LoopStep:
 class LoopResult:
     answer: Optional[str]
     steps: list[LoopStep] = field(default_factory=list)
-    #: Why the loop ended: "answered" (the model produced text) | "budget" (it spent
-    #: every step) | "silent" (it returned neither a tool call nor text, twice — a
-    #: stall, and deliberately NOT the same thing as running out of budget, because
-    #: telling a user to narrow their question is wrong advice when the turn stopped
-    #: after one step of eight).
+    #: Why the loop ended: "answered" (the model produced text) | "budget_answered" (it
+    #: spent every step, then wrote the answer up on the tool-free closing request) |
+    #: "budget" (it spent every step and had nothing to say even then) | "silent" (it
+    #: returned neither a tool call nor text, twice — a stall, and deliberately NOT the
+    #: same thing as running out of budget, because telling a user to narrow their
+    #: question is wrong advice when the turn stopped after one step of eight).
     stop_reason: str = "answered"
 
     @property
@@ -267,11 +268,61 @@ def run_tool_loop(
             if not history and replay_args:
                 _capture_replay(decision_id, site, question, wire, provider, prompt_fingerprint,
                                 replay_args, trace_id=trace_id)
-        history.extend(_exchange(call, payload))
+        # The remaining-step count rides the RESULT, not the system prompt: it changes
+        # every step, and the prompt is fingerprinted once per turn and prefix-cached.
+        # Appended after `_record` so `result_chars` stays the tool's own size.
+        history.extend(_exchange(call, payload + _budget_note(len(steps), budget)))
 
-    # Budget spent. The turn is not an error — it is an answer we did not reach, and
-    # saying so plainly beats presenting a half-derived guess as a conclusion.
+    # Budget spent — but the turn is rarely empty. Every result is still in `history`, and
+    # the failure measured live was not "no answer exists", it was that nothing ever ASKED
+    # for one: a Slack thread that had already shown the user a twelve-row table of daily
+    # sales signed off with "I ran out of steps before reaching an answer (8 tool calls)".
+    #
+    # So spend one more request with NO tools on the wire. The model cannot choose a ninth
+    # step — it can only write up what the first eight found, which is the thing the reader
+    # was owed. A turn that genuinely has nothing to say returns empty and falls through to
+    # the caller's out-of-steps sentence, exactly as before this existed.
+    try:
+        final = provider.complete_with_tools(
+            system + "\n\n" + _FINAL_TURN, question, [], history=history or None)
+        text = (final.text or "").strip()
+        if text:
+            return LoopResult(answer=text, steps=steps, stop_reason="budget_answered")
+    except Exception as exc:
+        # Never fatal: the steps above are real work and the caller can still report them.
+        logger.warning("tool_loop: the final answer attempt failed (%s)", str(exc)[:200])
     return LoopResult(answer=None, steps=steps, stop_reason="budget")
+
+
+#: What the tool-free closing request adds to the system prompt. It grants nothing the turn
+#: did not already have — the data bound is unchanged, and "name the gap" is the prompt's
+#: own stated-gap rule restated for a turn that is out of road.
+_FINAL_TURN = (
+    "This turn has no tool calls left. Answer the question now, in plain text, from what "
+    "the tool results above already contain. Where they do not reach the answer, say which "
+    "part is missing rather than filling it in — an incomplete answer that names its own "
+    "gap is what this turn is for."
+)
+
+
+def _budget_note(used: int, budget: int) -> str:
+    """The turn's remaining step count, appended to a tool result near the ceiling.
+
+    The budget was invisible to the model: it chose its eighth step exactly as it chose its
+    first, and the only thing that ever told it the turn had ended was the turn ending. On
+    the live corpus that is how "What were the sales yesterday?" spent a `list_tables`, a
+    daily-revenue query, a freshness probe, a second daily query and a prior-week average —
+    five steps and 116 seconds of model time — on a question one query answers.
+
+    Stated only in the last two steps. A countdown from step one reads as pressure and would
+    cut short the looking-around a real investigation needs; two steps is enough warning to
+    write up what is in hand.
+    """
+    left = budget - used
+    if not 1 <= left <= 2:
+        return ""
+    return (f"\n\n[{left} tool call{'s' if left != 1 else ''} left this turn. Answer in "
+            "plain text as soon as the results support one.]")
 
 
 #: The temperature `LLMProvider.complete_with_tools` defaults to, and therefore what this loop

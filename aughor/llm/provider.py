@@ -2205,8 +2205,11 @@ class LLMProvider:
                 max_tokens=_max_output_tokens(self.role, model),
                 system=system,
                 messages=_anthropic_messages(user, history),
-                tools=_anthropic_tools(tools),
-                tool_choice={"type": "auto"},
+                # An EMPTY roster means "no tools on the wire", not "an empty menu":
+                # both wire formats reject `tools: []`, and the tool loop's closing
+                # request depends on a turn that genuinely cannot choose a tool.
+                **({"tools": _anthropic_tools(tools),
+                    "tool_choice": {"type": "auto"}} if tools else {}),
                 **({"temperature": _effective_temperature(temperature, backend)} if pinned else {}),
             )
             _t0 = time.monotonic()
@@ -2221,8 +2224,7 @@ class LLMProvider:
                 max_tokens=_max_output_tokens(self.role, model),
                 messages=([{"role": "system", "content": system},
                            {"role": "user", "content": user}] + list(history or [])),
-                tools=tools,
-                tool_choice="auto",
+                **({"tools": tools, "tool_choice": "auto"} if tools else {}),
                 response_model=None,
             )
             extra = _reasoning_extra_body(backend)

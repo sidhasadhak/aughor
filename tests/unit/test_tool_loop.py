@@ -136,6 +136,51 @@ def test_the_budget_ends_the_loop_instead_of_running_forever(provider):
     assert len(result.steps) == 3
 
 
+def test_a_spent_budget_is_written_up_instead_of_thrown_away(provider):
+    """Measured live: a Slack thread that had ALREADY shown the reader a twelve-row table
+    of daily sales signed off with "I ran out of steps before reaching an answer (8 tool
+    calls)". The answer existed — nothing had asked for it. When the ceiling is reached the
+    loop spends one more request with no tools on the wire, so the model cannot choose a
+    ninth step and can only write up what the first eight found."""
+    set_responses([
+        *[FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql")] * 3,
+        "Sales on 2026-09-23 were $39,921.19 across 633 orders.",
+    ])
+
+    result = run_tool_loop(provider, "sys", "what were the sales yesterday?",
+                           [_tool()], max_steps=3)
+
+    assert result.answer == "Sales on 2026-09-23 were $39,921.19 across 633 orders."
+    assert result.stop_reason == "budget_answered"   # NOT "budget" — there IS an answer
+    assert len(result.steps) == 3                    # and the closing call is not a step
+
+
+def test_the_closing_request_carries_no_tools(provider):
+    """The mechanism, not the outcome: if the roster still rode the wire the model could
+    spend a step the budget does not cover, which is the bug this replaces, not fixes."""
+    seen: list[int] = []
+    inner = provider.complete_with_tools
+    provider.complete_with_tools = lambda sys_, user, tools, **kw: (
+        seen.append(len(tools)) or inner(sys_, user, tools, **kw))
+    set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"), "done"])
+
+    run_tool_loop(provider, "sys", "q", [_tool()], max_steps=1)
+
+    assert seen == [1, 0]        # the step chose from one tool; the closing request from none
+
+
+def test_the_last_steps_are_told_how_many_remain(provider):
+    """The budget was invisible to the model: it chose its eighth step exactly as it chose
+    its first. Stated only near the ceiling — a countdown from step one reads as pressure."""
+    from aughor.agent.tool_loop import _budget_note
+
+    assert _budget_note(1, 8) == ""                  # step 1 of 8 — nothing said
+    assert _budget_note(5, 8) == ""                  # still room to look around
+    assert "2 tool calls left" in _budget_note(6, 8)
+    assert "1 tool call left" in _budget_note(7, 8)  # singular, not "1 tool calls"
+    assert _budget_note(8, 8) == ""                  # spent — the closing request says it
+
+
 def test_the_budget_comes_from_the_model_profile_not_a_constant(provider, monkeypatch):
     """ModelProfile exists so capability knobs stop coming back as module constants."""
     import aughor.agent.tool_loop as loop_mod
