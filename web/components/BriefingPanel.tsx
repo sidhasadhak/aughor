@@ -1526,6 +1526,9 @@ interface MoverTile {
   /** The finding itself, so a tile can open the same detail its ledger row does — the chart,
    *  the untruncated statement, Evidence/Investigate — without a round-trip to find it. */
   insight:    ExplorationInsight;
+  /** Under a range: one sentence naming the figure this tile shows and saying that the chart
+   *  in its detail is the finding's own all-history evidence. Absent on the standing view. */
+  rangeNote?: string;
 }
 
 function VerdictHero({
@@ -1547,8 +1550,10 @@ function VerdictHero({
   /** "Numbers that moved" — figures extracted from this cycle's findings; each tile
    *  opens its finding in place. Empty/absent → the row is omitted. */
   movers?:       MoverTile[];
-  /** Arc BR-3 — a range's measured figures, in place of the standing movers. */
+  /** Arc BR-3 — a range's measured figures, BESIDE the tiles (BR-6 follow-up: under a range
+   *  the tiles carry the re-asked findings, so the two rows answer different questions). */
   figures?:      ReactNode;
+
   /** Arc BR-3 — a range's one-line proof, in place of the standing counts. */
   stats?:        string;
   /** Everything a tile needs to expand in place into its finding's detail. */
@@ -1561,6 +1566,7 @@ function VerdictHero({
   // rather than only deep-linking down to the ledger. One open at a time, like the ledger.
   const [openIdent, setOpenIdent] = useState<string | null>(null);
   const openTile = movers?.find(d => d.ident === openIdent) ?? null;
+  const openNote = openTile?.rangeNote ?? "";
   // Both are grounded prose quoted verbatim — normalise float noise, never the wording.
   const theme   = normalizeNumberPrecision(narrative?.headline_theme?.trim());
   const finding = normalizeNumberPrecision(headline?.insight.finding?.trim());
@@ -1687,6 +1693,14 @@ function VerdictHero({
                     ×
                   </Button>
                 </div>
+                {openNote && (
+                  /* The tile above carries THIS RANGE's figure; the chart below is the
+                     finding's own stored evidence, which is all-history. Printed together
+                     with nothing said they read as two answers to one question — the user,
+                     2026-09-28: *"the numbers dont match in the dropdown"*. So both are named.
+                     The sentence is built where the re-ask is, and rides on the tile. */
+                  <div className="aug-fs-xs" style={{ marginBottom: 10, color: "var(--t3)" }}>{openNote}</div>
+                )}
                 <FindingDetail
                   key={openTile.ident}
                   insight={openTile.insight}
@@ -2814,17 +2828,18 @@ export function BriefingPanel({
       .filter(s => signalIdentity(s.insight) !== headlineId);
     const out: MoverTile[] = [];
     for (const s of ranked) {
-      const fig = extractKeyFigure(s.insight.finding);
+      const found = s.insight;
+      const fig = extractKeyFigure(found.finding);
       if (!fig) continue;
       out.push({
-        ident: signalIdentity(s.insight), insightId: s.insight.id,
+        ident: signalIdentity(found), insightId: found.id,
         value: fig.value, secondary: fig.secondary, sublabel: fig.sublabel,
         // PX-1 — the tile quotes the finding's prose, and stored prose can carry raw
         // float64s ("0.315801 of total Gross Sales"). Precision policy at the render
         // boundary, same as everywhere else; the stored finding is untouched.
-        label: normalizeNumberPrecision(s.insight.finding),
+        label: normalizeNumberPrecision(found.finding),
         domain: s.domain, accent: domainColor(s.domain),
-        insight: s.insight,
+        insight: found,
       });
       if (out.length >= 6) break;
     }
@@ -2883,47 +2898,53 @@ export function BriefingPanel({
   const isEmpty        = !briefing || briefing.totalInsights === 0;
 
   // BR-7's re-ask, as TILES. Under a range the hero showed the governed figures and nothing
-  // else: `movers` was suppressed by `!figures`, so a period read as a metrics table while the
-  // standing view read as insight (the user, 2026-09-28: *"the cards should form based on the
-  // findings for that period ... each period must generate equally strong insights if not
-  // more"*). Simply un-suppressing the standing movers would have been worse than the gap —
-  // their values are ALL-HISTORY prose, and printing them under a range heading is the exact
-  // mislabelling BR-9 went and fixed.
+  // else: these were suppressed by `!figures`, so a period read as a metrics table while the
+  // standing view read as findings (the user, 2026-09-28: the cards should form from the
+  // findings for that period, and each period should read as strongly as "What we know").
   //
-  // So these are built from the re-ask: the same findings, valued by their OWN SQL over this
-  // range and the one before it, which is what `reask.reasked` already carries. Ordered by the
-  // size of the move, because under a range "what moved" is the question. The insight rides
-  // along untouched, so a tile still expands into its ledger row's detail — the "every number
-  // one click from its why" guarantee holds.
+  // Un-suppressing the standing tiles would have been worse than the gap — their values are
+  // read from ALL-HISTORY prose, and printing those under a range heading is the mislabelling
+  // BR-9 went and fixed. So the same tiles are RE-VALUED from the re-ask, which carries each
+  // finding's own SQL run over this range and the one before it. Mapping the built tiles
+  // rather than rebuilding them keeps one construction site for a tile, not two that drift.
   const rangeMovers = useMemo<MoverTile[]>(() => {
-    if (!briefing || !reask) return [];
+    if (!reask) return [];
     const byId = new Map(reask.reasked.map(r => [r.id, r] as const));
     const seen = new Set<string>();
     const scored: { tile: MoverTile; size: number }[] = [];
-    for (const s of dedupeSignals([...briefing.signals, ...briefing.allSignals])) {
-      const r = byId.get(findingId(s));
+    for (const m of movers) {
+      const r = byId.get(m.insightId);
       if (!r || r.current === null) continue;
-      const ident = signalIdentity(s.insight);
-      if (seen.has(ident)) continue;
-      seen.add(ident);
+      // Two findings can re-ask to the SAME measure — the re-ask counts those as `duplicates`
+      // — and the row then printed one number twice under two statements, which reads as a
+      // coincidence rather than as the same quantity. Keep the first.
+      const shape = `${r.measure}|${r.current}|${r.previous}`;
+      if (seen.has(shape)) continue;
+      seen.add(shape);
       scored.push({
-        // Biggest move first; a finding this range could not move (`rel` null) scores 0 and
-        // sorts last rather than being dropped — it is still a finding about this range.
+        // Biggest move first; one this range could not move scores 0 and sorts last rather
+        // than being dropped — it is still a finding about this range.
         size: Math.abs(r.rel ?? 0),
         tile: {
-          ident, insightId: s.insight.id,
+          ...m,
           value: fmtReask(r.current, r.measure),
           secondary: r.previous !== null ? ` vs ${fmtReask(r.previous, r.measure)}` : undefined,
           sublabel: r.how === "value" ? r.measure : `${r.how} of ${r.measure}`,
-          label: normalizeNumberPrecision(s.insight.finding),
-          domain: s.domain, accent: domainColor(s.domain),
-          insight: s.insight,
+          // The measure is named only when it IS a name: the re-ask reports whatever the
+          // finding's SQL called the column, and an anonymous alias ("f0_") told a reader
+          // nothing while looking like a term they were expected to know.
+          rangeNote: `${fmtReask(r.current, r.measure)}`
+            + (r.previous !== null ? ` vs ${fmtReask(r.previous, r.measure)}` : "")
+            + (/^[a-z]*\d+_?$/i.test(r.measure.trim()) || !r.measure.trim()
+                ? "" : ` — ${r.how === "value" ? "" : `${r.how} of `}${r.measure}`)
+            + `, measured for ${reask.covers}. The chart below is this finding's own `
+            + `evidence, as it was recorded — all history, not this range.`,
         },
       });
     }
     scored.sort((a, b) => b.size - a.size);
     return scored.slice(0, 6).map(x => x.tile);
-  }, [briefing, reask]);
+  }, [movers, reask]);
 
   // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
   // moved-number tile details). Scoped exactly like the narrative, so one schema's edits never show

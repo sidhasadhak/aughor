@@ -168,3 +168,64 @@ def test_an_untouched_formula_is_not_rechecked():
     class _Existing:
         sql = "SELECT (SUM(total_amount)) AS revenue FROM order_items"
     assert _binds(_Existing.sql, existing=_Existing()) is None
+
+
+# ── a governance change restates the Briefings that quoted the old answer ─────
+
+def test_approving_a_metric_drops_its_connection_cached_briefings(monkeypatch):
+    """Measured 2026-09-28: after five of theLook's metrics were approved, the Month Briefing
+    measured twelve while the Day measured five — and the Day's five said "no approved
+    definition; approve one in the Semantic Layer", about metrics approved minutes earlier.
+    Only the period someone happened to regenerate told the truth."""
+    from aughor.routers import metrics as mod
+
+    dropped: list[str] = []
+    monkeypatch.setattr("aughor.knowledge.briefing.invalidate",
+                        lambda conn, schema=None: dropped.append(conn) or 1)
+
+    mod._restate_briefings("8233e4fd")
+    assert dropped == ["8233e4fd"]
+
+
+def test_a_global_definition_drops_nothing():
+    """`*` is not a connection; there is no per-connection cache to restate, and passing it
+    through would ask the store to drop every Briefing on the install."""
+    from aughor.routers import metrics as mod
+
+    mod._restate_briefings("*")      # must not raise, must not fan out
+
+
+def test_an_invalidation_that_fails_does_not_lose_the_metric_change(monkeypatch):
+    """The edit is already saved by this point; a cache that will not drop must not undo it."""
+    from aughor.routers import metrics as mod
+
+    def _boom(conn, schema=None):
+        raise RuntimeError("store unreadable")
+
+    monkeypatch.setattr("aughor.knowledge.briefing.invalidate", _boom)
+    mod._restate_briefings("8233e4fd")     # tolerated and counted, never raised
+
+
+def test_the_edit_door_itself_restates_the_briefings(monkeypatch):
+    """The three tests above exercise the helper, and a mutant that deletes its CALL SITE
+    survives them — which is a guard that cannot fail. This drives `update_metric` itself."""
+    from aughor.routers import metrics as mod
+    from aughor.semantic.metrics import MetricDefinition
+
+    # The store is NOT written: an earlier cut called `save_metric` and left a row behind that
+    # broke `test_metric_dedup`'s file-order assertion — a test that mutates shared state is a
+    # flake it hands to whoever runs next.
+    existing = MetricDefinition(name="restate_me", connection="c9", label="Restate Me",
+                                sql="SELECT (SUM(x)) AS restate_me FROM t", tables=["t"])
+    dropped: list[str] = []
+    monkeypatch.setattr("aughor.knowledge.briefing.invalidate",
+                        lambda conn, schema=None: dropped.append(conn) or 1)
+    monkeypatch.setattr(mod, "_require_binds", lambda *a, **k: None)   # no warehouse in a unit test
+    monkeypatch.setattr(mod, "get_metric", lambda name, connection_id=None: existing)
+    monkeypatch.setattr(mod, "save_metric", lambda m: None)
+
+    mod.update_metric("restate_me", mod.MetricRequest(
+        name="restate_me", connection="c9", label="Restate Me",
+        sql="SELECT (SUM(x)) AS restate_me FROM t", tables=["t"], caveats="edited"))
+
+    assert dropped == ["c9"], "an edit must drop its connection's cached Briefings"

@@ -251,6 +251,34 @@ def _require_binds(sql: str, connection: str, name: str, tables, filters, existi
             f"{name}: {str(err or 'the engine refused it').splitlines()[0][:300]}"))
 
 
+def _restate_briefings(connection: str) -> None:
+    """A governed definition changed, so every cached Briefing for its connection is stale.
+
+    Measured 2026-09-28: after approving five of theLook's metrics, the Month Briefing (which
+    had been rebuilt) measured twelve while the Day measured five and the Week one — and the
+    Day's five said *"no approved definition; approve one in the Semantic Layer to measure it"*
+    about metrics approved minutes earlier. Nothing was wrong with the period logic: each view
+    was serving a two-hour cache built before the approval, and only the period someone
+    happened to regenerate told the truth. Forcing a person to press Regenerate once per period
+    to see a governance change is a cache pretending to be an answer.
+
+    Best-effort and silent about nothing: an invalidation that fails is counted, because the
+    next reader would otherwise be told yesterday's answer with today's confidence.
+    """
+    if not connection or connection == GLOBAL_CONNECTION:
+        return
+    try:
+        from aughor.knowledge import briefing as _briefing
+        dropped = _briefing.invalidate(connection)
+        if dropped:
+            logger.info("metric change invalidated %d cached briefing(s) for %s", dropped, connection)
+    except Exception as exc:  # noqa: BLE001 — the metric change stands either way
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the metric changed but its connection's cached Briefings could not be "
+                      "dropped; they will read as stale until they expire",
+                 counter="metrics.briefing_invalidate")
+
+
 class ProposalsRequest(BaseModel):
     """What the metric editor sends to be offered what the platform proposes for a definition:
     its runnable statement (when it was written as an expression) and the dates it could be
@@ -433,6 +461,7 @@ def update_metric(name: str, req: MetricRequest):
                      "version": existing.version, "at": datetime.now(timezone.utc).isoformat()}
     m = MetricDefinition(**data)
     save_metric(m)
+    _restate_briefings(req.connection)
     if audit:
         from aughor.kernel.ledger import Ledger
         Ledger.default().emit("metric.governance", audit)
@@ -482,6 +511,7 @@ def transition_metric(name: str, req: TransitionRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     save_metric(MetricDefinition(**updated))
+    _restate_briefings(req.connection)
     Ledger.default().emit("metric.governance", audit)
     return {"metric": updated, "audit": audit}
 
