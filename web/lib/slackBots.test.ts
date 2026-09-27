@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SlackBotSummary, UserAgent } from "@/lib/api";
-import { bindingProblem, patchBodyFor } from "./slackBots";
+import { bindingProblem, patchBodyFor, slackStepBotNote } from "./slackBots";
 
 const bot: SlackBotSummary = {
   id: "sb_1", name: "Aughor", enabled: true, team_id: "T1", bot_user_id: "U1",
@@ -53,5 +53,23 @@ describe("bindingProblem", () => {
   it("says when the agent is disabled or gone", () => {
     expect(bindingProblem(bot, [agent({ enabled: false })])).toContain("disabled");
     expect(bindingProblem(bot, [])).toContain("no longer exists");
+  });
+});
+
+describe("slackStepBotNote", () => {
+  const live = { ...bot, id: "sb_live", name: "Aughor", enabled: true };
+  it("is silent for a bot that is there and running, and for an unset step", () => {
+    expect(slackStepBotNote("sb_live", [live])).toBe("");
+    expect(slackStepBotNote("", [live])).toBe("");
+    expect(slackStepBotNote(undefined, [live])).toBe("");
+  });
+  it("says so when the step names a bot that was deleted", () => {
+    expect(slackStepBotNote("sb_gone", [live])).toContain("no longer in the registry");
+  });
+  it("says so when the step names a paused bot, by name", () => {
+    expect(slackStepBotNote("sb_live", [{ ...live, enabled: false }])).toContain("Aughor is paused");
+  });
+  it("leaves a bound value alone — a binding is not an id", () => {
+    expect(slackStepBotNote({ $from: "item.bot" }, [live])).toBe("");
   });
 });

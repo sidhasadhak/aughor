@@ -52,3 +52,24 @@ export function bindingProblem(
   }
   return null;
 }
+
+/** What a "Post to Slack" step should say about the bot it names, or "" when the bot is
+ *  there and running.
+ *
+ *  The step stores a bot ID. Delete or pause that bot and the picker used to show
+ *  "Post as…" — the stored id matched no option — while the step kept the dead id and
+ *  saved it back on the next edit. A person changed the channel, saw nothing wrong, and
+ *  the post failed later as "unknown Slack bot". A bound value (`{"$from": …}`) is not an
+ *  id and is left alone. */
+export function slackStepBotNote(botId: unknown, bots: SlackBotSummary[]): string {
+  if (typeof botId !== "string" || !botId) return "";
+  const bot = bots.find(b => b.id === botId);
+  if (!bot) {
+    return "This step posts as a bot that is no longer in the registry, so its post will fail. "
+      + "Pick one of the bots above.";
+  }
+  if (!bot.enabled) {
+    return `${bot.name} is paused, so this step's post will fail until it is resumed or another bot is picked.`;
+  }
+  return "";
+}
