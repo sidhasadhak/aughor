@@ -76,7 +76,7 @@ def test_the_earlier_version_survives_the_later_one(key):
 
 
 def test_the_narrative_is_not_what_is_compared(key):
-    """The prose is model-written and differs between runs over identical rows. Digesting it
+    """The prose is model-written and differs between runs over identical rows. Comparing it
     would make every visit a revision and the history meaningless."""
     versions.record("c6", _brief(return_rate=10.0), **key)
     same_numbers = _brief(return_rate=10.0)

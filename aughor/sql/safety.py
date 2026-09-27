@@ -127,15 +127,15 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
         # of it — a classifier built on a guess looks fixed and keeps missing silently. This
         # line exists to collect that wording. `classified` rides along so a misfiling is
         # visible in one grep rather than needing the taxonomy re-derived by hand.
+        # The engine's own words and the dialect that produced them — nothing else. An earlier
+        # cut also logged what `tools.error_classifier` CALLED the error, which was useful and
+        # crossed the platform→agent boundary (`test_platform_does_not_import_agent`): `sql/` is
+        # platform, `tools/` is agent. The raw wording is what this exists to collect, and the
+        # classification is derivable from it by whoever reads the log.
         _dialect = str(getattr(conn, "dialect", "") or "unknown")
-        try:
-            from aughor.tools.error_classifier import classify_error_type
-            _classified = classify_error_type(err, out, _dialect).value
-        except Exception:
-            _classified = "unclassified"
-        logger.warning("sql_preflight_bind_failure dialect=%s classified=%s error=%r",
-                       _dialect, _classified, (err or "")[:400])
-        _bump(f"sql_safety.preflight_bind_failure.{_dialect}.{_classified}")
+        logger.warning("sql_preflight_bind_failure dialect=%s error=%r",
+                       _dialect, (err or "")[:400])
+        _bump(f"sql_safety.preflight_bind_failure.{_dialect}")
 
         # 3 — Repair the bind/parse error. SqlWriter.fix substitutes DuckDB's candidate bindings
         #     deterministically (no LLM) before falling back to a typed LLM repair, and validates

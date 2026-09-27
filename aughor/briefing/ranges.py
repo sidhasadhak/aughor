@@ -257,8 +257,9 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     from aughor.semantic.metrics import list_metrics
 
     said = mt.ensure_dates(conn_id, run_sql=run_sql, dialect=dialect, today=spec.as_of)
-    approved = [m for m in list_metrics(connection_id=conn_id)
-                if m.status == "approved" and m.connection == conn_id][:MAX_METRICS]
+    governed = [m for m in list_metrics(connection_id=conn_id)
+                if m.status == "approved" and m.connection == conn_id]
+    approved, over_cap = governed[:MAX_METRICS], governed[MAX_METRICS:]
     windows = spec.windows()
     slack = _slack(spec.days)
     measured: list[dict] = []
@@ -300,7 +301,19 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
                 unsettled=bool({mt.bare_name(t) for t in m.tables} & set(spec.still_moving)))),
             "sql": mt.measure_sql(m, windows, dialect=dialect)[0] or "",
         })
-    seen = {_norm(m.name) for m in approved} | {_norm(m.label) for m in approved}
+    # A metric the CAP cut says the cap cut it. Measured 2026-09-27: theLook had ten approved
+    # definitions against a cap of eight, and the two it dropped fell through to the north-star
+    # loop below — which sees only that the name is unaccounted for and reports "no approved
+    # definition; approve one in the Semantic Layer", about metrics that had just been approved
+    # there. A reader who follows that instruction finds the work already done and no way to
+    # learn why the figure is missing. Named here first, so the loop below never sees them.
+    for m in over_cap:
+        unmeasured.append({"name": m.label or m.name, "metric": m.name,
+                           "reason": (f"past this Briefing's cap of {MAX_METRICS} headline metrics — "
+                                      "it is approved and governed, and measuring it needs the cap "
+                                      "raised, not a definition")})
+    # `seen` reads the WHOLE governed set, not the capped slice, for the same reason.
+    seen = {_norm(m.name) for m in governed} | {_norm(m.label) for m in governed}
     for ns in north_stars or []:
         ns_name = ns.get("name") if isinstance(ns, dict) else getattr(ns, "name", "")
         if ns_name and _norm(ns_name) not in seen:

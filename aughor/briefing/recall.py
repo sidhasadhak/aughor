@@ -54,7 +54,11 @@ def remeasure(conn_id: str, brief: dict, *, runner: Optional[Callable[[], Any]] 
                     continue
                 try:
                     _cols, got, error = run_sql(sql)
-                except Exception:  # noqa: BLE001 — one metric's failure is not the pass's
+                except Exception as exc:  # noqa: BLE001 — one metric's failure is not the pass's
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, f"{name} could not be re-measured; it is reported as "
+                                  "unmeasured rather than unchanged",
+                             counter="briefing.recall.metric")
                     continue
                 if error:
                     continue

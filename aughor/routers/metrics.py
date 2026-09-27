@@ -211,8 +211,13 @@ def _require_binds(sql: str, connection: str, name: str, tables, filters, existi
     try:
         import sqlglot
         sqlglot.parse_one(runnable, read="bigquery")
-    except ImportError:
-        pass                        # no parser available — the dry run below still may bind
+    except ImportError as exc:
+        # No parser on this install. The dry run below may still bind it, but "not parsed
+        # here" and "parsed clean" must not look alike to whoever reads the counters.
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "sqlglot is unavailable, so the definition was not parse-checked; the "
+                      "engine's own dry run below still gates it",
+                 counter="metrics.save_no_parser")
     except Exception as exc:
         raise HTTPException(status_code=422, detail=(
             f"that SQL does not parse, so it cannot be a definition: {str(exc).splitlines()[0][:200]}"))

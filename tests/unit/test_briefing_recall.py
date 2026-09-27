@@ -141,3 +141,43 @@ def test_a_provisional_flow_figure_says_it_is_not_at_equal_age(status):
     assert out["equal"] is False
     assert "Return Rate" in out["why"]
     assert "same age" in out["why"]
+
+
+# ── a metric the cap cut says the cap cut it ──────────────────────────────────
+
+def test_an_over_cap_metric_is_not_reported_as_undefined(monkeypatch):
+    """Measured live 2026-09-27: theLook had ten approved definitions against a cap of eight,
+    and the two it dropped fell through to the north-star loop, which reports "no approved
+    definition; approve one in the Semantic Layer" — about metrics approved there minutes
+    earlier. A reader following that instruction finds the work already done.
+
+    Drives the real `measure_range`, so it fails if the reporting regresses."""
+    from datetime import date
+
+    from aughor.briefing import ranges
+    from aughor.semantic import metric_time as mt
+
+    class _M:
+        def __init__(self, n):
+            self.name, self.label, self.status, self.connection = n, n.title(), "approved", "c"
+            self.time_kind, self.tables, self.unit = "flow", [], ""
+            self.time_source, self.time_confirmed_by = "rule", None
+
+    governed = [_M(f"m{i}") for i in range(ranges.MAX_METRICS + 2)]
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: governed)
+    monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
+    monkeypatch.setattr(mt, "declared", lambda m: True)
+    monkeypatch.setattr(mt, "run_measure", lambda *a, **k: ([], "measured elsewhere"))
+
+    spec = ranges.RangeSpec(preset="custom", start=date(2026, 8, 1), end=date(2026, 9, 1),
+                            previous_start=date(2026, 7, 1), previous_end=date(2026, 8, 1),
+                            last_year_start=None, last_year_end=None, as_of=date(2026, 9, 15),
+                            lag_days=8, lag_source="learned", still_moving=[], period="month")
+    out = ranges.measure_range("c", spec, run_sql=lambda s: ([], [], ""), dialect="duckdb",
+                               north_stars=[{"name": m.label} for m in governed])
+
+    reasons = {u["name"]: u["reason"] for u in out["unmeasured"]}
+    cut = [m.label for m in governed[ranges.MAX_METRICS:]]
+    for name in cut:
+        assert "cap" in reasons.get(name, ""), f"{name} was cut by the cap and must say so"
+        assert "no approved definition" not in reasons.get(name, "")
