@@ -184,3 +184,51 @@ def test_a_daily_quota_still_trips_the_cooldown(monkeypatch):
     with pytest.raises(Exception):
         p.complete("s", "u", Out)
     assert P._in_quota_cooldown("openrouter")
+
+
+# ── BigQuery, from errors this deployment actually produced ───────────────────
+# `classify_error_type`'s docstring named DuckDB, Postgres and SQLite. theLook is
+# BigQuery, whose wording matches almost none of those patterns, so its failures fell
+# through to the SEMANTIC catch-all on the function's last line. These four strings are
+# VERBATIM from `sql_safety.preflight_bind_failure` (the engine's own words, logged
+# before anything interprets them) — not from a recollection of how BigQuery phrases
+# things, which is how a classifier ends up looking fixed while still missing.
+
+_BQ_TIMESTAMP_DATE = ("No matching signature for operator >= for argument types: "
+                      "TIMESTAMP, DATE\n  Signature: T1 >= T1")
+_BQ_GROUP_BY = ("Multi-level aggregation requires the enclosing aggregate function to "
+                "have one or more GROUP BY modifiers. at [1:10]")
+_BQ_UNRECOGNIZED = "Unrecognized name: total_amount at [1:13]"
+_BQ_SYNTAX = "Syntax error: Unexpected keyword GROUP at [1:20]"
+
+
+def test_bigquery_type_mismatch_classifies_semantic():
+    """9 of 10 captured failures were this one shape, and SEMANTIC was always the right
+    answer for it — it just arrived via the unmatched default rather than a rule, so the
+    bucket meaning "unrecognised" was carrying 90% of this connection's traffic.
+
+    This pins the OUTCOME. It deliberately does not claim to prove which branch produced
+    it: the return value cannot distinguish them, and a test that asserts something it
+    cannot observe is the kind that passes for the wrong reason. Matching the phrase
+    explicitly is behaviour-neutral today; it is worth doing so that a future genuine
+    fallthrough is visible instead of hidden under this shape's volume."""
+    from aughor.tools.error_classifier import SqlErrorClass, classify_error_type
+    assert classify_error_type(_BQ_TIMESTAMP_DATE, "", "bigquery") is SqlErrorClass.SEMANTIC
+
+
+def test_a_bigquery_name_error_is_a_binder_error():
+    """It was SEMANTIC, so `error_class_guidance` answered a misspelled column with
+    "A type or expression mismatch. Cast explicitly" — advice for a different failure."""
+    from aughor.tools.error_classifier import SqlErrorClass, classify_error_type
+    assert classify_error_type(_BQ_UNRECOGNIZED, "", "bigquery") is SqlErrorClass.BINDER
+
+
+def test_a_bigquery_group_by_error_is_a_binder_error():
+    """Postgres' "must appear in the GROUP BY" was matched; BigQuery's phrasing was not."""
+    from aughor.tools.error_classifier import SqlErrorClass, classify_error_type
+    assert classify_error_type(_BQ_GROUP_BY, "", "bigquery") is SqlErrorClass.BINDER
+
+
+def test_a_bigquery_syntax_error_was_already_right_and_stays_right():
+    from aughor.tools.error_classifier import SqlErrorClass, classify_error_type
+    assert classify_error_type(_BQ_SYNTAX, "", "bigquery") is SqlErrorClass.PARSER
