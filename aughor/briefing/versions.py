@@ -20,9 +20,9 @@ every mount. So a reading whose figures have not moved writes NOTHING and the as
 day the figures are actually from; a reading that moves one figure by `NOISE_REL` or more (the
 platform's own 5% bar, imported, not re-declared) writes the next version and names what moved.
 
-**Figures, never prose.** The digest reads `measured[].current` only. The narrative is
-model-written and varies between runs over identical rows; digesting it would make every visit a
-revision and the history meaningless.
+**Figures, never prose.** What is compared is `measured[].current` and nothing else. The
+narrative is model-written and varies between runs over identical rows; comparing it would make
+every visit a revision and the history meaningless.
 """
 from __future__ import annotations
 
