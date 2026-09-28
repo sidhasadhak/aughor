@@ -9659,6 +9659,15 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 > spend was asked for); the Briefing draws no cockpit layer on a connection that was never explored, as it drew
 > no "Your cockpit" there before.
 
+> **Status 2026-09-28, later — a tab of its own.** The user: *"The cockpit shuld be a tab inside the Briefing.. as
+> simple as that.."*. The person's cockpits moved from the foot of the Briefing's page to a **Cockpit** tab beside
+> it, in the Intelligence workspace (`?layer=cockpit`), with a range control of its own ("As written" until one is
+> chosen). With the flag on, the Briefing's page draws no cockpit layer; off, it draws "Your cockpit" as before, and
+> there is no tab; a canvas's Briefing keeps the layer and has no tab. Opening the tab loads no Briefing and asks no
+> model, and a connection need not be explored for it — so the two limits of the first cut are gone. Web only: no
+> route changed. Web 1,372 tests and the seven gates; seen live on the scratch servers (the Payments cockpit drawn in
+> the tab, its figures as written; no Briefing request from opening it).
+
 > **Status 2026-09-28, the six repairs — at the user's word (*"fix the six faults"*).** Each fault the third run
 > found is repaired, and each repair was broken on purpose afterwards: 17 deliberate breaks, all caught. The
 > numerals law reads a range's unit on both ends and "percent" as a word; a limit is set only where the turn's own

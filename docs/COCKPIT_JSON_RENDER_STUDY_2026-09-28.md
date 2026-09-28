@@ -656,3 +656,8 @@ are fixed.
 **Not measured.** A draft by a model: nothing was spent. The Briefing draws no cockpit
 layer on a connection never explored, as before; a person's cockpit does not need one, and
 whether it should show there is left to the user.
+
+**A tab of its own, the same evening.** The user: *"The cockpit shuld be a tab inside the
+Briefing.. as simple as that.."*. The strip of cockpits moved from the foot of the Briefing's
+page to a Cockpit tab beside it, with a range control of its own. It needs no exploration and
+loads no Briefing — the two limits the first cut named above are gone with it.

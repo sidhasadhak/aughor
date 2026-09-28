@@ -1,18 +1,20 @@
 "use client";
 
 /**
- * BriefingCockpits — a person's cockpits in the Briefing (Arc CT, CT-7 to CT-10; ROADMAP §3.50).
+ * BriefingCockpits — a person's cockpits, the Cockpit tab beside the Briefing (Arc CT, CT-7 to
+ * CT-10; ROADMAP §3.50).
  *
  * The Briefing is the connection's: what the platform found for a period. A cockpit is a
  * person's own: the standing set of cards they keep watching for an area — returns, pricing,
- * marketing — and they may keep as many as they like (§6 item 36(i)–(l)). This is where they
- * live, in place of the one unnamed "Your cockpit" the Briefing drew before.
+ * marketing — and they may keep as many as they like (§6 item 36(i)–(l)). The user: "The
+ * cockpit should be a tab inside the Briefing.. as simple as that" — so it is a tab of the
+ * Intelligence workspace, next to the Briefing, and the Briefing's page no longer draws one.
  *
- * Behind `cockpit.composed`. Off, the list route answers 404 and the Briefing draws what it
- * always drew (`fallback`), byte for byte.
+ * Behind `cockpit.composed`; off, the tab is not there. Opening it loads no Briefing and asks
+ * no model, and it needs no exploration: a cockpit is made of cards, not of findings.
  *
  * What it does, and what each costs:
- *   - draws the chosen cockpit for the page's range: no model;
+ *   - draws the chosen cockpit for a range of its own ("As written" until one is chosen): no model;
  *   - arranges it by hand, each save a version: no model;
  *   - starts "My cockpit" from the cards pinned before cockpits had names: no model;
  *   - moves a cockpit that lived in a Data Canvas here: no model;
@@ -22,6 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
+import { RangeControl, type RangeChoice } from "@/components/brief/BriefRange";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
 import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
@@ -205,18 +208,20 @@ function NewCockpit({ connectionId, schema, onKept, onClose }: {
   );
 }
 
-export function BriefingCockpits({ connectionId, schema, range, rangeNote, onOpenSource, onEvidence, fallback }: {
+const AS_WRITTEN = { label: "As written", title: "Every card as it was written, not cut to a range" };
+
+const RANGE_SAYS: Record<PersonCockpit["range"]["status"], string> = {
+  standing: "", final: "Final", provisional: "Provisional", to_date: "To date",
+};
+
+export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidence }: {
   connectionId: string;
   schema?: string;
-  /** The page's range: every card runs cut to it. Null on the standing view. */
-  range: BriefingRange | null;
-  /** What the Briefing says of the range the cards were asked for. */
-  rangeNote?: React.ReactNode;
   onOpenSource?: (iid: string) => void;
   onEvidence?: (iid: string) => void;
-  /** What the Briefing drew before cockpits had names — drawn, unchanged, when the flag is off. */
-  fallback: React.ReactNode;
 }) {
+  const [chosenRange, setChosenRange] = useState<RangeChoice>({ preset: "standing" });
+  const range: BriefingRange | null = chosenRange.preset === "standing" ? null : chosenRange;
   const [list, setList] = useState<CockpitList | null | "off">(null);
   const [chosen, setChosen] = useState("");
   const [data, setData] = useState<PersonCockpit | null>(null);
@@ -322,9 +327,17 @@ export function BriefingCockpits({ connectionId, schema, range, rangeNote, onOpe
     [takeOffOne, refreshOne, onOpenSource, onEvidence]);
   const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
 
-  if (list === "off") return <>{fallback}</>;
+  if (list === "off") {
+    return (
+      <div style={{ padding: "24px 32px" }}>
+        <EmptyState icon="gauge" title="Cockpits are off on this install">
+          Cockpits need the cockpit flag, which is off here. The Briefing keeps its own cockpit meanwhile.
+        </EmptyState>
+      </div>
+    );
+  }
   if (list === null) {
-    return <div className="aug-fs-sm" data-testid="cockpits-loading" style={{ color: "var(--t3)" }}>Reading your cockpits…</div>;
+    return <div className="aug-fs-sm" data-testid="cockpits-loading" style={{ color: "var(--t3)", padding: "24px 32px" }}>Reading your cockpits…</div>;
   }
 
   const live = list.cockpits.filter(c => !c.retired);
@@ -335,7 +348,7 @@ export function BriefingCockpits({ connectionId, schema, range, rangeNote, onOpe
   const unplaced = arranging ? (data?.cards ?? []).filter(c => !cardsPlaced(arranging).includes(c.id)) : [];
 
   return (
-    <div data-testid="briefing-cockpits">
+    <div data-testid="briefing-cockpits" style={{ flex: 1, overflow: "auto", padding: "14px 32px 32px" }}>
       {/* The strip: the person's cockpits, and the door to a new one. */}
       <div role="tablist" aria-label="Your cockpits" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         {/* The layer's own label, as the Briefing has always marked it: violet is the user's. */}
@@ -348,7 +361,17 @@ export function BriefingCockpits({ connectionId, schema, range, rangeNote, onOpe
           </Button>
         ))}
         <Button size="sm" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New cockpit</Button>
-        {rangeNote}
+        {data?.ranges_on && live.length > 0 && (
+          <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+            {data.range.status !== "standing" && (
+              <span className="aug-fs-sm" data-testid="cockpit-range" style={{ color: "var(--t2)" }}>
+                {RANGE_SAYS[data.range.status]} · {data.range.covers}
+              </span>
+            )}
+            <RangeControl value={chosenRange} onChange={setChosenRange} disabled={busy}
+              standing={AS_WRITTEN} label="Cockpit range" />
+          </span>
+        )}
       </div>
 
       {/* A retired cockpit leaves the strip, not the record: it is said here, and brought back

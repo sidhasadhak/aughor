@@ -143,7 +143,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] CT-8 arranged by hand — the outline: move, rename, take off, new section or tab, add a card; each save a version. **BUILT 2026-09-28**, same branch. No model call.
 - [ ] CT-9 a new cockpit from an area — one short model run with the drafting tool alone; arranged before keeping, or discarded. **BUILT 2026-09-28**, same branch. ⚑ Not yet run by a model.
 - [ ] CT-10 out of the canvas — the tab and the tool left it; a canvas cockpit is moved to its owner's Briefing in one act. **BUILT 2026-09-28**, same branch. The Executive Cockpit on theLook (version 3) waits on the install to be moved.
-- [ ] The Briefing draws no cockpit layer on a connection that was never explored — as it drew no "Your cockpit" there before. A person's cockpit is made of approved metrics and does not need an exploration; whether it should show there is the user's call.
+- [x] The Briefing draws no cockpit layer on a connection that was never explored — as it drew no "Your cockpit" there before. **Gone 2026-09-28:** the cockpits became a tab of their own beside the Briefing (the user: *"The cockpit shuld be a tab inside the Briefing.. as simple as that"*), which needs no exploration and loads no Briefing.
 - [x] §6 item 36 — adopted as drafted 2026-09-28 (the user: *"Adopt the Arc CT and commit locally"*); clauses (a), (b), (c), (e) and (g) decided.
 - [x] §6 item 36(d) — decided 2026-09-28 (the user: *"Yes, install it and start CT-1 and CT-2"*); installed the same day.
 - [x] Keep the library? — KEPT 2026-09-28, the user's word on CT-1's numbers (§6 item 36(d)); pinned exact.

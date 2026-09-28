@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * BriefingCockpits (Arc CT, CT-7 to CT-10): a person's cockpits in the Briefing.
+ * BriefingCockpits (Arc CT, CT-7 to CT-10): a person's cockpits, the Cockpit tab beside the Briefing.
  *
  * The API is stood in for, and the cockpit's own drawing (`ComposedCockpit`, tested on its own)
  * is a stub that records what it was handed. What is asserted is what this component asks the
@@ -61,8 +61,7 @@ const READ: PersonCockpit = {
   history: [version(3), { ...version(2), current: false }, { ...version(1), current: false }],
 };
 
-const show = (range = null as null | { preset: "last_month" }) => render(
-  <BriefingCockpits connectionId="thelook" schema="thelook" range={range} fallback={<div data-testid="the-old-cockpit" />} />);
+const show = () => render(<BriefingCockpits connectionId="thelook" schema="thelook" />);
 
 beforeEach(() => {
   for (const f of Object.values(api)) f.mockReset();
@@ -76,27 +75,37 @@ beforeEach(() => {
 });
 
 describe("with the flag off", () => {
-  it("draws exactly what the Briefing drew before, and nothing of its own", async () => {
+  it("says so, and reads nothing more", async () => {
     api.listCockpits.mockResolvedValue(null);
     show();
-    expect(await screen.findByTestId("the-old-cockpit")).toBeInTheDocument();
+    expect(await screen.findByText("Cockpits are off on this install")).toBeInTheDocument();
     expect(screen.queryByTestId("briefing-cockpits")).toBeNull();
     expect(api.getCockpit).not.toHaveBeenCalled();
   });
 });
 
 describe("a person's cockpits", () => {
-  it("lists them in a strip and draws the first, each card it places run for the page's range", async () => {
-    show({ preset: "last_month" });
+  it("lists them in a strip and draws the first, each card it places run as written", async () => {
+    show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     expect(screen.getAllByTestId("cockpit-strip-item").map(b => b.textContent)).toEqual(["Returns", "Pricing"]);
-    expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "last_month" });
+    expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", null);
     // Only the cards the spec places are run — the pinned card it does not place is not.
     expect(api.runDashboardCard.mock.calls.map(c => c[0]).sort()).toEqual(["c7f3a001", "c91b2002"]);
-    expect(api.runDashboardCard.mock.calls[0][1]).toEqual({ preset: "last_month" });
+    expect(api.runDashboardCard.mock.calls[0][1]).toBeNull();
     const last = drawn.props.at(-1)!;
     expect(last.spec).toEqual(SPEC);
     expect(screen.getByTestId("cockpit-version")).toHaveTextContent("Version 3 · kept by person");
+  });
+
+  it("reads the cockpit for a range of its own, chosen on the tab", async () => {
+    show();
+    const group = await screen.findByRole("group", { name: "Cockpit range" });
+    expect(within(group).getByRole("button", { name: "As written" })).toHaveAttribute("aria-pressed", "true");
+    api.runDashboardCard.mockClear();
+    fireEvent.click(within(group).getByRole("button", { name: "Month" }));
+    await waitFor(() => expect(api.getCockpit).toHaveBeenLastCalledWith("thelook", "returns-1", { preset: "last_month" }));
+    await waitFor(() => expect(api.runDashboardCard).toHaveBeenCalledWith("c7f3a001", { preset: "last_month" }));
   });
 
   it("opens the one the person chose last time", async () => {

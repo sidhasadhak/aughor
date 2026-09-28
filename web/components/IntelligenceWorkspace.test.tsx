@@ -16,7 +16,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IntelligenceWorkspace, type IntelLayer } from "@/components/IntelligenceWorkspace";
-import { generateBriefingNarrative, getCatalogTree } from "@/lib/api";
+import { generateBriefingNarrative, getCatalogTree, getSystemFlags, type SystemFlag } from "@/lib/api";
 
 // Every async call in the API module stays pending unless a test answers it, so the real
 // BriefingPanel renders its loading state and nothing reaches the no-network guard. Synchronous
@@ -120,5 +120,38 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
     expect(generateBriefingNarrative).toHaveBeenCalledTimes(1);
     expect(generateBriefingNarrative).toHaveBeenLastCalledWith(CONN, false, "sales", "default");
     expect(getCatalogTree).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("IntelligenceWorkspace — the Cockpit tab, beside the Briefing (Arc CT-7)", () => {
+  const tabs = () => screen.getAllByRole("tab").map(t => t.textContent?.trim());
+  const flags = (on: boolean) => vi.mocked(getSystemFlags).mockResolvedValue(
+    { "cockpit.composed": { value: on } as unknown as SystemFlag });
+
+  it("is there with the flag on, right after the Briefing, and opening it asks for no brief", async () => {
+    flags(true);
+    render(shell("cockpit"));
+    await waitFor(() => expect(tabs()).toContain("Cockpit"));
+    expect(tabs().slice(0, 2)).toEqual(["Briefing", "Cockpit"]);
+    await settle();
+    expect(generateBriefingNarrative).not.toHaveBeenCalled();
+  });
+
+  it("is not there with the flag off, and a link to it opens the Briefing", async () => {
+    flags(false);
+    const onLayerChange = vi.fn();
+    render(<IntelligenceWorkspace connectionId={CONN} layer="cockpit" onLayerChange={onLayerChange}
+      onInvestigate={noop} connections={[{ id: CONN, name: "Warehouse" }]} workspaceId="default" />);
+    await waitFor(() => expect(onLayerChange).toHaveBeenCalledWith("briefing"));
+    expect(tabs()).not.toContain("Cockpit");
+  });
+
+  it("is not there for a canvas, which is for questions and deep analysis", async () => {
+    flags(true);
+    render(<IntelligenceWorkspace connectionId={CONN} layer="briefing" onLayerChange={noop} onInvestigate={noop}
+      canvasId="cv1" workspaceId="default" />);
+    await settle();
+    expect(tabs()).not.toContain("Cockpit");
   });
 });
