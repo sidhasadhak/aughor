@@ -313,6 +313,63 @@ def seed_from_kb(force: bool = False) -> int:
     return len(playbook)
 
 
+#: The words a KB-seeded play takes from its KB entry. A person who changes one of them has made the
+#: play theirs, and a refresh leaves it alone.
+_FROM_THE_KB = ("trigger_condition", "recommendation", "tags", "cause", "fix")
+
+
+def refresh_from_kb(path: Path | None = None) -> dict:
+    """Give each KB-seeded play the words its KB entry says NOW, unless a person has made it theirs.
+
+    Knowledge is corrected after it is seeded — the user, 2026-09-28: fix the AOV, return and refund
+    entries — and `seed_from_kb` writes only into an empty playbook, so without this a corrected entry
+    never reaches the plays built from it: they go on saying "Return Rate appears inflated" about an
+    entry now titled "Order Return Rate". `POST /playbook/seed` re-seeds, but wholesale: it throws away
+    every status and word a person set and brings back what they deleted.
+
+    A play is re-derived only while the words it took from the KB are the words it was seeded with —
+    its first version in the log; for a play seeded before the log kept content, a play never saved
+    since (version 1). `cause` and `fix` may also have been filled in by IP-1's top-up from empty. A
+    play a person reworded keeps their words and is counted; a play a person deleted is not here to
+    refresh, and nothing is added. Each change is saved as the play's next version, so a finding that
+    cited the old wording still resolves to it; its id, status and history are its own. Idempotent:
+    a second pass changes nothing. One read and one write. Returns ``{"updated", "kept_changed"}``."""
+    from aughor.packs.knowledge import PACK_PLAY_PREFIX
+    from aughor.playbook.store import first_contents, list_entries
+
+    built: dict[str, PlaybookEntry] = {}
+    for e in _load_all_kb():
+        if _has_causal_data(e):
+            for play in _build_entries_for_kb(e):
+                built.setdefault(stable_key(play.id), play)
+    first = first_contents(path)
+    counts = {"updated": 0, "kept_changed": 0}
+    to_save: list[PlaybookEntry] = []
+    for held in list_entries(path):
+        if not held.source_kb_id or held.source_kb_id.startswith(PACK_PLAY_PREFIX):
+            continue
+        now = built.get(stable_key(held.id))
+        if now is None or now.source_kb_id != held.source_kb_id:
+            continue
+        words = {f: getattr(now, f) for f in _FROM_THE_KB}
+        if all(getattr(held, f) == words[f] for f in _FROM_THE_KB):
+            continue
+        seeded = first.get(held.id)
+        if seeded is None:
+            untouched = int(held.version or 1) <= 1
+        else:
+            untouched = all(
+                getattr(held, f) == seeded.get(f) or (f in ("cause", "fix") and not seeded.get(f))
+                for f in _FROM_THE_KB)
+        if not untouched:
+            counts["kept_changed"] += 1
+            continue
+        to_save.append(held.model_copy(update=words))
+        counts["updated"] += 1
+    save_entries(to_save, path)
+    return counts
+
+
 def top_up_data_quality(path: Path | None = None) -> dict:
     """IP-1 — give an EXISTING playbook the data-quality plays it never received (§6 item 21, answer 7).
 

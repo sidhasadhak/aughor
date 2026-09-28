@@ -125,6 +125,23 @@ def ever_saved_ids(path: Path | None = None) -> set[str]:
     return {str(s["entry_id"]) for s in (log if isinstance(log, list) else []) if s.get("entry_id")}
 
 
+def first_contents(path: Path | None = None) -> dict[str, dict]:
+    """Each play's content as it was FIRST saved, by play id, read in one pass over the log — what a
+    seeded play said before anyone changed it. A play seeded before the log kept content has none."""
+    vp = _versions_path(path)
+    if not vp.exists():
+        return {}
+    log = json.load(open(vp))
+    first: dict[str, tuple[int, dict]] = {}
+    for s in (log if isinstance(log, list) else []):
+        eid, content = str(s.get("entry_id") or ""), s.get("content")
+        if not eid or not isinstance(content, dict):
+            continue
+        if eid not in first or int(s.get("version") or 0) < first[eid][0]:
+            first[eid] = (int(s.get("version") or 0), content)
+    return {eid: content for eid, (_v, content) in first.items()}
+
+
 def get_version(entry_id: str, version: int, path: Path | None = None) -> dict | None:
     """The frozen content of one past version — what a finding citing it actually relied on."""
     for s in list_versions(entry_id, path):
