@@ -12945,6 +12945,16 @@ export interface components {
              */
             insight_id: string;
             /**
+             * Metric
+             * @default
+             */
+            metric: string;
+            /**
+             * Metric Version
+             * @default 0
+             */
+            metric_version: number;
+            /**
              * Origin Finding Id
              * @default
              */

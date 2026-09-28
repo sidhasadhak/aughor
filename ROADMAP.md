@@ -9634,7 +9634,7 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
-### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 and CT-2 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged)
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1, CT-2 and CT-3 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged)
 
 > **Status 2026-09-28 — CT-1 and CT-2 are built; falsifier (1) did not fire.** The library is installed at exactly
 > `0.21.0` (two lockfile entries, nothing else), one hand-written spec draws in a browser with every card handed to
@@ -9651,6 +9651,25 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 > tests; 11,932 Python tests. **Found on the way:** the design system's tabs drew horizontal tabs as a row and no
 > screen had ever used them — fixed at the cause, seen only in the browser. **Not yet:** the drift gate has not run
 > in CI (nothing is pushed); the active tab is marked by weight alone; the server needs Node to accept a spec.
+
+> **Status 2026-09-28, later — CT-3 is built.** A cockpit's spec is a Ledger artifact of kind `cockpit`, one
+> natural key per canvas (`aughor/cockpit/versions.py`); its cards are kept at canvas scope
+> (`aughor/cockpit/cards.py`); a card made from an approved metric records its name and version. **No new store,
+> no migration**: a card's provenance is a JSON column, so the two new fields read as empty on every older row,
+> and the Briefing's arrangement table is untouched. Keeping is an act of approval, so every outcome is said —
+> kept, unchanged, refused, not checked, failed — and nothing is kept without the name of who approved it and
+> where it came from. Going back is the next version, checked against the canvas as it is today; retiring is a
+> version that says so. **Receipt, run on the real stores in a scratch directory:** v1 kept · the same spec
+> approved again, unchanged · an edit, v2 · three refusals that wrote nothing · back to v1 as v3 · retired as v4 ·
+> back to v2 as v5, with all five versions readable. **Verified:** 34 tests against the real Ledger, card store
+> and canvas store; thirteen deliberate breaks, all caught; the typed client regenerated with the two fields and
+> nothing else. **Found on the way:** a card's id is its own across the whole card store and an upsert by id
+> MOVES the row, so placing a card that lives elsewhere would have taken it from there — refused now, by name.
+> **Open, and named:** deleting a canvas deletes only the canvas — its cards and its cockpit's history stay,
+> unreachable, and no purge hook exists for a canvas; nothing reads a cockpit yet, so there is no route (CT-4
+> adds the read, CT-5 the approval); and a refusal names every reason of the FIRST kind it meets, not of every
+> kind — a spec with a refused field, a figure in a title and a card it does not hold is told of the field
+> alone, which in CT-5 costs a model call per round.
 
 > **Origin.** The user, with `vercel-labs/json-render` on screen: *"Where can use this? Be a little open to ideas
 > here.. and some wild but relevant use cases.."* On the first mock, a plain grid: *"it needs to be full extension
@@ -9695,7 +9714,8 @@ second place that declares chart kinds.
   this canvas, every state path is in the published tree, there is no `watch`, `on` or unregistered `$computed`,
   and every piece of model-written text passes the numerals law. Refused whole, with sentences (AV-0's law). A
   drift gate like the chart bundle's. "Cockpit", "card" and "section" entered in the glossary. *Two days.*
-- **CT-3 · kept as versions.** A Ledger artifact of kind `cockpit`, one natural key per canvas; cards made for it
+- **CT-3 · kept as versions. ✅ BUILT 2026-09-28** (`aughor/cockpit/versions.py`, `aughor/cockpit/cards.py`;
+  no route yet). A Ledger artifact of kind `cockpit`, one natural key per canvas; cards made for it
   stored at canvas scope; a card made from an approved metric records which one. The connection cockpit's
   arrangement table is untouched. *A day.*
 - **CT-4 · the Cockpit tab.** The fourth tab of the Data Canvas, behind `cockpit.composed` (off, byte-identical

@@ -39,6 +39,11 @@ class CardProvenance(BaseModel):
     insight_id: str = ""                  # the finding/insight it was pinned from (Door 1)
     origin_finding_id: str = ""           # the origin_finding anchor (drill/receipt reuse)
     receipt_ref: str = ""                 # the trust-receipt key proving the number
+    # Arc CT-3 — a card made from an approved metric records which one, and at which version,
+    # so a cockpit can say what stands behind a figure. Empty / 0 = not made from a metric.
+    # Stored inside `provenance_json`, so an older row reads with both at their defaults.
+    metric: str = ""
+    metric_version: int = 0
 
 
 class DashboardCard(BaseModel):

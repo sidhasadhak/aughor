@@ -2169,7 +2169,9 @@ export interface DashboardCard {
   render: Record<string, unknown>;
   refresh: DashboardCardRefresh;
   thresholds: Record<string, unknown>;
-  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string };
+  /** `metric` and `metric_version` (Arc CT-3): the approved metric a card was made from, and the
+   *  version it had then. Empty and 0 when the card was not made from a metric. */
+  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string; metric: string; metric_version: number };
   links: string[];
   body: string;
   author: string;
