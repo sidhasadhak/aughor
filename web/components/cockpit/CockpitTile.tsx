@@ -101,6 +101,9 @@ export function changeWords(cur: number, prev: number, card: CockpitCard, agains
   // A relative change has no base to stand on when what it is compared with is zero.
   if (!d.text.endsWith("pts") && !d.text.endsWith("×") && prev === 0) return null;
   const size = d.text.replace(/^[+-]/, "").replace(/pts$/, " pts");
+  // A move too small to show at the precision it is written in is no move to a reader: "0.0 pts
+  // lower" (seen on theLook's gross margin, 2026-09-28) says a direction the figure cannot carry.
+  if (parseFloat(size) === 0) return { text: `the same as ${against}`, sign: 0 };
   return { text: `${size} ${d.sign > 0 ? "higher" : "lower"} than ${against}`, sign: d.sign };
 }
 

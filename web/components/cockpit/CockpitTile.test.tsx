@@ -141,6 +141,12 @@ describe("the words", () => {
     expect(changeWords(5, 0, plain, "June")).toBeNull();
     expect(changeWords(5, 5, plain, "June")).toEqual({ text: "the same as June", sign: 0 });
   });
+
+  it("say a move too small to show as no move, never '0.0 pts lower'", () => {
+    const margin = card({ unit: "percent 0-100", stated_range: { kind: "pct100", lo: 0, hi: 100 } });
+    expect(changeWords(51.9, 51.93, margin, "June")).toEqual({ text: "the same as June", sign: 0 });
+    expect(changeWords(51.9, 52.0, margin, "June")).toEqual({ text: "0.1 pts lower than June", sign: -1 });
+  });
 });
 
 describe("a series", () => {
