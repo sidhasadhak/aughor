@@ -603,10 +603,40 @@ def test_the_tool_tells_the_writer_to_repair_and_try_again(desk):
     out = draft_cockpit(CONN, desk.id, {"op": "new", "spec": desk.spec(), "cards": [
         {"key": "return-rate", "metric": desk.draft_metric}]})
     assert out["staged"] is False and "could_not_check" not in out
-    assert out["summary"].startswith("Nothing staged. Repair every point below and draft it again. ")
+    assert out["summary"] == "Nothing staged. Repair every point in `refused`, then draft it again."
     assert out["refused"][0] == f'The metric "{desk.draft_metric}" is draft. A card is made from an approved metric.'
-    assert draft_cockpit(CONN, desk.id, {"op": "publish"})["summary"] \
-        == 'Nothing staged: "publish" is not one of options, new, edit.'
+    # `error` is the field the platform's record of a step keeps, always: a refused draft's
+    # reasons are on the record of the run, and not only in the model's context.
+    assert out["error"] == " ".join(out["refused"])
+    wrong = draft_cockpit(CONN, desk.id, {"op": "publish"})
+    assert wrong["summary"] == 'Nothing staged: "publish" is not one of options, new, edit.'
+    assert wrong["error"] == '"publish" is not one of: options, new, edit.'
+
+
+def test_a_refused_drafts_reasons_are_kept_on_the_record_of_the_step(desk, monkeypatch):
+    """Through the tool loop's own recorder, as a turn would: what it stores of a step's
+    result is `error`, and a refusal must be in it."""
+    from aughor.agent import tool_loop
+    from aughor.obs import session_log
+
+    kept = []
+    monkeypatch.setattr(session_log, "emit", lambda kind, **kw: kept.append((kind, kw)))
+    result = draft_cockpit(CONN, desk.id, {"op": "new", "spec": desk.spec(), "cards": [
+        {"key": "return-rate", "metric": desk.draft_metric}]})
+    step = tool_loop.LoopStep(tool="draft_cockpit", arguments={"op": "new"}, ok=True,
+                              result_chars=len(json.dumps(result)))
+    tool_loop._emit_step(1, step, result=result, elapsed_ms=1.0, site="converse",
+                         conn_id=CONN, trace_id="t-1")
+
+    [(kind, kw)] = kept
+    assert kind == session_log.STEP and kw["name"] == "draft_cockpit"
+    assert f'The metric "{desk.draft_metric}" is draft.' in kw["payload"]["error"]
+
+    kept.clear()
+    staged_result = draft_cockpit(CONN, desk.id, {"op": "new", "spec": desk.spec(), "cards": desk.cards()})
+    tool_loop._emit_step(2, step, result=staged_result, elapsed_ms=1.0, site="converse",
+                         conn_id=CONN, trace_id="t-1")
+    assert kept[0][1]["payload"]["error"] == ""          # a staged draft has nothing to say there
 
 
 def test_when_the_rules_cannot_run_nothing_is_staged_and_trying_again_will_not_help(desk, monkeypatch):
@@ -619,7 +649,8 @@ def test_when_the_rules_cannot_run_nothing_is_staged_and_trying_again_will_not_h
 
     told = draft_cockpit(CONN, desk.id, {"op": "new", "spec": desk.spec(), "cards": desk.cards()})
     assert told["could_not_check"] is True
-    assert told["summary"].startswith("Nothing staged, and drafting it again will not help: ")
+    assert told["summary"] == "Nothing staged, and drafting it again will not help. Tell the user why."
+    assert "node was not found on this machine" in told["error"]
     assert propose.options(CONN, desk.id)["available"] is False
 
 

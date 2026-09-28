@@ -94,19 +94,25 @@ def draft_cockpit(connection_id: str, canvas_id: str, args: dict, *, emit: Optio
     if op == "options":
         return propose.options(connection_id, canvas_id)
     if op not in (propose.MODE_NEW, propose.MODE_EDIT):
-        return {"staged": False, "refused": [f'"{op}" is not one of: options, new, edit.'],
+        said = f'"{op}" is not one of: options, new, edit.'
+        return {"staged": False, "refused": [said], "error": said,
                 "summary": f'Nothing staged: "{op}" is not one of options, new, edit.'}
 
     drafted = propose.draft(
         connection_id, canvas_id, mode=op, spec=args.get("spec"), patches=args.get("patches"),
         cards=args.get("cards"), reasoning=str(args.get("reasoning") or ""))
     if not drafted.staged:
+        # `error` is what the platform keeps of a step's result, always (the tool loop's step
+        # record). Without it a refused draft's reasons went to the model and nowhere else,
+        # and nobody reading the run afterwards could say why it took two rounds. The
+        # sentences are said once more in `refused`, one to a line, for the writer to repair.
         said = " ".join(drafted.refusals)
         if drafted.not_checked:
             return {"staged": False, "could_not_check": True, "refused": list(drafted.refusals),
-                    "summary": f"Nothing staged, and drafting it again will not help: {said} Tell the user."}
-        return {"staged": False, "refused": list(drafted.refusals),
-                "summary": f"Nothing staged. Repair every point below and draft it again. {said}"}
+                    "error": said,
+                    "summary": "Nothing staged, and drafting it again will not help. Tell the user why."}
+        return {"staged": False, "refused": list(drafted.refusals), "error": said,
+                "summary": "Nothing staged. Repair every point in `refused`, then draft it again."}
 
     p = drafted.proposal
     _announce(emit, p)
