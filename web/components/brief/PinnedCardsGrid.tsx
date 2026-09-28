@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PinnedCardBody, type CardState } from "@/components/brief/PinnedCardBody";
 
-const CARD_H = 210;   // uniform tile height → a clean, gap-free scorecard grid
+export const CARD_H = 210;   // uniform tile height → a clean, gap-free scorecard grid
 
 const orderKey = (cid: string) => `aughor:cockpit-order:${cid}`;
 function loadOrder(cid: string): string[] {

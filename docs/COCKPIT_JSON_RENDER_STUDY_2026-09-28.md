@@ -208,3 +208,49 @@ the install for CT-1 and the model calls of CT-5's receipt still wait on their w
 | CT-4 | the Cockpit tab, behind a flag, with the range control and the counted conditions | CT-3 |
 | CT-5 | ask for it: one proposal, approved all or nothing; edits as patches | CT-4, and the user's yes to the receipt's model calls |
 | CT-6 | out by other doors | its trigger: a person asks for a cockpit outside the app |
+
+## 9 · CT-1's receipt — the premise, run (2026-09-28)
+
+The library was installed and run the same day, at the user's *"Yes, install it and start CT-1 and CT-2"*.
+**Falsifier (1) did not fire:** the card component is registered unchanged, and the rules run from Python.
+
+| asked of CT-1 | measured |
+|---|---|
+| install, pinned | `@json-render/core` and `@json-render/react` at exactly `0.21.0`. The lockfile gained those two entries and nothing else. Neither package runs a script on install. `zod` is now declared (`^4.4.3`), at the version the lockfile already held |
+| one hand-written spec, drawn | `web/lib/cockpit/premise.fixture.json`: two tabs, two sections, two cards from the card store, one card and one section shown by a condition. Drawn in a browser from this branch's own dev server, with a chart card added: the chart drew its six bars through Vega, and the console showed no error |
+| the card component, unchanged | yes. `PinnedCardBody` was not edited. The only change near it is that `PinnedCardsGrid` now exports the card height it already used |
+| the states that matter | seen in the browser, not only in tests: a card appears when the host says its watch is over; a withheld card stays in its place and says so; the open tab survives a change of host state; a section waiting on its condition is counted; a refused spec draws nothing and gives its reasons |
+| the rules, from Python | yes. `aughor/cockpit/validate.bundle.mjs` is 377,712 bytes, builds to the same bytes twice, and answers in about 60 ms |
+| the weight | 88.6 KB gzipped (403 KB minified) for the library, the rules and Zod, with React left out. **24.5 KB gzipped** (76 KB minified) with Zod left out too. Zod is most of it, and the `ai` package the chat already loads imports Zod — so a page of this app may already carry it. The figure on the canvas route itself is CT-4's to measure, once something mounts the cockpit |
+| the prompt | `catalog.prompt()` is 15,783 characters for five components. Most of it describes what this arc refuses. CT-5 needs a prompt of its own |
+
+### What running it corrected
+
+1. **The library's validator does not check props.** `catalog.validate` checks a component's name and an
+   element's shape. A tone outside the list, a number where a card id belongs and a prop nobody declared
+   all passed. The closed catalog is closed by `rules.ts`, which holds every prop to the catalog's own
+   schema, strictly.
+2. **`watch` and `on` are dropped by the library's parse, not refused.** A spec carrying them validated.
+   The rules refuse them by name, with the reason.
+3. **A condition on a path nobody publishes is simply false.** The card would be hidden and nothing would
+   say why. The rules refuse any path the host does not publish.
+4. **§7 item 7 was wrong.** The library does export a JSON Schema (`catalog.jsonSchema()`); its
+   documentation does not mention it. The design still does not need it.
+5. **`defineRegistry` hides the element from a component**, so a section could not count its own waiting
+   cards. The registry is written by hand, and the compiler refuses a missing or an extra component name.
+6. **The design system's tabs drew horizontal tabs as a row.** `components/ui/tabs.tsx` styled an
+   attribute nothing sets. No screen had used that primitive, so nobody had seen it. jsdom could not see
+   it either; the browser did. Fixed at the cause.
+7. **One of this wave's own tests passed for the wrong reason.** It handed the renderer a new spec object
+   on every render, so the state was rebuilt from scratch and the test stayed green with the host's state
+   never reaching an open cockpit. A deliberate break showed it. The test now holds one object, and the
+   component is keyed on what a spec says rather than on which object says it.
+
+### Still open after CT-1 and CT-2
+
+- The drift gate is written into CI and has not run there; nothing is pushed.
+- `check_spec_for_canvas` was tested against a stand-in for the card store, not a live one.
+- The server needs Node wherever a spec is to be accepted, as PDF export already does. Without it the
+  verdict is "not checked" and nothing is accepted.
+- The active tab is marked by weight alone: the tabs primitive's underline and colour do not draw. It is
+  CT-4's to settle when the tab is mounted.

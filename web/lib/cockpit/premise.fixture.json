@@ -1,0 +1,42 @@
+{
+  "root": "cockpit",
+  "state": { "tab": "overview" },
+  "elements": {
+    "cockpit": { "type": "Cockpit", "props": { "title": "Returns" }, "children": ["tabs"] },
+    "tabs": {
+      "type": "Tabs",
+      "props": { "value": { "$bindState": "/tab" } },
+      "children": ["tab-overview", "tab-watches"]
+    },
+    "tab-overview": {
+      "type": "Tab",
+      "props": { "name": "overview", "label": "Overview" },
+      "children": ["sec-headline"]
+    },
+    "sec-headline": {
+      "type": "Section",
+      "props": { "title": "Headline", "columns": 3 },
+      "children": ["alert-rate", "card-rate", "card-net"]
+    },
+    "alert-rate": {
+      "type": "Card",
+      "props": { "card": "c7f3a001", "tone": "bad" },
+      "children": [],
+      "visible": { "$state": "/cards/c7f3a001/status", "eq": "over" }
+    },
+    "card-rate": { "type": "Card", "props": { "card": "c7f3a001" }, "children": [] },
+    "card-net": { "type": "Card", "props": { "card": "c91b2002" }, "children": [] },
+    "tab-watches": {
+      "type": "Tab",
+      "props": { "name": "watches", "label": "Watches" },
+      "children": ["sec-limits"]
+    },
+    "sec-limits": {
+      "type": "Section",
+      "props": { "title": "Limits" },
+      "children": ["watch-rate"],
+      "visible": { "$state": "/range/status", "neq": "to_date" }
+    },
+    "watch-rate": { "type": "Card", "props": { "card": "c7f3a001" }, "children": [] }
+  }
+}

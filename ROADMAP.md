@@ -9634,7 +9634,23 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
-### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36)
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 and CT-2 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged)
+
+> **Status 2026-09-28 — CT-1 and CT-2 are built; falsifier (1) did not fire.** The library is installed at exactly
+> `0.21.0` (two lockfile entries, nothing else), one hand-written spec draws in a browser with every card handed to
+> `PinnedCardBody` unchanged and its chart drawn by Vega, and the rules run from Python through a Node bundle.
+> **Running it corrected the study four times** (its §9): the library's own validator checks a component's name
+> and NOT its props — a tone outside the list and a prop nobody declared both passed; it drops `watch` and `on`
+> without refusing them; a condition on a path nobody publishes is silently false; and it does export a JSON
+> Schema, which the study said it did not. So the catalog is closed by `web/lib/cockpit/rules.ts`, not by the
+> library. **Weight:** 24.5 KB gzipped without Zod, 88.6 KB with it; the chat's `ai` package already imports Zod, so
+> the figure on the canvas route is CT-4's to measure. **The generated prompt is 15,783 characters** for five
+> components, most of it describing what this arc refuses — CT-5 needs its own. **Verified:** 60 web tests and 35
+> Python tests on the cockpit, each refusal asserted by a token of its own sentence; fourteen deliberate breaks,
+> every one caught after one test was found passing for the wrong reason and fixed; the seven web gates; 1,254 web
+> tests; 11,932 Python tests. **Found on the way:** the design system's tabs drew horizontal tabs as a row and no
+> screen had ever used them — fixed at the cause, seen only in the browser. **Not yet:** the drift gate has not run
+> in CI (nothing is pushed); the active tab is marked by weight alone; the server needs Node to accept a spec.
 
 > **Origin.** The user, with `vercel-labs/json-render` on screen: *"Where can use this? Be a little open to ideas
 > here.. and some wild but relevant use cases.."* On the first mock, a plain grid: *"it needs to be full extension
@@ -9668,11 +9684,13 @@ card the reader may not see says so.
 cockpit proposal · `watch` · any action a spec defines · a figure typed into a prop · a second chart engine · a
 second place that declares chart kinds.
 
-- **CT-1 · the premise, run. ⚑** Install `@json-render/core` and `@json-render/react` at exactly `0.21.0` on a
-  branch; render ONE hand-written spec — a tab, a section, two existing cards, one condition — in the web; state
-  the weight it adds to the canvas route; run `validateSpec` from Python through a Node bundle the way
-  `export/echarts.py` runs the chart renderer. *A day.* Waits on the user's yes to the dependency.
-- **CT-2 · the catalog and the validator, one home.** Five components: `Cockpit`, `Tabs`, `Tab`, `Section`,
+- **CT-1 · the premise, run. ✅ BUILT 2026-09-28.** Install `@json-render/core` and `@json-render/react` at
+  exactly `0.21.0` on a branch; render ONE hand-written spec — a tab, a section, two existing cards, one
+  condition — in the web; state the weight it adds to the canvas route; run `validateSpec` from Python through a
+  Node bundle the way `export/echarts.py` runs the chart renderer. *A day.* The user's yes to the dependency came
+  the same day; the receipt is the study's §9.
+- **CT-2 · the catalog and the validator, one home. ✅ BUILT 2026-09-28** (`web/lib/cockpit/`,
+  `web/components/cockpit/ComposedCockpit.tsx`, `aughor/cockpit/validate.py`; nothing mounts it yet). Five components: `Cockpit`, `Tabs`, `Tab`, `Section`,
   `Card`. Structure checked by the library's own validator; the platform then checks that every card id is in
   this canvas, every state path is in the published tree, there is no `watch`, `on` or unregistered `$computed`,
   and every piece of model-written text passes the numerals law. Refused whole, with sentences (AV-0's law). A
@@ -10671,6 +10689,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-28, later:** item 36 adopted as drafted, at the user's *"Adopt the Arc CT and commit locally"*.
 > Two clauses stay open because adopting a plan is not a yes to a download or to a spend: (d) installing the
 > library for CT-1, and (f) the model calls of CT-5's receipt.
+> **Amended 2026-09-28, later still:** (d) decided at the user's *"Yes, install it and start CT-1 and CT-2"*; both
+> waves built the same day, and the library KEPT on CT-1's numbers at the user's word. Open under item 36: (f).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -11353,8 +11373,8 @@ the browser** · **measure the premise before building.**
     locally"*; the arc itself arrived earlier the same day at their *"Lets study and add it to the roadmap"*). The
     survey (CT-0) was taken BEFORE the arc was written; the study is
     `docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md`. The six waves stand in the order §3.50 gives them, with its law,
-    its refusals and its three falsifiers. Seven clauses; five are decided, **two stay open — (d) and (f)** —
-    because adopting a plan is not a yes to a download or to a spend.
+    its refusals and its three falsifiers. Seven clauses. Adopting a plan is not a yes to a download or to a
+    spend, so (d) and (f) were left open at adoption; (d) was decided later the same day. **One stays open: (f).**
     **(a) ✅ DECIDED — the full version.** The user, on the first mock: *"it needs to be full extension version with
     (sections, tabs, conditional tiles)"*. A plain grid first was the builder's suggestion and is withdrawn.
     **(b) ✅ DECIDED — adopted as §3.50.** It adds no store, no chart engine and no new vocabulary of chart kinds;
@@ -11362,10 +11382,12 @@ the browser** · **measure the premise before building.**
     **(c) ✅ DECIDED with the adoption, as drafted — the home is a fourth tab in the Data Canvas** (CT-4), where the
     ask is made and where the canvas names the cockpit and limits the tables. The Briefing keeps its cockpit as it
     is. The alternative was the Briefing's cockpit, which is one per connection and sits below four other sections.
-    **(d) ⚑ OPEN — the dependency.** `@json-render/core` and `@json-render/react` at exactly `0.21.0`: Apache-2.0,
-    eight months old, pre-1.0, read and not yet run. *Recommended:* yes for CT-1 on a branch, pinned exact, and the
-    decision to keep it taken on CT-1's numbers, not before. Installing it is a download, so it waits on the user's
-    word at the moment CT-1 starts.
+    **(d) ✅ DECIDED 2026-09-28 — the dependency is installed** (the user: *"Yes, install it and start CT-1 and
+    CT-2"*). `@json-render/core` and `@json-render/react` at exactly `0.21.0`: Apache-2.0, eight months old,
+    pre-1.0. CT-1 ran it and its first falsifier did not fire. **✅ KEPT, 2026-09-28** (the user, on CT-1's
+    numbers: *"Keep the library, commit locally and start CT-3"*): it draws, it costs 24.5 KB gzipped beside Zod,
+    and its own validator is weaker than the study assumed, which the rules make up for. It stays pinned exact;
+    a version change is a change to the bundle the server runs, and the drift gate will say so.
     **(e) ✅ DECIDED with the adoption, as drafted — a `Card` element points at a card** (the law of the arc). The
     alternative — the element carries the metric's name itself — reads better in a spec and makes a second place
     that knows what a card measures.

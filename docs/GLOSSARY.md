@@ -45,6 +45,10 @@ keep it; frontend identifiers and every user-visible string do not.
 | **What we know** | The Briefing's standing view: everything the platform has learned, not tied to dates (Arc BR, ROADMAP §3.48) | Standing, "history" (both survive as internal names only) |
 | **Range** | The days a Briefing covers: a preset — Day, Week, Month, Year, Month to date, Year to date — or a custom first and last day | window (in anything a reader sees) |
 | **Final · Provisional · To date** | A figure's status: its days (and, for a cohort, its outcome) have settled; have not yet; the range is still under way | preliminary, estimate, partial |
+| **Cockpit** | A standing set of cards a person keeps watching. The Briefing holds one per connection; a Data Canvas holds one composed from a spec — tabs, sections and cards shown by a condition (Arc CT, ROADMAP §3.50) | dashboard, board (in anything a reader sees) |
+| **Card** | One measured thing on a cockpit — a figure, a chart, a watch or a note — kept in the card store with its SQL, its limits and its history. A cockpit's spec holds a card's id and nothing about what it measures | tile, widget |
+| **Section** | A titled group of cards inside a cockpit | group, block (in anything a reader sees) |
+| **Within · Over · Unmeasured · Withheld** | A card's status as the host says it to a cockpit: inside its limit; past it; not measured, or with no limit to be past; not for this reader to see. A withheld card stays in its place and says so | breached, alerting; "hidden" for withheld (a card hidden by its condition is *waiting*) |
 | **Run** | One execution of anything | session, episode (a step *inside* a run is a **step**) |
 | **Trace** | The telemetry kept ABOUT one run — the `session_events` it wrote, reconstructed | run (a trace is the record, not the execution) |
 | **Trajectory** | One run's trace with its steps' tool, arguments and results, its answer, and the reward attached to it — the one record the exporters read (Arc TJ, ROADMAP §3.47). A trace without a reward is not a trajectory | episode; rollout (a rollout is the act of producing one or more trajectories for one problem, not the record) |

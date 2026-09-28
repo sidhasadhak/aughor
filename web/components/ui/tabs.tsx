@@ -20,7 +20,10 @@ function Tabs({
       data-slot="tabs"
       data-orientation={orientation}
       className={cn(
-        "group/tabs flex gap-2 data-horizontal:flex-col",
+        // The root carries `data-orientation`, so the variant must read that attribute's
+        // VALUE. `data-horizontal:` matched an attribute nothing sets, and horizontal tabs
+        // were drawn as a row — unseen, because no screen used this primitive until the cockpit.
+        "group/tabs flex gap-2 data-[orientation=horizontal]:flex-col",
         className
       )}
       {...props}
@@ -29,7 +32,7 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-stretch text-[var(--t2)] group-data-vertical/tabs:flex-col",
+  "group/tabs-list inline-flex w-fit items-stretch text-[var(--t2)] group-data-[orientation=vertical]/tabs:flex-col",
   {
     variants: {
       variant: {
