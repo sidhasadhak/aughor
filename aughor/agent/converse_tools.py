@@ -663,7 +663,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     ] + action_tools(connection_id, agent=agent) + platform_tools(connection_id, session_id=session_id) + spotlight_roster(
         connection_id, session_id=session_id, emit=emit) + present_tools(emit=emit) + delegation_tools(
         connection_id, emit=emit, session_id=session_id) + cockpit_tools(
-        connection_id, emit=emit, canvas_id=canvas_id)
+        connection_id, emit=emit, canvas_id=canvas_id, user_question=user_question)
 
 
 class _Regrounded(BaseModel):

@@ -9636,6 +9636,16 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 
 ### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10; after three repairs to the prompt, 10 of 10 on the same asks; on ten unseen asks falsifier (2) HOLDS, 8 of 9)
 
+> **Status 2026-09-28, the six repairs — at the user's word (*"fix the six faults"*).** Each fault the third run
+> found is repaired, and each repair was broken on purpose afterwards: 17 deliberate breaks, all caught. The
+> numerals law reads a range's unit on both ends and "percent" as a word; a limit is set only where the turn's own
+> words name it (they bind to the tool by closure); a card for a record the canvas already shows is refused with
+> the id to place; a finding refusal says a cockpit takes the canvas's findings, not `list_findings`'; a new
+> cockpit names every card it takes off, on the approval card and in the summary the chat quotes (the card named
+> none either — the third run's record said it did, and was corrected); and that summary says what each new card
+> shows. The last is half a repair: whether a writer says an ask cannot be met is the prompt's, and only another
+> run measures it. Not on the install, not run by a model. The study's §15.
+
 > **Status 2026-09-28, the receipt by a model, THIRD RUN — ten asks nobody had seen, at the user's word (asked
 > through the question tool: *"Run them on DeepSeek"*). FALSIFIER (2) HOLDS: 8 of the 9 first drafts passed.**
 > Five asks for a new cockpit and five edits to the one standing on canvas `d617964b` (the user had approved
@@ -9654,7 +9664,7 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 > for a metric the canvas already shows (a second lead time beside the first; a second Revenue); (4)
 > `list_findings` lists the connection's findings and a cockpit takes only the canvas's, which cost the refused
 > round; (5) a new cockpit asked for on a canvas that has one replaces it whole (asks 5 and 9 would take off 9
-> and 12 cards; the card says which); (6) "which categories sell best" cannot be a cockpit of totals, and the
+> and 12 cards, and neither the chat nor the approval card named one of them); (6) "which categories sell best" cannot be a cockpit of totals, and the
 > draft did not say so. Recorded in the study's §14.
 
 > **Status 2026-09-28, the receipt by a model, SECOND RUN — at the user's word (*"fix the three faults and run

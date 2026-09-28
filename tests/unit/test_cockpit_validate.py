@@ -74,6 +74,12 @@ def test_a_condition_may_not_read_the_status_of_a_card_outside_the_canvas(premis
     ("Revenue up 12%", "12%"),
     ("Returns over 1,200 a week", "1,200"),
     ("Net revenue $2.4M", "$2.4M"),
+    # A range's unit is its lower end's too, and a percentage may be written as a word. The
+    # receipt's third run found "11-12%" read as "12%".
+    ("Returns near 11-12%", "11-12%"),
+    ("Returns between 11 and 12%", "11 and 12%"),
+    ("Orders 1.2-1.5M a year", "1.2-1.5M"),
+    ("Returns up 12 percent", "12 percent"),
 ])
 def test_a_title_that_states_a_figure_is_refused(premise, title, figure):
     premise["elements"]["sec-headline"]["props"]["title"] = title
@@ -84,7 +90,7 @@ def test_a_title_that_states_a_figure_is_refused(premise, title, figure):
 
 
 @needs_rules
-@pytest.mark.parametrize("title", ["Top 6 categories", "Returns in 2026", "Week 3", "Headline"])
+@pytest.mark.parametrize("title", ["Top 6 categories", "Returns in 2026", "Week 3", "Headline", "Weeks 2-3"])
 def test_a_rank_a_year_and_a_small_count_are_not_figures(premise, title):
     """The numerals law exempts them at the departure gate; a title is held to the same law."""
     premise["elements"]["sec-headline"]["props"]["title"] = title

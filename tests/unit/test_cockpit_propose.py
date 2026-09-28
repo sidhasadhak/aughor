@@ -17,6 +17,7 @@ counting what the stores hold.
 """
 from __future__ import annotations
 
+import copy
 import json
 import shutil
 import uuid
@@ -84,7 +85,8 @@ def warehouse(monkeypatch, tmp_path) -> Warehouse:
     monkeypatch.setattr(doors, "run_guarded", w)
     FINDINGS.clear()
     monkeypatch.setattr("aughor.explorer.store.canvas_findings",
-                        lambda canvas_id, include_invalid=False: list(FINDINGS.get(canvas_id, [])))
+                        lambda canvas_id, include_invalid=False: [
+                            f for f in FINDINGS.get(canvas_id, []) if include_invalid or not f.get("quarantined")])
     return w
 
 
@@ -317,6 +319,8 @@ def test_a_draft_is_one_proposal_and_changes_nothing(desk, warehouse):
                                            "connection_id": CONN, "action_id": p.action_id})]
     assert out["summary"] == (
         f'Drafted the cockpit "Returns": 2 tabs, 3 sections, 4 cards (3 new) (proposal {p.id}). '
+        'The new cards show: "Return rate", one figure for the whole canvas; "Returned, by category", '
+        'a chart of its rows; "Returns cluster in the first week after delivery", a chart of its rows. '
         "Nothing is changed yet. A person approves it on the card, all of it or none of it, and it then "
         "appears in this canvas's Cockpit tab.")
 
@@ -467,6 +471,23 @@ def test_a_card_that_may_not_be_made(desk, card, sentence):
     assert sentence in refused(desk, **_one(desk, card(desk)))
 
 
+def test_a_finding_of_the_connection_is_not_one_of_the_canvas(desk):
+    """The receipt's third run: a writer took `pinned__2` from list_findings, which lists the
+    connection's findings, and spent a round learning it was not this canvas's."""
+    text = refused(desk, **_one(desk, {"key": "k1", "finding": "pinned__2"}))
+    assert ('This canvas has no finding "pinned__2". A card is made from a finding of this canvas, as op '
+            "options lists them under \"findings\"; list_findings lists the whole connection's.") in text
+
+
+def test_a_quarantined_finding_of_the_canvas_is_said_to_be_one(desk):
+    FINDINGS[desk.id].append({"id": "f-set-aside", "finding": "A pattern that did not hold",
+                              "sql": "SELECT 2", "quarantined": True})
+    text = refused(desk, **_one(desk, {"key": "k1", "finding": "f-set-aside"}))
+    assert ('The finding "f-set-aside" of this canvas is quarantined, and no card is made from a '
+            "quarantined finding.") in text
+    assert "has no finding" not in text
+
+
 def test_a_card_that_cannot_be_run_is_refused_to_the_writer_not_shown_to_a_person(desk, monkeypatch):
     broken = f"broken_{desk.tag}"
     save_metric(MetricDefinition(name=broken, connection=CONN, label="Broken", sql="SELECT BROKEN FROM x",
@@ -600,6 +621,52 @@ def test_a_figure_that_is_no_limit_of_the_draft_is_still_a_figure(desk):
         reasoning="An alert above 12%.")
 
 
+def test_a_range_in_the_reasoning_is_read_whole(desk):
+    """The receipt's third run, ask 5: "sits near 11-12%" passed. The 12 matched the draft's
+    limit, and the parser read the 11 as a small count."""
+    text = refused(desk, reasoning="Each capped at 12% because every category sits near 11-12%.")
+    assert "The reasoning states a figure (11-12%)." in text
+
+
+@pytest.mark.parametrize("words", [
+    "I want a returns watch with an alert when the return rate goes above 12%.",
+    "Alert me when returns go above 12.",
+    "Flag the return rate at 0.12.",
+])
+def test_a_limit_the_user_named_is_set(desk, words):
+    p = staged(desk, said=words, reasoning="An alert above 12%, as asked.")
+    assert p.params["cards"][0]["limit"] == {"critical": 12.0, "direction": "above"}
+
+
+def test_a_limit_nobody_named_is_refused_and_is_no_licence_for_a_figure(desk):
+    """The receipt's third run, ask 5: the writer set 12% on two return cards nobody had asked a
+    limit of, and the reasoning then stated a figure it had measured as "the limit"."""
+    text = refused(desk, said="Build me a returns cockpit.", reasoning="Each capped at 12%.")
+    assert ('The card "return-rate" sets a limit of 12, which the user did not name. A limit goes on a '
+            'card only when the user names it: leave "limit" out, or ask the user for one.') in text
+    assert "The reasoning states a figure (12%)." in text
+
+    draft_cards = desk.cards()                        # one named, one not
+    draft_cards[0]["limit"] = {"warning": 10, "critical": 12}
+    text = refused(desk, cards=draft_cards, said="Warn me when returns pass 10%.")
+    assert 'sets a limit of 12, which the user did not name' in text and "limit of 10" not in text
+
+
+def test_the_tool_holds_a_limit_to_the_words_of_the_turn(desk, on):
+    """What the person said binds by closure, through the whole roster, as the turn's other
+    identity does — the model does not get to say what the person said."""
+    from aughor.agent.converse_tools import converse_tools
+
+    def tool(words: str):
+        roster = converse_tools(CONN, emit=lambda k, p: None, canvas_id=desk.id, user_question=words)
+        return next(t for t in roster if t.name == "draft_cockpit")
+
+    ask = {"op": "new", "spec": desk.spec(), "cards": desk.cards()}
+    out = tool("Build me a returns cockpit.").run(ask)
+    assert out["staged"] is False and "which the user did not name" in out["error"]
+    assert tool("Build me a returns cockpit, with an alert above 12%.").run(ask)["staged"] is True
+
+
 def test_the_writer_is_told_how_many_cards_a_draft_may_make(desk, on):
     """The cap was in the code and in no text a writer reads; two of ten first drafts on the
     receipt made 19 and 17 cards against it."""
@@ -608,6 +675,12 @@ def test_the_writer_is_told_how_many_cards_a_draft_may_make(desk, on):
     assert f"A draft creates at most {propose.MAX_NEW_CARDS} cards" in out["summary"]
     assert '{"key": "return-rate", "metric": "return_rate"}' in out["summary"]
     assert 'A name the spec places and "cards" does not list is refused' in out["summary"]
+    # What the third run found a writer drafting without knowing.
+    for told in ('A "new" cockpit replaces the one that stands, whole',
+                 "list_findings lists the whole connection's",
+                 "only when the user named it; a limit you choose is refused",
+                 "a metric is one figure for the whole canvas"):
+        assert told in out["summary"]
     tool = cockpit_tools(CONN, emit=lambda k, p: None, canvas_id=desk.id)[0]
     listed = tool.parameters["properties"]["cards"]
     assert listed["maxItems"] == propose.MAX_NEW_CARDS
@@ -1026,15 +1099,103 @@ def test_an_edit_that_takes_off_a_section_and_a_tab_says_each_by_name(standing):
     assert len(standing.held_cards()) == 4
 
 
-def test_a_new_cockpit_takes_nothing_off(standing):
+def test_a_new_cockpit_says_what_it_takes_off_the_one_that_stands(standing):
+    """A new cockpit replaces the one that stands, whole. The first cut listed what was taken
+    off for an edit only, and this test asserted a new one took nothing off — while its spec
+    kept one card of four. The receipt's third run found two new cockpits that would have
+    taken off 9 and 12 cards, with none of them named on the card or in the chat."""
     spec = standing.spec()
     spec["elements"]["cockpit"]["props"]["title"] = "Returned goods"
-    for el in spec["elements"].values():                  # it places the cards the canvas now holds
+    for el in spec["elements"].values():         # every element keeps its name; one card is left
         if el["type"] == "Card" and el["props"]["card"] != standing.held:
             el["props"]["card"] = standing.held
         el.pop("visible", None)
-    p = staged(standing, spec=spec, cards=[])
-    assert p.detail["taken_off"] == [] and p.detail["replaces_version"] == 1
+    out = draft_cockpit(CONN, standing.id, {"op": "new", "spec": spec, "cards": []})
+    [p] = standing.pending()
+    assert p.detail["replaces_version"] == 1
+    # By card, not by element: each element is still there, pointing at another card. The
+    # card placed twice is named once.
+    assert p.detail["taken_off"] == [
+        {"what": "card", "title": "Return rate", "from": "Needs a look"},
+        {"what": "card", "title": "Returned, by category", "from": "Where and when"},
+        {"what": "card", "title": "Returns cluster in the first week after delivery", "from": "Where and when"},
+    ]
+    assert out["summary"].endswith(
+        " It replaces the cockpit that stands (version 1) whole, and takes off 3 of its cards: Return rate; "
+        "Returned, by category; Returns cluster in the first week after delivery. To add to that cockpit "
+        "instead, draft an edit. Nothing is changed yet. A person approves it on the card, all of it or "
+        "none of it, and it then appears in this canvas's Cockpit tab.")
+
+
+def _edit_adding(desk: Desk, card: dict) -> propose.Drafted:
+    """An edit that makes one card and places it in the detail section."""
+    return desk.draft(mode="edit", cards=[card], patches=[
+        {"op": "add", "path": "/elements/c-again",
+         "value": {"type": "Card", "props": {"card": card["key"]}, "children": []}},
+        {"op": "add", "path": "/elements/sec-detail/children/-", "value": "c-again"}])
+
+
+def test_a_record_a_card_already_shows_is_placed_not_made_again(standing):
+    """The receipt's third run drafted a second lead-time card beside the first, and a second
+    Revenue: a card made where one could have been placed."""
+    held = {c.title: c for c in cards.cards_of(standing.id)}
+    rate = held["Return rate"]                                       # it has a limit of 12
+    for card, twin in (
+        ({"key": "again", "metric": standing.metric, "limit": {"critical": 12, "direction": "above"}}, rate),
+        ({"key": "again", "metric": standing.metric}, rate),
+        ({"key": "again", "trusted_query": standing.trusted}, held["Returned, by category"]),
+        ({"key": "again", "finding": standing.finding}, held["Returns cluster in the first week after delivery"]),
+    ):
+        out = _edit_adding(standing, card)
+        assert out.staged is False
+        assert f'which the card "{twin.id}" ("{twin.title}") of this canvas already shows' in said(out)
+        assert f'Place "{twin.id}" by its id instead; a card may be placed in more than one section.' in said(out)
+    assert "with the same limit" in said(_edit_adding(standing, {
+        "key": "again", "metric": standing.metric, "limit": {"critical": 12}}))
+
+    # A card that keeps no record of its source is matched by its query.
+    same = f"one_{standing.tag}"
+    save_metric(MetricDefinition(name=same, connection=CONN, label="One", sql="SELECT 1",
+                                 status="approved", version=1))
+    assert f'which the card "{standing.held}" ("Net merchandise revenue")' in said(
+        _edit_adding(standing, {"key": "again", "metric": same}))
+
+    # A second card of a record is made to set a limit no card of it has.
+    assert _edit_adding(standing, {"key": "again", "metric": standing.metric,
+                                   "limit": {"warning": 10}}).staged is True
+
+
+def test_two_cards_of_one_record_in_one_draft(desk):
+    spec = desk.spec()
+    spec["elements"]["c-again"] = {"type": "Card", "props": {"card": "rate-again"}, "children": []}
+    spec["elements"]["sec-detail"]["children"].append("c-again")
+    again = {"key": "rate-again", "metric": desk.metric, "limit": {"critical": 12, "direction": "above"}}
+    assert (f'The cards "return-rate" and "rate-again" of the draft are both made from the metric '
+            f'"{desk.metric}" with the same limit. One card shows it') in refused(
+        desk, spec=spec, cards=[*desk.cards(), again])
+    assert 'of the draft are both made from' in refused(
+        desk, spec=spec, cards=[*desk.cards(), {"key": "rate-again", "metric": desk.metric}])
+    assert staged(desk, spec=spec, cards=[
+        *desk.cards(), {**again, "limit": {"warning": 10}}]).detail["counts"]["new"] == 4
+
+
+def test_options_say_what_each_card_of_the_canvas_is_made_from(standing):
+    made = {c["title"]: c.get("made_from") for c in propose.options(CONN, standing.id)["cards_in_canvas"]}
+    assert made == {
+        "Return rate": {"metric": standing.metric},
+        "Returned, by category": {"trusted_query": standing.trusted},
+        "Returns cluster in the first week after delivery": {"finding": standing.finding},
+        "Net merchandise revenue": None,
+    }
+
+
+def test_a_new_cockpit_that_keeps_every_card_says_so(standing):
+    spec = copy.deepcopy(versions.latest(standing.id)["spec"])
+    spec["elements"]["cockpit"]["props"]["title"] = "Returned goods"
+    out = draft_cockpit(CONN, standing.id, {"op": "new", "spec": spec, "cards": []})
+    assert out["staged"] is True, out
+    assert standing.pending()[0].detail["taken_off"] == []
+    assert " It replaces the cockpit that stands (version 1) whole; every card on it is kept." in out["summary"]
 
 
 def test_an_edit_may_make_a_card_and_place_it_by_the_name_it_gave(standing, monkeypatch):

@@ -90,31 +90,43 @@ def _count(n: int, one: str) -> str:
     return f"{n} {one}" if n == 1 else f"{n} {one}s"
 
 
-def draft_cockpit(connection_id: str, canvas_id: str, args: dict, *, emit: Optional[Emit] = None) -> dict:
+def _shows(card: dict) -> str:
+    """What a new card shows, in a reader's words. Said in the summary the chat quotes, so a
+    person reads it before approving: the third run of the receipt found "which categories
+    sell best" drafted as a cockpit of totals, and nothing said so."""
+    if card.get("kind") != "kpi":
+        return f'"{card.get("title")}", a chart of its rows'
+    whole = " for the whole canvas" if card.get("from") == "metric" else ""
+    return f'"{card.get("title")}", one figure{whole}'
+
+
+def draft_cockpit(connection_id: str, canvas_id: str, args: dict, *, emit: Optional[Emit] = None,
+                  said: Optional[str] = None) -> dict:
+    """``said`` is what the person said on this turn; a limit is set only where they named it."""
     from aughor.cockpit import propose
 
     op = str((args or {}).get("op") or "options")
     if op == "options":
         return propose.options(connection_id, canvas_id)
     if op not in (propose.MODE_NEW, propose.MODE_EDIT):
-        said = f'"{op}" is not one of: options, new, edit.'
-        return {"staged": False, "refused": [said], "error": said,
+        told = f'"{op}" is not one of: options, new, edit.'
+        return {"staged": False, "refused": [told], "error": told,
                 "summary": f'Nothing staged: "{op}" is not one of options, new, edit.'}
 
     drafted = propose.draft(
         connection_id, canvas_id, mode=op, spec=args.get("spec"), patches=args.get("patches"),
-        cards=args.get("cards"), reasoning=str(args.get("reasoning") or ""))
+        cards=args.get("cards"), reasoning=str(args.get("reasoning") or ""), said=said)
     if not drafted.staged:
         # `error` is what the platform keeps of a step's result, always (the tool loop's step
         # record). Without it a refused draft's reasons went to the model and nowhere else,
         # and nobody reading the run afterwards could say why it took two rounds. The
         # sentences are said once more in `refused`, one to a line, for the writer to repair.
-        said = " ".join(drafted.refusals)
+        told = " ".join(drafted.refusals)
         if drafted.not_checked:
             return {"staged": False, "could_not_check": True, "refused": list(drafted.refusals),
-                    "error": said,
+                    "error": told,
                     "summary": "Nothing staged, and drafting it again will not help. Tell the user why."}
-        return {"staged": False, "refused": list(drafted.refusals), "error": said,
+        return {"staged": False, "refused": list(drafted.refusals), "error": told,
                 "summary": "Nothing staged. Repair every point in `refused`, then draft it again."}
 
     p = drafted.proposal
@@ -129,19 +141,34 @@ def draft_cockpit(connection_id: str, canvas_id: str, args: dict, *, emit: Optio
     before = detail.get("replaces_version")
     what = (f'an edit to the cockpit "{detail.get("title")}", which stands at version {before}'
             if op == propose.MODE_EDIT else f'the cockpit "{detail.get("title")}"')
+    made = [c for c in (p.params or {}).get("cards") or [] if isinstance(c, dict)]
+    shows = f" The new cards show: {'; '.join(_shows(c) for c in made)}." if made else ""
+    # A new cockpit where one stands replaces it whole. Said in the summary the chat quotes:
+    # the third run of the receipt found two that would have taken off 9 and 12 cards, and
+    # the answer said nothing of it.
+    whole = ""
+    if op == propose.MODE_NEW and before:
+        gone = [t["title"] for t in detail.get("taken_off") or [] if t.get("what") == "card"]
+        whole = (f" It replaces the cockpit that stands (version {before}) whole"
+                 + (f", and takes off {len(gone)} of its cards: {'; '.join(gone)}." if gone
+                    else "; every card on it is kept.")
+                 + " To add to that cockpit instead, draft an edit.")
     replaced = (f" It replaces the earlier draft{'s' if len(drafted.replaced) != 1 else ''} "
                 f"{', '.join(drafted.replaced)}." if drafted.replaced else "")
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
-        "summary": (f"Drafted {what}: {shape} (proposal {p.id}). Nothing is changed yet. A person approves "
-                    f"it on the card, all of it or none of it, and it then appears in this canvas's Cockpit tab."
-                    f"{replaced}"),
+        "summary": (f"Drafted {what}: {shape} (proposal {p.id}).{shows}{whole} Nothing is changed yet. A person "
+                    f"approves it on the card, all of it or none of it, and it then appears in this canvas's "
+                    f"Cockpit tab.{replaced}"),
     }
 
 
 def cockpit_tools(connection_id: str, *, emit: Optional[Emit] = None,
-                  canvas_id: Optional[str] = None) -> list[ToolSpec]:
-    """``draft_cockpit``, when the flag is on and the turn is in a canvas with a channel."""
+                  canvas_id: Optional[str] = None, user_question: str = "") -> list[ToolSpec]:
+    """``draft_cockpit``, when the flag is on and the turn is in a canvas with a channel.
+
+    ``user_question`` binds by closure, as the turn's other identity does: it is what the
+    person said, and the model must not be the one to state it."""
     if emit is None or not canvas_id:
         return []
     from aughor.kernel.flags import flag_enabled
@@ -163,5 +190,5 @@ def cockpit_tools(connection_id: str, *, emit: Optional[Emit] = None,
             "summary field verbatim."
         ),
         parameters=_PARAMS,
-        run=lambda a: draft_cockpit(connection_id, canvas_id, a, emit=emit),
+        run=lambda a: draft_cockpit(connection_id, canvas_id, a, emit=emit, said=user_question or None),
     )]

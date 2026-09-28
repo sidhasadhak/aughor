@@ -61,19 +61,29 @@ MODE_NEW = "new"
 MODE_EDIT = "edit"
 
 #: What a writer is told of drafting, beside the grammar of the spec. Each sentence is here
-#: because the receipt by a model (the study's §12) found a first draft refused for want of it.
+#: because a receipt by a model (the study's §12 and §14) found a draft that went wrong for
+#: want of it.
 HOW_TO_DRAFT = (
     'To draft: call again with op "new" and the whole spec, or op "edit" and operations against the '
-    "cockpit above. "
+    'cockpit above. A "new" cockpit replaces the one that stands, whole; to add to it or change it, '
+    'draft an "edit". '
     'A card is CREATED by listing it in "cards", under a name of your own and with the one record it is '
     'made from, for example {"key": "return-rate", "metric": "return_rate"}. It is PLACED by that same '
     'name, {"type": "Card", "props": {"card": "return-rate"}}, and a condition reads it by that name too, '
     '"/cards/return-rate/status". A name the spec places and "cards" does not list is refused, unless it '
     "is the id of a card the canvas already holds. "
+    'A record a card of the canvas already shows ("made_from" above) is placed by that card\'s id, not '
+    "created again; a card may be placed in more than one section. "
+    'A finding is one of this canvas\'s, listed above under "findings"; list_findings lists the whole '
+    "connection's, and a cockpit does not take those. "
     f"A draft creates at most {MAX_NEW_CARDS} cards, because each is run before the draft is offered; "
     "choose the ones that matter most, and say that more can follow in an edit. "
-    'A limit the user named goes on the card, as "limit". Leave "visible" out of an element that is '
-    "always shown."
+    'A limit goes on a card, as "limit", only when the user named it; a limit you choose is refused. '
+    'Leave "visible" out of an element that is always shown. '
+    "A card shows what its record measures and no more: a metric is one figure for the whole canvas, "
+    "and a trusted query or a finding shows its own rows. When the user asks for what no record "
+    "measures, such as a breakdown no record gives, say so in your answer rather than drafting "
+    "something else in its place."
 )
 
 _KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
@@ -131,7 +141,14 @@ def _resolve(conn_id: str, canvas_id: str, kind: str, name: str) -> tuple[Option
         from aughor.explorer.store import canvas_findings
         found = next((f for f in canvas_findings(canvas_id) if str(f.get("id") or "") == name), None)
         if found is None:
-            return None, f'This canvas has no finding "{name}".'
+            if any(str(f.get("id") or "") == name for f in canvas_findings(canvas_id, include_invalid=True)):
+                return None, (f'The finding "{name}" of this canvas is quarantined, and no card is made '
+                              "from a quarantined finding.")
+            # The receipt's third run: a writer took `pinned__2` from list_findings, which lists
+            # the connection's findings, and spent a round learning it was not this canvas's.
+            return None, (f'This canvas has no finding "{name}". A card is made from a finding of this '
+                          'canvas, as op options lists them under "findings"; list_findings lists the '
+                          "whole connection's.")
         sql = (found.get("sql") or "").strip()
         if not sql:
             return None, f'The finding "{name}" has no query behind it, so no card can be made from it.'
@@ -165,9 +182,44 @@ def _limit(raw: Any, key: str) -> tuple[dict, str]:
     return {**out, "direction": direction}, ""
 
 
-def _draft_cards(conn_id: str, canvas, asked: Any) -> tuple[list[dict], list[str], set[str]]:
+def _named_by_the_user(value: float, said: str) -> bool:
+    """Whether the person's own words name this limit — 12, 12% and 0.12 alike, as
+    :func:`_is_a_limit` reads them."""
+    from aughor.explorer.grounding import extract_numerals
+    return any(_is_a_limit(n, [value]) for n in extract_numerals(said))
+
+
+def _made_from(card: Any) -> Optional[tuple[str, str]]:
+    """The record a card of the canvas was made from, as its provenance keeps it."""
+    prov = card.provenance
+    if prov.metric:
+        return FROM_METRIC, prov.metric
+    if (prov.receipt_ref or "").startswith("trusted_query:"):
+        return FROM_TRUSTED, prov.receipt_ref.split(":")[1]
+    if prov.insight_id:
+        return FROM_FINDING, prov.insight_id
+    return None
+
+
+def _limit_key(thresholds: Any) -> tuple:
+    t = thresholds if isinstance(thresholds, dict) else {}
+    if t.get("warning") is None and t.get("critical") is None:
+        return ()
+    return t.get("warning"), t.get("critical"), t.get("direction") or "above"
+
+
+def _query_key(sql: str) -> str:
+    return " ".join((sql or "").split()).rstrip(";")
+
+
+def _draft_cards(conn_id: str, canvas, asked: Any,
+                 said: Optional[str] = None) -> tuple[list[dict], list[str], set[str]]:
     """The cards a draft creates, each resolved and run; every refusal met on the way; and
-    every name the draft gave a card, made or refused."""
+    every name the draft gave a card, made or refused.
+
+    ``said`` is what the person said on this turn. When it is given, a limit it does not name
+    is refused: the third run of the receipt found a writer setting 12% on two cards nobody had
+    asked a limit of, and a person approving reads a limit on the card as one they set."""
     from aughor.dashboard import doors
 
     if asked in (None, []):
@@ -179,11 +231,13 @@ def _draft_cards(conn_id: str, canvas, asked: Any) -> tuple[list[dict], list[str
         return [], [f"The draft creates {len(asked)} cards. A draft creates at most {MAX_NEW_CARDS}; "
                     "the rest can follow in an edit."], named_all
 
-    held = {c.id for c in _cards.cards_of(canvas.id)}
+    held_cards = _cards.cards_of(canvas.id)
+    held = {c.id for c in held_cards}
     schema = _schema_of(canvas)
     out: list[dict] = []
     refusals: list[str] = []
     seen: set[str] = set()
+    drafted_from: dict[tuple[str, str], tuple[str, set]] = {}
     for i, raw in enumerate(asked, start=1):
         if not isinstance(raw, dict):
             refusals.append(f"Card {i} of the draft is not an object.")
@@ -228,6 +282,37 @@ def _draft_cards(conn_id: str, canvas, asked: Any) -> tuple[list[dict], list[str
         if why:
             refusals.append(why)
             continue
+        if limit and said is not None:
+            unnamed = [f"{limit[n]:g}" for n in ("warning", "critical")
+                       if n in limit and not _named_by_the_user(limit[n], said)]
+            if unnamed:
+                refusals.append(f'The card "{key}" sets a limit of {" and ".join(unnamed)}, which the user '
+                                'did not name. A limit goes on a card only when the user names it: leave '
+                                '"limit" out, or ask the user for one.')
+                continue
+
+        # One record, one card. The third run of the receipt found a second lead-time card
+        # drafted beside the first, and a second Revenue: the writer made a card where it
+        # could have placed one. A second card of a record is made only to set a limit the
+        # first does not have.
+        what = f'the {source.kind.replace("_", " ")} "{source.name}"'
+        mine = _limit_key(limit)
+        same = " with the same limit" if mine else ""
+        twins = [h for h in held_cards if _made_from(h) == (source.kind, source.name)
+                 or _query_key(h.sql) == _query_key(source.sql)]
+        if twins and (not mine or any(_limit_key(h.thresholds) == mine for h in twins)):
+            twin = next((h for h in twins if _limit_key(h.thresholds) == mine), twins[0])
+            refusals.append(f'The card "{key}" would show {what}, which the card "{twin.id}" '
+                            f'("{twin.title}") of this canvas already shows{same}. Place "{twin.id}" '
+                            "by its id instead; a card may be placed in more than one section.")
+            continue
+        earlier = drafted_from.get((source.kind, source.name))
+        if earlier is not None and (not mine or mine in earlier[1]):
+            refusals.append(f'The cards "{earlier[0]}" and "{key}" of the draft are both made from '
+                            f"{what}{same}. One card shows it; place that card in each section it "
+                            "belongs in.")
+            continue
+        drafted_from.setdefault((source.kind, source.name), (key, set()))[1].add(mine)
         try:
             result = doors.run_guarded(conn_id, source.sql, query_id=f"cockpit-draft:{key}", schema=schema)
         except doors.GuardRefused as refused:
@@ -372,6 +457,28 @@ def taken_off(before: Optional[dict], removed: list[str], titles: dict[str, str]
     return out
 
 
+def _replaced(before: dict, placed_after: set[str], removed: list[str], titles: dict[str, str]) -> list[dict]:
+    """What a NEW cockpit takes off the one that stands. A new spec may reuse an element's name
+    for another card, so a card is taken off when it is placed nowhere in the new one, whatever
+    its element is called; a tab or a section, when its element is gone. Each card once.
+
+    The third run of the receipt found two new cockpits that would have taken off 9 and 12
+    cards, and the card a person approves on listed none of them: this was computed for an
+    edit only."""
+    els = before.get("elements") or {}
+    keys, told = [], set()
+    for key, el in els.items():
+        if not isinstance(el, dict):
+            continue
+        card = (el.get("props") or {}).get("card") if el.get("type") == "Card" else None
+        if card is not None and card not in placed_after and card not in told:
+            told.add(card)
+            keys.append(key)
+        elif el.get("type") in ("Tab", "Section") and key in removed:
+            keys.append(key)
+    return taken_off(before, keys, titles)
+
+
 def _canonical(spec: Any) -> str:
     return json.dumps(spec, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -415,8 +522,8 @@ def options(connection_id: str, canvas_id: str) -> dict:
         "canvas": {"name": canvas.name},
         "cockpit": ({"version": live["version"], "spec": live["spec"]} if live else None),
         "cards_in_canvas": [{"id": c.id, "title": c.title, "kind": c.kind,
-                             "has_limit": bool((c.thresholds or {}).get("warning") is not None
-                                               or (c.thresholds or {}).get("critical") is not None)}
+                             "has_limit": bool(_limit_key(c.thresholds)),
+                             **({"made_from": dict([_made_from(c)])} if _made_from(c) else {})}
                             for c in _cards.cards_of(canvas_id)],
         "metrics": [{"metric": m.name, "label": m.label, "unit": m.unit or ""}
                     for m in metrics[:MAX_OFFERED]],
@@ -465,8 +572,11 @@ def _retire_pending(conn_id: str, canvas_id: str, by: str) -> tuple[str, ...]:
 
 
 def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, patches: Any = None,
-          cards: Any = None, reasoning: str = "") -> Drafted:
-    """Stage ONE proposal for this canvas's cockpit, or refuse with every reason found."""
+          cards: Any = None, reasoning: str = "", said: Optional[str] = None) -> Drafted:
+    """Stage ONE proposal for this canvas's cockpit, or refuse with every reason found.
+
+    ``said`` is what the person said on this turn, when the caller knows it: a limit is then
+    set only where they named it (:func:`_draft_cards`)."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.org.context import current_org_id
 
@@ -483,10 +593,13 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
     # The reasoning is a model's text, and it is read twice: by the person approving, on the
     # card, and by whoever later reads the cockpit's history, where it is the version's note.
     # It states no figure — but a limit the draft sets is a setting a person asked for and
-    # approves on the same card, not a measurement, and the reasoning may name it.
+    # approves on the same card, not a measurement, and the reasoning may name it. Only one
+    # they asked for: a limit the writer chose is a figure it read, and the third run of the
+    # receipt found one licensed that way ("each capped at 12% because every category sits
+    # near 11-12%").
     reasoning = (reasoning or "").strip()[:400]
-    figures = [n.text for n in _validate.stated_numerals(reasoning)
-               if not _is_a_limit(n, _limits_asked(cards))]
+    limits = [v for v in _limits_asked(cards) if said is None or _named_by_the_user(v, said)]
+    figures = _validate.as_written(n for n in _validate.stated_numerals(reasoning) if not _is_a_limit(n, limits))
     if figures:
         refusals.append(f'The reasoning states a figure ({", ".join(figures)}). Say why the cockpit is '
                         "arranged this way; a figure is a card's to show, where it is measured. "
@@ -512,7 +625,7 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
 
     # Every card is resolved and run even when the spec is already refused, and the spec is
     # checked even when a card was: the writer is told of everything in one round.
-    made, card_refusals, named = _draft_cards(connection_id, canvas, cards)
+    made, card_refusals, named = _draft_cards(connection_id, canvas, cards, said)
     refusals.extend(card_refusals)
 
     ids = {c["key"]: c["id"] for c in made}
@@ -567,7 +680,8 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
                    "sections": sum(len(t["sections"]) for t in arranged),
                    "cards": len(verdict.cards), "new": len(made)},
         "changes": moves,
-        "taken_off": taken_off(live["spec"], moves["removed"], titles) if mode == MODE_EDIT and live else [],
+        "taken_off": (taken_off(live["spec"], moves["removed"], titles) if mode == MODE_EDIT
+                      else _replaced(live["spec"], set(verdict.cards), moves["removed"], titles)) if live else [],
     }
     p = stage_proposal(StagedProposal(
         kind=KIND, org_id=current_org_id() or "", connection_id=connection_id,

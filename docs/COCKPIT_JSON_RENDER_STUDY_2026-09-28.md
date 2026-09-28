@@ -584,7 +584,9 @@ chosen, the Customers tab says "1 card waits on a condition".
 - **A card for a metric already shown.** Ask 1 placed a new lead-time card beside the canvas's
   own; ask 7 made a second Revenue card rather than place the first.
 - **A new cockpit replaces the standing one whole.** Asks 5 and 9 would take off 9 and 12
-  cards. The approval card lists them; the chat did not say it.
+  cards, and nothing named them: not the chat, and not the approval card either — what is
+  taken off was computed for an edit only. (First written here as "the approval card lists
+  them"; that was wrong, and was found while repairing it.)
 - **An ask a cockpit cannot answer.** "Which categories sell best" cannot be a card of a total,
   and the draft did not say so. The turn's last words were a list of bare numbers.
 
@@ -592,3 +594,25 @@ chosen, the Customers tab says "1 card waits on a condition".
 
 One model, one canvas. Each edit was drafted against the version standing when it was asked,
 not a fixed one: asks 8 to 10 were made against version 2.
+
+## 15 · The six repairs (2026-09-28)
+
+The user's word was *"fix the six faults"*. Each was broken on purpose afterwards and a test
+failed for each (17 deliberate breaks, all caught).
+
+| the fault | the repair |
+|---|---|
+| the numerals law read "11-12%" as "12%" | a range's unit is its lower end's too ("11-12%", "between 11 and 12%", "1.2-1.5M"), and "12 percent" is a percentage. A range is said once in a refusal |
+| a limit nobody named, then licensed in the reasoning | what the person said on the turn binds to the tool by closure, as the turn's other identity does. A limit it does not name is refused, and only a named one may be stated in the reasoning |
+| a card for a record the canvas already shows | refused, with the id of the card to place instead. Matched by the record a card keeps (a metric, a trusted query, a finding) or by its query. A second card of a record is made only to set a limit none of its cards has. `options` says what each card of the canvas is made from |
+| a finding from `list_findings` | the refusal says a cockpit takes this canvas's findings, as `options` lists them, and that `list_findings` lists the connection's. A quarantined finding of the canvas is said to be one |
+| a new cockpit replaces the standing one whole, unsaid | the approval card did not say it either: what is taken off was computed for an edit only. A new cockpit now lists every card it takes off, by card and once, on the card and in the summary the chat quotes |
+| a per-category ask drafted as totals, unsaid | the summary the chat quotes says what each new card shows ("one figure for the whole canvas", "a chart of its rows"), and the writer is told to say when no record measures what was asked |
+
+The last is half a repair. The platform cannot know that an ask wanted a breakdown. What it
+can do is say plainly what each card is. Whether the writer then says the rest is the
+prompt's, and is measured only by another run.
+
+Not repaired, and named: a number written as a word ("twelve percent") is not read, as a
+limit the person named or as a figure. The explorer's own parser still reads a range's unit on
+its upper end only.

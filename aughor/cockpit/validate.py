@@ -29,9 +29,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
@@ -149,16 +150,67 @@ def apply_patches(spec: Any, patches: Any) -> Edited:
     return Edited(ACCEPTED, spec=out["spec"])
 
 
+#: A percentage written as a word: "12 percent", "12 per cent", "12 pct".
+_PERCENT_WORD = re.compile(r"\s*(?:per\s?cent|pct)\b", re.I)
+#: What joins the two ends of a range: "11-12%", "11–12%", "11 to 12%".
+_RANGE_JOIN = re.compile(r"\s*(?:-|–|—|to)\s*", re.I)
+#: "between 11 and 12%" — "and" joins a range only after "between".
+_BETWEEN = re.compile(r"\bbetween\s*$", re.I)
+_AND = re.compile(r"\s*and\s*", re.I)
+
+
 def stated_numerals(text: str) -> list:
     """The figures a piece of reader text states, by the numerals law's own reading
     (``explorer/grounding.py``): a magnitude or a percentage. A year, a rank and a small count
-    are not claims about the data, there as here."""
-    return [n for n in extract_numerals(text) if n.enforce or n.suffix == "%"]
+    are not claims about the data, there as here.
+
+    Read as a reader reads them, which the parser alone does not. It reads a unit on the
+    number it follows, so in "11-12%" the 11 is a bare small number and nothing the law holds;
+    and it reads no unit in "12 percent". A model's reasoning said a category "sits near
+    11-12%" and the 11 passed (the third run of the receipt, ask 5). A range's unit is its
+    lower end's as well, and a percentage written as a word is a percentage. The lower end is
+    shown as the range it was written in."""
+    text = text or ""
+    read = list(extract_numerals(text))
+    spans: list[tuple[int, int]] = []
+    at = 0
+    for n in read:
+        start = max(text.find(n.text, at), at)
+        spans.append((start, start + len(n.text)))
+        at = start + len(n.text)
+    for i, n in enumerate(read):
+        word = _PERCENT_WORD.match(text, spans[i][1]) if not n.suffix else None
+        if word:
+            read[i] = replace(n, text=text[spans[i][0]:word.end()], suffix="%", multiplier=1.0, enforce=False)
+            spans[i] = (spans[i][0], word.end())
+    for i in range(len(read) - 2, -1, -1):
+        low, high = read[i], read[i + 1]
+        if low.suffix or not high.suffix:
+            continue
+        between = text[spans[i][1]:spans[i + 1][0]]
+        joined = _RANGE_JOIN.fullmatch(between) or (
+            _AND.fullmatch(between) and _BETWEEN.search(text, 0, spans[i][0]))
+        if joined:
+            read[i] = replace(low, text=text[spans[i][0]:spans[i + 1][1]],
+                              value=low.value * high.multiplier, multiplier=high.multiplier,
+                              suffix=high.suffix, enforce=high.enforce)
+    return [n for n in read if n.enforce or n.suffix == "%"]
+
+
+def as_written(numerals: Iterable) -> list[str]:
+    """Figures as the reader saw them written. A range is shown once: its upper end is read on
+    its own as well (either end may be the one a law refuses), and is not said twice."""
+    out: list[str] = []
+    for n in numerals:
+        if out and out[-1] != n.text and out[-1].endswith(n.text):
+            continue
+        out.append(n.text)
+    return out
 
 
 def stated_figures(text: str) -> list[str]:
     """:func:`stated_numerals`, as the reader saw them written."""
-    return [n.text for n in stated_numerals(text)]
+    return as_written(stated_numerals(text))
 
 
 def unknown_card(name: str, how: str) -> str:
