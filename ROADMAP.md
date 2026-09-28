@@ -9634,9 +9634,29 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
-### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10)
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10; after three repairs to the prompt, 10 of 10 on the same asks)
 
-> **Status 2026-09-28, the receipt by a model — RUN at the user's word (*"Run the ten asks on theLook"*).
+> **Status 2026-09-28, the receipt by a model, SECOND RUN — at the user's word (*"fix the three faults and run
+> the asks again"*). 10 of 10 first drafts passed.** The same ten asks, the same canvas, the same model
+> (`deepseek/deepseek-v4.1-flash`), after three repairs to what the writer is told: the cap of 12 new cards is
+> stated in the answer to `options`, in what that answer says of drafting, and in the tool's schema; the
+> reasoning may name a limit the draft itself sets, and no other figure; and a name the spec places and the
+> draft never declared is refused with its repair — that the draft creates none of that name, the exact entry
+> to add to `cards` when the name is an approved metric, a trusted query or a finding, and what the draft
+> does create. **Measured:** `options` first in 10 of 10; every first draft staged; no repair round; 42 model
+> calls, 556,793 tokens in and 22,367 out, 276 seconds for the ten turns. The two drafts that had made 19 and
+> 17 cards made 12. The two asks that named a limit in percent set it as 0.12 and 0.10 on metrics whose unit
+> is a ratio, which is right. The two records of each draft — the frame that a proposal was staged, and the
+> step's own `error` — were held against each other and agreed. **What this does NOT show, said plainly:
+> these are the ten asks the repairs were written for.** The first run is the measurement of the prompt as
+> it was; this one shows that the repairs repair what they were aimed at. A set of asks nobody has seen is
+> the fair test, and it has not been run. Also unchanged: one model, one canvas; the door still paused asks
+> 6 and 8 to ask for a metric and a period; nothing was approved, so no cockpit a model drafted has been
+> drawn; and an edit drafted by a model is unmeasured. The run was made with the judgment shadow switched
+> off and the coder role on DeepSeek, both put back; the API did not freeze. **Left on the install:** twenty
+> cockpit drafts on theLook, nineteen superseded and one pending ("Executive Cockpit", 12 cards).
+
+> **Status 2026-09-28, the receipt by a model, FIRST RUN — at the user's word (*"Run the ten asks on theLook"*).
 > FALSIFIER (2) FIRED: 4 of 10 first drafts passed validation, fewer than half.** Ten asks, sent one at a
 > time to the install's own `/ask` as the canvas's chat sends them, on the canvas "E-Commerce Operations
 > Overview", with `deepseek/deepseek-v4.1-flash` — the user's choice, after the first ask showed that the
@@ -11536,8 +11556,10 @@ the browser** · **measure the premise before building.**
     spent. "Start CT-5" was read as the word to build it, not as the word to spend — the ten asks still wait.*
     *Later the same day the user gave the word (*"Run the ten asks on theLook"*), and chose the model
     when the install's own turned out unable to call tools. **✅ SPENT 2026-09-28: ten asks on
-    `deepseek/deepseek-v4.1-flash`, 54 calls. Falsifier (2) fired, 4 of 10** (§3.50's first status block).
-    A second run, after the prompt is repaired, is a second spend and needs the user's word again.*
+    `deepseek/deepseek-v4.1-flash`, 54 calls. Falsifier (2) fired, 4 of 10.** The user then gave the word
+    for a second spend (*"fix the three faults and run the asks again"*): **10 of 10, 42 calls** — on the
+    asks the repairs were written for (§3.50's first two status blocks). A run on asks nobody has seen is
+    a third spend and needs the user's word again.*
     **(g) ✅ DECIDED with the adoption, as drafted — email is not in this arc.** CT-6 names it and waits for someone
     to ask; when it comes it is a new door and the departure gate stands in front of it.
 

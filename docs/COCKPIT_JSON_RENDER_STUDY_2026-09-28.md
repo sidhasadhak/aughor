@@ -488,3 +488,56 @@ on every call of the turn; the answer to `options` is about 12,700 characters of
 - Nothing was approved, so the cockpit a model drafted was never drawn.
 - All ten asks were for a new cockpit. An edit drafted by a model is unmeasured.
 - One model. Whether another passes more first drafts is not known.
+
+## 13 · The three repairs, and the ten asks again (2026-09-28)
+
+The user's word was *"fix the three faults and run the asks again"*.
+
+### What was repaired
+
+| the fault | what the writer is told now |
+|---|---|
+| more new cards than a draft may make | the cap, in three places: the answer to `options` (`limits.new_cards`), what that answer says of drafting, and the tool's own schema |
+| the reasoning repeated the limit the person asked for | the reasoning may name a limit the draft sets, as 12 or as 12%. Any other figure is refused as before, and with no limit set the same figure is a figure |
+| a card placed by a name the draft did not declare | that the draft creates none of that name; the exact entry to add to `cards` when the name is an approved metric, a trusted query or a finding; and what the draft does create. Told once for a card that is both placed and read |
+
+What `options` says of drafting now shows one card created, placed and read by the same
+name. A spec a person hands in is refused in the plain words it was: the repair is a draft's.
+
+The fourth fault, a condition that was an empty list, was the model's own slip and the rules
+already say it plainly. One sentence was added to what `options` says: leave `visible` out
+of an element that is always shown.
+
+### The same ten asks
+
+| | first run | second run |
+|---|---|---|
+| first drafts that passed | 4 of 10 | **10 of 10** |
+| asks that ended staged | 10 of 10 | 10 of 10 |
+| drafts to stage, on average | 1.7 | 1.0 |
+| asked for `options` first | 10 of 10 | 10 of 10 |
+| model calls | 54 | 42 |
+| tokens in, out | 670,139 and 39,542 | 556,793 and 22,367 |
+| the API froze | twice | never |
+
+The first run's calls include the judgment shadow's, one to an ask, on its first six asks;
+the second run was made with the shadow off throughout. So the two counts of calls are not
+like for like.
+
+Three things the second run showed that the first could not:
+
+- The two drafts that had made 19 and 17 cards made 12.
+- Asks 3 and 9 named their limit in percent. Both metrics are declared as a ratio from 0 to
+  1, and the drafts set the limits as 0.12 and 0.10. The unit came from `options`.
+- The two records of each draft — the frame that a proposal was staged, and the step's own
+  `error` — were held against each other for all ten and agreed.
+
+### What this does not show
+
+**These are the ten asks the repairs were written for.** The first run is the measurement
+of the prompt as it was. The second shows that the repairs repair what they were aimed at.
+Ten asks nobody has seen — other wording, other subjects, an edit among them — are the fair
+test, and they have not been run.
+
+Also as before: one model and one canvas; the door paused asks 6 and 8 to ask for a metric
+and a period; nothing was approved, so no cockpit a model drafted has been drawn.
