@@ -84,6 +84,27 @@ def _day(value: Optional[str], what: str) -> Optional[date]:
         raise HTTPException(status_code=422, detail=f"{what} is an ISO day, e.g. 2026-08-17")
 
 
+def _as_read(card, connection_id: str) -> dict:
+    """A card as a cockpit draws it: the card, whose it is, the record it was made from, and —
+    for a card made from a metric — the metric's unit and the range that unit states, read by
+    the same reader the Briefing's figures are (`business_profile/validate.stated_range`)."""
+    from aughor.business_profile.validate import stated_range
+    from aughor.cockpit import cards
+    from aughor.cockpit.propose import made_from
+    from aughor.semantic.metrics import get_metric
+
+    made = made_from(card)
+    out = {**card.model_dump(), "own": card.scope == cards.OWN, "made_from": made[0] if made else "",
+           "unit": "", "stated_range": None}
+    if made and made[0] == "metric":
+        metric = get_metric(made[1], connection_id=connection_id)
+        unit = str(getattr(metric, "unit", "") or "")
+        if unit:
+            kind, lo, hi = stated_range(unit)
+            out.update(unit=unit, stated_range={"kind": kind, "lo": lo, "hi": hi})
+    return out
+
+
 def _layout_order(connection_id: str, owner: str) -> list[str]:
     """The card ids in the order the person arranged them in the Briefing before cockpits had
     names: top to bottom, then left to right."""
@@ -121,6 +142,7 @@ def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: 
     _on()
     from aughor.cockpit import cards, host, versions
     from aughor.kernel.flags import flag_enabled
+    from aughor.routers.investigations import resolve_currency_symbol
     home = _home(request, connection_id, cockpit_id)
     kept = versions.latest(home)
     if kept is None:
@@ -135,10 +157,11 @@ def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: 
     return {
         **home.as_params(),
         "cockpit": kept,
-        "cards": [{**c.model_dump(), "own": c.scope == cards.OWN} for c in cards.cards_of(home)],
+        "cards": [_as_read(c, connection_id) for c in cards.cards_of(home)],
         "range": block,
         "ranges_on": ranges_on,
         "history": versions.history(home),
+        "currency_symbol": resolve_currency_symbol(connection_id, None),
     }
 
 

@@ -134,6 +134,26 @@ def phrases(spec: RangeSpec) -> dict:
     return {"covers": covers, "compared_with": against, "last_year": last_year}
 
 
+def compared_word(spec: RangeSpec) -> str:
+    """What the range is compared with, short enough to follow "higher than" on a cockpit's card.
+    ``phrases`` says it in full, with its dates; a card carries the full phrase as its title."""
+    p = PRESET_PERIOD.get(spec.preset)
+    if p == "month":
+        same_year = spec.previous_start.year == spec.start.year
+        return spec.previous_start.strftime("%B" if same_year else "%B %Y")
+    if p == "year":
+        return str(spec.previous_start.year)
+    if p == "week":
+        return "the week before"
+    if p == "day":
+        return "the same weekday a week earlier"
+    if spec.preset == "month_to_date":
+        return f"the same days of {spec.previous_start.strftime('%B')}"
+    if spec.preset == "year_to_date":
+        return "the same span a year earlier"
+    return "the span before it"
+
+
 def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
                   end: Optional[date] = None, today: date, lag_days: int = 1,
                   lag_source: str = "default", still_moving: tuple = (),

@@ -20,6 +20,7 @@ const api = vi.hoisted(() => ({
   listCockpits: vi.fn(), getCockpit: vi.fn(), runDashboardCard: vi.fn(), keepCockpit: vi.fn(),
   startMyCockpit: vi.fn(), draftCockpit: vi.fn(), getProposalById: vi.fn(), acceptProposal: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
+  getSystemFlags: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const composer = vi.hoisted(() => ({ onCreated: null as null | (() => void) }));
@@ -68,6 +69,8 @@ beforeEach(() => {
   drawn.props.length = 0;
   composer.onCreated = null;
   try { localStorage.clear(); } catch { /* jsdom */ }
+  // Ranges off unless a test turns them on: the cockpit then reads as written.
+  api.getSystemFlags.mockResolvedValue({});
   api.listCockpits.mockResolvedValue(LIST);
   api.getCockpit.mockResolvedValue(READ);
   api.runDashboardCard.mockResolvedValue({ columns: ["_v"], rows: [["10.03"]], row_count: 1 });
@@ -95,17 +98,31 @@ describe("a person's cockpits", () => {
     expect(api.runDashboardCard.mock.calls[0][1]).toBeNull();
     const last = drawn.props.at(-1)!;
     expect(last.spec).toEqual(SPEC);
+    expect(last.sym).toBe("$");
+    // The version is said in the history, not above the cards.
+    expect(screen.queryByTestId("cockpit-version")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
     expect(screen.getByTestId("cockpit-version")).toHaveTextContent("Version 3 · kept by person");
   });
 
-  it("reads the cockpit for a range of its own, chosen on the tab", async () => {
+  it("with ranges on, opens on the latest month and asks each card how it moved against the one before", async () => {
+    api.getSystemFlags.mockResolvedValue({ "briefing.ranges": { value: true } });
+    api.getCockpit.mockResolvedValue({ ...READ, currency_symbol: "€",
+      range: { ...READ.range, status: "final", preset: "last_month", covers: "July 2026" } });
     show();
-    const group = await screen.findByRole("group", { name: "Cockpit range" });
-    expect(within(group).getByRole("button", { name: "As written" })).toHaveAttribute("aria-pressed", "true");
-    api.runDashboardCard.mockClear();
-    fireEvent.click(within(group).getByRole("button", { name: "Month" }));
-    await waitFor(() => expect(api.getCockpit).toHaveBeenLastCalledWith("thelook", "returns-1", { preset: "last_month" }));
-    await waitFor(() => expect(api.runDashboardCard).toHaveBeenCalledWith("c7f3a001", { preset: "last_month" }));
+    await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "last_month" }));
+    await waitFor(() => expect(api.runDashboardCard).toHaveBeenCalledWith("c7f3a001", { preset: "last_month" }, { compare: true }));
+    // Never first read as written: that run would roll every card's standing value.
+    expect(api.getCockpit).not.toHaveBeenCalledWith("thelook", "returns-1", null);
+    expect(await screen.findByTestId("cockpit-range")).toHaveTextContent("July 2026 · final");
+    await waitFor(() => expect(drawn.props.at(-1)!.sym).toBe("€"));
+  });
+
+  it("with ranges off, there is no period to choose", async () => {
+    api.getCockpit.mockResolvedValue({ ...READ, ranges_on: false });
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    expect(screen.queryByTestId("cockpit-period")).toBeNull();
   });
 
   it("opens the one the person chose last time", async () => {
@@ -127,6 +144,9 @@ describe("a person's cockpits", () => {
 
   it("a card pinned from here lands on the cockpit in view", async () => {
     show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    expect(screen.queryByTestId("composer-stub")).toBeNull();
+    fireEvent.click(screen.getByTestId("cockpit-card-new"));
     await waitFor(() => expect(composer.onCreated).not.toBeNull());
     api.getCockpit.mockResolvedValue({ ...READ, cards: [...READ.cards, card("fresh0001", "Just pinned", false)] });
     composer.onCreated!();
@@ -139,6 +159,16 @@ describe("a person's cockpits", () => {
 });
 
 describe("a retired cockpit", () => {
+  it("is retired from the history, where its versions are", async () => {
+    api.retireCockpit.mockResolvedValue({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] });
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    expect(screen.queryByRole("button", { name: /Retire/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Retire this cockpit" }));
+    await waitFor(() => expect(api.retireCockpit).toHaveBeenCalledWith("thelook", "returns-1"));
+  });
+
   it("leaves the strip, is said to be retired, and is brought back as it was before", async () => {
     api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [LIST.cockpits[0], { ...LIST.cockpits[1], retired: true, version: 4, title: "Pricing" }] });
     api.restoreCockpit.mockResolvedValue({ status: "kept", kept: true, version: 5, artifact_id: "a5", sentences: [] });

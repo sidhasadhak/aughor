@@ -2194,6 +2194,19 @@ export interface CardRunResult {
   /** BR-9 — present when the run asked for a range: what the number covers, or `standing`
    *  with why the card's SQL could not be cut to it (no date on its tables). */
   scoped?: { covers: string; standing: boolean; why: string; grain: string | null } | null;
+  /** Asked for with `compare`: the card's figure for the window its range is compared with,
+   *  cut the same way. `word` is short enough to follow "higher than"; `covers` is the full
+   *  phrase. `equal_age` is false until the range is final — part of any difference is then
+   *  age, not a move. `value` null says why; it is never read as zero. */
+  previous?: CardRunPrevious | null;
+}
+
+export interface CardRunPrevious {
+  covers: string;
+  word: string;
+  equal_age: boolean;
+  value: number | null;
+  why: string;
 }
 
 /** Pin a briefing finding as a dashboard card (Door 1). The backend re-runs the finding's
@@ -2302,11 +2315,14 @@ export async function saveVizConfig(
 
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
-export async function runDashboardCard(cardId: string, range?: BriefingRange | null): Promise<CardRunResult> {
+export async function runDashboardCard(cardId: string, range?: BriefingRange | null,
+  opts: { compare?: boolean } = {}): Promise<CardRunResult> {
   const q = new URLSearchParams();
   if (range) {
     if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
     else q.set("preset", range.preset);
+    // A cockpit asks for the figure of the window its range is compared with, too (`previous`).
+    if (opts.compare) q.set("compare", "true");
   }
   // The path is one template and the query a plain suffix: the API-contract test reads the
   // template as the route, and a conditional inside it read as "/run${qs".
@@ -2370,8 +2386,15 @@ export interface CockpitRange {
   still_moving: string[];
 }
 
-/** A card a cockpit may place: the person's own, or one pinned for the connection. */
-export type CockpitCard = DashboardCard & { own: boolean };
+/** A card a cockpit may place: the person's own, or one pinned for the connection — with the
+ *  record it was made from ("metric", "trusted_query", "finding", or "" for a query of its own)
+ *  and, for a card made from a metric, the metric's unit and the range that unit states. */
+export type CockpitCard = DashboardCard & {
+  own: boolean;
+  made_from?: "metric" | "trusted_query" | "finding" | "";
+  unit?: string;
+  stated_range?: StatedRange | null;
+};
 
 export interface PersonCockpit {
   connection_id: string;
@@ -2382,6 +2405,8 @@ export interface PersonCockpit {
   range: CockpitRange;
   ranges_on: boolean;
   history: CockpitVersion[];
+  /** The symbol a money figure is written with, as the Briefing resolves it. */
+  currency_symbol?: string;
 }
 
 /** What a write answered: kept, unchanged — or a refusal, which arrives as an error. */

@@ -52,12 +52,12 @@ import {
   IconSitemap, IconSparkles, IconStar, IconSun, IconTable, IconTrash, IconUpload, IconX,
   IconAbc, IconAdjustmentsHorizontal, IconAlertCircle, IconArrowLeft, IconBell,
   IconBookmark, IconCalendar, IconChartBar, IconChevronLeft, IconChevronUp, IconColumns,
-  IconCompass, IconCopy, IconDotsVertical, IconDownload, IconExternalLink, IconEye,
+  IconCompass, IconCopy, IconDotsVertical, IconDownload, IconExternalLink, IconEye, IconEyeOff,
   IconFolder, IconGripVertical, IconKey, IconLink, IconLock,
   IconMaximize, IconMapPin, IconMessageCircle, IconMinus, IconPencil, IconPin, IconPoint,
   IconPlayerStop, IconRobot, IconSchema, IconServer, IconTarget, IconTerminal2,
   IconToggleLeft, IconTrendingDown, IconTrendingUp, IconUser, IconUsers, IconWand,
-  IconBulb, IconFlask, IconScale, IconZoomIn,
+  IconBulb, IconFlask, IconScale, IconZoomIn, IconArrowDownRight, IconArrowUpRight,
   IconArrowsSplit2, IconBinaryTree, IconChartDots3, IconGauge, IconHandStop, IconStack2,
   IconList, IconPaperclip, IconNumber123, IconBraces, IconBinary,
 } from "@tabler/icons-react";
@@ -157,6 +157,9 @@ const ICONS = {
   attach: IconPaperclip, // a file carried alongside a message — NOT the same idea
   list: IconList,
   eye: IconEye,
+  eyeoff: IconEyeOff,    // on screen and not shown: withheld, or waiting on a condition
+  rises: IconArrowUpRight,   // a figure higher than what it is compared with — NOT trendup,
+  falls: IconArrowDownRight, // which is a series' direction over many points
   minus: IconMinus,
   sliders: IconAdjustmentsHorizontal,
   expand: IconMaximize,

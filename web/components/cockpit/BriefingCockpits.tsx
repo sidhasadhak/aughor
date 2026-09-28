@@ -14,7 +14,8 @@
  * no model, and it needs no exploration: a cockpit is made of cards, not of findings.
  *
  * What it does, and what each costs:
- *   - draws the chosen cockpit for a range of its own ("As written" until one is chosen): no model;
+ *   - draws the chosen cockpit for a period of its own — the latest month when ranges are on,
+ *     "As written" otherwise — each figure against the period it is compared with: no model;
  *   - arranges it by hand, each save a version: no model;
  *   - starts "My cockpit" from the cards pinned before cockpits had names: no model;
  *   - moves a cockpit that lived in a Data Canvas here: no model;
@@ -24,17 +25,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
-import { RangeControl, type RangeChoice } from "@/components/brief/BriefRange";
+import type { RangeChoice } from "@/components/brief/BriefRange";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
 import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
+import { PeriodPicker } from "@/components/cockpit/PeriodPicker";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { ErrorState, Refusal } from "@/components/ui/states";
 import { toast } from "@/components/ui/toast";
 import {
-  CockpitRefused, acceptProposal, draftCockpit, getCockpit, getProposalById, keepCockpit, listCockpits,
+  CockpitRefused, acceptProposal, draftCockpit, getCockpit, getProposalById, getSystemFlags, keepCockpit, listCockpits,
   moveCanvasCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit,
   type BriefingRange, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
   type PersonCockpit, type StagedProposal,
@@ -208,19 +211,19 @@ function NewCockpit({ connectionId, schema, onKept, onClose }: {
   );
 }
 
-const AS_WRITTEN = { label: "As written", title: "Every card as it was written, not cut to a range" };
-
-const RANGE_SAYS: Record<PersonCockpit["range"]["status"], string> = {
-  standing: "", final: "Final", provisional: "Provisional", to_date: "To date",
-};
-
 export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidence }: {
   connectionId: string;
   schema?: string;
   onOpenSource?: (iid: string) => void;
   onEvidence?: (iid: string) => void;
 }) {
-  const [chosenRange, setChosenRange] = useState<RangeChoice>({ preset: "standing" });
+  // The period the cards are read for: the person's pick, else the latest complete month where
+  // ranges are on — a cockpit is watched month by month, as the mock showed it — else as written.
+  // Nothing is read until the flag is known: a first read "as written" would roll every card's
+  // standing value for a view nobody asked for.
+  const [rangesOn, setRangesOn] = useState<boolean | null>(null);
+  const [picked, setChosenRange] = useState<RangeChoice | null>(null);
+  const chosenRange: RangeChoice = picked ?? (rangesOn ? { preset: "last_month" } : { preset: "standing" });
   const range: BriefingRange | null = chosenRange.preset === "standing" ? null : chosenRange;
   const [list, setList] = useState<CockpitList | null | "off">(null);
   const [chosen, setChosen] = useState("");
@@ -232,12 +235,20 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [showHistory, setShowHistory] = useState(false);
   const [arranging, setArranging] = useState<CockpitSpec | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [composing, setComposing] = useState(false);
   const [tick, setTick] = useState(0);
   const known = useRef<Set<string>>(new Set());
   const adopt = useRef(false);
 
   const rangeKey = JSON.stringify(range ?? null);
   const reload = useCallback(() => setTick(t => t + 1), []);
+
+  useEffect(() => {
+    let alive = true;
+    getSystemFlags().then(f => { if (alive) setRangesOn(!!f["briefing.ranges"]?.value); })
+      .catch(() => { if (alive) setRangesOn(false); });
+    return () => { alive = false; };
+  }, []);
 
   // The person's cockpits. Null from the route means the flag is off: draw what was drawn before.
   useEffect(() => {
@@ -258,13 +269,14 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   // The chosen cockpit, read for the page's range, each card it places run through the guards.
   useEffect(() => {
     if (!chosen || list === "off") { setData(null); return; }
+    if (rangesOn === null) return;
     let cancelled = false;
     (async () => {
       try {
         const read = await getCockpit(connectionId, chosen, range);
         const placed = new Set(read.cockpit.spec ? cardsPlaced(read.cockpit.spec) : []);
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
-          try { return { card, run: await runDashboardCard(card.id, range) }; }
+          try { return { card, run: await runDashboardCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }
         }));
         if (cancelled) return;
@@ -287,7 +299,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
-  }, [connectionId, chosen, rangeKey, tick, list === "off"]);
+  }, [connectionId, chosen, rangeKey, tick, list === "off", rangesOn]);
 
   const write = useCallback(async (act: () => Promise<CockpitKept>, done: (k: CockpitKept) => string) => {
     setBusy(true); setRefusal(null);
@@ -307,7 +319,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
 
   const refreshOne = useCallback(async (id: string) => {
     try {
-      const run = await runDashboardCard(id, range);
+      const run = await runDashboardCard(id, range, { compare: true });
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c)));
     } catch {
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, failed: true } : c)));
@@ -361,17 +373,6 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           </Button>
         ))}
         <Button size="sm" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New cockpit</Button>
-        {data?.ranges_on && live.length > 0 && (
-          <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-            {data.range.status !== "standing" && (
-              <span className="aug-fs-sm" data-testid="cockpit-range" style={{ color: "var(--t2)" }}>
-                {RANGE_SAYS[data.range.status]} · {data.range.covers}
-              </span>
-            )}
-            <RangeControl value={chosenRange} onChange={setChosenRange} disabled={busy}
-              standing={AS_WRITTEN} label="Cockpit range" />
-          </span>
-        )}
       </div>
 
       {/* A retired cockpit leaves the strip, not the record: it is said here, and brought back
@@ -435,29 +436,42 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         </EmptyState>
       ) : drawn && data ? (
         <>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-            <span className="aug-fs-sm" data-testid="cockpit-version" style={{ color: "var(--t3)" }}>
-              Version {kept.version} · {kept.written_by_model ? "drafted, kept" : "kept"} by {person(kept.approved_by)} · {formatDateTime(kept.kept_at)}
-            </span>
-            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+            {data.ranges_on && (
+              <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy}
+                showing={data.range.status === "standing" ? null : data.range} />
+            )}
+            <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               {!arranging && (
-                <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-arrange-open"
-                  onClick={() => setArranging(JSON.parse(JSON.stringify(kept.spec)) as CockpitSpec)}>Arrange</Button>
-              )}
-              {data.history.length > 1 && (
-                <Button size="xs" variant="ghost" aria-expanded={showHistory} onClick={() => setShowHistory(s => !s)}>
-                  {showHistory ? "Hide history" : "History"}
+                <Button size="xs" variant="ghost" disabled={busy || composing} data-testid="cockpit-card-new"
+                  onClick={() => setComposing(true)}>
+                  <Icon name="plus" /> Card
                 </Button>
               )}
-              <Button size="xs" variant="ghost" disabled={busy}
-                onClick={() => void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.")}>
-                Retire
+              {!arranging && (
+                <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-arrange-open"
+                  onClick={() => setArranging(JSON.parse(JSON.stringify(kept.spec)) as CockpitSpec)}>
+                  <Icon name="sliders" /> Arrange
+                </Button>
+              )}
+              <Button size="xs" variant="ghost" aria-expanded={showHistory} onClick={() => setShowHistory(s => !s)}>
+                <Icon name="history" /> {showHistory ? "Hide history" : "History"}
               </Button>
             </span>
           </div>
 
           {showHistory && (
-            <ol data-testid="cockpit-history" style={{ listStyle: "none", margin: "0 0 12px", padding: 0, borderTop: "1px solid var(--b1)" }}>
+            <div style={{ margin: "8px 0 12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <span className="aug-fs-sm" data-testid="cockpit-version" style={{ color: "var(--t3)" }}>
+                Version {kept.version} · {kept.written_by_model ? "drafted, kept" : "kept"} by {person(kept.approved_by)} · {formatDateTime(kept.kept_at)}
+              </span>
+              <Button size="xs" variant="ghost" disabled={busy} style={{ marginLeft: "auto" }}
+                onClick={() => void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.")}>
+                Retire this cockpit
+              </Button>
+            </div>
+            <ol data-testid="cockpit-history" style={{ listStyle: "none", margin: 0, padding: 0, borderTop: "1px solid var(--b1)" }}>
               {data.history.map(v => (
                 <li key={v.artifact_id} className="aug-fs-sm" style={{ display: "flex", alignItems: "baseline", gap: 12, padding: "7px 0", borderBottom: "1px solid var(--b1)", color: "var(--t2)" }}>
                   <span style={{ color: "var(--t1)", fontWeight: 500, minWidth: 74 }}>Version {v.version}</span>
@@ -475,6 +489,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                 </li>
               ))}
             </ol>
+            </div>
           )}
 
           {arranging ? (
@@ -504,9 +519,14 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
             </div>
           ) : (
             <>
-              <NewCardComposer connectionId={connectionId} schema={schema}
-                onCreated={() => { adopt.current = true; reload(); }} />
-              <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} />
+              {composing && (
+                <div style={{ marginTop: 8 }}>
+                  <NewCardComposer connectionId={connectionId} schema={schema} startOpen
+                    onClose={() => setComposing(false)}
+                    onCreated={() => { adopt.current = true; reload(); }} />
+                </div>
+              )}
+              <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"} />
             </>
           )}
         </>

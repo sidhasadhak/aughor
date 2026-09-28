@@ -94,7 +94,9 @@ condition reads can be the platform's and not the spec's.
 **4.1 · The spec arranges, the card store measures.** The catalog holds five components: `Cockpit`, `Tabs`,
 `Tab`, `Section` and `Card`. A `Card` element carries the id of a card in the card store and nothing about
 what that card measures. Its SQL, its thresholds, its history and its provenance stay where they are, and it is
-drawn by `PinnedCardBody` unchanged.
+drawn by `PinnedCardBody` unchanged. *(Superseded 2026-09-28 at the user's word, "make the cockpit look like the
+mockup": a cockpit draws a card with a face of its own, `CockpitTile` — the figure at its unit's scale, how it
+moved, its limit, what stands behind it. What the card measures is still the card's own run; ROADMAP §3.50.)*
 
 ```json
 {

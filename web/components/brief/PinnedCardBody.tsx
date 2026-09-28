@@ -44,6 +44,64 @@ function BigValue({ v }: { v: number | null | undefined }) {
   );
 }
 
+/** Keep a chart's display edits on its card. `PUT /cards/{id}` has existed since the cockpit
+ *  shipped but had no client, so every edit to a pinned chart died on unmount. Debounced: the
+ *  chart emits per interaction (typing an axis title would be a PUT/keystroke). Every surface
+ *  that draws a card's chart keeps its edits through this one. */
+export function usePersistViz(card: DashboardCard): (viz: VizConfig) => void {
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistViz = useCallback((viz: VizConfig) => {
+    if (!card.id) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const next = { ...(card.render || {}) } as Record<string, unknown>;
+      if (isEmptyVizConfig(viz)) delete next.viz; else next.viz = viz;
+      // Best-effort: a display preference must never surface an error over the card.
+      void updateDashboardCard(card.id, { ...card, render: next }).catch(() => {});
+    }, 600);
+  }, [card]);
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+  return persistViz;
+}
+
+/** Watch → alert: a direction and a threshold, and the card becomes a scheduled monitor. */
+export function CardAlertForm({ card, direction, onSet }: {
+  card: DashboardCard;
+  direction: "below" | "above";
+  onSet: (direction: "below" | "above") => void;
+}) {
+  const [alertVal, setAlertVal] = useState("");
+  const [alertDir, setAlertDir] = useState<"below" | "above">(direction);
+  const [alertBusy, setAlertBusy] = useState(false);
+  const saveAlert = async () => {
+    const n = Number(alertVal);
+    if (!alertVal || Number.isNaN(n)) return;
+    setAlertBusy(true);
+    try {
+      await graduateCard(card.id, { warning_threshold: n, threshold_direction: alertDir });
+      onSet(alertDir);
+      toast.success("Alert set", { description: `You'll be notified when this metric goes ${alertDir} ${n}.` });
+    } catch {
+      toast.error("Couldn't set alert", { description: "The card's query didn't pass the trust guards, so no monitor was scheduled." });
+    }
+    finally { setAlertBusy(false); }
+  };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <select value={alertDir} onChange={e => setAlertDir(e.target.value as "below" | "above")}
+        style={{ fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t2)", padding: "2px 4px" }}>
+        <option value="below">below</option>
+        <option value="above">above</option>
+      </select>
+      <input type="number" value={alertVal} onChange={e => setAlertVal(e.target.value)} placeholder="threshold"
+        onKeyDown={e => { if (e.key === "Enter") saveAlert(); }}
+        style={{ fontSize: 11, width: 74, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 4px", outline: "none" }} />
+      <Button variant="ghost" size="xs" onClick={saveAlert} disabled={!alertVal || alertBusy}
+        style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>{alertBusy ? "…" : "Save"}</Button>
+    </div>
+  );
+}
+
 export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove, onRefresh, onOpenSource, onEvidence }: {
   cs: CardState;
   /** Canvas selection ring; the grid leaves it false. */
@@ -75,21 +133,7 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
     showDataLabels?: boolean; viz?: VizConfig;
   };
 
-  // Persist a display change back onto the card. `PUT /cards/{id}` has existed since the
-  // cockpit shipped but had no client, so every edit to a pinned chart died on unmount.
-  // Debounced: the chart emits per interaction (typing an axis title would be a PUT/keystroke).
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const persistViz = useCallback((viz: VizConfig) => {
-    if (!card.id) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const next = { ...(card.render || {}) } as Record<string, unknown>;
-      if (isEmptyVizConfig(viz)) delete next.viz; else next.viz = viz;
-      // Best-effort: a display preference must never surface an error over the card.
-      void updateDashboardCard(card.id, { ...card, render: next }).catch(() => {});
-    }, 600);
-  }, [card]);
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+  const persistViz = usePersistViz(card);
   const isTabular = !errored && !trend && val == null && !!run && !run.error
     && (run.columns?.length ?? 0) > 0 && (run.rows?.length ?? 0) > 0;
 
@@ -117,23 +161,8 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
   const limits = [t0?.warning, t0?.critical].filter((v): v is number => typeof v === "number");
   const [alerting, setAlerting] = useState(limits.length > 0 && !!t0?.monitor_id);
   const [alertOpen, setAlertOpen] = useState(false);
-  const [alertVal, setAlertVal] = useState("");
   const [alertDir, setAlertDir] = useState<"below" | "above">((t0?.direction as "below" | "above") || "below");
-  const [alertBusy, setAlertBusy] = useState(false);
   const canAlert = val != null && !errored;
-  const saveAlert = async () => {
-    const n = Number(alertVal);
-    if (!alertVal || Number.isNaN(n)) return;
-    setAlertBusy(true);
-    try {
-      await graduateCard(card.id, { warning_threshold: n, threshold_direction: alertDir });
-      setAlerting(true); setAlertOpen(false);
-      toast.success("Alert set", { description: `You'll be notified when this metric goes ${alertDir} ${n}.` });
-    } catch {
-      toast.error("Couldn't set alert", { description: "The card's query didn't pass the trust guards, so no monitor was scheduled." });
-    }
-    finally { setAlertBusy(false); }
-  };
 
   return (
     <div style={{
@@ -227,18 +256,8 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
           </div>
         )}
         {canAlert && !alerting && alertOpen && (
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <select value={alertDir} onChange={e => setAlertDir(e.target.value as "below" | "above")}
-              style={{ fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t2)", padding: "2px 4px" }}>
-              <option value="below">below</option>
-              <option value="above">above</option>
-            </select>
-            <input type="number" value={alertVal} onChange={e => setAlertVal(e.target.value)} placeholder="threshold"
-              onKeyDown={e => { if (e.key === "Enter") saveAlert(); }}
-              style={{ fontSize: 11, width: 74, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 4px", outline: "none" }} />
-            <Button variant="ghost" size="xs" onClick={saveAlert} disabled={!alertVal || alertBusy}
-              style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>{alertBusy ? "…" : "Save"}</Button>
-          </div>
+          <CardAlertForm card={card} direction={alertDir}
+            onSet={dir => { setAlertDir(dir); setAlerting(true); setAlertOpen(false); }} />
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
           {/* Evidence capsule — the receipt/derivation behind a finding-derived card. */}

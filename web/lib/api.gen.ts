@@ -2183,6 +2183,12 @@ export interface paths {
          *     substituted by itself filtered to the window — and `scoped` says what the number covers;
          *     a card whose tables have no date runs standing and `scoped` says why. A range run never
          *     rolls into the card's standing value history.
+         *
+         *     With `compare` (a cockpit asks it), a figure cut to a range is also read for the window the
+         *     range is compared with, cut the same way, so the two differ only by their dates — `previous`.
+         *     It is at equal age only when the range is final: a cut does not bound a cohort's outcomes to
+         *     an as-of the way a metric's own measurement does, so before then part of any difference is
+         *     age, and `previous` says so.
          */
         post: operations["run_card_route_cards__card_id__run_post"];
         delete?: never;
@@ -21119,6 +21125,7 @@ export interface operations {
                 start?: string | null;
                 end?: string | null;
                 workspace_id?: string | null;
+                compare?: boolean;
             };
             header?: never;
             path: {

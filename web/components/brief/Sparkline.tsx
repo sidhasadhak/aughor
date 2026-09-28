@@ -68,6 +68,9 @@ export interface SeriesTrend {
   values: number[];
   lastDelta: number | null;   // fractional period-over-period change (0.12 = +12%)
   periodLabel: string;        // MoM / WoW / YoY …
+  /** The date of each value, as the rows state it, in the same order. */
+  dates: string[];
+  gran: Gran;
 }
 
 /** Pull an ordered numeric series out of a (date, …, value) result, if one exists. */
@@ -90,7 +93,8 @@ export function seriesTrend(columns: string[], rows: (string | number | null)[][
     .sort((a, b) => String(a[dateIdx]).localeCompare(String(b[dateIdx])));
   if (sorted.length < 3) return null;
 
-  const values = sorted.map(r => Number(r[numIdx])).filter(v => !isNaN(v));
+  const points = sorted.map(r => [String(r[dateIdx]), Number(r[numIdx])] as const).filter(([, v]) => !isNaN(v));
+  const values = points.map(([, v]) => v);
   if (values.length < 3) return null;
 
   const prev = values[values.length - 2];
@@ -98,7 +102,7 @@ export function seriesTrend(columns: string[], rows: (string | number | null)[][
   const lastDelta = prev !== 0 ? (last - prev) / Math.abs(prev) : null;
 
   const gran = detectGranularity(columns[dateIdx], sorted.map(r => r[dateIdx]));
-  return { values, lastDelta, periodLabel: PERIOD_LABEL[gran] ?? "vs prior" };
+  return { values, lastDelta, periodLabel: PERIOD_LABEL[gran] ?? "vs prior", dates: points.map(([d]) => d), gran };
 }
 
 // ── TrendStrip — sparkline + signed period delta ───────────────────────────────

@@ -185,7 +185,7 @@ def _named_by_the_user(value: float, said: str) -> bool:
     return any(_is_a_limit(n, [value]) for n in extract_numerals(said))
 
 
-def _made_from(card: Any) -> Optional[tuple[str, str]]:
+def made_from(card: Any) -> Optional[tuple[str, str]]:
     """The record a card was made from, as its provenance keeps it."""
     prov = card.provenance
     if prov.metric:
@@ -294,7 +294,7 @@ def _draft_cards(home: Home, schema: Optional[str], asked: Any,
         what = f'the {source.kind.replace("_", " ")} "{source.name}"'
         mine = _limit_key(limit)
         same = " with the same limit" if mine else ""
-        twins = [h for h in held_cards if _made_from(h) == (source.kind, source.name)
+        twins = [h for h in held_cards if made_from(h) == (source.kind, source.name)
                  or _query_key(h.sql) == _query_key(source.sql)]
         if twins and (not mine or any(_limit_key(h.thresholds) == mine for h in twins)):
             twin = next((h for h in twins if _limit_key(h.thresholds) == mine), twins[0])
@@ -504,7 +504,7 @@ def options(home: Home, schema: Optional[str] = None) -> dict:
         "cockpit": ({"version": live["version"], "spec": live["spec"]} if live else None),
         "cards_you_have": [{"id": c.id, "title": c.title, "kind": c.kind,
                             "has_limit": bool(_limit_key(c.thresholds)),
-                            **({"made_from": dict([_made_from(c)])} if _made_from(c) else {})}
+                            **({"made_from": dict([made_from(c)])} if made_from(c) else {})}
                            for c in _cards.cards_of(home)],
         "metrics": [{"metric": m.name, "label": m.label, "unit": m.unit or ""}
                     for m in metrics[:MAX_OFFERED]],

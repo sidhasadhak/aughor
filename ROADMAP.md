@@ -9668,6 +9668,29 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 > route changed. Web 1,372 tests and the seven gates; seen live on the scratch servers (the Payments cockpit drawn in
 > the tab, its figures as written; no Briefing request from opening it).
 
+> **Status 2026-09-28, last — the look of the mock.** The user, on the mock drawn at the study: *"See how neat this
+> is.. why isnt our cockpit like this?"*, then *"make the cockpit look like the mockup"*. The first cut drew every
+> card with the Briefing's `PinnedCardBody` unchanged (study §4.1), which is why it looked like a pinned card. A
+> cockpit now draws its own face (`web/components/cockpit/CockpitTile.tsx`); the law is unchanged — the figure is
+> the card's own run. **A figure** is written at the scale its metric's unit states, read by the Briefing's own
+> reader (`stated_range`, sent with each card by `GET /cockpits/{id}`, with what the card was made from and the
+> currency symbol); under it, how it moved against the window its range is compared with ("0.4 pts lower than
+> June"), its limit and whether it is past it, and at its foot what stands behind it (approved metric, trusted
+> query, finding, query). The move is green or red only where the card's limit says which way is bad. **A series**
+> is a line with its newest point labelled and its limit drawn across it. **A withheld card** is a tile that says
+> so. The doors (refresh, alert, evidence, take off) show on pointing. **The tab's header** is one period menu
+> that names the period as the server resolved it ("July 2026 · final"); the version line and Retire moved into
+> History. With ranges on, the tab opens on the latest complete month. **The comparison** is `POST
+> /cards/{id}/run?compare=true`: the card's SQL cut to the compared-with window exactly as it was cut to the range,
+> so the two differ only by their dates. It is at equal age only when the range is final — a cut does not bound a
+> cohort's outcomes the way a metric's own measurement does — and the tile says "not at equal age" before then. A
+> window with no figure says so; it is never a move from zero. Only the cockpit asks, so the Briefing's cards pay
+> for no second query; a cockpit read for a range runs two guarded queries per figure card instead of one.
+> **Not done:** the mock's note tile (a new element in the catalog, which is a vocabulary change) and its second
+> figure under the first ("of 6,951 items ordered" — a card has one figure). **Found on the data:** theLook's
+> `return_rate` states its unit as `ratio` alone, which states no range, so it reads 0.10 and not 10.0% — its
+> declaration, not the tile, is what would change that.
+
 > **Status 2026-09-28, the six repairs — at the user's word (*"fix the six faults"*).** Each fault the third run
 > found is repaired, and each repair was broken on purpose afterwards: 17 deliberate breaks, all caught. The
 > numerals law reads a range's unit on both ends and "percent" as a word; a limit is set only where the turn's own

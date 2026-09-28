@@ -149,6 +149,28 @@ def test_reading_writes_nothing(client, desk, on):
 
 
 @needs_rules
+def test_a_card_reads_with_the_record_it_was_made_from_and_its_metrics_unit(client, desk, on, monkeypatch):
+    """The cockpit draws a figure at the scale its metric's unit states — the Briefing's own
+    reading of it — and says what stands behind it."""
+    import types
+    rate = card_store.get_card(desk.rate)
+    card_store.upsert_card(rate.model_copy(update={"provenance": rate.provenance.model_copy(update={"metric": "item_return_rate"})}))
+    net = card_store.get_card(desk.net)
+    card_store.upsert_card(net.model_copy(update={"provenance": net.provenance.model_copy(
+        update={"receipt_ref": "trusted_query:tq1"})}))
+    monkeypatch.setattr("aughor.semantic.metrics.get_metric", lambda name, connection_id=None, **kw:
+                        types.SimpleNamespace(unit="ratio 0-1 (typically 0.10-0.40)") if name == "item_return_rate" else None)
+    client.put(desk.path, params=desk.q, json={"spec": desk.spec})
+    read = client.get(desk.path, params=desk.q).json()
+    by = {c["id"]: c for c in read["cards"]}
+    assert (by[desk.rate]["made_from"], by[desk.rate]["unit"], by[desk.rate]["stated_range"]) == (
+        "metric", "ratio 0-1 (typically 0.10-0.40)", {"kind": "ratio01", "lo": 0.0, "hi": 1.0})
+    assert (by[desk.net]["made_from"], by[desk.net]["unit"], by[desk.net]["stated_range"]) == ("trusted_query", "", None)
+    assert (by[desk.chart]["made_from"], by[desk.chart]["stated_range"]) == ("", None)
+    assert read["currency_symbol"] == "$"
+
+
+@needs_rules
 def test_a_range_needs_the_briefings_own_flag(client, on):
     desk = Desk(connection="thelook")
     client.put(desk.path, params=desk.q, json={"spec": desk.spec})
