@@ -47,6 +47,29 @@ beforeEach(() => {
   cockpit.mounts.length = 0;
 });
 
+describe("the header, when the row is short of room", () => {
+  // jsdom measures nothing, so this holds what the row is TOLD to do; that it does it was seen
+  // in a browser at 1176px, where a long name and four tabs had made the row wider than its
+  // box and the workspace slid sideways under the sidebar.
+  it("lets the canvas's name and the connection's badge give way, and nothing else", async () => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.composed": { value: true } });
+    show({ ...CANVAS, name: "E-Commerce Operations Overview" });
+    await waitFor(() => expect(tabs()).toContain("Cockpit"));
+
+    const name = screen.getByTestId("canvas-name");
+    expect(name).toHaveTextContent("E-Commerce Operations Overview");
+    expect(name).toHaveAttribute("title", "E-Commerce Operations Overview");     // the whole name, on hover
+    expect(name).toHaveStyle({ minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+    expect(name.parentElement).toHaveStyle({ minWidth: "64px", flexShrink: "1" });   // room for a word
+    // The connection's badge gives way first, and says the whole of itself on hover.
+    const badge = screen.getByTestId("canvas-connection");
+    expect(badge).toHaveStyle({ flexShrink: "3", minWidth: "56px", overflow: "hidden" });
+    expect(badge).toHaveAttribute("title", "theLook bigquery");
+    expect(badge).toHaveTextContent("theLookbigquery");
+    expect(screen.getByTestId("canvas-tabs")).toHaveStyle({ flexShrink: "0" });
+  });
+});
+
 describe("with the flag off", () => {
   it.each([
     ["absent from the flags", {}],

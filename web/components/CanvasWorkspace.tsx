@@ -738,7 +738,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             padding: "4px 8px", borderRadius: "var(--r2)",
             background: "none", border: "1px solid transparent",
             color: "var(--t3)", fontSize: 11, cursor: "pointer",
-            transition: "border-color .1s, color .1s",
+            transition: "border-color .1s, color .1s", flexShrink: 0,
           }}
           onMouseEnter={e => {
             (e.currentTarget as HTMLButtonElement).style.color = "var(--t1)";
@@ -755,10 +755,14 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
 
         <span style={{ color: "var(--t3)", fontSize: 15, lineHeight: 1, userSelect: "none" }}>/</span>
 
-        {/* Canvas icon + name */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {/* Canvas icon + name. The name and the connection's badge are the two parts of this
+            row that give way when it is short of room, the badge first: with a long name and
+            four tabs the row was wider than its box, and the whole workspace slid sideways
+            under the sidebar when a tab took focus (seen at 1176px, on the first install to
+            show the Cockpit tab). The name keeps room for a word. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 64, flexShrink: 1 }}>
           <div style={{
-            width: 22, height: 22, borderRadius: 3,
+            width: 22, height: 22, borderRadius: 3, flexShrink: 0,
             background: canvas.is_legacy
               ? "var(--bg-3)"
               : "color-mix(in srgb, var(--blue3) 18%, transparent)",
@@ -767,7 +771,10 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           }}>
             <Icon name="canvas" size={11} color={canvas.is_legacy ? "var(--t3)" : "var(--blue4)"} />
           </div>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap" }}>{canvas.name}</span>
+          <span data-testid="canvas-name" title={canvas.name} style={{
+            fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap",
+            minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
+          }}>{canvas.name}</span>
         </div>
 
         {/* Table count badge */}
@@ -780,7 +787,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           border: `1px solid ${tableCount === 0
             ? "color-mix(in srgb, var(--grn3) 25%, transparent)"
             : "var(--b1)"}`,
-          fontSize: 11,
+          fontSize: 11, flexShrink: 0, whiteSpace: "nowrap",
           color: tableCount === 0 ? "var(--grn4)" : "var(--t3)",
         }}>
           {tableCount === 0 ? "All tables" : `${tableCount} table${tableCount !== 1 ? "s" : ""}`}
@@ -792,11 +799,14 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             display: "inline-flex", alignItems: "center", gap: 4,
             padding: "2px 7px", borderRadius: 3,
             background: "var(--bg-3)", border: "1px solid var(--b1)",
-            fontSize: 11, color: "var(--t3)",
-          }}>
+            fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap",
+            flexShrink: 3, minWidth: 56, overflow: "hidden",
+          }} data-testid="canvas-connection" title={`${connection.name}${connLabel ? ` ${connLabel}` : ""}`}>
             <Icon name="db" size={10} color="var(--t3)" />
-            {connection.name}
-            {connLabel && <span style={{ color: "var(--t3)" }}>{connLabel}</span>}
+            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+              {connection.name}
+              {connLabel && <span style={{ color: "var(--t3)", marginLeft: 4 }}>{connLabel}</span>}
+            </span>
           </span>
         )}
 
@@ -808,7 +818,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             exactly like the Chat tab, so the two read as duplicates. Starting a FRESH
             conversation now lives as the compact "+" beside them — a distinct create action,
             not a second "go to chat". */}
-        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+        <div data-testid="canvas-tabs" style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
           <TabPill icon="chat"   label="Chat"      active={wsTab === "chat"}      onClick={() => { setWsTab("chat"); setOpenInvId(null); }} />
           <TabPill icon="clock"  label="History"   active={wsTab === "history"}   onClick={() => { setWsTab("history"); setOpenInvId(null); }} />
           <TabPill icon="table"  label="Artifacts" active={wsTab === "artifacts"} onClick={() => setWsTab("artifacts")} />
