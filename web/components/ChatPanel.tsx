@@ -1115,7 +1115,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
            pane there is nowhere for it to go and the top becomes unreachable. The scroller
            owns the overflow and the child centres itself with `my-auto`, so a short screen
            still sits centred and a long one scrolls. */
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-10">
+        /* Its ground is the composer's own (--bg-3), at the user's word, 2026-09-28. */
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-10" style={{ background: "var(--bg-3)" }}>
           <div className="w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] my-auto flex flex-col gap-5">
 
             {capabilities}
