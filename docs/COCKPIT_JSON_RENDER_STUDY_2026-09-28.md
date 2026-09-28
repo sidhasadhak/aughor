@@ -542,3 +542,53 @@ test, and they have not been run.
 
 Also as before: one model and one canvas; the door paused asks 6 and 8 to ask for a metric
 and a period; nothing was approved, so no cockpit a model drafted has been drawn.
+
+## 14 · Ten asks nobody had seen (2026-09-28)
+
+The user chose to run them, through the question tool. Same canvas (`d617964b`), same model
+(`deepseek/deepseek-v4.1-flash`), shadow off for the run. The asks were written before the run
+and not changed after it (`ct5c_asks.py` in the session's scratchpad). Five ask for a new
+cockpit. Five edit the one that stood: the user had approved "Executive Cockpit" (12 cards,
+four tabs) at 15:14.
+
+| # | the ask, in short | first draft | by hand |
+|---|---|---|---|
+| 1 | a morning board: are orders shipping and arriving | staged (as an edit) | a Shipping tab; a second lead-time card beside the first |
+| 2 | move return rate onto Sales, after revenue | staged | exactly |
+| 3 | lay out a customer view | none | read as a question; the answer was withheld, its figures not in its rows |
+| 4 | take the margin chart off | staged | exactly |
+| 5 | a category dashboard | refused, then staged | totals, not categories; limits nobody asked for; replaces the cockpit |
+| 6 | rename Operations to Fulfilment, lead time last | staged | exactly |
+| 7 | a finance view, warn under 45 | staged | a Finance tab, limit at or below 45; a second Revenue card |
+| 8 | merge Customers and Operations into Health | staged | exactly |
+| 9 | a marketing cockpit on traffic sources | staged | two findings of the canvas and its conversion card; replaces the cockpit |
+| 10 | repeat purchase only once the range is final | staged | exactly |
+
+**Falsifier (2) holds: 8 of 9 first drafts passed.** `options` came first in all nine. The one
+refusal named `pinned__2`, which `list_findings` had listed: that tool lists the connection's
+findings, and a cockpit takes only the canvas's. 62 model calls, 847,529 tokens in and 48,094
+out, 689 seconds. Three turns ran to the step ceiling, each after running queries before it
+drafted.
+
+**The user approved asks 7 and 10 during the run** (versions 2 and 3). The Finance tab
+draws "Limit: at or below 45 · no alert is set". In the view as written, with no range
+chosen, the Customers tab says "1 card waits on a condition".
+
+### What passing validation did not catch
+
+- **The numerals law read "11-12%" as "12%".** Ask 5's reasoning said every category "sits near
+  11-12%". The 12 matched the draft's limit and the 11 was not read as a figure.
+- **A limit nobody named.** Ask 5 set 12% on two return cards; the person named none. The
+  second run's repair lets the reasoning name a limit the draft sets. It was written for a
+  limit the person asked for, and it licenses one the model chose from a measurement.
+- **A card for a metric already shown.** Ask 1 placed a new lead-time card beside the canvas's
+  own; ask 7 made a second Revenue card rather than place the first.
+- **A new cockpit replaces the standing one whole.** Asks 5 and 9 would take off 9 and 12
+  cards. The approval card lists them; the chat did not say it.
+- **An ask a cockpit cannot answer.** "Which categories sell best" cannot be a card of a total,
+  and the draft did not say so. The turn's last words were a list of bare numbers.
+
+### Not measured
+
+One model, one canvas. Each edit was drafted against the version standing when it was asked,
+not a fixed one: asks 8 to 10 were made against version 2.
