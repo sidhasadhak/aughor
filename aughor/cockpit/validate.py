@@ -33,7 +33,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from aughor.explorer.grounding import extract_numerals
 from aughor.kernel.errors import tolerate
@@ -149,17 +149,36 @@ def apply_patches(spec: Any, patches: Any) -> Edited:
     return Edited(ACCEPTED, spec=out["spec"])
 
 
-def stated_figures(text: str) -> list[str]:
+def stated_numerals(text: str) -> list:
     """The figures a piece of reader text states, by the numerals law's own reading
     (``explorer/grounding.py``): a magnitude or a percentage. A year, a rank and a small count
     are not claims about the data, there as here."""
-    return [n.text for n in extract_numerals(text) if n.enforce or n.suffix == "%"]
+    return [n for n in extract_numerals(text) if n.enforce or n.suffix == "%"]
 
 
-def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = True) -> SpecVerdict:
+def stated_figures(text: str) -> list[str]:
+    """:func:`stated_numerals`, as the reader saw them written."""
+    return [n.text for n in stated_numerals(text)]
+
+
+def unknown_card(name: str, how: str) -> str:
+    """What is said of a card a spec names and the canvas does not hold. ``how`` is "placed"
+    or "read" — a ``Card`` places it, or a condition reads its status."""
+    if how == "read":
+        return f'A condition reads the status of the card "{name}", which this canvas does not hold.'
+    return f'The cockpit places the card "{name}", which this canvas does not hold.'
+
+
+def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = True,
+               say_unknown: Optional[Callable[[str, str], str]] = None) -> SpecVerdict:
     """Accept ``spec`` whole or refuse it whole. ``known_cards`` are the ids of the cards this
     canvas holds, plus any the same proposal is about to create. ``model_written`` says whose
-    words the titles are: a model's are held to the numerals law, a person's are their own."""
+    words the titles are: a model's are held to the numerals law, a person's are their own.
+
+    ``say_unknown`` writes the sentence for a card the canvas does not hold. The default is
+    for a spec a person hands in. A draft has more to say — what it does create, and how the
+    card could be created — and says it itself (``aughor/cockpit/propose.py``)."""
+    say_unknown = say_unknown or unknown_card
     try:
         json.dumps(spec)
     except (TypeError, ValueError) as exc:
@@ -179,26 +198,24 @@ def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = T
         # after repairing everything else.
         said = [str(i.get("message", "")) for i in issues if isinstance(i, dict)]
         seen = out.get("seen") if isinstance(out.get("seen"), dict) else {}
-        said += _platform_says(seen, known, model_written)
+        said += _platform_says(seen, known, model_written, say_unknown)
         return SpecVerdict(REFUSED, tuple(said) or ("The rules refused the spec and gave no reason.",))
 
-    sentences = _platform_says(out, known, model_written)
+    sentences = _platform_says(out, known, model_written, say_unknown)
     if sentences:
         return SpecVerdict(REFUSED, tuple(sentences))
     return SpecVerdict(ACCEPTED, (), tuple(str(c) for c in out.get("cards") or []))
 
 
-def _platform_says(read: dict, known: set[str], model_written: bool) -> list[str]:
+def _platform_says(read: dict, known: set[str], model_written: bool,
+                   say_unknown: Callable[[str, str], str]) -> list[str]:
     """What only the platform knows of what the rules read: a card the canvas does not hold,
     and — of text a model wrote — a title that states a figure."""
-    sentences: list[str] = []
-    for card in read.get("cards") or []:
-        if str(card) not in known:
-            sentences.append(f'The cockpit places the card "{card}", which this canvas does not hold.')
-    for card in read.get("stateCards") or []:
-        if str(card) not in known:
-            sentences.append(
-                f'A condition reads the status of the card "{card}", which this canvas does not hold.')
+    # A caller's `say_unknown` may answer "" for a card it has already spoken of.
+    said = [say_unknown(str(card), "placed") for card in read.get("cards") or [] if str(card) not in known]
+    said += [say_unknown(str(card), "read") for card in read.get("stateCards") or []
+             if str(card) not in known]
+    sentences: list[str] = [s for s in said if s]
     for t in (read.get("texts") or []) if model_written else []:
         text = str(t.get("text", ""))
         figures = stated_figures(text)
@@ -210,10 +227,11 @@ def _platform_says(read: dict, known: set[str], model_written: bool) -> list[str
 
 
 def check_spec_for_canvas(spec: Any, canvas_id: str, *, also_known: Iterable[str] = (),
-                          model_written: bool = True) -> SpecVerdict:
+                          model_written: bool = True,
+                          say_unknown: Optional[Callable[[str, str], str]] = None) -> SpecVerdict:
     """:func:`check_spec` against the cards this canvas holds in the card store.
     ``also_known`` names the cards the same proposal will create on approval."""
     from aughor.dashboard.store import list_cards
     held = {c.id for c in list_cards(scope="canvas", scope_ref=canvas_id)}
     return check_spec(spec, known_cards=held | {str(c) for c in also_known},
-                      model_written=model_written)
+                      model_written=model_written, say_unknown=say_unknown)

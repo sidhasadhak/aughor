@@ -22,6 +22,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from aughor.agent.tool_loop import ToolSpec
+from aughor.cockpit.propose import MAX_NEW_CARDS
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +59,11 @@ _PARAMS = {
         "op": {"type": "string", "enum": ["options", "new", "edit"], "description": (
             "options: what a cockpit here may be made of, the cockpit as it stands, and how one is written. "
             "new: draft a whole cockpit. edit: draft a change to the one that stands.")},
-        "cards": {"type": "array", "items": _CARD, "description": (
-            "new or edit: the cards to CREATE, each made from exactly one of metric, trusted_query or finding. "
-            "A card the canvas already holds is not listed here; the spec places it by its id.")},
+        "cards": {"type": "array", "items": _CARD, "maxItems": MAX_NEW_CARDS, "description": (
+            f"new or edit: the cards to CREATE, at most {MAX_NEW_CARDS} to a draft, each made from exactly one "
+            "of metric, trusted_query or finding. Every name the spec places that is not the id of a card the "
+            "canvas holds must be listed here. A card the canvas already holds is not listed; the spec places "
+            "it by its id.")},
         "spec": {"type": "object", "description": "new: the whole cockpit, as options describes it."},
         "patches": {"type": "array", "items": {"type": "object"}, "description": (
             "edit: RFC 6902 operations against the cockpit as it stands.")},

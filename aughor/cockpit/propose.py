@@ -60,6 +60,22 @@ MAX_OFFERED = 40
 MODE_NEW = "new"
 MODE_EDIT = "edit"
 
+#: What a writer is told of drafting, beside the grammar of the spec. Each sentence is here
+#: because the receipt by a model (the study's §12) found a first draft refused for want of it.
+HOW_TO_DRAFT = (
+    'To draft: call again with op "new" and the whole spec, or op "edit" and operations against the '
+    "cockpit above. "
+    'A card is CREATED by listing it in "cards", under a name of your own and with the one record it is '
+    'made from, for example {"key": "return-rate", "metric": "return_rate"}. It is PLACED by that same '
+    'name, {"type": "Card", "props": {"card": "return-rate"}}, and a condition reads it by that name too, '
+    '"/cards/return-rate/status". A name the spec places and "cards" does not list is refused, unless it '
+    "is the id of a card the canvas already holds. "
+    f"A draft creates at most {MAX_NEW_CARDS} cards, because each is run before the draft is offered; "
+    "choose the ones that matter most, and say that more can follow in an edit. "
+    'A limit the user named goes on the card, as "limit". Leave "visible" out of an element that is '
+    "always shown."
+)
+
 _KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 _CARD_STATUS = re.compile(r"^/cards/([A-Za-z0-9_-]{1,64})/status$")
 _DIRECTIONS = ("above", "below")
@@ -411,10 +427,12 @@ def options(connection_id: str, canvas_id: str) -> dict:
         "not_shown": {"metrics": max(0, len(metrics) - MAX_OFFERED),
                       "trusted_queries": max(0, len(trusted) - MAX_OFFERED),
                       "findings": max(0, len(findings) - MAX_OFFERED)},
+        # What a draft may not exceed, beside the spec's own limits (which the grammar gives).
+        # The receipt by a model found this cap stated nowhere a writer reads: two of ten
+        # first drafts made 19 and 17 cards against it.
+        "limits": {"new_cards": MAX_NEW_CARDS},
         "how_to_write_one": text,
-        "summary": ("To draft: call again with op \"new\" (the whole spec) or op \"edit\" (operations against "
-                    "the cockpit above). Create a card by naming what it is made from; place it in the spec by "
-                    "the name you gave it. Place a card the canvas already holds by its id."),
+        "summary": HOW_TO_DRAFT,
     }
 
 
@@ -464,11 +482,15 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
 
     # The reasoning is a model's text, and it is read twice: by the person approving, on the
     # card, and by whoever later reads the cockpit's history, where it is the version's note.
+    # It states no figure — but a limit the draft sets is a setting a person asked for and
+    # approves on the same card, not a measurement, and the reasoning may name it.
     reasoning = (reasoning or "").strip()[:400]
-    figures = _validate.stated_figures(reasoning)
+    figures = [n.text for n in _validate.stated_numerals(reasoning)
+               if not _is_a_limit(n, _limits_asked(cards))]
     if figures:
         refusals.append(f'The reasoning states a figure ({", ".join(figures)}). Say why the cockpit is '
-                        "arranged this way; a figure is a card's to show, where it is measured.")
+                        "arranged this way; a figure is a card's to show, where it is measured. "
+                        "A limit this draft sets on a card may be named.")
 
     if mode == MODE_EDIT:
         if live is None:
@@ -502,7 +524,8 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
         # sentence for a fault already told in its own.
         refused_names = named - set(ids)
         verdict = _validate.check_spec_for_canvas(
-            final, canvas_id, also_known=[*ids.values(), *refused_names])
+            final, canvas_id, also_known=[*ids.values(), *refused_names],
+            say_unknown=_undeclared(connection_id, canvas, named))
         if verdict.status == _validate.NOT_CHECKED:
             return Drafted(refusals=verdict.sentences, not_checked=True)
         if not verdict.accepted:
@@ -552,6 +575,76 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
         params=params, detail=detail, reasoning=reasoning,
         proposer="cockpit", source="agent"))
     return Drafted(proposal=p, replaced=_retire_pending(connection_id, canvas_id, p.id))
+
+
+def _limits_asked(cards: Any) -> list[float]:
+    """Every limit the draft asks to set, as written — on a card that is made or on one that
+    is refused: the reasoning is judged by what the draft says, not by what became of it."""
+    out: list[float] = []
+    for card in cards if isinstance(cards, list) else []:
+        limit = card.get("limit") if isinstance(card, dict) else None
+        for name in ("warning", "critical"):
+            value = limit.get(name) if isinstance(limit, dict) else None
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                out.append(float(value))
+    return out
+
+
+def _is_a_limit(numeral: Any, limits: list[float]) -> bool:
+    """Whether a figure in the reasoning is one of the draft's own limits. "12%" names a limit
+    of 12 and a limit of 0.12 alike: which of the two a metric's unit calls for is the
+    writer's to get right on the card, and either way the figure is the limit and no
+    measurement."""
+    readings = (numeral.value, numeral.value / 100.0, numeral.value * 100.0)
+    return any(abs(r - limit) <= 1e-9 * max(1.0, abs(limit)) for r in readings for limit in limits)
+
+
+def _undeclared(conn_id: str, canvas, named: set[str]):
+    """The sentence for a name a DRAFT places, or reads, that is no card of the canvas and none
+    the draft creates. The default sentence says the canvas does not hold it, which is true and
+    does not say the repair; three drafts of the receipt by a model were refused for this, and
+    the writer had to work out for itself that the name belonged in "cards"."""
+    offered: dict[str, tuple[str, str]] = {}
+    told: set[str] = set()
+
+    def records() -> dict[str, tuple[str, str]]:
+        if not offered:
+            from aughor.explorer.store import canvas_findings
+            from aughor.semantic.metrics import list_metrics
+            from aughor.semantic.trusted_queries import list_trusted
+            for f in canvas_findings(canvas.id):
+                if (f.get("sql") or "").strip():
+                    offered[str(f.get("id") or "").lower()] = (FROM_FINDING, str(f.get("id") or ""))
+            for t in list_trusted(conn_id):
+                offered[t.id.lower()] = (FROM_TRUSTED, t.id)
+            for m in list_metrics(connection_id=conn_id):
+                if m.status == "approved":
+                    offered[m.name.lower()] = (FROM_METRIC, m.name)
+            offered[""] = ("", "")                 # read once, even when nothing is offered
+        return offered
+
+    def say(name: str, how: str) -> str:
+        if name in told:
+            return ""               # placed and read: one missing card, told once, with its repair
+        told.add(name)
+        does = "places the card" if how == "placed" else "reads the status of the card"
+        said = (f'The cockpit {does} "{name}". No card of this canvas has that id, and the draft '
+                "creates none of that name.")
+        kind, record = records().get(name.lower().replace("-", "_"), records().get(name.lower(), ("", "")))
+        if kind and _KEY.match(name):
+            said += (f' "{record}" is {_A[kind]}: to make a card from it, add '
+                     f'{{"key": "{name}", "{kind}": "{record}"}} to "cards".')
+        else:
+            said += (f' To create it, add it to "cards" with "key": "{name}" and the one record it is '
+                     f'made from ({", ".join(SOURCES)}).')
+        if named:
+            said += f' The draft creates: {", ".join(sorted(named))}.'
+        return said
+
+    return say
+
+
+_A = {FROM_METRIC: "an approved metric", FROM_TRUSTED: "a trusted query", FROM_FINDING: "a finding of this canvas"}
 
 
 def _as_written(sentence: str, ids: dict[str, str]) -> str:

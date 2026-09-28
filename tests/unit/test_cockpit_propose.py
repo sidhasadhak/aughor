@@ -501,11 +501,57 @@ def test_a_spec_the_rules_refuse_is_refused_in_the_rules_own_words(desk):
     assert 'The element "c-net" carries "on". A cockpit defines no action of its own' in refused(desk, spec=spec)
 
 
-def test_a_card_the_canvas_does_not_hold(desk):
+def test_a_name_the_draft_never_declared_is_refused_with_its_repair(desk):
+    """Three drafts of the receipt by a model were refused for this, in words that said the
+    canvas did not hold the card and not that the name belonged in "cards"."""
     spec = desk.spec()
     spec["elements"]["c-net"]["props"] = {"card": "ghost"}
     del spec["elements"]["c-net"]["visible"]
-    assert refused(desk, spec=spec) == 'The cockpit places the card "ghost", which this canvas does not hold.'
+    assert refused(desk, spec=spec) == (
+        'The cockpit places the card "ghost". No card of this canvas has that id, and the draft creates '
+        'none of that name. To create it, add it to "cards" with "key": "ghost" and the one record it is '
+        "made from (metric, trusted_query, finding). "
+        "The draft creates: by-category, first-week, return-rate.")
+
+
+def test_a_name_that_is_a_record_is_told_how_to_become_a_card(desk):
+    """What the model did on the receipt: it placed the METRIC's name, and declared no card."""
+    spec = desk.spec()
+    spec["elements"]["c-net"]["props"] = {"card": desk.metric}
+    spec["elements"]["c-net"]["visible"] = {"$state": f"/cards/{desk.metric}/status", "neq": "withheld"}
+    spec["elements"]["c-cat"]["props"] = {"card": desk.trusted}
+    spec["elements"]["c-week"]["props"] = {"card": desk.finding}
+    text = refused(desk, spec=spec, cards=[{"key": "return-rate", "metric": desk.metric}])
+    assert (f'The cockpit places the card "{desk.metric}". No card of this canvas has that id, and the draft '
+            f'creates none of that name. "{desk.metric}" is an approved metric: to make a card from it, add '
+            f'{{"key": "{desk.metric}", "metric": "{desk.metric}"}} to "cards". The draft creates: return-rate.') in text
+    assert f'"{desk.trusted}" is a trusted query: to make a card from it, add {{"key": "{desk.trusted}", "trusted_query": "{desk.trusted}"}}' in text
+    assert f'"{desk.finding}" is a finding of this canvas: to make a card from it' in text
+    # It is placed and its status is read: one missing card, told once.
+    assert text.count(f'the card "{desk.metric}"') == 1
+    assert "reads the status" not in text
+    # A draft metric is not offered as the repair: it could not make a card.
+    draft = refused(desk, spec={**spec, "elements": {**spec["elements"], "c-net": {
+        "type": "Card", "props": {"card": desk.draft_metric}, "children": []}}},
+        cards=[{"key": "return-rate", "metric": desk.metric}])
+    assert f'"{desk.draft_metric}" is an approved metric' not in draft
+    assert f'add it to "cards" with "key": "{desk.draft_metric}"' in draft
+
+
+def test_a_status_read_of_a_card_nobody_made(desk):
+    spec = desk.spec()
+    spec["elements"]["c-net"]["visible"] = {"$state": "/cards/phantom/status", "eq": "over"}
+    text = refused(desk, spec=spec)
+    assert text.startswith('The cockpit reads the status of the card "phantom". No card of this canvas has that id')
+
+
+def test_the_same_spec_from_a_person_is_refused_in_the_plain_words(desk):
+    """The repair a draft is told is a draft's. A person who hands in a spec is told what is so."""
+    spec = desk.spec()
+    out = versions.keep(desk.id, spec, approved_by="user1", source="a person's own hand",
+                        written_by_model=False)
+    assert 'The cockpit places the card "return-rate", which this canvas does not hold.' in out.sentences
+    assert 'A condition reads the status of the card "return-rate", which this canvas does not hold.' in out.sentences
 
 
 def test_a_title_that_states_a_figure(desk):
@@ -518,10 +564,61 @@ def test_the_reasoning_is_a_models_text_and_states_no_figure(desk):
     """It is shown to the person approving, and kept as the version's note in the history."""
     text = refused(desk, reasoning="The return rate is 10.03%, so its alert comes first.")
     assert text == ("The reasoning states a figure (10.03%). Say why the cockpit is arranged this way; "
-                    "a figure is a card's to show, where it is measured.")
+                    "a figure is a card's to show, where it is measured. "
+                    "A limit this draft sets on a card may be named.")
     # A year, a rank and a small count are not claims about the data, here as at the departure gate.
     assert staged(desk, reasoning="Three tabs, as asked in 2026: alerts first.").reasoning \
         == "Three tabs, as asked in 2026: alerts first."
+
+
+@pytest.mark.parametrize("limit,reasoning", [
+    ({"critical": 12, "direction": "above"}, "An alert when the return rate goes above 12%, as asked."),
+    ({"critical": 12, "direction": "above"}, "An alert when the return rate goes above 12, as asked."),
+    ({"warning": 0.12, "direction": "above"}, "An alert when the return rate goes above 12%, as asked."),
+    ({"warning": 10, "critical": 12.5}, "A warning at 10% and an alert at 12.5%."),
+])
+def test_the_reasoning_may_name_a_limit_the_draft_sets(desk, limit, reasoning):
+    """The person asked for the limit and approves it on the same card: it is a setting, not a
+    measurement. Two of ten first drafts on the receipt were refused for repeating it."""
+    draft_cards = desk.cards()
+    draft_cards[0] = {"key": "return-rate", "metric": desk.metric, "limit": limit}
+    assert staged(desk, cards=draft_cards, reasoning=reasoning).reasoning == reasoning
+
+
+def test_a_figure_that_is_no_limit_of_the_draft_is_still_a_figure(desk):
+    draft_cards = desk.cards()                                     # the limit is 12
+    text = refused(desk, cards=draft_cards,
+                   reasoning="An alert above 12%: the rate is 10.03% today and was 9% a year ago.")
+    assert "The reasoning states a figure (10.03%, 9%)." in text
+    # A limit on a card the draft could NOT make is still the draft's limit: one fault, told once.
+    draft_cards[0] = {"key": "return-rate", "metric": desk.draft_metric, "limit": {"critical": 12}}
+    text = refused(desk, cards=draft_cards, reasoning="An alert above 12%.")
+    assert "states a figure" not in text and "is draft" in text
+    # …and with no limit set at all, 12% is a figure like any other.
+    assert "The reasoning states a figure (12%)." in refused(
+        desk, cards=[{"key": "return-rate", "metric": desk.metric}, *desk.cards()[1:]],
+        reasoning="An alert above 12%.")
+
+
+def test_the_writer_is_told_how_many_cards_a_draft_may_make(desk, on):
+    """The cap was in the code and in no text a writer reads; two of ten first drafts on the
+    receipt made 19 and 17 cards against it."""
+    out = propose.options(CONN, desk.id)
+    assert out["limits"] == {"new_cards": propose.MAX_NEW_CARDS}
+    assert f"A draft creates at most {propose.MAX_NEW_CARDS} cards" in out["summary"]
+    assert '{"key": "return-rate", "metric": "return_rate"}' in out["summary"]
+    assert 'A name the spec places and "cards" does not list is refused' in out["summary"]
+    tool = cockpit_tools(CONN, emit=lambda k, p: None, canvas_id=desk.id)[0]
+    listed = tool.parameters["properties"]["cards"]
+    assert listed["maxItems"] == propose.MAX_NEW_CARDS
+    assert f"at most {propose.MAX_NEW_CARDS} to a draft" in listed["description"]
+    # The example it is shown is one the rules and the draft accept, with its names as written.
+    spec = {"root": "c", "elements": {
+        "c": {"type": "Cockpit", "props": {"title": "Returns"}, "children": ["s"]},
+        "s": {"type": "Section", "props": {"title": "Headline"}, "children": ["k"],
+              "visible": {"$state": "/cards/return-rate/status", "neq": "withheld"}},
+        "k": {"type": "Card", "props": {"card": "return-rate"}, "children": []}}}
+    assert staged(desk, spec=spec, cards=[{"key": "return-rate", "metric": desk.metric}])
 
 
 def test_a_refusal_names_everything_in_one_round(desk, warehouse):
@@ -540,8 +637,8 @@ def test_a_refusal_names_everything_in_one_round(desk, warehouse):
     assert 'The card "first-week" carries sql.' in text
     assert '"alert" has a problem with "tone"' in text
     assert 'tab "tab-detail" holds "c-net". A Tab holds: Section' in text
-    # A card that was refused is not ALSO called a card the canvas does not hold.
-    assert "does not hold" not in text
+    # A card that was refused is not ALSO called a card nobody made.
+    assert "No card of this canvas" not in text
     # The card that could be made was still run, so a fault in it would have been told too.
     assert [q for q, _ in warehouse.ran] == ["cockpit-draft:return-rate"]
 
@@ -567,10 +664,10 @@ def test_what_only_the_platform_knows_is_told_in_the_same_refusal_as_the_rules(d
     text = refused(desk, spec=spec)
     assert 'The element "c-rate" carries "on".' in text
     assert 'reads "Returns up 14%", which states a figure (14%)' in text
-    assert 'The cockpit places the card "ghost", which this canvas does not hold.' in text
-    assert 'A condition reads the status of the card "phantom", which this canvas does not hold.' in text
-    # …and the cards the draft does make are not among the ones it is said not to hold.
-    assert text.count("does not hold") == 2
+    assert 'The cockpit places the card "ghost". No card of this canvas has that id' in text
+    assert 'The cockpit reads the status of the card "phantom". No card of this canvas has that id' in text
+    # …and the cards the draft does make are not among the ones it is said not to have.
+    assert text.count("No card of this canvas has that id") == 2
 
 
 def test_a_prop_the_rules_refused_is_not_told_again_by_the_platform(desk):
@@ -578,7 +675,7 @@ def test_a_prop_the_rules_refused_is_not_told_again_by_the_platform(desk):
     spec["elements"]["c-net"]["props"] = {"card": "not an id!"}
     text = refused(desk, spec=spec)
     assert '"c-net" has a problem with "card"' in text
-    assert "does not hold" not in text
+    assert "No card of this canvas" not in text
 
 
 def test_a_refusal_speaks_in_the_names_the_writer_gave(desk):
