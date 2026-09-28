@@ -14,7 +14,7 @@ claim rots silently. If measuring shows an item was already done, tick it and sa
 
 ---
 
-## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON; 16–31 added 2026-09-24; 32–37 added 2026-09-25 from Arc TJ, unranked against the rest; 38–45 added 2026-09-26 from Arc BR, likewise unranked)
+## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON; 16–31 added 2026-09-24; 32–37 added 2026-09-25 from Arc TJ, unranked against the rest; 38–45 added 2026-09-26 from Arc BR, likewise unranked; 48 added 2026-09-28 from Arc CT, likewise unranked)
 
 Ranked by how many answers or people each one improves, and whether it unblocks others.
 Items 11–15 were drawn from the ontology arc at the user's direction ("an important part of the core engine") and are
@@ -97,11 +97,25 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
 46. [x] **The whole page adheres to the range** (BR-9, §3.48) — the user, 2026-09-26, on a screenshot of the Week view: *"I see only a few parts changing and not the whole briefing.. the whole briefing page needs to adhere to the range selected.. otherwise its quite useless"*. Measured: under "Week" only the hero and the synthesis table re-measure (Units Sold, by §3.27's trend query); the Key Metrics row (Return Rate 10.0%, Gross Margin 51.9%, Sales Volume by Category), the findings list ("ranked by novelty") and the cockpit are the explorer's all-history findings and carry no label saying so — BR-3's own falsifier fires. theLook's three metrics declare no date column, so BR-2's compiler has nothing to measure Return Rate for a month with. The wave: every figure under a range heading is measured for the range or says "all history" (a day, first); Key Metrics from approved metrics that know their dates (BR-2's rule run, a person correcting; `return_rate` is still a draft); BR-7 un-paused — findings keep their cell, are re-asked for the range and re-ranked by the scorecard the page already has (impact, else novelty); the cockpit scoped. *A day for the labels; then BR-7's week; then the re-rank.* *Built and **merged 2026-09-26 · #553** (`c4d058c5`) — every part under a range heading says what it covers.*
 
 47. [ ] **The gate map — every input and output through a declared door** (Arc GM, §3.49, ✅ ADOPTED 2026-09-26 as §6 item 35; `docs/GATE_MAP_STUDY_2026-09-26.md`) — the user, 2026-09-26: *"which of the inputs and outputs go through which of the gates … is the unique selling point"*. Measured: 150 warehouse SQL sites, ~40 send DuckDB-quoted platform SQL as written (fails or lies on BigQuery/Snowflake/MySQL/Exasol); the join value-domain guards, the grain probe, the snapshot signature and the ambiguity probes fail OPEN on native engines; eleven audit gaps by label; two dead doors (EXPLAIN, SUMMARIZE refused by the validator). GM-1 the door owns the dialect → GM-2 census ratchet → GM-3 doors as a receipt → GM-4 a guard that cannot run says so → GM-5 audit by what the statement is. *About a week.*
+
+48. [ ] ⚑ **A cockpit you ask for** (Arc CT, §3.50, ✅ ADOPTED 2026-09-28 as §6 item 36; `docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md`) — the user, 2026-09-28, on `vercel-labs/json-render`: *"it needs to be full extension version with (sections, tabs, conditional tiles)"*. Measured: the cockpit exists as the Briefing's standing layer, one per connection per person and unnamed; the server stores cards by canvas and no screen asks; the Data Canvas has three tabs and no cards; the library is 0.21.0, fits the web's React, draws no charts of its own (cards stay on Vega), and was read, not run. CT-1 the premise, run → CT-2 the catalog and the validator → CT-3 kept as versions → CT-4 the Cockpit tab → CT-5 ask for it → CT-6 out by other doors, on its trigger. ⚑ CT-1 waits on the user's yes to the dependency; ⚑ CT-5's receipt on their yes to its model calls. *About nine days to CT-5.*
 Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
 ---
 
 ## Everything pending, by arc
+
+### The composed cockpit — Arc CT (§3.50; drafted and adopted 2026-09-28, §6 item 36; clauses (d) and (f) open)
+- [x] CT-0 the survey — measured 2026-09-28 on `main` at `1913fd8d`, read-only; [docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md](docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md). The library was read, not run.
+- [ ] ⚑ CT-1 the premise, run — see top item 48; waits on §6 item 36(d), the dependency.
+- [ ] CT-2 the catalog and the validator, one home — five components; refused whole, with sentences; "cockpit", "card" and "section" entered in the glossary.
+- [ ] CT-3 kept as versions — a Ledger artifact per canvas; cards at canvas scope.
+- [ ] CT-4 the Cockpit tab — the Data Canvas's fourth tab, behind `cockpit.composed`, off by default.
+- [ ] ⚑ CT-5 ask for it — one proposal, approved all or nothing; edits as patches; the receipt spends model calls (§6 item 36(f)).
+- [ ] CT-6 out by other doors — named, not scheduled; on its trigger.
+- [x] §6 item 36 — adopted as drafted 2026-09-28 (the user: *"Adopt the Arc CT and commit locally"*); clauses (a), (b), (c), (e) and (g) decided.
+- [ ] ⚑ §6 item 36(d) — the user's yes to installing the library, asked when CT-1 starts.
+- [ ] ⚑ §6 item 36(f) — the user's yes to the model calls of CT-5's receipt.
 
 ### Briefing — Arc BR (§3.48; drafted 2026-09-26, §6 item 34 open)
 - [x] BR-0 the survey — measured 2026-09-25 (UTC), read-only; the rows that corrected standing prose are recorded in §3.48, with pointers at the ends of §3.23 and §3.27.

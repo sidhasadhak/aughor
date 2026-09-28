@@ -9634,6 +9634,72 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36)
+
+> **Origin.** The user, with `vercel-labs/json-render` on screen: *"Where can use this? Be a little open to ideas
+> here.. and some wild but relevant use cases.."* On the first mock, a plain grid: *"it needs to be full extension
+> version with (sections, tabs, conditional tiles)"*. Then *"But will this use Vega that we have in place already ?"*
+> and *"Lets study and add it to the roadmap."* The study is `docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md`: what the
+> library is, seventeen rows of what is already here, what §3.11 allows and refuses, the design, the eleven other
+> ideas and what became of each, and what was not measured.
+
+> **The survey (CT-0), taken before the arc was written, on `main` at `1913fd8d`.**
+> - **The cockpit exists and has no name.** It is the Briefing's standing layer; its arrangement is keyed on
+>   connection and user (`dashboard/store.py`), so there is exactly one per connection per person.
+> - **The canvas cockpit is half-built and unused.** `list_cards` takes a canvas scope; all five call sites in the
+>   web pass `scope: "connection"`. The Data Canvas has three tabs, no cards and no range control.
+> - **Charts stay on Vega.** A card draws through `PinnedCardBody` → `ResultChartCard` → `Chart` → `VegaChart`; the
+>   library has no chart engine and no other chart library is imported in the web source.
+> - **The spec needs no new store.** The Ledger's versioned artifacts (`artifact_write`, which takes a `canvas_id`)
+>   already keep the Briefing's versions (BR-6).
+> - **The library** is `0.21.0`, Apache-2.0, first published 2026-01-14, pre-1.0. Its React peer is `^19.2.3` (the
+>   web runs 19.2.4) and its Zod peer is `^4` (the lockfile holds 4.4.3). **It was read, not run.**
+> - **§3.11's refusal stands.** Three of the library's features cross it unless switched off: `watch` (an action
+>   with no click), an action a spec defines for itself, and a literal figure in a prop.
+> - **Model-written layout cost about 14 seconds** in the 2026-06-30 experiment, so a cockpit is written once,
+>   approved, and re-rendered at no model cost.
+
+**The law of the arc: the spec arranges, the card store measures.** A `Card` element carries a card's id and
+nothing about what it measures. Conditions read only what the host publishes — `/range`, `/cards/<id>/status`,
+`/tab` — and that tree carries statuses, never figures. A card hidden by its condition is counted on screen; a
+card the reader may not see says so.
+
+**Refused inside the arc:** `@json-render/shadcn` (Radix; the web is Base UI) · SQL written by the model in a
+cockpit proposal · `watch` · any action a spec defines · a figure typed into a prop · a second chart engine · a
+second place that declares chart kinds.
+
+- **CT-1 · the premise, run. ⚑** Install `@json-render/core` and `@json-render/react` at exactly `0.21.0` on a
+  branch; render ONE hand-written spec — a tab, a section, two existing cards, one condition — in the web; state
+  the weight it adds to the canvas route; run `validateSpec` from Python through a Node bundle the way
+  `export/echarts.py` runs the chart renderer. *A day.* Waits on the user's yes to the dependency.
+- **CT-2 · the catalog and the validator, one home.** Five components: `Cockpit`, `Tabs`, `Tab`, `Section`,
+  `Card`. Structure checked by the library's own validator; the platform then checks that every card id is in
+  this canvas, every state path is in the published tree, there is no `watch`, `on` or unregistered `$computed`,
+  and every piece of model-written text passes the numerals law. Refused whole, with sentences (AV-0's law). A
+  drift gate like the chart bundle's. "Cockpit", "card" and "section" entered in the glossary. *Two days.*
+- **CT-3 · kept as versions.** A Ledger artifact of kind `cockpit`, one natural key per canvas; cards made for it
+  stored at canvas scope; a card made from an approved metric records which one. The connection cockpit's
+  arrangement table is untouched. *A day.*
+- **CT-4 · the Cockpit tab.** The fourth tab of the Data Canvas, behind `cockpit.composed` (off, byte-identical
+  when off): the latest approved spec through the registry, `Card` drawn by `PinnedCardBody` unchanged, the
+  Briefing's range control feeding `/range`, the count of cards waiting on a condition per section. *Two days.*
+- **CT-5 · ask for it. ⚑** One converse tool, offered only in a Data Canvas on a streaming turn; it stages ONE
+  proposal of a new kind — the cards to create, each naming an approved metric, a trusted query or a finding,
+  and the spec — approved all or nothing. An edit arrives as RFC 6902 patches against the current spec and
+  becomes the next version. *Three days.* Its receipt spends model calls, which are the user's.
+- **CT-6 · out by other doors (named, not scheduled).** The same spec to PDF, to an image card for Slack, to
+  email — a new door, with the departure gate in front of it — and into other AI clients as an MCP App; charts
+  from the existing headless renderer. Trigger: a person asks for a cockpit outside the app.
+
+**Receipt:** on theLook, in a Data Canvas scoped to its returns tables, "build me a returns cockpit" stages a
+proposal; approved, the tab shows tabs and sections, a card that appears when a watch crosses its limit, every
+card cut to the chosen range; an edit makes version 2; reopening it costs no model call. **Falsifiers, three:**
+(1) if CT-1 shows `PinnedCardBody` cannot be registered unchanged, or the validator cannot run from Python, the
+library is the wrong tool — the tab (CT-4) and the versions (CT-3) stand, over a hand-written sectioned layout;
+(2) if fewer than half of first proposals pass validation over ten asks on theLook, the catalog or its prompt
+is wrong, and the closed vocabulary is not closing; (3) if an approved cockpit is not reopened within a week,
+the board was not wanted — counted from the session log the way AV-M counts uptake, which read 3 of 42.
+
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -10598,6 +10664,13 @@ the browser** · **measure the premise before building.**
 > Open: 32, 33, 34.
 > **Amended 2026-09-26, later:** item 34 decided clause by clause — (f) and (g) against the recommendation, (b) built as
 > rule and measurement so no model authors a definition. BR-1 to BR-5 built. Open: 32, 33.
+> **Amended 2026-09-28:** item 36 (Arc CT — the composed cockpit) arrived at the user's *"Lets study and add it to the
+> roadmap"*, on `vercel-labs/json-render`; its survey was taken first (CT-0). **OPEN with recommendations**, seven
+> clauses, the first already the user's own words. This line speaks for item 36 only; the open list above was not
+> re-measured when it was written.
+> **Amended 2026-09-28, later:** item 36 adopted as drafted, at the user's *"Adopt the Arc CT and commit locally"*.
+> Two clauses stay open because adopting a plan is not a yes to a download or to a spend: (d) installing the
+> library for CT-1, and (f) the model calls of CT-5's receipt.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -11276,6 +11349,30 @@ the browser** · **measure the premise before building.**
     a ratchet, GM-3 the path as a receipt, GM-4 a guard that cannot run says so, GM-5 audit and redaction by what the
     statement is — with the study's census as the migration list and its falsifier as the arc's. The hotfix that
     prompted it (the monitor runner through `native_sql`, both paths) is already on the branch.
+36. ✅ **DECIDED 2026-09-28 — Arc CT adopted as drafted** (the user, on the study: *"Adopt the Arc CT and commit
+    locally"*; the arc itself arrived earlier the same day at their *"Lets study and add it to the roadmap"*). The
+    survey (CT-0) was taken BEFORE the arc was written; the study is
+    `docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md`. The six waves stand in the order §3.50 gives them, with its law,
+    its refusals and its three falsifiers. Seven clauses; five are decided, **two stay open — (d) and (f)** —
+    because adopting a plan is not a yes to a download or to a spend.
+    **(a) ✅ DECIDED — the full version.** The user, on the first mock: *"it needs to be full extension version with
+    (sections, tabs, conditional tiles)"*. A plain grid first was the builder's suggestion and is withdrawn.
+    **(b) ✅ DECIDED — adopted as §3.50.** It adds no store, no chart engine and no new vocabulary of chart kinds;
+    it finishes a canvas scope the card store already has.
+    **(c) ✅ DECIDED with the adoption, as drafted — the home is a fourth tab in the Data Canvas** (CT-4), where the
+    ask is made and where the canvas names the cockpit and limits the tables. The Briefing keeps its cockpit as it
+    is. The alternative was the Briefing's cockpit, which is one per connection and sits below four other sections.
+    **(d) ⚑ OPEN — the dependency.** `@json-render/core` and `@json-render/react` at exactly `0.21.0`: Apache-2.0,
+    eight months old, pre-1.0, read and not yet run. *Recommended:* yes for CT-1 on a branch, pinned exact, and the
+    decision to keep it taken on CT-1's numbers, not before. Installing it is a download, so it waits on the user's
+    word at the moment CT-1 starts.
+    **(e) ✅ DECIDED with the adoption, as drafted — a `Card` element points at a card** (the law of the arc). The
+    alternative — the element carries the metric's name itself — reads better in a spec and makes a second place
+    that knows what a card measures.
+    **(f) ⚑ OPEN — the receipt's model calls. Spends tokens.** CT-5's receipt and its second falsifier need about
+    ten asks on theLook. *Recommended:* once, on the user's word, with the model stated beside the result.
+    **(g) ✅ DECIDED with the adoption, as drafted — email is not in this arc.** CT-6 names it and waits for someone
+    to ask; when it comes it is a new door and the departure gate stands in front of it.
 
 ---
 
