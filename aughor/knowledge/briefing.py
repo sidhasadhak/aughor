@@ -855,6 +855,39 @@ def peek_entry(key: str) -> dict[str, Any] | None:
         return None
 
 
+def _kept_version(connection_id: str, briefing: dict, scope_key, period) -> dict:
+    """BR-6 — keep this reading as of the day it was built, and hand the page its stamp.
+
+    Called on BOTH of `get_briefing`'s exits. It was first wired one layer up, in
+    `build_period_briefing`, and then here at the single `return briefing` — and neither was
+    enough. Measured live 2026-09-27: theLook's July Briefing came back with `version: null`
+    both times, because a brief that is still fresh returns from the two-hour cache at the
+    EARLY return and never reaches the bottom of the function. A Briefing served from cache is
+    still a Briefing somebody was shown, so it is still a reading to keep; recording only on
+    the path that rebuilds would have kept a history of exactly the visits that changed
+    nothing, and none of the ones a reader actually saw.
+
+    Only a brief with a PERIOD is kept: the standing brief measures no figures, so a version of
+    it would carry nothing to compare and every build would read as version 1 forever.
+    """
+    if not (isinstance(period, dict) and period):
+        return {}
+    try:
+        from aughor.briefing import versions as _versions
+        from aughor.briefing.recall import revisions_since as _revisions_since
+        recipe = str(period.get("period") or "")
+        kept = _versions.record(connection_id, briefing, scope_key=str(scope_key or ""),
+                                range_key=str(period.get("covers") or period.get("last_day") or ""),
+                                recipe=recipe)
+        return {"version": kept, "as_of_line": _versions.as_of_line(kept),
+                "revisions": _revisions_since(connection_id, days=1) if recipe == "day" else []}
+    except Exception as exc:  # noqa: BLE001 — a Briefing renders with or without its history
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the Briefing is served whether or not its version could be kept",
+                 counter="briefing.version.attach")
+        return {}
+
+
 def get_briefing(
     connection_id: str,
     domain_data: dict[str, list[dict]],
@@ -910,7 +943,7 @@ def get_briefing(
             if entry and same_window:
                 needs, pre_decision = _brief_rebuild_decision(key, connection_id, entry)
                 if not needs:
-                    return entry
+                    return {**entry, **_kept_version(connection_id, entry, scope_key, period)}
         except Exception:
             pass
 
@@ -984,7 +1017,7 @@ def get_briefing(
     # stamp above: only once the narrative exists and is cached.
     _note_brief_on_graph(key, connection_id, briefing)
 
-    return briefing
+    return {**briefing, **_kept_version(connection_id, briefing, scope_key, period)}
 
 
 def _note_brief_on_graph(key: str, connection_id: str, briefing: Any) -> None:

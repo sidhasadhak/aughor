@@ -4089,6 +4089,20 @@ export interface SlackBotSummary {
    *  which bots belong to an agent. */
   agent_id: string;
   connection_id: string;
+  /** Slack's Agent messaging mode. Set with the manifest at creation; carried through
+   *  every update unchanged (`patchBodyFor`), because the app and the record must agree. */
+  agent_view: boolean;
+}
+
+/** The plain fields an update sends — ALL of them, every time. The server replaces each
+ *  with what it is sent and keeps only the secrets it is not sent (`merge_secrets`), so a
+ *  partial body silently blanks the rest. Build it with `patchBodyFor` in lib/slackBots. */
+export interface SlackBotPatch {
+  name: string;
+  enabled: boolean;
+  agent_id: string;
+  connection_id: string;
+  agent_view: boolean;
 }
 
 /** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
@@ -4612,6 +4626,34 @@ export async function getSlackBots(): Promise<SlackBotSummary[]> {
   if (res.status === 404) return [];
   if (!res.ok) throw new Error("Failed to fetch Slack bots");
   return (await res.json()).bots ?? [];
+}
+
+/** Update a record's plain fields. Whole-record semantics — see `SlackBotPatch`. The
+ *  server re-verifies against Slack only when a credential changed, so this never needs
+ *  Slack to be reachable; the supervisor re-opens the socket on its next reconcile when
+ *  the agent or connection changed, and leaves it alone on a rename. */
+export async function updateSlackBot(id: string, body: SlackBotPatch): Promise<SlackBotSummary> {
+  const res = await fetch(`${getApiBase()}/slack-bots/${encodeURIComponent(id)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not update the Slack bot (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Delete a record. Its tokens go with it and the supervisor closes the socket on its
+ *  next reconcile; automations that post as it report "unknown Slack bot" until they
+ *  are re-pointed — the caller says so before asking. */
+export async function deleteSlackBot(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/slack-bots/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not delete the Slack bot (${res.status})`);
+  }
 }
 
 export interface AutoCondition { kind: ConditionKind; config: Record<string, unknown>; }

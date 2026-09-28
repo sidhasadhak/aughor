@@ -9608,6 +9608,33 @@ silently (§7).
 
 ---
 
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35)
+
+> **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
+> without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
+> gates. This is critical because this overall flow, the robust mechanism, is the unique selling point of our
+> platform."* The study is `docs/GATE_MAP_STUDY_2026-09-26.md`: the doors as the code applies them, a census of the
+> 184 places SQL reaches a warehouse (150 real, ~40 in the bug class, read one by one), the live exposure (one door
+> = 99.9% of theLook's errors), the audit's two-way label problem, and the guards that fail open on native engines.
+
+- **GM-1 · the door owns the dialect.** `execute(label, sql, *, sql_dialect=None)`: `"duckdb"` from platform code
+  makes the base door translate for native engines where transpile engines already do; `native_sql` becomes the
+  door's own step. Migration by the census, bug class first. *Two days plus the migration.*
+- **GM-2 · the census is a ratchet.** `tests/unit/test_sql_door_census.py` over the same regex, holding
+  `docs/SQL_DOORS.json`: a new site must classify itself; `none` may only fall. *A day.*
+- **GM-3 · the path is a receipt.** `QueryResult.doors` — validated, audited or internal, row-filtered,
+  translated, guarded — carried by the envelope, shown by the trajectory's `step`, said by Spotlight's `explain`.
+  *A day.*
+- **GM-4 · a guard that cannot run says so.** The value-domain, grain, snapshot and ambiguity probes return a
+  typed "not checked on this engine" instead of None, and the caveat travels. *A day.*
+- **GM-5 · audit and redaction by what the statement is.** `internal=` on the call, set only by plumbing; the
+  hand-listed allowlist retires; the eleven audit gaps in the study close. *A day plus the retirement.*
+
+**Receipt:** the census ratchet at zero `none` sites; theLook's audit page with no dialect errors for a week; a
+Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
+dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
+
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -11244,6 +11271,11 @@ the browser** · **measure the premise before building.**
     processing lines excluded, as its own note asks) so BR-2's first receipt measures a metric a person stands behind.
     Not part of this item: the ledger's home (BR-8, decided at its trigger), and a model judge of Briefings (dropped
     2026-09-06).
+35. ✅ **DECIDED 2026-09-26 — Arc GM adopted as drafted** (the user, on the gate-map study: *"adopt the Arc GM and commit
+    locally"*). The five waves stand in the order §3.49 gives them — GM-1 the door owns the dialect, GM-2 the census as
+    a ratchet, GM-3 the path as a receipt, GM-4 a guard that cannot run says so, GM-5 audit and redaction by what the
+    statement is — with the study's census as the migration list and its falsifier as the arc's. The hotfix that
+    prompted it (the monitor runner through `native_sql`, both paths) is already on the branch.
 
 ---
 

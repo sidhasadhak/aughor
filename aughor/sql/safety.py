@@ -15,7 +15,10 @@ See docs/MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md (R2).
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _bump(counter: str) -> None:
@@ -103,6 +106,36 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
         receipt["dry_run_ok"] = bool(ok)
         if ok:
             return out, receipt
+
+        # 2b — The engine's own words, recorded BEFORE anything interprets them.
+        #
+        # `err` was read here, handed to `SqlWriter.fix`, and dropped. Nothing on a running
+        # deployment held a single real bind-failure string — which is why the following went
+        # unnoticed for so long: `tools/error_classifier.py` only knows DuckDB, Postgres and
+        # SQLite phrasing ("does not exist", "no such column", "binder error"). BigQuery says
+        # "Unrecognized name: x at [3:12]", matches none of them, and falls through to the
+        # SEMANTIC catch-all on that function's last line.
+        #
+        # Measured 2026-09-27 on theLook (BigQuery), two hours after a restart: 32 preflight
+        # repairs, classed semantic 16 / type_mismatch 14 / dialect 2 / **binder 0** — zero
+        # binder errors on a warehouse whose commonest failure is a misspelled name. All three
+        # of `SqlWriter.fix`'s deterministic fast-paths key off recognising the error, so none
+        # of them fired and 26 of the 32 paid an LLM round-trip: 181 s of model time and 47.7k
+        # prompt tokens.
+        #
+        # Patterns for a new engine must be written from its ACTUAL wording, never from memory
+        # of it — a classifier built on a guess looks fixed and keeps missing silently. This
+        # line exists to collect that wording. `classified` rides along so a misfiling is
+        # visible in one grep rather than needing the taxonomy re-derived by hand.
+        # The engine's own words and the dialect that produced them — nothing else. An earlier
+        # cut also logged what `tools.error_classifier` CALLED the error, which was useful and
+        # crossed the platform→agent boundary (`test_platform_does_not_import_agent`): `sql/` is
+        # platform, `tools/` is agent. The raw wording is what this exists to collect, and the
+        # classification is derivable from it by whoever reads the log.
+        _dialect = str(getattr(conn, "dialect", "") or "unknown")
+        logger.warning("sql_preflight_bind_failure dialect=%s error=%r",
+                       _dialect, (err or "")[:400])
+        _bump(f"sql_safety.preflight_bind_failure.{_dialect}")
 
         # 3 — Repair the bind/parse error. SqlWriter.fix substitutes DuckDB's candidate bindings
         #     deterministically (no LLM) before falling back to a typed LLM repair, and validates

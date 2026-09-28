@@ -27,6 +27,7 @@ import {
   type IntegrationOperation, type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
 import { CASTS, seedConfig, upstreamKeys } from "@/lib/automationFlow";
+import { slackStepBotNote } from "@/lib/slackBots";
 import { ScheduleEditor } from "@/components/automations/ScheduleEditor";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
@@ -747,6 +748,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
   onChange: (e: AutoEffect) => void; onRemove?: () => void;
 }) {
   const set = (patch: Record<string, unknown>) => onChange({ ...e, config: { ...e.config, ...patch } });
+  const botNote = e.kind === "slack_post" ? slackStepBotNote(e.config.bot_id, bots) : "";
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
       <select value={e.kind} onChange={ev => onChange({ kind: ev.target.value as EffectKind, config: {} })}
@@ -782,16 +784,29 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
               <div className="aug-fs-xs" style={{ color: "var(--amb4)", padding: "6px 0" }}>
                 No Slack bots configured — create one first, then this step can post as it.
               </div>
-            ) : (
+            ) : (<>
               <select style={inputStyle} value={String(e.config.bot_id ?? "")}
                 aria-label="Post as bot"
                 onChange={ev => set({ bot_id: ev.target.value })}>
                 <option value="">Post as…</option>
+                {/* The stored bot, shown even when it cannot be posted as. Without this
+                    option the select displays "Post as…" for an id it still holds, and
+                    the dead id is saved back on the next edit with nothing said. */}
+                {botNote && (
+                  <option value={String(e.config.bot_id)}>
+                    {bots.find(b => b.id === e.config.bot_id)?.name
+                      ? `${bots.find(b => b.id === e.config.bot_id)?.name} (paused)`
+                      : `Removed bot — ${String(e.config.bot_id)}`}
+                  </option>
+                )}
                 {bots.filter(b => b.enabled).map(b => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
-            )}
+              {botNote && (
+                <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>{botNote}</div>
+              )}
+            </>)}
             {/* Bound like the message below it, and for the same reason: B1 made
                 `channel` bindable, and `String({$from: …})` renders "[object Object]" —
                 an editor inviting someone to overwrite the binding that makes the chain

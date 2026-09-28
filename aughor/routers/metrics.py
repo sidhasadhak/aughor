@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from aughor.licensing import Capability, gate
+
+logger = logging.getLogger(__name__)
 
 from aughor.semantic.metrics import (
     GLOBAL_CONNECTION,
@@ -159,6 +162,123 @@ def _require_statement(sql: str, existing) -> None:
     raise HTTPException(status_code=422, detail=_STATEMENT_RULE)
 
 
+def _require_binds(sql: str, connection: str, name: str, tables, filters, existing) -> None:
+    """Refuse a definition the engine cannot run — the check the save door never had.
+
+    A governed definition was the one artifact nothing validated. `_require_statement`
+    above asks only whether the text LOOKS like a statement; it never parsed it, never
+    bound it, never checked a column existed. Measured on theLook 2026-09-27, that let two
+    definitions be saved AND approved as the organisation's revenue: `SUM(total_amount)`,
+    naming a column the warehouse does not have, and `SELECT (SUM(sale_price) AS revenue
+    FROM order_items WHERE status <> 'Cancelled'` — one paren short, so it does not parse
+    at all. Both then held every Slack send that stated revenue, and the reader was told the
+    number was untrustworthy rather than that the definition was broken.
+
+    The platform already owned the answer: `conn.dry_run` runs against EVERY query in
+    `sql/safety.preflight_repair`. This asks it once more, at the door where a definition
+    becomes governance.
+
+    What is refused and what is not, deliberately:
+
+    * A parse error is refused always — it needs no warehouse and cannot be a false alarm.
+    * A bind failure is refused when the connection answered. That is the engine's own
+      verdict on the engine's own schema.
+    * Unreachable connection, no dry-run support, or a global (`*`) definition with no
+      connection to ask: NOT refused. An author must not be blocked by infrastructure they
+      cannot see, so the check fails OPEN — but it says so (counter + log) rather than
+      returning a silent pass, because "checked and fine" and "never checked" must not
+      look identical (§ the typed-verdict rule).
+    * SQL the edit did not change is never re-checked. A save that only edits a caveat must
+      not start failing because a table was dropped months after the formula was approved.
+
+    The runnable form is what is checked — `as_statement` over the declared tables and
+    filters — because that is exactly what the value path executes, not the stored text.
+    """
+    from aughor.semantic.metric_statement import as_statement
+
+    text = (sql or "").strip()
+    if not text:
+        return
+    if existing is not None and text == (str(getattr(existing, "sql", "") or "")).strip():
+        return                      # untouched formula — not this save's business
+    runnable = as_statement(text, list(tables or []), list(filters or []), name) or text
+
+    def _unchecked(why: str) -> None:
+        from aughor.stats import stats
+        stats.inc("metrics.save_unchecked")
+        logger.info("metric save not bind-checked (%s): %s", why, name)
+
+    try:
+        import sqlglot
+        sqlglot.parse_one(runnable, read="bigquery")
+    except ImportError as exc:
+        # No parser on this install. The dry run below may still bind it, but "not parsed
+        # here" and "parsed clean" must not look alike to whoever reads the counters.
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "sqlglot is unavailable, so the definition was not parse-checked; the "
+                      "engine's own dry run below still gates it",
+                 counter="metrics.save_no_parser")
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=(
+            f"that SQL does not parse, so it cannot be a definition: {str(exc).splitlines()[0][:200]}"))
+
+    if not connection or connection == GLOBAL_CONNECTION:
+        _unchecked("global definition — no connection to ask")
+        return
+    from aughor.db.connection import open_connection_for
+    try:
+        db = open_connection_for(connection)
+    except Exception as exc:
+        _unchecked(f"connection unreachable ({type(exc).__name__})")
+        return
+    try:
+        ok, err = db.dry_run(runnable)
+    except Exception as exc:
+        _unchecked(f"dry run unavailable ({type(exc).__name__})")
+        return
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a close that fails is logged, not raised over the answer",
+                     counter="metrics.save_check_close")
+    if not ok:
+        from aughor.stats import stats
+        stats.inc("metrics.save_refused_bind")
+        raise HTTPException(status_code=422, detail=(
+            f"{connection} cannot run that SQL, so it cannot be its definition of "
+            f"{name}: {str(err or 'the engine refused it').splitlines()[0][:300]}"))
+
+
+def _restate_briefings(connection: str) -> None:
+    """A governed definition changed, so every cached Briefing for its connection is stale.
+
+    Measured 2026-09-28: after approving five of theLook's metrics, the Month Briefing (which
+    had been rebuilt) measured twelve while the Day measured five and the Week one — and the
+    Day's five said *"no approved definition; approve one in the Semantic Layer to measure it"*
+    about metrics approved minutes earlier. Nothing was wrong with the period logic: each view
+    was serving a two-hour cache built before the approval, and only the period someone
+    happened to regenerate told the truth. Forcing a person to press Regenerate once per period
+    to see a governance change is a cache pretending to be an answer.
+
+    Best-effort and silent about nothing: an invalidation that fails is counted, because the
+    next reader would otherwise be told yesterday's answer with today's confidence.
+    """
+    if not connection or connection == GLOBAL_CONNECTION:
+        return
+    try:
+        from aughor.knowledge import briefing as _briefing
+        dropped = _briefing.invalidate(connection)
+        if dropped:
+            logger.info("metric change invalidated %d cached briefing(s) for %s", dropped, connection)
+    except Exception as exc:  # noqa: BLE001 — the metric change stands either way
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the metric changed but its connection's cached Briefings could not be "
+                      "dropped; they will read as stale until they expire",
+                 counter="metrics.briefing_invalidate")
+
+
 class ProposalsRequest(BaseModel):
     """What the metric editor sends to be offered what the platform proposes for a definition:
     its runnable statement (when it was written as an expression) and the dates it could be
@@ -273,6 +393,7 @@ async def generate_metric_sql(req: GenerateSqlRequest):
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def create_metric(req: MetricRequest):
     _require_statement(req.sql, None)
+    _require_binds(req.sql, req.connection, req.name, req.tables, req.filters, None)
     # G1: declared LOW — auto-allowed and AUDITED, so defining a governed metric leaves a
     # trail. The approval question belongs to the approve transition, not to authoring.
     from aughor import govern
@@ -313,6 +434,7 @@ def update_metric(name: str, req: MetricRequest):
         # approved the house default. Treat it as a new definition at this scope.
         existing = None
     _require_statement(req.sql, existing)
+    _require_binds(req.sql, req.connection, name, req.tables, req.filters, existing)
     data = {**req.model_dump(), "name": name}
     # Arc BR-2: the time fields are kept unless this edit SENT them — an editor that does not
     # know them must not erase what the platform set — and a sent correction is a person's.
@@ -339,6 +461,7 @@ def update_metric(name: str, req: MetricRequest):
                      "version": existing.version, "at": datetime.now(timezone.utc).isoformat()}
     m = MetricDefinition(**data)
     save_metric(m)
+    _restate_briefings(req.connection)
     if audit:
         from aughor.kernel.ledger import Ledger
         Ledger.default().emit("metric.governance", audit)
@@ -388,6 +511,7 @@ def transition_metric(name: str, req: TransitionRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     save_metric(MetricDefinition(**updated))
+    _restate_briefings(req.connection)
     Ledger.default().emit("metric.governance", audit)
     return {"metric": updated, "audit": audit}
 

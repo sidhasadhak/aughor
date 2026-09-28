@@ -41,7 +41,13 @@ LABEL = {"yesterday": "Daily", "last_week": "Weekly", "last_month": "Monthly", "
 #: The longest custom range; a longer question is the Year recipe's, or Ask's.
 MAX_RANGE_DAYS = 3 * 366
 #: The most headline metrics measured per Briefing — the standing Briefing's own cap.
-MAX_METRICS = 8
+#: Raised from 8 to 12 on 2026-09-27: theLook had ten approved definitions and the Briefing
+#: measured seven, so three were silently reported as having "no approved definition" — the
+#: cap's overflow falls through to the north-star loop, which cannot tell "over the cap" from
+#: "never approved" and says the second. Twelve covers a connection that has governed its
+#: headline set without inviting a Briefing that measures everything; the cost is per metric
+#: per window (three windows), so each one past the cap is three more warehouse queries.
+MAX_METRICS = 12
 #: How many days a window's rows may start late or end early before its value stops being
 #: that window's (§3.27's slack, by length).
 def _slack(days: int) -> int:
@@ -208,6 +214,39 @@ def _rel(cur: Optional[float], prev: Optional[float]) -> Optional[float]:
     return (cur - prev) / abs(prev)
 
 
+def equal_age(metric: Any, status: str) -> dict:
+    """Is this figure's comparison read at the same age as the figure itself? (BR-6)
+
+    `RangeSpec.windows` gives every comparison its OWN as-of — August read on 15 September is
+    14 days old, so July is read at 14 days too — and `metric_time.measure_sql` bounds a
+    COHORT's outcome to that as-of. Proven 2026-09-27: all three windows come back 14 days old.
+    So a cohort is already compared at equal age, and a settled figure needs no bound at all:
+    both periods have stopped moving.
+
+    What is left is the case §3.48 names and nothing said out loud. A **flow** figure that is
+    still provisional — theLook restates its recent days for eight — is compared with a period
+    that has finished restating. Its rows arrive late with no outcome date, so there is nothing
+    to bound; the honest reading needs BR-8's daily readings, which do not exist yet. Until
+    then the comparison SAYS it is not at equal age rather than letting a reader take a
+    difference of maturity for a move. The number is still shown: a stated caveat beside a
+    figure is worth more than a blank.
+    """
+    if status == "final":
+        return {"equal": True, "why": ""}
+    kind = str(_get_kind(metric) or "")
+    if kind == "cohort":
+        return {"equal": True, "why": ""}
+    label = getattr(metric, "label", "") or getattr(metric, "name", "") or "this figure"
+    return {"equal": False, "why": (
+        f"{label} is still {'to date' if status == 'to_date' else 'provisional'}, and what it is "
+        "compared with has settled — part of any difference is the difference in age, not a move. "
+        "Comparing them at the same age needs a daily reading this source does not keep yet.")}
+
+
+def _get_kind(metric: Any) -> str:
+    return str(getattr(metric, "time_kind", "") or "")
+
+
 def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tuple], dialect: str,
                   north_stars: Optional[list] = None) -> dict:
     """Every approved metric measured for the range and its comparisons. Returns ``{"measured",
@@ -218,8 +257,9 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     from aughor.semantic.metrics import list_metrics
 
     said = mt.ensure_dates(conn_id, run_sql=run_sql, dialect=dialect, today=spec.as_of)
-    approved = [m for m in list_metrics(connection_id=conn_id)
-                if m.status == "approved" and m.connection == conn_id][:MAX_METRICS]
+    governed = [m for m in list_metrics(connection_id=conn_id)
+                if m.status == "approved" and m.connection == conn_id]
+    approved, over_cap = governed[:MAX_METRICS], governed[MAX_METRICS:]
     windows = spec.windows()
     slack = _slack(spec.days)
     measured: list[dict] = []
@@ -254,9 +294,26 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
             "status": mt.figure_status(m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days,
                                        unsettled=bool({mt.bare_name(t) for t in m.tables} & set(spec.still_moving))),
             "current_partial": cur_partial, "previous_partial": prev_partial,
+            # BR-6 — said, never implied: a provisional flow figure against a settled comparison
+            # is not a fair move, and the reader is told so beside the number.
+            "equal_age": equal_age(m, mt.figure_status(
+                m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days,
+                unsettled=bool({mt.bare_name(t) for t in m.tables} & set(spec.still_moving)))),
             "sql": mt.measure_sql(m, windows, dialect=dialect)[0] or "",
         })
-    seen = {_norm(m.name) for m in approved} | {_norm(m.label) for m in approved}
+    # A metric the CAP cut says the cap cut it. Measured 2026-09-27: theLook had ten approved
+    # definitions against a cap of eight, and the two it dropped fell through to the north-star
+    # loop below — which sees only that the name is unaccounted for and reports "no approved
+    # definition; approve one in the Semantic Layer", about metrics that had just been approved
+    # there. A reader who follows that instruction finds the work already done and no way to
+    # learn why the figure is missing. Named here first, so the loop below never sees them.
+    for m in over_cap:
+        unmeasured.append({"name": m.label or m.name, "metric": m.name,
+                           "reason": (f"past this Briefing's cap of {MAX_METRICS} headline metrics — "
+                                      "it is approved and governed, and measuring it needs the cap "
+                                      "raised, not a definition")})
+    # `seen` reads the WHOLE governed set, not the capped slice, for the same reason.
+    seen = {_norm(m.name) for m in governed} | {_norm(m.label) for m in governed}
     for ns in north_stars or []:
         ns_name = ns.get("name") if isinstance(ns, dict) else getattr(ns, "name", "")
         if ns_name and _norm(ns_name) not in seen:

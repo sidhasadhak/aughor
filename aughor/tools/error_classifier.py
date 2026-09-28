@@ -31,8 +31,13 @@ class SqlErrorClass(str, Enum):
 def classify_error_type(error: Optional[str], sql: str = "", dialect: str = "") -> SqlErrorClass:
     """Classify a raw DB error into the repair taxonomy. Works across DuckDB
     (prefixed: 'Parser Error:', 'Binder Error:', 'Conversion Error:'), Postgres,
-    and SQLite. Order matters — runtime and the semantic 'operator does not exist'
-    are checked before the generic binder 'does not exist'. Never raises."""
+    SQLite and BigQuery. Order matters — runtime and the semantic 'operator does not
+    exist' are checked before the generic binder 'does not exist'. Never raises.
+
+    Every BigQuery phrase below was CAPTURED from a live bind failure
+    (`sql/safety.py` logs the engine's own words), never written from a recollection of
+    how that vendor phrases things: a classifier built on a guess looks fixed and goes on
+    missing silently, which is the state this function was already in."""
     if not error:
         return SqlErrorClass.OK
     e = error.lower()
@@ -44,12 +49,27 @@ def classify_error_type(error: Optional[str], sql: str = "", dialect: str = "") 
         return SqlErrorClass.PARSER
     if any(k in e for k in ("operator does not exist", "no function matches",
                             "conversion error", "invalid input", "cannot cast",
-                            "could not convert", "type mismatch", "double precision")):
+                            "could not convert", "type mismatch", "double precision",
+                            # BigQuery. Measured 2026-09-27 from `sql_safety.preflight_bind_failure`:
+                            # 9 of 10 live bind failures on theLook were the one shape
+                            # "No matching signature for operator >= for argument types:
+                            # TIMESTAMP, DATE". It already reached SEMANTIC — but by the
+                            # fallthrough on the last line, not by a rule. Matching it here is
+                            # behaviour-neutral today and stops 90% of this connection's traffic
+                            # sharing a bucket whose whole job is to mean "unrecognised".
+                            "no matching signature")):
         return SqlErrorClass.SEMANTIC
     if any(k in e for k in ("binder error", "catalog error", "does not exist",
                             "no such column", "no such table", "ambiguous",
                             "must appear in the group by", "not in group by",
-                            "not found", "unknown column", "undefined column")):
+                            "not found", "unknown column", "undefined column",
+                            # BigQuery, both captured live rather than recalled: a name error
+                            # reads "Unrecognized name: total_amount at [1:13]", and a GROUP BY
+                            # structural error "Multi-level aggregation requires the enclosing
+                            # aggregate function to have one or more GROUP BY modifiers". Neither
+                            # matched anything above, so both were filed SEMANTIC — which sent
+                            # `error_class_guidance` to answer a name error with "cast explicitly".
+                            "unrecognized name", "group by modifiers")):
         return SqlErrorClass.BINDER
     return SqlErrorClass.SEMANTIC   # unmatched: a logic/type issue to re-examine
 
