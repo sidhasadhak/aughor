@@ -80,6 +80,7 @@ import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { claimBriefingEntrance } from "@/components/brief/firstOpen";
 import { PinnedCards } from "@/components/brief/PinnedCards";
+import { BriefingCockpits } from "@/components/cockpit/BriefingCockpits";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import type { VizConfig } from "@/components/charts/vizConfig";
 import { useVizConfigs } from "@/lib/useVizConfigs";
@@ -2896,6 +2897,10 @@ export function BriefingPanel({
   }, [rangeSelected, connectionId, schema, range, rangeKey]);
   const reask          = rangeSelected && reaskFor && reaskFor.key === rangeKey ? reaskFor.data : null;
   const isEmpty        = !briefing || briefing.totalInsights === 0;
+  // What a cockpit card's source and evidence open — one definition, handed to whichever
+  // cockpit layer is drawn (a person's cockpits, or the one this layer drew before them).
+  const openCardSource = (iid: string) => onInvestigate("Investigate this finding", iid);
+  const openCardEvidence = (iid: string) => { const sig = briefing?.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); };
 
   // BR-7's re-ask, as TILES. Under a range the hero showed the governed figures and nothing
   // else: these were suppressed by `!figures`, so a period read as a metrics table while the
@@ -3279,20 +3284,28 @@ export function BriefingPanel({
             state) instead of vanishing. The cycle's findings read above in the ledger; the
             cockpit is the surface the user curates, not a dump of the brief. */}
       <div style={{ marginTop: 34, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
-        <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
-          Your cockpit
-          {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
-              could not be); the label names the range the cards were asked for. */}
-          {rangeSelected ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
-        </div>
-        {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
-        <NewCardComposer connectionId={connectionId} schema={schema}
-          onCreated={() => setPinnedRefresh(n => n + 1)} />
-        <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh} range={rangeSelected ? range : null}
-          suggestions={movers.slice(0, 3).map(m => ({ insightId: m.insightId, value: m.value, label: m.sublabel || m.domain }))}
-          onPinned={() => setPinnedRefresh(n => n + 1)}
-          onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
-          onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
+        {/* Arc CT-7 — a person's own named cockpits, behind `cockpit.composed`. Off, the list
+            route answers 404 and the fallback is what this layer always drew, unchanged. */}
+        <BriefingCockpits connectionId={connectionId} schema={schema} range={rangeSelected ? range : null}
+          rangeNote={rangeSelected ? <span className="aug-fs-sm" data-testid="cockpit-note" style={{ color: "var(--t3)" }}>{rangeBlock ? `Asked for ${rangeBlock.covers}` : "Asked for this range"}</span> : null}
+          onOpenSource={openCardSource}
+          onEvidence={openCardEvidence}
+          fallback={<>
+            <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
+              Your cockpit
+              {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
+                  could not be); the label names the range the cards were asked for. */}
+              {rangeSelected ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
+            </div>
+            {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
+            <NewCardComposer connectionId={connectionId} schema={schema}
+              onCreated={() => setPinnedRefresh(n => n + 1)} />
+            <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh} range={rangeSelected ? range : null}
+              suggestions={movers.slice(0, 3).map(m => ({ insightId: m.insightId, value: m.value, label: m.sublabel || m.domain }))}
+              onPinned={() => setPinnedRefresh(n => n + 1)}
+              onOpenSource={openCardSource}
+              onEvidence={openCardEvidence} />
+          </>} />
       </div>
 
       {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),

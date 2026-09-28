@@ -2317,7 +2317,7 @@ export async function runDashboardCard(cardId: string, range?: BriefingRange | n
   return res.json();
 }
 
-// ── A Data Canvas's cockpit (Arc CT-4, flag `cockpit.composed`) ─────────────────────────────
+// ── A person's cockpits in the Briefing (Arc CT-7 to CT-10, flag `cockpit.composed`) ───────────
 
 /** One kept version of a cockpit. The newest carries its `spec`; a history entry does not. */
 export interface CockpitVersion {
@@ -2337,6 +2337,28 @@ export interface CockpitVersion {
   spec?: unknown;
 }
 
+/** One of a person's cockpits, as the strip lists it. */
+export interface CockpitListed extends CockpitVersion {
+  cockpit_id: string;
+  title: string;
+  started_at: string;
+}
+
+/** A canvas's cockpit from before the home moved, waiting to be moved to the Briefing. */
+export interface CanvasCockpitLeft extends CockpitVersion {
+  canvas_id: string;
+  title: string;
+}
+
+export interface CockpitList {
+  person: string;
+  cockpits: CockpitListed[];
+  /** Cards pinned for everyone on the connection, and the person's own — what "My cockpit" starts from. */
+  shared_cards: number;
+  own_cards: number;
+  from_canvases: CanvasCockpitLeft[];
+}
+
 export interface CockpitRange {
   status: "standing" | "final" | "provisional" | "to_date";
   preset: RangePreset | null;
@@ -2348,11 +2370,15 @@ export interface CockpitRange {
   still_moving: string[];
 }
 
-export interface CanvasCockpit {
-  canvas_id: string;
+/** A card a cockpit may place: the person's own, or one pinned for the connection. */
+export type CockpitCard = DashboardCard & { own: boolean };
+
+export interface PersonCockpit {
   connection_id: string;
-  cockpit: CockpitVersion | null;
-  cards: DashboardCard[];
+  owner: string;
+  cockpit_id: string;
+  cockpit: CockpitVersion;
+  cards: CockpitCard[];
   range: CockpitRange;
   ranges_on: boolean;
   history: CockpitVersion[];
@@ -2364,6 +2390,29 @@ export interface CockpitKept {
   kept: boolean;
   version: number | null;
   artifact_id: string;
+  sentences: string[];
+  cockpit_id?: string;
+}
+
+/** What a draft for an area came to: one proposal to keep, or the reasons none was drafted. */
+export interface CockpitDrafted {
+  staged: boolean;
+  proposal_id: string;
+  cockpit_id: string;
+  summary: string;
+  rounds: number;
+  stop_reason: string;
+  sentences: string[];
+}
+
+export interface CockpitMoved {
+  moved: boolean;
+  connection_id?: string;
+  owner?: string;
+  cockpit_id?: string;
+  title?: string;
+  version?: number;
+  cards_moved?: number;
   sentences: string[];
 }
 
@@ -2385,18 +2434,36 @@ async function cockpitWrite(res: Response, fallback: string): Promise<CockpitKep
   throw new Error(fastApiError(body, fallback));
 }
 
-/** The canvas's cockpit as it stands, read for a range when one is chosen. Null when the
- *  flag is off (the route answers 404), so a caller need not know the flag's name. */
-export async function getCanvasCockpit(canvasId: string, range?: BriefingRange | null): Promise<CanvasCockpit | null> {
+function cockpitUrl(path: string, connectionId: string, extra?: URLSearchParams): string {
+  const q = new URLSearchParams(extra);
+  q.set("connection_id", connectionId);
+  return `${getApiBase()}${path}?${q.toString()}`;
+}
+
+function rangeParams(range?: BriefingRange | null): URLSearchParams {
   const q = new URLSearchParams();
   if (range) {
     if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
     else q.set("preset", range.preset);
   }
-  const url = `${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit`;
-  const qs = q.toString();
-  const res = await fetch(qs ? `${url}?${qs}` : url);
+  return q;
+}
+
+/** The asker's cockpits on this connection. Null when the flag is off (the route answers 404),
+ *  so a caller need not know the flag's name — and the Briefing draws its cockpit as before. */
+export async function listCockpits(connectionId: string): Promise<CockpitList | null> {
+  const res = await fetch(cockpitUrl("/cockpits", connectionId));
   if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read your cockpits"));
+  }
+  return res.json();
+}
+
+/** One of the asker's cockpits as it stands, read for a range when one is chosen. */
+export async function getCockpit(connectionId: string, cockpitId: string, range?: BriefingRange | null): Promise<PersonCockpit> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "Failed to read the cockpit"));
@@ -2404,15 +2471,9 @@ export async function getCanvasCockpit(canvasId: string, range?: BriefingRange |
   return res.json();
 }
 
-/** Start a cockpit from the cards the canvas holds, grouped by their kind. No model. */
-export async function startCanvasCockpit(canvasId: string): Promise<CockpitKept> {
-  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit/start`, { method: "POST" });
-  return cockpitWrite(res, "Failed to start the cockpit");
-}
-
-/** Keep a spec a person wrote. */
-export async function keepCanvasCockpit(canvasId: string, spec: unknown, note = ""): Promise<CockpitKept> {
-  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit`, {
+/** Keep a spec the person wrote — a card moved, a section renamed — as the next version. */
+export async function keepCockpit(connectionId: string, cockpitId: string, spec: unknown, note = ""): Promise<CockpitKept> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}`, connectionId), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ spec, note }),
@@ -2420,9 +2481,43 @@ export async function keepCanvasCockpit(canvasId: string, spec: unknown, note = 
   return cockpitWrite(res, "Failed to keep the cockpit");
 }
 
+/** Start "My cockpit" from the cards pinned in the Briefing, in the order they were arranged. No model. */
+export async function startMyCockpit(connectionId: string): Promise<CockpitKept> {
+  const res = await fetch(cockpitUrl("/cockpits/start", connectionId), { method: "POST" });
+  return cockpitWrite(res, "Failed to start your cockpit");
+}
+
+/** ⚑ Spends model calls. Draft a new cockpit for an area the person names. */
+export async function draftCockpit(connectionId: string, area: string, schema?: string): Promise<CockpitDrafted> {
+  const res = await fetch(cockpitUrl("/cockpits/draft", connectionId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ area, schema_name: schema || null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to draft the cockpit"));
+  }
+  return res.json();
+}
+
+/** Move a canvas's cockpit to the asker's Briefing. */
+export async function moveCanvasCockpit(connectionId: string, canvasId: string): Promise<CockpitMoved> {
+  const res = await fetch(cockpitUrl("/cockpits/move", connectionId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ canvas_id: canvasId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return body as CockpitMoved;
+  const detail = (body as { detail?: unknown }).detail;
+  if (detail && typeof detail === "object" && Array.isArray((detail as CockpitMoved).sentences)) return detail as CockpitMoved;
+  throw new Error(fastApiError(body, "Failed to move the cockpit"));
+}
+
 /** Go back to an earlier version: it is kept again, as the newest. */
-export async function restoreCanvasCockpit(canvasId: string, version: number): Promise<CockpitKept> {
-  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit/restore`, {
+export async function restoreCockpit(connectionId: string, cockpitId: string, version: number): Promise<CockpitKept> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/restore`, connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ version }),
@@ -2430,9 +2525,9 @@ export async function restoreCanvasCockpit(canvasId: string, version: number): P
   return cockpitWrite(res, "Failed to go back");
 }
 
-/** Retire the cockpit. Its history stays. */
-export async function retireCanvasCockpit(canvasId: string, note = ""): Promise<CockpitKept> {
-  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit/retire`, {
+/** Retire a cockpit. Its history stays. */
+export async function retireCockpit(connectionId: string, cockpitId: string, note = ""): Promise<CockpitKept> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/retire`, connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ note }),

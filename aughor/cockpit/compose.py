@@ -1,6 +1,6 @@
-"""A first cockpit, written by code from the cards a canvas holds (Arc CT, CT-4).
+"""A first cockpit, written by code from cards a person already has (Arc CT, CT-4; CT-7).
 
-**No model.** A person with cards in a canvas should not need one to get a cockpit: this
+**No model.** A person with cards should not need one to get a cockpit: this
 groups the cards by their kind into sections, in a fixed order, and the result is kept like
 any other spec — through the validator, as a version, with the person's name on it.
 CT-5 is where a model arranges; this is what a person starts from without one.
@@ -22,12 +22,18 @@ _FALLBACK = "chart"          # a card of a kind nobody has named yet is drawn wi
 _KEY = re.compile(r"[^A-Za-z0-9_-]")
 
 
-def default_spec(title: str, cards: Iterable[Any]) -> dict:
+def default_spec(title: str, cards: Iterable[Any], order: Iterable[str] = ()) -> dict:
     """The spec for ``cards`` (each with ``id``, ``kind`` and ``title``), or a spec with no
-    sections when there are none — which the validator refuses, and rightly."""
+    sections when there are none — which the validator refuses, and rightly.
+
+    ``order`` is the card ids in the order a person already arranged them (the Briefing kept
+    each card's place before cockpits had names). Within a section cards keep that order;
+    a card it does not name follows, by title."""
+    rank = {str(card_id): i for i, card_id in enumerate(order)}
     known = {kind for kind, *_ in SECTIONS}
     by_kind: dict[str, list[Any]] = {}
-    for card in sorted(cards, key=lambda c: (str(c.title or "").lower(), str(c.id))):
+    for card in sorted(cards, key=lambda c: (rank.get(str(c.id), len(rank)),
+                                             str(c.title or "").lower(), str(c.id))):
         kind = card.kind if card.kind in known else _FALLBACK
         by_kind.setdefault(kind, []).append(card)
 

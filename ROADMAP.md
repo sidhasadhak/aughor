@@ -9634,7 +9634,30 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
-### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10; after three repairs to the prompt, 10 of 10 on the same asks; on ten unseen asks falsifier (2) HOLDS, 8 of 9)
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10; after three repairs to the prompt, 10 of 10 on the same asks; on ten unseen asks falsifier (2) HOLDS, 8 of 9 · **CT-7 to CT-10 BUILT 2026-09-28** on `claude/briefing-cockpits`: the home moved to a person's Briefing, not committed)
+
+> **Status 2026-09-28, CT-7 to CT-10 BUILT — the home moved to a person's Briefing, at the user's word (§6 item
+> 36(c) superseded, clauses (i)–(l)).** A cockpit is a person's, keyed by connection, person and cockpit
+> (`aughor/cockpit/home.py`); the Ledger lists a person's by key prefix. Its cards are the person's own (the card
+> store's `user` scope) and the ones pinned for the connection; another person's are neither placeable nor listed.
+> **CT-7:** the Briefing's "Your cockpit" became a strip of the person's cockpits, drawn for the page's range, with
+> version, history, going back, retiring and bringing back; "My cockpit" starts in one act from the pinned cards, in
+> the order they were arranged. **CT-8:** Arrange — the outline by hand: move a card or section, move to a new
+> section or tab, rename, take off, add a card on none of the person's cockpits; each save a version. Pinning adds
+> to the cockpit in view. **CT-9:** "New cockpit" → an area → one short model run with the drafting tool alone
+> (`aughor/cockpit/ask.py`); the draft is shown as its outline, can be arranged before keeping (kept as the draft,
+> then the changes as the next version), or discarded. Only its owner can keep it. **CT-10:** the Cockpit tab and
+> the drafting tool left the Data Canvas (the chat's tools are byte-identical to before Arc CT); a canvas cockpit
+> is offered in its connection's Briefing and moved in one act, its cards made the person's, its canvas history
+> retired with a note, and put back if the move cannot be kept. **Measured:** Python 229 cockpit tests and the full
+> unit suite once (12,131 passed; its two ratchets then fixed at the cause — a retired word in six new lines, and
+> a spec copied through a line the params ratchet reads); web 1,367 tests and the seven gates; 20 deliberate breaks,
+> 19 caught and the 20th equivalent (the scope it set is set again by `cards.place`, whose own break is caught).
+> **Seen live** on the scratch servers: the Payments canvas cockpit (version 6) offered and moved, drawn in the
+> Briefing with its four tabs, arranged (a card taken off → version 2), gone back to (version 3), and a draft asked
+> for with no model configured, refused in the server's own sentence. **Not measured:** a draft by a model (no
+> spend was asked for); the Briefing draws no cockpit layer on a connection that was never explored, as it drew
+> no "Your cockpit" there before.
 
 > **Status 2026-09-28, the six repairs — at the user's word (*"fix the six faults"*).** Each fault the third run
 > found is repaired, and each repair was broken on purpose afterwards: 17 deliberate breaks, all caught. The
@@ -9900,6 +9923,22 @@ second place that declares chart kinds.
 - **CT-6 · out by other doors (named, not scheduled).** The same spec to PDF, to an image card for Slack, to
   email — a new door, with the departure gate in front of it — and into other AI clients as an MCP App; charts
   from the existing headless renderer. Trigger: a person asks for a cockpit outside the app.
+
+**The home moves to the Briefing (§6 item 36(c) superseded, clauses (i)–(l)).** Four waves, behind the same flag;
+off, the Briefing is byte-identical.
+- **CT-7 · a person's cockpits in the Briefing, no model.** A cockpit is keyed by connection, person and cockpit
+  (a Ledger artifact, as before). A strip of the person's named cockpits replaces "Your cockpit"; the selected one
+  is drawn with the page's range, with its version, history, going back and retiring. "My cockpit" is started in
+  one act from the cards pinned today — a read never builds it.
+- **CT-8 · adjusted by hand.** Move a card, take it off, rename or add a tab or a section — each a version, kept
+  with the person's name and checked by the same rules. Pinning adds to the cockpit in view; cards on none of the
+  person's cockpits are listed, not lost.
+- **CT-9 · a new cockpit from an area.** "New cockpit" → an area in the person's words → one short model run with
+  the drafting tool alone, over the connection's approved metrics, trusted queries and findings. The draft is shown
+  in place and kept or not; changes before keeping are kept as the next version in the same act.
+- **CT-10 · out of the canvas.** The Cockpit tab and the drafting tool leave the Data Canvas. A canvas cockpit is
+  offered to its owner in the Briefing and moved in one act: its spec becomes the person's cockpit, its cards
+  their own, its canvas history retired with a note that says where it went.
 
 **Receipt:** on theLook, in a Data Canvas scoped to its returns tables, "build me a returns cockpit" stages a
 proposal; approved, the tab shows tabs and sections, a card that appears when a watch crosses its limit, every
@@ -11595,6 +11634,26 @@ the browser** · **measure the premise before building.**
     a third spend and needs the user's word again.*
     **(g) ✅ DECIDED with the adoption, as drafted — email is not in this arc.** CT-6 names it and waits for someone
     to ask; when it comes it is a new door and the departure gate stands in front of it.
+    **(c) ⤳ SUPERSEDED 2026-09-28, after #555 merged — the home is the Briefing, and a cockpit is a person's.** The
+    user: *"now I want this in the Briefing tab.. the briefing itself can be at the connection level, but cockpit is
+    like a personal dashboard as well as a tailored briefing for the user who might want to look into certain areas
+    such as returns pricing marketing commercial analytics"*, and *"a better way to build it.. not from canvas..
+    canvas is dedicated for quick/deep investigation"*. Four clauses, each chosen through the question tool, each the
+    recommended option:
+    **(i) ✅ Several named cockpits per person**, one per area, switched from a strip in the Briefing; personal —
+    only its owner sees and changes it.
+    **(j) ✅ Built by naming an area, then adjusted by hand.** One short model run drafts a cockpit from the
+    connection's approved metrics, trusted queries and findings, checked by the same rules, shown in place; the
+    person keeps it or not. Changes after that are by hand and call no model.
+    **(k) ✅ Today's "Your cockpit" becomes the person's first cockpit** — one concept, one store. Its pinned cards
+    become version 1 of "My cockpit"; pinning adds to the cockpit in view.
+    **(l) ✅ Out of the canvas.** The Cockpit tab and the drafting tool leave the Data Canvas; the one canvas
+    cockpit approved on theLook moves to its owner's Briefing, linked to its history.
+    Three choices were the builder's and are open to the user: cards a person's cockpit creates are that person's
+    (the card store's `user` scope), so a limit is personal, while cards pinned for the connection stay placeable
+    by anyone; a person's cockpits are Ledger artifacts keyed by connection, person and cockpit; and "adjust before
+    keeping" is kept as two versions in one act — the model's draft, then the person's changes — so the history
+    says which was whose. Waves CT-7 to CT-10, §3.50.
 
 ---
 

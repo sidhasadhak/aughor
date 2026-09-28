@@ -309,7 +309,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
           { title: "Return rate", new: false, change: "", tone: "", shown: "" }] }] }] },
     })} actor="tester" />);
     const gone = screen.getByTestId("cockpit-taken-off");
-    expect(gone).toHaveTextContent("Taken off the cockpit. A card taken off stays in the canvas:");
+    expect(gone).toHaveTextContent("Taken off the cockpit. A card taken off is kept, and other cockpits may place it:");
     expect(gone).toHaveTextContent("CardReturns by week — it was in Where and when");
     expect(gone).toHaveTextContent("SectionWhere and when — it was in Detail");
     expect(gone).toHaveTextContent(/TabDetail$/);
@@ -329,7 +329,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
     render(<ProposalCard proposal={draft()} actor="approver@example.com" />);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     expect(acceptProposal).toHaveBeenCalledWith("prop-1", "approver@example.com", false, {});
-    expect(await screen.findByText("executed — kept as version 5 — it is in this canvas's Cockpit tab"))
+    expect(await screen.findByText("executed — kept as version 5 — it is among your cockpits in the Briefing"))
       .toBeInTheDocument();
   });
 
@@ -344,7 +344,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
   it("read after it settled, it still says where it went, or why it did not", () => {
     const { unmount } = render(<ProposalCard actor="tester" proposal={draft({
       status: "executed", outcome: { version: 2, cards_created: [] } })} />);
-    expect(screen.getByText("executed — kept as version 2 — it is in this canvas's Cockpit tab")).toBeInTheDocument();
+    expect(screen.getByText("executed — kept as version 2 — it is among your cockpits in the Briefing")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
     unmount();
     render(<ProposalCard actor="tester" proposal={draft({

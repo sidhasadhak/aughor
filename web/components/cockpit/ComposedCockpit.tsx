@@ -18,7 +18,7 @@
  *     boundary of its own that draws NOTHING when a component throws; the boundary here
  *     sits inside it, so the library's never gets the chance.
  *
- * Nothing mounts this yet. CT-4 puts it in the Data Canvas behind `cockpit.composed`.
+ * The Briefing draws a person's cockpits with it (`BriefingCockpits`), behind `cockpit.composed`.
  */
 import { Component, createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { evaluateVisibility, type Spec, type VisibilityCondition } from "@json-render/core";
@@ -64,7 +64,8 @@ const TONE_RULE: Record<Tone, string> = {
 
 function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string }>) {
   // The title names the cockpit for a screen reader and for the history. It is not drawn as a
-  // header: the canvas already carries the name, and a panel does not repeat its own title.
+  // header: the strip of cockpits above it already carries the name, and a panel does not
+  // repeat its own title.
   return <div role="region" aria-label={element.props.title} data-testid="cockpit">{children}</div>;
 }
 
@@ -176,7 +177,7 @@ function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: To
       {withheld
         ? <Said what="Withheld">You may not see this card. It is here, and it is not empty.</Said>
         : !cs
-          ? <Said what="Not in this canvas">The cockpit places a card this canvas does not hold.</Said>
+          ? <Said what="Not one of your cards">The cockpit places a card you do not have.</Said>
           : (
             <CardBoundary key={`${id}:${cs.run ? JSON.stringify(cs.run.rows).length : 0}:${cs.failed ? 1 : 0}`}>
               <PinnedCardBody cs={cs} onRemove={doors.onRemove} onRefresh={doors.onRefresh}

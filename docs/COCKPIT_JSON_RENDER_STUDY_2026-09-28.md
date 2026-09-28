@@ -616,3 +616,43 @@ prompt's, and is measured only by another run.
 Not repaired, and named: a number written as a word ("twelve percent") is not read, as a
 limit the person named or as a figure. The explorer's own parser still reads a range's unit on
 its upper end only.
+
+## 16 · The home moves to the Briefing (2026-09-28)
+
+After #555 merged, the user moved the cockpit: *"the briefing itself can be at the connection
+level, but cockpit is like a personal dashboard as well as a tailored briefing for the user"*,
+and *"not from canvas.. canvas is dedicated for quick/deep investigation"*. Four choices,
+each the recommended one (ROADMAP §6 item 36(i)–(l)): several named cockpits per person;
+built by naming an area, then arranged by hand; today's "Your cockpit" becomes the first
+one; out of the canvas.
+
+**Measured first.** The Briefing's cockpit drew every card pinned for the connection, and
+kept only the arrangement per person (`card_layouts`) — personal in its layout, shared in
+its cards. The card store already had a `user` scope that nothing used. Metrics carry no
+area: "returns" or "pricing" is not a field of theLook's twelve, so the area is the person's
+words, and the model chooses by them.
+
+**What was built** (waves CT-7 to CT-10, §3.50):
+
+| | |
+|---|---|
+| the home | a cockpit is keyed by connection, person and its own id; the Ledger lists a person's by key prefix |
+| the cards | the person's own (`user` scope) and those pinned for the connection; a draft's new cards are the person's, so a limit is theirs |
+| the Briefing | a strip of the person's cockpits in place of "Your cockpit"; flag off, the old layer is drawn unchanged |
+| by hand | Arrange: the outline, edited by pure functions (`web/lib/cockpit/edit.ts`) that prune an emptied section or tab |
+| by a model | "New cockpit" → an area → one run of the drafting tool alone; the draft arranged before keeping, kept as two versions |
+| the canvas | its tab and the tool are gone; a canvas cockpit moves to its owner's Briefing in one act, and back if it cannot be kept |
+
+**Seen live**, on the scratch servers: the Payments canvas cockpit offered and moved;
+drawn with its four tabs for the Briefing's range; a card taken off by Arrange (version 2);
+gone back to version 1 (version 3); a draft refused, with no model configured, in the
+server's own sentence.
+
+**Found on the way.** Four `tolerate()` calls in the cockpit code passed a field the
+function does not take: three written in this wave, and one — the approval's undo — on
+`main` since CT-5, so a failed undo would have raised instead of being recorded. All four
+are fixed.
+
+**Not measured.** A draft by a model: nothing was spent. The Briefing draws no cockpit
+layer on a connection never explored, as before; a person's cockpit does not need one, and
+whether it should show there is left to the user.

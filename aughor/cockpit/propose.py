@@ -1,13 +1,14 @@
-"""A cockpit a person asked for, as ONE proposal (Arc CT, CT-5; ROADMAP §3.50).
+"""A cockpit drafted for a person, as ONE proposal (Arc CT, CT-5; the home moved in CT-7).
 
-In a Data Canvas's chat a person says "build me a returns cockpit". What is staged is one
-proposal: the cards to create and the spec that arranges them. A person approves all of it or
-none of it. "Move the watches to their own tab" is the same act, with the spec arriving as
-RFC 6902 operations against the cockpit as it stands; approved, it is the next version.
+In the Briefing a person names an area — "returns", "pricing" — and a model drafts a cockpit
+of their own for it (``aughor/cockpit/ask.py``). What is staged is one proposal: the cards to
+create and the spec that arranges them. The person keeps all of it or none of it. An edit is
+the same act, with the spec arriving as RFC 6902 operations against the cockpit as it stands;
+kept, it is the next version.
 
 **The model writes no SQL here, and states no figure.** A new card names what it is made
-from — an approved metric, an approved trusted query, or a finding of this canvas — and its
-query is read from that record. Nothing in a draft can carry a query of its own.
+from — an approved metric, an approved trusted query, or a finding the Briefing shows — and
+its query is read from that record. Nothing in a draft can carry a query of its own.
 
 **A card is run before it is offered.** Every new card's query goes through the same guard
 battery the Briefing's pin doors use (``aughor/dashboard/doors.py``), at the time the draft is
@@ -40,6 +41,7 @@ from typing import Any, Optional
 from aughor.cockpit import cards as _cards
 from aughor.cockpit import validate as _validate
 from aughor.cockpit import versions as _versions
+from aughor.cockpit.home import NOBODY_IN_PARTICULAR, Home, approver
 from aughor.kernel.errors import tolerate
 
 #: The inbox's kind for a cockpit proposal.
@@ -71,16 +73,15 @@ HOW_TO_DRAFT = (
     'made from, for example {"key": "return-rate", "metric": "return_rate"}. It is PLACED by that same '
     'name, {"type": "Card", "props": {"card": "return-rate"}}, and a condition reads it by that name too, '
     '"/cards/return-rate/status". A name the spec places and "cards" does not list is refused, unless it '
-    "is the id of a card the canvas already holds. "
-    'A record a card of the canvas already shows ("made_from" above) is placed by that card\'s id, not '
+    'is the id of a card the person already has ("cards_you_have" above). '
+    'A record a card they have already shows ("made_from" above) is placed by that card\'s id, not '
     "created again; a card may be placed in more than one section. "
-    'A finding is one of this canvas\'s, listed above under "findings"; list_findings lists the whole '
-    "connection's, and a cockpit does not take those. "
+    'A finding is one the Briefing shows, listed above under "findings". '
     f"A draft creates at most {MAX_NEW_CARDS} cards, because each is run before the draft is offered; "
     "choose the ones that matter most, and say that more can follow in an edit. "
     'A limit goes on a card, as "limit", only when the user named it; a limit you choose is refused. '
     'Leave "visible" out of an element that is always shown. '
-    "A card shows what its record measures and no more: a metric is one figure for the whole canvas, "
+    "A card shows what its record measures and no more: a metric is one figure for the whole connection, "
     "and a trusted query or a finding shows its own rows. When the user asks for what no record "
     "measures, such as a breakdown no record gives, say so in your answer rather than drafting "
     "something else in its place."
@@ -104,16 +105,16 @@ class _Source:
     record: Any
 
 
-def _canvas(canvas_id: str):
-    from aughor.canvas.store import get_canvas
-    return get_canvas(canvas_id)
+def findings(conn_id: str, schema: Optional[str]) -> list[dict]:
+    """The findings the Briefing shows for this connection — the ones a person pins from, read
+    the way the Briefing's own pin door reads them. Only those with a query behind them can
+    become a card; the rest are said to have none."""
+    from aughor.routers import exploration
+    by_domain = exploration.domain_findings_for(conn_id, schema or None)
+    return [i for items in (by_domain or {}).values() for i in (items or []) if isinstance(i, dict)]
 
 
-def _schema_of(canvas) -> Optional[str]:
-    return (canvas.scopes[0].schema_name or None) if canvas.scopes else None
-
-
-def _resolve(conn_id: str, canvas_id: str, kind: str, name: str) -> tuple[Optional[_Source], str]:
+def _resolve(conn_id: str, schema: Optional[str], kind: str, name: str) -> tuple[Optional[_Source], str]:
     """The record ``kind``/``name`` names, or ``(None, why it may not be used)``."""
     if kind == FROM_METRIC:
         from aughor.semantic.metrics import get_metric, value_query
@@ -138,17 +139,12 @@ def _resolve(conn_id: str, canvas_id: str, kind: str, name: str) -> tuple[Option
                           "catalogue. A card is made from a query of the catalogue.")
         return _Source(kind, tq.id, int(tq.version or 0), tq.question or tq.id, tq.sql, tq), ""
     if kind == FROM_FINDING:
-        from aughor.explorer.store import canvas_findings
-        found = next((f for f in canvas_findings(canvas_id) if str(f.get("id") or "") == name), None)
+        found = next((f for f in findings(conn_id, schema) if str(f.get("id") or "") == name), None)
         if found is None:
-            if any(str(f.get("id") or "") == name for f in canvas_findings(canvas_id, include_invalid=True)):
-                return None, (f'The finding "{name}" of this canvas is quarantined, and no card is made '
-                              "from a quarantined finding.")
-            # The receipt's third run: a writer took `pinned__2` from list_findings, which lists
-            # the connection's findings, and spent a round learning it was not this canvas's.
-            return None, (f'This canvas has no finding "{name}". A card is made from a finding of this '
-                          'canvas, as op options lists them under "findings"; list_findings lists the '
-                          "whole connection's.")
+            # Said as what it is: the Briefing does not show it. A finding it leaves out — one set
+            # aside as not holding — may exist elsewhere, and is not said not to.
+            return None, (f'The Briefing shows no finding "{name}". A card is made from a finding it '
+                          'shows, as op options lists them under "findings".')
         sql = (found.get("sql") or "").strip()
         if not sql:
             return None, f'The finding "{name}" has no query behind it, so no card can be made from it.'
@@ -190,7 +186,7 @@ def _named_by_the_user(value: float, said: str) -> bool:
 
 
 def _made_from(card: Any) -> Optional[tuple[str, str]]:
-    """The record a card of the canvas was made from, as its provenance keeps it."""
+    """The record a card was made from, as its provenance keeps it."""
     prov = card.provenance
     if prov.metric:
         return FROM_METRIC, prov.metric
@@ -212,7 +208,7 @@ def _query_key(sql: str) -> str:
     return " ".join((sql or "").split()).rstrip(";")
 
 
-def _draft_cards(conn_id: str, canvas, asked: Any,
+def _draft_cards(home: Home, schema: Optional[str], asked: Any,
                  said: Optional[str] = None) -> tuple[list[dict], list[str], set[str]]:
     """The cards a draft creates, each resolved and run; every refusal met on the way; and
     every name the draft gave a card, made or refused.
@@ -231,9 +227,9 @@ def _draft_cards(conn_id: str, canvas, asked: Any,
         return [], [f"The draft creates {len(asked)} cards. A draft creates at most {MAX_NEW_CARDS}; "
                     "the rest can follow in an edit."], named_all
 
-    held_cards = _cards.cards_of(canvas.id)
+    conn_id = home.connection_id
+    held_cards = _cards.cards_of(home)
     held = {c.id for c in held_cards}
-    schema = _schema_of(canvas)
     out: list[dict] = []
     refusals: list[str] = []
     seen: set[str] = set()
@@ -252,7 +248,7 @@ def _draft_cards(conn_id: str, canvas, asked: Any,
             continue
         seen.add(key)
         if key in held:
-            refusals.append(f'"{key}" is already the id of a card in this canvas. '
+            refusals.append(f'"{key}" is already the id of a card the person has. '
                             "Give the new card a name of its own.")
             continue
         named = [s for s in SOURCES if raw.get(s) not in (None, "")]
@@ -266,7 +262,7 @@ def _draft_cards(conn_id: str, canvas, asked: Any,
             refusals.append(f'The card "{key}" carries {", ".join(extra)}. A card names what it is made '
                             "from; its query is read from that record, never written here.")
             continue
-        source, why = _resolve(conn_id, canvas.id, named[0], str(raw.get(named[0])))
+        source, why = _resolve(conn_id, schema, named[0], str(raw.get(named[0])))
         if source is None:
             refusals.append(why)
             continue
@@ -303,7 +299,7 @@ def _draft_cards(conn_id: str, canvas, asked: Any,
         if twins and (not mine or any(_limit_key(h.thresholds) == mine for h in twins)):
             twin = next((h for h in twins if _limit_key(h.thresholds) == mine), twins[0])
             refusals.append(f'The card "{key}" would show {what}, which the card "{twin.id}" '
-                            f'("{twin.title}") of this canvas already shows{same}. Place "{twin.id}" '
+                            f'("{twin.title}") the person has already shows{same}. Place "{twin.id}" '
                             "by its id instead; a card may be placed in more than one section.")
             continue
         earlier = drafted_from.get((source.kind, source.name))
@@ -485,55 +481,40 @@ def _canonical(spec: Any) -> str:
 
 # ── what a writer may choose from ────────────────────────────────────────────────────────────
 
-def _in_canvas(tables: list[str], canvas) -> bool:
-    """Whether a record that reads ``tables`` belongs to this canvas. A canvas of the whole
-    schema holds everything; a record that names no table is not held back for it."""
-    chosen = {t.split(".")[-1].lower() for t in (canvas.table_filter or [])}
-    if not chosen or not tables:
-        return True
-    return any(t.split(".")[-1].lower() in chosen for t in tables)
-
-
-def options(connection_id: str, canvas_id: str) -> dict:
-    """What a cockpit for this canvas may be made of, and how one is written. No model call,
+def options(home: Home, schema: Optional[str] = None) -> dict:
+    """What a cockpit for this person may be made of, and how one is written. No model call,
     no query, nothing written."""
-    from aughor.explorer.store import canvas_findings
     from aughor.semantic.metrics import list_metrics
     from aughor.semantic.trusted_queries import list_trusted
 
-    canvas = _canvas(canvas_id)
-    if canvas is None or (canvas.primary_connection_id or "") != connection_id:
-        return {"available": False,
-                "summary": "This conversation is not in a Data Canvas of this connection, so there is no cockpit to draft."}
     text = _validate.grammar()
     if text is None:
         return {"available": False,
                 "summary": "The cockpit's rules could not run on this server, so no cockpit can be drafted. "
                            "Say so; do not draft one."}
 
-    metrics = [m for m in list_metrics(connection_id=connection_id)
-               if m.status == "approved" and _in_canvas(list(m.tables or []), canvas)]
-    trusted = [t for t in list_trusted(connection_id) if _in_canvas(list(t.tables or []), canvas)]
-    findings = [f for f in canvas_findings(canvas_id) if (f.get("sql") or "").strip()]
-    current = _versions.latest(canvas_id)
+    metrics = [m for m in list_metrics(connection_id=home.connection_id) if m.status == "approved"]
+    trusted = [t for t in list_trusted(home.connection_id)
+               if t.status == "approved" and not t.owner_automation]
+    shown = [f for f in findings(home.connection_id, schema) if (f.get("sql") or "").strip()]
+    current = _versions.latest(home)
     live = current if current and not current["retired"] and current.get("spec") else None
     return {
         "available": True,
-        "canvas": {"name": canvas.name},
         "cockpit": ({"version": live["version"], "spec": live["spec"]} if live else None),
-        "cards_in_canvas": [{"id": c.id, "title": c.title, "kind": c.kind,
-                             "has_limit": bool(_limit_key(c.thresholds)),
-                             **({"made_from": dict([_made_from(c)])} if _made_from(c) else {})}
-                            for c in _cards.cards_of(canvas_id)],
+        "cards_you_have": [{"id": c.id, "title": c.title, "kind": c.kind,
+                            "has_limit": bool(_limit_key(c.thresholds)),
+                            **({"made_from": dict([_made_from(c)])} if _made_from(c) else {})}
+                           for c in _cards.cards_of(home)],
         "metrics": [{"metric": m.name, "label": m.label, "unit": m.unit or ""}
                     for m in metrics[:MAX_OFFERED]],
         "trusted_queries": [{"trusted_query": t.id, "answers": (t.question or "")[:160]}
                             for t in trusted[:MAX_OFFERED]],
         "findings": [{"finding": str(f.get("id") or ""), "says": (f.get("finding") or "")[:160]}
-                     for f in findings[:MAX_OFFERED]],
+                     for f in shown[:MAX_OFFERED]],
         "not_shown": {"metrics": max(0, len(metrics) - MAX_OFFERED),
                       "trusted_queries": max(0, len(trusted) - MAX_OFFERED),
-                      "findings": max(0, len(findings) - MAX_OFFERED)},
+                      "findings": max(0, len(shown) - MAX_OFFERED)},
         # What a draft may not exceed, beside the spec's own limits (which the grammar gives).
         # The receipt by a model found this cap stated nowhere a writer reads: two of ten
         # first drafts made 19 and 17 cards against it.
@@ -558,35 +539,33 @@ class Drafted:
         return self.proposal is not None
 
 
-def _retire_pending(conn_id: str, canvas_id: str, by: str) -> tuple[str, ...]:
-    """One pending draft per canvas. A newer draft replaces the older ones: two drafts written
+def _retire_pending(home: Home, by: str) -> tuple[str, ...]:
+    """One pending draft per cockpit. A newer draft replaces the older ones: two drafts written
     against one version cannot both land, and an approver offered both is offered a stale one."""
     from aughor.actions.inbox import list_proposals, supersede_proposal
     gone = []
-    for old in list_proposals(connection_id=conn_id, status="pending"):
-        if old.kind != KIND or old.id == by or (old.params or {}).get("canvas_id") != canvas_id:
+    for old in list_proposals(connection_id=home.connection_id, status="pending"):
+        if old.kind != KIND or old.id == by or Home.of((old.params or {}).get("home")) != home:
             continue
         if supersede_proposal(old.id, actor="cockpit:redraft", note=f"superseded by {by}"):
             gone.append(old.id)
     return tuple(gone)
 
 
-def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, patches: Any = None,
-          cards: Any = None, reasoning: str = "", said: Optional[str] = None) -> Drafted:
-    """Stage ONE proposal for this canvas's cockpit, or refuse with every reason found.
+def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards: Any = None,
+          reasoning: str = "", said: Optional[str] = None, schema: Optional[str] = None) -> Drafted:
+    """Stage ONE proposal for this person's cockpit, or refuse with every reason found.
 
-    ``said`` is what the person said on this turn, when the caller knows it: a limit is then
-    set only where they named it (:func:`_draft_cards`)."""
+    ``said`` is what the person asked for, when the caller knows it: a limit is then set only
+    where they named it (:func:`_draft_cards`). ``schema`` is the one the Briefing is read on;
+    a card is run on it, as a pin from the Briefing is."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.org.context import current_org_id
 
-    canvas = _canvas(canvas_id)
-    if canvas is None or (canvas.primary_connection_id or "") != connection_id:
-        return Drafted(refusals=("This conversation is not in a Data Canvas of this connection.",))
     if mode not in (MODE_NEW, MODE_EDIT):
         return Drafted(refusals=(f'A cockpit is drafted "{MODE_NEW}" or as an "{MODE_EDIT}".',))
 
-    current = _versions.latest(canvas_id)
+    current = _versions.latest(home)
     live = current if current and not current["retired"] and current.get("spec") else None
     refusals: list[str] = []
 
@@ -607,7 +586,7 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
 
     if mode == MODE_EDIT:
         if live is None:
-            return Drafted(refusals=('This canvas has no cockpit to edit. Draft one with op "new".',))
+            return Drafted(refusals=('There is no cockpit here to edit. Draft one with op "new".',))
         if spec is not None:
             refusals.append('An edit carries "patches", not a "spec".')
         edited = _validate.apply_patches(live["spec"], patches)
@@ -625,7 +604,7 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
 
     # Every card is resolved and run even when the spec is already refused, and the spec is
     # checked even when a card was: the writer is told of everything in one round.
-    made, card_refusals, named = _draft_cards(connection_id, canvas, cards, said)
+    made, card_refusals, named = _draft_cards(home, schema, cards, said)
     refusals.extend(card_refusals)
 
     ids = {c["key"]: c["id"] for c in made}
@@ -633,12 +612,12 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
     verdict = None
     if final is not None:
         # A card that was refused is still a name the spec places. It is counted as known
-        # here, or the rules would call it a card the canvas does not hold — a second
+        # here, or the rules would call it a card the cockpit may not place — a second
         # sentence for a fault already told in its own.
         refused_names = named - set(ids)
-        verdict = _validate.check_spec_for_canvas(
-            final, canvas_id, also_known=[*ids.values(), *refused_names],
-            say_unknown=_undeclared(connection_id, canvas, named))
+        verdict = _validate.check_spec_for_home(
+            final, home, also_known=[*ids.values(), *refused_names],
+            say_unknown=_undeclared(home, schema, named))
         if verdict.status == _validate.NOT_CHECKED:
             return Drafted(refusals=verdict.sentences, not_checked=True)
         if not verdict.accepted:
@@ -656,10 +635,11 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
     if live and not made and _canonical(final) == _canonical(live["spec"]):
         return Drafted(refusals=("The cockpit already reads this way. Nothing was drafted.",))
 
-    titles = {c.id: c.title for c in _cards.cards_of(canvas_id)} | {c["id"]: c["title"] for c in made}
+    titles = {c.id: c.title for c in _cards.cards_of(home)} | {c["id"]: c["title"] for c in made}
     title = str(final["elements"][final["root"]]["props"]["title"])
     params = {
-        "canvas_id": canvas_id,
+        "home": home.as_params(),
+        "schema": schema or "",
         "mode": mode,
         "base_version": current["version"] if current else None,
         "cards": made,
@@ -670,7 +650,6 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
     # A new cockpit is all of it new; saying "added" of every line would say nothing.
     arranged = outline(final, titles, set(ids.values()), moves if mode == MODE_EDIT else None)
     detail = {
-        "canvas_name": canvas.name,
         "title": title,
         "mode": mode,
         "replaces_version": live["version"] if live else None,
@@ -684,11 +663,11 @@ def draft(connection_id: str, canvas_id: str, *, mode: str, spec: Any = None, pa
                       else _replaced(live["spec"], set(verdict.cards), moves["removed"], titles)) if live else [],
     }
     p = stage_proposal(StagedProposal(
-        kind=KIND, org_id=current_org_id() or "", connection_id=connection_id,
-        schema_name=_schema_of(canvas) or "", action_id=f"cockpit:{canvas.name}",
+        kind=KIND, org_id=current_org_id() or "", connection_id=home.connection_id,
+        schema_name=schema or "", action_id=f"cockpit:{title}",
         params=params, detail=detail, reasoning=reasoning,
         proposer="cockpit", source="agent"))
-    return Drafted(proposal=p, replaced=_retire_pending(connection_id, canvas_id, p.id))
+    return Drafted(proposal=p, replaced=_retire_pending(home, p.id))
 
 
 def _limits_asked(cards: Any) -> list[float]:
@@ -713,9 +692,9 @@ def _is_a_limit(numeral: Any, limits: list[float]) -> bool:
     return any(abs(r - limit) <= 1e-9 * max(1.0, abs(limit)) for r in readings for limit in limits)
 
 
-def _undeclared(conn_id: str, canvas, named: set[str]):
-    """The sentence for a name a DRAFT places, or reads, that is no card of the canvas and none
-    the draft creates. The default sentence says the canvas does not hold it, which is true and
+def _undeclared(home: Home, schema: Optional[str], named: set[str]):
+    """The sentence for a name a DRAFT places, or reads, that is no card the person has and none
+    the draft creates. The default sentence says the cockpit may not place it, which is true and
     does not say the repair; three drafts of the receipt by a model were refused for this, and
     the writer had to work out for itself that the name belonged in "cards"."""
     offered: dict[str, tuple[str, str]] = {}
@@ -723,15 +702,14 @@ def _undeclared(conn_id: str, canvas, named: set[str]):
 
     def records() -> dict[str, tuple[str, str]]:
         if not offered:
-            from aughor.explorer.store import canvas_findings
             from aughor.semantic.metrics import list_metrics
             from aughor.semantic.trusted_queries import list_trusted
-            for f in canvas_findings(canvas.id):
+            for f in findings(home.connection_id, schema):
                 if (f.get("sql") or "").strip():
                     offered[str(f.get("id") or "").lower()] = (FROM_FINDING, str(f.get("id") or ""))
-            for t in list_trusted(conn_id):
+            for t in list_trusted(home.connection_id):
                 offered[t.id.lower()] = (FROM_TRUSTED, t.id)
-            for m in list_metrics(connection_id=conn_id):
+            for m in list_metrics(connection_id=home.connection_id):
                 if m.status == "approved":
                     offered[m.name.lower()] = (FROM_METRIC, m.name)
             offered[""] = ("", "")                 # read once, even when nothing is offered
@@ -742,7 +720,7 @@ def _undeclared(conn_id: str, canvas, named: set[str]):
             return ""               # placed and read: one missing card, told once, with its repair
         told.add(name)
         does = "places the card" if how == "placed" else "reads the status of the card"
-        said = (f'The cockpit {does} "{name}". No card of this canvas has that id, and the draft '
+        said = (f'The cockpit {does} "{name}". The person has no card with that id, and the draft '
                 "creates none of that name.")
         kind, record = records().get(name.lower().replace("-", "_"), records().get(name.lower(), ("", "")))
         if kind and _KEY.match(name):
@@ -758,7 +736,7 @@ def _undeclared(conn_id: str, canvas, named: set[str]):
     return say
 
 
-_A = {FROM_METRIC: "an approved metric", FROM_TRUSTED: "a trusted query", FROM_FINDING: "a finding of this canvas"}
+_A = {FROM_METRIC: "an approved metric", FROM_TRUSTED: "a trusted query", FROM_FINDING: "a finding the Briefing shows"}
 
 
 def _as_written(sentence: str, ids: dict[str, str]) -> str:
@@ -771,9 +749,9 @@ def _as_written(sentence: str, ids: dict[str, str]) -> str:
 
 # ── approval ─────────────────────────────────────────────────────────────────────────────────
 
-def _as_drafted(conn_id: str, canvas_id: str, card: dict) -> tuple[Optional[_Source], str]:
+def _as_drafted(conn_id: str, schema: Optional[str], card: dict) -> tuple[Optional[_Source], str]:
     """The record a card was drafted from, if it is as it was — else ``(None, why not)``."""
-    source, why = _resolve(conn_id, canvas_id, str(card.get("from")), str(card.get("name")))
+    source, why = _resolve(conn_id, schema, str(card.get("from")), str(card.get("name")))
     if source is None:
         return None, why
     what = f'the {source.kind.replace("_", " ")} "{source.name}"'
@@ -785,20 +763,20 @@ def _as_drafted(conn_id: str, canvas_id: str, card: dict) -> tuple[Optional[_Sou
     return source, ""
 
 
-def _card_of(conn_id: str, canvas_id: str, card: dict, source: _Source):
+def _card_of(home: Home, card: dict, source: _Source):
     from aughor.dashboard import doors
     from aughor.dashboard.models import CardProvenance, DashboardCard
 
     thresholds = dict(card.get("limit") or {})
     if source.kind == FROM_FINDING:
         return doors.card_from_finding(
-            conn_id, source.record, kind=str(card["kind"]), title=str(card["title"]),
-            scope=_cards.SCOPE, scope_ref=canvas_id, card_id=str(card["id"]),
+            home.connection_id, source.record, kind=str(card["kind"]), title=str(card["title"]),
+            scope=_cards.OWN, scope_ref=home.owner, card_id=str(card["id"]),
         ).model_copy(update={"thresholds": thresholds})
     # Where the card's query came from, kept on the card. A metric is stamped by `place`.
     proof = f"trusted_query:{source.name}:v{source.version}" if source.kind == FROM_TRUSTED else ""
     return DashboardCard(
-        id=str(card["id"]), connection_id=conn_id, scope=_cards.SCOPE, scope_ref=canvas_id,
+        id=str(card["id"]), connection_id=home.connection_id, scope=_cards.OWN, scope_ref=home.owner,
         source="authored", kind=str(card["kind"]), title=str(card["title"]), sql=source.sql,
         thresholds=thresholds, provenance=CardProvenance(receipt_ref=proof))
 
@@ -809,16 +787,20 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
     Returns ``(True, outcome)`` or ``(False, the sentence why not)``."""
     from aughor.dashboard.store import delete_card, get_card
 
-    canvas_id = str(params.get("canvas_id") or "")
-    canvas = _canvas(canvas_id)
-    if canvas is None:
-        return False, "The canvas this cockpit was drafted for no longer exists."
-    if (canvas.primary_connection_id or "") != connection_id:
-        return False, "The canvas this cockpit was drafted for is no longer on this connection."
+    home = Home.of((params or {}).get("home"))
+    if home is None:
+        return False, "This proposal names no cockpit to keep. Nothing was made."
+    if home.connection_id != connection_id:
+        return False, "The cockpit this was drafted for is on another connection. Nothing was made."
     if not (approved_by or "").strip():
         return False, "A cockpit is kept with the name of the person who approved it. None was given."
+    # A person's cockpit is theirs: only they keep it. Where identity is off there is one
+    # operator, and whoever approves is them.
+    if home.owner != NOBODY_IN_PARTICULAR and approved_by.strip() != approver(home.owner):
+        return False, "This cockpit was drafted for someone else, and only they can keep it. Nothing was made."
+    schema = str(params.get("schema") or "") or None
 
-    current = _versions.latest(canvas_id)
+    current = _versions.latest(home)
     now = current["version"] if current else None
     drafted_on = params.get("base_version")
     if now != drafted_on:
@@ -832,14 +814,14 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
     # Everything is checked before anything is written.
     sources: list[_Source] = []
     for card in drafts:
-        source, why = _as_drafted(connection_id, canvas_id, card)
+        source, why = _as_drafted(connection_id, schema, card)
         if source is None:
             return False, why + " Nothing was made. Ask for the cockpit again."
         if not card.get("id") or get_card(str(card["id"])) is not None:
             return False, f'A card with the id "{card.get("id")}" already exists. Nothing was made.'
         sources.append(source)
     ids = [str(c["id"]) for c in drafts]
-    verdict = _validate.check_spec_for_canvas(spec, canvas_id, also_known=ids)
+    verdict = _validate.check_spec_for_home(spec, home, also_known=ids)
     if not verdict.accepted:
         return False, " ".join(verdict.sentences) + " Nothing was made."
 
@@ -850,22 +832,22 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
             try:
                 delete_card(card_id)
             except Exception as exc:
-                tolerate(exc, "a card of a cockpit proposal that failed could not be removed again",
-                         counter="cockpit.propose.undo", card_id=card_id)
+                tolerate(exc, f"a card of a cockpit proposal that failed ({card_id}) could not be removed again",
+                         counter="cockpit.propose.undo", conn_id=home.connection_id)
 
     try:
         for card, source in zip(drafts, sources):
             placed = _cards.place(
-                canvas_id, _card_of(connection_id, canvas_id, card, source),
+                home, _card_of(home, card, source),
                 metric=source.record if source.kind == FROM_METRIC else None)
             made.append(placed.id)
         kept = _versions.keep(
-            canvas_id, spec, approved_by=approved_by, source=f"proposal {proposal_id}",
+            home, spec, approved_by=approved_by, source=f"proposal {proposal_id}",
             note=note, also_known=ids, written_by_model=True)
     except Exception as exc:
         undo()
         tolerate(exc, "a cockpit proposal failed part-way; what it had made was removed again",
-                 counter="cockpit.propose.accept", canvas_id=canvas_id)
+                 counter="cockpit.propose.accept", conn_id=home.connection_id)
         return False, f"The cockpit could not be made: {exc}. Nothing was kept."
     if not kept.kept:
         undo()
@@ -873,5 +855,5 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
         return False, f"{said} Nothing was kept."
 
     title = str(spec["elements"][spec["root"]]["props"]["title"])
-    return True, {"canvas_id": canvas_id, "canvas_name": canvas.name, "title": title,
+    return True, {**home.as_params(), "title": title,
                   "version": kept.version, "artifact_id": kept.artifact_id, "cards_created": made}

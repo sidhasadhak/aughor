@@ -142,7 +142,7 @@ describe("what a reader may not see", () => {
   it("a card the canvas does not hold says so", () => {
     render(<ComposedCockpit spec={premise()} cards={[CARDS[0]]} host={host("final", "within")} doors={DOORS} />);
     const net = screen.getAllByTestId("cockpit-card")[1];
-    expect(within(net).getByText("Not in this canvas")).toBeInTheDocument();
+    expect(within(net).getByText("Not one of your cards")).toBeInTheDocument();
   });
 });
 
