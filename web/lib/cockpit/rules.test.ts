@@ -221,6 +221,86 @@ describe("the shape of a cockpit", () => {
   });
 });
 
+describe("a refusal names every kind of fault, in one round (CT-5)", () => {
+  // The writer is a model, and a round spent learning of one fault at a time is a model call.
+  it("a bad prop, a child nobody defined, a card outside a section and a bad condition, together", () => {
+    const said = refused(s => {
+      s.elements["alert-rate"].props = { card: "c7f3a001", tone: "loud" };            // its props
+      s.elements["sec-limits"].children = ["watch-rate", "ghost"];                     // a key nobody defined
+      s.elements["tab-overview"].children = ["sec-headline", "card-net"];              // the shape
+      s.elements["sec-headline"].children = ["alert-rate", "card-rate"];
+      s.elements["card-rate"].visible = { $state: "/tab", eq: "overview" };           // a condition
+      s.state = { tab: "finance" };                                                    // the state
+    });
+    expect(said).toMatch(/"alert-rate" has a problem with "tone"/);
+    expect(said).toMatch(/section "sec-limits" holds "ghost", which the spec does not define/);
+    expect(said).toMatch(/tab "tab-overview" holds "card-net"\. A Tab holds: Section/);
+    expect(said).toMatch(/The condition on "card-rate" reads "\/tab"/);
+    expect(said).toMatch(/opens on the tab "finance", which it does not hold/);
+  });
+
+  it("a root that is no Cockpit does not hide what is wrong beneath it", () => {
+    const said = refused(s => { s.root = "sec-headline"; s.elements["card-net"].props = { card: 42 }; });
+    expect(said).toMatch(/The root "sec-headline" is a Section/);
+    expect(said).toMatch(/"card-net" has a problem with "card"/);
+  });
+
+  it("and one fault is not told twice in other words", () => {
+    // Two tabs with no name are refused for having none. They are not namesakes.
+    const unnamed = refused(s => {
+      s.elements["tab-overview"].props = { label: "Overview" };
+      s.elements["tab-watches"].props = { label: "Watches" };
+      delete s.state;
+    });
+    expect(unnamed).toMatch(/"tab-overview" has a problem with "name"/);
+    expect(unnamed).not.toMatch(/are both named/);
+    // A section whose only child is undefined holds something it should not. It is not empty.
+    const ghost = refused(s => { s.elements["sec-limits"].children = ["ghost"]; delete s.elements["watch-rate"]; });
+    expect(ghost).toMatch(/holds "ghost", which the spec does not define/);
+    expect(ghost).not.toMatch(/holds nothing/);
+    // An element that is not a component is refused as that, and its holder is not blamed for holding it.
+    const unknown = refused(s => { s.elements["card-rate"].type = "Iframe"; });
+    expect(unknown).toMatch(/"card-rate" is a "Iframe"/);
+    expect(unknown).not.toMatch(/section "sec-headline" holds/);
+  });
+});
+
+describe("what a refusal hands back beside its sentences (CT-5)", () => {
+  it("what it read, so the server can name what only it knows in the same refusal", () => {
+    const spec = premise();
+    spec.elements["card-net"].on = { press: { action: "anything" } };
+    spec.elements["sec-headline"].props = { title: "Returns up 14%" };
+    const check = checkCockpitSpec(spec);
+    expect(check.valid).toBe(false);
+    expect(check.issues.map(i => i.code)).toEqual(["refused_field"]);
+    // Nothing is licensed by it: what is drawn and kept comes from these, and they are empty.
+    expect(check.cards).toEqual([]);
+    expect(check.stateCards).toEqual([]);
+    expect(check.texts).toEqual([]);
+    expect(check.seen?.cards).toEqual(["c7f3a001", "c91b2002"]);
+    expect(check.seen?.stateCards).toEqual(["c7f3a001"]);
+    expect(check.seen?.texts).toContainEqual({ elementKey: "sec-headline", prop: "title", text: "Returns up 14%" });
+    expect(check.seen?.texts).toHaveLength(5);
+  });
+
+  it("but nothing from props that were refused, which have been told already", () => {
+    const spec = premise();
+    spec.elements["card-net"].props = { card: "not an id!" };
+    spec.elements["sec-headline"].props = { title: 7 };
+    spec.elements["card-rate"].visible = { $state: "/cards/c91b2002/status", eq: "breached" };
+    const check = checkCockpitSpec(spec);
+    expect(check.issues.map(i => i.elementKey).sort()).toEqual(["card-net", "card-rate", "sec-headline"]);
+    expect(check.seen?.cards).toEqual(["c7f3a001"]);
+    expect(check.seen?.stateCards).toEqual(["c7f3a001"]);      // not the card a refused condition named
+    expect(check.seen?.texts.map(t => t.elementKey)).not.toContain("sec-headline");
+  });
+
+  it("and nothing at all from what is not a spec, or from an accepted one", () => {
+    expect(checkCockpitSpec({ root: "cockpit" }).seen).toEqual({ cards: [], stateCards: [], texts: [] });
+    expect(checkCockpitSpec(premise()).seen).toBeUndefined();
+  });
+});
+
 describe("what a condition may read", () => {
   const on = (key: string, visible: unknown) => (s: Spec) => { s.elements[key].visible = visible; };
 

@@ -347,6 +347,11 @@ def save_canvas(canvas_id: str, state: dict) -> None:
     save(_canvas_key(canvas_id), state)
 
 
+def canvas_findings(canvas_id: str, include_invalid: bool = False) -> list[dict]:
+    """The findings of this canvas's own exploration — quarantined ones left out by default."""
+    return get_findings(_canvas_key(canvas_id), include_invalid=include_invalid)
+
+
 def canvas_ids_with_state() -> list[str]:
     """Every canvas id that has exploration state — store keys and legacy files."""
     return [k[len("canvas_"):] for k in _family().keys_with_prefix("canvas_")]

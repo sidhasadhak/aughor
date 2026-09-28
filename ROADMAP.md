@@ -9634,7 +9634,61 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
-### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-4 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged)
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt BY A MODEL waits on §6 item 36(f))
+
+> **Status 2026-09-28, last — CT-5 is built, and run live WITHOUT a model. No model call was spent.** In a Data
+> Canvas's chat, on a turn with a channel, and only with `cockpit.composed` on, the model is offered one tool,
+> `draft_cockpit` (`aughor/agent/cockpit_tool.py`); off, the tool list is byte-identical. It takes three shapes of
+> call: `options` (what a cockpit here may be made of, the cockpit as it stands, and how one is written — no
+> query, nothing written), `new` (the whole spec) and `edit` (RFC 6902 operations against the cockpit as it
+> stands). `new` and `edit` stage ONE proposal of the new kind `cockpit_draft` (`aughor/cockpit/propose.py`):
+> the cards to create and the spec that arranges them. **The model writes no SQL and states no figure:** a new
+> card names an approved metric, an approved trusted query of the catalogue, or a finding of this canvas, and
+> its query is read from that record; a card that carries a query of its own is refused by name. **Every new
+> card is run through the guard battery before the draft is offered** — the battery the Briefing's pin doors
+> run, moved out of the router to `aughor/dashboard/doors.py` so both doors share it. **Approval is all or
+> nothing:** everything is checked before anything is written, then the cards are made, then the spec is kept
+> as the next version; if either fails, what was made is removed again. A proposal refuses when a record a
+> card came from has a new version or a changed query, or when the cockpit has moved on since the draft — an
+> edit lands on the version it was written against or not at all. One pending draft per canvas: a newer one
+> supersedes the older. **The survey corrected the plan three times:** (1) the library's own `applySpecPatch`
+> is lenient by design — a `replace` of a path that is not there CREATES it, a `remove` of nothing and an
+> operation it has never heard of pass in silence — so edits are applied by a strict applier of this repo's
+> (`web/lib/cockpit/patch.ts`), in the same bundle as the rules; (2) nothing built a card from a metric's name
+> and no door turned a trusted query into a card; (3) the accept route binds no identity, so where someone is
+> signed in the version is kept in THEIR name (`user:<id>`) and not the accepting screen's. **The grammar the
+> model reads is 3,723 characters** against the library's 15,783, written from the same constants the rules
+> read, and its example is checked by the rules in a test (`web/lib/cockpit/grammar.ts`). **CT-3's open item is
+> settled:** a refusal names every kind of fault in one round — the rules no longer stop at the first phase,
+> and what only the platform knows (a card the canvas does not hold, a figure in a title) is said of what the
+> rules read, in the same refusal. **Live, on this branch's own servers and its own data**, with what a model
+> would write written by hand: two metrics and a trusted query made and approved through the product's own
+> governance routes; a first draft with five faults of five kinds, told of all five at once; an operation that
+> does not apply, refused; the repaired draft staged; approved in the browser from Agent Ops → Attention;
+> version 5 with three new cards, each recording the record and version it came from; a second edit, which
+> superseded its own earlier draft, approved as version 6. **The live run found what the tests had not:** a card
+> with a limit and no monitor behind it said "Alerting when above threshold" — true while graduating a card was
+> the only way to a limit, false for a card a proposal makes. It now says its limit and that no alert is set,
+> and keeps the door to one. And the approval card for an edit said "1 removed" without saying what: it now
+> names what is taken off and where it was, and marks each line the edit adds or changes. **Verified:** 194
+> Python and 162 web tests on the cockpit; **66 deliberate breaks, all caught in the end. Six were not caught
+> at first, and each pointed at something real:** a trusted query of another connection was untested; "every
+> fault in one round" was half true, because what the platform knows was asked only of a spec the rules had
+> accepted; one guard was backed by a second further down, so its test now counts that no card was ever
+> made; two breaks failed tests by exception, a refused draft being read for a field it did not have; and one
+> guard was half redundant and is now one check. The seven web gates; 1,356 web tests; the typed client
+> regenerated and unchanged; the bundle rebuilt to the same bytes twice. **The full Python suite, run once:
+> 12,091 passed and two failed, both by this wave's own new tests** — they saved metrics into the store the
+> whole suite shares, so a test that reads that store whole read 168 it had not expected; and one spelled a
+> retired word as a test value. Both were fixed at the cause (each test now has its own metric and
+> trusted-query store, as every other test that saves one does) and re-run beside the two tests they broke.
+> No targeted run had shown either. **NOT done, and it is the wave's own receipt:** no model has been asked.
+> Falsifier (2) — fewer than half of first proposals pass validation over ten asks on theLook — is unmeasured,
+> and so is whether a model reaches for `options` first. Both spend model calls, which are the user's (§6 item
+> 36(f)). **Open, and named:** the approval card is drawn in chat from a live frame and is not drawn again when
+> the chat is reopened (so of every proposal kind; it stays in Agent Ops → Attention); on an install without
+> sign-in the approver is recorded as the name of the screen it was approved on; a limit a proposal sets
+> schedules no monitor; an edit takes a card off the cockpit and never out of the canvas.
 
 > **Status 2026-09-28 — CT-1 and CT-2 are built; falsifier (1) did not fire.** The library is installed at exactly
 > `0.21.0` (two lockfile entries, nothing else), one hand-written spec draws in a browser with every card handed to
@@ -9749,10 +9803,13 @@ second place that declares chart kinds.
   `compose.py`, `web/components/cockpit/CockpitTab.tsx`). The fourth tab of the Data Canvas, behind `cockpit.composed` (off, byte-identical
   when off): the latest approved spec through the registry, `Card` drawn by `PinnedCardBody` unchanged, the
   Briefing's range control feeding `/range`, the count of cards waiting on a condition per section. *Two days.*
-- **CT-5 · ask for it. ⚑** One converse tool, offered only in a Data Canvas on a streaming turn; it stages ONE
-  proposal of a new kind — the cards to create, each naming an approved metric, a trusted query or a finding,
-  and the spec — approved all or nothing. An edit arrives as RFC 6902 patches against the current spec and
-  becomes the next version. *Three days.* Its receipt spends model calls, which are the user's.
+- **CT-5 · ask for it. ⚑ ✅ BUILT 2026-09-28; its receipt by a model NOT run** (`aughor/agent/cockpit_tool.py`,
+  `aughor/cockpit/propose.py`, `aughor/dashboard/doors.py`, `web/lib/cockpit/patch.ts` and `grammar.ts`, the
+  `cockpit_draft` branch of `web/components/ProposalCard.tsx`). One converse tool, offered only in a Data Canvas
+  on a streaming turn; it stages ONE proposal of a new kind — the cards to create, each naming an approved
+  metric, a trusted query or a finding, and the spec — approved all or nothing. An edit arrives as RFC 6902
+  patches against the current spec and becomes the next version. *Three days.* Its receipt spends model
+  calls, which are the user's.
 - **CT-6 · out by other doors (named, not scheduled).** The same spec to PDF, to an image card for Slack, to
   email — a new door, with the departure gate in front of it — and into other AI clients as an MCP App; charts
   from the existing headless renderer. Trigger: a person asks for a cockpit outside the app.
@@ -11441,6 +11498,8 @@ the browser** · **measure the premise before building.**
     that knows what a card measures.
     **(f) ⚑ OPEN — the receipt's model calls. Spends tokens.** CT-5's receipt and its second falsifier need about
     ten asks on theLook. *Recommended:* once, on the user's word, with the model stated beside the result.
+    *2026-09-28: CT-5 is built and was run live with what a model would write written by hand; nothing was
+    spent. "Start CT-5" was read as the word to build it, not as the word to spend — the ten asks still wait.*
     **(g) ✅ DECIDED with the adoption, as drafted — email is not in this arc.** CT-6 names it and waits for someone
     to ask; when it comes it is a new door and the departure gate stands in front of it.
 

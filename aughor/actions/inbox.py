@@ -184,11 +184,17 @@ class StagedProposal(BaseModel):
     #: against); accept writes it through `kernel.agents.set_governance`, which re-checks
     #: the knob is declared and the value in range — a cap on spend is governance
     #: however small the number, so Spotlight stages it rather than applying it.
+    #: ``cockpit_draft`` (Arc CT-5, 2026-09-28) is a Data Canvas's cockpit as a person asked
+    #: for it: params hold the cards to create — each naming the approved metric, trusted
+    #: query or finding it is made from, with the query read from that record at stage time
+    #: — and the spec that arranges them, or the spec an edit leaves. Accept makes every
+    #: card and keeps the spec as the next version, all or nothing, the bundles' own law;
+    #: it refuses when a record a card came from has changed or the cockpit has moved on.
     kind: Literal["declared_action", "integration",
                   "agent_draft", "automation_draft", "agent_bundle",
                   "automation_state", "agent_grant",
                   "automation_edit", "monitor_bundle", "brief_draft",
-                  "outbound_send", "agent_limit"] = "declared_action"
+                  "outbound_send", "agent_limit", "cockpit_draft"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -559,6 +565,8 @@ def gov_action_of(p: StagedProposal) -> str:
         return f"spotlight.{p.kind}"
     if p.kind == "outbound_send":
         return "automations.outbound_send"
+    if p.kind == "cockpit_draft":
+        return "cockpit.draft"
     return f"kinetic.{p.action_id}"
 
 
@@ -706,6 +714,8 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
         return _accept_agent_grant(p, actor=actor), ""
     if p.kind == "agent_limit":
         return _accept_agent_limit(p, actor=actor), ""
+    if p.kind == "cockpit_draft":
+        return _accept_cockpit_draft(p, actor=actor), ""
 
     action = _load_action(p.connection_id, p.schema_name, p.action_id)
     if action is None:
@@ -1128,6 +1138,33 @@ def _accept_brief_draft(p: StagedProposal, *, actor: str):
     return _Result("executed", True, p.action_id,
                    message=f"brief subscription '{saved.name}' saved as {saved.id}",
                    outcome=out, detail=out)
+
+
+def _accept_cockpit_draft(p: StagedProposal, *, actor: str):
+    """Make the cockpit a person approved (Arc CT-5): every card it creates, then the spec
+    as the canvas's next version — ALL OR NOTHING, the bundles' own law. The making lives
+    with the cockpit (``aughor/cockpit/propose.py``), which checks everything before it
+    writes anything and removes what it made if the rest fails; this executor records what
+    happened. ``actor`` is the person who approved, and the version is kept in their name."""
+    _Result = _executor_result()
+    from aughor.cockpit import propose
+    from aughor.org.context import current_user_id
+
+    # Who approved it, as the cockpit's own routes name them: the signed-in user where there
+    # is one, because that is the server's word; else the name the accepting screen gave.
+    uid = current_user_id()
+    ok, out = propose.accept(dict(p.params or {}), connection_id=p.connection_id,
+                             approved_by=(f"user:{uid}" if uid else actor),
+                             proposal_id=p.id, note=p.reasoning)
+    if not ok:
+        _record_outcome(p.id, "failed", str(out), {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {out}")
+    made = len(out["cards_created"])
+    said = (f"cockpit '{out['title']}' kept as version {out['version']} for the canvas "
+            f"'{out['canvas_name']}'" + (f", with {made} new card{'s' if made != 1 else ''}" if made else ""))
+    _record_outcome(p.id, "executed", said, out)
+    return _Result("executed", True, p.action_id, message=said, outcome=out, detail=out)
 
 
 def _accept_automation_state(p: StagedProposal, *, actor: str):

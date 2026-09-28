@@ -255,8 +255,8 @@ export function CockpitTab({ canvasId, connectionId, schema, active }: {
           {kept?.retired
             ? `Retired by ${person(kept.approved_by)} on ${formatDateTime(kept.kept_at)}. Its earlier versions are in the history.`
             : data.cards.length > 0
-              ? `This canvas holds ${data.cards.length} ${data.cards.length === 1 ? "card" : "cards"}. A cockpit arranges them in sections, and can show a card only while a condition holds.`
-              : "A cockpit is made of cards. Add a card above, then start a cockpit from it."}
+              ? `This canvas holds ${data.cards.length} ${data.cards.length === 1 ? "card" : "cards"}. A cockpit arranges them in sections, and can show a card only while a condition holds. You can also ask for one in this canvas's chat.`
+              : "A cockpit is made of cards. Add a card above and start a cockpit from it, or ask for one in this canvas's chat."}
         </EmptyState>
       )}
     </div>

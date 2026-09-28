@@ -5456,11 +5456,13 @@ export interface StagedProposal {
    *  declared OPERATION and `grant_id` names the connected account whose consent it
    *  spends. SP-3 added the platform-record drafts (`agent_draft`, `automation_draft`,
    *  `automation_state`, `agent_grant`); SP-8 adds `agent_bundle` — params hold BOTH
-   *  records, and accept creates the agent then saves its chain, all or nothing. */
+   *  records, and accept creates the agent then saves its chain, all or nothing.
+   *  Arc CT-5 adds `cockpit_draft`: params hold the cards to make and the spec that
+   *  arranges them; `detail.outline` is that arrangement in words. */
   kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
       | "agent_bundle" | "automation_state" | "agent_grant"
       | "automation_edit" | "monitor_bundle" | "brief_draft" | "outbound_send"
-      | "agent_limit";
+      | "agent_limit" | "cockpit_draft";
   /** The connected account an `integration` proposal would act as. "" otherwise. */
   grant_id: string;
   action_id: string;

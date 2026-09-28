@@ -49,6 +49,13 @@ export interface CockpitCheck {
   stateCards: string[];
   /** The text a reader will see. Empty unless the spec is valid. */
   texts: ReaderText[];
+  /**
+   * On a REFUSAL only: what was read from the elements whose props were sound. It is handed
+   * back so the server can name, in the same refusal, what only it knows — a card the canvas
+   * does not hold, a figure in a title (CT-5). It licenses nothing: `cards` and `texts` stay
+   * empty, and nothing is drawn or kept from a refused spec.
+   */
+  seen?: { cards: string[]; stateCards: string[]; texts: ReaderText[] };
 }
 
 export interface CockpitVocabulary {
@@ -198,7 +205,11 @@ const REFUSED: CockpitCheck = { valid: false, issues: [], cards: [], stateCards:
 
 export function checkCockpitSpec(spec: unknown): CockpitCheck {
   const issues: CockpitIssue[] = [];
-  const done = (): CockpitCheck => ({ ...REFUSED, issues });
+  const cards: string[] = [];
+  const stateCards = new Set<string>();
+  const texts: ReaderText[] = [];
+  const done = (): CockpitCheck => (
+    { ...REFUSED, issues, seen: { cards, stateCards: [...stateCards], texts } });
 
   if (!isObj(spec) || typeof spec.root !== "string" || !isObj(spec.elements)) {
     issues.push({ code: "not_a_spec",
@@ -218,6 +229,17 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     return done();
   }
 
+  // A refusal names EVERY kind of fault it can, not the first kind it meets (CT-5): the writer
+  // is a model, and a round spent learning of one fault at a time is a model call. So a phase
+  // does not stop the next. What lets that be safe is `sound`: the elements whose type, props
+  // and children can be read. A later phase reads those and no others, and an element that is
+  // not sound has already been refused by name.
+  type El = { type: ComponentName; props: Obj; children: string[]; visible?: unknown };
+  const sound = new Map<string, El>();
+  /** The sound elements whose props passed. Only their names, ids and titles are read: a prop
+   *  that was refused is not told again as a namesake, or as a card the canvas does not hold. */
+  const clean = new Set<string>();
+
   // The shape of each element, before anything reads it.
   for (const key of keys) {
     const el = elements[key];
@@ -236,53 +258,51 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
         message: `The element ${q(key)} is a ${q(el.type)}. A cockpit is made of: ${list(COMPONENT_NAMES)}.` });
       continue;
     }
-    if (!isObj(el.props)) {
+    const hasProps = isObj(el.props);
+    const before = issues.length;
+    if (!hasProps) {
       issues.push({ code: "bad_prop", elementKey: key, message: `The element ${q(key)} has no "props".` });
     } else {
-      checkProps(key, el.type, el.props, issues);
+      checkProps(key, el.type, el.props as Obj, issues);
     }
-    if (!Array.isArray(el.children) || el.children.some(c => typeof c !== "string")) {
+    if (issues.length === before) clean.add(key);
+    const hasChildren = Array.isArray(el.children) && el.children.every(c => typeof c === "string");
+    if (!hasChildren) {
       issues.push({ code: "structure", elementKey: key,
         message: `The element ${q(key)} needs "children": a list of element keys, empty when it holds none.` });
     }
+    if (hasProps && hasChildren) sound.set(key, el as unknown as El);
   }
-  if (issues.length) return done();
 
-  type El = { type: ComponentName; props: Obj; children: string[]; visible?: unknown };
-  const at = (k: string) => elements[k] as El;
-
-  // Every key an element names must be one the spec defines, before anything follows it.
+  // Every key an element names must be one the spec defines.
   if (!(spec.root in elements)) {
     issues.push({ code: "bad_root",
       message: `The root is ${q(spec.root)}, which the spec does not define.` });
   }
-  for (const key of keys) {
-    const missing = at(key).children.filter(c => !(c in elements));
+  for (const [key, el] of sound) {
+    const missing = el.children.filter(c => !(c in elements));
     if (missing.length) {
       issues.push({ code: "bad_child", elementKey: key,
-        message: `The ${at(key).type.toLowerCase()} ${q(key)} holds ${list(missing.map(q))}, which the spec does not define.` });
+        message: `The ${el.type.toLowerCase()} ${q(key)} holds ${list(missing.map(q))}, which the spec does not define.` });
     }
   }
-  if (issues.length) return done();
 
-  const root = at(spec.root);
-  if (root.type !== "Cockpit") {
+  const root = sound.get(spec.root);
+  if (root && root.type !== "Cockpit") {
     issues.push({ code: "bad_root", elementKey: spec.root,
       message: `The root ${q(spec.root)} is a ${root.type}. The root of a cockpit is a Cockpit.` });
-    return done();
   }
 
   const tabNames = new Map<string, string>();
-  const cards: string[] = [];
-  const stateCards = new Set<string>();
-  const texts: ReaderText[] = [];
   let tabCount = 0;
   let cardCount = 0;
 
-  for (const key of keys) {
-    const el = at(key);
-    const kinds = el.children.map(c => at(c).type);
-    const stray = el.children.filter((_, i) => !MAY_HOLD[el.type].includes(kinds[i]));
+  for (const [key, el] of sound) {
+    // Only the children that can be read are judged for their kind. One the spec does not
+    // define, or one that is not sound, has been refused above in its own words.
+    const held = el.children.filter(c => sound.has(c));
+    const kinds = held.map(c => (sound.get(c) as El).type);
+    const stray = held.filter((_, i) => !MAY_HOLD[el.type].includes(kinds[i]));
     if (stray.length) {
       const may = MAY_HOLD[el.type];
       issues.push({ code: "bad_child", elementKey: key,
@@ -303,21 +323,25 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
       issues.push({ code: "bad_root", elementKey: key,
         message: `The element ${q(key)} is a second Cockpit. A spec holds one, at its root.` });
     }
+    // A name, an id or a title is read only from props that passed. One that was refused is
+    // not read again here, where two tabs with no name would be called namesakes.
     if (el.type === "Tab") {
       tabCount += 1;
-      const name = String(el.props.name);
-      const first = tabNames.get(name);
-      if (first) {
-        issues.push({ code: "duplicate_tab", elementKey: key,
-          message: `The tabs ${q(first)} and ${q(key)} are both named ${q(name)}. A tab's name is its own.` });
-      } else {
-        tabNames.set(name, key);
+      if (clean.has(key)) {
+        const name = el.props.name as string;
+        const first = tabNames.get(name);
+        if (first) {
+          issues.push({ code: "duplicate_tab", elementKey: key,
+            message: `The tabs ${q(first)} and ${q(key)} are both named ${q(name)}. A tab's name is its own.` });
+        } else {
+          tabNames.set(name, key);
+        }
       }
     }
     if (el.type === "Card") {
       cardCount += 1;
-      const id = String(el.props.card);
-      if (!cards.includes(id)) cards.push(id);
+      const id = el.props.card as string;
+      if (clean.has(key) && !cards.includes(id)) cards.push(id);
     }
     if (el.visible !== undefined) {
       if (!MAY_BE_CONDITIONAL.includes(el.type)) {
@@ -328,8 +352,8 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
         checkCondition(key, el.visible, issues, stateCards);
       }
     }
-    for (const prop of READER_TEXT[el.type] ?? []) {
-      texts.push({ elementKey: key, prop, text: String(el.props[prop]) });
+    for (const prop of clean.has(key) ? READER_TEXT[el.type] ?? [] : []) {
+      texts.push({ elementKey: key, prop, text: el.props[prop] as string });
     }
   }
 

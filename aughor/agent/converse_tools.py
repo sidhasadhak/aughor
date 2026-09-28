@@ -588,6 +588,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     can see is one it will spend a turn trying.
     """
     from aughor.agent.action_tools import action_tools
+    from aughor.agent.cockpit_tool import cockpit_tools
     from aughor.agent.delegate_tool import delegation_tools
     from aughor.agent.platform_tools import platform_tools
     from aughor.agent.present_tool import present_tools
@@ -661,7 +662,8 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ),
     ] + action_tools(connection_id, agent=agent) + platform_tools(connection_id, session_id=session_id) + spotlight_roster(
         connection_id, session_id=session_id, emit=emit) + present_tools(emit=emit) + delegation_tools(
-        connection_id, emit=emit, session_id=session_id)
+        connection_id, emit=emit, session_id=session_id) + cockpit_tools(
+        connection_id, emit=emit, canvas_id=canvas_id)
 
 
 class _Regrounded(BaseModel):

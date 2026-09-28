@@ -165,6 +165,194 @@ describe("SP-12 kinds", () => {
   });
 });
 
+describe("cockpit_draft (Arc CT-5)", () => {
+  const spec = {
+    root: "cockpit", elements: {
+      cockpit: { type: "Cockpit", props: { title: "Returns" }, children: ["sec"] },
+      sec: { type: "Section", props: { title: "Headline" }, children: ["c"] },
+      c: { type: "Card", props: { card: "a1b2c3d4" }, children: [] },
+    },
+  };
+  const draft = (over: Partial<StagedProposal> = {}) => proposal({
+    kind: "cockpit_draft", action_id: "cockpit:canvas-1", proposer: "cockpit",
+    reasoning: "Alerts first, detail behind a tab.",
+    params: {
+      canvas_id: "canvas-1", mode: "new", base_version: null, spec, patches: [],
+      cards: [
+        { id: "a1b2c3d4", key: "return-rate", from: "metric", name: "return_rate", version: 3,
+          label: "Return rate", kind: "kpi", title: "Return rate", sql: "SELECT secret_sql FROM t",
+          limit: { critical: 12, direction: "above" } },
+        { id: "e5f6a7b8", key: "by-category", from: "trusted_query", name: "tq-7", version: 2,
+          label: "Items returned by category", kind: "chart", title: "Returned, by category",
+          sql: "SELECT other_sql", limit: {} },
+      ],
+    },
+    detail: {
+      canvas_name: "Returns desk", title: "Returns", mode: "new", replaces_version: null,
+      counts: { tabs: 2, sections: 2, cards: 3, new: 2 },
+      changes: { added: ["cockpit", "sec", "c"], removed: [], changed: [] },
+      outline: [
+        { tab: "Overview", sections: [
+          { title: "Needs a look", shown: "\"Return rate\" is over its limit", cards: [
+            { title: "Return rate", new: true, tone: "bad", shown: "" }] }] },
+        { tab: "Detail", sections: [
+          { title: "Where and when", shown: "", cards: [
+            { title: "Returned, by category", new: true, tone: "", shown: "" },
+            { title: "Net merchandise revenue", new: false, tone: "", shown: "the range is not to date" }] }] },
+      ],
+    },
+    ...over,
+  });
+
+  it("says what is arranged, in words — tabs, sections, cards and each condition", () => {
+    render(<ProposalCard proposal={draft()} actor="tester" />);
+    expect(screen.getByText("cockpit")).toBeInTheDocument();                     // the chip
+    expect(screen.getByText("Returns")).toBeInTheDocument();
+    expect(screen.getByText("Returns desk")).toBeInTheDocument();
+    const outline = screen.getByTestId("cockpit-outline");
+    expect(outline).toHaveTextContent("Tab · Overview");
+    expect(outline).toHaveTextContent("Needs a look · shown when \"Return rate\" is over its limit");
+    expect(outline).toHaveTextContent("Return rate · new");
+    expect(outline).toHaveTextContent("Tab · Detail");
+    expect(outline).toHaveTextContent("Net merchandise revenue · shown when the range is not to date");
+    // A card the canvas already holds is not called new.
+    expect(outline).not.toHaveTextContent("Net merchandise revenue · new");
+  });
+
+  it("says what each new card is made from, and never shows a query or the spec", () => {
+    const { container } = render(<ProposalCard proposal={draft()} actor="tester" />);
+    const made = screen.getByTestId("cockpit-new-cards");
+    expect(made).toHaveTextContent("2 cards are made");
+    expect(made).toHaveTextContent(
+      "Return rate — from the approved metric return_rate, version 3 · limit: critical at or above 12");
+    expect(made).toHaveTextContent("Returned, by category — from the trusted query tq-7, version 2");
+    expect(container.textContent).not.toContain("secret_sql");
+    expect(container.textContent).not.toContain("other_sql");
+    expect(container.textContent).not.toContain('"elements"');
+    expect(container.textContent).not.toContain("$state");
+    expect(screen.getByText(/all or nothing/)).toBeInTheDocument();
+    expect(screen.getByText("Alerts first, detail behind a tab.")).toBeInTheDocument();
+  });
+
+  it("a limit crossed going down, and a warning beside a critical", () => {
+    const p = draft();
+    (p.params.cards as Record<string, unknown>[])[0].limit = { warning: 95, critical: 90, direction: "below" };
+    render(<ProposalCard proposal={p} actor="tester" />);
+    expect(screen.getByTestId("cockpit-new-cards"))
+      .toHaveTextContent("limit: at or below 95, critical at or below 90");
+  });
+
+  it("an edit says which version it edits and how much of it moves", () => {
+    render(<ProposalCard proposal={draft({
+      params: { canvas_id: "canvas-1", mode: "edit", base_version: 4, spec, cards: [], patches: [] },
+      detail: { canvas_name: "Returns desk", title: "Returns", mode: "edit", replaces_version: 4,
+        counts: { tabs: 0, sections: 1, cards: 1, new: 0 },
+        changes: { added: [], removed: ["c-week"], changed: ["sec-detail", "sec-headline"] },
+        outline: [{ tab: "", sections: [{ title: "Headline", shown: "", cards: [
+          { title: "Return rate", new: false, tone: "", shown: "" }] }] }] },
+    })} actor="tester" />);
+    expect(screen.getByText(/version 4 · of its elements, 1 removed · 2 changed/)).toBeInTheDocument();
+    expect(screen.queryByTestId("cockpit-moved")).toBeNull();          // this outline marks nothing
+    expect(screen.queryByTestId("cockpit-taken-off")).toBeNull();      // and its record names nothing taken off
+    // No card is made, so the card does not speak of cards that were run.
+    expect(screen.queryByText(/was run once/)).toBeNull();
+    expect(screen.queryByTestId("cockpit-new-cards")).toBeNull();
+    expect(screen.queryByText(/Tab ·/)).toBeNull();
+    expect(screen.getByText(/accepting keeps this arrangement/)).toBeInTheDocument();
+  });
+
+  it("an edit marks each line it adds or changes, and no line it leaves alone", () => {
+    render(<ProposalCard proposal={draft({
+      params: { canvas_id: "canvas-1", mode: "edit", base_version: 4, spec, patches: [],
+        cards: [{ id: "a1b2c3d4", key: "units", from: "metric", name: "units_returned", version: 1,
+          label: "Units returned", kind: "kpi", title: "Units returned", sql: "SELECT x", limit: {} }] },
+      detail: { canvas_name: "Returns desk", title: "Returns", mode: "edit", replaces_version: 4,
+        counts: { tabs: 2, sections: 3, cards: 4, new: 1 },
+        changes: { added: ["tab-asked", "sec-asked", "c-units", "c-net-2"], removed: [], changed: ["sec-headline", "tabs"] },
+        outline: [
+          { tab: "Overview", change: "", sections: [
+            { title: "At a glance", change: "changed", shown: "", cards: [
+              { title: "Return rate", new: false, change: "", tone: "", shown: "" }] },
+            { title: "Trend", change: "", shown: "", cards: [
+              { title: "Revenue by month", new: false, change: "", tone: "", shown: "" }] }] },
+          { tab: "Asked for", change: "added", sections: [
+            { title: "From approved records", change: "added", shown: "", cards: [
+              { title: "Units returned", new: true, change: "added", tone: "", shown: "" },
+              { title: "Net merchandise revenue", new: false, change: "added", tone: "", shown: "" }] }] },
+        ] },
+    })} actor="tester" />);
+    const outline = screen.getByTestId("cockpit-outline");
+    expect(outline).toHaveTextContent("Tab · Asked for · added");
+    expect(outline).toHaveTextContent("At a glance · changed");
+    expect(outline).toHaveTextContent("From approved records · added");
+    expect(outline).toHaveTextContent("Net merchandise revenue · added");      // a card the canvas holds, placed here
+    expect(outline).toHaveTextContent("Units returned · new");                 // a card the draft makes says new…
+    expect(outline).not.toHaveTextContent("Units returned · new · added");     // …and not both
+    expect(outline).not.toHaveTextContent("Tab · Overview ·");
+    expect(outline).not.toHaveTextContent("Trend ·");
+    expect(outline).not.toHaveTextContent("Return rate ·");
+    expect(screen.getAllByTestId("cockpit-moved")).toHaveLength(4);
+  });
+
+  it("an edit names what it takes off, and where each was", () => {
+    render(<ProposalCard proposal={draft({
+      params: { canvas_id: "canvas-1", mode: "edit", base_version: 4, spec, cards: [], patches: [] },
+      detail: { canvas_name: "Returns desk", title: "Returns", mode: "edit", replaces_version: 4,
+        counts: { tabs: 0, sections: 1, cards: 1, new: 0 },
+        changes: { added: [], removed: ["c-week", "sec-detail", "tab-detail"], changed: ["tabs"] },
+        taken_off: [
+          { what: "card", title: "Returns by week", from: "Where and when" },
+          { what: "section", title: "Where and when", from: "Detail" },
+          { what: "tab", title: "Detail", from: "" },
+        ],
+        outline: [{ tab: "", change: "", sections: [{ title: "Headline", change: "", shown: "", cards: [
+          { title: "Return rate", new: false, change: "", tone: "", shown: "" }] }] }] },
+    })} actor="tester" />);
+    const gone = screen.getByTestId("cockpit-taken-off");
+    expect(gone).toHaveTextContent("Taken off the cockpit. A card taken off stays in the canvas:");
+    expect(gone).toHaveTextContent("CardReturns by week — it was in Where and when");
+    expect(gone).toHaveTextContent("SectionWhere and when — it was in Detail");
+    expect(gone).toHaveTextContent(/TabDetail$/);
+  });
+
+  it("a new cockpit names nothing taken off", () => {
+    render(<ProposalCard proposal={draft()} actor="tester" />);
+    expect(screen.queryByTestId("cockpit-taken-off")).toBeNull();
+    expect(screen.getByText(/Every new card was run once and passed the guards/)).toBeInTheDocument();
+  });
+
+  it("accepted, it says which version it became and where to find it", async () => {
+    acceptProposal.mockResolvedValue({
+      status: "executed", minted_grant: "",
+      outcome: { canvas_id: "canvas-1", version: 5, cards_created: ["a1b2c3d4", "e5f6a7b8"] },
+    });
+    render(<ProposalCard proposal={draft()} actor="approver@example.com" />);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(acceptProposal).toHaveBeenCalledWith("prop-1", "approver@example.com", false, {});
+    expect(await screen.findByText("executed — kept as version 5 — it is in this canvas's Cockpit tab"))
+      .toBeInTheDocument();
+  });
+
+  it("refused on accept, it says why in the server's own sentence and stays pending", async () => {
+    acceptProposal.mockRejectedValue(new Error(
+      "draft no longer valid: The cockpit has changed since this was drafted: it was version 1, and it is now version 2."));
+    render(<ProposalCard proposal={draft()} actor="tester" />);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(await screen.findByText(/The cockpit has changed since this was drafted/)).toBeInTheDocument();
+  });
+
+  it("read after it settled, it still says where it went, or why it did not", () => {
+    const { unmount } = render(<ProposalCard actor="tester" proposal={draft({
+      status: "executed", outcome: { version: 2, cards_created: [] } })} />);
+    expect(screen.getByText("executed — kept as version 2 — it is in this canvas's Cockpit tab")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    unmount();
+    render(<ProposalCard actor="tester" proposal={draft({
+      status: "superseded", status_message: "superseded by prop-9" })} />);
+    expect(screen.getByText("superseded — superseded by prop-9")).toBeInTheDocument();
+  });
+});
+
 describe("outbound_send (SP-7 widened)", () => {
   it("shows the drafted post's destination and offers always-allow", async () => {
     const accept = vi.fn().mockResolvedValue({ status: "executed", outcome: {}, minted_grant: "g1" });

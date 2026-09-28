@@ -108,8 +108,14 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
   const sparkH = Math.max(24, Math.min(dims.h > 0 ? dims.h - 40 : 30, 120));
 
   // Watch → alert.
-  const t0 = card.thresholds as { warning?: number | null; critical?: number | null; direction?: string } | undefined;
-  const [alerting, setAlerting] = useState(!!(t0 && (t0.warning != null || t0.critical != null)));
+  const t0 = card.thresholds as {
+    warning?: number | null; critical?: number | null; direction?: string; monitor_id?: string | null;
+  } | undefined;
+  // A limit is not an alert. A card says it is alerting only when a monitor stands behind it
+  // (`monitor_id`, written when the card was graduated). A card a cockpit proposal made carries
+  // a limit and schedules nothing (Arc CT-5); it says its limit, and the door to an alert stays.
+  const limits = [t0?.warning, t0?.critical].filter((v): v is number => typeof v === "number");
+  const [alerting, setAlerting] = useState(limits.length > 0 && !!t0?.monitor_id);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertVal, setAlertVal] = useState("");
   const [alertDir, setAlertDir] = useState<"below" | "above">((t0?.direction as "below" | "above") || "below");
@@ -213,6 +219,11 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
         {canAlert && alerting && (
           <div title="This card is now a scheduled monitor" className="aug-fs-xs" style={{ color: "var(--amb4)", display: "flex", alignItems: "center", gap: 4 }}>
             <span>⏰</span> Alerting when {alertDir} threshold
+          </div>
+        )}
+        {!alerting && limits.length > 0 && (
+          <div data-testid="card-limit" title="This card carries a limit. Nothing is scheduled to watch it." className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            Limit: {t0?.direction === "below" ? "at or below" : "at or above"} {limits.map(v => formatMetricValue(v)).join(", ")} · no alert is set
           </div>
         )}
         {canAlert && !alerting && alertOpen && (

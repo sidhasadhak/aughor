@@ -306,3 +306,98 @@ with the version, and going back to a version holds it to the rule it was first 
   still keeps the card for the connection.
 - The range control needs `briefing.ranges`. With it off the tab reads every card as written.
 - The weight the tab adds to the canvas page was not measured; §9's figure for the library stands.
+
+## 11 · CT-5's receipt — asking for it, run without a model (2026-09-28)
+
+The user's word was *"Start CT-5"*. It was read as the word to build the wave, not as the
+word to spend: §6 item 36(f), the model calls of the receipt, is still open. So this receipt
+is of everything **but** the model. What a model would write was written by hand and handed
+to the tool, against the real stores, the real rules and the real warehouse guard.
+
+### What the survey measured, before anything was built
+
+| asked | measured |
+|---|---|
+| can the library apply an edit? | it has `applySpecPatch`, and it is lenient by design. A `replace` of a path that is not there **creates** it; a `remove` of nothing and an operation it has never heard of pass in silence; the whole-document path writes a key named `""`. It is built for a spec arriving in pieces. An approved edit must do what it said, so edits are applied by a strict applier of this repo's, in the same bundle as the rules |
+| is any chat tool offered only in a canvas? | no. The canvas's id reached the tools only to be written on receipts. `draft_cockpit` is the first |
+| what makes a card from a metric, or from a trusted query? | nothing did. A finding had a door (`POST /cards/pin-insight`), a query written by hand had one (`pin-query`), and both ran the guard from inside the router. The guard and the card a finding becomes moved to `aughor/dashboard/doors.py`; both doors and the proposal call them |
+| who approved? | the accept route takes the approver's name from the request, and the web sends the name of the screen. Where someone is signed in, a cockpit's version is kept in their name |
+| does a chat show a proposal again when it is reopened? | no, for any kind of proposal: the card is drawn from a live frame. It stays in Agent Ops → Attention |
+
+### The tool
+
+One tool, `draft_cockpit`, in three shapes of call. It is offered only when the flag is on,
+the turn is in a Data Canvas, and the turn has a channel to draw a card on. Its description
+is 918 characters and is sent on every such turn; what a writer needs to know is 7,201
+characters and is sent only when `options` is asked for.
+
+| call | what it does | what it costs |
+|---|---|---|
+| `options` | the approved metrics, trusted queries and findings a card may be made from, limited to the canvas's tables; the cards the canvas holds; the cockpit as it stands; the grammar | no query, no model call, nothing written |
+| `new` | stages one proposal: the cards to create and the whole spec | one guarded query per new card |
+| `edit` | stages one proposal: the cards to create and RFC 6902 operations against the cockpit as it stands | the same |
+
+The grammar is 3,723 characters, against the 15,783 the library writes for the same five
+components. It is written from the constants the rules read, names nothing the arc refuses,
+and its example is checked by the rules in a test.
+
+### The run
+
+On this branch's own servers, against the demo warehouse, with no model key in the environment.
+
+| step | what happened |
+|---|---|
+| two metrics and a trusted query, through `POST /metrics`, `/metrics/{name}/transition` and `/learning/trusted` | proposed, then approved. The first try at one metric was refused by the route itself: a metric's SQL is a whole SELECT. A third metric was left a draft on purpose |
+| `options` | two approved metrics, one trusted query, six cards, the cockpit at version 4. The draft metric was not offered |
+| an edit with five faults of five kinds | refused once, naming all five: a draft metric; a card carrying a query of its own; a tone outside the list; a condition reading a figure; a title stating a figure |
+| an edit whose operation does not apply | refused: "Operation 1 of 1 is refused: … is not in the spec. Nothing was changed." |
+| the edit, repaired | staged as one proposal. Three new cards, each with the query read from its record, each run once. The cockpit was still version 4 and the canvas still held six cards |
+| the approval card, in Agent Ops → Attention | the arrangement in words, each condition as a sentence, each new card with the record and version it is made from, and no query |
+| Accept, in the browser | version 5, kept in the approver's name, with three new cards. Each card records where it came from |
+| the tab "Asked for" | the failure rate reads 1.59 against a limit of 1.5, so its section is shown. The chart is drawn by Vega |
+| a second edit, drafted twice | the second draft superseded the first. Its card marks the two sections it changes and the two lines it adds, and names the card it takes off and where it was |
+| Accept | version 6 |
+
+### What the live run found that the tests had not
+
+1. **A card with a limit said it was alerting.** "Alerting when above threshold", with the
+   title "This card is now a scheduled monitor". That was true while graduating a card was
+   the only way to give it a limit. A proposal gives a card a limit and schedules nothing.
+   The card now says its limit, says no alert is set, and keeps the door to one.
+2. **An edit's card said "1 removed" and not what.** The outline is of the cockpit as it will
+   be, so what is taken off was nowhere on it. It is now named, with where it was.
+3. **An edit's card showed the whole cockpit with nothing marked.** Each line an edit adds or
+   changes is now marked, and a line it leaves alone says nothing.
+4. **The inbox row read the canvas's id.** It reads the canvas's name.
+5. **Stopping the server is not the server being gone.** The first draft ran a second after
+   the scratch API was stopped and was warned that the old process still held the stores.
+   The later runs waited for the process, not the port.
+
+### What the deliberate breaks found
+
+Sixty-six guards were broken on purpose. All were caught in the end; six were not at first.
+
+1. A trusted query that belongs to another connection had no test.
+2. **"Every fault in one round" was half true.** What only the platform knows — a card the
+   canvas does not hold, a figure in a title — was asked only of a spec the rules had
+   accepted. A spec with a refused field and a card it does not hold was told of the field
+   alone, which is the case CT-3 had named. The rules now hand back what they read from a
+   refused spec, from the elements whose props were sound, and the platform says its part of
+   that in the same refusal.
+3. One guard was backed by a second further down, so breaking it changed nothing a test
+   could see. Its test now counts that no card was ever made.
+4. Two breaks failed tests by exception: a refused draft was read for a field it did not
+   have. A test that breaks is not a test that noticed. Drafts are now asserted to be staged,
+   with their reasons as the message.
+5. One guard was half redundant. It is now one check.
+
+### Not done
+
+- **No model has been asked.** Falsifier (2) — fewer than half of first proposals pass
+  validation over ten asks on theLook — is unmeasured. So is whether a model asks for
+  `options` before it drafts, and how many rounds a repair takes.
+- The reasoning a model gives is held to the numerals law, as titles are. A card's title
+  taken from a finding is the finding's own sentence and may state a figure, as it does when
+  a finding is pinned from the Briefing.
+- A limit set by a proposal schedules no monitor.
+- An edit takes a card off the cockpit and never out of the canvas.

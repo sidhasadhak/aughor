@@ -105,7 +105,51 @@ def vocabulary() -> Optional[dict]:
     return out
 
 
-def _stated_figures(text: str) -> list[str]:
+def grammar() -> Optional[str]:
+    """What the writer of a cockpit is told, as the web writes it from its own catalog — or
+    None when the rules cannot run. The server keeps no copy (CT-5)."""
+    out, _why = _run({"op": "grammar"})
+    text = (out or {}).get("text")
+    return text if isinstance(text, str) and text else None
+
+
+@dataclass(frozen=True)
+class Edited:
+    """What became of an edit. ``spec`` is the edited spec when ``status`` is ``accepted``,
+    and None otherwise: a refused edit leaves nothing behind, and one that could not be
+    applied is not one that applied."""
+    status: str
+    spec: Optional[dict] = None
+    sentences: tuple[str, ...] = ()
+
+    @property
+    def applied(self) -> bool:
+        return self.status == ACCEPTED
+
+
+def apply_patches(spec: Any, patches: Any) -> Edited:
+    """Apply RFC 6902 operations to ``spec``, strictly and all or nothing (CT-5). The result
+    is NOT checked here; the caller checks it as it would any spec."""
+    try:
+        json.dumps([spec, patches])
+    except (TypeError, ValueError) as exc:
+        return Edited(REFUSED, sentences=(f"The edit is not JSON: {exc}.",))
+    out, why = _run({"op": "patch", "spec": spec, "patches": patches})
+    if out is None:
+        return Edited(NOT_CHECKED, sentences=(
+            f"The edit could not be applied: {why}. Nothing is changed unchecked.",))
+    issues = out.get("issues")
+    if not isinstance(out.get("ok"), bool) or not isinstance(issues, list):
+        return Edited(NOT_CHECKED, sentences=(
+            "The edit could not be applied: the rules answered without a verdict. "
+            "Nothing is changed unchecked.",))
+    if not out["ok"] or not isinstance(out.get("spec"), dict):
+        said = tuple(str(i.get("message", "")) for i in issues if isinstance(i, dict))
+        return Edited(REFUSED, sentences=said or ("The edit was refused and no reason was given.",))
+    return Edited(ACCEPTED, spec=out["spec"])
+
+
+def stated_figures(text: str) -> list[str]:
     """The figures a piece of reader text states, by the numerals law's own reading
     (``explorer/grounding.py``): a magnitude or a percentage. A year, a rank and a small count
     are not claims about the data, there as here."""
@@ -127,30 +171,42 @@ def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = T
     issues = out.get("issues")
     if not isinstance(out.get("valid"), bool) or not isinstance(issues, list):
         return _not_checked("the rules answered without a verdict")
-    if not out["valid"]:
-        said = tuple(str(i.get("message", "")) for i in issues if isinstance(i, dict))
-        return SpecVerdict(REFUSED, said or ("The rules refused the spec and gave no reason.",))
-
     known = {str(c) for c in known_cards}
-    placed = [str(c) for c in out.get("cards") or []]
+    if not out["valid"]:
+        # A refusal names every fault it can (CT-5). The rules hand back what they read from
+        # the elements that were sound, and what only the platform knows is said of that, in
+        # the same refusal — or a writer would learn of a card the canvas does not hold only
+        # after repairing everything else.
+        said = [str(i.get("message", "")) for i in issues if isinstance(i, dict)]
+        seen = out.get("seen") if isinstance(out.get("seen"), dict) else {}
+        said += _platform_says(seen, known, model_written)
+        return SpecVerdict(REFUSED, tuple(said) or ("The rules refused the spec and gave no reason.",))
+
+    sentences = _platform_says(out, known, model_written)
+    if sentences:
+        return SpecVerdict(REFUSED, tuple(sentences))
+    return SpecVerdict(ACCEPTED, (), tuple(str(c) for c in out.get("cards") or []))
+
+
+def _platform_says(read: dict, known: set[str], model_written: bool) -> list[str]:
+    """What only the platform knows of what the rules read: a card the canvas does not hold,
+    and — of text a model wrote — a title that states a figure."""
     sentences: list[str] = []
-    for card in placed:
-        if card not in known:
+    for card in read.get("cards") or []:
+        if str(card) not in known:
             sentences.append(f'The cockpit places the card "{card}", which this canvas does not hold.')
-    for card in out.get("stateCards") or []:
+    for card in read.get("stateCards") or []:
         if str(card) not in known:
             sentences.append(
                 f'A condition reads the status of the card "{card}", which this canvas does not hold.')
-    for t in (out.get("texts") or []) if model_written else []:
+    for t in (read.get("texts") or []) if model_written else []:
         text = str(t.get("text", ""))
-        figures = _stated_figures(text)
+        figures = stated_figures(text)
         if figures:
             sentences.append(
                 f'The {t.get("prop")} of "{t.get("elementKey")}" reads "{text}", which states a figure '
                 f'({", ".join(figures)}). In a cockpit a figure belongs to a card, where it is measured.')
-    if sentences:
-        return SpecVerdict(REFUSED, tuple(sentences))
-    return SpecVerdict(ACCEPTED, (), tuple(placed))
+    return sentences
 
 
 def check_spec_for_canvas(spec: Any, canvas_id: str, *, also_known: Iterable[str] = (),
