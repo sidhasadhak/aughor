@@ -14,7 +14,10 @@ The properties that matter are mostly about restraint:
   are known to the caller, and a lever that re-infers a known fact is a lever that can be
   wrong about one;
 * `agreed` is computed at write time, because the arc's falsifier ("the shadow agrees with
-  what ran on essentially every ask") has to be one fold over one column.
+  what ran on essentially every ask") has to be one fold over one column;
+* it cannot stop the SERVER. It runs on a thread of its own, never on the event loop: called
+  from the door's `finally` it froze a live install twice in an hour, for minutes, while its
+  model's reply stalled.
 """
 from __future__ import annotations
 
@@ -164,6 +167,20 @@ def test_a_shadow_NEVER_costs_a_turn(on):
 
 # ── the hook ─────────────────────────────────────────────────────────────────────────────
 
+def _flag_on(monkeypatch):
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == T.SHADOW_FLAG)
+
+
+def _settled(timeout: float = 5.0) -> None:
+    """Wait for every shadow the door has scheduled. The door does not wait; a test must."""
+    import threading
+
+    from aughor.routers.investigations import SHADOW_THREAD
+    for t in [t for t in threading.enumerate() if t.name == SHADOW_THREAD]:
+        t.join(timeout)
+        assert not t.is_alive(), "a shadow was still running after the wait"
+
+
 def test_the_ask_door_actually_calls_the_shadow(monkeypatch):
     """The wire, not the function. `shadow` is thoroughly tested above and would still have
     been dead code: nothing referenced `stream_with_session_log` in the suite, so a hook
@@ -180,6 +197,7 @@ def test_the_ask_door_actually_calls_the_shadow(monkeypatch):
 
     monkeypatch.setattr(session_log, "enabled", lambda: True)
     monkeypatch.setattr(session_log, "emit", lambda *a, **k: None)
+    _flag_on(monkeypatch)
     calls = []
     monkeypatch.setattr("aughor.judgment.treatment.shadow",
                         lambda q, **kw: calls.append((q, kw)))
@@ -194,6 +212,7 @@ def test_the_ask_door_actually_calls_the_shadow(monkeypatch):
             yielded.append(ev)
 
     asyncio.run(_drive())
+    _settled()
 
     assert yielded, "the answer must still reach the caller"
     assert len(calls) == 1, "the door calls the shadow exactly once, when the turn settles"
@@ -213,6 +232,7 @@ def test_the_hook_reports_a_deep_turn_as_deep(monkeypatch):
 
     monkeypatch.setattr(session_log, "enabled", lambda: True)
     monkeypatch.setattr(session_log, "emit", lambda *a, **k: None)
+    _flag_on(monkeypatch)
     calls = []
     monkeypatch.setattr("aughor.judgment.treatment.shadow",
                         lambda q, **kw: calls.append(kw))
@@ -225,4 +245,155 @@ def test_the_hook_reports_a_deep_turn_as_deep(monkeypatch):
             pass
 
     asyncio.run(_drive())
+    _settled()
     assert calls[0]["ran"] == "deep"
+
+
+# ── the server is not the shadow's to stop ───────────────────────────────────────────────
+
+def _drain(monkeypatch, *, shadow, beside=None):
+    """Drive the real wrapper over a one-frame answer, with `shadow` standing in for the
+    model call. Returns (seconds the stream took to end, what `beside` returned)."""
+    import asyncio
+    import time
+
+    from aughor.obs import session_log
+    from aughor.routers import investigations as I
+
+    monkeypatch.setattr(session_log, "enabled", lambda: True)
+    monkeypatch.setattr(session_log, "emit", lambda *a, **k: None)
+    monkeypatch.setattr("aughor.judgment.treatment.shadow", shadow)
+
+    async def _drive():
+        async def _stream():
+            yield 'data: {"type":"headline","headline":"hi"}\n\n'
+        other = asyncio.ensure_future(beside()) if beside else None
+        t0 = time.monotonic()
+        async for _ in I.stream_with_session_log(
+                _stream(), question="why did revenue fall?", conn_id="c1", door="ask"):
+            pass
+        took = time.monotonic() - t0
+        return took, (await other if other else None)
+
+    return asyncio.run(_drive())
+
+
+def test_the_stream_ends_without_waiting_for_the_shadow(monkeypatch):
+    """The measured failure, in small: a model whose reply has begun and does not end.
+
+    The stand-in waits on an event nobody sets until the stream is over. Called on the event
+    loop, as it was, the stream could not end before the wait did — and on the install it
+    was not only this stream that waited, it was the server.
+    """
+    import threading
+
+    _flag_on(monkeypatch)
+    release, ran_on, seen = threading.Event(), [], []
+
+    def stalled(question, **kw):
+        ran_on.append(threading.current_thread())
+        seen.append((question, kw))
+        release.wait(5.0)
+
+    took, _ = _drain(monkeypatch, shadow=stalled)
+    try:
+        assert took < 1.0, f"the stream waited {took:.2f}s on the shadow's model"
+        assert not release.is_set()
+    finally:
+        release.set()
+    _settled()
+
+    [thread] = ran_on
+    assert thread is not threading.main_thread()
+    assert thread.name == "treatment-shadow" and thread.daemon is True
+    assert seen == [("why did revenue fall?",
+                     {"ran": "quick", "conn_id": "c1", "observed": {"grids": 0, "ok": True}})]
+
+
+def test_the_server_goes_on_serving_while_the_shadow_waits(monkeypatch):
+    """Not only this stream. While the shadow waits, another coroutine on the same loop must
+    go on running: on the install it was health checks and six automations that did not."""
+    import asyncio
+    import threading
+    import time
+
+    _flag_on(monkeypatch)
+    waiting, release = threading.Event(), threading.Event()
+
+    def stalled(question, **kw):
+        waiting.set()
+        release.wait(5.0)
+
+    async def heartbeat():
+        """Beats for as long as the shadow is waiting, up to a second."""
+        beats, t0 = 0, time.monotonic()
+        while time.monotonic() - t0 < 1.0:
+            await asyncio.sleep(0.01)
+            if waiting.is_set() and not release.is_set():
+                beats += 1
+            if beats >= 20:
+                break
+        return beats
+
+    try:
+        _took, beats = _drain(monkeypatch, shadow=stalled, beside=heartbeat)
+        assert beats >= 20, f"the loop beat {beats} times while the shadow waited"
+    finally:
+        release.set()
+    _settled()
+
+
+def test_the_shadows_row_is_filed_under_the_runs_own_trace(monkeypatch):
+    """The thread carries the request's context. Without it the session log drops the row —
+    it keeps no event that has no trace — and the experiment would collect nothing, quietly."""
+    from aughor import telemetry
+    from aughor.org.context import current_session_id, reset_session_id, set_session_id
+
+    _flag_on(monkeypatch)
+    seen = []
+    token = set_session_id("session-7")
+    try:
+        _drain(monkeypatch, shadow=lambda q, **kw: seen.append(
+            (telemetry.current_trace_id(), current_session_id())))
+    finally:
+        reset_session_id(token)
+    _settled()
+
+    [(trace, session)] = seen
+    assert trace and len(trace) == 8, "the run's own trace id, as the wrapper minted it"
+    assert session == "session-7"
+    assert not telemetry.current_trace_id(), "and it is bound to the run, not left on the caller"
+
+
+def test_with_the_flag_off_no_thread_is_started(monkeypatch):
+    """Off is the default, and off nothing is different: no shadow, and no thread for one."""
+    import threading
+
+    from aughor.routers.investigations import SHADOW_THREAD
+
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    started = []
+    real = threading.Thread
+
+    class Watched(real):
+        def start(self):
+            started.append(self.name)
+            return super().start()
+
+    monkeypatch.setattr(threading, "Thread", Watched)
+    calls = []
+    _drain(monkeypatch, shadow=lambda q, **kw: calls.append(q))
+    assert calls == [] and SHADOW_THREAD not in started
+
+
+def test_a_shadow_that_cannot_be_scheduled_costs_the_turn_nothing(monkeypatch):
+    import threading
+
+    _flag_on(monkeypatch)
+
+    def no_threads(*a, **kw):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(threading, "Thread", no_threads)
+    took, _ = _drain(monkeypatch, shadow=lambda q, **kw: None)
+    assert took < 1.0

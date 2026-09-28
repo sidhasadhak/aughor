@@ -9680,8 +9680,10 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 > under-specified question about data; (c) **the API froze twice, for 3m45s and for 8 minutes** — after
 > every settled ask `stream_with_session_log` calls the judgment treatment shadow, a model call, in its
 > `finally` ON THE EVENT LOOP, and on DeepSeek the reply stalled; while it did, nothing was served and six
-> automations failed every tick. It is older than this arc (CP-1) and is not fixed here; the last four asks
-> were sent with the shadow switched off, at the user's word, and it was switched back. (d) A refused
+> automations failed every tick. It is older than this arc (CP-1); the last four asks were sent with the
+> shadow switched off, at the user's word, and it was switched back. **Fixed the same day, at the user's
+> word:** the shadow runs on a thread of its own, carrying the request's context, and the stream ends
+> without waiting for it. (d) A refused
 > draft's reasons were recorded nowhere until the step's own `error` carried them — without that the
 > refusals above could have been counted and not read. **Left on the install:** ten cockpit drafts, nine
 > superseded and one pending ("Executive Cockpit", 12 cards), for a person to accept or reject; thirteen

@@ -477,8 +477,9 @@ on every call of the turn; the answer to `options` is about 12,700 characters of
    calls the judgment treatment shadow, which is a model call, in the `finally` of
    `stream_with_session_log` — on the event loop. On DeepSeek the reply stalled, and while
    it did the API served nothing and six automations failed every tick. It is older than
-   this arc and is not fixed here. The last four asks were sent with the shadow switched
-   off, at the user's word, and it was switched back.
+   this arc. The last four asks were sent with the shadow switched off, at the user's word,
+   and it was switched back. It was fixed the same day: the shadow now runs on a thread of
+   its own, and the stream ends without waiting for it.
 4. **A refused draft's reasons had been recorded nowhere.** They went to the model and were
    gone. They are now in the step's own `error`, which is how the table above could be
    written.
