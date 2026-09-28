@@ -9634,9 +9634,43 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
-### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt BY A MODEL waits on §6 item 36(f))
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10)
 
-> **Status 2026-09-28, last — CT-5 is built, and run live WITHOUT a model. No model call was spent.** In a Data
+> **Status 2026-09-28, the receipt by a model — RUN at the user's word (*"Run the ten asks on theLook"*).
+> FALSIFIER (2) FIRED: 4 of 10 first drafts passed validation, fewer than half.** Ten asks, sent one at a
+> time to the install's own `/ask` as the canvas's chat sends them, on the canvas "E-Commerce Operations
+> Overview", with `deepseek/deepseek-v4.1-flash` — the user's choice, after the first ask showed that the
+> model the install was using cannot call tools. **What held:** the model asked for `options` first in 10 of
+> 10; every ask ended with a staged proposal, in 1.7 drafts on average and never more than three; and **no
+> draft was refused for a component, a prop, a field or an expression outside the catalog** — the closed
+> vocabulary closed. No draft carried SQL. **What failed, by kind, across the six first drafts refused:**
+> (1) **a limit nobody had told the writer** — two drafts made 19 and 17 cards against a cap of 12 that
+> neither the grammar nor `options` states; (2) **the reasoning stated the user's own limit** — "above 12%",
+> "at 10 percent" — and the numerals law refused it, though a limit the draft itself sets is a setting and
+> not a measurement; (3) **cards placed by a name the draft never declared** — two first drafts, and one
+> second — refused as "a card this canvas does not hold", which does not say that the repair is to list it
+> in `cards`; (4) one condition that was an empty list. So of the falsifier's two readings it is the PROMPT
+> that is wrong, not the catalog: three of the four kinds are things the writer was not told, or was told
+> in words that did not land. **Cost:** 54 model calls and 670,139 tokens in, 39,542 out, for the ten turns —
+> about 67,000 tokens in per ask, most of it the roster of some forty tools sent on every call; a turn took
+> 18 to 90 seconds. **What the run found beside the falsifier:** (a) **where the install's model cannot call
+> tools the cockpit cannot be asked for at all, and nothing says so** — the first ask, on
+> `typesafe/jev-router`, was answered as a query of return rates; (b) **the door paused two of the ten asks
+> to ask "which metric, and over what time period?"** — its clarify gate reads a request for a cockpit as an
+> under-specified question about data; (c) **the API froze twice, for 3m45s and for 8 minutes** — after
+> every settled ask `stream_with_session_log` calls the judgment treatment shadow, a model call, in its
+> `finally` ON THE EVENT LOOP, and on DeepSeek the reply stalled; while it did, nothing was served and six
+> automations failed every tick. It is older than this arc (CP-1) and is not fixed here; the last four asks
+> were sent with the shadow switched off, at the user's word, and it was switched back. (d) A refused
+> draft's reasons were recorded nowhere until the step's own `error` carried them — without that the
+> refusals above could have been counted and not read. **Left on the install:** ten cockpit drafts, nine
+> superseded and one pending ("Executive Cockpit", 12 cards), for a person to accept or reject; thirteen
+> turns in the canvas's chat history; no card and no cockpit. The model and the flag are as they were.
+> **Not done:** no proposal was approved — that is a person's act — so "approved, the tab shows…" and "an edit
+> makes version 2" are measured only in the run without a model; and the ten asks were all new cockpits, so
+> an edit drafted by a model is unmeasured.
+
+> **Status 2026-09-28, last but one — CT-5 is built, and run live WITHOUT a model. No model call was spent.** In a Data
 > Canvas's chat, on a turn with a channel, and only with `cockpit.composed` on, the model is offered one tool,
 > `draft_cockpit` (`aughor/agent/cockpit_tool.py`); off, the tool list is byte-identical. It takes three shapes of
 > call: `options` (what a cockpit here may be made of, the cockpit as it stands, and how one is written — no
@@ -11496,10 +11530,14 @@ the browser** · **measure the premise before building.**
     **(e) ✅ DECIDED with the adoption, as drafted — a `Card` element points at a card** (the law of the arc). The
     alternative — the element carries the metric's name itself — reads better in a spec and makes a second place
     that knows what a card measures.
-    **(f) ⚑ OPEN — the receipt's model calls. Spends tokens.** CT-5's receipt and its second falsifier need about
+    **(f) ✅ DECIDED AND SPENT 2026-09-28 — the receipt's model calls.** CT-5's receipt and its second falsifier need about
     ten asks on theLook. *Recommended:* once, on the user's word, with the model stated beside the result.
     *2026-09-28: CT-5 is built and was run live with what a model would write written by hand; nothing was
     spent. "Start CT-5" was read as the word to build it, not as the word to spend — the ten asks still wait.*
+    *Later the same day the user gave the word (*"Run the ten asks on theLook"*), and chose the model
+    when the install's own turned out unable to call tools. **✅ SPENT 2026-09-28: ten asks on
+    `deepseek/deepseek-v4.1-flash`, 54 calls. Falsifier (2) fired, 4 of 10** (§3.50's first status block).
+    A second run, after the prompt is repaired, is a second spend and needs the user's word again.*
     **(g) ✅ DECIDED with the adoption, as drafted — email is not in this arc.** CT-6 names it and waits for someone
     to ask; when it comes it is a new door and the departure gate stands in front of it.
 

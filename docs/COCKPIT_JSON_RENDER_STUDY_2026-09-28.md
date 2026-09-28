@@ -393,11 +393,98 @@ Sixty-six guards were broken on purpose. All were caught in the end; six were no
 
 ### Not done
 
-- **No model has been asked.** Falsifier (2) — fewer than half of first proposals pass
+- **No model has drafted a cockpit.** Falsifier (2) — fewer than half of first proposals pass
   validation over ten asks on theLook — is unmeasured. So is whether a model asks for
-  `options` before it drafts, and how many rounds a repair takes.
+  `options` before it drafts, and how many rounds a repair takes. It was attempted; see §12.
 - The reasoning a model gives is held to the numerals law, as titles are. A card's title
   taken from a finding is the finding's own sentence and may state a figure, as it does when
   a finding is pinned from the Briefing.
 - A limit set by a proposal schedules no monitor.
 - An edit takes a card off the cockpit and never out of the canvas.
+
+## 12 · The receipt by a model — ten asks on theLook (2026-09-28)
+
+The user's word was *"Run the ten asks on theLook"*. **Falsifier (2) fired: 4 of 10 first
+drafts passed validation, fewer than half.** Every ask ended with a staged proposal.
+
+### How it was run
+
+Ten asks, sent one at a time to the install's own `/ask` as the canvas's chat sends them:
+depth "auto", a fresh session each, the canvas "E-Commerce Operations Overview" on theLook.
+Each turn's frames were read as they arrived, and its steps were read back from the
+install's own record of the run. Nothing was approved: that is a person's act.
+
+The first ask was sent alone, and was not answered by the tool at all. The install's model,
+`typesafe/jev-router` for every role, is recorded by the install as unable to call tools, so
+the conversation with tools serves no turn there and `draft_cockpit` is offered to nobody.
+"Build me a returns cockpit" was answered as a query of return rate by category. The user
+chose `deepseek/deepseek-v4.1-flash` for the run; the coder role was switched to it, and
+switched back afterwards. The ten asks below are on that model.
+
+### What each ask did
+
+| # | the ask | first draft | drafts to stage | what the first draft was refused for |
+|---|---|---|---|---|
+| 1 | Build me a returns cockpit. | staged | 1 | |
+| 2 | Make a dashboard for this canvas: revenue, units sold and average order value on top, returns below. | staged | 1 | |
+| 3 | I want a cockpit with two tabs, Sales and Returns. Show an alert when the return rate goes above 12%. | refused | 2 | the reasoning stated a figure, 12% |
+| 4 | Create a cockpit for the operations team with shipping lead time, sell-through and repeat purchases. | staged | 1 | |
+| 5 | Set up a board with gross margin and net merchandise revenue, and show the conversion rate only when the range is final. | staged | 1 | |
+| 6 | Give me a cockpit of the key metrics for this canvas. | refused | 2 | placed cards by names the draft had not declared |
+| 7 | Build a cockpit from the most interesting findings of this canvas. | refused | 2 | made 19 cards; a draft makes at most 12 |
+| 8 | Cockpit with revenue, units and AOV. One section, nothing else. | refused | 2 | placed two cards by names the draft had not declared |
+| 9 | I need a returns watch: the item return rate with a limit at 10 percent, and a section that only appears when it is over. | refused | 2 | the reasoning stated a figure, 10%; and a condition was an empty list |
+| 10 | Make me an executive cockpit with tabs for Sales, Margin, Customers and Operations. | refused | 3 | made 17 cards; then placed a card by a name it had not declared |
+
+Asks 6 and 8 were first answered by the door itself with a question — "which metric, and
+over what time period?" — and were sent again past it, as a person would.
+
+### What held
+
+- **The writer asked first.** `options` was the first call in 10 of 10.
+- **Every ask was staged**, in 1.7 drafts on average and never more than three. A refusal
+  was repaired in the next draft in six cases of seven.
+- **The closed vocabulary closed.** No draft was refused for a component, a prop, a field or
+  an expression outside the catalog. No draft carried SQL, `watch`, `on` or `repeat`.
+- **A refusal named more than one fault at once** when there was more than one (ask 9).
+
+### What failed, and why the falsifier's reading is "the prompt"
+
+| kind of fault | first drafts | what the writer had been told |
+|---|---|---|
+| more new cards than a draft may make | 2 | nothing. The cap of 12 is in the code and in no text the writer reads |
+| the reasoning repeated the limit the person asked for | 2 | that a figure belongs to a card. A limit the draft itself sets is a setting, not a measurement, and the rule does not tell them apart |
+| a card placed by a name the draft did not declare | 2, and one second draft | one sentence in `options`. The refusal then calls it "a card this canvas does not hold" and does not say that the repair is to list it in `cards` |
+| a condition that was an empty list | 1 | that a list of conditions means all of them |
+
+Three of the four are things the writer was not told, or was told in words that did not
+land. None is a fault of the catalog.
+
+### What it cost
+
+54 model calls for the ten turns: 670,139 tokens in and 39,542 out, about 67,000 in per ask.
+A turn took 18 to 90 seconds. Most of what goes in is the roster of some forty tools, sent
+on every call of the turn; the answer to `options` is about 12,700 characters of it.
+
+### What the run found beside the falsifier
+
+1. **Where the model cannot call tools, a cockpit cannot be asked for, and nothing says so.**
+   The ask is answered as a question about data. The Cockpit tab's empty state invites it
+   all the same.
+2. **The door pauses a request for a cockpit to ask for a metric and a time period.** Its
+   clarify gate is deterministic and reads the request as an under-specified question.
+3. **The API froze twice, for 3m45s and for 8 minutes.** After every settled ask the door
+   calls the judgment treatment shadow, which is a model call, in the `finally` of
+   `stream_with_session_log` — on the event loop. On DeepSeek the reply stalled, and while
+   it did the API served nothing and six automations failed every tick. It is older than
+   this arc and is not fixed here. The last four asks were sent with the shadow switched
+   off, at the user's word, and it was switched back.
+4. **A refused draft's reasons had been recorded nowhere.** They went to the model and were
+   gone. They are now in the step's own `error`, which is how the table above could be
+   written.
+
+### Not measured
+
+- Nothing was approved, so the cockpit a model drafted was never drawn.
+- All ten asks were for a new cockpit. An edit drafted by a model is unmeasured.
+- One model. Whether another passes more first drafts is not known.
