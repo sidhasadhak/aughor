@@ -5988,19 +5988,69 @@ async def stream_with_session_log(
             )
             # CP-1 — the treatment shadow, AFTER the answer and after its own final
             # record. The classification is a model call, so it runs where it cannot
-            # delay a word the user is waiting for; `shadow` is a no-op unless
-            # `judgment.shadow_treatment` is on, which is the operator's spending switch
-            # and is off by default. It swallows everything, so a dead judge or a dead
-            # ledger cannot turn a delivered answer into a failed request.
+            # delay a word the user is waiting for — and, since 2026-09-28, where it
+            # cannot stop the server either: see `_shadow_when_settled`. `shadow` is a
+            # no-op unless `judgment.shadow_treatment` is on, which is the operator's
+            # spending switch and is off by default. It swallows everything, so a dead
+            # judge or a dead ledger cannot turn a delivered answer into a failed request.
             #
             # `ran` is what this turn actually did, in the vocabulary the door already
             # has: its declared depth when it has one, else whether the deep path minted
             # an investigation. That is the column CP-2 compares the judged treatment
             # against — and the arc's falsifier reads.
-            from aughor.judgment.treatment import shadow as _shadow
-            _shadow(question, ran=(depth or ("deep" if inv_id else "quick")),
-                    conn_id=conn_id,
-                    observed={"grids": grids, "ok": failed is None})
+            _shadow_when_settled(question, ran=(depth or ("deep" if inv_id else "quick")),
+                                 conn_id=conn_id,
+                                 observed={"grids": grids, "ok": failed is None})
+
+
+#: The name of the thread a treatment shadow runs on — so a reader of a process sample, or a
+#: test, can find it.
+SHADOW_THREAD = "treatment-shadow"
+
+
+def _shadow_when_settled(question: str, *, ran: str, conn_id: str, observed: dict) -> None:
+    """CP-1's treatment shadow, on a thread of its own — never on the event loop.
+
+    It was called here directly, from the ``finally`` of an async generator, which runs ON the
+    event loop. The shadow is a model call. While it waited on its model the server served
+    nothing at all: measured on a live install on 2026-09-28, twice in one hour, for 3m45s and
+    for 8 minutes, when the provider began a reply and stalled. Health checks timed out and six
+    automations failed every tick of the heartbeat. A sample of the process found its main
+    thread in a socket read, beneath an async generator.
+
+    The comment above the call had said it "runs where it cannot delay a word the user is
+    waiting for". That was true of THIS user's answer, which had already streamed, and false of
+    every other request the server had.
+
+    The thread is `_remember_answer`'s pattern, two functions up, for the same reason: slow
+    work after the answer, which nothing waits on. It carries the request's context, so the
+    row the shadow writes is filed under the run's trace, organisation and asker exactly as it
+    was. It is a daemon: a shadow still waiting on its model when the server stops is lost,
+    which is what "a shadow never costs a turn" already promised of every other failure.
+
+    The flag is read HERE, on the loop, as it always was (``shadow`` read it first thing), so
+    with the flag off — the default — no thread is started and nothing is different.
+    """
+    import contextvars
+    import threading
+
+    from aughor.judgment import treatment
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if not flag_enabled(treatment.SHADOW_FLAG):
+            return
+        ctx = contextvars.copy_context()
+        threading.Thread(
+            target=ctx.run,
+            # Looked up when it runs, not when it is scheduled: `treatment.shadow` is what a
+            # test replaces, and what a reload would.
+            args=(lambda: treatment.shadow(question, ran=ran, conn_id=conn_id, observed=observed),),
+            daemon=True, name=SHADOW_THREAD,
+        ).start()
+    except Exception as exc:  # noqa: BLE001 — a shadow never costs a turn, nor its scheduling
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the treatment shadow could not be scheduled; the turn is unaffected",
+                 counter="judgment.shadow_schedule", conn_id=conn_id or None)
 
 
 async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None],

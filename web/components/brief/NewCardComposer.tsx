@@ -64,10 +64,13 @@ function seriesValues(r: DirectQueryResult | null): number[] {
   return r.rows.map(row => Number(row[c])).filter(v => Number.isFinite(v));
 }
 
-export function NewCardComposer({ connectionId, schema, onCreated }: {
+export function NewCardComposer({ connectionId, schema, onCreated, keptFor }: {
   connectionId: string;
   schema?: string;
   onCreated: () => void;
+  /** Where the card is kept. Absent, it is the connection's — the Briefing's cockpit, as it
+   *  always was. A Data Canvas's cockpit passes its own canvas (Arc CT-4). */
+  keptFor?: { scope: "canvas"; scopeRef: string };
 }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"metric" | "build">("metric");
@@ -163,7 +166,7 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
     setBusy(true); setError(null);
     try {
       await pinQueryToDashboard(connectionId, sql, title.trim() || defaultTitle || "New card", {
-        scope: "connection", scopeRef: connectionId, schema,
+        scope: keptFor?.scope ?? "connection", scopeRef: keptFor?.scopeRef ?? connectionId, schema,
         render: { chartType },
       });
       toast.success("Pinned to your cockpit");

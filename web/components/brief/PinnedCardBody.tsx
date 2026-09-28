@@ -29,7 +29,7 @@ export function cardKind(cs: CardState): Kind {
   const { card, run, failed } = cs;
   if (failed || run?.error) return "kpi";
   const trend = run && !run.error ? seriesTrend(run.columns, run.rows) : null;
-  const val = run?.refresh?.last_value ?? null;
+  const val = run?.scoped && !run.scoped.standing ? (run.value ?? null) : (run?.refresh?.last_value ?? null);
   if (trend || val != null) return "kpi";
   const isTabular = !!run && (run.columns?.length ?? 0) > 0 && (run.rows?.length ?? 0) > 0;
   if (isTabular) return card.kind === "table" ? "table" : "chart";
@@ -57,10 +57,14 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
 }) {
   const { card, run, failed } = cs;
   const errored = failed || !!run?.error;
-  const val = run?.refresh?.last_value ?? null;
-  const prev = run?.refresh?.prev_value ?? null;
+  // A run cut to a range shows the RANGE's figure. `refresh` is the card's standing value and
+  // its history; drawn under "for <the range>" it told a reader the all-time figure was the
+  // range's. The standing value's change and its sparkline are not the range's either.
+  const ranged = !!run?.scoped && !run.scoped.standing;
+  const val = ranged ? (run?.value ?? null) : (run?.refresh?.last_value ?? null);
+  const prev = ranged ? null : (run?.refresh?.prev_value ?? null);
   const delta = val != null && prev != null ? val - prev : null;
-  const hist = run?.refresh?.history ?? [];
+  const hist = ranged ? [] : (run?.refresh?.history ?? []);
   const caveats = run?.caveats ?? [];
   const trend = useMemo(() => (run && !run.error ? seriesTrend(run.columns, run.rows) : null), [run]);
   // `render` is the card's own durable display slot. `viz` is the user's edits from the chart
@@ -104,8 +108,14 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
   const sparkH = Math.max(24, Math.min(dims.h > 0 ? dims.h - 40 : 30, 120));
 
   // Watch → alert.
-  const t0 = card.thresholds as { warning?: number | null; critical?: number | null; direction?: string } | undefined;
-  const [alerting, setAlerting] = useState(!!(t0 && (t0.warning != null || t0.critical != null)));
+  const t0 = card.thresholds as {
+    warning?: number | null; critical?: number | null; direction?: string; monitor_id?: string | null;
+  } | undefined;
+  // A limit is not an alert. A card says it is alerting only when a monitor stands behind it
+  // (`monitor_id`, written when the card was graduated). A card a cockpit proposal made carries
+  // a limit and schedules nothing (Arc CT-5); it says its limit, and the door to an alert stays.
+  const limits = [t0?.warning, t0?.critical].filter((v): v is number => typeof v === "number");
+  const [alerting, setAlerting] = useState(limits.length > 0 && !!t0?.monitor_id);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertVal, setAlertVal] = useState("");
   const [alertDir, setAlertDir] = useState<"below" | "above">((t0?.direction as "below" | "above") || "below");
@@ -170,7 +180,9 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
             </div>
             {hist.length >= 2
               ? <Sparkline values={hist} width={sparkW} height={sparkH} color="var(--blue4)" />
-              : <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>trend builds as it refreshes</div>}
+              : ranged
+                ? null
+                : <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>trend builds as it refreshes</div>}
           </>
         ) : isTabular && run ? (
           <ResultChartCard
@@ -207,6 +219,11 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
         {canAlert && alerting && (
           <div title="This card is now a scheduled monitor" className="aug-fs-xs" style={{ color: "var(--amb4)", display: "flex", alignItems: "center", gap: 4 }}>
             <span>⏰</span> Alerting when {alertDir} threshold
+          </div>
+        )}
+        {!alerting && limits.length > 0 && (
+          <div data-testid="card-limit" title="This card carries a limit. Nothing is scheduled to watch it." className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            Limit: {t0?.direction === "below" ? "at or below" : "at or above"} {limits.map(v => formatMetricValue(v)).join(", ")} · no alert is set
           </div>
         )}
         {canAlert && !alerting && alertOpen && (

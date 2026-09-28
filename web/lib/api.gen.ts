@@ -1882,6 +1882,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/canvases/{canvas_id}/cockpit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Cockpit
+         * @description The canvas's cockpit as it stands: its newest version with its spec (or null when it
+         *     has none), the cards the canvas holds, the range it is read for, and its history.
+         *     No model call, and nothing is written.
+         */
+        get: operations["read_cockpit_canvases__canvas_id__cockpit_get"];
+        /**
+         * Keep Cockpit
+         * @description Keep a spec a person wrote as this canvas's cockpit: the next version, or a refusal
+         *     with the reasons.
+         */
+        put: operations["keep_cockpit_canvases__canvas_id__cockpit_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/canvases/{canvas_id}/cockpit/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Cockpit
+         * @description Go back to an earlier version. It is kept again as the newest, checked against the
+         *     canvas as it is today.
+         */
+        post: operations["restore_cockpit_canvases__canvas_id__cockpit_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/canvases/{canvas_id}/cockpit/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire Cockpit
+         * @description Retire this canvas's cockpit. Its history stays.
+         */
+        post: operations["retire_cockpit_canvases__canvas_id__cockpit_retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/canvases/{canvas_id}/cockpit/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Cockpit
+         * @description Start a cockpit from the cards this canvas holds, grouped by their kind. Written by
+         *     code, kept like any other spec.
+         */
+        post: operations["start_cockpit_canvases__canvas_id__cockpit_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/canvases/{canvas_id}/documents": {
         parameters: {
             query?: never;
@@ -12945,6 +13034,16 @@ export interface components {
              */
             insight_id: string;
             /**
+             * Metric
+             * @default
+             */
+            metric: string;
+            /**
+             * Metric Version
+             * @default 0
+             */
+            metric_version: number;
+            /**
              * Origin Finding Id
              * @default
              */
@@ -14163,6 +14262,16 @@ export interface components {
              */
             skip_cache: boolean;
         };
+        /** KeepRequest */
+        KeepRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Spec */
+            spec: unknown;
+        };
         /** KnowledgeEntryIn */
         KnowledgeEntryIn: {
             /** Body */
@@ -14939,6 +15048,11 @@ export interface components {
              */
             dry_run: boolean;
         };
+        /** RestoreRequest */
+        RestoreRequest: {
+            /** Version */
+            version: number;
+        };
         /**
          * ResumeEntry
          * @description A per-interrupt response in the resume array of a RunAgentInput.
@@ -14955,6 +15069,14 @@ export interface components {
             status: "resolved" | "cancelled";
         } & {
             [key: string]: unknown;
+        };
+        /** RetireRequest */
+        RetireRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
         };
         /** RetryQueryRequest */
         RetryQueryRequest: {
@@ -20303,6 +20425,188 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_cockpit_canvases__canvas_id__cockpit_get: {
+        parameters: {
+            query?: {
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                workspace_id?: string | null;
+            };
+            header?: never;
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_cockpit_canvases__canvas_id__cockpit_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_cockpit_canvases__canvas_id__cockpit_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retire_cockpit_canvases__canvas_id__cockpit_retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetireRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_cockpit_canvases__canvas_id__cockpit_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
             /** @description Validation Error */
             422: {

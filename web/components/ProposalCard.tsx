@@ -57,6 +57,7 @@ const KIND_CHIP: Record<string, { hue: ChipHue; label: string }> = {
   brief_draft: { hue: "info", label: "brief delivery" },
   outbound_send: { hue: "caution", label: "Slack post" },
   agent_limit: { hue: "accent", label: "agent limit" },
+  cockpit_draft: { hue: "info", label: "cockpit" },
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -195,6 +196,137 @@ function AutomationBody({ chain, detail, openKeys }: {
   );
 }
 
+/* ── a cockpit, as it will be arranged (Arc CT-5) ── */
+
+/** `change` is what an EDIT does to a line of the cockpit that stands: "added", "changed", or
+ *  "" when the edit leaves it as it is. A new cockpit carries none. */
+type CockpitCard = { title: string; new: boolean; tone: string; shown: string; change?: string };
+type CockpitSection = { title: string; shown: string; cards: CockpitCard[]; change?: string };
+type CockpitTabOutline = { tab: string; sections: CockpitSection[]; change?: string };
+
+/** What an edit does to one line, beside it. A line it leaves alone says nothing. */
+function Moved({ change }: { change?: string }) {
+  return change ? <span data-testid="cockpit-moved" style={{ color: "var(--amb4)" }}> · {change}</span> : null;
+}
+type CockpitNewCard = {
+  id: string; title: string; from: string; name: string; version: number; kind: string;
+  limit?: { warning?: number; critical?: number; direction?: string };
+};
+
+const TAKEN_OFF: Record<string, string> = { card: "Card", section: "Section", tab: "Tab" };
+
+const MADE_FROM: Record<string, string> = {
+  metric: "the approved metric", trusted_query: "the trusted query", finding: "the finding",
+};
+
+function limitWords(l: CockpitNewCard["limit"]): string {
+  if (!l || (l.warning == null && l.critical == null)) return "";
+  const way = l.direction === "below" ? "at or below" : "at or above";
+  const parts = [
+    l.warning != null ? `${way} ${l.warning}` : "",
+    l.critical != null ? `critical ${way} ${l.critical}` : "",
+  ].filter(Boolean);
+  return `limit: ${parts.join(", ")}`;
+}
+
+/** What an approved cockpit's outcome says, or "" when there is none to say. */
+function keptWords(outcome: Record<string, unknown> | undefined): string {
+  const version = outcome?.version;
+  return typeof version === "number"
+    ? `kept as version ${version} — it is in this canvas's Cockpit tab` : "";
+}
+
+function CockpitBody({ p }: { p: StagedProposal }) {
+  const d = p.detail ?? {};
+  const outline = (Array.isArray(d.outline) ? d.outline : []) as CockpitTabOutline[];
+  const made = (Array.isArray(p.params?.cards) ? p.params.cards : []) as CockpitNewCard[];
+  const changes = (d.changes ?? {}) as { added?: string[]; removed?: string[]; changed?: string[] };
+  const edit = d.mode === "edit";
+  const before = d.replaces_version;
+  const gone = (Array.isArray(d.taken_off) ? d.taken_off : []) as { what: string; title: string; from: string }[];
+  const moved = [
+    changes.added?.length ? `${changes.added.length} added` : "",
+    changes.removed?.length ? `${changes.removed.length} removed` : "",
+    changes.changed?.length ? `${changes.changed.length} changed` : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <div className="flex flex-col gap-2" data-testid="cockpit-draft">
+      <div className="flex flex-col gap-1">
+        <Row label="Cockpit">{String(d.title ?? "")}</Row>
+        <Row label="Canvas">{String(d.canvas_name ?? "")}</Row>
+        {edit
+          ? <Row label="Edits">version {String(before)}{moved ? ` · of its elements, ${moved}` : ""}</Row>
+          : before != null && <Row label="Replaces">version {String(before)}</Row>}
+      </div>
+
+      <div className="flex flex-col gap-1.5" data-testid="cockpit-outline">
+        {outline.map((tab, i) => (
+          <div key={`tab-${i}`} className="flex flex-col gap-1">
+            {tab.tab && (
+              <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
+                Tab · {tab.tab}<Moved change={tab.change} />
+              </span>
+            )}
+            {tab.sections.map((s, j) => (
+              <div key={`section-${i}-${j}`} className="flex flex-col gap-0.5 rounded px-2 py-1.5"
+                style={{ background: "var(--bg-3)", border: "1px solid var(--b1)" }}>
+                <span className="aug-text-sm" style={{ color: "var(--t1)" }}>
+                  {s.title}
+                  <Moved change={s.change} />
+                  {s.shown && <span style={{ color: "var(--t3)" }}> · shown when {s.shown}</span>}
+                </span>
+                {s.cards.map((c, k) => (
+                  <span key={`card-${i}-${j}-${k}`} className="aug-text-xs" style={{ color: "var(--t2)" }}>
+                    {c.title}
+                    {c.new && <span style={{ color: "var(--t1)" }}> · new</span>}
+                    {/* A card the draft makes is new, which says more than that its line was added. */}
+                    {!c.new && <Moved change={c.change} />}
+                    {c.shown && <span style={{ color: "var(--t3)" }}> · shown when {c.shown}</span>}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {gone.length > 0 && (
+        <div className="flex flex-col gap-1" data-testid="cockpit-taken-off">
+          <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
+            Taken off the cockpit{gone.some(g => g.what === "card") ? ". A card taken off stays in the canvas" : ""}:
+          </span>
+          {gone.map((g, i) => (
+            <Row key={`gone-${i}`} label={TAKEN_OFF[g.what] ?? g.what}>
+              {g.title}{g.from ? ` — it was in ${g.from}` : ""}
+            </Row>
+          ))}
+        </div>
+      )}
+
+      {made.length > 0 && (
+        <div className="flex flex-col gap-1" data-testid="cockpit-new-cards">
+          <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
+            {made.length === 1 ? "One card is made" : `${made.length} cards are made`}, each from a record that is already approved or found:
+          </span>
+          {made.map(c => (
+            <Row key={c.id} label={c.kind === "kpi" ? "Figure" : "Chart"}>
+              {c.title} — from {MADE_FROM[c.from] ?? c.from} {c.name}
+              {c.version ? `, version ${c.version}` : ""}
+              {limitWords(c.limit) ? ` · ${limitWords(c.limit)}` : ""}
+            </Row>
+          ))}
+        </div>
+      )}
+
+      <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
+        One decision: accepting {made.length > 0 ? "makes the cards and " : ""}keeps this arrangement as the
+        canvas&apos;s next version — all or nothing.
+        {made.length > 0 ? " Every new card was run once and passed the guards." : ""} Rejecting changes nothing.
+      </span>
+    </div>
+  );
+}
+
 /* ── the card ── */
 
 export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inboxHref, accountLabel }: {
@@ -234,7 +366,8 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
       const filled = Object.fromEntries(Object.entries(fills).filter(([, v]) => v.trim()));
       const r = await acceptProposal(p.id, actor, mint, filled);
       setStatus(r.status);
-      setNote(String((r.outcome as Record<string, unknown>)?.message ?? ""));
+      setNote(String((r.outcome as Record<string, unknown>)?.message ?? "")
+        || (p.kind === "cockpit_draft" ? keptWords(r.outcome as Record<string, unknown>) : ""));
       onResolved?.("ok", `Accepted → ${r.status}${r.minted_grant ? " (grant minted)" : ""}`);
     } catch (e) {
       setNote((e as Error).message);
@@ -365,6 +498,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
           </span>
         </div>
       )}
+      {p.kind === "cockpit_draft" && <CockpitBody p={p} />}
       {(p.kind === "declared_action" || p.kind === "integration") && (
         <div className="flex flex-col gap-1">
           <Row label="Action" mono>{p.action_id}</Row>
@@ -431,7 +565,10 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
         </div>
       ) : (
         <span className="aug-text-xs" style={{ color: STATUS_TONE[status] ?? "var(--t3)" }}>
-          {status}{note ? ` — ${note}` : ""}
+          {status}{note ? ` — ${note}`
+            // A card read after it settled has no note of its own; a cockpit's record says where it went.
+            : p.kind === "cockpit_draft" && status === "executed" && keptWords(p.outcome) ? ` — ${keptWords(p.outcome)}`
+            : p.kind === "cockpit_draft" && p.status_message ? ` — ${p.status_message}` : ""}
         </span>
       )}
       {pending && note && (

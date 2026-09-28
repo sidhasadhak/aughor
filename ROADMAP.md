@@ -9634,6 +9634,282 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10; after three repairs to the prompt, 10 of 10 on the same asks; on ten unseen asks falsifier (2) HOLDS, 8 of 9)
+
+> **Status 2026-09-28, the six repairs — at the user's word (*"fix the six faults"*).** Each fault the third run
+> found is repaired, and each repair was broken on purpose afterwards: 17 deliberate breaks, all caught. The
+> numerals law reads a range's unit on both ends and "percent" as a word; a limit is set only where the turn's own
+> words name it (they bind to the tool by closure); a card for a record the canvas already shows is refused with
+> the id to place; a finding refusal says a cockpit takes the canvas's findings, not `list_findings`'; a new
+> cockpit names every card it takes off, on the approval card and in the summary the chat quotes (the card named
+> none either — the third run's record said it did, and was corrected); and that summary says what each new card
+> shows. The last is half a repair: whether a writer says an ask cannot be met is the prompt's, and only another
+> run measures it. Not on the install, not run by a model. The study's §15.
+
+> **Status 2026-09-28, the receipt by a model, THIRD RUN — ten asks nobody had seen, at the user's word (asked
+> through the question tool: *"Run them on DeepSeek"*). FALSIFIER (2) HOLDS: 8 of the 9 first drafts passed.**
+> Five asks for a new cockpit and five edits to the one standing on canvas `d617964b` (the user had approved
+> "Executive Cockpit" at 15:14). Written before the run and not changed after it (`ct5c_asks.py`). **Measured:**
+> nine asks drafted, all nine asking for `options` first; the tenth ("lay out a customer view") was read as a
+> question and answered with five queries, and that answer was withheld because its figures were not in the rows
+> it read. Of the nine first drafts, eight staged; the ninth was refused for a finding the canvas does not hold,
+> and the second draft staged. All five edits staged at the first draft. By hand, six drafts do exactly what was
+> asked (a move, a removal, a rename with a reorder, a merge of two tabs, a Finance tab with a limit crossed going
+> below, a condition on the range). The user approved two of them during the run (versions 2 and 3), so **edits a
+> model drafted are now drawn**. 62 model calls, 847,529 tokens in and 48,094 out, 689 seconds; three turns ran
+> to the step ceiling. Shadow off for the run and back on after; the coder role stays on DeepSeek at the user's
+> word. **What unseen asks found, which the ten repaired asks could not:** (1) the numerals law read "11-12%" as
+> "12%" and let the 11 through; (2) a model set a limit nobody named (12% on two return cards), and the second
+> run's repair then licensed that measured figure in the reasoning as "the limit"; (3) two drafts created a card
+> for a metric the canvas already shows (a second lead time beside the first; a second Revenue); (4)
+> `list_findings` lists the connection's findings and a cockpit takes only the canvas's, which cost the refused
+> round; (5) a new cockpit asked for on a canvas that has one replaces it whole (asks 5 and 9 would take off 9
+> and 12 cards, and neither the chat nor the approval card named one of them); (6) "which categories sell best" cannot be a cockpit of totals, and the
+> draft did not say so. Recorded in the study's §14.
+
+> **Status 2026-09-28, the receipt by a model, SECOND RUN — at the user's word (*"fix the three faults and run
+> the asks again"*). 10 of 10 first drafts passed.** The same ten asks, the same canvas, the same model
+> (`deepseek/deepseek-v4.1-flash`), after three repairs to what the writer is told: the cap of 12 new cards is
+> stated in the answer to `options`, in what that answer says of drafting, and in the tool's schema; the
+> reasoning may name a limit the draft itself sets, and no other figure; and a name the spec places and the
+> draft never declared is refused with its repair — that the draft creates none of that name, the exact entry
+> to add to `cards` when the name is an approved metric, a trusted query or a finding, and what the draft
+> does create. **Measured:** `options` first in 10 of 10; every first draft staged; no repair round; 42 model
+> calls, 556,793 tokens in and 22,367 out, 276 seconds for the ten turns. The two drafts that had made 19 and
+> 17 cards made 12. The two asks that named a limit in percent set it as 0.12 and 0.10 on metrics whose unit
+> is a ratio, which is right. The two records of each draft — the frame that a proposal was staged, and the
+> step's own `error` — were held against each other and agreed. **What this does NOT show, said plainly:
+> these are the ten asks the repairs were written for.** The first run is the measurement of the prompt as
+> it was; this one shows that the repairs repair what they were aimed at. A set of asks nobody has seen is
+> the fair test, and it has not been run. Also unchanged: one model, one canvas; the door still paused asks
+> 6 and 8 to ask for a metric and a period; nothing was approved, so no cockpit a model drafted has been
+> drawn; and an edit drafted by a model is unmeasured. The run was made with the judgment shadow switched
+> off and the coder role on DeepSeek, both put back; the API did not freeze. **Left on the install:** twenty
+> cockpit drafts on theLook, nineteen superseded and one pending ("Executive Cockpit", 12 cards).
+
+> **Status 2026-09-28, the receipt by a model, FIRST RUN — at the user's word (*"Run the ten asks on theLook"*).
+> FALSIFIER (2) FIRED: 4 of 10 first drafts passed validation, fewer than half.** Ten asks, sent one at a
+> time to the install's own `/ask` as the canvas's chat sends them, on the canvas "E-Commerce Operations
+> Overview", with `deepseek/deepseek-v4.1-flash` — the user's choice, after the first ask showed that the
+> model the install was using cannot call tools. **What held:** the model asked for `options` first in 10 of
+> 10; every ask ended with a staged proposal, in 1.7 drafts on average and never more than three; and **no
+> draft was refused for a component, a prop, a field or an expression outside the catalog** — the closed
+> vocabulary closed. No draft carried SQL. **What failed, by kind, across the six first drafts refused:**
+> (1) **a limit nobody had told the writer** — two drafts made 19 and 17 cards against a cap of 12 that
+> neither the grammar nor `options` states; (2) **the reasoning stated the user's own limit** — "above 12%",
+> "at 10 percent" — and the numerals law refused it, though a limit the draft itself sets is a setting and
+> not a measurement; (3) **cards placed by a name the draft never declared** — two first drafts, and one
+> second — refused as "a card this canvas does not hold", which does not say that the repair is to list it
+> in `cards`; (4) one condition that was an empty list. So of the falsifier's two readings it is the PROMPT
+> that is wrong, not the catalog: three of the four kinds are things the writer was not told, or was told
+> in words that did not land. **Cost:** 54 model calls and 670,139 tokens in, 39,542 out, for the ten turns —
+> about 67,000 tokens in per ask, most of it the roster of some forty tools sent on every call; a turn took
+> 18 to 90 seconds. **What the run found beside the falsifier:** (a) **where the install's model cannot call
+> tools the cockpit cannot be asked for at all, and nothing says so** — the first ask, on
+> `typesafe/jev-router`, was answered as a query of return rates; (b) **the door paused two of the ten asks
+> to ask "which metric, and over what time period?"** — its clarify gate reads a request for a cockpit as an
+> under-specified question about data; (c) **the API froze twice, for 3m45s and for 8 minutes** — after
+> every settled ask `stream_with_session_log` calls the judgment treatment shadow, a model call, in its
+> `finally` ON THE EVENT LOOP, and on DeepSeek the reply stalled; while it did, nothing was served and six
+> automations failed every tick. It is older than this arc (CP-1); the last four asks were sent with the
+> shadow switched off, at the user's word, and it was switched back. **Fixed the same day, at the user's
+> word:** the shadow runs on a thread of its own, carrying the request's context, and the stream ends
+> without waiting for it. (d) A refused
+> draft's reasons were recorded nowhere until the step's own `error` carried them — without that the
+> refusals above could have been counted and not read. **Left on the install:** ten cockpit drafts, nine
+> superseded and one pending ("Executive Cockpit", 12 cards), for a person to accept or reject; thirteen
+> turns in the canvas's chat history; no card and no cockpit. The model and the flag are as they were.
+> **Not done:** no proposal was approved — that is a person's act — so "approved, the tab shows…" and "an edit
+> makes version 2" are measured only in the run without a model; and the ten asks were all new cockpits, so
+> an edit drafted by a model is unmeasured.
+
+> **Status 2026-09-28, last but one — CT-5 is built, and run live WITHOUT a model. No model call was spent.** In a Data
+> Canvas's chat, on a turn with a channel, and only with `cockpit.composed` on, the model is offered one tool,
+> `draft_cockpit` (`aughor/agent/cockpit_tool.py`); off, the tool list is byte-identical. It takes three shapes of
+> call: `options` (what a cockpit here may be made of, the cockpit as it stands, and how one is written — no
+> query, nothing written), `new` (the whole spec) and `edit` (RFC 6902 operations against the cockpit as it
+> stands). `new` and `edit` stage ONE proposal of the new kind `cockpit_draft` (`aughor/cockpit/propose.py`):
+> the cards to create and the spec that arranges them. **The model writes no SQL and states no figure:** a new
+> card names an approved metric, an approved trusted query of the catalogue, or a finding of this canvas, and
+> its query is read from that record; a card that carries a query of its own is refused by name. **Every new
+> card is run through the guard battery before the draft is offered** — the battery the Briefing's pin doors
+> run, moved out of the router to `aughor/dashboard/doors.py` so both doors share it. **Approval is all or
+> nothing:** everything is checked before anything is written, then the cards are made, then the spec is kept
+> as the next version; if either fails, what was made is removed again. A proposal refuses when a record a
+> card came from has a new version or a changed query, or when the cockpit has moved on since the draft — an
+> edit lands on the version it was written against or not at all. One pending draft per canvas: a newer one
+> supersedes the older. **The survey corrected the plan three times:** (1) the library's own `applySpecPatch`
+> is lenient by design — a `replace` of a path that is not there CREATES it, a `remove` of nothing and an
+> operation it has never heard of pass in silence — so edits are applied by a strict applier of this repo's
+> (`web/lib/cockpit/patch.ts`), in the same bundle as the rules; (2) nothing built a card from a metric's name
+> and no door turned a trusted query into a card; (3) the accept route binds no identity, so where someone is
+> signed in the version is kept in THEIR name (`user:<id>`) and not the accepting screen's. **The grammar the
+> model reads is 3,723 characters** against the library's 15,783, written from the same constants the rules
+> read, and its example is checked by the rules in a test (`web/lib/cockpit/grammar.ts`). **CT-3's open item is
+> settled:** a refusal names every kind of fault in one round — the rules no longer stop at the first phase,
+> and what only the platform knows (a card the canvas does not hold, a figure in a title) is said of what the
+> rules read, in the same refusal. **Live, on this branch's own servers and its own data**, with what a model
+> would write written by hand: two metrics and a trusted query made and approved through the product's own
+> governance routes; a first draft with five faults of five kinds, told of all five at once; an operation that
+> does not apply, refused; the repaired draft staged; approved in the browser from Agent Ops → Attention;
+> version 5 with three new cards, each recording the record and version it came from; a second edit, which
+> superseded its own earlier draft, approved as version 6. **The live run found what the tests had not:** a card
+> with a limit and no monitor behind it said "Alerting when above threshold" — true while graduating a card was
+> the only way to a limit, false for a card a proposal makes. It now says its limit and that no alert is set,
+> and keeps the door to one. And the approval card for an edit said "1 removed" without saying what: it now
+> names what is taken off and where it was, and marks each line the edit adds or changes. **Verified:** 194
+> Python and 162 web tests on the cockpit; **66 deliberate breaks, all caught in the end. Six were not caught
+> at first, and each pointed at something real:** a trusted query of another connection was untested; "every
+> fault in one round" was half true, because what the platform knows was asked only of a spec the rules had
+> accepted; one guard was backed by a second further down, so its test now counts that no card was ever
+> made; two breaks failed tests by exception, a refused draft being read for a field it did not have; and one
+> guard was half redundant and is now one check. The seven web gates; 1,356 web tests; the typed client
+> regenerated and unchanged; the bundle rebuilt to the same bytes twice. **The full Python suite, run once:
+> 12,091 passed and two failed, both by this wave's own new tests** — they saved metrics into the store the
+> whole suite shares, so a test that reads that store whole read 168 it had not expected; and one spelled a
+> retired word as a test value. Both were fixed at the cause (each test now has its own metric and
+> trusted-query store, as every other test that saves one does) and re-run beside the two tests they broke.
+> No targeted run had shown either. **NOT done, and it is the wave's own receipt:** no model has been asked.
+> Falsifier (2) — fewer than half of first proposals pass validation over ten asks on theLook — is unmeasured,
+> and so is whether a model reaches for `options` first. Both spend model calls, which are the user's (§6 item
+> 36(f)). **Open, and named:** the approval card is drawn in chat from a live frame and is not drawn again when
+> the chat is reopened (so of every proposal kind; it stays in Agent Ops → Attention); on an install without
+> sign-in the approver is recorded as the name of the screen it was approved on; a limit a proposal sets
+> schedules no monitor; an edit takes a card off the cockpit and never out of the canvas.
+
+> **Status 2026-09-28 — CT-1 and CT-2 are built; falsifier (1) did not fire.** The library is installed at exactly
+> `0.21.0` (two lockfile entries, nothing else), one hand-written spec draws in a browser with every card handed to
+> `PinnedCardBody` unchanged and its chart drawn by Vega, and the rules run from Python through a Node bundle.
+> **Running it corrected the study four times** (its §9): the library's own validator checks a component's name
+> and NOT its props — a tone outside the list and a prop nobody declared both passed; it drops `watch` and `on`
+> without refusing them; a condition on a path nobody publishes is silently false; and it does export a JSON
+> Schema, which the study said it did not. So the catalog is closed by `web/lib/cockpit/rules.ts`, not by the
+> library. **Weight:** 24.5 KB gzipped without Zod, 88.6 KB with it; the chat's `ai` package already imports Zod, so
+> the figure on the canvas route is CT-4's to measure. **The generated prompt is 15,783 characters** for five
+> components, most of it describing what this arc refuses — CT-5 needs its own. **Verified:** 60 web tests and 35
+> Python tests on the cockpit, each refusal asserted by a token of its own sentence; fourteen deliberate breaks,
+> every one caught after one test was found passing for the wrong reason and fixed; the seven web gates; 1,254 web
+> tests; 11,932 Python tests. **Found on the way:** the design system's tabs drew horizontal tabs as a row and no
+> screen had ever used them — fixed at the cause, seen only in the browser. **Not yet:** the drift gate has not run
+> in CI (nothing is pushed); the active tab is marked by weight alone; the server needs Node to accept a spec.
+
+> **Status 2026-09-28, later still — CT-4 is built, and seen live.** The Data Canvas has a fourth tab, Cockpit,
+> behind `cockpit.composed` (off by default; off, the routes answer 404 and the canvas's own answers are
+> byte-identical). It reads the kept spec, runs the canvas's cards through the guard battery as the Briefing's
+> cockpit does, says each card's status from its run, and draws. **No route and no screen here calls a model.**
+> A first cockpit is started by code from the canvas's cards, grouped by kind. **Receipt, on this branch's own
+> servers and its own data** (the demo warehouse, provisioned through `POST /connections/demo`): six cards of real
+> SQL, a spec kept by hand with three tabs; read as written the payment failure rate is 1.59 against a limit of
+> 1.7 and its alert card waits; read for November 2025 it is 1.84 and the alert card appears; going back through
+> the history made versions 3 and 4. **The live run found four things the tests had not**, each fixed at the
+> cause: (1) **a card read for a range showed its ALL-TIME figure under the range's label** — 8.42M "for
+> November", where November held 2.78M. The run carried the range's figure in `rows`, as text, while `refresh`
+> went on carrying the standing one, and the card drew `refresh`. It is BR-9's defect, and it reached the
+> Briefing's cockpit too; a run now says its own `value` and the card draws that. (2) My own status check read
+> the figure out of `rows` and asked for a number; the server sends text, so every ranged card read as
+> unmeasured. Twenty tests passed on it. (3) **The library draws NOTHING in place of a component that throws**,
+> so a card that failed to draw vanished; a boundary inside the library's now says so in the card's place.
+> (4) The active tab's underline and colour never drew: an unlayered reset for raw buttons beat the tab's
+> utilities. **And one the live run did not find, a test that failed one run in six did:** the numerals law was
+> held against every title, whoever wrote it, so a canvas called "Store 4521" could not start a cockpit. The
+> law is for text a MODEL wrote, as §3.50 says; a person's title is their own word, and which it is is kept with
+> the version. **Verified:** 116 Python and 106 web tests on the cockpit; eight more deliberate breaks, all
+> caught; the seven web gates; 1,300 web tests; the full Python suite. **Open:** nothing says `withheld` yet —
+> the platform has no rule for which cards a reader may not see; a canvas's cards can be made on the tab, but
+> pinning a finding or a query from the canvas's chat still keeps it for the connection; the tab's range control
+> needs `briefing.ranges`; and the route weight on the canvas page was not measured, because the dev server
+> does not report one.
+
+> **Status 2026-09-28, later — CT-3 is built.** A cockpit's spec is a Ledger artifact of kind `cockpit`, one
+> natural key per canvas (`aughor/cockpit/versions.py`); its cards are kept at canvas scope
+> (`aughor/cockpit/cards.py`); a card made from an approved metric records its name and version. **No new store,
+> no migration**: a card's provenance is a JSON column, so the two new fields read as empty on every older row,
+> and the Briefing's arrangement table is untouched. Keeping is an act of approval, so every outcome is said —
+> kept, unchanged, refused, not checked, failed — and nothing is kept without the name of who approved it and
+> where it came from. Going back is the next version, checked against the canvas as it is today; retiring is a
+> version that says so. **Receipt, run on the real stores in a scratch directory:** v1 kept · the same spec
+> approved again, unchanged · an edit, v2 · three refusals that wrote nothing · back to v1 as v3 · retired as v4 ·
+> back to v2 as v5, with all five versions readable. **Verified:** 34 tests against the real Ledger, card store
+> and canvas store; thirteen deliberate breaks, all caught; the typed client regenerated with the two fields and
+> nothing else. **Found on the way:** a card's id is its own across the whole card store and an upsert by id
+> MOVES the row, so placing a card that lives elsewhere would have taken it from there — refused now, by name.
+> **Open, and named:** deleting a canvas deletes only the canvas — its cards and its cockpit's history stay,
+> unreachable, and no purge hook exists for a canvas; nothing reads a cockpit yet, so there is no route (CT-4
+> adds the read, CT-5 the approval); and a refusal names every reason of the FIRST kind it meets, not of every
+> kind — a spec with a refused field, a figure in a title and a card it does not hold is told of the field
+> alone, which in CT-5 costs a model call per round.
+
+> **Origin.** The user, with `vercel-labs/json-render` on screen: *"Where can use this? Be a little open to ideas
+> here.. and some wild but relevant use cases.."* On the first mock, a plain grid: *"it needs to be full extension
+> version with (sections, tabs, conditional tiles)"*. Then *"But will this use Vega that we have in place already ?"*
+> and *"Lets study and add it to the roadmap."* The study is `docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md`: what the
+> library is, seventeen rows of what is already here, what §3.11 allows and refuses, the design, the eleven other
+> ideas and what became of each, and what was not measured.
+
+> **The survey (CT-0), taken before the arc was written, on `main` at `1913fd8d`.**
+> - **The cockpit exists and has no name.** It is the Briefing's standing layer; its arrangement is keyed on
+>   connection and user (`dashboard/store.py`), so there is exactly one per connection per person.
+> - **The canvas cockpit is half-built and unused.** `list_cards` takes a canvas scope; all five call sites in the
+>   web pass `scope: "connection"`. The Data Canvas has three tabs, no cards and no range control.
+> - **Charts stay on Vega.** A card draws through `PinnedCardBody` → `ResultChartCard` → `Chart` → `VegaChart`; the
+>   library has no chart engine and no other chart library is imported in the web source.
+> - **The spec needs no new store.** The Ledger's versioned artifacts (`artifact_write`, which takes a `canvas_id`)
+>   already keep the Briefing's versions (BR-6).
+> - **The library** is `0.21.0`, Apache-2.0, first published 2026-01-14, pre-1.0. Its React peer is `^19.2.3` (the
+>   web runs 19.2.4) and its Zod peer is `^4` (the lockfile holds 4.4.3). **It was read, not run.**
+> - **§3.11's refusal stands.** Three of the library's features cross it unless switched off: `watch` (an action
+>   with no click), an action a spec defines for itself, and a literal figure in a prop.
+> - **Model-written layout cost about 14 seconds** in the 2026-06-30 experiment, so a cockpit is written once,
+>   approved, and re-rendered at no model cost.
+
+**The law of the arc: the spec arranges, the card store measures.** A `Card` element carries a card's id and
+nothing about what it measures. Conditions read only what the host publishes — `/range`, `/cards/<id>/status`,
+`/tab` — and that tree carries statuses, never figures. A card hidden by its condition is counted on screen; a
+card the reader may not see says so.
+
+**Refused inside the arc:** `@json-render/shadcn` (Radix; the web is Base UI) · SQL written by the model in a
+cockpit proposal · `watch` · any action a spec defines · a figure typed into a prop · a second chart engine · a
+second place that declares chart kinds.
+
+- **CT-1 · the premise, run. ✅ BUILT 2026-09-28.** Install `@json-render/core` and `@json-render/react` at
+  exactly `0.21.0` on a branch; render ONE hand-written spec — a tab, a section, two existing cards, one
+  condition — in the web; state the weight it adds to the canvas route; run `validateSpec` from Python through a
+  Node bundle the way `export/echarts.py` runs the chart renderer. *A day.* The user's yes to the dependency came
+  the same day; the receipt is the study's §9.
+- **CT-2 · the catalog and the validator, one home. ✅ BUILT 2026-09-28** (`web/lib/cockpit/`,
+  `web/components/cockpit/ComposedCockpit.tsx`, `aughor/cockpit/validate.py`; nothing mounts it yet). Five components: `Cockpit`, `Tabs`, `Tab`, `Section`,
+  `Card`. Structure checked by the library's own validator; the platform then checks that every card id is in
+  this canvas, every state path is in the published tree, there is no `watch`, `on` or unregistered `$computed`,
+  and every piece of model-written text passes the numerals law. Refused whole, with sentences (AV-0's law). A
+  drift gate like the chart bundle's. "Cockpit", "card" and "section" entered in the glossary. *Two days.*
+- **CT-3 · kept as versions. ✅ BUILT 2026-09-28** (`aughor/cockpit/versions.py`, `aughor/cockpit/cards.py`;
+  no route yet). A Ledger artifact of kind `cockpit`, one natural key per canvas; cards made for it
+  stored at canvas scope; a card made from an approved metric records which one. The connection cockpit's
+  arrangement table is untouched. *A day.*
+- **CT-4 · the Cockpit tab. ✅ BUILT 2026-09-28** (`aughor/routers/cockpit.py`, `aughor/cockpit/host.py` and
+  `compose.py`, `web/components/cockpit/CockpitTab.tsx`). The fourth tab of the Data Canvas, behind `cockpit.composed` (off, byte-identical
+  when off): the latest approved spec through the registry, `Card` drawn by `PinnedCardBody` unchanged, the
+  Briefing's range control feeding `/range`, the count of cards waiting on a condition per section. *Two days.*
+- **CT-5 · ask for it. ⚑ ✅ BUILT 2026-09-28; its receipt by a model NOT run** (`aughor/agent/cockpit_tool.py`,
+  `aughor/cockpit/propose.py`, `aughor/dashboard/doors.py`, `web/lib/cockpit/patch.ts` and `grammar.ts`, the
+  `cockpit_draft` branch of `web/components/ProposalCard.tsx`). One converse tool, offered only in a Data Canvas
+  on a streaming turn; it stages ONE proposal of a new kind — the cards to create, each naming an approved
+  metric, a trusted query or a finding, and the spec — approved all or nothing. An edit arrives as RFC 6902
+  patches against the current spec and becomes the next version. *Three days.* Its receipt spends model
+  calls, which are the user's.
+- **CT-6 · out by other doors (named, not scheduled).** The same spec to PDF, to an image card for Slack, to
+  email — a new door, with the departure gate in front of it — and into other AI clients as an MCP App; charts
+  from the existing headless renderer. Trigger: a person asks for a cockpit outside the app.
+
+**Receipt:** on theLook, in a Data Canvas scoped to its returns tables, "build me a returns cockpit" stages a
+proposal; approved, the tab shows tabs and sections, a card that appears when a watch crosses its limit, every
+card cut to the chosen range; an edit makes version 2; reopening it costs no model call. **Falsifiers, three:**
+(1) if CT-1 shows `PinnedCardBody` cannot be registered unchanged, or the validator cannot run from Python, the
+library is the wrong tool — the tab (CT-4) and the versions (CT-3) stand, over a hand-written sectioned layout;
+(2) if fewer than half of first proposals pass validation over ten asks on theLook, the catalog or its prompt
+is wrong, and the closed vocabulary is not closing; (3) if an approved cockpit is not reopened within a week,
+the board was not wanted — counted from the session log the way AV-M counts uptake, which read 3 of 42.
+
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -10598,6 +10874,15 @@ the browser** · **measure the premise before building.**
 > Open: 32, 33, 34.
 > **Amended 2026-09-26, later:** item 34 decided clause by clause — (f) and (g) against the recommendation, (b) built as
 > rule and measurement so no model authors a definition. BR-1 to BR-5 built. Open: 32, 33.
+> **Amended 2026-09-28:** item 36 (Arc CT — the composed cockpit) arrived at the user's *"Lets study and add it to the
+> roadmap"*, on `vercel-labs/json-render`; its survey was taken first (CT-0). **OPEN with recommendations**, seven
+> clauses, the first already the user's own words. This line speaks for item 36 only; the open list above was not
+> re-measured when it was written.
+> **Amended 2026-09-28, later:** item 36 adopted as drafted, at the user's *"Adopt the Arc CT and commit locally"*.
+> Two clauses stay open because adopting a plan is not a yes to a download or to a spend: (d) installing the
+> library for CT-1, and (f) the model calls of CT-5's receipt.
+> **Amended 2026-09-28, later still:** (d) decided at the user's *"Yes, install it and start CT-1 and CT-2"*; both
+> waves built the same day, and the library KEPT on CT-1's numbers at the user's word. Open under item 36: (f).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -11276,6 +11561,40 @@ the browser** · **measure the premise before building.**
     a ratchet, GM-3 the path as a receipt, GM-4 a guard that cannot run says so, GM-5 audit and redaction by what the
     statement is — with the study's census as the migration list and its falsifier as the arc's. The hotfix that
     prompted it (the monitor runner through `native_sql`, both paths) is already on the branch.
+36. ✅ **DECIDED 2026-09-28 — Arc CT adopted as drafted** (the user, on the study: *"Adopt the Arc CT and commit
+    locally"*; the arc itself arrived earlier the same day at their *"Lets study and add it to the roadmap"*). The
+    survey (CT-0) was taken BEFORE the arc was written; the study is
+    `docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md`. The six waves stand in the order §3.50 gives them, with its law,
+    its refusals and its three falsifiers. Seven clauses. Adopting a plan is not a yes to a download or to a
+    spend, so (d) and (f) were left open at adoption; (d) was decided later the same day. **One stays open: (f).**
+    **(a) ✅ DECIDED — the full version.** The user, on the first mock: *"it needs to be full extension version with
+    (sections, tabs, conditional tiles)"*. A plain grid first was the builder's suggestion and is withdrawn.
+    **(b) ✅ DECIDED — adopted as §3.50.** It adds no store, no chart engine and no new vocabulary of chart kinds;
+    it finishes a canvas scope the card store already has.
+    **(c) ✅ DECIDED with the adoption, as drafted — the home is a fourth tab in the Data Canvas** (CT-4), where the
+    ask is made and where the canvas names the cockpit and limits the tables. The Briefing keeps its cockpit as it
+    is. The alternative was the Briefing's cockpit, which is one per connection and sits below four other sections.
+    **(d) ✅ DECIDED 2026-09-28 — the dependency is installed** (the user: *"Yes, install it and start CT-1 and
+    CT-2"*). `@json-render/core` and `@json-render/react` at exactly `0.21.0`: Apache-2.0, eight months old,
+    pre-1.0. CT-1 ran it and its first falsifier did not fire. **✅ KEPT, 2026-09-28** (the user, on CT-1's
+    numbers: *"Keep the library, commit locally and start CT-3"*): it draws, it costs 24.5 KB gzipped beside Zod,
+    and its own validator is weaker than the study assumed, which the rules make up for. It stays pinned exact;
+    a version change is a change to the bundle the server runs, and the drift gate will say so.
+    **(e) ✅ DECIDED with the adoption, as drafted — a `Card` element points at a card** (the law of the arc). The
+    alternative — the element carries the metric's name itself — reads better in a spec and makes a second place
+    that knows what a card measures.
+    **(f) ✅ DECIDED AND SPENT 2026-09-28 — the receipt's model calls.** CT-5's receipt and its second falsifier need about
+    ten asks on theLook. *Recommended:* once, on the user's word, with the model stated beside the result.
+    *2026-09-28: CT-5 is built and was run live with what a model would write written by hand; nothing was
+    spent. "Start CT-5" was read as the word to build it, not as the word to spend — the ten asks still wait.*
+    *Later the same day the user gave the word (*"Run the ten asks on theLook"*), and chose the model
+    when the install's own turned out unable to call tools. **✅ SPENT 2026-09-28: ten asks on
+    `deepseek/deepseek-v4.1-flash`, 54 calls. Falsifier (2) fired, 4 of 10.** The user then gave the word
+    for a second spend (*"fix the three faults and run the asks again"*): **10 of 10, 42 calls** — on the
+    asks the repairs were written for (§3.50's first two status blocks). A run on asks nobody has seen is
+    a third spend and needs the user's word again.*
+    **(g) ✅ DECIDED with the adoption, as drafted — email is not in this arc.** CT-6 names it and waits for someone
+    to ask; when it comes it is a new door and the departure gate stands in front of it.
 
 ---
 

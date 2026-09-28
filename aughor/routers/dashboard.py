@@ -13,7 +13,8 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from aughor.dashboard.models import CardProvenance, DashboardCard
+from aughor.dashboard import doors
+from aughor.dashboard.models import DashboardCard
 from aughor.dashboard.store import (
     delete_card, get_card, get_layout, get_viz_configs, list_cards, set_layout,
     set_viz_config, upsert_card,
@@ -129,10 +130,10 @@ def delete_card_route(card_id: str) -> None:
 
 # ── Guard-on-write: the shared trust gate every authoring door runs through ──
 
-def _clip_title(title: str, fallback: str) -> str:
-    """A human card label: the given title (or the fallback when blank), clipped to ~120 chars."""
-    t = (title or "").strip() or fallback
-    return (t[:117].rstrip() + "…") if len(t) > 120 else t
+#: The guard, the scalar reading and the title clip are shared with every other door that
+#: makes a card (`aughor/dashboard/doors.py`); the names below are this router's own for them.
+_clip_title = doors.clip_title
+_scalar = doors.scalar_of
 
 
 def _preview(result) -> dict:
@@ -144,16 +145,6 @@ def _preview(result) -> dict:
     }
 
 
-def _scalar(result) -> Optional[float]:
-    """A single numeric cell → the card's tracked value; else None (chart/table card)."""
-    if result.error or result.row_count != 1 or len(result.columns or []) != 1:
-        return None
-    try:
-        return float((result.rows or [[None]])[0][0])
-    except (TypeError, ValueError, IndexError):
-        return None
-
-
 def _guarded_or_refuse(
     connection_id: str, sql: str, *, query_id: str, schema: Optional[str] = None
 ):
@@ -163,28 +154,10 @@ def _guarded_or_refuse(
     BLOCKED by a guard is a 422 — nothing is persisted either way. Shared by every authoring
     door so a Query-Builder pin carries the exact same trust guarantee as a pinned finding.
     """
-    from aughor.db.connection import open_connection_for, open_connection_for_with_schema
-    from aughor.sql.executor import execute_guarded
-
     try:
-        db = (
-            open_connection_for_with_schema(connection_id, schema_name=schema)
-            if schema else open_connection_for(connection_id)
-        )
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
-    try:
-        result = execute_guarded(db, sql, query_id=query_id, schema=schema)
-    finally:
-        try:
-            db.close()
-        except Exception as exc:
-            tolerate(exc, "dashboard: connection close failed after guarded query", counter="dashboard.db_close")
-    if result.error:
-        raise HTTPException(
-            status_code=422, detail=f"Query failed the trust guards, not pinned: {result.error}"
-        )
-    return result
+        return doors.run_guarded(connection_id, sql, query_id=query_id, schema=schema)
+    except doors.GuardRefused as refused:
+        raise HTTPException(status_code=404 if refused.missing_connection else 422, detail=str(refused))
 
 
 # ── Door 1: pin a briefing finding as a card ─────────────────────────────────
@@ -237,21 +210,9 @@ def pin_insight_route(req: PinInsightRequest) -> dict:
     )
 
     # 3) Build + store the card, linked to the source finding (graph edge) + its receipt.
-    finding = (insight.get("finding") or "").strip()
-    saved = upsert_card(DashboardCard(
-        connection_id=req.connection_id,
-        scope=req.scope,
-        scope_ref=req.scope_ref,
-        source="insight",
-        kind=req.kind,
-        title=_clip_title(req.title or finding, "Pinned finding"),
-        sql=sql,
-        provenance=CardProvenance(
-            insight_id=req.insight_id,
-            receipt_ref=f"insight:{req.connection_id}:{req.insight_id}",
-        ),
-        links=[req.insight_id],
-    ))
+    saved = upsert_card(doors.card_from_finding(
+        req.connection_id, insight, kind=req.kind, title=req.title,
+        scope=req.scope, scope_ref=req.scope_ref))
     return {"card": saved.model_dump(), "preview": _preview(result), "caveats": result.caveats or []}
 
 
@@ -412,7 +373,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         raise HTTPException(status_code=404, detail="Card not found")
     if not (card.sql or "").strip():
         return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": None,
-                "refresh": card.refresh.model_dump(), "scoped": None}
+                "value": None, "refresh": card.refresh.model_dump(), "scoped": None}
     spec = _card_range(card.connection_id, preset, start, end, workspace_id)
     try:
         db = open_connection_for(card.connection_id)
@@ -444,8 +405,14 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
             db.close()
         except Exception as exc:
             tolerate(exc, "dashboard: connection close failed after card run", counter="dashboard.db_close")
+    # The figure of THIS run, whatever it was run for. Until Arc CT-4 a run cut to a range
+    # carried its figure only inside `rows`, as text, while `refresh` went on carrying the
+    # standing one — and the card drew `refresh`. So a card with a standing value showed it
+    # under "for <the range>": the all-time revenue, labelled November's. Seen live on the
+    # demo warehouse, 8.42M where the range held 2.78M. `value` is what a reader is shown.
+    value = _scalar(result)
     # A range's figure is the range's; the tracked value and its history stay the standing card's.
-    scalar = None if (scoped is not None and not scoped["standing"]) else _scalar(result)
+    scalar = None if (scoped is not None and not scoped["standing"]) else value
     if scalar is not None:
         hist = list(card.refresh.history or [])
         if not hist or hist[-1] != scalar:      # dedupe consecutive equals → a meaningful step series
@@ -462,6 +429,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         "row_count": result.row_count,
         "caveats": result.caveats or [],
         "error": result.error,
+        "value": value,
         "refresh": card.refresh.model_dump(),
         "scoped": scoped,
     }

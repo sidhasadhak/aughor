@@ -129,6 +129,15 @@ jobs:
         run: |
           npm run build:chart-ssr
           git diff --exit-code ../aughor/export/chart_ssr.bundle.mjs
+      - name: Cockpit-validator bundle drift
+        # Arc CT, CT-2: aughor/cockpit/validate.bundle.mjs is web/lib/cockpit/rules.ts
+        # bundled for the server, so a spec is checked by the function the browser
+        # draws it with. Rebuild and fail if the committed bundle is stale — a rule
+        # changed in the web and not rebuilt is a server that accepts what the
+        # browser refuses, or refuses what it draws.
+        run: |
+          npm run build:cockpit-validate
+          git diff --exit-code ../aughor/cockpit/validate.bundle.mjs
       - name: Chart-palette gate
         # CA-4: the six-check palette validator (lightness band, chroma floor,
         # CVD separation, normal-vision floor, contrast vs the real card

@@ -61,5 +61,9 @@ def test_the_queue_is_named_and_migrations_are_empty():
     receipt record lives on the GRADUATION_QUEUE tombstone in kernel/flags.py)."""
     from aughor.kernel.flags import GRADUATION_QUEUE, MIGRATION
 
-    assert GRADUATION_QUEUE == {}
+    # Arc CT-4 (ROADMAP §3.50), 2026-09-28: `cockpit.composed` — a Cockpit tab in the Data Canvas.
+    # It adds no model call, so it has no grid to pass: it is queued on a receipt of USE, and
+    # its entry in kernel/flags.py says which, and what would delete it instead.
+    assert set(GRADUATION_QUEUE) == {"cockpit.composed"}
+    assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}
