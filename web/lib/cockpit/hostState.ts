@@ -6,11 +6,14 @@
  * watch is over its limit is the host's to say.
  *
  *   /tab                     which tab is open — the only path a spec may seed or write
- *   /range/status            final · provisional · to_date
+ *   /range/status            standing · final · provisional · to_date
  *   /cards/<card id>/status  within · over · unmeasured · withheld
  */
 
-export const RANGE_STATUSES = ["final", "provisional", "to_date"] as const;
+/** `standing` is a cockpit read with no range chosen: every card runs as it was written. The
+ *  other three are the glossary's own words for a figure's status. The server says the same
+ *  four (`aughor/cockpit/host.py`), and a test on its side holds the two lists together. */
+export const RANGE_STATUSES = ["standing", "final", "provisional", "to_date"] as const;
 export type RangeStatus = (typeof RANGE_STATUSES)[number];
 
 export const CARD_STATUSES = ["within", "over", "unmeasured", "withheld"] as const;

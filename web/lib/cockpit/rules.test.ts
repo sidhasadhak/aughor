@@ -38,7 +38,7 @@ describe("the catalog", () => {
       version: COCKPIT_VOCABULARY_VERSION,
       components: ["Cockpit", "Tabs", "Tab", "Section", "Card"],
       tones: ["good", "warn", "bad", "info", "neutral"],
-      range_statuses: ["final", "provisional", "to_date"],
+      range_statuses: ["standing", "final", "provisional", "to_date"],
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
@@ -250,12 +250,12 @@ describe("what a condition may read", () => {
     expect(refused(on("card-net", { $state: "/cards/c7f3a001/status", eq: "breached" })))
       .toMatch(/with "breached"\. It may be compared with: within, over, unmeasured, withheld/);
     expect(refused(on("card-net", { $state: "/range/status", eq: "over" })))
-      .toMatch(/with "over"\. It may be compared with: final, provisional, to_date/);
+      .toMatch(/with "over"\. It may be compared with: standing, final, provisional, to_date/);
   });
 
   it("never with another path, which would let a spec compare what it likes", () => {
     expect(refused(on("card-net", { $state: "/range/status", eq: { $state: "/tab" } })))
-      .toMatch(/It may be compared with: final, provisional, to_date/);
+      .toMatch(/It may be compared with: standing, final, provisional, to_date/);
   });
 
   it("by eq or neq, once — a status has no greater or lesser", () => {

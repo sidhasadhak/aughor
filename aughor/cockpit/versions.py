@@ -101,6 +101,7 @@ def _entry(row: dict, *, with_spec: bool) -> dict[str, Any]:
         "source": p.get("source") or "",
         "note": p.get("note") or "",
         "vocabulary_version": p.get("vocabulary_version") or 0,
+        "written_by_model": bool(p.get("written_by_model", True)),
         "cards": list(p.get("cards") or []),
         "changes": p.get("changes") or {"added": [], "removed": [], "changed": []},
     }
@@ -167,11 +168,13 @@ def _write(canvas_id: str, payload: dict, prior: Optional[dict], why: str) -> Ke
 
 
 def keep(canvas_id: str, spec: Any, *, approved_by: str, source: str, note: str = "",
-         also_known: Iterable[str] = ()) -> Kept:
+         also_known: Iterable[str] = (), written_by_model: bool = True) -> Kept:
     """Keep ``spec`` as this canvas's cockpit: the next version, or nothing at all.
 
     ``approved_by`` is the person who approved it; ``source`` is where it came from.
-    ``also_known`` names cards the same approval has just created.
+    ``also_known`` names cards the same approval has just created. ``written_by_model`` says
+    whose words its titles are; it defaults to True, the strict reading, and is kept with the
+    version so that going back to it holds it to the rule it was first held to.
     """
     from aughor.canvas.store import get_canvas
 
@@ -182,7 +185,8 @@ def keep(canvas_id: str, spec: Any, *, approved_by: str, source: str, note: str 
         return Kept(REFUSED, sentences=(
             f'The canvas "{canvas_id}" does not exist, so no cockpit can be kept for it.',))
 
-    verdict = _validate.check_spec_for_canvas(spec, canvas_id, also_known=also_known)
+    verdict = _validate.check_spec_for_canvas(spec, canvas_id, also_known=also_known,
+                                              model_written=written_by_model)
     if verdict.status == _validate.NOT_CHECKED:
         return Kept(NOT_CHECKED, sentences=verdict.sentences)
     if not verdict.accepted:
@@ -198,6 +202,7 @@ def keep(canvas_id: str, spec: Any, *, approved_by: str, source: str, note: str 
         "spec": spec, "retired": False,
         "approved_by": approved_by.strip(), "source": source.strip(), "note": note.strip(),
         "vocabulary_version": int(vocab.get("version") or 0),
+        "written_by_model": bool(written_by_model),
         "cards": list(verdict.cards),
         "changes": changes(before.get("spec"), spec),
     }
@@ -215,7 +220,8 @@ def restore(canvas_id: str, number: int, *, approved_by: str) -> Kept:
         return Kept(REFUSED, sentences=(
             f"Version {number} is the one that retired the cockpit; it holds no spec to go back to.",))
     return keep(canvas_id, earlier["spec"], approved_by=approved_by,
-                source=f"restored from version {number}")
+                source=f"restored from version {number}",
+                written_by_model=earlier["written_by_model"])
 
 
 def retire(canvas_id: str, *, approved_by: str, note: str = "") -> Kept:
@@ -234,6 +240,7 @@ def retire(canvas_id: str, *, approved_by: str, note: str = "") -> Kept:
         "spec": None, "retired": True,
         "approved_by": approved_by.strip(), "source": "retired", "note": note.strip(),
         "vocabulary_version": before.get("vocabulary_version") or 0,
+        "written_by_model": False,
         "cards": [],
         "changes": changes(before.get("spec"), None),
     }

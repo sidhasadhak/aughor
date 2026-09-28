@@ -94,6 +94,11 @@ FLAG_ENV = {
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
     "briefing.ranges": "AUGHOR_BRIEFING_RANGES",
+    # Arc CT-4 (ROADMAP §3.50). ON adds a Cockpit tab to the Data Canvas: the canvas's own cards,
+    # arranged by a kept spec — tabs, sections, cards shown by a condition. No model call: the
+    # tab draws what was approved. OFF → the Data Canvas has its three tabs and the cockpit's
+    # routes answer 404, exactly as before.
+    "cockpit.composed": "AUGHOR_COCKPIT_COMPOSED",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
@@ -332,6 +337,10 @@ FLAG_META = {
     "answers.recheck": {
         "label": "Tell people when an answer they were given changes",
         "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. On by default since 2026-09-24 (the user's call); off → nothing is re-run, recorded or sent.",
+    },
+    "cockpit.composed": {
+        "label": "A cockpit in each Data Canvas",
+        "description": "Adds a Cockpit tab to the Data Canvas, beside Chat, History and Artifacts. It shows the canvas's own cards arranged in tabs and sections, and a card can be set to appear only when a condition holds — for example while a watch is over its limit. The arrangement is kept as versions, so every change can be read and undone. Off: the Data Canvas is unchanged.",
     },
     "briefing.ranges": {
         "label": "Briefings for any date range, measured from approved metrics",
@@ -599,6 +608,13 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc CT-4 (ROADMAP §3.50), queued 2026-09-28. It adds no model call and changes no prompt,
+    # so there is no grid to buy: it graduates on being USED.
+    "cockpit.composed": "receipt: on theLook, a person opens a Data Canvas's Cockpit tab and sees "
+                        "its cards cut to the range they chose, and a card that appears when its "
+                        "watch crosses its limit. Falsifier (§3.50, the third): an approved cockpit "
+                        "that nobody reopens within a week was not wanted — then the tab goes, "
+                        "and the flag with it",
     # EMPTY again as of 2026-08-28: ask.resume_stream (FL-1b, queued 2026-08-28)
     # graduated on its declared receipt, delivered live the same day: a browser soak
     # (85s deep run, tab killed at ~4s, a reloading client reattached via

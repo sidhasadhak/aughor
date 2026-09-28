@@ -484,7 +484,7 @@ BASELINE: dict[str, int] = {
     # restored the Hub's domain rail on the Profile layer (ProfileLayer.tsx +28: the
     # domain-findings API by its own names). Code #498 removed came back by request;
     # renaming that API to dodge the pattern would only hide it from this test.
-    "insight": 1757,   # 1759 → 1757 on 2026-09-26: three prose comments in BriefingPanel.tsx now say "finding"
+    "insight": 1754,   # 1757 → 1754 on 2026-09-28: the cockpit's test fixtures no longer spell out a card's provenance
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     # 2026-09-13: 602 → 573, measured. Instrument redrew the Briefing and deleted ProcessMapper.tsx;

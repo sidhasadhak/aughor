@@ -2185,6 +2185,11 @@ export interface CardRunResult {
   row_count: number;
   caveats: string[];
   error: string | null;
+  /** The figure of THIS run — the range's when the run was cut to one, the standing one
+   *  otherwise; null when the result is a table. `refresh` always carries the card's standing
+   *  value, so a card drawn for a range reads this and not that (Arc CT-4). Optional because a
+   *  server from before it does not send it. */
+  value?: number | null;
   refresh: DashboardCardRefresh;
   /** BR-9 — present when the run asked for a range: what the number covers, or `standing`
    *  with why the card's SQL could not be cut to it (no date on its tables). */
@@ -2310,6 +2315,129 @@ export async function runDashboardCard(cardId: string, range?: BriefingRange | n
   const res = await fetch(qs ? `${url}?${qs}` : url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh dashboard card");
   return res.json();
+}
+
+// ── A Data Canvas's cockpit (Arc CT-4, flag `cockpit.composed`) ─────────────────────────────
+
+/** One kept version of a cockpit. The newest carries its `spec`; a history entry does not. */
+export interface CockpitVersion {
+  version: number;
+  artifact_id: string;
+  kept_at: string;
+  current: boolean;
+  retired: boolean;
+  approved_by: string;
+  source: string;
+  note: string;
+  vocabulary_version: number;
+  /** Whose words the titles are. A model's were held to the numerals law; a person's are their own. */
+  written_by_model: boolean;
+  cards: string[];
+  changes: { added: string[]; removed: string[]; changed: string[] };
+  spec?: unknown;
+}
+
+export interface CockpitRange {
+  status: "standing" | "final" | "provisional" | "to_date";
+  preset: RangePreset | null;
+  start: string | null;
+  last_day: string | null;
+  covers: string;
+  as_of: string | null;
+  lag_days: number | null;
+  still_moving: string[];
+}
+
+export interface CanvasCockpit {
+  canvas_id: string;
+  connection_id: string;
+  cockpit: CockpitVersion | null;
+  cards: DashboardCard[];
+  range: CockpitRange;
+  ranges_on: boolean;
+  history: CockpitVersion[];
+}
+
+/** What a write answered: kept, unchanged — or a refusal, which arrives as an error. */
+export interface CockpitKept {
+  status: "kept" | "unchanged" | "refused" | "not_checked" | "failed";
+  kept: boolean;
+  version: number | null;
+  artifact_id: string;
+  sentences: string[];
+}
+
+/** A cockpit write that was refused. `sentences` are the validator's own, to show as they are. */
+export class CockpitRefused extends Error {
+  constructor(public readonly outcome: CockpitKept) {
+    super(outcome.sentences.join(" ") || "The cockpit was not kept.");
+    this.name = "CockpitRefused";
+  }
+}
+
+async function cockpitWrite(res: Response, fallback: string): Promise<CockpitKept> {
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return body as CockpitKept;
+  const detail = (body as { detail?: unknown }).detail;
+  if (detail && typeof detail === "object" && Array.isArray((detail as CockpitKept).sentences)) {
+    throw new CockpitRefused(detail as CockpitKept);
+  }
+  throw new Error(fastApiError(body, fallback));
+}
+
+/** The canvas's cockpit as it stands, read for a range when one is chosen. Null when the
+ *  flag is off (the route answers 404), so a caller need not know the flag's name. */
+export async function getCanvasCockpit(canvasId: string, range?: BriefingRange | null): Promise<CanvasCockpit | null> {
+  const q = new URLSearchParams();
+  if (range) {
+    if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+    else q.set("preset", range.preset);
+  }
+  const url = `${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit`;
+  const qs = q.toString();
+  const res = await fetch(qs ? `${url}?${qs}` : url);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the cockpit"));
+  }
+  return res.json();
+}
+
+/** Start a cockpit from the cards the canvas holds, grouped by their kind. No model. */
+export async function startCanvasCockpit(canvasId: string): Promise<CockpitKept> {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit/start`, { method: "POST" });
+  return cockpitWrite(res, "Failed to start the cockpit");
+}
+
+/** Keep a spec a person wrote. */
+export async function keepCanvasCockpit(canvasId: string, spec: unknown, note = ""): Promise<CockpitKept> {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ spec, note }),
+  });
+  return cockpitWrite(res, "Failed to keep the cockpit");
+}
+
+/** Go back to an earlier version: it is kept again, as the newest. */
+export async function restoreCanvasCockpit(canvasId: string, version: number): Promise<CockpitKept> {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version }),
+  });
+  return cockpitWrite(res, "Failed to go back");
+}
+
+/** Retire the cockpit. Its history stays. */
+export async function retireCanvasCockpit(canvasId: string, note = ""): Promise<CockpitKept> {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/cockpit/retire`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note }),
+  });
+  return cockpitWrite(res, "Failed to retire the cockpit");
 }
 
 export async function deleteDashboardCard(cardId: string): Promise<void> {

@@ -9634,7 +9634,7 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
-### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1, CT-2 and CT-3 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged)
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-4 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged)
 
 > **Status 2026-09-28 — CT-1 and CT-2 are built; falsifier (1) did not fire.** The library is installed at exactly
 > `0.21.0` (two lockfile entries, nothing else), one hand-written spec draws in a browser with every card handed to
@@ -9651,6 +9651,33 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 > tests; 11,932 Python tests. **Found on the way:** the design system's tabs drew horizontal tabs as a row and no
 > screen had ever used them — fixed at the cause, seen only in the browser. **Not yet:** the drift gate has not run
 > in CI (nothing is pushed); the active tab is marked by weight alone; the server needs Node to accept a spec.
+
+> **Status 2026-09-28, later still — CT-4 is built, and seen live.** The Data Canvas has a fourth tab, Cockpit,
+> behind `cockpit.composed` (off by default; off, the routes answer 404 and the canvas's own answers are
+> byte-identical). It reads the kept spec, runs the canvas's cards through the guard battery as the Briefing's
+> cockpit does, says each card's status from its run, and draws. **No route and no screen here calls a model.**
+> A first cockpit is started by code from the canvas's cards, grouped by kind. **Receipt, on this branch's own
+> servers and its own data** (the demo warehouse, provisioned through `POST /connections/demo`): six cards of real
+> SQL, a spec kept by hand with three tabs; read as written the payment failure rate is 1.59 against a limit of
+> 1.7 and its alert card waits; read for November 2025 it is 1.84 and the alert card appears; going back through
+> the history made versions 3 and 4. **The live run found four things the tests had not**, each fixed at the
+> cause: (1) **a card read for a range showed its ALL-TIME figure under the range's label** — 8.42M "for
+> November", where November held 2.78M. The run carried the range's figure in `rows`, as text, while `refresh`
+> went on carrying the standing one, and the card drew `refresh`. It is BR-9's defect, and it reached the
+> Briefing's cockpit too; a run now says its own `value` and the card draws that. (2) My own status check read
+> the figure out of `rows` and asked for a number; the server sends text, so every ranged card read as
+> unmeasured. Twenty tests passed on it. (3) **The library draws NOTHING in place of a component that throws**,
+> so a card that failed to draw vanished; a boundary inside the library's now says so in the card's place.
+> (4) The active tab's underline and colour never drew: an unlayered reset for raw buttons beat the tab's
+> utilities. **And one the live run did not find, a test that failed one run in six did:** the numerals law was
+> held against every title, whoever wrote it, so a canvas called "Store 4521" could not start a cockpit. The
+> law is for text a MODEL wrote, as §3.50 says; a person's title is their own word, and which it is is kept with
+> the version. **Verified:** 116 Python and 106 web tests on the cockpit; eight more deliberate breaks, all
+> caught; the seven web gates; 1,300 web tests; the full Python suite. **Open:** nothing says `withheld` yet —
+> the platform has no rule for which cards a reader may not see; a canvas's cards can be made on the tab, but
+> pinning a finding or a query from the canvas's chat still keeps it for the connection; the tab's range control
+> needs `briefing.ranges`; and the route weight on the canvas page was not measured, because the dev server
+> does not report one.
 
 > **Status 2026-09-28, later — CT-3 is built.** A cockpit's spec is a Ledger artifact of kind `cockpit`, one
 > natural key per canvas (`aughor/cockpit/versions.py`); its cards are kept at canvas scope
@@ -9718,7 +9745,8 @@ second place that declares chart kinds.
   no route yet). A Ledger artifact of kind `cockpit`, one natural key per canvas; cards made for it
   stored at canvas scope; a card made from an approved metric records which one. The connection cockpit's
   arrangement table is untouched. *A day.*
-- **CT-4 · the Cockpit tab.** The fourth tab of the Data Canvas, behind `cockpit.composed` (off, byte-identical
+- **CT-4 · the Cockpit tab. ✅ BUILT 2026-09-28** (`aughor/routers/cockpit.py`, `aughor/cockpit/host.py` and
+  `compose.py`, `web/components/cockpit/CockpitTab.tsx`). The fourth tab of the Data Canvas, behind `cockpit.composed` (off, byte-identical
   when off): the latest approved spec through the registry, `Card` drawn by `PinnedCardBody` unchanged, the
   Briefing's range control feeding `/range`, the count of cards waiting on a condition per section. *Two days.*
 - **CT-5 · ask for it. ⚑** One converse tool, offered only in a Data Canvas on a streaming turn; it stages ONE

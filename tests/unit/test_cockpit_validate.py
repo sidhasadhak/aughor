@@ -93,6 +93,24 @@ def test_a_rank_a_year_and_a_small_count_are_not_figures(premise, title):
 
 
 @needs_rules
+@pytest.mark.parametrize("title", ["Revenue up 12%", "Top 1000 accounts", "Store 4521"])
+def test_a_persons_own_title_is_their_own_word(premise, title):
+    """The law is for text a model wrote. A person's title is said in their name — and a
+    canvas called "Store 4521" is a canvas's name, not a claim about the data."""
+    premise["elements"]["sec-headline"]["props"]["title"] = title
+    assert V.check_spec(premise, known_cards=CARDS, model_written=False).status == V.ACCEPTED
+    refused = V.check_spec(premise, known_cards=CARDS, model_written=True)
+    assert refused.status == V.REFUSED and "states a figure" in said(refused)
+    assert V.check_spec(premise, known_cards=CARDS).status == V.REFUSED      # unsaid is strict
+
+
+@needs_rules
+def test_whoever_wrote_it_a_card_outside_the_canvas_is_refused(premise):
+    verdict = V.check_spec(premise, known_cards={"c7f3a001"}, model_written=False)
+    assert verdict.status == V.REFUSED and 'places the card "c91b2002"' in said(verdict)
+
+
+@needs_rules
 def test_every_reason_is_said_not_only_the_first(premise):
     premise["elements"]["tab-watches"]["props"]["label"] = "Up 40%"
     verdict = V.check_spec(premise, known_cards=set())
@@ -157,7 +175,7 @@ def test_the_server_reads_the_vocabulary_the_web_declares():
     vocab = V.vocabulary()
     assert vocab["version"] == 1
     assert vocab["components"] == ["Cockpit", "Tabs", "Tab", "Section", "Card"]
-    assert vocab["range_statuses"] == ["final", "provisional", "to_date"]
+    assert vocab["range_statuses"] == ["standing", "final", "provisional", "to_date"]
     assert vocab["card_statuses"] == ["within", "over", "unmeasured", "withheld"]
 
 

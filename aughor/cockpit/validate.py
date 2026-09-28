@@ -11,8 +11,15 @@ Two halves, and the split is by who can know:
    ``export/echarts.py`` uses for charts, for the same reason: the server checks a spec with
    the function the browser draws it with, so the two cannot come to disagree.
 
-2. **What only the platform knows** — whether a card the spec places is in this canvas, and
-   whether a title states a figure. Those are checked here.
+2. **What only the platform knows** — whether a card the spec places is in this canvas, and,
+   for a spec a MODEL wrote, whether a title states a figure. Those are checked here.
+
+**The numerals law is for text a model wrote.** A person who names a section "Top 1000
+accounts" has said so in their own name, and a canvas called "Store 4521" is a canvas's name.
+The first cut held every title to the law, whoever wrote it: a cockpit started from a canvas
+whose name held a number was refused for "stating a figure" — found by a test that failed one
+run in six, because its canvas names were random. ``model_written`` defaults to True, so a
+caller that forgets to say gets the strict reading.
 
 **This gate fails CLOSED.** The chart renderer falls back to a table when node is missing; a
 validator that fell back to "accepted" would be no validator. When the rules cannot run, the
@@ -105,9 +112,10 @@ def _stated_figures(text: str) -> list[str]:
     return [n.text for n in extract_numerals(text) if n.enforce or n.suffix == "%"]
 
 
-def check_spec(spec: Any, *, known_cards: Iterable[str]) -> SpecVerdict:
+def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = True) -> SpecVerdict:
     """Accept ``spec`` whole or refuse it whole. ``known_cards`` are the ids of the cards this
-    canvas holds, plus any the same proposal is about to create."""
+    canvas holds, plus any the same proposal is about to create. ``model_written`` says whose
+    words the titles are: a model's are held to the numerals law, a person's are their own."""
     try:
         json.dumps(spec)
     except (TypeError, ValueError) as exc:
@@ -133,7 +141,7 @@ def check_spec(spec: Any, *, known_cards: Iterable[str]) -> SpecVerdict:
         if str(card) not in known:
             sentences.append(
                 f'A condition reads the status of the card "{card}", which this canvas does not hold.')
-    for t in out.get("texts") or []:
+    for t in (out.get("texts") or []) if model_written else []:
         text = str(t.get("text", ""))
         figures = _stated_figures(text)
         if figures:
@@ -145,10 +153,11 @@ def check_spec(spec: Any, *, known_cards: Iterable[str]) -> SpecVerdict:
     return SpecVerdict(ACCEPTED, (), tuple(placed))
 
 
-def check_spec_for_canvas(spec: Any, canvas_id: str, *,
-                          also_known: Iterable[str] = ()) -> SpecVerdict:
+def check_spec_for_canvas(spec: Any, canvas_id: str, *, also_known: Iterable[str] = (),
+                          model_written: bool = True) -> SpecVerdict:
     """:func:`check_spec` against the cards this canvas holds in the card store.
     ``also_known`` names the cards the same proposal will create on approval."""
     from aughor.dashboard.store import list_cards
     held = {c.id for c in list_cards(scope="canvas", scope_ref=canvas_id)}
-    return check_spec(spec, known_cards=held | {str(c) for c in also_known})
+    return check_spec(spec, known_cards=held | {str(c) for c in also_known},
+                      model_written=model_written)

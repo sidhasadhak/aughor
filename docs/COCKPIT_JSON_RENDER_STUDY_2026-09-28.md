@@ -254,3 +254,55 @@ The library was installed and run the same day, at the user's *"Yes, install it 
   verdict is "not checked" and nothing is accepted.
 - The active tab is marked by weight alone: the tabs primitive's underline and colour do not draw. It is
   CT-4's to settle when the tab is mounted.
+
+## 10 · CT-4's receipt — the tab, live (2026-09-28)
+
+Run on this branch's own servers (web on 3117, API on 8117) with every store in a scratch
+directory, the platform's clocks off and no model key in the environment. The warehouse is
+the product's own demo, provisioned through `POST /connections/demo`: three months of revenue
+and payment data, September to November 2025.
+
+| step | what happened |
+|---|---|
+| a canvas, through `POST /canvases` | "Payments", on the demo warehouse |
+| six cards, through `POST /cards/pin-query` | each kept at canvas scope, each run through the guard battery before it was kept |
+| a limit on one card | payment failure rate, over 1.7 |
+| `POST /canvases/{id}/cockpit/start` | version 1: sections by kind, written by code |
+| `PUT /canvases/{id}/cockpit` | version 2: three tabs, and an alert card shown while the failure rate is over its limit |
+| the tab, read as written | revenue 8.42M, 800 paying customers, failure rate 1.59. The alert card waits, and the section says one card is waiting |
+| the tab, read for November 2025 | revenue 2.78M, failure rate 1.84. The alert card appears. Every card says "for 2025-11-01 to 2025-11-29" |
+| the second tab | two bar charts, drawn by Vega, cut to the same range |
+| the history, "Go back to this" twice | versions 3 and 4, each naming the version it restored |
+
+### What the live run found that the tests had not
+
+1. **A card read for a range showed its all-time figure under the range's label.** Revenue read
+   8.42M "for November"; November held 2.78M. The run carried the range's figure in `rows`, as
+   text, and `refresh` — the card's standing value — beside it, and the card drew `refresh`.
+   This is older than the cockpit (BR-9) and reached the Briefing's cockpit as well. A run now
+   says its own `value`, and the card draws that when it was read for a range.
+2. **Every ranged card read as unmeasured.** The status check read the figure out of `rows` and
+   asked for a number; the server sends text. Twenty tests passed on it, each of them handing
+   it a number.
+3. **The library draws nothing in place of a component that throws.** A card that failed to draw
+   vanished, with a line in the console. A boundary inside the library's now says, in the
+   card's own place, that it could not be drawn.
+4. **The active tab's underline and colour never drew.** The app resets raw buttons with a rule
+   outside any layer, and an unlayered rule beats a utility whatever its specificity.
+
+### What a test that failed one run in six found
+
+The numerals law was held against every title, whoever wrote it. The test's canvas names
+were random, and one in seventeen was all digits: the canvas's name became the cockpit's
+title, and the title "stated a figure". A canvas called "Store 4521" could not have started
+a cockpit. The law is for text a model wrote. Whose words a version's titles are is now kept
+with the version, and going back to a version holds it to the rule it was first held to.
+
+### Open after CT-4
+
+- Nothing says a card is `withheld`. The platform has no rule for which cards a reader may not
+  see: whoever may open a canvas may see its cards.
+- A card can be made on the tab itself. Pinning a finding or a query from the canvas's chat
+  still keeps the card for the connection.
+- The range control needs `briefing.ranges`. With it off the tab reads every card as written.
+- The weight the tab adds to the canvas page was not measured; §9's figure for the library stands.

@@ -412,7 +412,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         raise HTTPException(status_code=404, detail="Card not found")
     if not (card.sql or "").strip():
         return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": None,
-                "refresh": card.refresh.model_dump(), "scoped": None}
+                "value": None, "refresh": card.refresh.model_dump(), "scoped": None}
     spec = _card_range(card.connection_id, preset, start, end, workspace_id)
     try:
         db = open_connection_for(card.connection_id)
@@ -444,8 +444,14 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
             db.close()
         except Exception as exc:
             tolerate(exc, "dashboard: connection close failed after card run", counter="dashboard.db_close")
+    # The figure of THIS run, whatever it was run for. Until Arc CT-4 a run cut to a range
+    # carried its figure only inside `rows`, as text, while `refresh` went on carrying the
+    # standing one — and the card drew `refresh`. So a card with a standing value showed it
+    # under "for <the range>": the all-time revenue, labelled November's. Seen live on the
+    # demo warehouse, 8.42M where the range held 2.78M. `value` is what a reader is shown.
+    value = _scalar(result)
     # A range's figure is the range's; the tracked value and its history stay the standing card's.
-    scalar = None if (scoped is not None and not scoped["standing"]) else _scalar(result)
+    scalar = None if (scoped is not None and not scoped["standing"]) else value
     if scalar is not None:
         hist = list(card.refresh.history or [])
         if not hist or hist[-1] != scalar:      # dedupe consecutive equals → a meaningful step series
@@ -462,6 +468,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         "row_count": result.row_count,
         "caveats": result.caveats or [],
         "error": result.error,
+        "value": value,
         "refresh": card.refresh.model_dump(),
         "scoped": scoped,
     }

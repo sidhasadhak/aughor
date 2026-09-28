@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 
-def _canvas_owner_guard(request: Request) -> None:
+def canvas_owner_guard(request: Request) -> None:
     """Object-level authz (SEC-05): a by-id canvas route is reachable only by the
     org that owns the canvas's connection. No-op on routes without a ``canvas_id``
     (list/create/suggest-name) and in localhost mode (identity off)."""
@@ -18,7 +18,7 @@ def _canvas_owner_guard(request: Request) -> None:
         check_owner("canvas", canvas_id, get_principal(request))
 
 
-router = APIRouter(tags=["canvas"], dependencies=[Depends(_canvas_owner_guard)])
+router = APIRouter(tags=["canvas"], dependencies=[Depends(canvas_owner_guard)])
 
 class CreateCanvasRequest(BaseModel):
     # R10 — name is now optional: an empty name is derived

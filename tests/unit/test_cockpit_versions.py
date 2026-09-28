@@ -35,10 +35,10 @@ class Desk:
     """One canvas with two cards, and the premise spec written for THOSE cards. Card ids are
     unique to each test, because a card's id is its own across the whole store."""
 
-    def __init__(self, connection: str = "thelook"):
+    def __init__(self, connection: str = "thelook", name: str = "Returns"):
         tag = uuid.uuid4().hex[:6]
         self.connection = connection
-        self.canvas = create_canvas(f"Returns {tag}", [CanvasScope(connection_id=connection)])
+        self.canvas = create_canvas(name, [CanvasScope(connection_id=connection)])
         self.rate, self.net = f"rate{tag}", f"net{tag}"
         text = FIXTURE.read_text().replace("c7f3a001", self.rate).replace("c91b2002", self.net)
         self._spec = json.loads(text)
@@ -229,6 +229,34 @@ def test_a_write_that_fails_is_said_not_swallowed(desk, monkeypatch):
     assert "Nothing was changed" in said(out)
 
 
+# ── whose words the titles are ────────────────────────────────────────────────
+
+@needs_rules
+def test_a_models_title_is_held_to_the_numerals_law_and_a_persons_is_not(desk):
+    spec = desk.spec()
+    spec["elements"]["sec-headline"]["props"]["title"] = "Top 1000 accounts"
+
+    by_model = desk.keep(spec, source="proposal:p_7")                 # unsaid is strict
+    assert by_model.status == versions.REFUSED and "states a figure (1000)" in said(by_model)
+    assert versions.latest(desk.id) is None
+
+    by_person = desk.keep(spec, written_by_model=False)
+    assert by_person.status == versions.KEPT
+    assert versions.latest(desk.id)["written_by_model"] is False
+
+
+@needs_rules
+def test_going_back_holds_a_version_to_the_rule_it_was_first_held_to(desk):
+    spec = desk.spec()
+    spec["elements"]["sec-headline"]["props"]["title"] = "Top 1000 accounts"
+    desk.keep(spec, written_by_model=False)
+    desk.keep(desk.spec(), written_by_model=True, source="proposal:p_8")
+
+    back = versions.restore(desk.id, 1, approved_by="user1")
+    assert back.status == versions.KEPT, said(back)                   # a person's title, still theirs
+    assert versions.latest(desk.id)["written_by_model"] is False
+
+
 # ── going back, and retiring ──────────────────────────────────────────────────
 
 @needs_rules
@@ -403,8 +431,8 @@ def test_a_card_written_before_this_reads_with_no_metric(desk):
     read as "not made from a metric", not fail."""
     c = card_store._conn()
     c.execute("UPDATE dashboard_cards SET provenance_json = ? WHERE id = ?",
-              ('{"insight_id": "i_9", "origin_finding_id": "", "receipt_ref": ""}', desk.rate))
+              ('{"origin_finding_id": "f_9", "receipt_ref": "r_1"}', desk.rate))
     c.commit()
     old = card_store.get_card(desk.rate)
-    assert old.provenance.insight_id == "i_9"
+    assert (old.provenance.origin_finding_id, old.provenance.receipt_ref) == ("f_9", "r_1")
     assert (old.provenance.metric, old.provenance.metric_version) == ("", 0)

@@ -55,6 +55,46 @@ def test_a_range_cuts_the_card_on_its_tables_date_and_never_rolls_into_the_histo
     assert r.json()["scoped"] is None and r.json()["refresh"]["last_value"] == 7 and seen["sql"] == card.sql
 
 
+def test_a_run_says_its_own_figure_and_the_standing_one_stays_the_cards(monkeypatch):
+    """Arc CT-4. A card that already HAS a standing value, then read for a range: the run's
+    figure is the range's, and `refresh` goes on carrying the standing one. The card drew
+    `refresh`, so it showed the all-time figure under the range's label — which the test above
+    could not see, because it cuts the card before it has ever run standing."""
+    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
+    seen: dict = {}
+    _stub(monkeypatch, seen)
+    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                     sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
+
+    def answering(figure):
+        def run(db, sql, **kw):
+            seen["sql"] = sql
+            return QueryResult(hypothesis_id="c", sql=sql, columns=["n"], rows=[[figure]], row_count=1)
+        monkeypatch.setattr("aughor.sql.executor.execute_guarded", run)
+
+    answering("8416308.73")                      # as the warehouse answers: text
+    standing = client.post(f"/cards/{card.id}/run").json()
+    assert standing["value"] == 8416308.73 and standing["refresh"]["last_value"] == 8416308.73
+
+    answering("2778117.83")
+    ranged = client.post(f"/cards/{card.id}/run", params={"preset": "last_week"}).json()
+    assert ranged["scoped"]["standing"] is False
+    assert ranged["value"] == 2778117.83                       # the range's own
+    assert ranged["refresh"]["last_value"] == 8416308.73       # the card's standing one, untouched
+    assert get_card(card.id).refresh.history == [8416308.73]
+
+
+def test_a_table_has_no_figure(monkeypatch):
+    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
+    _stub(monkeypatch, {})
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda db, sql, **kw: QueryResult(
+        hypothesis_id="c", sql=sql, columns=["region", "n"], rows=[["NA", 3], ["EU", 2]], row_count=2))
+    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                     sql="SELECT region, COUNT(*) AS n FROM orders GROUP BY 1", title="by region"))
+    assert client.post(f"/cards/{card.id}/run").json()["value"] is None
+    assert client.post(f"/cards/{card.id}/run", params={"preset": "last_week"}).json()["value"] is None
+
+
 def test_a_card_without_a_date_runs_standing_and_says_why(monkeypatch):
     monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     seen: dict = {}

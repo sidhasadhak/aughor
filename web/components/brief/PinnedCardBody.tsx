@@ -29,7 +29,7 @@ export function cardKind(cs: CardState): Kind {
   const { card, run, failed } = cs;
   if (failed || run?.error) return "kpi";
   const trend = run && !run.error ? seriesTrend(run.columns, run.rows) : null;
-  const val = run?.refresh?.last_value ?? null;
+  const val = run?.scoped && !run.scoped.standing ? (run.value ?? null) : (run?.refresh?.last_value ?? null);
   if (trend || val != null) return "kpi";
   const isTabular = !!run && (run.columns?.length ?? 0) > 0 && (run.rows?.length ?? 0) > 0;
   if (isTabular) return card.kind === "table" ? "table" : "chart";
@@ -57,10 +57,14 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
 }) {
   const { card, run, failed } = cs;
   const errored = failed || !!run?.error;
-  const val = run?.refresh?.last_value ?? null;
-  const prev = run?.refresh?.prev_value ?? null;
+  // A run cut to a range shows the RANGE's figure. `refresh` is the card's standing value and
+  // its history; drawn under "for <the range>" it told a reader the all-time figure was the
+  // range's. The standing value's change and its sparkline are not the range's either.
+  const ranged = !!run?.scoped && !run.scoped.standing;
+  const val = ranged ? (run?.value ?? null) : (run?.refresh?.last_value ?? null);
+  const prev = ranged ? null : (run?.refresh?.prev_value ?? null);
   const delta = val != null && prev != null ? val - prev : null;
-  const hist = run?.refresh?.history ?? [];
+  const hist = ranged ? [] : (run?.refresh?.history ?? []);
   const caveats = run?.caveats ?? [];
   const trend = useMemo(() => (run && !run.error ? seriesTrend(run.columns, run.rows) : null), [run]);
   // `render` is the card's own durable display slot. `viz` is the user's edits from the chart
@@ -170,7 +174,9 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
             </div>
             {hist.length >= 2
               ? <Sparkline values={hist} width={sparkW} height={sparkH} color="var(--blue4)" />
-              : <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>trend builds as it refreshes</div>}
+              : ranged
+                ? null
+                : <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>trend builds as it refreshes</div>}
           </>
         ) : isTabular && run ? (
           <ResultChartCard

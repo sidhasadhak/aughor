@@ -12,12 +12,15 @@
  *   - draw a spec the rules refuse. It says why instead, in the rules' own sentences.
  *   - let a condition read anything the host did not publish. The state a cockpit renders
  *     against is the open tab plus the host's tree, laid over whatever the spec seeded.
- *   - hide a card without saying so. A section counts the cards waiting on a condition, and
- *     a card the reader may not see stays where it is and says it is withheld.
+ *   - hide a card without saying so. A section counts the cards waiting on a condition, a
+ *     card the reader may not see stays where it is and says it is withheld, and a card
+ *     that fails to draw says that too. The library wraps every element in an error
+ *     boundary of its own that draws NOTHING when a component throws; the boundary here
+ *     sits inside it, so the library's never gets the chance.
  *
  * Nothing mounts this yet. CT-4 puts it in the Data Canvas behind `cockpit.composed`.
  */
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { Component, createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { evaluateVisibility, type Spec, type VisibilityCondition } from "@json-render/core";
 import {
   JSONUIProvider, Renderer, createStateStore, useBoundProp, useStateStore,
@@ -143,6 +146,21 @@ function Said({ what, children }: { what: string; children: ReactNode }) {
   );
 }
 
+/** A card that throws while drawing says so, in its own place. Keyed by the card, so a
+ *  refresh that brings a run it CAN draw gets a fresh start. */
+class CardBoundary extends Component<{ children: ReactNode }, { failed: string | null }> {
+  state = { failed: null as string | null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { failed: error instanceof Error ? error.message : String(error) };
+  }
+
+  render() {
+    if (this.state.failed === null) return this.props.children;
+    return <Said what="Could not be drawn">This card is here, and drawing it failed: {this.state.failed}</Said>;
+  }
+}
+
 function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: Tone | null }>) {
   const { cards, host, doors } = useCockpit();
   const id = element.props.card;
@@ -159,8 +177,12 @@ function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: To
         ? <Said what="Withheld">You may not see this card. It is here, and it is not empty.</Said>
         : !cs
           ? <Said what="Not in this canvas">The cockpit places a card this canvas does not hold.</Said>
-          : <PinnedCardBody cs={cs} onRemove={doors.onRemove} onRefresh={doors.onRefresh}
-              onOpenSource={doors.onOpenSource} onEvidence={doors.onEvidence} />}
+          : (
+            <CardBoundary key={`${id}:${cs.run ? JSON.stringify(cs.run.rows).length : 0}:${cs.failed ? 1 : 0}`}>
+              <PinnedCardBody cs={cs} onRemove={doors.onRemove} onRefresh={doors.onRefresh}
+                onOpenSource={doors.onOpenSource} onEvidence={doors.onEvidence} />
+            </CardBoundary>
+          )}
     </div>
   );
 }
