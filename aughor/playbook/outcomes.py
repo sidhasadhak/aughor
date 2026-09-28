@@ -144,7 +144,7 @@ def measurement_sql(spec: dict, *, end_day: "date") -> tuple[Optional[str], str,
     (the most recent complete day), or ``(None, "", why)`` when the definition cannot be measured
     on its own — a metric whose SQL or date column reaches another table needs a join the intake
     never declared, and a baseline that guessed one would be a number nobody can defend. Written in
-    the platform's canonical form; the caller renders it native (`db.dialects.native_sql`)."""
+    the platform's canonical form; the caller declares it DuckDB to the door, which renders it native (GM-1)."""
     metric_sql = str(spec.get("metric_sql") or "").strip()
     table = str(spec.get("metric_table") or "").strip()
     date_col = str(spec.get("date_column") or "").strip()

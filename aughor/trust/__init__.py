@@ -122,7 +122,7 @@ def _verify_sql(sql: str, scope: Scope) -> Verdict:
             from aughor.sql.grain_guard import detect_fanout
 
             def _probe(s: str):
-                r = scope.conn.execute("__trust_grain__", s)
+                r = scope.conn.execute("__trust_grain__", s, sql_dialect="duckdb")
                 return (not r.error, r.rows, r.error or "")
 
             for f in detect_fanout(out, _probe, dialect):

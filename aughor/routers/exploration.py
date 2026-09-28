@@ -645,7 +645,8 @@ def _metric_moves_provider(conn_id: str, profile):
                 cached = get_cached(conn_id, sql, tenancy=tenancy)
                 if cached is not None:
                     return cached.columns, cached.rows, None
-                res = db.execute("__brief_metric_move__", sql)
+                # the business profile's chart_sql is prompted as DuckDB; the door renders it (GM-1)
+                res = db.execute("__brief_metric_move__", sql, sql_dialect="duckdb")
                 err = getattr(res, "error", None)
                 if not err:
                     try:

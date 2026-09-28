@@ -38,9 +38,8 @@ def measure_key(db: Any, from_clause: str, primary_key: str) -> tuple[Optional[t
         return None, "no backing or no primary key to measure"
     col = quote_ident(primary_key)
     sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {from_clause}"
-    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__backing_probe__", native_sql(db, sql))
+        result = db.execute("__backing_probe__", sql, sql_dialect="duckdb")
     except Exception as exc:  # noqa: BLE001 — an unprobeable backing is unmeasured, not a failure
         return None, f"probe raised: {exc}"[:200]
     if getattr(result, "error", None) or not getattr(result, "rows", None):

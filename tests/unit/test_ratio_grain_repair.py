@@ -22,7 +22,7 @@ class _Shim:
     def __init__(self, con):
         self._c = con
 
-    def execute(self, tag, sql):
+    def execute(self, tag, sql, sql_dialect=None):
         r = type("R", (), {})()
         try:
             cur = self._c.execute(sql)

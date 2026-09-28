@@ -189,7 +189,7 @@ class _FakeDB:
         self.hits = hits or {}
         self.seen = []
 
-    def rows(self, sql, label=None):
+    def rows(self, sql, label=None, sql_dialect=None):
         self.seen.append(sql)
         for needle, rows in self.hits.items():
             if needle in sql:

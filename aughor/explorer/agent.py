@@ -653,6 +653,7 @@ class SchemaExplorer:
         loop = asyncio.get_running_loop()
         self._last_query_at = time.monotonic()
         self._status.queries_executed += 1
+        sql_dialect = None
         if schema:
             sql = self._repair_contra_amount(sql)
             keyed = self._order_keys_projected(sql)
@@ -669,24 +670,24 @@ class SchemaExplorer:
             # written, and BigQuery refused it: measured over September 2026, 40 of the
             # explorer's 42 SQL failures were `CAST(x AS FLOAT)` ("Type not found: FLOAT"),
             # `CAST(x AS VARCHAR)` ("Type not found: VARCHAR") and `::` ("CAST operators are
-            # not supported"). `native_sql` is the seam for exactly this and returns DuckDB's
-            # own SQL untouched, so the common path pays nothing.
+            # not supported"). It is declared DuckDB to the door, which translates it for such
+            # an engine and hands it on untouched everywhere else, so the common path pays
+            # nothing (GM-1).
             #
-            # NOT applied to model-written SQL above: the model is told the target dialect and
+            # NOT declared for model-written SQL above: the model is told the target dialect and
             # writes in it, so reading that as DuckDB and transpiling would corrupt it.
-            from aughor.db.dialects import native_sql
-            sql = native_sql(self._conn, sql)
+            sql_dialect = "duckdb"
         self._last_executed_sql = sql
         try:
             if schema:
                 from aughor.sql.executor import execute_guarded
                 result = await loop.run_in_executor(
                     None, lambda: execute_guarded(
-                        self._conn, sql, query_id="__explorer__", schema=schema),
+                        self._conn, sql, query_id="__explorer__", schema=schema, sql_dialect=sql_dialect),
                 )
             else:
                 result = await loop.run_in_executor(
-                    None, self._conn.execute, "__explorer__", sql
+                    None, lambda: self._conn.execute("__explorer__", sql, sql_dialect=sql_dialect)
                 )
             ran = (getattr(result, "sql", None) or sql).strip() or sql
             self._last_executed_sql = ran
@@ -882,11 +883,10 @@ class SchemaExplorer:
             f"FROM {table} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
         )
         try:
-            # Direct connector call (this probe does not go through `_run`), so it needs the
-            # same dialect translation: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery
-            # rejects the `::` operator outright.
-            from aughor.db.dialects import native_sql
-            r = self._conn.execute("__explorer__", native_sql(self._conn, sql))
+            # Direct connector call (this probe does not go through `_run`), so it declares
+            # the same dialect: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery rejects
+            # the `::` operator outright.
+            r = self._conn.execute("__explorer__", sql, sql_dialect="duckdb")
         except Exception:
             return None
         rows = (r.rows or []) if not getattr(r, "error", None) else []
@@ -937,11 +937,10 @@ class SchemaExplorer:
             f"FROM {anchor} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
         )
         try:
-            # Direct connector call (this probe does not go through `_run`), so it needs the
-            # same dialect translation: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery
-            # rejects the `::` operator outright.
-            from aughor.db.dialects import native_sql
-            r = self._conn.execute("__explorer__", native_sql(self._conn, sql))
+            # Direct connector call (this probe does not go through `_run`), so it declares
+            # the same dialect: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery rejects
+            # the `::` operator outright.
+            r = self._conn.execute("__explorer__", sql, sql_dialect="duckdb")
         except Exception:
             return None
         rows = (r.rows or []) if not getattr(r, "error", None) else []
@@ -1260,6 +1259,7 @@ class SchemaExplorer:
                 f"SELECT table_schema, table_name FROM INFORMATION_SCHEMA.TABLES "
                 f"WHERE table_schema {schema_filter} "
                 f"AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name",
+                sql_dialect="duckdb",
             )
             raw_tables = [(row[0], row[1]) for row in (r.rows or [])] if not r.error else []
             # When multiple schemas exist, fully-qualify table names so generated

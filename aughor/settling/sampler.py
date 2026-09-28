@@ -33,8 +33,8 @@ RunSql = Callable[[str], tuple[list, list, Optional[str]]]
 
 
 def _ident(name: str) -> str:
-    """One identifier, double-quoted in DuckDB's dialect — `native_sql` translates the
-    quoting for engines that write their own (BigQuery's backticks). Found by the first
+    """One identifier, double-quoted in DuckDB's dialect — the door translates the quoting
+    for engines that write their own (BigQuery's backticks). Found by the first
     live tick: an unquoted "Order Date" is two tokens, and the reading failed on every
     upload whose columns carry spaces."""
     return '"' + name.replace('"', '""') + '"'

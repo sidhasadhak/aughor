@@ -56,9 +56,8 @@ def _sql_literal(value: str) -> str:
 
 
 def _rows(db: Any, sql: str) -> Optional[list]:
-    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__lifecycle_probe__", native_sql(db, sql))
+        result = db.execute("__lifecycle_probe__", sql, sql_dialect="duckdb")
     except Exception as exc:  # noqa: BLE001 — a probe that raises is an unmeasurable claim, not a build failure
         logger.debug("lifecycle probe raised: %s", exc)
         return None

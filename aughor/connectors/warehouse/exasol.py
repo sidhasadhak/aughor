@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 
 from aughor.connectors.base import Connector
+from aughor.db.dialects import sql_for_engine
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -63,12 +64,13 @@ class ExasolConnection(Connector):
             return stage_type(column.get("type"), column.get("precision"), column.get("scale"))
         return stage_type(column)
 
-    def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        return self._execute(hypothesis_id, sql, MAX_ROWS)
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
+        return self._execute(hypothesis_id, sql_for_engine(self, sql, sql_dialect), MAX_ROWS)
 
-    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
-        return self._execute(hypothesis_id, sql, max(1, max_rows))
+        return self._execute(hypothesis_id, sql_for_engine(self, sql, sql_dialect), max(1, max_rows))
 
     def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, offer_typed_rows, security_pre, security_post

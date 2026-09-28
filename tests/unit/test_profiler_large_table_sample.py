@@ -26,7 +26,8 @@ import pytest
 import aughor.tools.profiler as profiler
 from aughor.db.connection import DatabaseConnection, open_connection
 from aughor.ontology.builder import extract_structural_ontology
-from aughor.tools.profiler import _TranspilingConnection, build_column_profiles, profile_connection
+from aughor.db.dialects import sql_for_engine
+from aughor.tools.profiler import build_column_profiles, profile_connection
 
 _ROWS = 638_649   # the BTS table the defect was measured on
 _STATUSES = {"arrived", "cancelled", "diverted"}
@@ -69,8 +70,8 @@ def large_flights(tmp_path_factory):
     run = db.execute
     run_bounded = db.execute_bounded
 
-    def recording(label, sql):
-        result = run(label, sql)
+    def recording(label, sql, **door):
+        result = run(label, sql, **door)
         statements.append((sql, result.error or ""))
         return result
 
@@ -78,8 +79,8 @@ def large_flights(tmp_path_factory):
     # sample and the dense date range go through `execute_bounded` (the bounded reads),
     # and a recorder wrapping only `execute` would report those statements as never
     # issued — which is exactly the miss `_SHAPES` exists to catch.
-    def recording_bounded(label, sql, max_rows):
-        result = run_bounded(label, sql, max_rows)
+    def recording_bounded(label, sql, max_rows, **door):
+        result = run_bounded(label, sql, max_rows, **door)
         statements.append((sql, result.error or ""))
         return result
 
@@ -144,24 +145,27 @@ def test_every_profiler_statement_runs_on_a_large_duckdb_table(large_flights):
 
 
 class _Recorder:
+    """A connection that records each statement after the door's dialect step (GM-1): Postgres translates from DuckDB
+    itself later, the other engines run SQL as written."""
     def __init__(self, dialect):
         self.dialect = dialect
+        self.writes_native_sql = dialect != "postgres"
         self.seen: list[str] = []
 
-    def execute(self, label, sql):
-        self.seen.append(sql)
+    def execute(self, label, sql, *, sql_dialect=None):
+        self.seen.append(sql_for_engine(self, sql, sql_dialect))
         return SimpleNamespace(error=None, rows=[], columns=[], row_count=0)
 
-    def execute_bounded(self, label, sql, max_rows):
-        return self.execute(label, sql)
+    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None):
+        return self.execute(label, sql, sql_dialect=sql_dialect)
 
 
 def _received_by(dialect: str) -> list[str]:
     """Every statement one large table's column profile sends, spelled as `dialect` receives it."""
     recorder = _Recorder(dialect)
-    # Postgres is handed the profiler's own spelling and translates at its connection; the others run natively
-    # behind the profiler's transpiling wrapper.
-    conn = recorder if dialect == "postgres" else _TranspilingConnection(recorder)
+    # Postgres is handed the profiler's own spelling and translates at its connection; the others are rendered by
+    # the door's step, from the DuckDB every profiler statement declares.
+    conn = recorder
     columns = [("id", "BIGINT"), ("status", "VARCHAR"), ("brand", "VARCHAR"), ("amount", "DOUBLE"), ("note", "VARCHAR")]
     stats = {   # `note` misses the catalog (the batch scan); `amount` has no min/max (the range scan)
         "id": {"approx_unique": 2_000_000},
@@ -195,6 +199,6 @@ def test_a_warehouse_samples_its_large_scans_before_where_and_limit(dialect):
 def test_an_engine_without_table_samples_is_not_shuffled_whole():
     # sqlglot drops the sample for MySQL, so a shuffle there would sort every row of a large table to pick 300.
     recorder = _Recorder("mysql")
-    profiler._row_sample(_TranspilingConnection(recorder), "orders", [("id", "BIGINT")],
+    profiler._row_sample(recorder, "orders", [("id", "BIGINT")],
                          profiler._LARGE_TABLE_THRESHOLD + 1)
     assert recorder.seen and not any("RAND" in sql.upper() for sql in recorder.seen)

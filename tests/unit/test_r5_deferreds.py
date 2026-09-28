@@ -38,7 +38,7 @@ class _FakeConn:
         self.labels: list[str] = []
         self._connection_id = "connG"
 
-    def execute(self, label: str, sql: str):
+    def execute(self, label: str, sql: str, sql_dialect=None):
         self.labels.append(label)
         if label == "__filter_highcard_exists__":
             probe = sql.split("LOWER('")[1].split("')")[0].replace("''", "'")

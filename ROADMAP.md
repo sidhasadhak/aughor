@@ -9608,7 +9608,7 @@ silently (§7).
 
 ---
 
-### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35)
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1 BUILT 2026-09-29** on `claude/briefing-cockpits`, not merged)
 
 > **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
 > without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
@@ -9616,6 +9616,55 @@ silently (§7).
 > platform."* The study is `docs/GATE_MAP_STUDY_2026-09-26.md`: the doors as the code applies them, a census of the
 > 184 places SQL reaches a warehouse (150 real, ~40 in the bug class, read one by one), the live exposure (one door
 > = 99.9% of theLook's errors), the audit's two-way label problem, and the guards that fail open on native engines.
+
+> **Status 2026-09-29, GM-1 BUILT.** The door owns the dialect: every connection's `execute` and `execute_bounded` (all
+> twelve connector classes), the adapters (`rows`, `scalar`, `execute_typed`, `read_typed_rows`) and `execute_guarded`
+> take `sql_dialect=`. `"duckdb"` is translated for an engine that runs SQL as written, before the first gate
+> (`db.dialects.sql_for_engine`); `None` is handed on byte-identical; any other value is refused. `native_sql` keeps two
+> callers — the door's step and the writer's dialect-rejection repair, which builds a candidate for a dry run and runs
+> nothing. Moved onto the declaration: the 20 call sites that translated for themselves; the profiler, whose private
+> wrapper keyed on the dialect NAME and so never translated for Exasol (retired); and the census's bug class, site by
+> site. `tests/unit/test_gm1_the_door_owns_the_dialect.py` pins the door (every connection class reads the declaration;
+> the native four hand their first gate the translated statement), mutation-tested in three places.
+> **Receipt, live on theLook, no model calls:** 39 statements through the real BigQuery door, none failed on the
+> dialect. The same platform statement fails as written (`Unexpected string literal "orders"`) and runs declared. The
+> join value-domain guard now RUNS on BigQuery — real FK overlap 1.0, no warning — and FIRES on a fabricated join
+> (`orders.status = users.country`, overlap 0.0), where it failed open. The filter guard binds `'complete'` to
+> `'Complete'`; the grain probe finds `order_items` fanning out 1.45× on `order_id`; the snapshot signature reads
+> `orders=125545`; the catalog's column read takes one statement where it took three; the cross-source keyed read
+> splices a BigQuery-native sub-query in untouched and joins 3 of 3 keys. Four errors in the run were types, not the
+> dialect (named below).
+> **Measured, and the census's premise did not hold on five rows.** (a) A DuckDB declaration CORRUPTS native SQL:
+> sqlglot reads BigQuery's `DATE_TRUNC(x, MONTH)` as DuckDB's and swaps its arguments, `TIMESTAMP '…'` becomes
+> `DATETIME`, `DATE_DIFF` breaks. So a statement declares DuckDB only when its author demonstrably wrote DuckDB; a
+> portable statement carrying a model's or a person's fragment stays as written, and a platform wrapper around a
+> native sub-query translates its own part and splices the sub-query in after (`remote_join._right_statement`).
+> (b) The deep-analysis plan prompts say "SQL RULES: DuckDB", yet theLook's audit shows the model writing native SQL
+> (138 of 670 successful statements backticked, 28 with BigQuery's `DATE_TRUNC(x, MONTH)`); declared, they would break —
+> so they stay undeclared. (c) A monitor re-anchors only native SQL (a card's, a finding's, a person's), never the
+> sentinel's, so `monitors/window.py` was right to read `db.dialect` — unchanged. (d) `measure_sql` reads a governed
+> metric in the engine's dialect and theLook's three are plain ANSI: `__metric_value__`, the metric pin and the
+> clarify probes stay undeclared. (e) The join guard's `USING SAMPLE n ROWS` has no spelling on any other engine —
+> sqlglot writes a RESERVOIR table sample that Postgres, BigQuery, Snowflake and Exasol refuse — so on Postgres, where
+> the door always translated, the guard had been failing open too; everywhere but DuckDB it now reads the first n rows
+> of the one column it samples. Two more DuckDB-only spellings rewritten: the costume probe's `FILTER (WHERE …)`
+> (sqlglot hands it to BigQuery unchanged) and the grain probe's bare names and `||`-joined composite key.
+> **Left, named, not fixed:** the monitor runner declares EVERY monitor's SQL DuckDB (the hotfix's rule) while only the
+> sentinel writes DuckDB — a card, Spotlight or person-written monitor using BigQuery-native syntax is corrupted; a
+> monitor should record the dialect its SQL was written in. The deep plan prompts contradict the engine, and their top
+> theLook error (TIMESTAMP compared with a DATE literal, 51 statements) comes from the prompt's own "use DATE literals"
+> rule. The inline premise check nests the metric's aggregate inside `SUM(CASE …)` (BigQuery refuses; the analyst's
+> copy is already right). The join guard parses the model's SQL in sqlglot's default dialect — a backticked or
+> project-qualified BigQuery name yields no join conditions, and a probe drops the project — and its reconcile
+> suggestions are DuckDB expressions handed to the model on any engine. Cross-source keyed reads compare an INT64 key
+> to a string `IN` list, which BigQuery refuses. The profiler casts every column to STRING, which a BigQuery
+> `GEOGRAPHY` refuses (3 of the run's errors). The catalog's sample read stays DuckDB-only on purpose: translated, it
+> would put BigQuery rows into the model's prompt unredacted (`_catalog` skips the PII pass) — GM-5 first. The ontology
+> enricher's prompt names no dialect, so its formulas are run as written; a query-backed type's keyed SELECT is
+> declared DuckDB with its probe, as `native_sql` did, where the splice above would keep it native. Exasol declares
+> `postgres` while sqlglot 30.8 ships an `exasol` dialect. Not dialect: ALTER COLUMN answers `applied: true` whatever
+> the engine said; EXPLAIN (the skill dry run) and SUMMARIZE (the overview) are refused by the validator everywhere;
+> `db.rows()` still reads any error as "no rows" (GM-4).
 
 - **GM-1 · the door owns the dialect.** `execute(label, sql, *, sql_dialect=None)`: `"duckdb"` from platform code
   makes the base door translate for native engines where transpile engines already do; `native_sql` becomes the

@@ -129,3 +129,30 @@ def native_sql(db: object, sql: str) -> str:
         return sqlglot.transpile(sql, read="duckdb", write=dialect)[0]
     except Exception:  # noqa: BLE001 — the engine's refusal names what it could not run
         return sql
+
+
+#: GM-1 — the one dialect a statement may declare it was written in. Platform code writes DuckDB's: a probe, a
+#: series, a keyed read. A statement written for the engine itself — the model's under the writer rules, a person's,
+#: one sqlglot rendered in the connection's own dialect — declares nothing.
+PLATFORM_DIALECT = "duckdb"
+
+
+def sql_for_engine(db: object, sql: str, sql_dialect: str | None) -> str:
+    """GM-1 — the door's dialect step: ``sql`` as the engine behind ``db`` must receive it, from the dialect its
+    author declared.
+
+    ``None`` is a statement written for this engine and is handed on as written. ``"duckdb"`` is platform SQL and
+    goes through `native_sql`: translated for an engine that runs SQL as written, unchanged for one that translates
+    from DuckDB itself. Every connector's `execute` and `execute_bounded` apply this step first, before the safety
+    check, the row policy and the audit, so each of those reads the statement the engine will run.
+
+    Before GM-1 the translation was a function each call site had to remember. The monitor runner forgot, and
+    theLook's Units Sold watch failed 2,283 times on BigQuery (`docs/GATE_MAP_STUDY_2026-09-26.md`). A declaration
+    this step cannot read is refused rather than handed on as written, where it would fail on the engine with
+    nothing saying why."""
+    if sql_dialect is None:
+        return sql
+    if sql_dialect != PLATFORM_DIALECT:
+        raise ValueError(f"sql_dialect={sql_dialect!r}: platform SQL is written in DuckDB's dialect "
+                         f"(sql_dialect={PLATFORM_DIALECT!r}); a statement written for the engine declares nothing")
+    return native_sql(db, sql)

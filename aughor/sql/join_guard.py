@@ -41,6 +41,20 @@ _SAMPLE_B = 1000  # from the join's RHS (the referenced / PK side)
 _MAX_PROBES = 4
 
 
+def _sample_from(conn: "DatabaseConnection", table: str, cols: str, n: int) -> str:
+    """The FROM of an ``n``-row sample of ``table``, reading ``cols``.
+
+    DuckDB draws it at random (`USING SAMPLE … ROWS`). No other engine takes that spelling: sqlglot renders it
+    as a RESERVOIR table sample, which Postgres, BigQuery, Snowflake and Exasol refuse, and MySQL has no table
+    sample at all. So everywhere else the sample is the first ``n`` rows of the columns the probe reads — a
+    biased sample still answers "are these values in that column", where the refused probe answered nothing and
+    the join was allowed to proceed (GM-1). Only the columns read, never ``*``: BigQuery bills every column a
+    statement names, whatever its LIMIT."""
+    if getattr(conn, "dialect", "duckdb") == "duckdb":
+        return f"{table} USING SAMPLE {n} ROWS"
+    return f"(SELECT {cols} FROM {table} LIMIT {n}) AS _sample"
+
+
 def _quote_table(name: str) -> str:
     """Return a safely quoted table reference for DuckDB.
 
@@ -126,15 +140,14 @@ def _probe_overlap(
         probe_sql = f"""
 WITH s_a AS (
     SELECT DISTINCT CAST({qa} AS VARCHAR) AS v
-    FROM {ta}
-    USING SAMPLE {_SAMPLE_A} ROWS
+    FROM {_sample_from(conn, ta, qa, _SAMPLE_A)}
 )
 SELECT
     (SELECT COUNT(*) FROM s_a) AS total,
     (SELECT COUNT(*) FROM s_a WHERE v IN (SELECT CAST({qb} AS VARCHAR) FROM {tb})) AS matched
 """.strip()
 
-        result = conn.execute("__domain_probe__", probe_sql)
+        result = conn.execute("__domain_probe__", probe_sql, sql_dialect="duckdb")
         if result and result.rows:
             # The connection stringifies all result values (no dtype passthrough),
             # so coerce to int before any numeric comparison.
@@ -186,7 +199,7 @@ SELECT
        SELECT CAST({qb} AS VARCHAR)      FROM {tb} WHERE {qb} IS NOT NULL
    ) AS _u) AS union_d
 """.strip()
-        result = conn.execute("__hll_overlap_probe__", sql)
+        result = conn.execute("__hll_overlap_probe__", sql, sql_dialect="duckdb")
         if result and result.rows:
             a_d, b_d, u_d = (int(result.rows[0][0]), int(result.rows[0][1]), int(result.rows[0][2]))
             _, cont_a, _ = overlap_from_hll(a_d, b_d, u_d)
@@ -247,22 +260,24 @@ class KeyReconciliation:
     overlap: float  # reconciled overlap under the transform
 
 
-def _probe_overlap_expr(conn, table_a: str, expr_a: str, table_b: str, expr_b: str) -> float | None:
+def _probe_overlap_expr(conn, table_a: str, expr_a: str, table_b: str, expr_b: str, *,
+                        col_a: str) -> float | None:
     """Containment of transformed A-values in transformed B-values (empty/NULL results ignored).
+    ``col_a`` is the column ``expr_a`` transforms, the one the A-side sample reads.
 
     Returns None on any failure (fail-open)."""
     try:
         ta, tb = _quote_table(table_a), _quote_table(table_b)
         probe_sql = f"""
 WITH s_a AS (
-    SELECT DISTINCT {expr_a} AS v FROM {ta} USING SAMPLE {_SAMPLE_A} ROWS
+    SELECT DISTINCT {expr_a} AS v FROM {_sample_from(conn, ta, f'"{col_a}"', _SAMPLE_A)}
 )
 SELECT
     (SELECT COUNT(*) FROM s_a WHERE v IS NOT NULL AND v <> '') AS total,
     (SELECT COUNT(*) FROM s_a
         WHERE v IS NOT NULL AND v <> '' AND v IN (SELECT {expr_b} FROM {tb})) AS matched
 """.strip()
-        result = conn.execute("__reconcile_probe__", probe_sql)
+        result = conn.execute("__reconcile_probe__", probe_sql, sql_dialect="duckdb")
         if result and result.rows:
             total = int(result.rows[0][0])
             matched = int(result.rows[0][1])
@@ -285,8 +300,8 @@ def reconcile_join_keys(
     for name, label, tmpl in _KEY_TRANSFORMS:
         ea = tmpl.format(col=f'"{col_a}"')
         eb = tmpl.format(col=f'"{col_b}"')
-        ov_ab = _probe_overlap_expr(conn, table_a, ea, table_b, eb)
-        ov_ba = _probe_overlap_expr(conn, table_b, eb, table_a, ea)
+        ov_ab = _probe_overlap_expr(conn, table_a, ea, table_b, eb, col_a=col_a)
+        ov_ba = _probe_overlap_expr(conn, table_b, eb, table_a, ea, col_a=col_b)
         ovs = [o for o in (ov_ab, ov_ba) if o is not None]
         if not ovs:
             continue
@@ -718,6 +733,7 @@ def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
         exists = conn.execute(
             "__filter_highcard_exists__",
             f"SELECT 1 FROM {qt} WHERE LOWER(CAST({qc} AS VARCHAR)) = LOWER('{safe}') LIMIT 1",
+            sql_dialect="duckdb",
         )
         if exists and exists.rows:
             continue  # the literal is a real value — do not second-guess it
@@ -733,6 +749,7 @@ def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
             _bexists = conn.execute(
                 "__filter_highcard_exists__",
                 f"SELECT 1 FROM {qt} WHERE LOWER(CAST({qc} AS VARCHAR)) = LOWER('{_bsafe}') LIMIT 1",
+                sql_dialect="duckdb",
             )
             if not (_bexists and _bexists.rows):
                 best = None
@@ -742,6 +759,7 @@ def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
                     "__filter_highcard_sample__",
                     f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt} "
                     f"WHERE {qc} IS NOT NULL LIMIT {_HIGHCARD_SAMPLE}",
+                    sql_dialect="duckdb",
                 )
                 sample = [r[0] for r in res.rows if r and r[0] is not None] if res and res.rows else []
                 index = ValueIndex(sample)
@@ -763,7 +781,7 @@ def _table_text_columns(conn: "DatabaseConnection", table: str) -> "list[str] | 
     and every column is a candidate when they are not (a CAST-to-VARCHAR equality on a
     numeric column simply never matches). None when even the projection fails."""
     try:
-        res = conn.execute("__filter_sibling_cols__", f"SELECT * FROM {_quote_table(table)} LIMIT 0")
+        res = conn.execute("__filter_sibling_cols__", f"SELECT * FROM {_quote_table(table)} LIMIT 0", sql_dialect="duckdb")
     except Exception:
         return None
     if res is None or res.error or not res.columns:
@@ -808,6 +826,7 @@ def _sibling_columns_holding(conn: "DatabaseConnection", table: str, col: str,
             res = conn.execute(
                 "__filter_sibling_probe__",
                 f'SELECT 1 FROM {qt} WHERE CAST("{c}" AS VARCHAR) = \'{safe_lit}\' LIMIT 1',
+                sql_dialect="duckdb",
             )
         except Exception:
             return None
@@ -836,6 +855,7 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
                     "__filter_domain_probe__",
                     f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt} "
                     f"WHERE {qc} IS NOT NULL LIMIT {_ENUMERABLE_MAX_DISTINCT + 1}",
+                    sql_dialect="duckdb",
                 )
                 if not res or not res.rows:
                     continue

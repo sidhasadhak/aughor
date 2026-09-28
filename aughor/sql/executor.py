@@ -202,6 +202,7 @@ def execute_guarded(
     schema: Optional[str] = None,
     fix_prompt_template: Optional[str] = None,
     provider_factory: Optional[Callable[..., Any]] = None,
+    sql_dialect: Optional[str] = None,
 ):
     """Execute SQL with the guard battery and one self-correction retry. Returns QueryResult.
 
@@ -217,8 +218,16 @@ def execute_guarded(
     `fix_prompt_template` + `provider_factory` supply the LLM repair loop from
     the caller's layer; when either is missing the deterministic guards still
     run but the LLM retry is skipped (the raw result is returned).
+
+    `sql_dialect` is the door's declaration (GM-1): ``"duckdb"`` for platform SQL,
+    ``None`` for a statement written for this engine. It is applied HERE, once, before
+    the first guard, so the hardening, the trust gate, the value-domain guards and any
+    repair all read the statement the engine will run, not the one the platform wrote.
     """
     from pydantic import BaseModel
+    from aughor.db.dialects import sql_for_engine
+
+    sql = sql_for_engine(conn, sql, sql_dialect)
 
     # Pre-execute deterministic hardening (de-fan → preflight-repair), shared with the
     # explore path. Byte-identical to the inline version this replaced — same guards,

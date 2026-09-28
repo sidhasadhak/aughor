@@ -192,9 +192,8 @@ def measure_binding(db: Any, entity: OntologyEntity, binding: Binding, *, object
            "(SELECT COUNT(DISTINCT k) FROM bound_keys), (SELECT COUNT(*) FROM object_keys), "
            "(SELECT COUNT(*) FROM object_keys WHERE k IN (SELECT k FROM bound_keys WHERE k IS NOT NULL)), "
            "(SELECT COUNT(DISTINCT k) FROM bound_keys WHERE k IS NOT NULL AND k NOT IN (SELECT k FROM object_keys))")
-    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__binding_probe__", native_sql(db, sql))
+        result = db.execute("__binding_probe__", sql, sql_dialect="duckdb")
     except Exception as exc:  # noqa: BLE001 — an unprobeable binding is unmeasured, not refuted
         m.note = f"probe raised: {exc}"[:200]
         return m
@@ -219,10 +218,9 @@ def _measure_across(db: Any, object_db: Any, entity: OntologyEntity, binding: Bi
     from aughor.ontology.sources import distinct_keys
     source, objects = binding_from(binding, "b"), object_from(entity, "o")
     bk = quote_ident(binding.key)
-    from aughor.db.dialects import native_sql
     counts = f"SELECT COUNT(*), COUNT(b.{bk}), COUNT(DISTINCT b.{bk}) FROM {source}"
     try:
-        result = db.execute("__binding_probe__", native_sql(db, counts))
+        result = db.execute("__binding_probe__", counts, sql_dialect="duckdb")
     except Exception as exc:  # noqa: BLE001 — an unprobeable binding is unmeasured, not refuted
         m.note = f"probe raised: {exc}"[:200]
         return m
@@ -725,10 +723,10 @@ def describe_with(db: Any) -> Describe:
     so no row is fetched and the security gate still sees it — or ``""`` for every column where a connector reports no
     types. ``({}, error)`` when the source cannot be read."""
     def describe(source: str) -> tuple[dict[str, str], Optional[str]]:
-        from aughor.db.dialects import native_sql
-        sql = native_sql(db, f"SELECT * FROM {source} LIMIT 0")
+        sql = f"SELECT * FROM {source} LIMIT 0"
         typed = getattr(db, "execute_typed", None)
-        result, payload = typed("binding_columns", sql) if callable(typed) else (db.execute("binding_columns", sql), None)
+        result, payload = (typed("binding_columns", sql, sql_dialect="duckdb") if callable(typed)
+                           else (db.execute("binding_columns", sql, sql_dialect="duckdb"), None))
         if getattr(result, "error", None):
             return {}, result.error
         names = [str(c) for c in (result.columns or [])]

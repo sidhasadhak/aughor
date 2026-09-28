@@ -432,6 +432,15 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
     def _q(name: str) -> str:
         return f'"{name}"'
 
+    def _qt(table: str) -> str:
+        # each part of `schema.table` is its own identifier: quoted whole, a qualified name
+        # named a table that exists on no engine
+        return ".".join(_q(p) for p in table.split("."))
+
+    # The portrait is DuckDB's spelling and says so to the door, which renders it for the engine (GM-1).
+    def _scan(sql: str):
+        return conn.execute("scan", sql, sql_dialect="duckdb")
+
     portrait_parts: list[str] = []
     # Track the overall data date range found across all tables (for events scoping)
     _all_min_dates: list[str] = []
@@ -446,7 +455,7 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
 
         if date_cols:
             dc = _q(date_cols[0])
-            r = conn.execute("scan", f'SELECT COUNT(*) AS n, MIN({dc})::VARCHAR, MAX({dc})::VARCHAR FROM {_q(table)}')
+            r = _scan(f'SELECT COUNT(*) AS n, MIN({dc})::VARCHAR, MAX({dc})::VARCHAR FROM {_qt(table)}')
             if not r.error and r.rows:
                 n, min_d, max_d = r.rows[0]
                 lines.append(f"  {int(n):,} rows | {date_cols[0]}: {min_d} → {max_d}")
@@ -456,7 +465,7 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
                 if max_d:
                     _all_max_dates.append(str(max_d))
         else:
-            r = conn.execute("scan", f'SELECT COUNT(*) AS n FROM {_q(table)}')
+            r = _scan(f'SELECT COUNT(*) AS n FROM {_qt(table)}')
             if not r.error and r.rows:
                 lines.append(f"  {int(r.rows[0][0]):,} rows")
 
@@ -465,7 +474,7 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
                 f'ROUND(SUM({_q(c)}), 1) AS "sum_{c}", ROUND(AVG({_q(c)}), 2) AS "avg_{c}"'
                 for c in num_cols[:3]
             )
-            r = conn.execute("scan", f'SELECT {agg} FROM {_q(table)}')
+            r = _scan(f'SELECT {agg} FROM {_qt(table)}')
             if not r.error and r.rows and r.columns:
                 pairs = [
                     f"{col}={val}"
@@ -476,7 +485,7 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
                     lines.append(f"  Metrics: {', '.join(pairs)}")
 
         for cc in cat_cols[:2]:
-            r = conn.execute("scan", f'SELECT {_q(cc)}, COUNT(*) AS n FROM {_q(table)} GROUP BY 1 ORDER BY 2 DESC LIMIT 8')
+            r = _scan(f'SELECT {_q(cc)}, COUNT(*) AS n FROM {_qt(table)} GROUP BY 1 ORDER BY 2 DESC LIMIT 8')
             if not r.error and r.rows:
                 vals = ", ".join(f"{row[0]}({row[1]})" for row in r.rows)
                 lines.append(f"  {cc}: {vals}")

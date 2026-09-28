@@ -90,7 +90,7 @@ def validate_sql(conn_id: str, sql: str, *, dialect: str = "duckdb",
             from aughor.sql.grain_guard import detect_fanout
 
             def _grain_probe(s: str):
-                r = db.execute("__grain_probe__", s)
+                r = db.execute("__grain_probe__", s, sql_dialect="duckdb")
                 return (not r.error, r.rows, r.error or "")
 
             grain_warnings = [

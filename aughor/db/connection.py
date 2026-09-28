@@ -19,6 +19,7 @@ from typing import Optional
 import duckdb
 import sqlglot
 
+from aughor.db.dialects import sql_for_engine
 from aughor.db.single_flight import single_flight_build
 from aughor.control_plane.contracts.execution import QueryResult
 
@@ -758,9 +759,14 @@ class DatabaseConnection(ABC):
     _ontology = None  # Optional[OntologyGraph] — set by get_schema()
 
     @abstractmethod
-    def execute(self, hypothesis_id: str, sql: str) -> QueryResult: ...
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
+        """Run ``sql`` through this connection's door. ``sql_dialect`` is the dialect the statement was written in:
+        ``"duckdb"`` for platform SQL, ``None`` for a statement written for this engine. The door translates
+        (`aughor.db.dialects.sql_for_engine`) before its first gate, so a caller declares what it wrote and never
+        has to know how this engine reads it."""
 
-    def execute_typed(self, hypothesis_id: str, sql: str) -> "tuple[QueryResult, dict | None]":
+    def execute_typed(self, hypothesis_id: str, sql: str, *,
+                      sql_dialect: str | None = None) -> "tuple[QueryResult, dict | None]":
         """SE-0: run ``execute()`` while capturing raw (pre-stringification) row values
         and cursor types as a side channel. Returns ``(result, payload)`` where the
         legacy ``result`` is byte-identical to a plain ``execute()`` and ``payload`` is
@@ -768,7 +774,8 @@ class DatabaseConnection(ABC):
         site, the label is internal (internal queries skip the PII/audit post-pass, so
         a typed capture there would be an unredacted side channel), or the security
         post-pass disarmed the capture (fail closed, never a redaction bypass)."""
-        return self._capture_typed(hypothesis_id, lambda: self.execute(hypothesis_id, sql))
+        statement = sql_for_engine(self, sql, sql_dialect)
+        return self._capture_typed(hypothesis_id, lambda: self.execute(hypothesis_id, statement))
 
     def execute_with_params_typed(self, hypothesis_id: str, sql: str,
                                   params: dict) -> "tuple[QueryResult, dict | None]":
@@ -893,20 +900,24 @@ class DatabaseConnection(ABC):
     # ── Convenience adapters ──────────────────────────────────────────────────
     # Replace the ad-hoc "execute → check .error → pull .rows/.rows[0][0]" wrappers
     # scattered across the codebase. Best-effort: any error returns []/None, never raises.
+    # Each takes the door's ``sql_dialect`` and applies it before `execute`, which then
+    # receives a statement already written for this engine.
 
-    def rows(self, sql: str, *, label: str = "__adapter__") -> list:
-        """Run SQL and return its rows; [] on error."""
+    def rows(self, sql: str, *, label: str = "__adapter__", sql_dialect: str | None = None) -> list:
+        """Run SQL and return its rows; [] on error. A declaration the door cannot read raises
+        before the run, because swallowing it would read as an empty result."""
+        statement = sql_for_engine(self, sql, sql_dialect)
         try:
-            res = self.execute(label, sql)
+            res = self.execute(label, statement)
             if getattr(res, "error", None):
                 return []
             return list(getattr(res, "rows", None) or [])
         except Exception:
             return []
 
-    def scalar(self, sql: str, *, label: str = "__adapter__", cast=float):
+    def scalar(self, sql: str, *, label: str = "__adapter__", cast=float, sql_dialect: str | None = None):
         """Run SQL and return the first cell coerced via ``cast`` (default float), or None."""
-        rs = self.rows(sql, label=label)
+        rs = self.rows(sql, label=label, sql_dialect=sql_dialect)
         if not rs:
             return None
         row = rs[0]
@@ -964,7 +975,8 @@ class DatabaseConnection(ABC):
         bounded = f"SELECT * FROM ({sql.strip().rstrip(';')}) __q LIMIT {limit}" if limit > 0 else sql
         return self.execute("__bulk__", bounded)
 
-    def read_typed_rows(self, hypothesis_id: str, sql: str, max_rows: int) -> "tuple[QueryResult, dict | None]":
+    def read_typed_rows(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> "tuple[QueryResult, dict | None]":
         """ON-8 — `execute_bounded` with the raw row values captured, for platform PLUMBING only: the cross-source
         object query reads each source's rows here and joins them in memory before anything is returned.
 
@@ -976,9 +988,10 @@ class DatabaseConnection(ABC):
         when the connector offers no typed rows, and the caller then refuses rather than guess a type."""
         if not _is_internal_query(hypothesis_id):
             raise ValueError(f"read_typed_rows is platform plumbing; {hypothesis_id!r} is not an internal label")
+        statement = sql_for_engine(self, sql, sql_dialect)
         token = _TYPED_SINK.set({})
         try:
-            result = self.execute_bounded(hypothesis_id, sql, max_rows)
+            result = self.execute_bounded(hypothesis_id, statement, max_rows)
             sink = _TYPED_SINK.get()
         finally:
             _TYPED_SINK.reset(token)
@@ -986,7 +999,8 @@ class DatabaseConnection(ABC):
             return result, None
         return result, sink
 
-    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> "QueryResult":
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> "QueryResult":
         """Like :meth:`execute` but may return up to ``max_rows`` rows.
 
         For internal high-volume reads — notably the cross-source join engine, which must read more
@@ -995,7 +1009,7 @@ class DatabaseConnection(ABC):
         doesn't override this simply reads ≤ MAX_ROWS, which the join surfaces as PARTIAL);
         DuckDB/Postgres override it to actually return more rows.
         """
-        return self.execute(hypothesis_id, sql)
+        return self.execute(hypothesis_id, sql_for_engine(self, sql, sql_dialect))
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Validate SQL without returning rows. Returns (ok, error_message).
@@ -1181,12 +1195,13 @@ class DuckDBConnection(DatabaseConnection):
         except Exception:
             return sql
 
-    def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        return self._run(hypothesis_id, sql, MAX_ROWS)
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
+        return self._run(hypothesis_id, sql_for_engine(self, sql, sql_dialect), MAX_ROWS)
 
-    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> QueryResult:
         """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
-        return self._run(hypothesis_id, sql, max(1, max_rows))
+        return self._run(hypothesis_id, sql_for_engine(self, sql, sql_dialect), max(1, max_rows))
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
@@ -1604,12 +1619,13 @@ class PostgresConnection(DatabaseConnection):
         sql = _pg_fix_interval_arithmetic(sql)
         return sql
 
-    def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        return self._run(hypothesis_id, sql, MAX_ROWS)
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
+        return self._run(hypothesis_id, sql_for_engine(self, sql, sql_dialect), MAX_ROWS)
 
-    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> QueryResult:
         """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
-        return self._run(hypothesis_id, sql, max(1, max_rows))
+        return self._run(hypothesis_id, sql_for_engine(self, sql, sql_dialect), max(1, max_rows))
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,

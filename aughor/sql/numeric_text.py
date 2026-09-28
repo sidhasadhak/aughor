@@ -94,25 +94,29 @@ def costume_probe_sql(col: str) -> str:
 
     Returned as a fragment rather than a whole query so callers can run it through
     whatever execution path they already hold — a raw DuckDB handle at ingest, the
-    Connector's guarded ``execute`` at verification time. Feed the resulting row to
-    :func:`interpret_costume`.
+    Connector's guarded ``execute`` at verification time, declared DuckDB so the door
+    renders it for the engine (GM-1). Feed the resulting row to :func:`interpret_costume`.
+
+    Conditional counts are ``count(CASE WHEN … THEN 1 END)``, never ``FILTER (WHERE …)``:
+    the two are the same count on every engine, zero rows included, and sqlglot hands
+    ``FILTER`` to BigQuery unchanged, where it is a syntax error.
     """
     esc = col.replace('"', '""')
     cleaned = costume_clean_sql(col, "DOUBLE")
-    return f"""count(*) FILTER (WHERE "{esc}" IS NOT NULL
-                    AND trim(CAST("{esc}" AS VARCHAR)) <> '')                AS nn,
-        count(*) FILTER (WHERE regexp_matches(trim(CAST("{esc}" AS VARCHAR)),
-                                              '{sql_str(COSTUME_SHAPE)}'))   AS shaped,
-        count(*) FILTER (WHERE regexp_matches(CAST("{esc}" AS VARCHAR),
-                                              '{sql_str(COSTUME_MARK)}'))    AS marked,
-        count(*) FILTER (WHERE {cleaned} IS NOT NULL
-                         AND {cleaned} <> floor({cleaned}))                  AS fractional,
-        count(*) FILTER (WHERE regexp_matches(CAST("{esc}" AS VARCHAR), '%')) AS pct,
+    return f"""count(CASE WHEN "{esc}" IS NOT NULL
+                    AND trim(CAST("{esc}" AS VARCHAR)) <> '' THEN 1 END)     AS nn,
+        count(CASE WHEN regexp_matches(trim(CAST("{esc}" AS VARCHAR)),
+                                       '{sql_str(COSTUME_SHAPE)}') THEN 1 END) AS shaped,
+        count(CASE WHEN regexp_matches(CAST("{esc}" AS VARCHAR),
+                                       '{sql_str(COSTUME_MARK)}') THEN 1 END)  AS marked,
+        count(CASE WHEN {cleaned} IS NOT NULL
+                    AND {cleaned} <> floor({cleaned}) THEN 1 END)            AS fractional,
+        count(CASE WHEN regexp_matches(CAST("{esc}" AS VARCHAR), '%') THEN 1 END) AS pct,
         max(regexp_extract(CAST("{esc}" AS VARCHAR),
                            '[{sql_str(CURRENCY_CHARS)}]'))                   AS sym,
-        max(CAST("{esc}" AS VARCHAR)) FILTER (
-            WHERE regexp_matches(CAST("{esc}" AS VARCHAR),
-                                 '{sql_str(COSTUME_MARK)}'))                 AS example"""
+        max(CASE WHEN regexp_matches(CAST("{esc}" AS VARCHAR),
+                                     '{sql_str(COSTUME_MARK)}')
+                 THEN CAST("{esc}" AS VARCHAR) END)                          AS example"""
 
 
 def _as_int(v) -> int:

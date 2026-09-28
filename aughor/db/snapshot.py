@@ -40,13 +40,17 @@ def snapshot_receipts_enabled() -> bool:
 
 
 def _meta_row(conn: Any, sql: str) -> Optional[tuple]:
-    """Run a tiny metadata query off the audit path; return the first row or None. Fail-open."""
+    """Run a tiny metadata query off the audit path; return the first row or None. Fail-open.
+
+    The statement is DuckDB's dialect. A connection with no raw path runs it through its door,
+    declared so: on a native engine it was sent as written, `"t"` read as a string literal, the
+    signature came back None, and revalidation's `data_moved` never fired there (GM-1)."""
     try:
         _cols, rows, _types = conn.raw_execute(sql)     # bypasses validation/security (metadata)
         return tuple(rows[0]) if rows else None
     except Exception:
         try:
-            res = conn.execute("__snapshot__", sql)      # internal id → skips audit
+            res = conn.execute("__snapshot__", sql, sql_dialect="duckdb")      # internal id → skips audit
             return tuple(res.rows[0]) if getattr(res, "rows", None) else None
         except Exception:
             return None

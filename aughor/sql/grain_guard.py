@@ -13,7 +13,8 @@ overwriting a correct query** — the failure mode that made LLM-mediated repair
 strong models.
 
 Backend-agnostic: callers inject a read-only `probe_fn(sql) -> (ok, rows, error)` and a `table_cols`
-map. Used by the product answer path (attach a fan-out caveat / route a repair) and by the Spider2
+map. The probe is written in DuckDB's dialect, and a `probe_fn` hands it to its connection declared so
+(``sql_dialect="duckdb"``), which renders it for the engine (GM-1). Used by the product answer path (attach a fan-out caveat / route a repair) and by the Spider2
 harness (measure detection coverage).
 """
 from __future__ import annotations
@@ -116,9 +117,15 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
             continue
         seen.add((rt.lower(), keys[0]))
 
-        # Probe uniqueness of the join key on the right (joined) table, on real data.
-        expr = "||'-'||".join(keys) if len(keys) > 1 else keys[0]
-        probe = f"SELECT COUNT(*), COUNT(DISTINCT {expr}) FROM {rt}"
+        # Probe uniqueness of the join key on the right (joined) table, on real data. Rendered in
+        # DuckDB's dialect from the parsed names, qualifier and quoting kept. It was built bare, with a
+        # composite key joined by `||`: BigQuery concatenates only strings that way and MySQL reads `||`
+        # as OR, so on both the probe errored and the guard reported no fan-out (GM-1). A composite key
+        # is compared as text now.
+        target = exp.Table(**{k: right.args[k].copy() for k in ("this", "db", "catalog") if right.args.get(k)})
+        quoted = [exp.to_identifier(k).sql(dialect="duckdb") for k in keys]
+        expr = quoted[0] if len(quoted) == 1 else " || '-' || ".join(f"CAST({q} AS VARCHAR)" for q in quoted)
+        probe = f"SELECT COUNT(*), COUNT(DISTINCT {expr}) FROM {target.sql(dialect='duckdb')}"
         try:
             ok, rows, _ = probe_fn(probe)
         except Exception:

@@ -12,7 +12,8 @@ All four are DuckDB spellings sent verbatim to BigQuery. `_run`'s own docstring 
 the line this fix keys on: SQL with a `schema` was written by a MODEL and is guarded, while
 SQL without one is "built by the explorer itself from parsed schema metadata" — platform SQL,
 written in DuckDB's dialect, which is precisely what `aughor.db.dialects.native_sql` exists to
-translate. Model-written SQL is deliberately NOT transpiled: the model is told the target
+translate — since GM-1 as the door's own step, the platform branch declaring `sql_dialect="duckdb"`.
+Model-written SQL is deliberately NOT transpiled: the model is told the target
 dialect and writes in it, so reading that as DuckDB would corrupt it.
 
 The FILTER one is the exception `native_sql` could not fix — sqlglot leaves `FILTER (WHERE …)`
@@ -77,25 +78,30 @@ class TestEveryFailingShapeNowTranslates:
         assert out.count("AVG(") == 4 and "MIN(" in out and "MAX(" in out
 
 
+#: How the platform branch declares its SQL to the door (GM-1).
+_DECLARED = 'sql_dialect = "duckdb"'
+
+
 class TestTheExplorerRoutesItsOwnSql:
-    def test_the_platform_branch_translates(self):
+    def test_the_platform_branch_declares_duckdb(self):
         src = inspect.getsource(EA.SchemaExplorer._run)
-        assert "native_sql(" in src, "_run still sends DuckDB SQL to whatever engine it finds"
+        assert _DECLARED in src, "_run still sends DuckDB SQL to whatever engine it finds"
+        assert "sql_dialect=sql_dialect" in src, "the declaration never reaches the door"
 
     def test_model_written_sql_is_not_transpiled(self):
         """The model is told the dialect and writes in it; reading that as DuckDB corrupts it.
-        The translation must sit on the `else` (no-schema) branch only."""
+        The declaration must sit on the `else` (no-schema) branch only."""
         src = inspect.getsource(EA.SchemaExplorer._run)
-        before = src.split("native_sql(")[0]
-        assert "else:" in before, "the translation is not confined to the platform-SQL branch"
+        before = src.split(_DECLARED)[0]
+        assert "else:" in before, "the declaration is not confined to the platform-SQL branch"
         assert "_repair_contra_amount" in before, "the model branch moved — re-pin this test"
 
-    def test_the_direct_period_probes_translate_too(self):
+    def test_the_direct_period_probes_declare_too(self):
         """Two period probes call the connector directly, bypassing `_run` — they carried the
         `::VARCHAR` that BigQuery refused outright."""
         src = inspect.getsource(EA)
-        direct = src.count('self._conn.execute("__explorer__", native_sql(')
-        assert direct == 2, f"expected both direct probes wrapped, found {direct}"
+        direct = src.count('self._conn.execute("__explorer__", sql, sql_dialect="duckdb")')
+        assert direct == 2, f"expected both direct probes declared, found {direct}"
 
     def test_no_filter_clause_survives_in_explorer_sql(self):
         """sqlglot does not rewrite `FILTER (WHERE …)` for BigQuery, so the seam cannot save

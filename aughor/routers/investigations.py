@@ -2315,7 +2315,8 @@ def _answer_core(
                     _cands = generate_candidate_readings(question, schema)
                     if len(_cands) >= 2:
                         def _probe_ex(_sql):
-                            _r = db.execute("ambiguity_probe", _sql)
+                            # the readings are prompted as DuckDB SQL; the door renders them (GM-1)
+                            _r = db.execute("ambiguity_probe", _sql, sql_dialect="duckdb")
                             return (not _r.error, _r.rows or [], _r.error or "")
                         _sv = assess_structural_ambiguity(question, _cands, _probe_ex)
                         if _sv.ambiguous:
