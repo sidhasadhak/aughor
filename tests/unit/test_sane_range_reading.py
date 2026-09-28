@@ -97,7 +97,7 @@ INTENDED = {
     ("retail", "Cart-to-Order Conversion Rate", "sane_range"): RATIO,               # "ratio 0..1 (never > 1)"
     ("retail", "Gross Margin %", "sane_range"): ("pct100", 0.0, 100.0),             # "percent 0..100"
     ("retail", "Inventory Turnover", "sane_range"): OPEN,                           # "ratio 0..∞"
-    ("retail", "Return / Refund Rate", "sane_range"): RATIO,                        # "ratio 0..1"
+    ("retail", "Return Rate", "sane_range"): RATIO,                                 # "ratio 0..1"
     ("retail", "Repeat Purchase Rate", "sane_range"): RATIO,                        # "ratio 0..1."
     ("retail", "Customer Acquisition Cost (CAC)", "sane_range"): OPEN,              # "USD, positive"
     ("retail", "ROAS (Return on Ad Spend) by Channel", "sane_range"): OPEN,         # "ratio 0..∞"

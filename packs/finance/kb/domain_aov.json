@@ -2,7 +2,7 @@
   {
     "id": "average_order_value",
     "title": "Average Order Value (AOV)",
-    "business_definition": "AOV = total revenue / number of orders. Rising AOV means customers are buying more per transaction. Falling AOV can signal pricing pressure, mix shift to cheaper products, or promotional discounting.",
+    "business_definition": "AOV = merchandise value per completed order: each order's lines (quantity × unit price) summed, before refunds, discounts and fees — the same basis as GMV — over the number of distinct completed orders. Rising AOV means customers are buying more per transaction. Falling AOV can signal pricing pressure, mix shift to cheaper products, or promotional discounting.",
     "intent_tags": ["AOV", "average order value", "basket size", "order value", "spend per order"],
     "when_to_use": ["AOV dropped", "basket size analysis", "revenue per order changed"],
     "diagnostic_questions": [
@@ -37,7 +37,7 @@
     ],
     "related_patterns": ["revenue_drop_analysis", "conversion_funnel", "refund_rate"],
     "anti_patterns": [
-      "Do not include cancelled or returned orders in AOV calculation",
+      "Do not include cancelled, test or fraud orders in AOV — but keep returned ones: AOV is gross, on GMV's basis, and returns are read by the return rate, not taken out of AOV",
       "Do not compare AOV across B2B and B2C segments without separating them first"
     ],
     "sql_assets": {

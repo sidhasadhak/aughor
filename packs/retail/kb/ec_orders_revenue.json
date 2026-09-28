@@ -559,7 +559,7 @@
   },
   {
     "id": "ec_return_rate",
-    "title": "Return Rate",
+    "title": "Order Return Rate",
     "intent_tags": [
       "return rate",
       "order return rate",
@@ -595,7 +595,7 @@
       "ec_net_revenue",
       "ec_aov"
     ],
-    "business_definition": "Count of distinct orders with at least one return event, divided by count of distinct completed orders in a period, expressed as a percentage. Excludes cancelled, test, and fraud-flagged orders.",
+    "business_definition": "The ORDER grain of returns \u2014 not the package's return rate, which counts sold lines (metrics/return_rate.yaml). Count of distinct orders with at least one return event, divided by count of distinct completed orders in a period, expressed as a percentage. Excludes cancelled, test, and fraud-flagged orders.",
     "metric_nature": {
       "what_it_measures": "The proportion of orders that experienced a return. Answers: out of every 100 orders, how many came back?",
       "what_it_does_not_measure": "The financial impact of returns. A 10% return rate could mean $1,000 or $100,000 in refund dollars depending on which orders were returned. Use ec_refund_rate for dollar-weighted impact.",

@@ -1,6 +1,6 @@
 name: return_rate
 title: Return rate
-aliases: [item return rate, returns rate, refund rate, return / refund rate]
+aliases: [item return rate, returns rate]
 unit: ratio
 definition: The share of sold lines that the customer sent back.
 formula: >
@@ -15,6 +15,8 @@ grain: >
 binds:
   required: [order_item]
 anti_patterns:
+  - "Reading refunds as returns: a refund is money, a return is goods. Money can go back without the goods (a damaged item refunded in place) and goods can come back without money (an exchange, store credit), so a refund rate is its own metric and never another name for this one."
+  - "Counting ORDERS with a return over orders: that is the order return rate, a different and higher figure — an order with one returned line of five counts whole."
   - "Reading it over a population that still contains cancelled lines: a cancelled line never shipped, so it was never eligible to be returned, and leaving it in the denominator understates the rate. Filter cancellations out of the population first — the formula cannot, because not every warehouse marks them the same way."
   - "Counting return ROWS rather than returned lines: one returned line can carry several rows in a returns table, which inflates the numerator."
   - "Reading a period's rate without its lag: a line sold on the last day of the period has not had time to be returned, so a recent window always reads low until the return window closes."
