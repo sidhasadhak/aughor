@@ -2595,23 +2595,10 @@ def _answer_core(
             except Exception as _e:
                 logger.debug("chat scope guard is best-effort; skipped: %s", _e)
 
-        # ── Filter value-domain guard — catch a guessed enum value ──────────────
-        # `order_status = 'cancelled'` when the data holds 'canceled' runs clean but
-        # silently matches ZERO rows, so every rate reads 0%. Probe the column's real
-        # domain and force a repair when an enumerable value is a near-miss typo.
+        # The filter value-domain guard runs AFTER the pre-flight below, on the statement that will run (see there).
         _filter_fix_hint = ""
         _unchecked_caveats: list[str] = []   # GM-4 — what a guard here could not check, said on the result
-        if final_sql:
-            try:
-                from aughor.sql.join_guard import filter_domain_check
-                _frun = filter_domain_check(db, final_sql)
-                _fw = _frun.findings
-                _checked.append(_frun.door)
-                _unchecked_caveats.extend(_frun.caveats())
-                if _fw:
-                    _filter_fix_hint = " | ".join(w.to_prompt_text() for w in _fw)
-            except Exception as _e:
-                logger.debug("chat filter value-domain guard is best-effort; skipped: %s", _e)
+        _frun = None                         # the filter guard's run over the statement that runs
 
         # ── Breakdown-grain guard — "top product CATEGORIES" grouped by product_id ──
         # The model sometimes groups a categorical breakdown at too fine a grain (an id),
@@ -2709,6 +2696,28 @@ def _answer_core(
             except Exception as _gl_exc:
                 logger.debug("grounded-literal enforcement skipped: %s", _gl_exc)
 
+        # ── Filter value-domain guard — catch a guessed enum value ──────────────
+        # `order_status = 'cancelled'` when the data holds 'canceled' runs clean but
+        # silently matches ZERO rows, so every rate reads 0%. Probe the column's real
+        # domain and ask for a repair when an enumerable value is a near-miss typo.
+        # It reads the statement that will RUN — after the pre-flight has bound what it can. It used to read the
+        # model's statement before the pre-flight, so a finding the pre-flight had already fixed still asked the
+        # model for a repair; on theLook (2026-09-29) that repair re-wrote `country = 'Brasil'` back to 'Brazil',
+        # was adopted, and 0 shipped where the answer is 4,458. A novel literal (in no column) is an honest
+        # absence and never a repair target — a "fix" that drops the predicate answers another question; it is
+        # said as a caveat instead.
+        if final_sql:
+            try:
+                from aughor.sql.join_guard import filter_domain_check
+                _frun = filter_domain_check(db, final_sql)
+                _checked.append(_frun.door)
+                _unchecked_caveats.extend(_frun.caveats())
+                _fw_actionable = [w for w in _frun.findings if not getattr(w, "novel", False)]
+                if _fw_actionable:
+                    _filter_fix_hint = " | ".join(w.to_prompt_text() for w in _fw_actionable)
+            except Exception as _e:
+                logger.debug("chat filter value-domain guard is best-effort; skipped: %s", _e)
+
         _checkpoint()   # before the user-facing execute — the query is not free either
         emit("sql", {"sql": final_sql})
         result = _execute_chat_sql(db, final_sql)
@@ -2751,6 +2760,15 @@ def _answer_core(
                         fix.sql, _triggered, question=question, dialect=db.dialect,
                         full_cols=_pst_recheck(_full_schema),
                         schema_cols=_pst_recheck(schema)) if _triggered else []
+                    # The filter guard is asked again of EVERY model repair, although it probes the warehouse
+                    # (one DISTINCT per filtered column, on this path only): the model writes a new statement,
+                    # and the one it wrote on theLook put back the literal the pre-flight had fixed.
+                    _frun_fix = None
+                    if _frun is not None and not retry.error:
+                        from aughor.sql.join_guard import filter_domain_check as _fdc_re, filter_repair_holds
+                        _frun_fix = _fdc_re(db, fix.sql)
+                        if not filter_repair_holds(_frun, _frun_fix):
+                            _still = [*_still, "filter"]
                     if _still:
                         _receipt({
                             "guard": "repair_recheck", "action": "kept_original",
@@ -2774,6 +2792,8 @@ def _answer_core(
                         final_sql = fix.sql
                         result = retry
                         _checked.append("repaired")
+                        if _frun_fix is not None:
+                            _frun = _frun_fix          # the filter run over the statement that now answers
                         emit("sql", {"sql": final_sql})
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
@@ -2787,6 +2807,10 @@ def _answer_core(
                             for _c in _checked])
         if _unchecked_caveats:
             result.caveats = list(dict.fromkeys([*(result.caveats or []), *_unchecked_caveats]))
+        # A filter finding still on the statement that answers — one no repair cleared, or a novel literal, which
+        # is never repaired — is said beside the number, as the shared executor says it.
+        if _frun is not None and _frun.findings:
+            result.caveats = list(dict.fromkeys([*(result.caveats or []), *(w.caveat() for w in _frun.findings)]))
 
         if result.error:
             from aughor.agent.escalate import assess_escalation

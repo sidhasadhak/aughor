@@ -341,22 +341,7 @@ def execute_guarded(
             f"join guard: {_w.label_a} ↔ {_w.label_b} share only "
             f"{_w.overlap:.0%} of sampled values — the join may be unreliable{_rec}")
     for _w in _filter_warnings:
-        if getattr(_w, "column_suggestion", None):
-            _guard_caveats.append(
-                f"filter guard: '{_w.bad_value}' is not a value of {_w.table}.{_w.col} but is a "
-                f"value of {_w.table}.{_w.column_suggestion} — the predicate as written matches "
-                f"no row")
-            continue
-        if getattr(_w, "novel", False):
-            _guard_caveats.append(
-                f"filter guard: '{_w.bad_value}' is not a stored value of {_w.table}.{_w.col} or "
-                f"of any other text column in {_w.table} — the predicate matches no row; the "
-                f"segment is absent, not zero")
-            continue
-        _sugg = f" (did you mean '{_w.suggestion}'?)" if _w.suggestion else ""
-        _guard_caveats.append(
-            f"filter guard: '{_w.bad_value}' is not a stored value of "
-            f"{_w.table}.{_w.col}{_sugg} — the predicate is a silent no-op")
+        _guard_caveats.append(_w.caveat())
     if _idmath_warn:
         _guard_caveats.append(f"id-arithmetic guard: {_idmath_warn}")
     if _zero_diag:
@@ -415,6 +400,7 @@ def execute_guarded(
         try:
             from aughor.sql.join_guard import (
                 filter_domain_check as _fdc_det,
+                filter_repair_holds as _holds_det,
                 repair_filter_literals as _repair_det,
             )
             _fixed = _repair_det(sql, _filter_warnings, dialect=getattr(conn, "dialect", "duckdb"))
@@ -425,7 +411,7 @@ def execute_guarded(
                     _det_retry = conn.execute(query_id, _fixed)
                 # A repair the guard could not re-check is not a repair it confirmed (GM-4).
                 if (not _det_retry.error and (_det_retry.row_count > 0 or not _zero_diag)
-                        and _fdc_det(conn, _fixed).cleared(_frun)):
+                        and _holds_det(_frun, _fdc_det(conn, _fixed))):
                     from aughor.stats import stats as _fg_stats
                     _fg_stats.inc("filter_guard.deterministic_repair")
                     _steps.append("repaired:deterministic")
@@ -552,8 +538,8 @@ def execute_guarded(
             # Never replace a query with one that STILL filters on a non-existent literal.
             if _accept and _filter_warnings_actionable:
                 try:
-                    from aughor.sql.join_guard import filter_domain_check as _fdc
-                    _accept = _fdc(conn, fix.fixed_sql).cleared(_frun)
+                    from aughor.sql.join_guard import filter_domain_check as _fdc, filter_repair_holds
+                    _accept = filter_repair_holds(_frun, _fdc(conn, fix.fixed_sql))
                 except Exception:
                     _accept = False
             # Never accept a "fix" that still multiplies the measure by a key/id column.

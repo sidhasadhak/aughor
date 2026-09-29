@@ -9768,10 +9768,16 @@ silently (§7).
 > by two probes; of 25 of the model's own joined statements, 22 are checked (12 through derived sides) and 3 are
 > unchecked — each names a column that does not exist, the statement's own error. **With two model calls (approved):**
 > a quick question ran its filter guard on the model's native SQL (`guarded:filter-domain`, a finding, nothing
-> unchecked). **It also showed a defect outside GM-4, named here:** the model wrote `u.country = 'Brazil'` where
-> theLook stores `'Brasil'`; the guard found it, the quick path used the finding only as a model repair hint, adopted a
-> repair without re-checking the filter (its adoption re-check omits the filter guard), and shipped **0** where the
-> answer is **4,458**, with no caveat — `execute_guarded` would have bound it deterministically. **Left, named:** a
+> unchecked). **It also showed a defect outside GM-4 — FIXED the same day:** the model wrote `u.country = 'Brazil'`
+> where theLook stores `'Brasil'`. The pre-flight bound it; but the quick path's filter guard had read the model's
+> statement BEFORE the pre-flight, so its finding outlived the fix and asked the model for a repair — and the model,
+> told 'Brazil' matches nothing while looking at 'Brasil', wrote 'Brazil' back. The repair was adopted without the
+> filter asked again (the adoption re-check covered the SQL-only checks), and **0** shipped where the answer is
+> **4,458**, with no caveat. Now the guard reads the statement that runs, after the pre-flight; every model repair is
+> asked the filter guard before it is adopted (`join_guard.filter_repair_holds`, the battery's rule too); a novel
+> literal — in no column — is said and never sent for repair; and a finding left on the statement that answers is a
+> caveat (`FilterDomainWarning.caveat`, the battery's words, now in one place). Replayed on theLook with the model's
+> two live outputs scripted, no model called: before, 0 and one repair asked; after, 4,458 and none. **Left, named:** a
 > filter on an unqualified column in a statement with more than one table in any scope is not resolved (the literal
 > extractor counts tables across scopes; shared with object pages and the grounded-literal contract); a literal found
 > in two or more sibling columns is neither repaired nor said; the derived probe ignores the outer statement's WHERE,

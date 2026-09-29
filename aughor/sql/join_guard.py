@@ -831,6 +831,20 @@ class FilterDomainWarning:
     #: match zero rows, and the honest report says the segment is absent, never invents one.
     novel: bool = False
 
+    def caveat(self) -> str:
+        """What a reader is told when the statement that ran still carries this finding. The novel wording's
+        tail ("the segment is absent, not zero") is what the battery keys on to keep that caveat after a repair."""
+        if self.column_suggestion:
+            return (f"filter guard: '{self.bad_value}' is not a value of {self.table}.{self.col} but is a "
+                    f"value of {self.table}.{self.column_suggestion} — the predicate as written matches no row")
+        if self.novel:
+            return (f"filter guard: '{self.bad_value}' is not a stored value of {self.table}.{self.col} or of "
+                    f"any other text column in {self.table} — the predicate matches no row; the segment is "
+                    f"absent, not zero")
+        sugg = f" (did you mean '{self.suggestion}'?)" if self.suggestion else ""
+        return (f"filter guard: '{self.bad_value}' is not a stored value of {self.table}.{self.col}{sugg} — "
+                f"the predicate is a silent no-op")
+
     def to_prompt_text(self) -> str:
         vals = ", ".join(repr(v) for v in self.valid_values[:12])
         sugg = f" Did you mean '{self.suggestion}'?" if self.suggestion else ""
@@ -1278,6 +1292,23 @@ def filter_domain_check(conn: "DatabaseConnection", sql: str) -> "GuardRun":
         from aughor.stats import bump
         bump("guard.filter_domain.unchecked", len(run.unchecked))
     return run
+
+
+def filter_repair_holds(before: "GuardRun", after: "GuardRun") -> bool:
+    """Whether the filter guard's run over a REPAIRED statement (``after``) confirms the repair, against its run
+    over the statement that ran (``before``): no finding a repair should have removed, and nothing unchecked that was
+    checked before (`GuardRun.cleared`).
+
+    A novel literal — a value in no text column of its table — is an honest absence, never a repair target (a
+    model "fix" that drops the predicate answers a different question), so a repair may keep one that was there
+    before; one it introduces is a new silent zero and refuses it. Every other finding refuses it: the quick path
+    adopted a model's repair that re-wrote `country = 'Brasil'` back to 'Brazil' and shipped 0 where the answer is
+    4,458 (theLook, 2026-09-29)."""
+    from aughor.sql.guard_run import GuardRun
+    kept = {(w.table, w.col, w.bad_value) for w in before.findings if getattr(w, "novel", False)}
+    remaining = [w for w in after.findings
+                 if not (getattr(w, "novel", False) and (w.table, w.col, w.bad_value) in kept)]
+    return GuardRun(after.guard, remaining, list(after.unchecked)).cleared(before)
 
 
 def repair_filter_literals(sql: str, warnings: list["FilterDomainWarning"],

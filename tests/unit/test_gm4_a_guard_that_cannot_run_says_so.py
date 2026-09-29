@@ -521,3 +521,20 @@ def test_an_alert_about_running_is_never_a_reading():
         append_alert(MonitorAlert(monitor_id="gm4-reading", triggered_at="2026-09-29T10:00:00Z",
                                   alert_on=kind, current_value=value, message=kind))
     assert _last_alert_value("gm4-reading") == 7.0
+
+
+def test_a_filter_repair_holds_only_without_a_finding_it_should_have_removed():
+    from aughor.sql.join_guard import FilterDomainWarning, filter_repair_holds
+
+    def w(value, *, novel=False, suggestion=None):
+        return FilterDomainWarning("customers", "region", value, ["EMEA"], suggestion, novel=novel)
+
+    atlantis = w("Atlantis", novel=True)
+    before = GuardRun("filter-domain", findings=[atlantis])
+    assert filter_repair_holds(before, GuardRun("filter-domain"))
+    assert filter_repair_holds(before, GuardRun("filter-domain", findings=[w("Atlantis", novel=True)])), \
+        "a repair that kept an honest absence was refused"
+    assert not filter_repair_holds(before, GuardRun("filter-domain", findings=[w("Mars", novel=True)])), \
+        "a repair that introduced a new absent value was adopted"
+    assert not filter_repair_holds(before, GuardRun("filter-domain", findings=[w("Emea", suggestion="EMEA")]))
+    assert not filter_repair_holds(before, GuardRun("filter-domain", unchecked=["the check failed: x"]))
