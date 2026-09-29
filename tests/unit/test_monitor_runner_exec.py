@@ -35,9 +35,13 @@ def test_query_uses_execute_and_returns_rows():
     assert db.calls and db.calls[0][1] == "SELECT 42"
 
 
-def test_query_returns_empty_on_error():
-    db = ConnLike([], error="boom")
-    assert _query(db, "SELECT 1") == []
+def test_a_refused_query_is_not_an_empty_one():
+    """GM-4 — the premise this test used to pin ([] on error) is reversed: a refused monitor query read as
+    "no condition met", and theLook's two monitors recorded 1,737 failures as clean runs."""
+    import pytest
+    from aughor.db.connection import QueryRefused
+    with pytest.raises(QueryRefused, match="boom"):
+        _query(ConnLike([], error="boom"), "SELECT 1")
 
 
 def test_scalar_executes_against_connection_api():
@@ -50,9 +54,12 @@ def test_scalar_handles_dict_rows():
     assert _scalar(db, "SELECT COUNT(*) AS c FROM orders") == 17.0
 
 
-def test_scalar_none_on_error():
-    db = ConnLike([], error="bad sql")
-    assert _scalar(db, "SELECT nope") is None
+def test_a_refused_scalar_is_not_a_missing_one():
+    import pytest
+    from aughor.db.connection import QueryRefused
+    with pytest.raises(QueryRefused, match="bad sql"):
+        _scalar(ConnLike([], error="bad sql"), "SELECT nope")
+    assert _scalar(ConnLike([]), "SELECT nothing") is None       # a query that ran and found nothing
 
 
 class _NativeConn(ConnLike):

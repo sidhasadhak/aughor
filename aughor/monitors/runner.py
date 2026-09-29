@@ -3,13 +3,21 @@
 Each public function accepts a Monitor + a live DatabaseConnection and returns
 a MonitorAlert (or None if no alert condition is met).  The scheduler calls
 these on cron; they never raise — errors are caught and surfaced as info alerts.
+
+A query the warehouse refuses is neither (GM-4): the check did not run. Read strictly, it
+raises `QueryRefused` out of the monitor's function, `check_monitor` records the run as
+failed, and `health_alert` sends one alert when a monitor starts failing and one when it
+runs again — theLook's two monitors failed 1,737 times on 09-25/26, and every run was
+recorded "executed · no alert".
 """
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+from aughor.db.connection import QueryRefused
 from aughor.monitors.models import Monitor, MonitorAlert
 
 logger = logging.getLogger(__name__)
@@ -30,8 +38,11 @@ def _query(db, sql: str) -> list:
     translates it for the engine (GM-1): on BigQuery a double-quoted identifier is a string
     literal, and theLook's Units Sold watch failed every minute with "Invalid date:
     'created_at'" (2026-09-26, 2,283 errors on the Security page) because this wrapper ran
-    it as written."""
-    return db.rows(sql, label="__monitor__", sql_dialect="duckdb")
+    it as written.
+
+    Strict (GM-4): a refused query raises `QueryRefused` rather than returning [], which read as
+    "no condition met" and recorded a monitor that never ran as one that found nothing."""
+    return db.rows(sql, label="__monitor__", sql_dialect="duckdb", strict=True)
 
 
 def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
@@ -72,15 +83,29 @@ def _scalar(db, sql: str) -> Optional[float]:
     """First cell of a monitor query as float, or None. Wrapper over ``db.scalar``, declared
     DuckDB as `_query` is: the threshold, any-change and trend-reversal monitors read this
     path, and the gate-map census (2026-09-26) found it still sending DuckDB-quoted SQL to
-    native engines after the anomaly path was fixed."""
-    return db.scalar(sql, label="__monitor__", cast=float, sql_dialect="duckdb")
+    native engines after the anomaly path was fixed. Strict, as `_query` is."""
+    return db.scalar(sql, label="__monitor__", cast=float, sql_dialect="duckdb", strict=True)
+
+
+#: The kinds of the two alerts about whether a monitor can run — never a reading of its metric.
+QUERY_FAILING = "query_failing"
+QUERY_RUNS_AGAIN = "query_runs_again"
+_HEALTH = (QUERY_FAILING, QUERY_RUNS_AGAIN)
+#: How far back a lookup reads past the alerts it skips.
+_SCAN = 50
+
+
+def _metric_alerts(monitor_id: str, limit: int) -> list[MonitorAlert]:
+    """This monitor's most recent persisted alerts about its METRIC, newest first — an alert about whether the
+    monitor could run is no reading, so it never becomes a baseline, a trend point or the debounce's last alert."""
+    from aughor.monitors.store import get_alerts
+    return [a for a in get_alerts(monitor_id=monitor_id, limit=limit + _SCAN) if a.alert_on not in _HEALTH][:limit]
 
 
 def _last_alert(monitor_id: str) -> Optional[MonitorAlert]:
-    """The most recent persisted alert for this monitor (None if none / store error)."""
+    """The most recent persisted metric alert for this monitor (None if none / store error)."""
     try:
-        from aughor.monitors.store import get_alerts
-        alerts = get_alerts(monitor_id=monitor_id, limit=1)
+        alerts = _metric_alerts(monitor_id, 1)
         return alerts[0] if alerts else None
     except Exception:
         return None
@@ -173,6 +198,7 @@ def _make_alert(
     current_value: Optional[float] = None,
     previous_value: Optional[float] = None,
     threshold: Optional[float] = None,
+    alert_on: Optional[str] = None,
 ) -> MonitorAlert:
     return MonitorAlert(
         monitor_id=monitor.id,
@@ -180,7 +206,7 @@ def _make_alert(
         conn_id=monitor.conn_id,
         metric_name=monitor.metric_name,
         triggered_at=_now_iso(),
-        alert_on=monitor.alert_on,
+        alert_on=alert_on or monitor.alert_on,
         severity=severity,
         current_value=current_value,
         previous_value=previous_value,
@@ -262,8 +288,7 @@ def run_trend_reversal_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
         return None
 
     try:
-        from aughor.monitors.store import get_alerts
-        recent = get_alerts(monitor_id=monitor.id, limit=3)
+        recent = _metric_alerts(monitor.id, 3)
     except Exception:
         return None
 
@@ -358,13 +383,14 @@ def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
             val = list(row.values())[0] if isinstance(row, dict) else row[0]
             current = float(val) if val is not None else None
             try:
-                from aughor.monitors.store import get_alerts
-                past = get_alerts(monitor_id=monitor.id, limit=monitor.history_days)
+                past = _metric_alerts(monitor.id, monitor.history_days)
                 history_values = [
                     a.current_value for a in past if a.current_value is not None
                 ]
             except Exception:
                 pass
+    except QueryRefused:
+        raise
     except Exception as exc:
         logger.debug("Anomaly monitor query failed: %s", exc)
         return None
@@ -419,6 +445,8 @@ def run_drift_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
     try:
         rows = _query(db, sql)
+    except QueryRefused:
+        raise
     except Exception as exc:
         logger.debug("Drift monitor query failed: %s", exc)
         return None
@@ -444,8 +472,7 @@ def run_drift_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     # For simplicity: we record the current distribution as a baseline if none exists
     # and only fire from the second run onward.
     try:
-        from aughor.monitors.store import get_alerts
-        past = get_alerts(monitor_id=monitor.id, limit=1)
+        past = _metric_alerts(monitor.id, 1)
     except Exception:
         return None
 
@@ -537,6 +564,8 @@ def run_freshness_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
                 current_value=staleness_hours,
                 threshold=sla,
             )
+    except QueryRefused:
+        raise
     except Exception as exc:
         logger.debug("Freshness monitor failed: %s", exc)
 
@@ -545,13 +574,27 @@ def run_freshness_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
+@dataclass
+class MonitorRun:
+    """One check of a monitor: the alert it raised, or — when its query could not run — why."""
+    alert: Optional[MonitorAlert] = None
+    failed: str = ""      # the warehouse's refusal; "" when the query ran
+
+
 def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[MonitorAlert]:
+    """The alert a check raised, or None — including when its query could not run; `check_monitor` says
+    which (GM-4). Kept for the callers that only deliver an alert (the drill, the receipts)."""
+    return check_monitor(monitor, db, suppress).alert
+
+
+def check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
     """Dispatch to the correct runner based on monitor.alert_on.
 
     Always safe — exceptions are caught and surfaced as info alerts so the
     scheduler never crashes. `suppress` applies the anti-flap debounce (default
     True for the cron path); the manual "test now" endpoint passes False so it
-    always shows the raw verdict.
+    always shows the raw verdict. A query the warehouse refused is a failed run,
+    not an alert and not "no alert" (GM-4).
     """
     try:
         dispatch = {
@@ -565,8 +608,11 @@ def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[Monitor
         fn = dispatch.get(monitor.alert_on)
         if fn is None:
             logger.warning("Unknown alert_on '%s' for monitor %s", monitor.alert_on, monitor.id)
-            return None
+            return MonitorRun()
         alert = fn(monitor, db)
+    except QueryRefused as exc:
+        logger.warning("Monitor %s (%s): its query could not run: %s", monitor.id, monitor.name, exc)
+        return MonitorRun(failed=str(exc) or "the warehouse refused the query")
     except Exception as exc:
         logger.error("Monitor %s (%s) runner crashed: %s", monitor.id, monitor.name, exc)
         alert = _make_alert(monitor, "info", f"{monitor.name}: runner error — {exc}")
@@ -584,5 +630,30 @@ def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[Monitor
     # Anti-flap: debounce a repeat alert of the same-or-lower severity within the grace window.
     if suppress and alert is not None and _suppressed_by_grace(monitor, alert):
         logger.debug("Monitor %s (%s): %s alert suppressed (grace window)", monitor.id, monitor.name, alert.severity)
-        return None
-    return alert
+        return MonitorRun()
+    return MonitorRun(alert=alert)
+
+
+def failure_alert(monitor: Monitor, failed: str) -> MonitorAlert:
+    """The alert that says a monitor's query could not run — and so that it is not watching."""
+    return _make_alert(monitor, "warning",
+                       f"{monitor.name}: its query could not run, so it is not being checked — {failed[:300]}",
+                       alert_on=QUERY_FAILING)
+
+
+def health_alert(monitor: Monitor, run: MonitorRun) -> Optional[MonitorAlert]:
+    """The one alert a change in whether a monitor can run deserves (the user's call, 2026-09-29): when its query
+    starts failing, and when it runs again — never one per failing tick. The alert store is the record: the newest
+    of this monitor's alerts about running says which state it was last in."""
+    from aughor.monitors.store import get_alerts
+    try:
+        last = next((a for a in get_alerts(monitor_id=monitor.id, limit=_SCAN) if a.alert_on in _HEALTH), None)
+    except Exception:
+        last = None
+    was_failing = last is not None and last.alert_on == QUERY_FAILING
+    if run.failed and not was_failing:
+        return failure_alert(monitor, run.failed)
+    if not run.failed and was_failing:
+        return _make_alert(monitor, "info", f"{monitor.name}: its query runs again; checking has resumed.",
+                           alert_on=QUERY_RUNS_AGAIN)
+    return None

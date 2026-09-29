@@ -38,6 +38,7 @@ WORDS: dict[str, str] = {
     "audited": "written to the audit log",
     "repaired": "repaired ({d})",
     "guarded": "checked by the {d} guard",
+    "unchecked": "NOT checked by the {d} guard: it could not run on this statement",
 }
 
 #: The guards a statement can be checked by, as a reader knows them.
@@ -55,6 +56,7 @@ GUARDS: dict[str, str] = {
     "breakdown-grain": "breakdown-grain",
     "ratio-of-sums": "ratio-of-sums",
     "chasm": "aggregate-over-chasm",
+    "grain": "join-key grain",
 }
 
 
@@ -100,7 +102,7 @@ def describe(doors: Iterable[str]) -> list[str]:
     out: list[str] = []
     for word in doors or []:
         name, _, detail = str(word).partition(":")
-        if name == "guarded":
+        if name in ("guarded", "unchecked"):
             detail = GUARDS.get(detail, detail)
         text = WORDS.get(name)
         out.append(text.format(d=detail.replace("→", " to ")) if text else str(word))

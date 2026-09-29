@@ -77,12 +77,13 @@ def test_monitor_effect_appends_the_same_alert_the_monitor_produces(monkeypatch)
                          severity="critical", message="Revenue down 40%")
     seen_suppress = {}
 
-    def fake_run_monitor(m, db, suppress=True):
+    def fake_check_monitor(m, db, suppress=True):
+        from aughor.monitors.runner import MonitorRun
         seen_suppress["value"] = suppress
-        return alert
+        return MonitorRun(alert=alert)
 
     appended: list = []
-    monkeypatch.setattr("aughor.monitors.runner.run_monitor", fake_run_monitor)
+    monkeypatch.setattr("aughor.monitors.runner.check_monitor", fake_check_monitor)
     monkeypatch.setattr("aughor.monitors.store.append_alert", lambda a: appended.append(a))
     monkeypatch.setattr("aughor.db.connection.open_connection_for",
                         lambda cid: type("D", (), {"close": lambda self: None})())
@@ -98,7 +99,8 @@ def test_monitor_effect_appends_the_same_alert_the_monitor_produces(monkeypatch)
 def test_monitor_effect_appends_nothing_when_the_check_is_quiet(monkeypatch):
     upsert_monitor(_monitor(id="m-quiet", conn_id="c-q"))
     appended: list = []
-    monkeypatch.setattr("aughor.monitors.runner.run_monitor", lambda m, db, suppress=True: None)
+    from aughor.monitors.runner import MonitorRun
+    monkeypatch.setattr("aughor.monitors.runner.check_monitor", lambda m, db, suppress=True: MonitorRun())
     monkeypatch.setattr("aughor.monitors.store.append_alert", lambda a: appended.append(a))
     monkeypatch.setattr("aughor.db.connection.open_connection_for",
                         lambda cid: type("D", (), {"close": lambda self: None})())
@@ -141,7 +143,8 @@ def test_adopted_monitor_fires_its_effect_through_run_automation(monkeypatch):
     alert = MonitorAlert(monitor_id="m-e2e", triggered_at="2026-07-24T10:00:00Z",
                          severity="warning", message="edge")
     appended: list = []
-    monkeypatch.setattr("aughor.monitors.runner.run_monitor", lambda m, db, suppress=True: alert)
+    from aughor.monitors.runner import MonitorRun
+    monkeypatch.setattr("aughor.monitors.runner.check_monitor", lambda m, db, suppress=True: MonitorRun(alert=alert))
     monkeypatch.setattr("aughor.monitors.store.append_alert", lambda a: appended.append(a))
     monkeypatch.setattr("aughor.db.connection.open_connection_for",
                         lambda cid: type("D", (), {"close": lambda self: None})())

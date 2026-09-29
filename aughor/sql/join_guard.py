@@ -9,9 +9,9 @@ forms.c_id = 'CF-98122'.  The value domain cannot be fooled the way names can.
 
 This module probes value overlap by sampling both sides of each explicit JOIN
 condition and checking containment.  A real FK has high overlap; a bogus join
-has ~0%.  The check is entirely fail-open: any exception (unparseable SQL, CTE
-alias, empty table, connection unavailable) returns no warnings and lets the
-query proceed normally.
+has ~0%.  The check is fail-open — the query always proceeds — but not silent:
+what it could not check (unparseable SQL, a refused probe, a side it cannot
+attribute) is returned as `unchecked` by `join_domain_check` (GM-4).
 
 Hook: call check_join_value_domains(conn, sql) alongside detect_invalid_joins
 in execute_planned_queries.  The returned JoinDomainWarning objects satisfy the
@@ -20,11 +20,13 @@ same .to_prompt_text() interface as JoinWarning / AmbiguityWarning.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
+    from aughor.sql.guard_run import GuardRun
 
 # Overlap below this fraction → warn.  Chosen conservatively so a lightly
 # populated child table (e.g. a fresh orders table for today only) doesn't
@@ -36,9 +38,8 @@ _THRESHOLD = 0.15
 _SAMPLE_A = 100   # from the join's LHS (the "many" / FK side)
 _SAMPLE_B = 1000  # from the join's RHS (the referenced / PK side)
 
-# Limit the number of join pairs probed per query — each probe is one extra
-# query execution, so cap at 4 to keep the pre-flight fast.
-_MAX_PROBES = 4
+# Every join a statement makes is probed, two statements per join (the user's call, 2026-09-29: of ~2,050
+# joined statements on theLook, 2 had five or more joins, and a cap of 4 left their fifth unchecked and unsaid).
 
 
 def _sample_from(conn: "DatabaseConnection", table: str, cols: str, n: int) -> str:
@@ -68,44 +69,158 @@ def _quote_table(name: str) -> str:
     return ".".join(f'"{p}"' for p in parts)
 
 
-def _extract_join_conditions(sql: str) -> list[tuple[str, str, str, str]]:
-    """Return (table_a, col_a, table_b, col_b) for each explicit JOIN … ON eq."""
+def _readable(dialect: str | None) -> str | None:
+    """``dialect`` when sqlglot can read and write it, else None — the neutral reading."""
+    if not dialect:
+        return None
     try:
-        import sqlglot
+        from sqlglot.dialects.dialect import Dialect
+        Dialect.get_or_raise(dialect)
+        return dialect
+    except Exception:
+        return None
+
+
+def _parse(sql: str, dialect: str | None = None):
+    """``sql`` parsed the way its engine reads it, else in sqlglot's neutral reading; None when neither can.
+
+    The guards read every statement neutrally, and the neutral reading refuses the spelling BigQuery's
+    model and cards write — `` `bigquery-public-data.thelook_ecommerce.orders` `` — so on theLook the join
+    and filter guards ran nothing and, until GM-4, reported clean. The engine's own dialect reads it."""
+    import sqlglot
+    for read in dict.fromkeys((dialect or None, None)):
+        try:
+            tree = sqlglot.parse_one(sql, read=read, error_level=sqlglot.ErrorLevel.RAISE)
+        except Exception:
+            continue
+        if tree is not None:
+            return tree
+    return None
+
+
+def _table_name(tbl) -> str:
+    """Every part of a table's name the statement gives — project, dataset, table. The probe reads this
+    table, and a name cut to its last two parts resolves against the connection's own project: on theLook,
+    `thelook_ecommerce.orders` without `bigquery-public-data` is a 404, and the join went unchecked."""
+    return ".".join(part for part in (tbl.catalog, tbl.db, tbl.name) if part)
+
+
+@dataclass(frozen=True)
+class _Side:
+    """One side of a join's equality: what the statement writes, and where its values are read from.
+
+    ``source`` is the node the side's qualifier names — a stored table, a CTE the statement defines, or a
+    subquery — and ``stored`` is that table's full name when it is one the warehouse has (a CTE's is not)."""
+    alias: str        # the qualifier the side's columns carry, lowercased
+    expr: Any         # the side as written: a column, or an expression over one qualifier's columns
+    source: Any
+    stored: str
+    dialect: str      # the statement's own
+
+    @property
+    def plain(self) -> bool:
+        """A stored table's column as written — what the platform's own probe (`_probe_overlap`) reads."""
         import sqlglot.expressions as exp
+        return bool(self.stored) and isinstance(self.expr, exp.Column)
 
-        tree = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
+    @property
+    def table(self) -> str:
+        """The side's table as a reader names it: the stored table, the CTE, or the subquery's alias."""
+        import sqlglot.expressions as exp
+        if self.stored:
+            return self.stored
+        return self.source.name if isinstance(self.source, exp.Table) else self.alias
 
-        # Build alias → real-table-name map.
-        alias_map: dict[str, str] = {}
-        for tbl in tree.find_all(exp.Table):
-            real = tbl.name or ""
-            if tbl.db:
-                real = f"{tbl.db}.{tbl.name}"
-            alias = tbl.alias or real
-            if alias:
-                alias_map[alias.lower()] = real
+    @property
+    def column(self) -> str:
+        """The side's column, or the expression as the statement writes it."""
+        import sqlglot.expressions as exp
+        return self.expr.name if isinstance(self.expr, exp.Column) else self.expr.sql(dialect=self.dialect)
 
-        conditions: list[tuple[str, str, str, str]] = []
-        for join in tree.find_all(exp.Join):
-            on = join.args.get("on")
-            if not on:
+
+def _same_source(a: _Side, b: _Side) -> bool:
+    """Both sides read one stored table, or one CTE — a self-join."""
+    import sqlglot.expressions as exp
+    if a.stored or b.stored:
+        return a.stored == b.stored
+    return (isinstance(a.source, exp.Table) and isinstance(b.source, exp.Table)
+            and a.source.name.lower() == b.source.name.lower())
+
+
+def _join_sides(tree, dialect: str | None) -> "tuple[list[tuple[_Side, _Side]], list[str]]":
+    """Each equality a JOIN … ON makes between two row sources, as a pair of sides, each pair once — and, for
+    each equality the guard cannot attribute to one source per side, why (an unqualified column, a side mixing
+    two sources, a qualifier naming no table, CTE or subquery the statement defines, e.g. an UNNEST).
+
+    A comparison with a literal is a filter written in ON, not a key, and is skipped; so is an equality between
+    two columns of one row source, and a self-join — both sides reading one stored table or one CTE, whatever the
+    expressions. A self-join compares a key with itself: one domain on both sides, and a lagged one (`prev.period
+    = DATE_SUB(curr.period, INTERVAL 12 MONTH)`, the year-over-year shape) overlaps only partly BY DESIGN — probed,
+    theLook's own YoY statement read as a 14% "different entities" mismatch."""
+    import sqlglot.expressions as exp
+    ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    by_alias: dict = {}
+    by_name: dict = {}
+    for tbl in tree.find_all(exp.Table):
+        full = _table_name(tbl)
+        is_cte = not tbl.db and not tbl.catalog and (tbl.name or "").lower() in ctes
+        entry = (tbl, "" if is_cte else full)
+        if tbl.alias:
+            by_alias.setdefault(tbl.alias.lower(), entry)
+        for key in (tbl.name, full):
+            if key:
+                by_name.setdefault(key.lower(), entry)
+    for sq in tree.find_all(exp.Subquery):
+        if sq.alias:
+            by_alias.setdefault(sq.alias.lower(), (sq, ""))
+
+    def side(node) -> "tuple[_Side | None, str]":
+        cols = list(node.find_all(exp.Column))
+        if not cols:
+            return None, ""
+        written = node.sql(dialect=dialect)
+        quals = {(c.table or "").lower() for c in cols}
+        if "" in quals:
+            return None, f"{written} names a column without its table"
+        if len(quals) > 1:
+            return None, f"{written} mixes the columns of {len(quals)} tables"
+        alias = quals.pop()
+        found = by_alias.get(alias) or by_name.get(alias)
+        if found is None:
+            return None, f"{written}: '{alias}' is not a table, CTE or subquery the guard can read"
+        return _Side(alias, node, found[0], found[1], dialect or ""), ""
+
+    pairs: dict = {}
+    unreadable: list[str] = []
+    for join in tree.find_all(exp.Join):
+        on = join.args.get("on")
+        if on is None:
+            continue
+        for eq in on.find_all(exp.EQ):
+            a, why_a = side(eq.left)
+            b, why_b = side(eq.right)
+            if a is None or b is None:
+                if why_a or why_b:
+                    unreadable.append(why_a or why_b)
                 continue
-            for eq in on.find_all(exp.EQ):
-                left, right = eq.left, eq.right
-                if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
-                    continue
-                raw_ta = (left.table or "").lower()
-                raw_tb = (right.table or "").lower()
-                if not raw_ta or not raw_tb:
-                    continue
-                t_a = alias_map.get(raw_ta, raw_ta)
-                t_b = alias_map.get(raw_tb, raw_tb)
-                c_a = left.name or ""
-                c_b = right.name or ""
-                if t_a and c_a and t_b and c_b and t_a != t_b:
-                    conditions.append((t_a, c_a, t_b, c_b))
-        return conditions
+            if a.alias == b.alias or _same_source(a, b):
+                continue
+            pairs.setdefault((a.alias, a.expr.sql(), b.alias, b.expr.sql()), (a, b))
+    return list(pairs.values()), list(dict.fromkeys(unreadable))
+
+
+def _extract_join_conditions(sql: str, dialect: str | None = None) -> list[tuple[str, str, str, str]]:
+    """Return (table_a, col_a, table_b, col_b) for each explicit JOIN … ON equality between two columns, each
+    pair once — a CTE's or a subquery's column named by the CTE or the alias. ``dialect`` is the statement's:
+    it is read the way its engine reads it (`_parse`). Empty when it cannot be read."""
+    try:
+        tree = _parse(sql, dialect)
+        if tree is None:
+            raise ValueError("the statement parses in neither its engine's dialect nor the neutral reading")
+        import sqlglot.expressions as exp
+        pairs, _ = _join_sides(tree, dialect)
+        return [(a.table, a.column, b.table, b.column) for a, b in pairs
+                if isinstance(a.expr, exp.Column) and isinstance(b.expr, exp.Column)]
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "join_guard: SQL parse failed — no conditions extracted",
@@ -119,10 +234,12 @@ def _probe_overlap(
     col_a: str,
     table_b: str,
     col_b: str,
+    why: list[str] | None = None,
 ) -> float | None:
     """Fraction of sampled values from table_a.col_a found in table_b.col_b.
 
-    Returns None on any failure (fail-open).
+    Returns None on any failure (fail-open), and then appends the reason to ``why`` when one is passed: an error
+    is a probe that could not run, where an empty sample is one that had nothing to compare (GM-4).
     """
     try:
         ta = _quote_table(table_a)
@@ -148,6 +265,9 @@ SELECT
 """.strip()
 
         result = conn.execute("__domain_probe__", probe_sql, sql_dialect="duckdb")
+        if result is not None and getattr(result, "error", None) and why is not None:
+            from aughor.sql.guard_run import why as _why
+            why.append(f"the probe of {table_a}.{col_a} failed: {_why(result.error)}")
         if result and result.rows:
             # The connection stringifies all result values (no dtype passthrough),
             # so coerce to int before any numeric comparison.
@@ -159,7 +279,73 @@ SELECT
         from aughor.kernel.errors import tolerate
         tolerate(exc, "join_guard: value-domain probe failed — join allowed to proceed",
                  counter="join_guard.probe_error")
+        if why is not None:
+            from aughor.sql.guard_run import why as _why
+            why.append(f"the probe of {table_a}.{col_a} failed: {_why(exc)}")
     return None
+
+
+#: The name the derived probe gives its sample of side A — chosen so no statement's own CTE shares it.
+_SIDE_CTE = "_aughor_side_a"
+
+
+def _derived_probe_sql(tree, a: _Side, b: _Side) -> str:
+    """The containment probe for a side the statement itself defines — a CTE, a subquery, an expression — in
+    the statement's own dialect: a sample of side A's values (the first `_SAMPLE_A` rows of the columns it
+    reads), each checked against every value of side B, with the statement's CTEs carried in so either side
+    can name one. Each side keeps the statement's qualifier, so its expression reads exactly as written."""
+    import sqlglot.expressions as exp
+    text = exp.DataType.build("text")
+
+    def from_(side: _Side):
+        src = side.source.copy()
+        if not isinstance(src, exp.Subquery):
+            src.set("alias", exp.TableAlias(this=exp.to_identifier(side.alias)))
+        return src
+
+    read_a = list({c.name: exp.column(c.name, table=a.alias) for c in a.expr.find_all(exp.Column)}.values())
+    sample_a = exp.select(*read_a).from_(from_(a)).limit(_SAMPLE_A)
+    side_a = (exp.select(exp.alias_(exp.cast(a.expr.copy(), text), "v")).distinct()
+              .from_(sample_a.subquery(a.alias)))
+    values_b = exp.select(exp.cast(b.expr.copy(), text)).from_(from_(b))
+    total = exp.select(exp.Count(this=exp.Star())).from_(_SIDE_CTE).where(exp.column("v").is_(exp.null()).not_())
+    matched = (exp.select(exp.Count(this=exp.Star())).from_(_SIDE_CTE)
+               .where(exp.and_(exp.column("v").is_(exp.null()).not_(), exp.column("v").isin(query=values_b))))
+    probe = exp.select(exp.alias_(total.subquery(), "total"), exp.alias_(matched.subquery(), "matched"))
+    carried = {}
+    for cte in tree.find_all(exp.CTE):
+        carried.setdefault(cte.alias_or_name.lower(), cte)
+    for cte in carried.values():
+        probe = probe.with_(cte.alias_or_name, as_=cte.this.copy())
+    probe = probe.with_(_SIDE_CTE, as_=side_a)
+    with_ = tree.args.get("with")
+    if with_ is not None and with_.args.get("recursive"):
+        probe.args["with"].set("recursive", True)
+    return probe.sql(dialect=a.dialect or None)
+
+
+def _probe_overlap_derived(conn: "DatabaseConnection", tree, a: _Side, b: _Side,
+                           why: list[str]) -> float | None:
+    """Containment of side ``a``'s sampled values in side ``b``'s, when either side is one the statement defines.
+
+    Its fragments are the author's own SQL, so the probe is written in the statement's dialect and declares
+    nothing: declaring DuckDB would translate a native fragment and corrupt it (GM-1 measured `DATE_TRUNC(x,
+    MONTH)` with its arguments swapped). A CTE is recomputed by each probe — two per join, the cost the user chose
+    over leaving these joins unchecked (2026-09-29). None on failure, with the reason appended to ``why``."""
+    from aughor.sql.guard_run import why as _why
+    try:
+        result = conn.execute("__domain_probe__", _derived_probe_sql(tree, a, b))
+    except Exception as exc:
+        why.append(f"the probe of {a.table}.{a.column} failed: {_why(exc)}")
+        return None
+    if result is not None and getattr(result, "error", None):
+        why.append(f"the probe of {a.table}.{a.column} failed: {_why(result.error)}")
+        return None
+    try:
+        total, matched = int(result.rows[0][0]), int(result.rows[0][1])
+    except Exception:
+        return None
+    return matched / total if total > 0 else None
 
 
 # Above this many rows on either side, the exact probe's full RHS scan (a hashed IN-set of
@@ -255,7 +441,7 @@ _RECONCILE_MIN_GAIN    = 0.30
 class KeyReconciliation:
     transform: str
     label: str
-    expr_a: str     # DuckDB expression to normalize side A's key
+    expr_a: str     # expression to normalize side A's key, in the engine's spelling
     expr_b: str     # ... and side B's key
     overlap: float  # reconciled overlap under the transform
 
@@ -290,13 +476,29 @@ SELECT
     return None
 
 
+def _in_engine_spelling(expr: str, dialect: str | None) -> str:
+    """A DuckDB expression as the engine spells it. A reconciliation is probed in DuckDB's spelling, which
+    the door translates, but its expressions are handed to a model writing for the engine and to a reader:
+    `CAST(x AS VARCHAR)` and `regexp_replace(…, 'g')` are refused by BigQuery, so they are said as BigQuery
+    writes them. Falls back to the DuckDB spelling when the expression cannot be rendered."""
+    if not dialect or dialect == "duckdb":
+        return expr
+    try:
+        import sqlglot
+        return sqlglot.transpile(expr, read="duckdb", write=dialect)[0]
+    except Exception:
+        return expr
+
+
 def reconcile_join_keys(
-    conn, table_a: str, col_a: str, table_b: str, col_b: str, raw_overlap: float,
+    conn, table_a: str, col_a: str, table_b: str, col_b: str, raw_overlap: float, *,
+    dialect: str | None = None,
 ) -> KeyReconciliation | None:
     """Try deterministic normalizations to reconcile two low-overlap join keys.
 
     Returns the first transform that materially lifts overlap (direction-aware, like the raw
-    probe), or None if the keys are genuinely disjoint. Fail-open throughout."""
+    probe), or None if the keys are genuinely disjoint. Fail-open throughout. The returned
+    expressions are in ``dialect``'s spelling (the engine's), DuckDB's when none is given."""
     for name, label, tmpl in _KEY_TRANSFORMS:
         ea = tmpl.format(col=f'"{col_a}"')
         eb = tmpl.format(col=f'"{col_b}"')
@@ -307,8 +509,17 @@ def reconcile_join_keys(
             continue
         ov = max(ovs)
         if ov >= _RECONCILE_MIN_OVERLAP and ov - raw_overlap >= _RECONCILE_MIN_GAIN:
-            return KeyReconciliation(name, label, ea, eb, ov)
+            return KeyReconciliation(name, label, _in_engine_spelling(ea, dialect),
+                                     _in_engine_spelling(eb, dialect), ov)
     return None
+
+
+_IDENTIFIER = re.compile(r"^\w+$")
+
+
+def _side_label(table: str, col: str) -> str:
+    """`table.column` for a column; an expression is named as written (it carries its own qualifier)."""
+    return f"{table}.{col}" if table and _IDENTIFIER.match(col or "") else col
 
 
 @dataclass
@@ -320,11 +531,20 @@ class JoinDomainWarning:
     overlap: float
     reconciliation: KeyReconciliation | None = None
 
+    @property
+    def label_a(self) -> str:
+        """Side A as a reader names it: `table.column`, or the join expression as the statement writes it."""
+        return _side_label(self.table_a, self.col_a)
+
+    @property
+    def label_b(self) -> str:
+        return _side_label(self.table_b, self.col_b)
+
     def to_prompt_text(self) -> str:
         pct = f"{self.overlap:.0%}"
         base = (
-            f"JOIN VALUE-DOMAIN MISMATCH: {self.table_a}.{self.col_a} ↔ "
-            f"{self.table_b}.{self.col_b} — only {pct} of sampled values match. "
+            f"JOIN VALUE-DOMAIN MISMATCH: {self.label_a} ↔ "
+            f"{self.label_b} — only {pct} of sampled values match. "
         )
         if self.reconciliation:
             r = self.reconciliation
@@ -341,6 +561,10 @@ class JoinDomainWarning:
         )
 
 
+_JOIN_WORD = re.compile(r"\bJOIN\b", re.IGNORECASE)
+_FILTER_WORD = re.compile(r"\b(WHERE|HAVING)\b", re.IGNORECASE)
+
+
 def check_join_value_domains(
     conn: "DatabaseConnection",
     sql: str,
@@ -349,12 +573,51 @@ def check_join_value_domains(
     """Check each explicit JOIN condition for value-domain overlap.
 
     Returns a (possibly empty) list of warnings.  Never raises — entirely
-    fail-open so the calling query path is never blocked by the guard.
+    fail-open so the calling query path is never blocked by the guard. An
+    empty list does not say every join was checked; :func:`join_domain_check`
+    does (GM-4).
     """
-    warnings: list[JoinDomainWarning] = []
+    return join_domain_check(conn, sql, threshold).findings
+
+
+def join_domain_check(
+    conn: "DatabaseConnection",
+    sql: str,
+    threshold: float = _THRESHOLD,
+) -> "GuardRun":
+    """The join value-domain guard's run over ``sql``: its warnings, and each join it could not check (GM-4) —
+    a statement it could not parse, a join side it cannot attribute to one row source, or a join whose probes
+    the warehouse refused both ways. Never raises.
+
+    Every join is probed (the user's call, 2026-09-29): a join between two stored tables' columns by the
+    platform's probe, and a join to a CTE or a subquery, or on an expression, by a probe that carries the
+    statement's own CTEs (`_probe_overlap_derived`) — 9% and 4% of theLook's joined statements, which the
+    guard used to probe against a table that does not exist, or skip."""
+    from aughor.db.dialects import authored_dialect
+    from aughor.sql.guard_run import GuardRun, why as _why
+    run = GuardRun("join-domain")
+    warnings: list[JoinDomainWarning] = run.findings
+    dialect = _readable(authored_dialect(conn))
     try:
-        conditions = _extract_join_conditions(sql)
-        for t_a, c_a, t_b, c_b in conditions[:_MAX_PROBES]:
+        tree = _parse(sql, dialect)
+        if tree is None:
+            if _JOIN_WORD.search(sql or ""):
+                run.unchecked.append("the statement could not be parsed to find its join keys")
+            return run
+        pairs, unreadable = _join_sides(tree, dialect)
+        run.unchecked.extend(unreadable)
+        for a, b in pairs:
+            if not (a.plain and b.plain):
+                failed: list[str] = []
+                overlaps = [o for o in (_probe_overlap_derived(conn, tree, a, b, failed),
+                                        _probe_overlap_derived(conn, tree, b, a, failed)) if o is not None]
+                if not overlaps and failed:
+                    run.unchecked.append(f"{_side_label(a.table, a.column)} ↔ {_side_label(b.table, b.column)}: "
+                                         f"{failed[0]}")
+                elif overlaps and max(overlaps) < threshold:
+                    warnings.append(JoinDomainWarning(a.table, a.column, b.table, b.column, max(overlaps)))
+                continue
+            t_a, c_a, t_b, c_b = a.stored, a.column, b.stored, b.column
             # Direction-aware containment: a real FK is contained in ONE direction
             # (child ⊆ parent), even when the parent has many keys the child lacks. The
             # single-direction check false-flagged a legitimate parent⋈child subset join
@@ -362,14 +625,18 @@ def check_join_value_domains(
             # 10%, but refunds→orders is ~100%). Probe BOTH ways and take the MAX — a truly
             # fabricated join (different entities, e.g. touchpoint_type = channel) is low
             # BOTH ways and still flags; a subset FK is high one way and passes.
-            ov_ab = _probe_overlap(conn, t_a, c_a, t_b, c_b)
-            ov_ba = _probe_overlap(conn, t_b, c_b, t_a, c_a)
+            failed: list[str] = []
+            ov_ab = _probe_overlap(conn, t_a, c_a, t_b, c_b, failed)
+            ov_ba = _probe_overlap(conn, t_b, c_b, t_a, c_a, failed)
             overlaps = [o for o in (ov_ab, ov_ba) if o is not None]
+            if not overlaps and failed:
+                run.unchecked.append(f"{t_a}.{c_a} ↔ {t_b}.{c_b}: {failed[0]}")
+                continue
             if overlaps and max(overlaps) < threshold:
                 raw = max(overlaps)
                 recon = None
                 try:
-                    recon = reconcile_join_keys(conn, t_a, c_a, t_b, c_b, raw)
+                    recon = reconcile_join_keys(conn, t_a, c_a, t_b, c_b, raw, dialect=dialect)
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
                     tolerate(exc, "join_guard: reconciliation skipped — mismatch still surfaced",
@@ -379,13 +646,17 @@ def check_join_value_domains(
         from aughor.kernel.errors import tolerate
         tolerate(exc, "join_guard: domain check failed — no warnings emitted",
                  counter="join_guard.check_error")
+        run.unchecked.append(f"the check failed: {_why(exc)}")
+    if run.unchecked:
+        from aughor.stats import bump
+        bump("guard.join_domain.unchecked", len(run.unchecked))
     if warnings:
         from aughor.stats import bump
         bump("guard.join_domain.fired", len(warnings))
         reconciled = sum(1 for w in warnings if w.reconciliation is not None)
         if reconciled:
             bump("guard.join_domain.reconciled", reconciled)
-    return warnings
+    return run
 
 
 # ── Build-time joinability: PREVENT a value-disjoint join, not just catch it ─────────
@@ -539,7 +810,6 @@ def render_verified_joins(verified: list, rejected: list) -> str:
 # close-match requirement keeps it high-precision: a genuinely-valid-but-empty
 # filter (e.g. status='refunded' with no refunds yet) has no near neighbour and is
 # left alone.
-_FILTER_MAX_PROBES = 6
 _ENUMERABLE_MAX_DISTINCT = 50
 _HIGHCARD_SAMPLE = 10000   # CHESS used N=10000 sampled distinct values for its value index
 _HIGHCARD_CUTOFF = 0.82    # stricter than the ≤50-distinct 0.6 — high-cardinality binding is riskier
@@ -629,10 +899,12 @@ def _extract_filter_literals(sql: str, *, dialects: tuple = (None,),
     alias_map: dict[str, str] = {}
     base_tables: list[str] = []
     for tbl in tree.find_all(exp.Table):
-        real = f"{tbl.db}.{tbl.name}" if tbl.db else (tbl.name or "")
+        real = _table_name(tbl)
         alias = tbl.alias or real
         if alias:
             alias_map[alias.lower()] = real
+        if not tbl.alias and tbl.name:
+            alias_map.setdefault(tbl.name.lower(), real)
         if real:
             base_tables.append(real)
     distinct_bases = set(base_tables)
@@ -683,6 +955,64 @@ def _extract_filter_literals(sql: str, *, dialects: tuple = (None,),
     return out
 
 
+#: The placeholder a filter probe's body reads, replaced by the source the probe runs against.
+_SRC_TOKEN = "{src}"
+_SRC_NAME = "_aughor_src"
+
+
+@dataclass(frozen=True)
+class _Source:
+    """Where a filtered column's values are read: a stored table (``node`` None), or a CTE or a subquery the
+    statement defines (``node`` is it; ``tree`` is the statement, whose CTEs every probe of it carries)."""
+    name: str
+    node: Any = None
+    tree: Any = None
+    dialect: str = ""
+
+
+def _source(src: "_Source | str") -> _Source:
+    return src if isinstance(src, _Source) else _Source(str(src))
+
+
+def _defined_sources(tree, dialect: str) -> dict:
+    """The CTEs and subqueries ``tree`` defines, by lowercased name or alias."""
+    import sqlglot.expressions as exp
+    out: dict = {}
+    for cte in tree.find_all(exp.CTE):
+        out.setdefault(cte.alias_or_name.lower(), _Source(cte.alias_or_name, cte, tree, dialect))
+    for sq in tree.find_all(exp.Subquery):
+        if sq.alias:
+            out.setdefault(sq.alias.lower(), _Source(sq.alias, sq, tree, dialect))
+    return out
+
+
+def _probe(conn: "DatabaseConnection", label: str, src: "_Source | str", body: str):
+    """Run ``body`` — platform SQL in DuckDB's spelling that reads the table ``{src}`` — against ``src``.
+
+    A stored table is quoted into the body, which is declared DuckDB and translated by the door. A CTE or a
+    subquery the statement defines is the author's own SQL, so the body is parsed as DuckDB, ``{src}`` is replaced
+    by that source, the statement's CTEs are carried in, and the whole is rendered in the statement's dialect and
+    declared nothing: declaring DuckDB would translate the native fragment and corrupt it (GM-1). On theLook 51 of
+    the 251 statements that filter on a text value filter a CTE's or a subquery's column, and each probe read a
+    table that does not exist (GM-4)."""
+    src = _source(src)
+    if src.node is None:
+        return conn.execute(label, body.replace(_SRC_TOKEN, _quote_table(src.name)), sql_dialect="duckdb")
+    import sqlglot
+    import sqlglot.expressions as exp
+    probe = sqlglot.parse_one(body.replace(_SRC_TOKEN, _SRC_NAME), read="duckdb")
+    for placeholder in list(probe.find_all(exp.Table)):
+        if placeholder.name == _SRC_NAME:
+            placeholder.replace(src.node.copy() if isinstance(src.node, exp.Subquery)
+                                else exp.Table(this=exp.to_identifier(src.name)))
+    carried: dict = {}
+    for cte in src.tree.find_all(exp.CTE):
+        carried.setdefault(cte.alias_or_name.lower(), cte)
+    for cte in carried.values():
+        probe = probe.with_(cte.alias_or_name, as_=cte.this.copy())
+    return conn.execute(label, probe.sql(dialect=src.dialect or None))
+
+
 def _persisted_value_sample(conn: "DatabaseConnection", t: str, c: str) -> "list[str]":
     """The R5 persisted entity-value sample for (table, column), [] when absent.
     Read through the kernel registry seam (the agent registers the profiler's
@@ -708,8 +1038,9 @@ def extract_filter_literals(sql: str, *, dialects: tuple = (None,),
     return _extract_filter_literals(sql, dialects=dialects, numbers=numbers)
 
 
-def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
-                            litops: "set[tuple[str, str]]") -> list[FilterDomainWarning]:
+def _highcard_bind_warnings(conn: "DatabaseConnection", t: "_Source | str", c: str,
+                            litops: "set[tuple[str, str]]",
+                            unchecked: "list[str] | None" = None) -> list[FilterDomainWarning]:
     """Bind a guessed literal on a HIGH-cardinality text column (names/SKUs/cities) to its nearest
     real value — but ONLY when the literal is execution-confirmed absent and a close neighbour exists
     in the column's value domain. Positive predicates only (=, IN): never weaken a negation
@@ -718,23 +1049,31 @@ def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
     Sample source (R5 deferred, closed): the PERSISTED entity-value sample from the
     profiler is consulted first — an offline bind costs zero warehouse scans. Only
     when it is absent or yields no neighbour does the live bounded SELECT DISTINCT
-    run (staleness-safe: a value newer than the last profile still binds)."""
+    run (staleness-safe: a value newer than the last profile still binds).
+
+    A probe the warehouse refused is not a value's absence (GM-4): an existence probe that errored read as
+    "absent" and bound a literal that may be right to its nearest neighbour. The reason goes to ``unchecked``
+    and that literal is left as written."""
+    from aughor.sql.guard_run import why as _why
     from aughor.sql.value_index import ValueIndex
     out: list[FilterDomainWarning] = []
     positives = [(lit, op) for lit, op in litops if op in ("=", "IN")]
     if not positives:
         return out
-    qt, qc = _quote_table(t), f'"{c}"'
+    src = _source(t)
+    t = src.name
+    qc = f'"{c}"'
     offline: "ValueIndex | None" = None
     offline_loaded = False
     index: "ValueIndex | None" = None
     for lit, op in positives:
         safe = lit.replace("'", "''")
-        exists = conn.execute(
-            "__filter_highcard_exists__",
-            f"SELECT 1 FROM {qt} WHERE LOWER(CAST({qc} AS VARCHAR)) = LOWER('{safe}') LIMIT 1",
-            sql_dialect="duckdb",
-        )
+        exists = _probe(conn, "__filter_highcard_exists__", src,
+                        f"SELECT 1 FROM {{src}} WHERE LOWER(CAST({qc} AS VARCHAR)) = LOWER('{safe}') LIMIT 1")
+        if exists is not None and getattr(exists, "error", None):
+            if unchecked is not None:
+                unchecked.append(f"whether '{lit}' is a value of {t}.{c} could not be read: {_why(exists.error)}")
+            continue
         if exists and exists.rows:
             continue  # the literal is a real value — do not second-guess it
         if not offline_loaded:  # warmed profiler sample, loaded once per column
@@ -746,21 +1085,15 @@ def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
             # The sample may predate the last data refresh — a 1-row probe confirms the
             # suggestion still exists before it can drive a rewrite (never bind to a ghost).
             _bsafe = best.replace("'", "''")
-            _bexists = conn.execute(
-                "__filter_highcard_exists__",
-                f"SELECT 1 FROM {qt} WHERE LOWER(CAST({qc} AS VARCHAR)) = LOWER('{_bsafe}') LIMIT 1",
-                sql_dialect="duckdb",
-            )
+            _bexists = _probe(conn, "__filter_highcard_exists__", src,
+                              f"SELECT 1 FROM {{src}} WHERE LOWER(CAST({qc} AS VARCHAR)) = LOWER('{_bsafe}') LIMIT 1")
             if not (_bexists and _bexists.rows):
                 best = None
         if best is None:
             if index is None:  # live fallback, built once per column, only when needed
-                res = conn.execute(
-                    "__filter_highcard_sample__",
-                    f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt} "
-                    f"WHERE {qc} IS NOT NULL LIMIT {_HIGHCARD_SAMPLE}",
-                    sql_dialect="duckdb",
-                )
+                res = _probe(conn, "__filter_highcard_sample__", src,
+                             f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {{src}} "
+                             f"WHERE {qc} IS NOT NULL LIMIT {_HIGHCARD_SAMPLE}")
                 sample = [r[0] for r in res.rows if r and r[0] is not None] if res and res.rows else []
                 index = ValueIndex(sample)
             best = index.best_match(lit, cutoff=_HIGHCARD_CUTOFF)
@@ -774,14 +1107,16 @@ _SIBLING_MAX_COLUMNS = 16      # text columns of the table probed per literal (L
 _SIBLING_TEXT_TYPES = ("varchar", "text", "string", "char", "nvarchar", "bpchar", "enum")
 
 
-def _table_text_columns(conn: "DatabaseConnection", table: str) -> "list[str] | None":
+def _table_text_columns(conn: "DatabaseConnection", table: "_Source | str") -> "list[str] | None":
     """The text-typed columns of `table`, spelled as the schema declares them. Names come
     from a zero-row projection (declared case survives; the cached type map lowercases);
     types from the connection's cached introspection narrow to text columns when available,
     and every column is a candidate when they are not (a CAST-to-VARCHAR equality on a
     numeric column simply never matches). None when even the projection fails."""
+    src = _source(table)
+    table = src.name
     try:
-        res = conn.execute("__filter_sibling_cols__", f"SELECT * FROM {_quote_table(table)} LIMIT 0", sql_dialect="duckdb")
+        res = _probe(conn, "__filter_sibling_cols__", src, "SELECT * FROM {src} LIMIT 0")
     except Exception:
         return None
     if res is None or res.error or not res.columns:
@@ -804,59 +1139,75 @@ def _table_text_columns(conn: "DatabaseConnection", table: str) -> "list[str] | 
     return narrowed or declared
 
 
-def _sibling_columns_holding(conn: "DatabaseConnection", table: str, col: str,
-                             lit: str) -> "list[str] | None":
+def _sibling_columns_holding(conn: "DatabaseConnection", table: "_Source | str", col: str,
+                             lit: str) -> "tuple[list[str], bool] | None":
     """Which OTHER text columns of `table` hold `lit` as an exact stored value. Bounded
     (LIMIT 1 per column, ≤ _SIBLING_MAX_COLUMNS columns). Returns the column names as the
-    schema spells them, [] when none holds it, None when the probe could not run."""
-    cols = _table_text_columns(conn, table)
+    schema spells them and whether every other text column was searched — an empty list after
+    a search the bound cut short is not "no other column holds it" (GM-4) — or None when the
+    probe could not run."""
+    src = _source(table)
+    cols = _table_text_columns(conn, src)
     if cols is None:
         return None
     holders: list[str] = []
-    qt = _quote_table(table)
     safe_lit = lit.replace("'", "''")
-    probed = 0
-    for c in cols:
-        if c.lower() == col.lower():
-            continue
-        if probed >= _SIBLING_MAX_COLUMNS:
-            break
-        probed += 1
+    others = [c for c in cols if c.lower() != col.lower()]
+    for c in others[:_SIBLING_MAX_COLUMNS]:
         try:
-            res = conn.execute(
-                "__filter_sibling_probe__",
-                f'SELECT 1 FROM {qt} WHERE CAST("{c}" AS VARCHAR) = \'{safe_lit}\' LIMIT 1',
-                sql_dialect="duckdb",
-            )
+            res = _probe(conn, "__filter_sibling_probe__", src,
+                         f'SELECT 1 FROM {{src}} WHERE CAST("{c}" AS VARCHAR) = \'{safe_lit}\' LIMIT 1')
         except Exception:
             return None
         if res is None or res.error:
             return None
         if res.rows:
             holders.append(c)
-    return holders
+    return holders, len(others) <= _SIBLING_MAX_COLUMNS
 
 
 def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[FilterDomainWarning]:
     """Flag WHERE/HAVING equality/IN literals that don't exist in an enumerable column's
-    actual value domain (a guessed enum value). Fail-open; never raises."""
+    actual value domain (a guessed enum value). Fail-open; never raises. An empty list
+    does not say every filter was checked; :func:`filter_domain_check` does (GM-4)."""
+    return filter_domain_check(conn, sql).findings
+
+
+def filter_domain_check(conn: "DatabaseConnection", sql: str) -> "GuardRun":
+    """The filter value-domain guard's run over ``sql``: its warnings, and each filter it could not check (GM-4)
+    — a statement it could not parse, a column whose values the warehouse would not list, a literal whose search
+    of the table's other columns failed or was cut short. Never raises.
+
+    The statement is read in its own dialect, every filtered column is probed, and a CTE's or a subquery's
+    column is read through the statement's own CTEs (`_probe`) — the choices the user made for the join guard,
+    2026-09-29, which the filter guard shares."""
     import difflib
     from collections import defaultdict
-    warnings: list[FilterDomainWarning] = []
+    from aughor.db.dialects import authored_dialect
+    from aughor.sql.guard_run import GuardRun, why as _why
+    run = GuardRun("filter-domain")
+    warnings: list[FilterDomainWarning] = run.findings
     sibling_budget = [_SIBLING_MAX_LITERALS]   # per-query cap on sibling-column probes
+    dialect = _readable(authored_dialect(conn))
     try:
         by_col: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
-        for t, c, lit, op in _extract_filter_literals(sql):
+        tree = _parse(sql, dialect)
+        literals = _extract_filter_literals(sql, dialects=tuple(dict.fromkeys((dialect, None))))
+        if not literals and _FILTER_WORD.search(sql or "") and tree is None:
+            run.unchecked.append("the statement could not be parsed to find its filter values")
+        defined = _defined_sources(tree, dialect) if tree is not None else {}
+        for t, c, lit, op in literals:
             by_col[(t, c)].add((lit, op))
-        for (t, c), litops in list(by_col.items())[:_FILTER_MAX_PROBES]:
+        for (t, c), litops in by_col.items():
             try:
-                qt, qc = _quote_table(t), f'"{c}"'
-                res = conn.execute(
-                    "__filter_domain_probe__",
-                    f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt} "
-                    f"WHERE {qc} IS NOT NULL LIMIT {_ENUMERABLE_MAX_DISTINCT + 1}",
-                    sql_dialect="duckdb",
-                )
+                src = defined.get(t.lower()) or _Source(t)
+                qc = f'"{c}"'
+                res = _probe(conn, "__filter_domain_probe__", src,
+                             f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {{src}} "
+                             f"WHERE {qc} IS NOT NULL LIMIT {_ENUMERABLE_MAX_DISTINCT + 1}")
+                if res is not None and getattr(res, "error", None):
+                    run.unchecked.append(f"the values of {t}.{c} could not be read: {_why(res.error)}")
+                    continue
                 if not res or not res.rows:
                     continue
                 vals = [r[0] for r in res.rows if r and r[0] is not None]
@@ -866,7 +1217,7 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
                     # High-cardinality column: the ≤50 enumeration can't see the domain. Use a
                     # CHESS-style value index over a bounded sample, but only bind a literal that is
                     # execution-confirmed absent (so we never second-guess a real value).
-                    warnings.extend(_highcard_bind_warnings(conn, t, c, litops))
+                    warnings.extend(_highcard_bind_warnings(conn, src, c, litops, run.unchecked))
                     continue
                 exact = set(vals)
                 by_lower = {v.lower(): v for v in vals}   # lower -> stored casing
@@ -889,27 +1240,44 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
                     # table (the deep path's `CHANNEL_LVL_0 = 'Direkteingabe'` when it is a
                     # CHANNEL_LVL_1 value — every query returned [] and the report invented a
                     # segment), or it lives nowhere — and then nothing may be invented.
+                    # The domain above is complete, so the predicate matches no row; when which other column holds
+                    # the value could not be looked up, or not everywhere, that is said, not repaired (GM-4).
                     if sibling_budget[0] <= 0:
+                        run.unchecked.append(f"'{lit}' is not a stored value of {t}.{c}; the table's other columns "
+                                             f"were not searched for it (the guard searches for at most "
+                                             f"{_SIBLING_MAX_LITERALS} such values per statement)")
                         continue
                     sibling_budget[0] -= 1
-                    holders = _sibling_columns_holding(conn, t, c, lit)
-                    if holders is None:
-                        continue                     # probe failed — stay fail-open, say nothing
+                    searched = _sibling_columns_holding(conn, src, c, lit)
+                    if searched is None:
+                        run.unchecked.append(f"'{lit}' is not a stored value of {t}.{c}, and the table's other "
+                                             "columns could not be searched for it")
+                        continue
+                    holders, everywhere = searched
                     if len(holders) == 1:
                         warnings.append(FilterDomainWarning(t, c, lit, vals, None, op,
                                                             column_suggestion=holders[0]))
-                    elif not holders:
+                    elif not holders and everywhere:
                         warnings.append(FilterDomainWarning(t, c, lit, vals, None, op, novel=True))
+                    elif not holders:
+                        run.unchecked.append(f"'{lit}' is not a stored value of {t}.{c}; only "
+                                             f"{_SIBLING_MAX_COLUMNS} of the table's other text columns were "
+                                             "searched for it")
                     # 2+ holders: ambiguous — no repair, no warning (fail-open)
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "filter_guard: value-domain probe failed — query allowed to proceed",
                          counter="filter_guard.probe_error")
+                run.unchecked.append(f"the values of {t}.{c} could not be read: {_why(exc)}")
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "filter_guard: check failed — no warnings emitted",
                  counter="filter_guard.check_error")
-    return warnings
+        run.unchecked.append(f"the check failed: {_why(exc)}")
+    if run.unchecked:
+        from aughor.stats import bump
+        bump("guard.filter_domain.unchecked", len(run.unchecked))
+    return run
 
 
 def repair_filter_literals(sql: str, warnings: list["FilterDomainWarning"],

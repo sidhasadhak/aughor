@@ -65,6 +65,9 @@ class AmbiguityVerdict:
     previews: list = field(default_factory=list)  # a compact result preview per option (parallel)
     source: str = "structural"
     n_groups: int = 0                              # how many distinct result-groups the candidates fell into
+    # GM-4 — readings whose SQL could not be run. Any one of them leaves "not ambiguous" undecided: the
+    # reading that failed is the one that might have diverged.
+    unchecked: int = 0
 
     def to_event(self) -> dict:
         return {"question": self.question, "options": list(self.options),
@@ -123,20 +126,23 @@ def assess_structural_ambiguity(question: str, candidates, execute_fn: ExecuteFn
     when ≥2 distinct groups remain, the question is structurally ambiguous and each group's label
     becomes a grounded option chip. Pure: ``execute_fn`` is injected."""
     groups: dict = {}   # signature -> (the first CandidateReading that produced it, its preview)
+    failed = 0          # readings that could not be run — counted, never read as agreement (GM-4)
     for c in candidates or []:
         if not getattr(c, "sql", "").strip():
             continue
         try:
             ok, rows, _ = execute_fn(c.sql)
         except Exception:
+            failed += 1
             continue
         if not ok:
+            failed += 1
             continue
         sig = _signature(rows)
         groups.setdefault(sig, (c, _preview(rows)))
     distinct = list(groups.values())
     if len(distinct) < 2:
-        return AmbiguityVerdict(False, n_groups=len(distinct))
+        return AmbiguityVerdict(False, n_groups=len(distinct), unchecked=failed)
     labelled = [(c, p) for (c, p) in distinct if c.label][:4]
     return AmbiguityVerdict(
         True,
@@ -144,6 +150,7 @@ def assess_structural_ambiguity(question: str, candidates, execute_fn: ExecuteFn
         options=[c.label for c, _p in labelled],
         previews=[p for _c, p in labelled],
         n_groups=len(distinct),
+        unchecked=failed,
     )
 
 

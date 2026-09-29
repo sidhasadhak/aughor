@@ -60,6 +60,11 @@ class _FakeDB:
                 return rows
         return []
 
+    def execute(self, label, sql, sql_dialect=None):
+        """The resolver's live probe reads `execute`, which tells an error from no match (GM-4)."""
+        from types import SimpleNamespace
+        return SimpleNamespace(rows=self.rows(sql, label, sql_dialect), error=None)
+
 
 # ── entity binding (found via annotation) ─────────────────────────────────────
 

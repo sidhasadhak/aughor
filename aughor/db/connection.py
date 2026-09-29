@@ -426,8 +426,8 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
         if not filters:
             return sql, None
         from aughor.sql.rls import inject_row_filters
-        dialect = conn.dialect if getattr(conn, "writes_native_sql", False) else "duckdb"
-        filtered = inject_row_filters(sql, filters, dialect)
+        from aughor.db.dialects import authored_dialect
+        filtered = inject_row_filters(sql, filters, authored_dialect(conn))
         _passed("row-policy")
         return filtered, None
     except Exception as exc:  # noqa: BLE001 — fail CLOSED: an un-appliable policy blocks, never leaks
@@ -763,6 +763,11 @@ _PG_OID_MAP: dict[int, str] = {
 def _pg_type_name(oid: int) -> str:
     return _PG_OID_MAP.get(oid, f"TYPE({oid})")
 
+class QueryRefused(RuntimeError):
+    """The engine refused a statement a caller asked for strictly (`DatabaseConnection.rows(strict=True)`): the
+    read did not happen, which is not the same as a read that found no rows (GM-4)."""
+
+
 class DatabaseConnection(ABC):
     dialect: str = "duckdb"
     poolable: bool = True  # may this connection be reused via the pool? (see db/pool.py)
@@ -920,25 +925,34 @@ class DatabaseConnection(ABC):
 
     # ── Convenience adapters ──────────────────────────────────────────────────
     # Replace the ad-hoc "execute → check .error → pull .rows/.rows[0][0]" wrappers
-    # scattered across the codebase. Best-effort: any error returns []/None, never raises.
+    # scattered across the codebase. Best-effort: any error returns []/None, never raises —
+    # unless the caller passes ``strict``, when an error raises `QueryRefused` (GM-4): an
+    # empty result a caller acts on must not be a refusal it cannot see.
     # Each takes the door's ``sql_dialect`` and applies it before `execute`, which then
     # receives a statement already written for this engine.
 
-    def rows(self, sql: str, *, label: str = "__adapter__", sql_dialect: str | None = None) -> list:
-        """Run SQL and return its rows; [] on error. A declaration the door cannot read raises
-        before the run, because swallowing it would read as an empty result."""
+    def rows(self, sql: str, *, label: str = "__adapter__", sql_dialect: str | None = None,
+             strict: bool = False) -> list:
+        """Run SQL and return its rows; [] on error, or `QueryRefused` when ``strict``. A declaration
+        the door cannot read raises before the run, because swallowing it would read as an empty result."""
         statement = sql_for_engine(self, sql, sql_dialect)
         try:
             res = self.execute(label, statement)
-            if getattr(res, "error", None):
-                return []
-            return list(getattr(res, "rows", None) or [])
-        except Exception:
+        except Exception as exc:
+            if strict:
+                raise QueryRefused(str(exc)) from exc
             return []
+        if getattr(res, "error", None):
+            if strict:
+                raise QueryRefused(str(res.error))
+            return []
+        return list(getattr(res, "rows", None) or [])
 
-    def scalar(self, sql: str, *, label: str = "__adapter__", cast=float, sql_dialect: str | None = None):
-        """Run SQL and return the first cell coerced via ``cast`` (default float), or None."""
-        rs = self.rows(sql, label=label, sql_dialect=sql_dialect)
+    def scalar(self, sql: str, *, label: str = "__adapter__", cast=float, sql_dialect: str | None = None,
+               strict: bool = False):
+        """Run SQL and return the first cell coerced via ``cast`` (default float), or None — `QueryRefused`
+        on an error when ``strict``."""
+        rs = self.rows(sql, label=label, sql_dialect=sql_dialect, strict=strict)
         if not rs:
             return None
         row = rs[0]

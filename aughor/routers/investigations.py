@@ -2327,6 +2327,13 @@ def _answer_core(
                             emit("done", {})
                             return _AnswerCoreResult(outcome="clarify", clarify=_clarify,
                                                      guard_receipts=receipts)
+                        if _sv.unchecked:
+                            # GM-4 — a reading that could not be run is not a reading that agreed: the
+                            # probe did not decide, and the answer says so rather than passing it.
+                            _receipt({"guard": "ambiguity_probe", "action": "caveated",
+                                      "detail": (f"{_sv.unchecked} of {len(_cands)} readings of the question "
+                                                 "could not be run, so whether it has more than one reading "
+                                                 "was not checked")})
             except Exception:
                 logger.debug("ambiguity probe failed; proceeding to answer", exc_info=True)
 
@@ -2593,11 +2600,14 @@ def _answer_core(
         # silently matches ZERO rows, so every rate reads 0%. Probe the column's real
         # domain and force a repair when an enumerable value is a near-miss typo.
         _filter_fix_hint = ""
+        _unchecked_caveats: list[str] = []   # GM-4 — what a guard here could not check, said on the result
         if final_sql:
             try:
-                from aughor.sql.join_guard import check_filter_value_domains
-                _fw = check_filter_value_domains(db, final_sql)
-                _checked.append("filter-domain")
+                from aughor.sql.join_guard import filter_domain_check
+                _frun = filter_domain_check(db, final_sql)
+                _fw = _frun.findings
+                _checked.append(_frun.door)
+                _unchecked_caveats.extend(_frun.caveats())
                 if _fw:
                     _filter_fix_hint = " | ".join(w.to_prompt_text() for w in _fw)
             except Exception as _e:
@@ -2773,7 +2783,10 @@ def _answer_core(
         # GM-3 — the path is a receipt: the connection's door stamped its own steps on the result; the
         # quick path's guards, and an adopted repair, follow them.
         from aughor.db.doors import add as _add_doors
-        _add_doors(result, ["repaired:model" if _c == "repaired" else f"guarded:{_c}" for _c in _checked])
+        _add_doors(result, [_c if ":" in _c else "repaired:model" if _c == "repaired" else f"guarded:{_c}"
+                            for _c in _checked])
+        if _unchecked_caveats:
+            result.caveats = list(dict.fromkeys([*(result.caveats or []), *_unchecked_caveats]))
 
         if result.error:
             from aughor.agent.escalate import assess_escalation
