@@ -242,11 +242,12 @@ def _quote_ref(table: str) -> str:
 
 def _raw_rows(conn: "DatabaseConnection", sql: str) -> tuple[list[str], list]:
     """Run a metadata query, preferring raw_execute (bypasses the SELECT-only
-    validator that rejects PRAGMA/DESCRIBE) and falling back to execute()."""
+    validator that rejects PRAGMA/DESCRIBE) and falling back to execute(), declared
+    DuckDB so the door renders it for the engine (GM-1)."""
     if getattr(conn, "dialect", "") == "duckdb" and hasattr(conn, "raw_execute"):
         cols, rows, _ = conn.raw_execute(sql)
         return cols, rows
-    result = conn.execute("_catalog", sql)
+    result = conn.execute("_catalog", sql, sql_dialect="duckdb")
     return list(getattr(result, "columns", []) or []), list(result.rows)
 
 
@@ -265,10 +266,13 @@ def table_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, str
 def _fetch_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, str, bool]]:
     """Return [(col_name, col_type, nullable), ...] preserving exact DB case."""
     ref = _quote_ref(table)
+    # DESCRIBE and PRAGMA are DuckDB's and SQLite's own statements, with no equivalent the door could
+    # render: any other engine refused both, two failed round trips per table, before step 3 answered.
+    speaks_describe = getattr(conn, "dialect", "duckdb") in ("duckdb", "sqlite")
 
     # 1. DESCRIBE — most reliable for DuckDB/MotherDuck across attached DBs.
     try:
-        _, rows = _raw_rows(conn, f"DESCRIBE {ref}")
+        _, rows = _raw_rows(conn, f"DESCRIBE {ref}") if speaks_describe else ([], [])
         if rows:
             # DESCRIBE → [column_name, column_type, null, key, default, extra]
             return [
@@ -281,7 +285,7 @@ def _fetch_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
 
     # 2. PRAGMA table_info → [cid, name, type, notnull, dflt_value, pk]
     try:
-        _, rows = _raw_rows(conn, f"PRAGMA table_info({ref})")
+        _, rows = _raw_rows(conn, f"PRAGMA table_info({ref})") if speaks_describe else ([], [])
         if rows:
             return [(str(r[1]), str(r[2]), not bool(r[3])) for r in rows]
     except Exception:

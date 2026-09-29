@@ -8,15 +8,16 @@
     {
       "name": "Average Order Value (AOV)",
       "aliases": ["AOV", "average basket value", "average ticket"],
-      "definition": "Average revenue per completed order.",
-      "formula": "SUM(order_revenue) / COUNT(DISTINCT order_id)",
-      "grain": "Order grain. If revenue lives on line items, SUM the line revenue and divide by COUNT(DISTINCT order_id) — never average line totals.",
+      "definition": "Merchandise value per completed order: each order's lines (quantity × unit price) summed, before refunds, discounts and fees — the same basis as GMV — over the number of distinct completed orders. Cancelled, test and fraud orders are left out.",
+      "formula": "SUM(line_quantity * line_unit_price) / NULLIF(COUNT(DISTINCT order_id), 0)",
+      "grain": "Order grain. Sum the line value to the order, then divide by COUNT(DISTINCT order_id) — never average line totals. Where a warehouse keeps only an order total, sum it at one row per order.",
       "anti_patterns": [
         "AVG(order_items.line_total) computes average LINE value, not order value.",
-        "After joining orders to items, COUNT(*) counts lines, not orders — dividing revenue by it understates AOV."
+        "After joining orders to items, COUNT(*) counts lines, not orders — dividing revenue by it understates AOV.",
+        "Taking refunds or discounts out of the numerator: that is net revenue per order, a different figure. AOV here is gross, on GMV's basis, so AOV × orders = GMV."
       ],
       "sane_range": "USD, strictly positive; typically tens to low-hundreds for DTC.",
-      "needs_concepts": ["orders", "order or line revenue"]
+      "needs_concepts": ["orders", "order line quantity and unit price, or an order total"]
     },
     {
       "name": "Cart-to-Order Conversion Rate",
@@ -59,17 +60,18 @@
       "needs_concepts": ["units sold / COGS", "inventory snapshots or movements"]
     },
     {
-      "name": "Return / Refund Rate",
-      "aliases": ["return rate", "refund rate", "RMA rate"],
-      "definition": "Share of orders (or units) that are returned/refunded.",
-      "formula": "COUNT(DISTINCT refunded_order_id) / NULLIF(COUNT(DISTINCT eligible_order_id), 0)",
-      "grain": "Order grain. Denominator must be orders ELIGIBLE to be returned (e.g. delivered), not all rows. Match numerator and denominator population.",
+      "name": "Return Rate",
+      "aliases": ["item return rate", "returns rate", "RMA rate"],
+      "definition": "Share of sold lines the customer sent back. The same metric as the package's governed return_rate (metrics/return_rate.yaml).",
+      "formula": "SUM(CASE WHEN returned_at IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0) over sold lines",
+      "grain": "Line grain: sold lines over a period. Take cancelled lines out of the population where they are marked — a cancelled line never shipped, so it could not be returned.",
       "anti_patterns": [
-        "Numerator = refunds but denominator = all orders including undelivered → a 100%-looking rate or a meaningless ratio.",
-        "Counting refund rows (a refund can have multiple lines) instead of distinct refunded orders inflates the numerator."
+        "A refund is not a return: money can go back without the goods (a damaged item refunded in place), and goods can come back without money (an exchange, store credit). Refund rate is its own metric.",
+        "Counting ORDERS with a return over orders is the order return rate — a different, higher figure: an order with one returned line of five counts whole.",
+        "Counting return ROWS rather than returned lines: one line can carry several rows in a returns table."
       ],
       "sane_range": "ratio 0..1; apparel/beauty often 0.1–0.4.",
-      "needs_concepts": ["orders with status", "refunds / returns"]
+      "needs_concepts": ["order lines", "a return date or flag per line"]
     },
     {
       "name": "Repeat Purchase Rate",

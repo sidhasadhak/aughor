@@ -26,6 +26,7 @@ import duckdb
 from aughor.db.duckdb_ext import prepare_extensions
 
 from aughor.connectors.base import Connector
+from aughor.db.doors import through_door
 from aughor.control_plane.contracts.execution import QueryResult
 
 if TYPE_CHECKING:
@@ -170,12 +171,13 @@ class FederatedConnection(Connector):
         cols = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
         return cols, self._duckdb.fetchall()
 
-    def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        return self._duckdb_read(self._duckdb, hypothesis_id, sql, MAX_ROWS)
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._duckdb_read(self._duckdb, hypothesis_id, statement, MAX_ROWS))
 
-    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
-        return self._duckdb_read(self._duckdb, hypothesis_id, sql, max(1, max_rows))
+        return through_door(self, sql, sql_dialect, lambda statement: self._duckdb_read(self._duckdb, hypothesis_id, statement, max(1, max_rows)))
 
     def get_schema(self) -> str:
         """Build a federated schema context showing all member namespaces."""

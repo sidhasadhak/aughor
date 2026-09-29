@@ -26,12 +26,12 @@ def _query(db, sql: str) -> list:
     NOT the phantom ``execute_query`` the runner once called → "No condition met" forever.
 
     The SQL a monitor carries is platform SQL in DuckDB's dialect (`sentinel.daily_series_sql`
-    double-quotes its identifiers and says so), so it is handed to the connection through
-    `native_sql`: on BigQuery a double-quoted identifier is a string literal, and theLook's
-    Units Sold watch failed every minute with "Invalid date: 'created_at'" (2026-09-26,
-    2,283 errors on the Security page) because this wrapper ran it as written."""
-    from aughor.db.dialects import native_sql
-    return db.rows(native_sql(db, sql), label="__monitor__")
+    double-quotes its identifiers and says so), and it is declared so to the door, which
+    translates it for the engine (GM-1): on BigQuery a double-quoted identifier is a string
+    literal, and theLook's Units Sold watch failed every minute with "Invalid date:
+    'created_at'" (2026-09-26, 2,283 errors on the Security page) because this wrapper ran
+    it as written."""
+    return db.rows(sql, label="__monitor__", sql_dialect="duckdb")
 
 
 def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
@@ -69,12 +69,11 @@ def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
 
 
 def _scalar(db, sql: str) -> Optional[float]:
-    """First cell of a monitor query as float, or None. Wrapper over ``db.scalar`` — through
-    `native_sql`, as `_query` is: the threshold, any-change and trend-reversal monitors read
-    this path, and the gate-map census (2026-09-26) found it still sending DuckDB-quoted SQL
-    to native engines after the anomaly path was fixed."""
-    from aughor.db.dialects import native_sql
-    return db.scalar(native_sql(db, sql), label="__monitor__", cast=float)
+    """First cell of a monitor query as float, or None. Wrapper over ``db.scalar``, declared
+    DuckDB as `_query` is: the threshold, any-change and trend-reversal monitors read this
+    path, and the gate-map census (2026-09-26) found it still sending DuckDB-quoted SQL to
+    native engines after the anomaly path was fixed."""
+    return db.scalar(sql, label="__monitor__", cast=float, sql_dialect="duckdb")
 
 
 def _last_alert(monitor_id: str) -> Optional[MonitorAlert]:

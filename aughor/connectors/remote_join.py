@@ -95,6 +95,20 @@ def _qident(name: str) -> str:
     return ".".join('"' + p.replace('"', '""') + '"' for p in name.split("."))
 
 
+#: Where a caller's right-side sub-query sits while the platform's part of the keyed read is rendered (GM-1).
+_SUBQUERY_SLOT = "__aughor_right_source__"
+
+
+def _right_statement(right_conn: "DatabaseConnection", sql: str, subquery: str | None) -> str:
+    """The keyed read as ``right_conn`` runs it. The platform writes its part in DuckDB's spelling — quoted names,
+    the reconcile expressions — and the door's step renders it for the engine (GM-1). A caller's sub-query is
+    written for that engine and is spliced in after, untouched: rendered with the rest, a BigQuery
+    `DATE_TRUNC(d, MONTH)` would be read as DuckDB's and its arguments swapped."""
+    from aughor.db.dialects import sql_for_engine
+    statement = sql_for_engine(right_conn, sql, "duckdb")
+    return statement.replace(_SUBQUERY_SLOT, f"({subquery})", 1) if subquery else statement
+
+
 def _idx(cols: list[str], name: str) -> int:
     return cols.index(name) if name in cols else -1
 
@@ -135,6 +149,7 @@ def _distinct_keys(rows: list, li: int) -> list[str]:
 def _fetch_right(
     right_conn: "DatabaseConnection", from_clause: str, right_cols: list[str] | None,
     jk_expr: str, in_values: list[str], key_chunk: int, max_rows: int, *, canon: bool = True,
+    subquery: str | None = None,
 ) -> tuple[list[str], dict[str, list[list]], int, str | None]:
     """Fetch right rows whose join-key expression ``jk_expr`` is IN ``in_values`` (batched).
 
@@ -149,7 +164,7 @@ def _fetch_right(
         in_list = ", ".join(_sql_literal(v) for v in chunk)
         sql = f"SELECT {sel}, {jk_expr} AS __jk FROM {from_clause} WHERE {jk_expr} IN ({in_list})"
         try:
-            res = right_conn.execute_bounded("__remote_join__", sql, max_rows)
+            res = right_conn.execute_bounded("__remote_join__", _right_statement(right_conn, sql, subquery), max_rows)
         except Exception as exc:  # noqa: BLE001 — fail-safe: never raise into the query path
             return [], {}, 0, str(exc)
         if res.error:
@@ -229,7 +244,8 @@ def batched_foreach_join(
         return _join_refused(f"the left read stopped at {len(left.rows):,} rows while more remained, and a join is "
                              "never taken from part of them")
 
-    from_clause = f"({right_sql.rstrip().rstrip(';')}) AS __rt" if right_sql else _qident(right_table)
+    subquery = right_sql.rstrip().rstrip(";") if right_sql else None
+    from_clause = f"{_SUBQUERY_SLOT} AS __rt" if subquery else _qident(right_table)
 
     raw_keys = _distinct_keys(left.rows, li)   # raw strings, so reconcile can normalize them
     if not raw_keys:
@@ -238,7 +254,7 @@ def batched_foreach_join(
     keys = _dedup([_canon_key(k) for k in raw_keys])   # canonicalized: for the IN-list + match rate
     rk = _qident(right_key)
     right_columns, by_key, fetched, err = _fetch_right(
-        right_conn, from_clause, right_cols, rk, keys, key_chunk, max_right_rows, canon=True)
+        right_conn, from_clause, right_cols, rk, keys, key_chunk, max_right_rows, canon=True, subquery=subquery)
     if err:
         logger.warning("remote_join: right query failed: %s", err)
         return _join_failed(err)
@@ -249,7 +265,7 @@ def batched_foreach_join(
 
     if reconcile and raw_rate < _RECON_LOW:
         healed = _try_reconcile(right_conn, from_clause, right_cols, right_key,
-                                raw_keys, raw_rate, key_chunk, max_right_rows)
+                                raw_keys, raw_rate, key_chunk, max_right_rows, subquery=subquery)
         if healed:
             name, pyfn, right_columns, by_key = healed
             keyfn = pyfn                                       # reconcile keys are not canonicalized
@@ -275,7 +291,8 @@ def batched_foreach_join(
 
 def _try_reconcile(
     right_conn: "DatabaseConnection", from_clause: str, right_cols: list[str] | None,
-    right_key: str, raw_keys: list[str], raw_rate: float, key_chunk: int, max_rows: int,
+    right_key: str, raw_keys: list[str], raw_rate: float, key_chunk: int, max_rows: int, *,
+    subquery: str | None = None,
 ) -> tuple[str, Callable[[str], str], list[str], dict[str, list[list]]] | None:
     """Try each paired normalization; return the first that materially lifts the match rate."""
     rk = _qident(right_key)
@@ -285,7 +302,7 @@ def _try_reconcile(
             continue
         right_columns, by_key, _fetched, err = _fetch_right(
             right_conn, from_clause, right_cols, tmpl.format(col=rk), norm_keys,
-            key_chunk, max_rows, canon=False)
+            key_chunk, max_rows, canon=False, subquery=subquery)
         if err:
             continue
         rate = _match_rate(norm_keys, by_key)
@@ -329,7 +346,6 @@ def fetch_by_keys(
     value as the source holds it rather than as text; the join itself keys on `canon_key` of each side's value, the
     form `batched_foreach_join` keys on. ``keys`` are canonical key strings. More than ``max_rows`` rows is an error,
     never a partial read, because a partial read would be summed as though it were the whole."""
-    from aughor.db.dialects import native_sql
     rk = _qident(key)
     select = ", ".join([f"{rk} AS __key", *(_qident(c) for c in columns)])
     out_columns: list[str] = []
@@ -340,8 +356,8 @@ def fetch_by_keys(
         in_list = ", ".join(_sql_literal(k) for k in chunk)
         sql = f"SELECT {select} FROM {from_clause} WHERE {f'{rk} IN ({in_list})' if chunk else '1 = 0'}"
         try:
-            # written for DuckDB: a connection that runs SQL as written reads it in its own dialect
-            result, payload = conn.read_typed_rows(label, native_sql(conn, sql), max_rows - len(out_rows) + 1)
+            # written for DuckDB, and declared so: the door translates for a connection that runs SQL as written
+            result, payload = conn.read_typed_rows(label, sql, max_rows - len(out_rows) + 1, sql_dialect="duckdb")
         except Exception as exc:  # noqa: BLE001 — a read that raised is an error result, never an exception upward
             return [], [], [], f"keyed read failed: {exc}"[:300]
         if result.error:

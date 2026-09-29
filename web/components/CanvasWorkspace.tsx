@@ -2,10 +2,9 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import type { Canvas, Connection, CanvasHistoryItem as HistoryItem } from "@/lib/api";
-import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts, deleteCanvasArtifact, getCanvasDocuments, listDocuments, getSystemFlags, type CanvasArtifact, type CanvasDocument, type DocumentEntry } from "@/lib/api";
+import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts, deleteCanvasArtifact, getCanvasDocuments, listDocuments, type CanvasArtifact, type CanvasDocument, type DocumentEntry } from "@/lib/api";
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
-import { CockpitTab } from "@/components/cockpit/CockpitTab";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
 import { LifecyclePanel } from "@/components/LifecyclePanel";
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,7 @@ import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 const ROLE = {
   back: "back", canvas: "canvas", db: "db", chat: "chat", clock: "clock",
   process: "process", catalog: "catalog", settings: "settings", close: "close",
-  check: "check", table: "table", plus: "plus", gauge: "gauge",
+  check: "check", table: "table", plus: "plus",
 } as const;
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -36,8 +35,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-/** `cockpit` exists only with the flag `cockpit.composed` on (Arc CT-4). */
-type WsTab = "chat" | "history" | "artifacts" | "cockpit";
+type WsTab = "chat" | "history" | "artifacts";
 
 // ── History tab ───────────────────────────────────────────────────────────────
 
@@ -658,18 +656,6 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
-  // Arc CT-4 — the Cockpit tab, behind `cockpit.composed`. Off, this screen has its three
-  // tabs and asks the server for nothing more than the flags it already serves.
-  const [cockpitOn, setCockpitOn] = useState(false);
-  // The cockpit runs its cards when it mounts, so it mounts when it is first opened — and
-  // stays mounted after that, like the other panels, so the tab a reader chose survives.
-  const [cockpitOpened, setCockpitOpened] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => { if (alive) setCockpitOn(!!f["cockpit.composed"]?.value); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  useEffect(() => { setCockpitOpened(false); }, [canvas.id]);
 
   const connectionId = canvas.scopes[0]?.connection_id ?? "";
   const connection = connections.find(c => c.id === connectionId);
@@ -758,8 +744,8 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
         {/* Canvas icon + name. The name and the connection's badge are the two parts of this
             row that give way when it is short of room, the badge first: with a long name and
             four tabs the row was wider than its box, and the whole workspace slid sideways
-            under the sidebar when a tab took focus (seen at 1176px, on the first install to
-            show the Cockpit tab). The name keeps room for a word. */}
+            under the sidebar when a tab took focus (seen at 1176px, when the canvas briefly
+            had a fourth tab). The name keeps room for a word. */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 64, flexShrink: 1 }}>
           <div style={{
             width: 22, height: 22, borderRadius: 3, flexShrink: 0,
@@ -822,10 +808,6 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           <TabPill icon="chat"   label="Chat"      active={wsTab === "chat"}      onClick={() => { setWsTab("chat"); setOpenInvId(null); }} />
           <TabPill icon="clock"  label="History"   active={wsTab === "history"}   onClick={() => { setWsTab("history"); setOpenInvId(null); }} />
           <TabPill icon="table"  label="Artifacts" active={wsTab === "artifacts"} onClick={() => setWsTab("artifacts")} />
-          {cockpitOn && (
-            <TabPill icon="gauge" label="Cockpit" active={wsTab === "cockpit"}
-              onClick={() => { setCockpitOpened(true); setWsTab("cockpit"); }} />
-          )}
         </div>
 
         {/* New conversation — compact "+" (dedup of the old wordy "New" button that read the
@@ -955,16 +937,6 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           <ArtifactsPanel canvasId={canvas.id} />
         </div>
 
-        {/* Cockpit — mounted on first open, then kept; absent entirely with the flag off */}
-        {cockpitOn && cockpitOpened && (
-          <div style={{
-            display: wsTab === "cockpit" ? "flex" : "none",
-            flex: 1, flexDirection: "column", overflow: "hidden",
-          }}>
-            <CockpitTab canvasId={canvas.id} connectionId={connectionId}
-              schema={canvas.scopes[0]?.schema_name ?? undefined} active={wsTab === "cockpit"} />
-          </div>
-        )}
 
       </div>
 

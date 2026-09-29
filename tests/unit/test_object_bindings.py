@@ -317,7 +317,7 @@ def test_lineage_traces_only_a_column_the_select_passes_through_from_one_of_its_
 
 def test_a_connector_without_typed_results_still_binds_and_the_profile_types_its_pass_through_columns(db, graph):
     class Untyped:                                  # reports columns, never types
-        def execute(self, label, sql):
+        def execute(self, label, sql, sql_dialect=None):
             return db.execute(label, sql)
 
     sql = "SELECT p.order_id, p.amount AS settled, p.amount * 2 AS doubled FROM payments p"
@@ -329,7 +329,7 @@ def test_a_connector_without_typed_results_still_binds_and_the_profile_types_its
     assert (typed["doubled"].data_type, typed["doubled"].semantic_type) == ("", "")   # nothing typed it: not added up
 
     class Misaligned(Untyped):                      # reports fewer types than columns — positional, so none is trusted
-        def execute_typed(self, label, sql):
+        def execute_typed(self, label, sql, sql_dialect=None):
             return db.execute(label, sql), {"types": ["VARCHAR"]}
 
     columns, error = describe_with(Misaligned())(f"({sql}) AS b")

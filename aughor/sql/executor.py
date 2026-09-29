@@ -202,6 +202,7 @@ def execute_guarded(
     schema: Optional[str] = None,
     fix_prompt_template: Optional[str] = None,
     provider_factory: Optional[Callable[..., Any]] = None,
+    sql_dialect: Optional[str] = None,
 ):
     """Execute SQL with the guard battery and one self-correction retry. Returns QueryResult.
 
@@ -217,14 +218,32 @@ def execute_guarded(
     `fix_prompt_template` + `provider_factory` supply the LLM repair loop from
     the caller's layer; when either is missing the deterministic guards still
     run but the LLM retry is skipped (the raw result is returned).
+
+    `sql_dialect` is the door's declaration (GM-1): ``"duckdb"`` for platform SQL,
+    ``None`` for a statement written for this engine. It is applied HERE, once, before
+    the first guard, so the hardening, the trust gate, the value-domain guards and any
+    repair all read the statement the engine will run, not the one the platform wrote.
     """
     from pydantic import BaseModel
+    from aughor.db.dialects import sql_for_engine
+    from aughor.db.doors import add as _add_doors
+
+    # GM-3 — the battery's own doors, added to whichever result it hands back: what happened to the
+    # statement before the connection's door (`_before`) and each guard that ran on it (`_steps`).
+    _written = sql
+    sql = sql_for_engine(conn, sql, sql_dialect)
+    _before = [f"translated:duckdb→{getattr(conn, 'dialect', '')}"] if sql != _written else []
+    _steps: list[str] = []
 
     # Pre-execute deterministic hardening (de-fan → preflight-repair), shared with the
     # explore path. Byte-identical to the inline version this replaced — same guards,
     # same dry-run gates, same ada.exec_* counters.
     if schema:
+        _unhardened = sql
         sql = preflight_harden(conn, sql, schema, counter_prefix="ada.exec")
+        _steps.append("guarded:preflight")
+        if sql != _unhardened:
+            _steps.append("repaired:preflight")
 
     # AL-01 — route the generated SQL through the one Trust plane's
     # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
@@ -237,10 +256,12 @@ def execute_guarded(
         _verdict = _trust_verify(sql, _TrustScope(schema=schema,
                                                   dialect=getattr(conn, "dialect", "duckdb")),
                                  kind="sql")
+        _steps.append("guarded:trust-gate")
         if not _verdict.ok:
             from aughor.control_plane.contracts.execution import QueryResult
             return QueryResult(hypothesis_id=query_id, sql=sql, columns=[], rows=[],
-                               row_count=0, error=f"[BLOCKED] {_verdict.reason}")
+                               row_count=0, error=f"[BLOCKED] {_verdict.reason}",
+                               doors=[*_before, *_steps, "blocked:trust-gate"])
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "AL-01 trust.verify live gate (advisory; execute proceeds)",
@@ -257,6 +278,7 @@ def execute_guarded(
     _zero_diag = None
     if not result.error and result.row_count == 0:
         _zero_diag = zero_row_suspicious(sql)
+        _steps.append("guarded:zero-row")
 
     # Value-domain join guard: a join on value-disjoint keys produces an
     # unreliable result (0 rows on inner joins, all-NULL right side on outer)
@@ -265,6 +287,7 @@ def execute_guarded(
     try:
         from aughor.sql.join_guard import check_join_value_domains
         _domain_warnings = check_join_value_domains(conn, sql)
+        _steps.append("guarded:join-domain")
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "ada join-guard probe best-effort; query proceeds",
@@ -278,6 +301,7 @@ def execute_guarded(
     try:
         from aughor.sql.join_guard import check_filter_value_domains
         _filter_warnings = check_filter_value_domains(conn, sql)
+        _steps.append("guarded:filter-domain")
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "ada filter-guard probe best-effort; query proceeds",
@@ -292,6 +316,7 @@ def execute_guarded(
     try:
         from aughor.sql.fanout import measure_times_key_arithmetic
         _idmath_warn = measure_times_key_arithmetic(sql, dialect=getattr(conn, "dialect", "duckdb")) or ""
+        _steps.append("guarded:id-arithmetic")
     except Exception:
         _idmath_warn = ""
 
@@ -333,6 +358,8 @@ def execute_guarded(
     def _attach_caveats(res, extra: list[str]):
         if extra:
             res.caveats = list(dict.fromkeys([*res.caveats, *extra]))
+        _add_doors(res, _before, first=True)
+        _add_doors(res, _steps)
         # Wave K3: merge this connection's human overlay edits onto the result at read
         # time. With no edits the merge is a no-op. Best-effort inside apply_overlay.
         from aughor.actions.overlay import apply_overlay
@@ -353,11 +380,13 @@ def execute_guarded(
             # attribute is `_connection_id` (there is no public `connection_id` property) —
             # keying on the wrong name collapses every connection to one shared cache entry.
             _ct = connection_column_types(getattr(conn, "_connection_id", ""), conn) or None
-            return [f"{t.pattern}: {t.message}"
-                    for t in run_trust_checks(final_sql, col_types=_ct,
-                                              dialect=getattr(conn, "dialect", "duckdb"),
-                                              phase="execute",
-                                              connection_id=getattr(conn, "_connection_id", "") or "")]
+            _found = [f"{t.pattern}: {t.message}"
+                      for t in run_trust_checks(final_sql, col_types=_ct,
+                                                dialect=getattr(conn, "dialect", "duckdb"),
+                                                phase="execute",
+                                                connection_id=getattr(conn, "_connection_id", "") or "")]
+            _steps.append("guarded:e1")
+            return _found
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "E1 live checks are advisory; result proceeds uncaveated",
@@ -390,6 +419,7 @@ def execute_guarded(
                         and not _cfvd_det(conn, _fixed)):
                     from aughor.stats import stats as _fg_stats
                     _fg_stats.inc("filter_guard.deterministic_repair")
+                    _steps.append("repaired:deterministic")
                     _det_retry.sql = _fixed
                     return _attach_caveats(_det_retry, _e1_caveats(_fixed))
         except Exception as _exc:
@@ -527,6 +557,7 @@ def execute_guarded(
                 # NOVEL-literal caveat, which is not a defect the repair addressed.
                 retry.sql = fix.fixed_sql
                 result = retry
+                _steps.append("repaired:model")
                 _novel_caveats = [c for c in _guard_caveats if "the segment is absent, not zero" in c]
                 if _novel_caveats:
                     result = _attach_caveats(result, _novel_caveats)

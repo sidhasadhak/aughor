@@ -96,7 +96,7 @@ def _as_date(value) -> Optional[date]:
 def daily_series_sql(expr: str, table: str, ts_col: str, filters: list[str] | None = None,
                      since: Optional[date] = None) -> str:
     """An approved metric's expression, per day — `value_query`'s wrap with the day as the
-    grain. Identifiers quoted in DuckDB's dialect (`native_sql` translates for BigQuery).
+    grain. Identifiers quoted in DuckDB's dialect; the runner declares it so and the door translates for BigQuery.
 
     ``since`` bounds the series IN SQL. Found on the first live run: theLook's revenue per
     day spans 2019→2026, the executor caps a result at a few thousand rows, and "the last

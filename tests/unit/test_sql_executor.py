@@ -263,7 +263,7 @@ def test_investigate_execute_safe_delegates_here(monkeypatch):
     captured = {}
 
     def _fake(conn, sql, *, query_id, schema=None, fix_prompt_template=None,
-              provider_factory=None):
+              provider_factory=None, sql_dialect=None):
         captured.update(query_id=query_id, sql=sql, schema=schema,
                         template=fix_prompt_template, factory=provider_factory)
         return QueryResult(hypothesis_id=query_id, sql=sql, columns=[], rows=[],

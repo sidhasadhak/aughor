@@ -353,7 +353,8 @@ def _card_range(conn_id: str, preset: Optional[str], start: Optional[str], end: 
 
 @router.post("/cards/{card_id}/run")
 def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[str] = None,
-                   end: Optional[str] = None, workspace_id: Optional[str] = None) -> dict:
+                   end: Optional[str] = None, workspace_id: Optional[str] = None,
+                   compare: bool = False) -> dict:
     """Recompute a card's value NOW: re-run its SQL through the guard battery and return the
     current result. A single numeric cell is recorded as the card's latest value (rolling the
     previous one into prev_value) so a KPI can show a delta. Guard-on-read keeps a card honest
@@ -363,7 +364,13 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     it the way a finding is re-asked — the first table it reads that has a main date,
     substituted by itself filtered to the window — and `scoped` says what the number covers;
     a card whose tables have no date runs standing and `scoped` says why. A range run never
-    rolls into the card's standing value history."""
+    rolls into the card's standing value history.
+
+    With `compare` (a cockpit asks it), a figure cut to a range is also read for the window the
+    range is compared with, cut the same way, so the two differ only by their dates — `previous`.
+    It is at equal age only when the range is final: a cut does not bound a cohort's outcomes to
+    an as-of the way a metric's own measurement does, so before then part of any difference is
+    age, and `previous` says so."""
     from aughor.db.connection import open_connection_for
     from aughor.sql.executor import execute_guarded
     from aughor.util.time import now_iso
@@ -379,7 +386,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         db = open_connection_for(card.connection_id)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
-    sql, scoped = card.sql, None
+    sql, scoped, cut_on = card.sql, None, None
     if spec is not None:
         from aughor.briefing.ranges import phrases
         from aughor.briefing.reask import grain_for
@@ -396,10 +403,13 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         if cut is None:
             scoped = {"covers": covers, "standing": True, "why": why, "grain": None}
         else:
-            sql = cut
+            sql, cut_on = cut, (table, col, dialect)
             scoped = {"covers": covers, "standing": False, "why": "", "grain": f"{table}.{col}"}
+    previous = None
     try:
         result = execute_guarded(db, sql, query_id=f"card:{card_id}", schema=None)
+        if compare and cut_on is not None and _scalar(result) is not None:
+            previous = _previous_figure(db, card, spec, *cut_on, execute_guarded)
     finally:
         try:
             db.close()
@@ -432,4 +442,26 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         "value": value,
         "refresh": card.refresh.model_dump(),
         "scoped": scoped,
+        **({"previous": previous} if compare else {}),
     }
+
+
+def _previous_figure(db, card, spec, table: str, col: str, dialect: str, execute) -> dict:
+    """The card's figure for the window its range is compared with, cut as the range was.
+    ``value`` is None when that window has none, with ``why``; never a zero."""
+    from aughor.briefing.ranges import compared_word, phrases
+    from aughor.cockpit.host import FINAL, status_of
+    from aughor.semantic.metric_statement import scoped_statement
+    from aughor.semantic.metric_time import window_predicate
+
+    said = {"covers": phrases(spec)["compared_with"], "word": compared_word(spec),
+            "equal_age": status_of(spec) == FINAL, "value": None, "why": ""}
+    cut, why, _ = scoped_statement(card.sql, table, window_predicate(col, spec.previous_start, spec.previous_end),
+                                   dialect=dialect)
+    if cut is None:
+        return {**said, "why": why}
+    got = execute(db, cut, query_id=f"card:{card.id}:previous", schema=None)
+    if got.error:
+        return {**said, "why": f"its query failed: {str(got.error)[:160]}"}
+    value = _scalar(got)
+    return {**said, "value": value, "why": "" if value is not None else "it has no figure there"}

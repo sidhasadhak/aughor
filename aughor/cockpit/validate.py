@@ -11,7 +11,7 @@ Two halves, and the split is by who can know:
    ``export/echarts.py`` uses for charts, for the same reason: the server checks a spec with
    the function the browser draws it with, so the two cannot come to disagree.
 
-2. **What only the platform knows** — whether a card the spec places is in this canvas, and,
+2. **What only the platform knows** — whether a card the spec places is one this cockpit may place, and,
    for a spec a MODEL wrote, whether a title states a figure. Those are checked here.
 
 **The numerals law is for text a model wrote.** A person who names a section "Top 1000
@@ -214,20 +214,20 @@ def stated_figures(text: str) -> list[str]:
 
 
 def unknown_card(name: str, how: str) -> str:
-    """What is said of a card a spec names and the canvas does not hold. ``how`` is "placed"
+    """What is said of a card a spec names that is not one this cockpit may place. ``how`` is "placed"
     or "read" — a ``Card`` places it, or a condition reads its status."""
     if how == "read":
-        return f'A condition reads the status of the card "{name}", which this canvas does not hold.'
-    return f'The cockpit places the card "{name}", which this canvas does not hold.'
+        return f'A condition reads the status of the card "{name}", which is not a card of this cockpit.'
+    return f'The cockpit places the card "{name}", which is not a card of this cockpit.'
 
 
 def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = True,
                say_unknown: Optional[Callable[[str, str], str]] = None) -> SpecVerdict:
     """Accept ``spec`` whole or refuse it whole. ``known_cards`` are the ids of the cards this
-    canvas holds, plus any the same proposal is about to create. ``model_written`` says whose
+    cockpit may place, plus any the same proposal is about to create. ``model_written`` says whose
     words the titles are: a model's are held to the numerals law, a person's are their own.
 
-    ``say_unknown`` writes the sentence for a card the canvas does not hold. The default is
+    ``say_unknown`` writes the sentence for a card the cockpit may not place. The default is
     for a spec a person hands in. A draft has more to say — what it does create, and how the
     card could be created — and says it itself (``aughor/cockpit/propose.py``)."""
     say_unknown = say_unknown or unknown_card
@@ -246,7 +246,7 @@ def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = T
     if not out["valid"]:
         # A refusal names every fault it can (CT-5). The rules hand back what they read from
         # the elements that were sound, and what only the platform knows is said of that, in
-        # the same refusal — or a writer would learn of a card the canvas does not hold only
+        # the same refusal — or a writer would learn of a card the cockpit may not place only
         # after repairing everything else.
         said = [str(i.get("message", "")) for i in issues if isinstance(i, dict)]
         seen = out.get("seen") if isinstance(out.get("seen"), dict) else {}
@@ -261,7 +261,7 @@ def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = T
 
 def _platform_says(read: dict, known: set[str], model_written: bool,
                    say_unknown: Callable[[str, str], str]) -> list[str]:
-    """What only the platform knows of what the rules read: a card the canvas does not hold,
+    """What only the platform knows of what the rules read: a card the cockpit may not place,
     and — of text a model wrote — a title that states a figure."""
     # A caller's `say_unknown` may answer "" for a card it has already spoken of.
     said = [say_unknown(str(card), "placed") for card in read.get("cards") or [] if str(card) not in known]
@@ -278,12 +278,13 @@ def _platform_says(read: dict, known: set[str], model_written: bool,
     return sentences
 
 
-def check_spec_for_canvas(spec: Any, canvas_id: str, *, also_known: Iterable[str] = (),
-                          model_written: bool = True,
-                          say_unknown: Optional[Callable[[str, str], str]] = None) -> SpecVerdict:
-    """:func:`check_spec` against the cards this canvas holds in the card store.
-    ``also_known`` names the cards the same proposal will create on approval."""
-    from aughor.dashboard.store import list_cards
-    held = {c.id for c in list_cards(scope="canvas", scope_ref=canvas_id)}
+def check_spec_for_home(spec: Any, home: Any, *, also_known: Iterable[str] = (),
+                        model_written: bool = True,
+                        say_unknown: Optional[Callable[[str, str], str]] = None) -> SpecVerdict:
+    """:func:`check_spec` against the cards this person's cockpit may place — their own and
+    the connection's (``aughor/cockpit/cards.py``). ``also_known`` names the cards the same
+    proposal will create on approval."""
+    from aughor.cockpit import cards
+    held = {c.id for c in cards.cards_of(home)}
     return check_spec(spec, known_cards=held | {str(c) for c in also_known},
                       model_written=model_written, say_unknown=say_unknown)

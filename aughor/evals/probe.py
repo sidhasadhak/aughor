@@ -18,14 +18,16 @@ ProbeFn = Callable[[str], tuple]
 def probe_fn_for(conn: Any, label: str = "__eval_probe__") -> ProbeFn:
     """Adapt a connection to the guards' probe signature.
 
-    Duck-typed on ``conn.execute(label, sql)``, which is all the guards ever use
-    — any of the registered connectors, or a stub, works. Errors are returned
-    rather than raised: a probe that cannot answer must leave the guard free to
-    decline, not abort the evaluation.
+    Duck-typed on ``conn.execute(label, sql, sql_dialect=...)``, which is all the
+    guards ever use — any of the registered connectors, or a stub that takes the
+    keyword, works. The guards write their probes in DuckDB's dialect, so each is
+    declared so and the connection renders it for its engine (GM-1). Errors are
+    returned rather than raised: a probe that cannot answer must leave the guard
+    free to decline, not abort the evaluation.
     """
     def probe(sql: str) -> tuple:
         try:
-            result = conn.execute(label, sql)
+            result = conn.execute(label, sql, sql_dialect="duckdb")
         except Exception as exc:
             return (False, [], str(exc))
         return (not result.error, result.rows or [], result.error or "")

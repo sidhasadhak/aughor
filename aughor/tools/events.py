@@ -130,7 +130,7 @@ def load_events_from_db(conn: "DatabaseConnection") -> list[CalendarEvent]:
             f'FROM "{table}" ORDER BY {sc}'
         )
         try:
-            result = conn.execute("__events_scan__", sql)
+            result = conn.execute("__events_scan__", sql, sql_dialect="duckdb")
             if result.error or not result.rows:
                 continue
             events: list[CalendarEvent] = []

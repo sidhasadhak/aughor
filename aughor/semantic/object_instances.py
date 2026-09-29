@@ -94,8 +94,7 @@ def _value(row: dict, column: str) -> Any:
 
 
 def _read(db: Any, sql: str, what: str):
-    from aughor.db.dialects import native_sql
-    result = db.execute("object_instance", native_sql(db, sql))
+    result = db.execute("object_instance", sql, sql_dialect="duckdb")
     if getattr(result, "error", None):
         raise ObjectQueryRefused(f"{what} could not be read: {result.error}"[:300])
     return result

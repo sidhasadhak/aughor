@@ -3,7 +3,7 @@
 /**
  * CT-1's premise, as a test: ONE hand-written spec — tabs, sections, two cards from the card
  * store, one card shown by a condition — drawn through the library, with every card handed to
- * `PinnedCardBody` unchanged.
+ * the cockpit's tile (`CockpitTile`, tested on its own).
  *
  * What this cannot show is geometry: jsdom reports every element as 0×0. Whether the grid
  * looks right is a browser question, and CT-1's receipt answers it there.
@@ -26,7 +26,7 @@ vi.mock("@/lib/api", async (original) => ({
 }));
 
 beforeAll(() => {
-  // PinnedCardBody measures itself to size its sparkline; jsdom has nothing to measure with.
+  // A section measures itself to choose its columns; jsdom has nothing to measure with.
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 });
 
@@ -53,7 +53,7 @@ function host(range: RangeStatus, rate: CardStatus, net: CardStatus = "within"):
 const placed = () => screen.queryAllByTestId("cockpit-card").map(el => `${el.dataset.card}${el.dataset.tone ? `:${el.dataset.tone}` : ""}`);
 
 describe("the premise spec, drawn", () => {
-  it("draws its tabs, its section, and both cards through PinnedCardBody", () => {
+  it("draws its tabs, its section, and both cards as tiles", () => {
     render(<ComposedCockpit spec={premise()} cards={CARDS} host={host("final", "within")} doors={DOORS} />);
 
     expect(screen.getByRole("region", { name: "Returns" })).toBeInTheDocument();
@@ -142,7 +142,7 @@ describe("what a reader may not see", () => {
   it("a card the canvas does not hold says so", () => {
     render(<ComposedCockpit spec={premise()} cards={[CARDS[0]]} host={host("final", "within")} doors={DOORS} />);
     const net = screen.getAllByTestId("cockpit-card")[1];
-    expect(within(net).getByText("Not in this canvas")).toBeInTheDocument();
+    expect(within(net).getByText("Not one of your cards")).toBeInTheDocument();
   });
 });
 

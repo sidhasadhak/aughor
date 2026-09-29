@@ -553,7 +553,9 @@ def _run_association_scan(conn, question: str, dimensions: list, metric_table: s
     sql = (f'SELECT "{a}", "{b}", COUNT(*) AS n_records, {measure} AS {_safe_alias(metric_label)}\n'
            f'FROM {from_clause}\nGROUP BY 1, 2\nORDER BY 1, 2')
     try:
-        result = _execute_safe(conn, phase_id, sql)
+        # DuckDB's quoting, declared so (GM-1): sent as written, BigQuery grouped the two
+        # names as string literals — one row, no error, and the zero-row check did not trip.
+        result = _execute_safe(conn, phase_id, sql, sql_dialect="duckdb")
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "association scan is best-effort; the weakness scan still runs",
@@ -609,7 +611,8 @@ def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: l
         hear 'no' to. Labelled, not dunder-internal, because it reads user data and every
         query that does belongs in the audit trail."""
         try:
-            res = conn.execute(f"{phase_id}_type_probe", sql)
+            # `agent.relationship` writes DuckDB (TRY_CAST … AS DOUBLE, double-quoted names); the door renders it
+            res = conn.execute(f"{phase_id}_type_probe", sql, sql_dialect="duckdb")
             if getattr(res, "error", None):
                 return None
             return getattr(res, "rows", None)
@@ -671,7 +674,7 @@ def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: l
                 return _f
             continue
 
-        result = _execute_safe(conn, phase_id, plan.sql, schema=schema or None)
+        result = _execute_safe(conn, phase_id, plan.sql, schema=schema or None, sql_dialect="duckdb")
         if result is None or getattr(result, "error", None) or not getattr(result, "rows", None):
             _logging.getLogger(__name__).info(
                 "[deep] relationship scan (%s, %s) did not execute: %s", plan.kind, candidate,
@@ -1751,8 +1754,10 @@ from aughor.sql.executor import (  # noqa: F401  (re-exports)
 )
 
 
-def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: Optional[str] = None):
-    """Execute SQL with one self-correction retry. Returns QueryResult.
+def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: Optional[str] = None, *,
+                  sql_dialect: Optional[str] = None):
+    """Execute SQL with one self-correction retry. Returns QueryResult. ``sql_dialect`` is the door's
+    declaration (GM-1): ``"duckdb"`` for a statement the platform wrote in DuckDB's spelling.
 
     Retries on:
     - Hard SQL errors (syntax, missing column/table)
@@ -1784,6 +1789,7 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
         schema=schema,
         fix_prompt_template=FIX_SQL_PROMPT,
         provider_factory=_provider,
+        sql_dialect=sql_dialect,
     )))
 
 
@@ -3093,7 +3099,8 @@ def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_labe
 
         def _probe(sql):
             try:
-                r = conn.execute("__ratio_grain_probe__", sql)
+                # `sql.ratio_grain` writes DuckDB's quoting; the door renders it (GM-1)
+                r = conn.execute("__ratio_grain_probe__", sql, sql_dialect="duckdb")
                 return None if getattr(r, "error", None) else r.rows
             except Exception:
                 return None
@@ -3113,7 +3120,9 @@ def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_labe
             f["rows"] = [[r[0], r[1], r[2]] for r in rows[:50]]
             f["columns"] = [seg, "metric_total", "n"]
             f["row_count"] = len(rows)
-            f["sql"] = plan["sql"]             # the drill shows the CORRECT query
+            # the drill shows the CORRECT query, as the engine ran it: a replay sends it as written
+            from aughor.db.dialects import sql_for_engine
+            f["sql"] = sql_for_engine(conn, plan["sql"], "duckdb")
             f["key_numbers"] = []
             f["error"] = None
             # Clean-output policy: the corrected chart + ranking ARE the finding. The
@@ -3434,7 +3443,7 @@ def _resolve_table_for_column(conn, col: str) -> Optional[str]:
         r = conn.execute(
             "__col_table_probe__",
             "SELECT table_schema, table_name FROM INFORMATION_SCHEMA.COLUMNS "
-            f"WHERE column_name = '{col}' GROUP BY 1, 2")
+            f"WHERE column_name = '{col}' GROUP BY 1, 2", sql_dialect="duckdb")
         if r and not getattr(r, "error", None) and r.rows and len(r.rows) == 1:
             sch, tbl = r.rows[0][0], r.rows[0][1]
             return f"{sch}.{tbl}" if sch else tbl
@@ -3452,7 +3461,7 @@ def _independent_global_ratio(conn, sources: dict) -> Optional[float]:
         den = f'{sources["den_agg"]}("{sources["den_col"]}")'
         sql = (f'SELECT (SELECT {num} FROM {sources["num_table"]}) * {sources["scale"]} '
                f'/ NULLIF((SELECT {den} FROM {sources["den_table"]}), 0) AS global_ratio')
-        r = conn.execute("__global_ratio_probe__", sql)
+        r = conn.execute("__global_ratio_probe__", sql, sql_dialect="duckdb")
         if r and not getattr(r, "error", None) and r.rows and r.rows[0] and r.rows[0][0] is not None:
             return float(r.rows[0][0])
     except Exception:
@@ -4376,11 +4385,11 @@ def _observation_window_is_wrong(obs_start, obs_end, cov_min: str, cov_max: str)
 #: and the TRAILING-PARTIAL guard simply never ran on a BigQuery or MySQL connection, and the
 #: intake carried on as though the window were dense and its final month complete.
 #:
-#: The fix is the seam that already exists rather than a second one here:
-#: `aughor.db.dialects.native_sql` transpiles DuckDB-written platform SQL into the dialect
-#: the connection actually runs, for every `writes_native_sql` engine, and returns DuckDB's
-#: own SQL untouched. It handles strictly more than a type-name map would — the `::` cast
-#: operator, `date_trunc`, function names — which is the point of not hand-rolling one.
+#: The fix is the seam that already exists rather than a second one here: both probes declare
+#: `sql_dialect="duckdb"`, and the connection's door (`aughor.db.dialects.sql_for_engine`, GM-1)
+#: transpiles them into the dialect it actually runs, for every `writes_native_sql` engine, and
+#: hands DuckDB's own SQL on untouched. It handles strictly more than a type-name map would — the
+#: `::` cast operator, `date_trunc`, function names — which is the point of not hand-rolling one.
 
 
 def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, end: str) -> "int | None":
@@ -4398,11 +4407,11 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
         ref, col = _resolve_probe_ref(table, date_col)
-        from aughor.db.dialects import native_sql
         res = db.execute(
             "intake_density",
-            native_sql(db, f"SELECT COUNT(DISTINCT substr(CAST({col} AS VARCHAR), 1, 7)) "
-                           f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}'"),
+            f"SELECT COUNT(DISTINCT substr(CAST({col} AS VARCHAR), 1, 7)) "
+            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}'",
+            sql_dialect="duckdb",
         )
         if res.error or not res.rows or res.rows[0][0] is None:
             # Still fail-open, but no longer SILENT: this probe returning None disables the
@@ -4441,12 +4450,12 @@ def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: st
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
         ref, col = _resolve_probe_ref(table, date_col)
-        from aughor.db.dialects import native_sql
         res = db.execute(
             "intake_monthly",
-            native_sql(db, f"SELECT substr(CAST({col} AS VARCHAR), 1, 7) AS m, COUNT(*) AS n "
-                           f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' "
-                           f"GROUP BY 1 ORDER BY 1"),
+            f"SELECT substr(CAST({col} AS VARCHAR), 1, 7) AS m, COUNT(*) AS n "
+            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' "
+            f"GROUP BY 1 ORDER BY 1",
+            sql_dialect="duckdb",
         )
         if res.error or not res.rows:
             # As above: None here disables the TRAILING-PARTIAL guard — the one whose warning
@@ -5368,6 +5377,7 @@ def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col:
             "intake_unit_probe",
             "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
             f"WHERE table_name = '{bare}'",
+            sql_dialect="duckdb",
         )
         if getattr(tres, "error", None) or not getattr(tres, "rows", None):
             return False
@@ -6661,7 +6671,7 @@ def run_analysis_phase(
                         + (f" AND table_schema = '{_p[0]}'" if len(_p) == 2 else "")
                     )
                     try:
-                        _res = conn.execute("__fanout_schema_probe__", _probe)
+                        _res = conn.execute("__fanout_schema_probe__", _probe, sql_dialect="duckdb")
                         _rows = getattr(_res, "rows", None) or []
                         if _rows:
                             _tc[_ref] = [r[0] for r in _rows]
@@ -8419,7 +8429,7 @@ def _discover_population_dims(state: AgentState, conn: "DatabaseConnection") -> 
             # table (e.g. many customer_service rows per order_id), the join fans out and would inflate
             # the metric — skip it. This is the guard the first cut missed.
             try:
-                _u = conn.execute("__uniq_probe__", f"SELECT COUNT(*), COUNT(DISTINCT {_jk}) FROM {t}")
+                _u = conn.execute("__uniq_probe__", f"SELECT COUNT(*), COUNT(DISTINCT {_jk}) FROM {t}", sql_dialect="duckdb")
                 _tot, _dist = int(_u.rows[0][0]), int(_u.rows[0][1])
                 if _dist < _tot:
                     continue
@@ -8439,7 +8449,7 @@ def _discover_population_dims(state: AgentState, conn: "DatabaseConnection") -> 
                 if ("char" in ty.lower() or "text" in ty.lower()) and len(extra_dims) < 2 \
                         and cl not in {_dim_column(d) for d in extra_dims}:
                     try:
-                        _r = conn.execute("__card_probe__", f"SELECT COUNT(DISTINCT {c}) FROM {t}")
+                        _r = conn.execute("__card_probe__", f"SELECT COUNT(DISTINCT {c}) FROM {t}", sql_dialect="duckdb")
                         _nd = int(_r.rows[0][0]) if (_r and _r.rows and _r.rows[0]) else 999
                     except Exception:
                         _nd = 999
@@ -8549,7 +8559,7 @@ def _db_typed_columns(conn: "DatabaseConnection", schema_name: str) -> dict:
             return {}
         res = conn.execute("__temporal_types__",
                            "SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
-                           f"WHERE table_schema = '{schema_name}'")
+                           f"WHERE table_schema = '{schema_name}'", sql_dialect="duckdb")
         if getattr(res, "error", None) or not getattr(res, "rows", None):
             return {}
         out: dict = {}
@@ -9340,7 +9350,7 @@ def _probe_lifecycle_values(conn, cols: list) -> dict:
             r = conn.execute_bounded(
                 "loss_lifecycle_probe",
                 f'SELECT DISTINCT "{col}" AS v FROM {table} WHERE "{col}" IS NOT NULL LIMIT 25',
-                25)
+                25, sql_dialect="duckdb")
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, f"lifecycle probe '{qualified}' best-effort; skipped",
@@ -9376,7 +9386,7 @@ def _probe_contra_ranges(conn, cols: list, schema_text: str) -> dict:
             r = conn.execute_bounded(
                 "loss_contra_range_probe",
                 f'SELECT MIN("{col}") AS lo, MAX("{col}") AS hi FROM {table} '
-                f'WHERE "{col}" IS NOT NULL', 1)
+                f'WHERE "{col}" IS NOT NULL', 1, sql_dialect="duckdb")
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, f"contra range probe '{key}' best-effort; skipped",

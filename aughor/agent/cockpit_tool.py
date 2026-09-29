@@ -1,20 +1,14 @@
-"""The one tool a cockpit is asked for with (Arc CT, CT-5; ROADMAP §3.50).
+"""The one tool a cockpit is drafted with (Arc CT, CT-5; bound to a person's cockpit in CT-7).
 
-Offered on a turn only when three things hold, and absent otherwise — a tool the model can
-see is a tool it will spend a turn trying:
-
-* ``cockpit.composed`` is on. Off, the tool list is exactly what it was.
-* the turn is in a Data Canvas. A cockpit belongs to one; there is none to draft elsewhere.
-* the turn has a channel. What this tool makes is a proposal a person approves on a card,
-  and a card needs somewhere to be drawn.
+It was first offered in a Data Canvas's chat. The canvas is for investigation (§6 item
+36(l)), so it is offered nowhere a person talks to a model now: the Briefing's "new cockpit"
+runs a model with this tool ALONE, bound to the cockpit it drafts (``aughor/cockpit/ask.py``).
 
 It takes three shapes of call. ``options`` costs nothing and says what a cockpit here may be
-made of and how one is written — kept out of the description on purpose, because a
-description is sent on every turn in every canvas and that text is wanted on the few turns
-that ask for a cockpit. ``new`` and ``edit`` stage ONE proposal and change nothing.
+made of and how one is written. ``new`` and ``edit`` stage ONE proposal and change nothing.
 
 The work is the platform's (``aughor/cockpit/propose.py``). This module is the agent's side
-of it: the words the model reads, and the frame the chat draws the card from.
+of it: the words the model reads, and the frame a screen draws the draft from.
 """
 from __future__ import annotations
 
@@ -22,6 +16,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from aughor.agent.tool_loop import ToolSpec
+from aughor.cockpit.home import Home
 from aughor.cockpit.propose import MAX_NEW_CARDS
 
 logger = logging.getLogger(__name__)
@@ -37,7 +32,7 @@ _CARD = {
             "A name of your own for this new card, e.g. return-rate. Place the card in the spec by this name.")},
         "metric": {"type": "string", "description": "The approved metric this card measures, by its name."},
         "trusted_query": {"type": "string", "description": "The trusted query this card draws, by its id."},
-        "finding": {"type": "string", "description": "The finding of this canvas this card shows, by its id."},
+        "finding": {"type": "string", "description": "The finding the Briefing shows that this card shows, by its id."},
         "title": {"type": "string", "description": (
             "What the card is called. Leave it out to use the record's own name. It states no figure.")},
         "limit": {"type": "object", "description": (
@@ -62,8 +57,8 @@ _PARAMS = {
         "cards": {"type": "array", "items": _CARD, "maxItems": MAX_NEW_CARDS, "description": (
             f"new or edit: the cards to CREATE, at most {MAX_NEW_CARDS} to a draft, each made from exactly one "
             "of metric, trusted_query or finding. Every name the spec places that is not the id of a card the "
-            "canvas holds must be listed here. A card the canvas already holds is not listed; the spec places "
-            "it by its id.")},
+            "person has must be listed here. A card they already have is not listed; the spec places it by "
+            "its id.")},
         "spec": {"type": "object", "description": "new: the whole cockpit, as options describes it."},
         "patches": {"type": "array", "items": {"type": "object"}, "description": (
             "edit: RFC 6902 operations against the cockpit as it stands.")},
@@ -91,31 +86,31 @@ def _count(n: int, one: str) -> str:
 
 
 def _shows(card: dict) -> str:
-    """What a new card shows, in a reader's words. Said in the summary the chat quotes, so a
-    person reads it before approving: the third run of the receipt found "which categories
-    sell best" drafted as a cockpit of totals, and nothing said so."""
+    """What a new card shows, in a reader's words. Said in the summary, so a person reads it
+    before keeping: the third run of the receipt found "which categories sell best" drafted
+    as a cockpit of totals, and nothing said so."""
     if card.get("kind") != "kpi":
         return f'"{card.get("title")}", a chart of its rows'
-    whole = " for the whole canvas" if card.get("from") == "metric" else ""
+    whole = " for the whole connection" if card.get("from") == "metric" else ""
     return f'"{card.get("title")}", one figure{whole}'
 
 
-def draft_cockpit(connection_id: str, canvas_id: str, args: dict, *, emit: Optional[Emit] = None,
-                  said: Optional[str] = None) -> dict:
-    """``said`` is what the person said on this turn; a limit is set only where they named it."""
+def draft_cockpit(home: Home, args: dict, *, emit: Optional[Emit] = None, said: Optional[str] = None,
+                  schema: Optional[str] = None) -> dict:
+    """``said`` is what the person asked for; a limit is set only where they named it."""
     from aughor.cockpit import propose
 
     op = str((args or {}).get("op") or "options")
     if op == "options":
-        return propose.options(connection_id, canvas_id)
+        return propose.options(home, schema)
     if op not in (propose.MODE_NEW, propose.MODE_EDIT):
         told = f'"{op}" is not one of: options, new, edit.'
         return {"staged": False, "refused": [told], "error": told,
                 "summary": f'Nothing staged: "{op}" is not one of options, new, edit.'}
 
     drafted = propose.draft(
-        connection_id, canvas_id, mode=op, spec=args.get("spec"), patches=args.get("patches"),
-        cards=args.get("cards"), reasoning=str(args.get("reasoning") or ""), said=said)
+        home, mode=op, spec=args.get("spec"), patches=args.get("patches"),
+        cards=args.get("cards"), reasoning=str(args.get("reasoning") or ""), said=said, schema=schema)
     if not drafted.staged:
         # `error` is what the platform keeps of a step's result, always (the tool loop's step
         # record). Without it a refused draft's reasons went to the model and nowhere else,
@@ -143,9 +138,8 @@ def draft_cockpit(connection_id: str, canvas_id: str, args: dict, *, emit: Optio
             if op == propose.MODE_EDIT else f'the cockpit "{detail.get("title")}"')
     made = [c for c in (p.params or {}).get("cards") or [] if isinstance(c, dict)]
     shows = f" The new cards show: {'; '.join(_shows(c) for c in made)}." if made else ""
-    # A new cockpit where one stands replaces it whole. Said in the summary the chat quotes:
-    # the third run of the receipt found two that would have taken off 9 and 12 cards, and
-    # the answer said nothing of it.
+    # A new cockpit where one stands replaces it whole. Said in the summary: the third run of
+    # the receipt found two that would have taken off 9 and 12 cards, and nothing said it.
     whole = ""
     if op == propose.MODE_NEW and before:
         gone = [t["title"] for t in detail.get("taken_off") or [] if t.get("what") == "card"]
@@ -157,38 +151,29 @@ def draft_cockpit(connection_id: str, canvas_id: str, args: dict, *, emit: Optio
                 f"{', '.join(drafted.replaced)}." if drafted.replaced else "")
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
-        "summary": (f"Drafted {what}: {shape} (proposal {p.id}).{shows}{whole} Nothing is changed yet. A person "
-                    f"approves it on the card, all of it or none of it, and it then appears in this canvas's "
-                    f"Cockpit tab.{replaced}"),
+        "summary": (f"Drafted {what}: {shape} (proposal {p.id}).{shows}{whole} Nothing is changed yet. The "
+                    f"person keeps it, all of it or none of it, and it then appears among their cockpits in "
+                    f"the Briefing.{replaced}"),
     }
 
 
-def cockpit_tools(connection_id: str, *, emit: Optional[Emit] = None,
-                  canvas_id: Optional[str] = None, user_question: str = "") -> list[ToolSpec]:
-    """``draft_cockpit``, when the flag is on and the turn is in a canvas with a channel.
-
-    ``user_question`` binds by closure, as the turn's other identity does: it is what the
-    person said, and the model must not be the one to state it."""
-    if emit is None or not canvas_id:
-        return []
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(FLAG):
-        return []
-    return [ToolSpec(
+def drafting_tool(home: Home, *, emit: Optional[Emit] = None, said: Optional[str] = None,
+                  schema: Optional[str] = None) -> ToolSpec:
+    """``draft_cockpit``, bound to one person's cockpit. The cockpit, the person and what they
+    asked for bind by closure: none of them is the model's to state."""
+    return ToolSpec(
         name="draft_cockpit",
         description=(
-            "Draft this Data Canvas's cockpit, or a change to it. A cockpit is the standing set of cards a "
-            "person keeps watching: cards in sections, in tabs when there are many, some shown only on a "
-            "condition such as a figure crossing its limit. Use this when the user asks to build, make, "
-            "change or rearrange one here; they may call it a dashboard or a board, and in your answer it "
-            "is a cockpit. Call it FIRST with op options: that returns what a "
-            "cockpit here may be made of, the cockpit as it stands, and how one is written. Then call it "
-            "with op new and the whole spec, or op edit and the operations. You write no SQL and state no "
-            "figure: a new card names the approved metric, the trusted query or the finding it is made "
-            "from. It STAGES one proposal and changes nothing; a person approves it on the card, all of it "
-            "or none. When it refuses it names every fault: repair them all, then call again. Quote the "
-            "summary field verbatim."
+            "Draft a cockpit for a person's Briefing, or a change to one. A cockpit is the standing set "
+            "of cards a person keeps watching for one area of the business: cards in sections, in tabs "
+            "when there are many, some shown only on a condition such as a figure crossing its limit. "
+            "Call it FIRST with op options: that returns what a cockpit here may be made of, the "
+            "cockpit as it stands, and how one is written. Then call it with op new and the whole "
+            "spec, or op edit and the operations. You write no SQL and state no figure: a new card "
+            "names the approved metric, the trusted query or the finding it is made from. It STAGES "
+            "one proposal and changes nothing; the person keeps it or not. When it refuses it names "
+            "every fault: repair them all, then call again."
         ),
         parameters=_PARAMS,
-        run=lambda a: draft_cockpit(connection_id, canvas_id, a, emit=emit, said=user_question or None),
-    )]
+        run=lambda a: draft_cockpit(home, a, emit=emit, said=said, schema=schema),
+    )

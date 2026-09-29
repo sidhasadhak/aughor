@@ -9608,7 +9608,7 @@ silently (§7).
 
 ---
 
-### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35)
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1, GM-2 and GM-3 BUILT 2026-09-29** on `claude/briefing-cockpits`, not merged)
 
 > **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
 > without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
@@ -9616,6 +9616,93 @@ silently (§7).
 > platform."* The study is `docs/GATE_MAP_STUDY_2026-09-26.md`: the doors as the code applies them, a census of the
 > 184 places SQL reaches a warehouse (150 real, ~40 in the bug class, read one by one), the live exposure (one door
 > = 99.9% of theLook's errors), the audit's two-way label problem, and the guards that fail open on native engines.
+
+> **Status 2026-09-29, GM-1 BUILT.** The door owns the dialect: every connection's `execute` and `execute_bounded` (all
+> twelve connector classes), the adapters (`rows`, `scalar`, `execute_typed`, `read_typed_rows`) and `execute_guarded`
+> take `sql_dialect=`. `"duckdb"` is translated for an engine that runs SQL as written, before the first gate
+> (`db.dialects.sql_for_engine`); `None` is handed on byte-identical; any other value is refused. `native_sql` keeps two
+> callers — the door's step and the writer's dialect-rejection repair, which builds a candidate for a dry run and runs
+> nothing. Moved onto the declaration: the 20 call sites that translated for themselves; the profiler, whose private
+> wrapper keyed on the dialect NAME and so never translated for Exasol (retired); and the census's bug class, site by
+> site. `tests/unit/test_gm1_the_door_owns_the_dialect.py` pins the door (every connection class reads the declaration;
+> the native four hand their first gate the translated statement), mutation-tested in three places.
+> **Receipt, live on theLook, no model calls:** 39 statements through the real BigQuery door, none failed on the
+> dialect. The same platform statement fails as written (`Unexpected string literal "orders"`) and runs declared. The
+> join value-domain guard now RUNS on BigQuery — real FK overlap 1.0, no warning — and FIRES on a fabricated join
+> (`orders.status = users.country`, overlap 0.0), where it failed open. The filter guard binds `'complete'` to
+> `'Complete'`; the grain probe finds `order_items` fanning out 1.45× on `order_id`; the snapshot signature reads
+> `orders=125545`; the catalog's column read takes one statement where it took three; the cross-source keyed read
+> splices a BigQuery-native sub-query in untouched and joins 3 of 3 keys. Four errors in the run were types, not the
+> dialect (named below).
+> **Measured, and the census's premise did not hold on five rows.** (a) A DuckDB declaration CORRUPTS native SQL:
+> sqlglot reads BigQuery's `DATE_TRUNC(x, MONTH)` as DuckDB's and swaps its arguments, `TIMESTAMP '…'` becomes
+> `DATETIME`, `DATE_DIFF` breaks. So a statement declares DuckDB only when its author demonstrably wrote DuckDB; a
+> portable statement carrying a model's or a person's fragment stays as written, and a platform wrapper around a
+> native sub-query translates its own part and splices the sub-query in after (`remote_join._right_statement`).
+> (b) The deep-analysis plan prompts say "SQL RULES: DuckDB", yet theLook's audit shows the model writing native SQL
+> (138 of 670 successful statements backticked, 28 with BigQuery's `DATE_TRUNC(x, MONTH)`); declared, they would break —
+> so they stay undeclared. (c) A monitor re-anchors only native SQL (a card's, a finding's, a person's), never the
+> sentinel's, so `monitors/window.py` was right to read `db.dialect` — unchanged. (d) `measure_sql` reads a governed
+> metric in the engine's dialect and theLook's three are plain ANSI: `__metric_value__`, the metric pin and the
+> clarify probes stay undeclared. (e) The join guard's `USING SAMPLE n ROWS` has no spelling on any other engine —
+> sqlglot writes a RESERVOIR table sample that Postgres, BigQuery, Snowflake and Exasol refuse — so on Postgres, where
+> the door always translated, the guard had been failing open too; everywhere but DuckDB it now reads the first n rows
+> of the one column it samples. Two more DuckDB-only spellings rewritten: the costume probe's `FILTER (WHERE …)`
+> (sqlglot hands it to BigQuery unchanged) and the grain probe's bare names and `||`-joined composite key.
+> **Left, named, not fixed:** the monitor runner declares EVERY monitor's SQL DuckDB (the hotfix's rule) while only the
+> sentinel writes DuckDB — a card, Spotlight or person-written monitor using BigQuery-native syntax is corrupted; a
+> monitor should record the dialect its SQL was written in. The deep plan prompts contradict the engine, and their top
+> theLook error (TIMESTAMP compared with a DATE literal, 51 statements) comes from the prompt's own "use DATE literals"
+> rule. The inline premise check nests the metric's aggregate inside `SUM(CASE …)` (BigQuery refuses; the analyst's
+> copy is already right). The join guard parses the model's SQL in sqlglot's default dialect — a backticked or
+> project-qualified BigQuery name yields no join conditions, and a probe drops the project — and its reconcile
+> suggestions are DuckDB expressions handed to the model on any engine. Cross-source keyed reads compare an INT64 key
+> to a string `IN` list, which BigQuery refuses. The profiler casts every column to STRING, which a BigQuery
+> `GEOGRAPHY` refuses (3 of the run's errors). The catalog's sample read stays DuckDB-only on purpose: translated, it
+> would put BigQuery rows into the model's prompt unredacted (`_catalog` skips the PII pass) — GM-5 first. The ontology
+> enricher's prompt names no dialect, so its formulas are run as written; a query-backed type's keyed SELECT is
+> declared DuckDB with its probe, as `native_sql` did, where the splice above would keep it native. Exasol declares
+> `postgres` while sqlglot 30.8 ships an `exasol` dialect. Not dialect: ALTER COLUMN answers `applied: true` whatever
+> the engine said; EXPLAIN (the skill dry run) and SUMMARIZE (the overview) are refused by the validator everywhere;
+> `db.rows()` still reads any error as "no rows" (GM-4).
+>
+> **Status 2026-09-29, GM-2 BUILT — the census is a ratchet.** `tests/unit/test_sql_door_census.py` walks `aughor/`
+> (an AST walk over the door's method names; the study's regex was never recorded) and holds `docs/SQL_DOORS.json`:
+> 191 sites, one row each, keyed by file, enclosing function, door and label — never by line — with the site's
+> dialect class and author. A new door call fails with the row to add; a row whose call is gone fails; `declared` and
+> `forwards` are read off the call, so a row cannot claim them for a call that does not declare and a declaring call
+> cannot be filed elsewhere; `none` (3) and `unstated` (5) are pinned exactly — a fix lowers its baseline in the same
+> change. Mutation-tested eight ways, each killed by an assertion. **The first cut found nine bug-class sites the
+> study's census had missed**, all platform SQL in DuckDB's spelling, now declared — and measured live on theLook
+> before and after, five of six were silently wrong with no error: the business profile's uniqueness oracle said
+> `orders.order_id` is not unique (`COUNT(DISTINCT "order_id")` counts one string literal), its cardinality oracle
+> counted 1 status for 5, the relationship planner grouped the literals `'status'` and `'gender'` into one row where
+> there are 10 and its type probe failed on `TRY_CAST`, the explore mode's scan counted 1 distinct user for 80,182, and
+> the loss probe read the lifecycle values as `['status']`. Also declared: the profile's value and chart SQL audits
+> and its calibration (the SQL is prompted as runnable DuckDB). **Left in `none`, each with its reason in the file:**
+> the catalog's sample read (PII first — GM-5), the overview's `SUMMARIZE` (refused everywhere) and ALTER COLUMN.
+> **`unstated` (5):** the conversation agent, the explore plan and the ontology enricher write SQL with no dialect in
+> their prompt — the fix is the prompt, measured by a model run, not a declaration.
+>
+> **Status 2026-09-29, GM-3 BUILT — the path is a receipt.** Every statement's result carries `QueryResult.doors`:
+> the words each door said as the statement passed it (`aughor/db/doors.py`) — `translated:duckdb→bigquery`,
+> `validated:<dialect>`, `safety-checked` or `internal`, `row-policy`, `pii-checked`/`pii-redacted:n`/`pii-blocked`,
+> `row-budget:n`, `audited`, `repaired:<how>`, `blocked:<by>`, and the guard battery's and the quick path's
+> `guarded:<check>` for every check that RAN. Each connection's `execute` opens a fresh trail for its one statement
+> (`through_door`) and stamps the result on the way out, so a step outside a statement — a translation made to store
+> one, a probe the battery runs while judging another — is credited to no statement (mutation-tested seven ways). The
+> path rides the `columns` frame (the web reads `columns` alone from it — no web change, by the user's choice), is
+> kept per statement in the envelope's `provenance.doors` and on the run's record, is recorded on the tool loop's
+> `step` (so the trajectory shows it), and Spotlight's `explain` says it in plain words — or says a run's path was
+> not recorded. **Receipt, live on theLook, two model calls (approved):** a quick question — 31,535 orders Complete
+> — came back with its statement's eight doors on the envelope, the run's record and the trajectory's `run_sql`
+> step; asked which gates that answer passed, Spotlight called `explain` once and answered *"that one statement
+> passed eight doors, in this order"*, naming each. The receipt is honest about what did not happen: no
+> `translated` (the model wrote native BigQuery) and no `validated` (the BigQuery door never parses — the study's
+> finding 5, now visible on every answer). **Not in this wave, by the user's scope:** deep analysis's findings;
+> the quick core (`_answer_core`) is wired but the live turn was routed to the conversation agent; a person's
+> parameterised `/query` (`execute_with_params`) opens no trail, so its doors are `[]` — which `explain` reads as
+> "not recorded", never as "passed no door".
 
 - **GM-1 · the door owns the dialect.** `execute(label, sql, *, sql_dialect=None)`: `"duckdb"` from platform code
   makes the base door translate for native engines where transpile engines already do; `native_sql` becomes the
@@ -9634,7 +9721,62 @@ silently (§7).
 Spotlight answer on theLook that names its gates. **Falsifier:** if after GM-1 a native-engine failure of the
 dialect class recurs, the door did not own the dialect and the design is wrong, not the migration.
 
-### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10; after three repairs to the prompt, 10 of 10 on the same asks; on ten unseen asks falsifier (2) HOLDS, 8 of 9)
+### 3.50 · Arc CT — the composed cockpit: a board a person asks for, arranged by the model, measured by the cards (DRAFTED 2026-09-28 at the user's direction · ✅ ADOPTED the same day, §6 item 36 · **CT-1 to CT-5 BUILT 2026-09-28**, branch `claude/cockpit-json-render-study`, not merged · CT-5's receipt by a model RUN the same day: ⚠ falsifier (2) FIRED, 4 of 10; after three repairs to the prompt, 10 of 10 on the same asks; on ten unseen asks falsifier (2) HOLDS, 8 of 9 · **CT-7 to CT-10 BUILT 2026-09-28** on `claude/briefing-cockpits`: the home moved to a person's Briefing, not committed)
+
+> **Status 2026-09-28, CT-7 to CT-10 BUILT — the home moved to a person's Briefing, at the user's word (§6 item
+> 36(c) superseded, clauses (i)–(l)).** A cockpit is a person's, keyed by connection, person and cockpit
+> (`aughor/cockpit/home.py`); the Ledger lists a person's by key prefix. Its cards are the person's own (the card
+> store's `user` scope) and the ones pinned for the connection; another person's are neither placeable nor listed.
+> **CT-7:** the Briefing's "Your cockpit" became a strip of the person's cockpits, drawn for the page's range, with
+> version, history, going back, retiring and bringing back; "My cockpit" starts in one act from the pinned cards, in
+> the order they were arranged. **CT-8:** Arrange — the outline by hand: move a card or section, move to a new
+> section or tab, rename, take off, add a card on none of the person's cockpits; each save a version. Pinning adds
+> to the cockpit in view. **CT-9:** "New cockpit" → an area → one short model run with the drafting tool alone
+> (`aughor/cockpit/ask.py`); the draft is shown as its outline, can be arranged before keeping (kept as the draft,
+> then the changes as the next version), or discarded. Only its owner can keep it. **CT-10:** the Cockpit tab and
+> the drafting tool left the Data Canvas (the chat's tools are byte-identical to before Arc CT); a canvas cockpit
+> is offered in its connection's Briefing and moved in one act, its cards made the person's, its canvas history
+> retired with a note, and put back if the move cannot be kept. **Measured:** Python 229 cockpit tests and the full
+> unit suite once (12,131 passed; its two ratchets then fixed at the cause — a retired word in six new lines, and
+> a spec copied through a line the params ratchet reads); web 1,367 tests and the seven gates; 20 deliberate breaks,
+> 19 caught and the 20th equivalent (the scope it set is set again by `cards.place`, whose own break is caught).
+> **Seen live** on the scratch servers: the Payments canvas cockpit (version 6) offered and moved, drawn in the
+> Briefing with its four tabs, arranged (a card taken off → version 2), gone back to (version 3), and a draft asked
+> for with no model configured, refused in the server's own sentence. **Not measured:** a draft by a model (no
+> spend was asked for); the Briefing draws no cockpit layer on a connection that was never explored, as it drew
+> no "Your cockpit" there before.
+
+> **Status 2026-09-28, later — a tab of its own.** The user: *"The cockpit shuld be a tab inside the Briefing.. as
+> simple as that.."*. The person's cockpits moved from the foot of the Briefing's page to a **Cockpit** tab beside
+> it, in the Intelligence workspace (`?layer=cockpit`), with a range control of its own ("As written" until one is
+> chosen). With the flag on, the Briefing's page draws no cockpit layer; off, it draws "Your cockpit" as before, and
+> there is no tab; a canvas's Briefing keeps the layer and has no tab. Opening the tab loads no Briefing and asks no
+> model, and a connection need not be explored for it — so the two limits of the first cut are gone. Web only: no
+> route changed. Web 1,372 tests and the seven gates; seen live on the scratch servers (the Payments cockpit drawn in
+> the tab, its figures as written; no Briefing request from opening it).
+
+> **Status 2026-09-28, last — the look of the mock.** The user, on the mock drawn at the study: *"See how neat this
+> is.. why isnt our cockpit like this?"*, then *"make the cockpit look like the mockup"*. The first cut drew every
+> card with the Briefing's `PinnedCardBody` unchanged (study §4.1), which is why it looked like a pinned card. A
+> cockpit now draws its own face (`web/components/cockpit/CockpitTile.tsx`); the law is unchanged — the figure is
+> the card's own run. **A figure** is written at the scale its metric's unit states, read by the Briefing's own
+> reader (`stated_range`, sent with each card by `GET /cockpits/{id}`, with what the card was made from and the
+> currency symbol); under it, how it moved against the window its range is compared with ("0.4 pts lower than
+> June"), its limit and whether it is past it, and at its foot what stands behind it (approved metric, trusted
+> query, finding, query). The move is green or red only where the card's limit says which way is bad. **A series**
+> is a line with its newest point labelled and its limit drawn across it. **A withheld card** is a tile that says
+> so. The doors (refresh, alert, evidence, take off) show on pointing. **The tab's header** is one period menu
+> that names the period as the server resolved it ("July 2026 · final"); the version line and Retire moved into
+> History. With ranges on, the tab opens on the latest complete month. **The comparison** is `POST
+> /cards/{id}/run?compare=true`: the card's SQL cut to the compared-with window exactly as it was cut to the range,
+> so the two differ only by their dates. It is at equal age only when the range is final — a cut does not bound a
+> cohort's outcomes the way a metric's own measurement does — and the tile says "not at equal age" before then. A
+> window with no figure says so; it is never a move from zero. Only the cockpit asks, so the Briefing's cards pay
+> for no second query; a cockpit read for a range runs two guarded queries per figure card instead of one.
+> **Not done:** the mock's note tile (a new element in the catalog, which is a vocabulary change) and its second
+> figure under the first ("of 6,951 items ordered" — a card has one figure). **Found on the data:** theLook's
+> `return_rate` states its unit as `ratio` alone, which states no range, so it reads 0.10 and not 10.0% — its
+> declaration, not the tile, is what would change that.
 
 > **Status 2026-09-28, the six repairs — at the user's word (*"fix the six faults"*).** Each fault the third run
 > found is repaired, and each repair was broken on purpose afterwards: 17 deliberate breaks, all caught. The
@@ -9900,6 +10042,22 @@ second place that declares chart kinds.
 - **CT-6 · out by other doors (named, not scheduled).** The same spec to PDF, to an image card for Slack, to
   email — a new door, with the departure gate in front of it — and into other AI clients as an MCP App; charts
   from the existing headless renderer. Trigger: a person asks for a cockpit outside the app.
+
+**The home moves to the Briefing (§6 item 36(c) superseded, clauses (i)–(l)).** Four waves, behind the same flag;
+off, the Briefing is byte-identical.
+- **CT-7 · a person's cockpits in the Briefing, no model.** A cockpit is keyed by connection, person and cockpit
+  (a Ledger artifact, as before). A strip of the person's named cockpits replaces "Your cockpit"; the selected one
+  is drawn with the page's range, with its version, history, going back and retiring. "My cockpit" is started in
+  one act from the cards pinned today — a read never builds it.
+- **CT-8 · adjusted by hand.** Move a card, take it off, rename or add a tab or a section — each a version, kept
+  with the person's name and checked by the same rules. Pinning adds to the cockpit in view; cards on none of the
+  person's cockpits are listed, not lost.
+- **CT-9 · a new cockpit from an area.** "New cockpit" → an area in the person's words → one short model run with
+  the drafting tool alone, over the connection's approved metrics, trusted queries and findings. The draft is shown
+  in place and kept or not; changes before keeping are kept as the next version in the same act.
+- **CT-10 · out of the canvas.** The Cockpit tab and the drafting tool leave the Data Canvas. A canvas cockpit is
+  offered to its owner in the Briefing and moved in one act: its spec becomes the person's cockpit, its cards
+  their own, its canvas history retired with a note that says where it went.
 
 **Receipt:** on theLook, in a Data Canvas scoped to its returns tables, "build me a returns cockpit" stages a
 proposal; approved, the tab shows tabs and sections, a card that appears when a watch crosses its limit, every
@@ -11595,6 +11753,26 @@ the browser** · **measure the premise before building.**
     a third spend and needs the user's word again.*
     **(g) ✅ DECIDED with the adoption, as drafted — email is not in this arc.** CT-6 names it and waits for someone
     to ask; when it comes it is a new door and the departure gate stands in front of it.
+    **(c) ⤳ SUPERSEDED 2026-09-28, after #555 merged — the home is the Briefing, and a cockpit is a person's.** The
+    user: *"now I want this in the Briefing tab.. the briefing itself can be at the connection level, but cockpit is
+    like a personal dashboard as well as a tailored briefing for the user who might want to look into certain areas
+    such as returns pricing marketing commercial analytics"*, and *"a better way to build it.. not from canvas..
+    canvas is dedicated for quick/deep investigation"*. Four clauses, each chosen through the question tool, each the
+    recommended option:
+    **(i) ✅ Several named cockpits per person**, one per area, switched from a strip in the Briefing; personal —
+    only its owner sees and changes it.
+    **(j) ✅ Built by naming an area, then adjusted by hand.** One short model run drafts a cockpit from the
+    connection's approved metrics, trusted queries and findings, checked by the same rules, shown in place; the
+    person keeps it or not. Changes after that are by hand and call no model.
+    **(k) ✅ Today's "Your cockpit" becomes the person's first cockpit** — one concept, one store. Its pinned cards
+    become version 1 of "My cockpit"; pinning adds to the cockpit in view.
+    **(l) ✅ Out of the canvas.** The Cockpit tab and the drafting tool leave the Data Canvas; the one canvas
+    cockpit approved on theLook moves to its owner's Briefing, linked to its history.
+    Three choices were the builder's and are open to the user: cards a person's cockpit creates are that person's
+    (the card store's `user` scope), so a limit is personal, while cards pinned for the connection stay placeable
+    by anyone; a person's cockpits are Ledger artifacts keyed by connection, person and cockpit; and "adjust before
+    keeping" is kept as two versions in one act — the model's draft, then the person's changes — so the history
+    says which was whose. Waves CT-7 to CT-10, §3.50.
 
 ---
 

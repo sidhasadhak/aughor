@@ -1882,95 +1882,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/canvases/{canvas_id}/cockpit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Cockpit
-         * @description The canvas's cockpit as it stands: its newest version with its spec (or null when it
-         *     has none), the cards the canvas holds, the range it is read for, and its history.
-         *     No model call, and nothing is written.
-         */
-        get: operations["read_cockpit_canvases__canvas_id__cockpit_get"];
-        /**
-         * Keep Cockpit
-         * @description Keep a spec a person wrote as this canvas's cockpit: the next version, or a refusal
-         *     with the reasons.
-         */
-        put: operations["keep_cockpit_canvases__canvas_id__cockpit_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/canvases/{canvas_id}/cockpit/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Restore Cockpit
-         * @description Go back to an earlier version. It is kept again as the newest, checked against the
-         *     canvas as it is today.
-         */
-        post: operations["restore_cockpit_canvases__canvas_id__cockpit_restore_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/canvases/{canvas_id}/cockpit/retire": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Retire Cockpit
-         * @description Retire this canvas's cockpit. Its history stays.
-         */
-        post: operations["retire_cockpit_canvases__canvas_id__cockpit_retire_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/canvases/{canvas_id}/cockpit/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start Cockpit
-         * @description Start a cockpit from the cards this canvas holds, grouped by their kind. Written by
-         *     code, kept like any other spec.
-         */
-        post: operations["start_cockpit_canvases__canvas_id__cockpit_start_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/canvases/{canvas_id}/documents": {
         parameters: {
             query?: never;
@@ -2272,6 +2183,12 @@ export interface paths {
          *     substituted by itself filtered to the window — and `scoped` says what the number covers;
          *     a card whose tables have no date runs standing and `scoped` says why. A range run never
          *     rolls into the card's standing value history.
+         *
+         *     With `compare` (a cockpit asks it), a figure cut to a range is also read for the window the
+         *     range is compared with, cut the same way, so the two differ only by their dates — `previous`.
+         *     It is at equal age only when the range is final: a cut does not bound a cohort's outcomes to
+         *     an as-of the way a metric's own measurement does, so before then part of any difference is
+         *     age, and `previous` says so.
          */
         post: operations["run_card_route_cards__card_id__run_post"];
         delete?: never;
@@ -2477,6 +2394,158 @@ export interface paths {
         get: operations["get_chat_receipt_chat__connection_id___turn_id__receipt_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Cockpits
+         * @description The asker's cockpits on this connection, the cards they may place, and the canvas
+         *     cockpits waiting to be moved here. No model call, and nothing is written.
+         */
+        get: operations["list_cockpits_cockpits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Cockpit
+         * @description ⚑ Spends model calls. Draft a new cockpit for the area the person named: one short
+         *     model run with the drafting tool alone. What comes back is a proposal to keep or not, or
+         *     the reasons none was drafted — never a cockpit changed.
+         */
+        post: operations["draft_cockpit_cockpits_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Cockpit
+         * @description Move a canvas's cockpit to the asker's Briefing. One act: the cards it places become
+         *     theirs, its spec their cockpit's first version, and the canvas's is retired with a note.
+         */
+        post: operations["move_cockpit_cockpits_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start First
+         * @description Start "My cockpit" from the cards pinned in the Briefing before cockpits had names, in the
+         *     order the person arranged them. Written by code, kept like any other spec.
+         */
+        post: operations["start_first_cockpits_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/{cockpit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Cockpit
+         * @description One of the asker's cockpits as it stands: its newest version with its spec, every card
+         *     it may place (theirs and the connection's), the range it is read for, and its history.
+         */
+        get: operations["read_cockpit_cockpits__cockpit_id__get"];
+        /**
+         * Keep Cockpit
+         * @description Keep a spec the person wrote — a card moved, a section renamed — as the cockpit's next
+         *     version, or a refusal with the reasons.
+         */
+        put: operations["keep_cockpit_cockpits__cockpit_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/{cockpit_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Cockpit
+         * @description Go back to an earlier version. It is kept again as the newest, checked against the
+         *     cards as they are today.
+         */
+        post: operations["restore_cockpit_cockpits__cockpit_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/{cockpit_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire Cockpit
+         * @description Retire a cockpit. Its history stays.
+         */
+        post: operations["retire_cockpit_cockpits__cockpit_id__retire_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13620,6 +13689,13 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DraftRequest */
+        DraftRequest: {
+            /** Area */
+            area: string;
+            /** Schema Name */
+            schema_name?: string | null;
+        };
         /** DrillRequest */
         DrillRequest: {
             /**
@@ -14430,6 +14506,11 @@ export interface components {
              * @default
              */
             source: string;
+        };
+        /** MoveRequest */
+        MoveRequest: {
+            /** Canvas Id */
+            canvas_id: string;
         };
         /**
          * ObjectFilter
@@ -20437,188 +20518,6 @@ export interface operations {
             };
         };
     };
-    read_cockpit_canvases__canvas_id__cockpit_get: {
-        parameters: {
-            query?: {
-                preset?: string | null;
-                start?: string | null;
-                end?: string | null;
-                workspace_id?: string | null;
-            };
-            header?: never;
-            path: {
-                canvas_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    keep_cockpit_canvases__canvas_id__cockpit_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                canvas_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KeepRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    restore_cockpit_canvases__canvas_id__cockpit_restore_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                canvas_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RestoreRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    retire_cockpit_canvases__canvas_id__cockpit_retire_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                canvas_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RetireRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    start_cockpit_canvases__canvas_id__cockpit_start_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                canvas_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     canvas_documents_canvases__canvas_id__documents_get: {
         parameters: {
             query?: never;
@@ -21226,6 +21125,7 @@ export interface operations {
                 start?: string | null;
                 end?: string | null;
                 workspace_id?: string | null;
+                compare?: boolean;
             };
             header?: never;
             path: {
@@ -21564,6 +21464,302 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_cockpits_cockpits_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_cockpit_cockpits_draft_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_cockpit_cockpits_move_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_first_cockpits_start_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_cockpit_cockpits__cockpit_id__get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                workspace_id?: string | null;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_cockpit_cockpits__cockpit_id__put: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_cockpit_cockpits__cockpit_id__restore_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retire_cockpit_cockpits__cockpit_id__retire_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetireRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

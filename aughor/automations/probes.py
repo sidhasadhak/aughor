@@ -108,7 +108,8 @@ def current_version(conn_id: str, db, table: str, *,
     sql = f"SELECT {', '.join(parts)} FROM {table}"
     try:
         bounded = getattr(db, "execute_bounded", None)
-        r = bounded(_PROBE_ID, sql, 2) if bounded else db.execute(_PROBE_ID, sql)
+        r = (bounded(_PROBE_ID, sql, 2, sql_dialect="duckdb") if bounded
+             else db.execute(_PROBE_ID, sql, sql_dialect="duckdb"))
     except Exception as exc:
         return None, f"probe failed: {type(exc).__name__}: {exc}"
     if r is None or r.error:

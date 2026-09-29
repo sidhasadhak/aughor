@@ -572,7 +572,7 @@ def test_keys_that_cannot_all_be_read_leave_a_claim_unmeasured_and_unread(source
     from aughor.ontology import sources as SRC
 
     class Partial:
-        def execute_bounded(self, label, sql, max_rows):
+        def execute_bounded(self, label, sql, max_rows, sql_dialect=None):
             return QueryResult(hypothesis_id=label, sql=sql, columns=["k"], rows=[["a"], ["b"]], row_count=5)
 
     keys, why = SRC.distinct_keys(Partial(), "t AS o", "o", "k")
@@ -960,7 +960,13 @@ class ReadAsBigQuery:
     def __init__(self, inner):
         self.inner = inner
         if hasattr(inner, "execute_typed"):
-            self.execute_typed = lambda label, sql: inner.execute_typed(label, self.read(sql))
+            self.execute_typed = lambda label, sql, *, sql_dialect=None: inner.execute_typed(
+                label, self.read(self.door(sql, sql_dialect)))
+
+    def door(self, sql: str, sql_dialect) -> str:
+        """The door's dialect step, as every native connector applies it before its first gate (GM-1)."""
+        from aughor.db.dialects import sql_for_engine
+        return sql_for_engine(self, sql, sql_dialect)
 
     @staticmethod
     def read(sql: str) -> str:
@@ -973,14 +979,14 @@ class ReadAsBigQuery:
             raise ValueError(f"BigQuery reads a double-quoted token as a string, never as a name: {sql[:120]}")
         return sqlglot.transpile(sql, read="bigquery", write="duckdb")[0]
 
-    def execute(self, label, sql):
-        return self.inner.execute(label, self.read(sql))
+    def execute(self, label, sql, *, sql_dialect=None):
+        return self.inner.execute(label, self.read(self.door(sql, sql_dialect)))
 
-    def execute_bounded(self, label, sql, max_rows):
-        return self.inner.execute_bounded(label, self.read(sql), max_rows)
+    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None):
+        return self.inner.execute_bounded(label, self.read(self.door(sql, sql_dialect)), max_rows)
 
-    def read_typed_rows(self, label, sql, max_rows):
-        return self.inner.read_typed_rows(label, self.read(sql), max_rows)
+    def read_typed_rows(self, label, sql, max_rows, *, sql_dialect=None):
+        return self.inner.read_typed_rows(label, self.read(self.door(sql, sql_dialect)), max_rows)
 
     def close(self):
         self.inner.close()

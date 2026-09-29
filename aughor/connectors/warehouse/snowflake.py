@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 
 from aughor.connectors.base import Connector
+from aughor.db.doors import through_door
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -70,12 +71,13 @@ class SnowflakeConnection(Connector):
         return [stage_type(FIELD_ID_TO_NAME.get(d[1], "") if len(d) > 1 else "",
                            d[4] if len(d) > 4 else None, d[5] if len(d) > 5 else None) for d in description]
 
-    def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        return self._execute(hypothesis_id, sql, MAX_ROWS)
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS))
 
-    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
-        return self._execute(hypothesis_id, sql, max(1, max_rows))
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)))
 
     def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, offer_typed_rows, security_pre, security_post

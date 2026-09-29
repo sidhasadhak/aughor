@@ -56,7 +56,7 @@ def test_a_card_this_canvas_does_not_hold_is_refused_by_name(premise):
     verdict = V.check_spec(premise, known_cards={"c7f3a001"})
     assert verdict.status == V.REFUSED
     assert verdict.cards == ()
-    assert 'places the card "c91b2002", which this canvas does not hold' in said(verdict)
+    assert 'places the card "c91b2002", which is not a card of this cockpit' in said(verdict)
     assert "c7f3a001" not in said(verdict)          # the card it does hold is not named
 
 
@@ -66,7 +66,7 @@ def test_a_condition_may_not_read_the_status_of_a_card_outside_the_canvas(premis
     verdict = V.check_spec(premise, known_cards=CARDS)
     assert verdict.status == V.REFUSED
     assert said(verdict) == ('A condition reads the status of the card "feedbeef", '
-                             'which this canvas does not hold.')
+                             'which is not a card of this cockpit.')
 
 
 @needs_rules
@@ -247,23 +247,25 @@ def test_rules_that_hang_are_not_checked(premise, monkeypatch, tmp_path):
 # ── against the card store ────────────────────────────────────────────────────
 
 @needs_rules
-def test_the_canvas_is_asked_for_the_cards_it_holds(premise, monkeypatch):
+def test_the_card_store_is_asked_for_the_persons_cards_and_the_connections(premise, monkeypatch):
+    from aughor.cockpit.home import Home
     from aughor.dashboard import store
     from aughor.dashboard.models import DashboardCard
 
     asked = []
 
     def list_cards(connection_id=None, scope=None, scope_ref=None):
-        asked.append((scope, scope_ref))
-        return [DashboardCard(id="c7f3a001", scope="canvas", scope_ref="cv_returns")]
+        asked.append((connection_id, scope, scope_ref))
+        return [DashboardCard(id="c7f3a001", scope=scope, scope_ref=scope_ref)] if scope == "user" else []
 
     monkeypatch.setattr(store, "list_cards", list_cards)
 
-    verdict = V.check_spec_for_canvas(copy.deepcopy(premise), "cv_returns")
-    assert asked == [("canvas", "cv_returns")]
+    home = Home("thelook", "u1", "returns")
+    verdict = V.check_spec_for_home(copy.deepcopy(premise), home)
+    assert sorted(asked) == [("thelook", "connection", "thelook"), ("thelook", "user", "u1")]
     assert verdict.status == V.REFUSED
     assert 'places the card "c91b2002"' in said(verdict)
 
     # A card the same proposal is about to create counts as held.
-    verdict = V.check_spec_for_canvas(premise, "cv_returns", also_known=["c91b2002"])
+    verdict = V.check_spec_for_home(premise, home, also_known=["c91b2002"])
     assert verdict.status == V.ACCEPTED, said(verdict)

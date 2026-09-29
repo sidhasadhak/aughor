@@ -106,6 +106,72 @@ def test_a_card_without_a_date_runs_standing_and_says_why(monkeypatch):
     assert seen["sql"] == card.sql and body["refresh"]["last_value"] == 7
 
 
+def _answers(monkeypatch, seen: list, by_window: dict):
+    """The warehouse, answering each window's cut with its own figure."""
+    def run(db, sql, **kw):
+        seen.append(sql)
+        figure = next((v for day, v in by_window.items() if day in sql), None)
+        return QueryResult(hypothesis_id="c", sql=sql, columns=["n"], rows=[[figure]], row_count=1)
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded", run)
+
+
+def test_asked_to_compare_a_cut_figure_is_read_for_its_comparison_the_same_way(monkeypatch):
+    """A cockpit's card says how its figure moved against the window its range is compared
+    with — the card's own SQL, cut on the same date, so the two differ only by their dates."""
+    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
+    _stub(monkeypatch, {})
+    seen: list = []
+    _answers(monkeypatch, seen, {"2026-08-24": 7, "2026-08-10": 5})
+    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                     sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
+    body = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()
+    assert body["value"] == 7
+    from aughor.briefing.ranges import phrases
+    assert body["previous"] == {"covers": phrases(SPEC)["compared_with"], "word": "the week before",
+                                "equal_age": True, "value": 5, "why": ""}
+    assert len(seen) == 2 and "2026-08-10" in seen[1] and "2026-08-17" in seen[1]
+    assert get_card(card.id).refresh.history == []          # neither figure is the standing one
+
+
+def test_a_comparison_before_the_range_settles_says_it_is_not_at_equal_age(monkeypatch):
+    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
+    _stub(monkeypatch, {})
+    young = RangeSpec(**{**SPEC.__dict__, "as_of": date(2026, 8, 26)})
+    monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (young, ""))
+    _answers(monkeypatch, [], {"2026-08-24": 7, "2026-08-10": 5})
+    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                     sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
+    body = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()
+    assert body["previous"]["value"] == 5 and body["previous"]["equal_age"] is False
+
+
+def test_a_comparison_with_no_figure_says_so_and_is_never_zero(monkeypatch):
+    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
+    _stub(monkeypatch, {})
+    _answers(monkeypatch, [], {"2026-08-24": 7})
+    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                     sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
+    prev = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()["previous"]
+    assert prev["value"] is None and prev["why"] == "it has no figure there"
+
+
+def test_nothing_is_compared_unasked_or_where_nothing_was_cut(monkeypatch):
+    """The Briefing's own cards never ask, so they pay for no second query; a card that ran
+    standing has no window of its own to compare."""
+    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
+    _stub(monkeypatch, {})
+    seen: list = []
+    _answers(monkeypatch, seen, {"2026-08-24": 7, "2026-08-10": 5})
+    orders = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                       sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
+    assert "previous" not in client.post(f"/cards/{orders.id}/run", params={"preset": "last_week"}).json()
+    assert len(seen) == 1
+    products = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                         sql="SELECT COUNT(*) AS n FROM products", title="products"))
+    body = client.post(f"/cards/{products.id}/run", params={"preset": "last_week", "compare": True}).json()
+    assert body["scoped"]["standing"] is True and body["previous"] is None and len(seen) == 2
+
+
 def test_a_range_is_refused_with_the_flag_off(monkeypatch):
     monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "0")
     seen: dict = {}

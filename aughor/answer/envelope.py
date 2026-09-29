@@ -19,9 +19,9 @@ frames the run already emitted, and a door reads that:
   width, a CSV past N rows, a fenced block — belong to the door);
 * ``caveats`` — what qualifies the number, worth a reader's eye on every surface;
 * ``follow_ups`` — the questions the run suggested next;
-* ``provenance`` — SQL, tables, guard receipts, ids, confidence: the record. A door that
-  drops it (Slack, by the user's 2026-09-22 rule) drops a FIELD, and one that shows it
-  (the PDF) shows the same field.
+* ``provenance`` — SQL, tables, guard receipts, the doors each statement passed (GM-3), ids,
+  confidence: the record. A door that drops it (Slack, by the user's 2026-09-22 rule) drops a
+  FIELD, and one that shows it (the PDF) shows the same field.
 
 The fold is the single implementation. It never invents: a field the frames did not carry
 stays empty, and the counter `lifted_tables` says how often the model tabulated in prose,
@@ -68,6 +68,10 @@ class Provenance(BaseModel):
     sql: list[str] = Field(default_factory=list)
     tables_used: list[str] = Field(default_factory=list)
     guard_receipts: list[dict[str, Any]] = Field(default_factory=list)
+    #: GM-3 — each executed statement with the doors it passed, ``{"sql": …, "doors": [...]}``, in the
+    #: order they ran (`aughor.db.doors`). Guard receipts say what FIRED; this says what every statement
+    #: went through, fired or not. Empty when no statement reported its path.
+    doors: list[dict[str, Any]] = Field(default_factory=list)
     folded_at: str = ""
 
 
@@ -205,6 +209,8 @@ class EnvelopeFolder:
         self._chart_type = ""
         self._chart_config: dict[str, Any] = {}
         self._sql: list[str] = []
+        self._last_sql = ""
+        self._doors: list[dict[str, Any]] = []
         self._tables: list[str] = []
         self._receipts: list[dict[str, Any]] = []
         self._caveats: list[str] = []
@@ -231,8 +237,13 @@ class EnvelopeFolder:
             sql = str(p.get("sql") or "").strip()
             if sql and sql not in self._sql:
                 self._sql.append(sql)
+            self._last_sql = sql or self._last_sql
         elif kind == "columns":
             self._columns = [str(c) for c in (p.get("columns") or [])]
+            if p.get("doors"):
+                # the statement that just ran is the last one a `sql` frame named; a re-run replaces its entry
+                self._doors = [e for e in self._doors if e["sql"] != self._last_sql]
+                self._doors.append({"sql": self._last_sql, "doors": _strs(p.get("doors"))})
         elif kind == "rows":
             self._rows = list(p.get("rows") or [])
         elif kind == "chart_type":
@@ -347,6 +358,7 @@ class EnvelopeFolder:
                 mode=self._mode,
                 confidence=self._confidence, sql=list(self._sql),
                 tables_used=list(self._tables), guard_receipts=list(self._receipts),
+                doors=list(self._doors),
                 folded_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             ),
             error=self._error,

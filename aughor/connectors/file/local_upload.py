@@ -48,6 +48,7 @@ from aughor.db.duckdb_ext import prepare_extensions
 
 from aughor.db.single_flight import single_flight_build
 from aughor.connectors.base import Connector
+from aughor.db.doors import through_door
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.control_plane.vending import STORAGE_ROOT, vend_storage
 # Numbers stored as text ('₹1,099', '64%', '24,269') are re-typed at ingest. The
@@ -1333,13 +1334,15 @@ class LocalUploadConnection(Connector):
         return self.execute(hypothesis_id, sql, params=params)
 
     def execute(self, hypothesis_id: str, sql: str,
-                params: dict | None = None) -> QueryResult:
-        return self._execute(hypothesis_id, sql, params, MAX_ROWS)
+                params: dict | None = None, *,
+                sql_dialect: str | None = None) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, params, MAX_ROWS))
 
-    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> QueryResult:
         """Up to ``max_rows`` rows. Without it the Workspace connection read every cross-source key set and keyed
         read through its 2,000-row cap, so a measurement or a join past it was refused."""
-        return self._execute(hypothesis_id, sql, None, max(1, max_rows))
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, None, max(1, max_rows)))
 
     def _execute(self, hypothesis_id: str, sql: str, params: dict | None, max_rows: int) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post

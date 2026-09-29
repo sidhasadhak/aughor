@@ -4,9 +4,10 @@
  * ComposedCockpit — a cockpit drawn from a spec (Arc CT, CT-1 and CT-2; ROADMAP §3.50).
  *
  * The law of the arc: the spec arranges, the card store measures. This component draws tabs
- * and sections from the spec, and hands every card to `PinnedCardBody` UNCHANGED — the same
- * component the Briefing's cockpit draws with — so a chart here is the same Vega chart it is
- * there, and nothing about what a card measures is decided in this file.
+ * and sections from the spec, and hands every card to `CockpitTile`, which draws the card's own
+ * run at its metric's unit — nothing about what a card measures is decided in this file. (Until
+ * the user's "make the cockpit look like the mockup", 2026-09-28, a card was drawn with the
+ * Briefing's `PinnedCardBody` unchanged; the face changed, the law did not.)
  *
  * Three things it will not do:
  *   - draw a spec the rules refuse. It says why instead, in the rules' own sentences.
@@ -18,19 +19,21 @@
  *     boundary of its own that draws NOTHING when a component throws; the boundary here
  *     sits inside it, so the library's never gets the chance.
  *
- * Nothing mounts this yet. CT-4 puts it in the Data Canvas behind `cockpit.composed`.
+ * The Briefing draws a person's cockpits with it (`BriefingCockpits`), behind `cockpit.composed`.
  */
-import { Component, createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { Component, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { evaluateVisibility, type Spec, type VisibilityCondition } from "@json-render/core";
 import {
   JSONUIProvider, Renderer, createStateStore, useBoundProp, useStateStore,
   type ComponentRegistry, type ComponentRenderProps,
 } from "@json-render/react";
 
-import { PinnedCardBody, type CardState } from "@/components/brief/PinnedCardBody";
-import { CARD_H } from "@/components/brief/PinnedCardsGrid";
+import type { CardState } from "@/components/brief/PinnedCardBody";
+import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape } from "@/components/cockpit/CockpitTile";
+import { Icon } from "@/components/ui/icon";
 import { Refusal } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { CockpitCard } from "@/lib/api";
 import type { ComponentName, Tone } from "@/lib/cockpit/catalog";
 import { stateModel, type CockpitHostState } from "@/lib/cockpit/hostState";
 import { checkCockpitSpec, openingTab } from "@/lib/cockpit/rules";
@@ -47,9 +50,13 @@ interface CockpitContextValue {
   cards: Map<string, CardState>;
   host: CockpitHostState;
   doors: CockpitDoors;
+  sym: string;
 }
 
 const CockpitContext = createContext<CockpitContextValue | null>(null);
+
+/** How many columns the section a card sits in draws — a wide tile takes two, where there are two. */
+const SectionColumns = createContext(1);
 
 function useCockpit(): CockpitContextValue {
   const ctx = useContext(CockpitContext);
@@ -64,7 +71,8 @@ const TONE_RULE: Record<Tone, string> = {
 
 function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string }>) {
   // The title names the cockpit for a screen reader and for the history. It is not drawn as a
-  // header: the canvas already carries the name, and a panel does not repeat its own title.
+  // header: the strip of cockpits above it already carries the name, and a panel does not
+  // repeat its own title.
   return <div role="region" aria-label={element.props.title} data-testid="cockpit">{children}</div>;
 }
 
@@ -77,7 +85,7 @@ function CockpitTabs({ element, children, bindings }: ComponentRenderProps<{ val
   });
   return (
     <Tabs value={open ?? tabs[0]?.name} onValueChange={v => setOpen(String(v))}>
-      <TabsList variant="line">
+      <TabsList>
         {tabs.map(t => <TabsTrigger key={t.key} value={t.name}>{t.label}</TabsTrigger>)}
       </TabsList>
       {children}
@@ -101,7 +109,8 @@ function CockpitTab({ element, children }: ComponentRenderProps<{ name: string; 
     <TabsContent value={element.props.name}>
       {children}
       {waiting > 0 && (
-        <div className="aug-fs-sm" data-testid="cockpit-waiting-sections" style={{ color: "var(--t3)", marginTop: 16 }}>
+        <div className="aug-fs-sm" data-testid="cockpit-waiting-sections" style={{ color: "var(--t3)", marginTop: 16, display: "flex", alignItems: "center", gap: 6 }}>
+          <Icon name="eyeoff" size={13} />
           {waiting === 1 ? "1 section waits on a condition" : `${waiting} sections wait on a condition`}
         </div>
       )}
@@ -109,40 +118,48 @@ function CockpitTab({ element, children }: ComponentRenderProps<{ name: string; 
   );
 }
 
+/** The narrowest a tile is drawn. A section never asks for more columns than fit. */
+const MIN_TILE = 200;
+const GAP = 12;
+const MAX_AUTO_COLUMNS = 4;
+
+/** How many columns a section draws: the spec's, when it says, never more than fit. Width 0 is
+ *  a section not yet measured (or a test's DOM), and draws as asked. */
+function useColumns(asked: number | null | undefined): [RefObject<HTMLDivElement | null>, number] {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    setWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  const fit = width > 0 ? Math.max(1, Math.floor((width + GAP) / (MIN_TILE + GAP))) : MAX_AUTO_COLUMNS;
+  return [ref, Math.min(asked ?? MAX_AUTO_COLUMNS, fit)];
+}
+
 function CockpitSection({ element, children }: ComponentRenderProps<{ title: string; columns?: number | null }>) {
   const waiting = useWaiting(element.children);
-  const columns = element.props.columns;
+  const [ref, columns] = useColumns(element.props.columns);
   return (
-    <section data-testid="cockpit-section" style={{ marginTop: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-        <div className="aug-label">{element.props.title}</div>
+    <section data-testid="cockpit-section" style={{ marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
+        <div className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>{element.props.title}</div>
         {waiting > 0 && (
-          <div className="aug-fs-sm" data-testid="cockpit-waiting" style={{ color: "var(--t3)" }}>
+          <div className="aug-fs-sm" data-testid="cockpit-waiting" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon name="eyeoff" size={13} />
             {waiting === 1 ? "1 card waits on a condition" : `${waiting} cards wait on a condition`}
           </div>
         )}
       </div>
-      <div style={{
-        display: "grid", gap: 12, alignItems: "start",
-        gridTemplateColumns: columns
-          ? `repeat(${columns}, minmax(0, 1fr))`
-          : "repeat(auto-fill, minmax(280px, 1fr))",
+      <div ref={ref} data-columns={columns} style={{
+        display: "grid", gap: GAP, alignItems: "stretch", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
       }}>
-        {children}
+        <SectionColumns.Provider value={columns}>{children}</SectionColumns.Provider>
       </div>
     </section>
-  );
-}
-
-function Said({ what, children }: { what: string; children: ReactNode }) {
-  return (
-    <div className="aug-fs-sm" data-testid="cockpit-card-said" style={{
-      height: "100%", boxSizing: "border-box", padding: "9px 12px",
-      border: "1px dashed var(--b2)", borderRadius: "var(--r3)", color: "var(--t2)",
-    }}>
-      <div style={{ fontWeight: 500, color: "var(--t1)" }}>{what}</div>
-      <div style={{ marginTop: 4 }}>{children}</div>
-    </div>
   );
 }
 
@@ -157,30 +174,32 @@ class CardBoundary extends Component<{ children: ReactNode }, { failed: string |
 
   render() {
     if (this.state.failed === null) return this.props.children;
-    return <Said what="Could not be drawn">This card is here, and drawing it failed: {this.state.failed}</Said>;
+    return <SaidTile what="Could not be drawn">This card is here, and drawing it failed: {this.state.failed}</SaidTile>;
   }
 }
 
 function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: Tone | null }>) {
-  const { cards, host, doors } = useCockpit();
+  const { cards, host, doors, sym } = useCockpit();
+  const columns = useContext(SectionColumns);
   const id = element.props.card;
   const tone = element.props.tone ?? null;
   const cs = cards.get(id);
-  const withheld = host.cards[id]?.status === "withheld";
+  const status = host.cards[id]?.status ?? "unmeasured";
+  const wide = !!cs && WIDE[tileShape(cs)];
   return (
     <div data-testid="cockpit-card" data-card={id} data-tone={tone ?? undefined} style={{
-      height: CARD_H, position: "relative", borderRadius: "var(--r3)",
+      position: "relative", borderRadius: "var(--r3)", minWidth: 0,
+      gridColumn: wide ? `span ${Math.min(2, columns)}` : undefined,
       boxShadow: tone ? `inset 3px 0 0 ${TONE_RULE[tone]}` : undefined,
       paddingLeft: tone ? 3 : 0,
     }}>
-      {withheld
-        ? <Said what="Withheld">You may not see this card. It is here, and it is not empty.</Said>
+      {status === "withheld"
+        ? <WithheldTile />
         : !cs
-          ? <Said what="Not in this canvas">The cockpit places a card this canvas does not hold.</Said>
+          ? <SaidTile what="Not one of your cards">The cockpit places a card you do not have.</SaidTile>
           : (
             <CardBoundary key={`${id}:${cs.run ? JSON.stringify(cs.run.rows).length : 0}:${cs.failed ? 1 : 0}`}>
-              <PinnedCardBody cs={cs} onRemove={doors.onRemove} onRefresh={doors.onRefresh}
-                onOpenSource={doors.onOpenSource} onEvidence={doors.onEvidence} />
+              <CockpitTile cs={cs as CardState & { card: CockpitCard }} status={status} sym={sym} doors={doors} />
             </CardBoundary>
           )}
     </div>
@@ -196,11 +215,13 @@ const REGISTRY = {
   Card: CockpitCard,
 } satisfies Record<ComponentName, unknown>;
 
-export function ComposedCockpit({ spec, cards, host, doors }: {
+export function ComposedCockpit({ spec, cards, host, doors, sym = "$" }: {
   spec: unknown;
   cards: CardState[];
   host: CockpitHostState;
   doors: CockpitDoors;
+  /** The symbol a money figure is written with (`currency_symbol` from the cockpit's read). */
+  sym?: string;
 }) {
   // A spec is known by what it says, not by which object says it: a caller that parses the
   // same JSON again on every render hands over a new object each time, and that must not
@@ -225,8 +246,9 @@ export function ComposedCockpit({ spec, cards, host, doors }: {
     cards: new Map(cards.map(c => [c.card.id, c])),
     host,
     doors,
+    sym,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the spec says
-  }), [check.valid, written, cards, host, doors]);
+  }), [check.valid, written, cards, host, doors, sym]);
 
   if (!check.valid) {
     return (

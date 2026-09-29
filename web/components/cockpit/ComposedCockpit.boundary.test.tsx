@@ -16,13 +16,13 @@ import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import type { DashboardCard } from "@/lib/api";
 
-vi.mock("@/components/brief/PinnedCardBody", () => ({
-  PinnedCardBody: ({ cs }: { cs: CardState }) => {
+vi.mock("@/components/cockpit/CockpitTile", async (original) => ({
+  ...(await original<typeof import("@/components/cockpit/CockpitTile")>()),
+  CockpitTile: ({ cs }: { cs: CardState }) => {
     if (cs.card.id === "c91b2002") throw new Error("the chart could not be built");
     return <div>{cs.card.title}</div>;
   },
 }));
-vi.mock("@/components/brief/PinnedCardsGrid", () => ({ CARD_H: 210 }));
 
 const premise = () => JSON.parse(readFileSync(resolve(process.cwd(), "lib/cockpit/premise.fixture.json"), "utf8"));
 const card = (id: string, title: string): CardState => ({ card: { id, title } as DashboardCard });

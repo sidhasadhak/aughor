@@ -448,6 +448,7 @@ def _parse_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
             r = conn.execute(
                 "__profiler__",
                 f'SELECT column_name, column_type FROM (DESCRIBE {table})',
+                sql_dialect="duckdb",
             )
             if r.error or not r.rows:
                 # Fallback: information_schema (works on DuckDB too)
@@ -461,6 +462,7 @@ def _parse_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
                     "__profiler__",
                     f"SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                     f"{where} ORDER BY ordinal_position",
+                    sql_dialect="duckdb",
                 )
             if r.error or not r.rows:
                 return []
@@ -474,6 +476,7 @@ def _parse_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
                 f"SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                 f"WHERE table_name = '{table}' AND table_schema = '{schema_name}' "
                 f"ORDER BY ordinal_position",
+                sql_dialect="duckdb",
             )
             if r.error or not r.rows:
                 return []
@@ -804,6 +807,7 @@ def _robust_date_range(
             f"SELECT date_trunc('month', {qts})::VARCHAR AS m, COUNT(*) AS c "
             f"FROM {qt} WHERE {qts} IS NOT NULL GROUP BY 1 ORDER BY 1",
             _DENSE_RANGE_MAX_MONTHS,
+            sql_dialect="duckdb",
         )
     except Exception:
         return None
@@ -892,6 +896,7 @@ def _period_density(conn: "DatabaseConnection", qt: str, qts: str, date_range):
         r0 = conn.execute(
             "__profiler__",
             f"SELECT COUNT(DISTINCT date_trunc('day', {qts})) FROM {qt} WHERE {qts} IS NOT NULL",
+            sql_dialect="duckdb",
         )
         if not r0.error and r0.rows and r0.rows[0][0] is not None:
             distinct_days = int(r0.rows[0][0])
@@ -906,6 +911,7 @@ def _period_density(conn: "DatabaseConnection", qt: str, qts: str, date_range):
             "__profiler__",
             f"SELECT date_trunc('{grain}', {qts})::VARCHAR AS p, COUNT(*) AS c "
             f"FROM {qt} WHERE {qts} IS NOT NULL GROUP BY 1 ORDER BY 1",
+            sql_dialect="duckdb",
         )
     except Exception:
         return grain, est, False
@@ -952,7 +958,7 @@ def _catalog_stats_duckdb(
             f"AND schema_name NOT IN ('information_schema','pg_catalog','temp')"
         )
     row_count: Optional[int] = None
-    r = conn.execute("__profiler__", rc_sql)
+    r = conn.execute("__profiler__", rc_sql, sql_dialect="duckdb")
     if not r.error and r.rows and r.rows[0][0] is not None:
         try:
             row_count = int(r.rows[0][0])
@@ -963,7 +969,7 @@ def _catalog_stats_duckdb(
     qt = _qt(f'{schema}.{table}' if schema else table)
     sum_sql = f"SELECT * FROM (SUMMARIZE {qt})"
     col_stats: dict = {}
-    r2 = conn.execute("__profiler__", sum_sql)
+    r2 = conn.execute("__profiler__", sum_sql, sql_dialect="duckdb")
     if not r2.error and r2.rows and r2.columns:
         # DuckDB SUMMARIZE columns vary by version; map by name
         col_idx = {c.lower(): i for i, c in enumerate(r2.columns)}
@@ -1032,6 +1038,7 @@ def _catalog_stats_postgres(
         f"SELECT reltuples::bigint FROM pg_class c "
         f"JOIN pg_namespace n ON n.oid = c.relnamespace "
         f"WHERE c.relname = '{table}' AND n.nspname = '{schema}'",
+        sql_dialect="duckdb",
     )
     if not r.error and r.rows and r.rows[0][0] is not None:
         try:
@@ -1045,6 +1052,7 @@ def _catalog_stats_postgres(
         f"SELECT attname, null_frac, n_distinct, "
         f"most_common_vals::text, histogram_bounds::text "
         f"FROM pg_stats WHERE tablename = '{table}' AND schemaname = '{schema}'",
+        sql_dialect="duckdb",
     )
     col_stats: dict = {}
     if not r2.error and r2.rows:
@@ -1133,7 +1141,7 @@ def build_table_profile(
     # Use catalog estimate if we have one; fall back to COUNT(*) only when it's
     # genuinely missing (rare: table never vacuumed / fresh DuckDB without stats).
     if row_count == 0:
-        r = conn.execute("__profiler__", f"SELECT COUNT(*) FROM {qt}")
+        r = conn.execute("__profiler__", f"SELECT COUNT(*) FROM {qt}", sql_dialect="duckdb")
         if not r.error and r.rows:
             try:
                 row_count = int(r.rows[0][0])
@@ -1183,9 +1191,9 @@ def build_table_profile(
             qc = _q(candidate)
             exact = row_count <= _LARGE_TABLE_THRESHOLD
             if exact:
-                r2 = conn.execute("__profiler__", f"SELECT COUNT(DISTINCT {qc}) FROM {qt}")
+                r2 = conn.execute("__profiler__", f"SELECT COUNT(DISTINCT {qc}) FROM {qt}", sql_dialect="duckdb")
             elif conn.dialect == "duckdb":
-                r2 = conn.execute("__profiler__", f"SELECT approx_count_distinct({qc}) FROM {qt}")
+                r2 = conn.execute("__profiler__", f"SELECT approx_count_distinct({qc}) FROM {qt}", sql_dialect="duckdb")
             else:
                 r2 = None
             if r2 is not None and not r2.error and r2.rows:
@@ -1223,6 +1231,7 @@ def build_table_profile(
                 rc = conn.execute(
                     "__profiler__",
                     f"SELECT COUNT(*) FROM (SELECT DISTINCT {_q(a)}, {_q(b)} FROM {qt})",
+                    sql_dialect="duckdb",
                 )
                 distinct = _safe_float(rc.rows[0][0]) if (not rc.error and rc.rows) else None
                 if distinct is not None and int(distinct) == row_count:
@@ -1258,6 +1267,7 @@ def build_table_profile(
                 r3 = conn.execute(
                     "__profiler__",
                     f"SELECT MIN({qts})::VARCHAR, MAX({qts})::VARCHAR FROM {qt}",
+                    sql_dialect="duckdb",
                 )
                 if not r3.error and r3.rows and r3.rows[0][0] is not None:
                     date_range = (str(r3.rows[0][0]), str(r3.rows[0][1]))
@@ -1339,13 +1349,13 @@ def _row_sample(conn: "DatabaseConnection", table: str, columns: list, row_count
         sql = f"SELECT {selects} FROM {_sampled_table(_qt(table), large)}{shuffle} LIMIT {_PAIR_SAMPLE_ROWS}"
     else:
         sql = f"SELECT {selects} FROM {_qt(table)} USING SAMPLE {_PAIR_SAMPLE_ROWS} ROWS"
-    r = conn.execute("__profiler__", sql)
+    r = conn.execute("__profiler__", sql, sql_dialect="duckdb")
     if r.error or not r.rows:
         # `USING SAMPLE … ROWS` is DuckDB's spelling, and not every engine takes a table
         # sample. Where one is refused, take the cheap prefix and accept that it is a
         # prefix — a biased sample still answers "do these two columns hold the same
         # value", and a failed probe must not look like a true negative.
-        r = conn.execute("__profiler__", f"SELECT {selects} FROM {_qt(table)} LIMIT {_PAIR_SAMPLE_ROWS}")
+        r = conn.execute("__profiler__", f"SELECT {selects} FROM {_qt(table)} LIMIT {_PAIR_SAMPLE_ROWS}", sql_dialect="duckdb")
     if r.error or not r.rows:
         return []
     return [
@@ -1476,7 +1486,7 @@ def build_column_profiles(
                 else:
                     selects.append(f"COUNT(DISTINCT {qc}) AS _dc_{col}")
             sql = f"SELECT {', '.join(selects)} FROM {qt if approx else scan_from}"
-            r = conn.execute("__profiler__", sql)
+            r = conn.execute("__profiler__", sql, sql_dialect="duckdb")
             if r.error or not r.rows:
                 for col in chunk:
                     raw_stats[col] = {"non_null": row_count, "distinct": 0}
@@ -1512,7 +1522,7 @@ def build_column_profiles(
         for col, _ in numeric_missing[:20]:
             qc = _q(col)
             selects.append(f"MIN({qc})::DOUBLE AS _lo_{col}, MAX({qc})::DOUBLE AS _hi_{col}")
-        r = conn.execute("__profiler__", f"SELECT {', '.join(selects)} FROM {scan_from}")
+        r = conn.execute("__profiler__", f"SELECT {', '.join(selects)} FROM {scan_from}", sql_dialect="duckdb")
         if not r.error and r.rows:
             row_data = r.rows[0]
             for i, (col, _) in enumerate(numeric_missing[:20]):
@@ -1539,6 +1549,7 @@ def build_column_profiles(
             "__profiler__",
             f"SELECT {qc}, COUNT(*) AS n FROM {values_from} "
             f"WHERE {qc} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+            sql_dialect="duckdb",
         )
         if not r.error and r.rows:
             top_values_map[col] = [str(row[0]) for row in r.rows if row[0] is not None]
@@ -1583,6 +1594,7 @@ def build_column_profiles(
             f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {values_from} "
             f"WHERE {qc} IS NOT NULL LIMIT {_VALUE_SAMPLE_MAX_DISTINCT + 1}",
             _VALUE_SAMPLE_MAX_DISTINCT + 1,
+            sql_dialect="duckdb",
         )
         if (not r.error and r.rows and len(r.rows) <= _VALUE_SAMPLE_MAX_DISTINCT
                 and (r.row_count or 0) <= len(r.rows)):
@@ -1688,41 +1700,6 @@ def build_column_profiles(
 _NATIVE_PROFILER_DIALECTS = ("", "duckdb", "postgres")
 
 
-class _TranspilingConnection:
-    """Transpile the profiler's DuckDB-flavored SQL for every other engine.
-
-    BigQuery/MySQL/Snowflake accept none of the profiler's spellings (a
-    double-quoted identifier is a string literal on the backtick engines), so on
-    those engines every scan probe failed and the whole intelligence layer —
-    exploration, briefing, ontology — starved on zero profiles. Transpiling at
-    this one seam beats hand-porting ~20 call sites. A statement sqlglot cannot
-    parse passes through unchanged: per-probe error handling already treats a
-    failed probe as absent data (e.g. the USING SAMPLE → LIMIT-prefix fallback),
-    never as fatal.
-    """
-
-    def __init__(self, conn):
-        self._raw = conn
-
-    def __getattr__(self, name):
-        return getattr(self._raw, name)
-
-    def _transpile(self, sql):
-        try:
-            import sqlglot
-            return sqlglot.transpile(sql, read="duckdb", write=self._raw.dialect)[0]
-        except Exception:
-            return sql
-
-    def execute(self, label, sql):
-        return self._raw.execute(label, self._transpile(sql))
-
-    # Spelled out rather than left to `__getattr__`, which would hand the engine's own bounded read the
-    # DuckDB spelling untranspiled.
-    def execute_bounded(self, label, sql, max_rows):
-        return self._raw.execute_bounded(label, self._transpile(sql), max_rows)
-
-
 def profile_connection(
     conn: "DatabaseConnection",
     tables: list[str],
@@ -1745,8 +1722,6 @@ def profile_connection(
     table_profiles: dict[str, TableProfile] = {}
     column_profiles: dict[str, ColumnProfile] = {}
     dialect = getattr(conn, "dialect", "")
-    if dialect not in _NATIVE_PROFILER_DIALECTS:
-        conn = _TranspilingConnection(conn)
 
     # R11 — when the per-column config exists, its `index` flag decides value-sample
     # eligibility (human override wins; defaults mirror the R5 gate, so an unedited

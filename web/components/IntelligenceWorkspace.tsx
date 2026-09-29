@@ -4,7 +4,7 @@ import { SkeletonRows } from "@/components/ui/motion";
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { getCatalogTree } from "@/lib/api";
+import { getCatalogTree, getSystemFlags } from "@/lib/api";
 import { listOntologySchemas, withSchemas } from "@/lib/objectTypes";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
@@ -30,6 +30,8 @@ const ConnectionGraphPanel = dynamic(() => import("@/components/ConnectionGraphP
 // loop's accumulation is org-wide learning — "what Aughor knows", which is this
 // section's job — not agent operations.
 const MemoryPanel      = dynamic(() => import("@/components/MemoryPanel").then(m => ({ default: m.MemoryPanel })), { ssr: false, loading });
+// Arc CT-7 — a person's own cockpits, a tab of their own beside the Briefing.
+const BriefingCockpits = dynamic(() => import("@/components/cockpit/BriefingCockpits").then(m => ({ default: m.BriefingCockpits })), { ssr: false, loading });
 
 // Minimal inline icon set — mirrors NavIcon paths used elsewhere in the shell.
 /**
@@ -46,6 +48,7 @@ const ROLE: Record<string, IconName> = {
   spark: "spark",
   check: "ok",
   memory: "memory",
+  gauge: "gauge",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -56,7 +59,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type IntelLayer = "briefing" | "hub" | "ontology" | "graph" | "evidence" | "memory" | "kinetic" | "org" | "brain";
+export type IntelLayer = "briefing" | "cockpit" | "hub" | "ontology" | "graph" | "evidence" | "memory" | "kinetic" | "org" | "brain";
 
 const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
@@ -73,6 +76,11 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
 // promotes). Always present: the graph surface is unconditional, and the panel itself
 // reports honestly when a connection has no graph built yet.
 const GRAPH_LAYER: WorkspaceLayer<IntelLayer> = { id: "graph", icon: "kgraph", label: "Graph", blurb: "Connection knowledge graph" };
+
+// Arc CT-7 — the person's cockpits, beside the Briefing: the Briefing is the connection's, a
+// cockpit is the person's own. Present only with `cockpit.composed` on, and never for a canvas,
+// which is for questions and deep analysis. Off, the layers are exactly what they were.
+const COCKPIT_LAYER: WorkspaceLayer<IntelLayer> = { id: "cockpit", icon: "gauge", label: "Cockpit", blurb: "Your own cockpits — the cards you keep watching" };
 
 type Props = {
   connectionId: string;
@@ -163,7 +171,22 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   }, [connectionId, canvasId, metaSchema]);
   const schema = selectedSchema ?? undefined;
 
-  const layers = LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER] : [l]));
+  // Arc CT-7 — read once. Until it answers, and when it cannot, the flag is off.
+  const [cockpitsOn, setCockpitsOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getSystemFlags().then(f => { if (alive) setCockpitsOn(!!f["cockpit.composed"]?.value); })
+      .catch(() => { if (alive) setCockpitsOn(false); });
+    return () => { alive = false; };
+  }, []);
+  const withCockpit = cockpitsOn === true && !canvasId;
+  // A link to the Cockpit tab where there is none opens the Briefing instead of an empty pane.
+  useEffect(() => {
+    if (layer === "cockpit" && cockpitsOn !== null && !withCockpit) onLayerChange("briefing");
+  }, [layer, cockpitsOn, withCockpit, onLayerChange]);
+
+  const layers = LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER]
+    : l.id === "briefing" && withCockpit ? [l, COCKPIT_LAYER] : [l]));
 
   const showConnPicker = !canvasId && !!onConnectionChange && (connections?.length ?? 0) > 1;
   const showSchema = !canvasId && schemas.length > 1;
@@ -250,6 +273,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
                 : "Briefings are per connection. Add one from the Catalog, then come back here."}
             </SharedEmptyState>
           );
+        if (id === "cockpit")  return <BriefingCockpits connectionId={connectionId} schema={schema} />;
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} initialTableId={initialGraphTable} />;
         if (id === "hub")      return <ProfileLayer connectionId={connectionId} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;

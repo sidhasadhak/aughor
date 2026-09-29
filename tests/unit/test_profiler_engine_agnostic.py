@@ -5,65 +5,85 @@ double-quoted identifier is a string literal, so every profiler probe errored,
 the profile came out empty, and the explorer treated "no profiler data" as a
 successful no-op run — the whole intelligence layer (exploration, briefing,
 ontology) never worked on any non-DuckDB/Postgres warehouse.
+
+The translation was a private wrapper keyed on the dialect NAME, so Exasol — which declares
+`postgres` while running SQL as written — was never translated. Since GM-1 every profiler
+statement declares `sql_dialect="duckdb"` and the connection's door translates; the stub below
+applies the door's step exactly as a native connector does.
 """
 
 from types import SimpleNamespace
 
+from aughor.db.dialects import sql_for_engine
 from aughor.tools.profiler import (
     _NATIVE_PROFILER_DIALECTS,
-    _TranspilingConnection,
     _parse_columns,
+    build_column_profiles,
 )
 
 
 class _StubConn:
+    """A native BigQuery connection: it runs what it is handed, after the door's dialect step."""
     dialect = "bigquery"
+    writes_native_sql = True
     _schema_name = "thelook"
 
     def __init__(self, rows=None):
         self.seen: list[str] = []
         self.bounded: list[tuple[str, int]] = []
+        self.declared: list = []
         self._rows = rows if rows is not None else []
 
-    def execute(self, label, sql):
-        self.seen.append(sql)
+    def execute(self, label, sql, *, sql_dialect=None):
+        self.declared.append(sql_dialect)
+        self.seen.append(sql_for_engine(self, sql, sql_dialect))
         return SimpleNamespace(error=None, rows=self._rows, columns=[])
 
-    def execute_bounded(self, label, sql, max_rows):
-        self.bounded.append((sql, max_rows))
+    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None):
+        self.declared.append(sql_dialect)
+        self.bounded.append((sql_for_engine(self, sql, sql_dialect), max_rows))
         return SimpleNamespace(error=None, rows=self._rows, row_count=len(self._rows), columns=[])
 
 
-def test_wrapper_transpiles_duckdb_flavor_to_backticks():
+def test_every_profiler_statement_is_declared_duckdb():
+    """What the retired wrapper did for three engines by name, each statement now says for itself."""
     stub = _StubConn()
-    wrapped = _TranspilingConnection(stub)
-    wrapped.execute("__profiler__", 'SELECT COUNT("a") AS n FROM "thelook"."orders"')
+    _parse_columns(stub, "orders")
+    columns = [("id", "INT64"), ("status", "STRING"), ("amount", "FLOAT64"), ("created_at", "TIMESTAMP")]
+    build_column_profiles(stub, "orders", columns, set(), 50_000, fast_stats={})
+    assert len(stub.declared) > 3, "the profiler issued too few statements to say anything"
+    assert set(stub.declared) == {"duckdb"}, stub.declared
+
+
+def test_the_door_renders_duckdb_flavor_as_backticks():
+    stub = _StubConn()
+    stub.execute("__profiler__", 'SELECT COUNT("a") AS n FROM "thelook"."orders"', sql_dialect="duckdb")
     assert len(stub.seen) == 1
     sent = stub.seen[0]
     assert "`orders`" in sent and '"orders"' not in sent
 
 
-def test_wrapper_transpiles_casts_and_date_trunc():
+def test_the_door_renders_casts_and_date_trunc():
     stub = _StubConn()
-    wrapped = _TranspilingConnection(stub)
-    wrapped.execute(
+    stub.execute(
         "__profiler__",
         "SELECT date_trunc('month', \"created_at\")::VARCHAR AS m FROM \"orders\"",
+        sql_dialect="duckdb",
     )
     sent = stub.seen[0]
     assert "::" not in sent
     assert "TRUNC" in sent.upper()
 
 
-def test_wrapper_transpiles_a_bounded_read_and_keeps_its_bound():
-    # The value sample reads past the answer cap through `execute_bounded`. The wrapper had no such method, so
-    # `__getattr__` handed the engine's own one the DuckDB spelling untranspiled.
+def test_a_declared_bounded_read_is_rendered_and_keeps_its_bound():
+    # The value sample reads past the answer cap through `execute_bounded`; the retired wrapper once handed the
+    # engine's own one the DuckDB spelling untranspiled.
     stub = _StubConn()
-    wrapped = _TranspilingConnection(stub)
-    wrapped.execute_bounded(
+    stub.execute_bounded(
         "__profiler__",
         'SELECT DISTINCT CAST("city" AS VARCHAR) AS v FROM "orders" WHERE "city" IS NOT NULL LIMIT 2001',
         2001,
+        sql_dialect="duckdb",
     )
     assert stub.seen == []
     [(sent, max_rows)] = stub.bounded
@@ -71,24 +91,16 @@ def test_wrapper_transpiles_a_bounded_read_and_keeps_its_bound():
     assert "`orders`" in sent and "`city`" in sent and '"' not in sent
 
 
-def test_wrapper_passes_unparseable_sql_through_unchanged():
+def test_unparseable_sql_passes_through_unchanged():
     stub = _StubConn()
-    wrapped = _TranspilingConnection(stub)
     weird = "PRAGMA definitely_not_sql("
-    wrapped.execute("__profiler__", weird)
+    stub.execute("__profiler__", weird, sql_dialect="duckdb")
     assert stub.seen == [weird]
 
 
-def test_wrapper_passes_attributes_through():
-    stub = _StubConn()
-    wrapped = _TranspilingConnection(stub)
-    assert wrapped.dialect == "bigquery"
-    assert wrapped._schema_name == "thelook"
-
-
-def test_native_dialect_gate_covers_the_right_engines():
-    # DuckDB is the flavor the SQL is written in; Postgres overlaps enough to run
-    # it natively. Everything else must go through the transpiling wrapper.
+def test_the_approximate_distinct_gate_covers_the_right_engines():
+    # DuckDB is the flavor the SQL is written in; Postgres overlaps enough to run it after its own
+    # translation. The other engines take APPROX_COUNT_DISTINCT over a large table's batch scan.
     for native in ("", "duckdb", "postgres"):
         assert native in _NATIVE_PROFILER_DIALECTS
     for foreign in ("bigquery", "mysql", "snowflake"):

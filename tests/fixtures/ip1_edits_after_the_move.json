@@ -1,0 +1,345 @@
+{
+  "_comment": "Edits made to package knowledge AFTER the IP-1 move, each with the entry exactly as it was moved. tests/unit/test_ip1_package_parity.py puts these back before it hashes, so the move is still proven unchanged against tests/fixtures/ip1_kb_parity.json — and every change made since is named here, with why. Add to this file; never edit that fixture.",
+  "industry_metrics": [
+    {
+      "industry": "retail",
+      "name": "Average Order Value (AOV)",
+      "date": "2026-09-28",
+      "why": "The user: 'fix the AOV and return rate duplicates'. The recipe said 'revenue per order', which read as gross or net; the knowledge base's ec_aov says GMV per order, before refunds and discounts. One basis now: GMV's.",
+      "as_moved": {
+        "name": "Average Order Value (AOV)",
+        "aliases": [
+          "AOV",
+          "average basket value",
+          "average ticket"
+        ],
+        "definition": "Average revenue per completed order.",
+        "formula": "SUM(order_revenue) / COUNT(DISTINCT order_id)",
+        "grain": "Order grain. If revenue lives on line items, SUM the line revenue and divide by COUNT(DISTINCT order_id) — never average line totals.",
+        "anti_patterns": [
+          "AVG(order_items.line_total) computes average LINE value, not order value.",
+          "After joining orders to items, COUNT(*) counts lines, not orders — dividing revenue by it understates AOV."
+        ],
+        "sane_range": "USD, strictly positive; typically tens to low-hundreds for DTC.",
+        "needs_concepts": [
+          "orders",
+          "order or line revenue"
+        ]
+      }
+    },
+    {
+      "industry": "retail",
+      "name": "Return Rate",
+      "date": "2026-09-28",
+      "why": "Was 'Return / Refund Rate' at order grain, with 'refund rate' as another name. A refund is money, a return is goods; the package's governed return_rate counts lines. Now the same metric as return_rate; refund rate is its own.",
+      "as_moved": {
+        "name": "Return / Refund Rate",
+        "aliases": [
+          "return rate",
+          "refund rate",
+          "RMA rate"
+        ],
+        "definition": "Share of orders (or units) that are returned/refunded.",
+        "formula": "COUNT(DISTINCT refunded_order_id) / NULLIF(COUNT(DISTINCT eligible_order_id), 0)",
+        "grain": "Order grain. Denominator must be orders ELIGIBLE to be returned (e.g. delivered), not all rows. Match numerator and denominator population.",
+        "anti_patterns": [
+          "Numerator = refunds but denominator = all orders including undelivered → a 100%-looking rate or a meaningless ratio.",
+          "Counting refund rows (a refund can have multiple lines) instead of distinct refunded orders inflates the numerator."
+        ],
+        "sane_range": "ratio 0..1; apparel/beauty often 0.1–0.4.",
+        "needs_concepts": [
+          "orders with status",
+          "refunds / returns"
+        ]
+      }
+    }
+  ],
+  "kb_entries": [
+    {
+      "id": "ec_return_rate",
+      "date": "2026-09-28",
+      "why": "Titled 'Return Rate' at ORDER grain while the package's return rate counts lines: retitled 'Order Return Rate', and says so.",
+      "as_moved": {
+        "id": "ec_return_rate",
+        "title": "Return Rate",
+        "intent_tags": [
+          "return rate",
+          "order return rate",
+          "what percent of orders are returned",
+          "how many returns",
+          "return percentage",
+          "return ratio",
+          "returns analysis",
+          "why are returns high",
+          "product returns",
+          "return trend",
+          "how often do customers return orders"
+        ],
+        "sql_features": [
+          "aggregation",
+          "left_join",
+          "conditional_count",
+          "nullif",
+          "coalesce"
+        ],
+        "difficulty": "intermediate",
+        "pattern_type": "ratio",
+        "when_to_use": [
+          "measure what fraction of orders result in a return",
+          "compare return rates across product categories to identify quality issues",
+          "evaluate the operational impact of returns on fulfillment",
+          "track return trends as a proxy for customer satisfaction",
+          "assess whether return policy changes are affecting behavior"
+        ],
+        "related_patterns": [
+          "ec_refund_rate",
+          "ec_gmv",
+          "ec_net_revenue",
+          "ec_aov"
+        ],
+        "business_definition": "Count of distinct orders with at least one return event, divided by count of distinct completed orders in a period, expressed as a percentage. Excludes cancelled, test, and fraud-flagged orders.",
+        "metric_nature": {
+          "what_it_measures": "The proportion of orders that experienced a return. Answers: out of every 100 orders, how many came back?",
+          "what_it_does_not_measure": "The financial impact of returns. A 10% return rate could mean $1,000 or $100,000 in refund dollars depending on which orders were returned. Use ec_refund_rate for dollar-weighted impact.",
+          "common_misconception": "Return rate counts orders, not items. An order where 1 out of 5 items was returned counts the same as an order where all 5 items were returned. For item-level granularity, calculate item return rate separately."
+        },
+        "template": "SELECT ROUND(COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_rate_pct FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date BETWEEN {start_date} AND {end_date}",
+        "inflation_causes": [
+          {
+            "cause": "Counting return line items instead of return orders",
+            "how_it_inflates": "An order with 3 returned items generates 3 rows in the returns table. Using COUNT(r.return_id) instead of COUNT(DISTINCT r.order_id) counts that order 3 times in the numerator, tripling its weight.",
+            "detection_sql": "SELECT r.order_id, COUNT(*) AS return_lines FROM returns r GROUP BY r.order_id HAVING COUNT(*) > 1 ORDER BY return_lines DESC LIMIT 20",
+            "fix": "Use COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) to count each returned order exactly once."
+          },
+          {
+            "cause": "Exchange orders counted as returns",
+            "how_it_inflates": "If exchanges (swap for different size/color) are recorded in the same returns table as true returns, every exchange inflates return rate even though the customer kept the product.",
+            "detection_sql": "SELECT r.return_type, COUNT(DISTINCT r.order_id) AS orders, COUNT(*) AS return_lines FROM returns r GROUP BY r.return_type ORDER BY orders DESC",
+            "fix": "Filter to return_type IN ('return', 'refund') and exclude return_type = 'exchange' from the return rate numerator."
+          },
+          {
+            "cause": "Return-to-order date mismatch",
+            "how_it_inflates": "Returns processed in April for orders placed in February are divided by April's order count. If April had fewer orders, the return rate appears inflated because the numerator contains returns from a higher-volume period.",
+            "detection_sql": "SELECT DATE_TRUNC('month', r.return_date) AS return_month, DATE_TRUNC('month', o.order_date) AS order_month, COUNT(DISTINCT r.order_id) AS returned_orders FROM returns r JOIN orders o ON r.order_id = o.order_id GROUP BY 1, 2 ORDER BY 1 DESC, 3 DESC LIMIT 20",
+            "fix": "Attribute returns to the original order date, not the return processing date, so numerator and denominator align to the same order cohort."
+          }
+        ],
+        "deflation_causes": [
+          {
+            "cause": "Return window not yet closed for recent orders",
+            "how_it_deflates": "If your return policy allows 30-day returns, orders from the last 30 days have not had their full return window elapse. Including them in the denominator but not yet in the numerator understates the return rate.",
+            "detection_sql": "SELECT DATE_TRUNC('week', o.order_date) AS order_week, COUNT(DISTINCT o.order_id) AS total_orders, COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) AS returned_orders, ROUND(COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_rate_pct FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.status NOT IN ('cancelled', 'test') GROUP BY 1 ORDER BY 1 DESC LIMIT 12",
+            "fix": "Exclude orders placed within the return window period from the denominator, or report return rate only for cohorts whose return window has fully closed."
+          }
+        ],
+        "diagnostic_questions": [
+          "Is the return rate change in a specific product category, size range, or supplier?",
+          "Did the return policy change (extended window, free returns, etc.) in this period?",
+          "Are exchanges being counted as returns?",
+          "Are returns being attributed to order date or return processing date?",
+          "Has the return window closed for the orders in the denominator?",
+          "Did a specific marketing campaign drive orders with higher return propensity?"
+        ],
+        "causal_relationships": [
+          {
+            "if": "ec_return_rate up, ec_refund_rate up proportionally",
+            "then": "Both count-weighted and dollar-weighted returns are increasing — this is a broad quality or satisfaction issue across order values."
+          },
+          {
+            "if": "ec_return_rate up, ec_refund_rate flat",
+            "then": "More low-value orders are being returned, but high-value orders are retained. The financial impact is muted. Investigate by price tier."
+          },
+          {
+            "if": "ec_return_rate up, ec_aov up",
+            "then": "Higher-value orders may inherently have higher return rates (e.g., apparel sizing). Check if a new high-AOV category launched."
+          },
+          {
+            "if": "ec_return_rate down, ec_net_revenue up",
+            "then": "Fewer returns means more revenue retained — could indicate product quality improvements, better product descriptions, or more accurate sizing guides."
+          }
+        ],
+        "cross_metric_signals": [
+          {
+            "if_this_metric": "Return rate jumps >3 percentage points in a month",
+            "and_also": "ec_refund_rate jumps by a similar magnitude",
+            "shared_root_cause": "A product quality issue or fulfillment error wave. When both order-count returns and dollar-weighted refunds spike together, the root cause is almost always a specific product batch, supplier, or warehouse shipping wrong items. Check return reasons by supplier and product.",
+            "diagnostic_sql": "SELECT p.supplier_id, p.category, r.return_reason, COUNT(DISTINCT r.order_id) AS returned_orders, SUM(r.refund_amount) AS refund_total FROM returns r JOIN orders o ON r.order_id = o.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id WHERE r.return_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1, 2, 3 ORDER BY returned_orders DESC LIMIT 20"
+          },
+          {
+            "if_this_metric": "Return rate increases for a specific channel (e.g., mobile)",
+            "and_also": "ec_aov for that channel is also changing",
+            "shared_root_cause": "The channel experience may be causing sizing/expectation mismatches. Mobile product pages often show less detail, leading to more returns. If AOV is also dropping on mobile, customers may be ordering cheaper items impulsively and returning more.",
+            "diagnostic_sql": "SELECT o.channel, DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT o.order_id) AS orders, COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) AS returns, ROUND(COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_rate_pct, ROUND(SUM(oi.quantity * oi.unit_price) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS aov FROM orders o JOIN order_items oi ON o.order_id = oi.order_id LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.status NOT IN ('cancelled', 'test') GROUP BY 1, 2 ORDER BY 2, 1"
+          }
+        ],
+        "anti_patterns": [
+          {
+            "pattern": "Using COUNT(r.return_id) instead of COUNT(DISTINCT order_id with return)",
+            "why_wrong": "An order with multiple returned items has multiple rows in the returns table. COUNT(r.return_id) counts return line items, not returned orders, overstating the return rate by the average number of items returned per order.",
+            "bad_sql": "SELECT COUNT(r.return_id) * 100.0 / COUNT(DISTINCT o.order_id) AS return_rate FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id",
+            "good_sql": "SELECT COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud')"
+          },
+          {
+            "pattern": "INNER JOIN to returns table excludes non-returned orders from denominator",
+            "why_wrong": "An INNER JOIN drops all orders without returns, making the denominator only returned orders. Return rate becomes 100% (or higher if counting line items), which is meaningless.",
+            "bad_sql": "SELECT COUNT(DISTINCT r.order_id) * 100.0 / COUNT(DISTINCT o.order_id) AS return_rate FROM orders o JOIN returns r ON o.order_id = r.order_id",
+            "good_sql": "SELECT COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud')"
+          }
+        ],
+        "sql_assets": {
+          "basic_sql": "SELECT ROUND(COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_rate_pct FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+          "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, COUNT(DISTINCT o.order_id) AS total_orders, COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) AS returned_orders, ROUND(COUNT(DISTINCT CASE WHEN r.return_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_rate_pct FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 1, 5 DESC",
+          "advanced_sql": "WITH order_returns AS (\n  -- Grain: one row per order, flagged if any return exists\n  SELECT\n    o.order_id,\n    o.order_date,\n    o.channel,\n    MAX(CASE WHEN r.return_id IS NOT NULL THEN 1 ELSE 0 END) AS has_return\n  FROM orders o\n  LEFT JOIN returns r ON o.order_id = r.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY 1, 2, 3\n),\nmonthly_rates AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    COUNT(*) AS total_orders,\n    SUM(has_return) AS returned_orders,\n    ROUND(SUM(has_return) * 100.0 / NULLIF(COUNT(*), 0), 2) AS return_rate_pct\n  FROM order_returns\n  GROUP BY 1\n),\nwith_trend AS (\n  SELECT\n    month,\n    total_orders,\n    returned_orders,\n    return_rate_pct,\n    LAG(return_rate_pct) OVER (ORDER BY month) AS prev_month_rate,\n    return_rate_pct - LAG(return_rate_pct) OVER (ORDER BY month) AS rate_change_pp\n  FROM monthly_rates\n)\nSELECT * FROM with_trend ORDER BY month"
+        }
+      }
+    },
+    {
+      "id": "average_order_value",
+      "date": "2026-09-28",
+      "why": "The user: fix the finance pack's loose AOV. 'total revenue / number of orders' read as gross or net, and it left returned orders out — against retail's GMV basis, which counts them. One basis now, every industry: GMV's.",
+      "as_moved": {
+        "id": "average_order_value",
+        "title": "Average Order Value (AOV)",
+        "business_definition": "AOV = total revenue / number of orders. Rising AOV means customers are buying more per transaction. Falling AOV can signal pricing pressure, mix shift to cheaper products, or promotional discounting.",
+        "intent_tags": [
+          "AOV",
+          "average order value",
+          "basket size",
+          "order value",
+          "spend per order"
+        ],
+        "when_to_use": [
+          "AOV dropped",
+          "basket size analysis",
+          "revenue per order changed"
+        ],
+        "diagnostic_questions": [
+          "Did AOV drop because of product mix shift (more cheap items) or lower prices overall?",
+          "Are discounts or promotions being applied more frequently?",
+          "Did a specific category or segment drive the AOV change?",
+          "Are customers buying fewer items per order (units per transaction dropped)?"
+        ],
+        "causal_relationships": [
+          {
+            "symptom": "AOV declined month-over-month",
+            "check_in_order": [
+              "discount_rate",
+              "product_category_mix",
+              "units_per_order",
+              "new_vs_returning_customer_mix"
+            ],
+            "detection_sql": "SELECT DATE_TRUNC('month', order_date) AS month, AVG(amount) AS aov, AVG(discount_amount / NULLIF(amount, 0)) AS avg_discount_rate, AVG(item_count) AS avg_items FROM orders WHERE status = 'completed' GROUP BY 1 ORDER BY 1"
+          },
+          {
+            "symptom": "AOV varies significantly by customer segment",
+            "check_in_order": [
+              "aov_by_segment",
+              "aov_by_channel",
+              "aov_by_region"
+            ],
+            "detection_sql": "SELECT customer_segment, COUNT(*) AS orders, AVG(amount) AS aov, STDDEV(amount) AS aov_stddev FROM orders JOIN customers USING (customer_id) WHERE order_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1 ORDER BY 2 DESC"
+          }
+        ],
+        "inflation_causes": [
+          {
+            "cause": "Bulk or wholesale orders included — inflating retail AOV",
+            "detection_sql": "SELECT order_type, COUNT(*), AVG(amount) FROM orders GROUP BY 1"
+          }
+        ],
+        "deflation_causes": [
+          {
+            "cause": "Shipping and taxes stripped from order amount inconsistently",
+            "detection_sql": "SELECT AVG(gross_amount) AS avg_gross, AVG(net_amount) AS avg_net, AVG(shipping) AS avg_shipping FROM orders WHERE order_date >= CURRENT_DATE - INTERVAL '30 days'"
+          }
+        ],
+        "related_patterns": [
+          "revenue_drop_analysis",
+          "conversion_funnel",
+          "refund_rate"
+        ],
+        "anti_patterns": [
+          "Do not include cancelled or returned orders in AOV calculation",
+          "Do not compare AOV across B2B and B2C segments without separating them first"
+        ],
+        "sql_assets": {
+          "aov_trend": "SELECT DATE_TRUNC('week', order_date) AS week, AVG(amount) AS aov, COUNT(*) AS orders FROM orders WHERE status = 'completed' AND order_date >= CURRENT_DATE - INTERVAL '90 days' GROUP BY 1 ORDER BY 1"
+        }
+      }
+    },
+    {
+      "id": "refund_rate",
+      "date": "2026-09-28",
+      "why": "Was 'Refund Rate & Returns Analysis': amount OR count, tagged 'returns' and 'return rate', and its example counted refunds. A refund is money and a return is goods: now refunded amount over GMV, tagged only as refunds.",
+      "as_moved": {
+        "id": "refund_rate",
+        "title": "Refund Rate & Returns Analysis",
+        "business_definition": "Refund rate = refund amount or count / gross order amount or count. High refund rates signal product quality issues, expectation mismatches, fraud, or fulfillment problems. Refunds directly reduce net revenue.",
+        "intent_tags": [
+          "refund rate",
+          "returns",
+          "refunds",
+          "chargebacks",
+          "disputes",
+          "return rate"
+        ],
+        "when_to_use": [
+          "refund rate increased",
+          "refunds spiked",
+          "chargeback analysis",
+          "product quality issues"
+        ],
+        "diagnostic_questions": [
+          "Is the refund rate spike concentrated in a specific product category, SKU, or supplier?",
+          "Did a specific batch, fulfillment center, or shipping partner cause the issue?",
+          "Is this voluntary (customer request) or involuntary (failed charge, chargeback)?",
+          "Are refunds being processed within policy windows or are late refunds increasing liability?"
+        ],
+        "causal_relationships": [
+          {
+            "symptom": "refund rate spiked in a specific period",
+            "check_in_order": [
+              "refund_reason_breakdown",
+              "product_category_refund_rate",
+              "shipping_partner_correlation",
+              "customer_segment_refund_rate"
+            ],
+            "detection_sql": "SELECT refund_reason, product_category, COUNT(*) AS refunds, SUM(refund_amount) AS total_refunded, COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS pct FROM refunds WHERE refunded_at >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1, 2 ORDER BY 3 DESC"
+          },
+          {
+            "symptom": "chargeback rate increasing",
+            "check_in_order": [
+              "payment_method_mix",
+              "fraud_score_distribution",
+              "high_risk_customer_orders"
+            ],
+            "detection_sql": "SELECT payment_method, COUNT(CASE WHEN is_chargeback THEN 1 END) AS chargebacks, COUNT(*) AS total_orders, COUNT(CASE WHEN is_chargeback THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS chargeback_rate FROM orders GROUP BY 1 ORDER BY 4 DESC"
+          }
+        ],
+        "inflation_causes": [
+          {
+            "cause": "Test refunds or internal credits included in refund figures",
+            "detection_sql": "SELECT refund_type, COUNT(*), SUM(refund_amount) FROM refunds GROUP BY 1"
+          }
+        ],
+        "deflation_causes": [
+          {
+            "cause": "Store credits given instead of cash refunds not counted",
+            "detection_sql": "SELECT resolution_type, COUNT(*), SUM(amount) FROM customer_complaints WHERE resolved_at >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1"
+          }
+        ],
+        "related_patterns": [
+          "revenue_drop_analysis",
+          "average_order_value",
+          "payment_failure"
+        ],
+        "anti_patterns": [
+          "Do not measure refund rate only by count — a few high-value refunds matter more than many small ones",
+          "Do not compare refund rates across product categories without accounting for expected return rate differences"
+        ],
+        "sql_assets": {
+          "refund_rate_by_category": "SELECT product_category, COUNT(r.refund_id) * 100.0 / NULLIF(COUNT(o.order_id), 0) AS refund_rate, SUM(r.refund_amount) AS total_refunded FROM orders o LEFT JOIN refunds r ON o.order_id = r.order_id WHERE o.order_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1 ORDER BY 2 DESC"
+        }
+      }
+    }
+  ]
+}

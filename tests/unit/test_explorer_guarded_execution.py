@@ -32,7 +32,7 @@ def _explorer(monkeypatch):
     class _Conn:
         dialect = "duckdb"
 
-        def execute(self, query_id, sql):
+        def execute(self, query_id, sql, sql_dialect=None):
             calls.append({"via": "raw", "query_id": query_id, "sql": sql})
             return SimpleNamespace(error=None, rows=[[1]], columns=["n"], row_count=1, sql=sql)
 

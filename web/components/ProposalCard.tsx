@@ -233,7 +233,7 @@ function limitWords(l: CockpitNewCard["limit"]): string {
 function keptWords(outcome: Record<string, unknown> | undefined): string {
   const version = outcome?.version;
   return typeof version === "number"
-    ? `kept as version ${version} — it is in this canvas's Cockpit tab` : "";
+    ? `kept as version ${version} — it is among your cockpits in the Briefing` : "";
 }
 
 function CockpitBody({ p }: { p: StagedProposal }) {
@@ -293,7 +293,7 @@ function CockpitBody({ p }: { p: StagedProposal }) {
       {gone.length > 0 && (
         <div className="flex flex-col gap-1" data-testid="cockpit-taken-off">
           <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
-            Taken off the cockpit{gone.some(g => g.what === "card") ? ". A card taken off stays in the canvas" : ""}:
+            Taken off the cockpit{gone.some(g => g.what === "card") ? ". A card taken off is kept, and other cockpits may place it" : ""}:
           </span>
           {gone.map((g, i) => (
             <Row key={`gone-${i}`} label={TAKEN_OFF[g.what] ?? g.what}>

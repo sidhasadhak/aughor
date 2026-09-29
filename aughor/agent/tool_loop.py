@@ -468,6 +468,8 @@ def _emit_step(index: int, step: LoopStep, *, result: Any, elapsed_ms: Optional[
             "sql": str(r.get("sql") or "")[:4000],
             "error": (str(r.get("error") or "") if step.ok else str(step.detail or ""))[:1000],
             "guards": guards, "result_chars": step.result_chars,
+            # GM-3 — the doors the step's statement passed: a work artifact, stored always, like its guards.
+            "doors": [str(d)[:80] for d in (r.get("doors") or [])][:40],
             "captured": False,
         }
         # The payload fields, by the lawful lane: only under an open capture window. The

@@ -16,6 +16,7 @@ import re
 from contextlib import contextmanager
 
 from aughor.connectors.base import Connector
+from aughor.db.doors import passed, through_door
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -210,12 +211,13 @@ class BigQueryConnection(Connector):
             rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
             return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
 
-    def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        return self._execute(hypothesis_id, sql, MAX_ROWS)
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS))
 
-    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
-        return self._execute(hypothesis_id, sql, max(1, max_rows))
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)))
 
     def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time
@@ -242,6 +244,7 @@ class BigQueryConnection(Connector):
                 retried = self._run_job(hypothesis_id, rewritten, max_rows)
                 if not retried.error:
                     result = retried
+                    passed("repaired:date-literals")
 
         elapsed_ms = (_time.monotonic() - _t0) * 1000
         return security_post(self._connection_id, hypothesis_id, result.sql, result, elapsed_ms)

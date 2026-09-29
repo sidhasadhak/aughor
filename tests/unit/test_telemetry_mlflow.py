@@ -391,7 +391,7 @@ def test_executor_emits_tool_span(monkeypatch):
     class _Conn:
         dialect = "duckdb"
 
-        def execute(self, query_id, sql):
+        def execute(self, query_id, sql, sql_dialect=None):
             return QueryResult(hypothesis_id=query_id, sql=sql,
                                columns=["n"], rows=[[1]], row_count=1, error=None)
 

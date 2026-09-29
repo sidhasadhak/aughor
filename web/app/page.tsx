@@ -1392,7 +1392,7 @@ function tabFromUrl(): NavTab | null {
 }
 
 const VALID_LAYERS = new Set<IntelLayer>([
-  "briefing", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org", "brain",
+  "briefing", "cockpit", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org", "brain",
 ]);
 
 /** PX-0 (§3.14) — every workspace's layer is addressable, not only Intelligence's

@@ -127,7 +127,7 @@ def _calibrate_ranges(profile, conn) -> None:
         if not sql or "measured" in (m.unit_or_range or "").lower():
             continue
         try:
-            res = conn.execute("profile-calibrate", sql)
+            res = conn.execute("profile-calibrate", sql, sql_dialect="duckdb")
             rows = (getattr(res, "rows", None) or []) if not getattr(res, "error", None) else []
             val = next((n for n in (_as_num(c) for c in (rows[0] if rows else [])) if n is not None), None)
             if val is not None:

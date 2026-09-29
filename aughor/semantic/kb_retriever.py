@@ -63,14 +63,20 @@ def build_kb_index() -> int:
 
 def _build() -> int:
     from aughor.semantic.kb_loader import load_kb_entries, load_package_kb_entries
-    from aughor.semantic.embedder import embed
-    from aughor.semantic.vector_store import ensure_collection, upsert
+    from aughor.semantic.vector_store import ensure_collection
 
     entries = load_kb_entries(KB_PATH) if KB_PATH else load_package_kb_entries()
     if not entries:
         return 0
 
     ensure_collection(KB_COLLECTION)
+    return _embed_and_upsert(entries)
+
+
+def _embed_and_upsert(entries: list) -> int:
+    """Embed ``entries`` and upsert each at its stable id. Returns how many were written."""
+    from aughor.semantic.embedder import embed
+    from aughor.semantic.vector_store import upsert
 
     # Batch embed in chunks of 64 to stay within Ollama memory limits
     BATCH = 64
@@ -91,6 +97,46 @@ def _build() -> int:
         total += len(points)
 
     return total
+
+
+#: The most entries one refresh re-embeds. More than this changed at once is a re-index, not a
+#: correction — and on a hosted embedder a spend nobody asked for — so it is said and not done.
+MAX_REFRESH = 50
+
+
+def refresh_changed() -> dict:
+    """Re-embed the KB entries whose text is no longer what the index holds for them.
+
+    The index is built whole the first time it is empty, and each point is upserted at a stable id,
+    but nothing ever looked again: a corrected entry — the user, 2026-09-28: the AOV, return and
+    refund entries — went on being retrieved with its old words until someone emptied the collection.
+    Here each entry's payload is compared with the one stored at its id; an entry that differs, or
+    was never indexed, is embedded again. Nothing else is touched.
+
+    It refreshes nothing, and says why, when the index is empty (the first use builds it whole),
+    when the stored payloads cannot be read (every entry would read as changed), or when more than
+    ``MAX_REFRESH`` differ. Returns ``{"checked", "refreshed", "why"}``."""
+    out = {"checked": 0, "refreshed": 0, "why": ""}
+    if not KB_ENABLED:
+        return {**out, "why": "the KB is off (AUGHOR_KB_ENABLED)"}
+    from aughor.semantic.kb_loader import load_kb_entries, load_package_kb_entries
+    from aughor.semantic.vector_store import collection_count, scroll_payloads
+
+    held = collection_count(KB_COLLECTION)
+    if held == 0:
+        return {**out, "why": "the index is empty; its first use builds it whole"}
+    stored = {(p.get("source_file"), p.get("pattern_id")): p for p in scroll_payloads(KB_COLLECTION)}
+    if not stored:
+        return {**out, "why": f"the index holds {held} points and none could be read"}
+    entries = load_kb_entries(KB_PATH) if KB_PATH else load_package_kb_entries()
+    changed = [e for e in entries if stored.get((e.source_file, e.pattern_id)) != e.payload]
+    out["checked"] = len(entries)
+    if len(changed) > MAX_REFRESH:
+        return {**out, "why": (f"{len(changed)} of {len(entries)} entries differ from the index — more than "
+                               f"{MAX_REFRESH}, which is a re-index: empty the collection and its first use rebuilds it")}
+    if changed:
+        out["refreshed"] = _embed_and_upsert(changed)
+    return out
 
 
 def _ensure_indexed() -> bool:

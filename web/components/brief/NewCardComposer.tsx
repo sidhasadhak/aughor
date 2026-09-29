@@ -64,15 +64,19 @@ function seriesValues(r: DirectQueryResult | null): number[] {
   return r.rows.map(row => Number(row[c])).filter(v => Number.isFinite(v));
 }
 
-export function NewCardComposer({ connectionId, schema, onCreated, keptFor }: {
+export function NewCardComposer({ connectionId, schema, onCreated, keptFor, startOpen = false, onClose }: {
   connectionId: string;
   schema?: string;
   onCreated: () => void;
+  /** Open on arrival, for a screen whose own button asked for it (the Cockpit tab); `onClose`
+   *  then hears when it is done, kept or cancelled. */
+  startOpen?: boolean;
+  onClose?: () => void;
   /** Where the card is kept. Absent, it is the connection's — the Briefing's cockpit, as it
    *  always was. A Data Canvas's cockpit passes its own canvas (Arc CT-4). */
   keptFor?: { scope: "canvas"; scopeRef: string };
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const [mode, setMode] = useState<"metric" | "build">("metric");
 
   // ── From-metric state ──
@@ -155,6 +159,7 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor }: {
   const reset = () => {
     setOpen(false); setSel(""); setTitle(""); setPreview(null); setError(null);
     setBTable(""); setBMeasure(""); setBDim(""); setBAgg("count");
+    onClose?.();
   };
 
   const chartType = mode === "metric"

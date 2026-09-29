@@ -97,6 +97,7 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         "error": result.error,
         "caveats": list(result.caveats or []) + ([fanout] if fanout else []),
         "guard_receipts": [_receipt_dict(r) for r in receipts],
+        "doors": list(getattr(result, "doors", None) or []),
     }
     if result.error:
         out["repair"] = route_error(result.error, sql, getattr(conn, "dialect", "") or "")
@@ -165,6 +166,7 @@ def query_objects(connection_id: str, args: dict, *, emit: Optional[Emit] = None
         "error": result.error,
         "caveats": list(compiled.caveats) + list(result.caveats or []),
         "guard_receipts": [_receipt_dict(r) for r in receipts],
+        "doors": list(getattr(result, "doors", None) or []),
     }
     if result.error:
         out["instruction"] = ("The compiled query failed to execute — a defect in the object model or the "
@@ -187,7 +189,7 @@ def _surface_primitive_answer(emit: Emit, connection_id: str, sql: str, result: 
     if compiled is not None:
         emit("compiled", {"intent_type": "object_query", "entity": compiled.object_type,
                           "measure": ", ".join(compiled.measures), "dimension": ", ".join(compiled.dimensions)})
-    emit("columns", {"columns": list(result.columns or [])})
+    emit("columns", {"columns": list(result.columns or []), "doors": list(getattr(result, "doors", None) or [])})
     emit("rows", {"rows": list(result.rows or [])[:10000]})
     try:
         import uuid
@@ -332,6 +334,7 @@ def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = No
         "row_count": result.row_count,
         "caveats": list(result.caveats or []),
         "guard_receipts": [_receipt_dict(r) for r in (result.guard_receipts or [])],
+        "doors": list(getattr(result, "doors", None) or []),
     }
     if result.error:
         out["error"] = result.error
@@ -588,7 +591,6 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     can see is one it will spend a turn trying.
     """
     from aughor.agent.action_tools import action_tools
-    from aughor.agent.cockpit_tool import cockpit_tools
     from aughor.agent.delegate_tool import delegation_tools
     from aughor.agent.platform_tools import platform_tools
     from aughor.agent.present_tool import present_tools
@@ -662,8 +664,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ),
     ] + action_tools(connection_id, agent=agent) + platform_tools(connection_id, session_id=session_id) + spotlight_roster(
         connection_id, session_id=session_id, emit=emit) + present_tools(emit=emit) + delegation_tools(
-        connection_id, emit=emit, session_id=session_id) + cockpit_tools(
-        connection_id, emit=emit, canvas_id=canvas_id, user_question=user_question)
+        connection_id, emit=emit, session_id=session_id)
 
 
 class _Regrounded(BaseModel):

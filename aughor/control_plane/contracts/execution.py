@@ -61,3 +61,8 @@ class QueryResult(BaseModel):
     # store is independent of the connection cache, so an edit survives refreshes. Additive:
     # default [] keeps every existing consumer intact.
     annotations: list[dict] = Field(default_factory=list)
+    # GM-3: the doors the statement passed, in order — translated, validated, safety-checked, audited or
+    # internal, row-filtered, redacted, guarded (`aughor.db.doors`, which says each in plain words). An
+    # answer carried what its guards FIRED, never which doors it went through. Additive: [] when the path
+    # was not recorded, which a reader must not take for "passed no door".
+    doors: list[str] = Field(default_factory=list)

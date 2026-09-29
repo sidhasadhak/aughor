@@ -149,6 +149,7 @@ async def _lifespan(app: "FastAPI"):
     await _validate_connections()
     await _start_explorers()
     await _seed_playbook()
+    await _refresh_kb_index()
     # On Vercel the clock belongs to Cron (routers/cron.py — /cron/tick runs one
     # engine tick; monitors and briefs ride it as virtual automations). Starting
     # APScheduler here too would DOUBLE-tick on warm instances, so the in-process
@@ -875,8 +876,8 @@ async def _start_continuous_exploration_loop() -> None:
 
 async def _seed_playbook() -> None:
     try:
-        from aughor.playbook.builder import (activate_seeded, seed_from_kb, seed_from_packs,
-                                              top_up_data_quality)
+        from aughor.playbook.builder import (activate_seeded, refresh_from_kb, seed_from_kb,
+                                              seed_from_packs, top_up_data_quality)
         n = seed_from_kb()
         if n:
             logger.info("Playbook seeded with %d entries from KB.", n)
@@ -891,6 +892,12 @@ async def _seed_playbook() -> None:
         # they reached nothing: `playbooks/*.yaml` had only gates and surfaces for readers, and the
         # steering pool excludes a knowledge package by construction (`PackManifest.steers`).
         # Same manners as the top-up: additive, and a play a person deleted stays deleted.
+        # A corrected KB entry reaches the plays built from it — unless a person made a play theirs.
+        refreshed = refresh_from_kb()
+        if refreshed["updated"] or refreshed["kept_changed"]:
+            logger.info("Playbook refreshed from the KB: %d plays given their entry's corrected words "
+                        "(%d changed by a person, kept as they are).",
+                        refreshed["updated"], refreshed["kept_changed"])
         seeded_packs = seed_from_packs()
         if seeded_packs["added"]:
             logger.info("Playbook seeded with %d plays from active industry packages "
@@ -906,6 +913,22 @@ async def _seed_playbook() -> None:
         # Non-fatal: a missing/empty KB just means no seeded playbook. Surface it
         # at warning level like every other startup step rather than swallowing.
         logger.warning("Playbook seeding failed (non-fatal): %s", exc)
+
+
+async def _refresh_kb_index() -> None:
+    """Re-embed the KB entries corrected since the index was built — in the background, off the
+    event loop, since embedding is a network call; never failing startup and never waited on.
+    See `kb_retriever.refresh_changed`."""
+    def run() -> None:
+        try:
+            from aughor.semantic.kb_retriever import refresh_changed
+            got = refresh_changed()
+            if got["refreshed"] or got["why"]:
+                logger.info("KB index: %d of %d entries re-embedded%s", got["refreshed"], got["checked"],
+                            f" — {got['why']}" if got["why"] else "")
+        except Exception as exc:
+            logger.warning("KB index refresh failed (non-fatal): %s", exc)
+    asyncio.create_task(asyncio.to_thread(run), name="kb-index-refresh")
 
 
 async def _start_monitor_scheduler() -> None:

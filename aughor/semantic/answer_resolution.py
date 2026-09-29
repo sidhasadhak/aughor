@@ -623,7 +623,7 @@ def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] 
         sql = (f"SELECT CAST({col} AS VARCHAR) FROM {table} "
                f"WHERE lower(CAST({col} AS VARCHAR)) = lower('{lit}') LIMIT 1")
         try:
-            rows = db.rows(sql, label="__resolve__")
+            rows = db.rows(sql, label="__resolve__", sql_dialect="duckdb")   # DuckDB's CAST; the door renders it
         except Exception:
             rows = None          # couldn't probe this column — skip, don't count as "absent"
         if rows is None:

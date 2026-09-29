@@ -74,9 +74,10 @@ class TestTheSeamTranslatesWhatTheProbesWrite:
 
 class TestBothProbesUseIt:
     @pytest.mark.parametrize("fn", ["_populated_month_count", "_monthly_counts"])
-    def test_the_probe_routes_through_the_seam(self, fn):
+    def test_the_probe_declares_duckdb_to_the_door(self, fn):
+        """Since GM-1 the seam is the door's own step; the probe declares what it wrote."""
         src = inspect.getsource(getattr(I, fn))
-        assert "native_sql(" in src, f"{fn} still sends DuckDB SQL to whatever engine it finds"
+        assert 'sql_dialect="duckdb"' in src, f"{fn} still sends DuckDB SQL to whatever engine it finds"
 
     @pytest.mark.parametrize("fn,counter", [
         ("_populated_month_count", "intake.density_probe_failed"),

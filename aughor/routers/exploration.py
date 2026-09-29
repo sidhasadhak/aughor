@@ -237,14 +237,18 @@ def _load_state(conn_id: str, schema: str | None) -> dict:
     return _s.load(conn_id)
 
 
-def _domain_insights_for(conn_id: str, schema: str | None) -> dict:
-    """by_domain insights for a (connection, schema) — per-schema, aggregate, or conn-level."""
+def domain_findings_for(conn_id: str, schema: str | None) -> dict:
+    """by_domain findings for a (connection, schema) — per-schema, aggregate, or conn-level."""
     from aughor.explorer import store as _s
     if schema:
-        return _s.get_domain_insights(_store_key(conn_id, schema))
+        return _s.get_domain_findings(_store_key(conn_id, schema))
     if _s.schema_run_keys(conn_id):
-        return _s.get_aggregate_domain_insights(conn_id)
-    return _s.get_domain_insights(conn_id)
+        return _s.get_aggregate_domain_findings(conn_id)
+    return _s.get_domain_findings(conn_id)
+
+
+#: The name before the glossary settled on 'finding'; existing callers still read it.
+_domain_insights_for = domain_findings_for
 
 
 def _needs_filter(conn_id: str, schema: str | None) -> bool:
@@ -641,7 +645,8 @@ def _metric_moves_provider(conn_id: str, profile):
                 cached = get_cached(conn_id, sql, tenancy=tenancy)
                 if cached is not None:
                     return cached.columns, cached.rows, None
-                res = db.execute("__brief_metric_move__", sql)
+                # the business profile's chart_sql is prompted as DuckDB; the door renders it (GM-1)
+                res = db.execute("__brief_metric_move__", sql, sql_dialect="duckdb")
                 err = getattr(res, "error", None)
                 if not err:
                     try:

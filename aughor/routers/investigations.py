@@ -1492,6 +1492,8 @@ class _AnswerCoreResult:
     guard_receipts: list[dict] = field(default_factory=list)
     receipt: dict = field(default_factory=dict)
     caveats: list[str] = field(default_factory=list)
+    #: GM-3 — the doors the answer's statement passed (`aughor.db.doors`), in order.
+    doors: list[str] = field(default_factory=list)
 
     # ── copied out of _ChatAnswer ────────────────────────────────────────────
     chart_type: str = "auto"
@@ -2315,7 +2317,8 @@ def _answer_core(
                     _cands = generate_candidate_readings(question, schema)
                     if len(_cands) >= 2:
                         def _probe_ex(_sql):
-                            _r = db.execute("ambiguity_probe", _sql)
+                            # the readings are prompted as DuckDB SQL; the door renders them (GM-1)
+                            _r = db.execute("ambiguity_probe", _sql, sql_dialect="duckdb")
                             return (not _r.error, _r.rows or [], _r.error or "")
                         _sv = assess_structural_ambiguity(question, _cands, _probe_ex)
                         if _sv.ambiguous:
@@ -2440,10 +2443,14 @@ def _answer_core(
         # ── Semantic column alignment — deterministic pre-execution check ─────
         # Catches wrong entity column (e.g. product_id used for seller analysis)
         # and injects a fix hint into SqlWriter if a rewrite is needed.
+        # GM-3 — the quick path's own guards, each named here once it has RUN on the statement (a check
+        # that raised is not credited); added to the result's doors after execution.
+        _checked: list[str] = []
         _semantic_fix_hint = ""
         try:
             from aughor.tools.semantic_validator import check_entity_column_alignment
             _sem_warnings = check_entity_column_alignment(question, final_sql, schema)
+            _checked.append("entity-columns")
             if _sem_warnings:
                 _semantic_fix_hint = " | ".join(w.to_prompt_text() for w in _sem_warnings)
         except Exception as exc:
@@ -2463,6 +2470,7 @@ def _answer_core(
             _pst_cols = _pst(_full_schema)
             _ff = detect_fanout(final_sql, _pst_cols, dialect=db.dialect) or \
                 dimension_ratio_chasm(final_sql, _pst_cols, dialect=db.dialect)
+            _checked.append("fan-out")
             if _ff:
                 # Deterministic de-fan FIRST (the LLM-rewrite path is only ~20%
                 # reliable on a known fan-out — it returns plausible CTEs that still
@@ -2570,6 +2578,7 @@ def _answer_core(
                     if _r.schema and _r.schema.strip().lower()
                     not in (_allowed, "information_schema", "pg_catalog", "system")
                 })
+                _checked.append("scope")
                 if _oos:
                     _scope_fix_hint = (
                         f"OUT-OF-SCOPE TABLES {_oos}: this question is scoped to the "
@@ -2588,6 +2597,7 @@ def _answer_core(
             try:
                 from aughor.sql.join_guard import check_filter_value_domains
                 _fw = check_filter_value_domains(db, final_sql)
+                _checked.append("filter-domain")
                 if _fw:
                     _filter_fix_hint = " | ".join(w.to_prompt_text() for w in _fw)
             except Exception as _e:
@@ -2600,6 +2610,7 @@ def _answer_core(
         if final_sql:
             try:
                 _grain_fix_hint = _breakdown_grain_hint(question, final_sql, db.dialect)
+                _checked.append("breakdown-grain")
             except Exception as _e:
                 logger.debug("chat breakdown-grain guard is best-effort; skipped: %s", _e)
 
@@ -2612,6 +2623,7 @@ def _answer_core(
             try:
                 from aughor.sql.fanout import measure_times_key_arithmetic
                 _idmath_fix_hint = measure_times_key_arithmetic(final_sql, dialect=db.dialect) or ""
+                _checked.append("id-arithmetic")
             except Exception as _e:
                 logger.debug("chat id-arithmetic guard is best-effort; skipped: %s", _e)
 
@@ -2623,6 +2635,7 @@ def _answer_core(
             try:
                 from aughor.sql.fanout import avg_of_row_ratios
                 _ratio_fix_hint = avg_of_row_ratios(final_sql, dialect=db.dialect) or ""
+                _checked.append("ratio-of-sums")
             except Exception as _e:
                 logger.debug("chat ratio-of-sums guard is best-effort; skipped: %s", _e)
 
@@ -2636,6 +2649,7 @@ def _answer_core(
                 from aughor.agent.verifier import Verifier as _Verifier
                 from aughor.tools.schema import parse_schema_tables as _pst_chasm
                 _vhits = _Verifier.scan([final_sql], _pst_chasm(schema), db.dialect)
+                _checked.append("chasm")
                 if _vhits:
                     _chasm_fix_hint = " | ".join(_vhits)
             except Exception as _e:
@@ -2651,6 +2665,7 @@ def _answer_core(
                 from aughor.sql.safety import preflight_repair
                 _pf_before = final_sql
                 final_sql, _pf_receipt = preflight_repair(db, final_sql, schema)
+                _checked.append("preflight")
                 if final_sql.strip() != _pf_before.strip():
                     # Said, as the shared executor already says it (sql/executor.py): the rewrite was silent on the
                     # quick path, so its before-and-after — a query that would not bind and the one that did — was
@@ -2692,6 +2707,7 @@ def _answer_core(
         _chat_zero_diag = None
         if not result.error and result.row_count == 0:
             _chat_zero_diag = _zero_row_suspicious(final_sql)
+            _checked.append("zero-row")
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
@@ -2747,11 +2763,17 @@ def _answer_core(
                             "before": final_sql[:2000], "after": fix.sql[:2000]})
                         final_sql = fix.sql
                         result = retry
+                        _checked.append("repaired")
                         emit("sql", {"sql": final_sql})
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "post-execution SQL repair is best-effort; serving the original result/error",
                          counter="chat.sql_repair")
+
+        # GM-3 — the path is a receipt: the connection's door stamped its own steps on the result; the
+        # quick path's guards, and an adopted repair, follow them.
+        from aughor.db.doors import add as _add_doors
+        _add_doors(result, ["repaired:model" if _c == "repaired" else f"guarded:{_c}" for _c in _checked])
 
         if result.error:
             from aughor.agent.escalate import assess_escalation
@@ -2764,7 +2786,7 @@ def _answer_core(
                 outcome="query_failed", error=result.error, sql=final_sql,
                 columns=list(result.columns or []), rows=list(result.rows or []),
                 row_count=result.row_count, guard_receipts=receipts,
-                receipt=dict(_rcpt), caveats=list(result.caveats or []),
+                receipt=dict(_rcpt), caveats=list(result.caveats or []), doors=list(result.doors or []),
                 escalate=_esc_event, intent=answer.intent,
                 approach=list(answer.approach or []),
                 trusted=list(_trusted_used or []))
@@ -2878,7 +2900,8 @@ def _answer_core(
         _exh = quick_exhibit(result.columns, result.rows, answer.chart_type)
         if _exh:
             answer.chart_config = {**(answer.chart_config or {}), "exhibit": _exh}
-        emit("columns", {"columns": result.columns})
+        # `doors` rides the frame that says the statement ran (GM-3); the web reads `columns` alone from it.
+        emit("columns", {"columns": result.columns, "doors": list(result.doors or [])})
         emit("rows", {"rows": result.rows[:10000]})
         _grounded_headline = _apply_currency(_grounded_headline, _cur_sym)
         emit("headline", {"headline": _grounded_headline})
@@ -3216,6 +3239,7 @@ def _answer_core(
             guard_receipts=receipts,
             receipt=dict(_rcpt),
             caveats=list(result.caveats or []),
+            doors=list(result.doors or []),
             chart_type=answer.chart_type,
             chart_config=dict(answer.chart_config or {}),
             intent=answer.intent,

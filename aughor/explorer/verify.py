@@ -271,7 +271,7 @@ def unparsed_numeric_diagnosis(sql: str, conn=None, col_types=None) -> str | Non
         ][:_COSTUME_DIAGNOSIS_MAX_COLS]
         for col in suspects:
             res = conn.execute("_verify_costume",
-                               f"SELECT {costume_probe_sql(col)} FROM {table}")
+                               f"SELECT {costume_probe_sql(col)} FROM {table}", sql_dialect="duckdb")
             if getattr(res, "error", None) or not getattr(res, "rows", None):
                 continue
             hit = interpret_costume(res.rows[0])

@@ -14,6 +14,10 @@ loaders are gone).
 A play's content is compared over the fields a play HAD when the fixture was measured: the
 `cause` and `fix` IP-1 added afterwards, for the Verifier's rule-outs, are not part of the move
 and are checked in `test_ip1_rule_outs.py`.
+
+Knowledge edited on purpose AFTER the move is recorded in `tests/fixtures/ip1_edits_after_the_move.json`,
+each entry with the text it had when it was moved. These tests put that text back before they hash,
+so the move is still proven unchanged — and a change nobody recorded still fails here.
 """
 from __future__ import annotations
 
@@ -27,6 +31,40 @@ import pytest
 
 BASELINE = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "ip1_kb_parity.json")
                       .read_text(encoding="utf-8"))
+EDITS = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "ip1_edits_after_the_move.json")
+                   .read_text(encoding="utf-8"))
+PACKS = Path(__file__).resolve().parents[2] / "packs"
+
+
+def _as_moved_industry(kb: dict) -> dict:
+    moved = {e["name"]: e["as_moved"] for e in EDITS["industry_metrics"] if e["industry"] == kb.get("id")}
+    if not moved:
+        return kb
+    return {**kb, "metrics": [moved.get(m.get("name"), m) for m in kb.get("metrics") or []]}
+
+
+def _as_moved_payload(data):
+    moved = {e["id"]: e["as_moved"] for e in EDITS["kb_entries"]}
+    if isinstance(data, list):
+        return [moved.get(e.get("id"), e) if isinstance(e, dict) else e for e in data]
+    return moved.get(data.get("id"), data) if isinstance(data, dict) else data
+
+
+@pytest.fixture(scope="module", autouse=True)
+def as_moved():
+    """Every knowledge reader in this module sees the packages as they were moved: the edits
+    recorded since are put back, in place, so order and everything else stay as they are."""
+    from aughor.business_profile import metric_kb
+    from aughor.packs import knowledge
+
+    live_industries, live_payloads = knowledge.industry_kbs, knowledge.iter_kb_payloads
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(knowledge, "industry_kbs", lambda: tuple(_as_moved_industry(kb) for kb in live_industries()))
+        mp.setattr(knowledge, "iter_kb_payloads",
+                   lambda: ((f, _as_moved_payload(data)) for f, data in live_payloads()))
+        metric_kb._metric_vocabulary.cache_clear()
+        yield
+    metric_kb._metric_vocabulary.cache_clear()
 
 
 #: PlaybookEntry fields added after the fixture was measured (IP-1's rule-outs).
@@ -122,3 +160,20 @@ def test_each_industrys_metric_vocabulary_is_the_same():
         text = "" if industry == "_all" else industry
         got = metric_vocabulary(text, include_packages=False)
         assert _sha([json.dumps(t) for t in got]) == digest, industry
+
+
+def test_every_edit_recorded_since_the_move_is_there_and_says_why():
+    """A record whose edit was undone, or whose entry was renamed again, would put back text
+    over nothing and prove nothing: each one must name an entry that exists NOW and differs
+    from what was moved. Read from disk, past the fixture above."""
+    for edit in EDITS["industry_metrics"]:
+        live = json.loads((PACKS / edit["industry"] / "industry.json").read_text(encoding="utf-8"))
+        now = [m for m in live["metrics"] if m["name"] == edit["name"]]
+        assert len(now) == 1, edit["name"]
+        assert now[0] != edit["as_moved"] and edit["why"].strip() and edit["date"], edit["name"]
+    for edit in EDITS["kb_entries"]:
+        found = [e for f in PACKS.glob("*/kb/*.json")
+                 for e in (json.loads(f.read_text(encoding="utf-8")) or [])
+                 if isinstance(e, dict) and e.get("id") == edit["id"]]
+        assert len(found) == 1, edit["id"]
+        assert found[0] != edit["as_moved"] and edit["why"].strip() and edit["date"], edit["id"]
