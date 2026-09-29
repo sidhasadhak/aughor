@@ -65,7 +65,7 @@ class TestCalibrateRanges:
 
     class _Conn:
         def __init__(self, rows): self._rows = rows
-        def execute(self, *a): return TestCalibrateRanges._Res(self._rows)
+        def execute(self, *a, **_kw): return TestCalibrateRanges._Res(self._rows)
 
     def test_appends_measured_magnitude(self):
         m = _metric("AOV", unit_or_range="USD (human scale: 20-150)", value_sql="SELECT AVG(x) FROM t")

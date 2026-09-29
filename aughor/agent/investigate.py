@@ -611,7 +611,8 @@ def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: l
         hear 'no' to. Labelled, not dunder-internal, because it reads user data and every
         query that does belongs in the audit trail."""
         try:
-            res = conn.execute(f"{phase_id}_type_probe", sql)
+            # `agent.relationship` writes DuckDB (TRY_CAST … AS DOUBLE, double-quoted names); the door renders it
+            res = conn.execute(f"{phase_id}_type_probe", sql, sql_dialect="duckdb")
             if getattr(res, "error", None):
                 return None
             return getattr(res, "rows", None)
@@ -673,7 +674,7 @@ def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: l
                 return _f
             continue
 
-        result = _execute_safe(conn, phase_id, plan.sql, schema=schema or None)
+        result = _execute_safe(conn, phase_id, plan.sql, schema=schema or None, sql_dialect="duckdb")
         if result is None or getattr(result, "error", None) or not getattr(result, "rows", None):
             _logging.getLogger(__name__).info(
                 "[deep] relationship scan (%s, %s) did not execute: %s", plan.kind, candidate,
@@ -9349,7 +9350,7 @@ def _probe_lifecycle_values(conn, cols: list) -> dict:
             r = conn.execute_bounded(
                 "loss_lifecycle_probe",
                 f'SELECT DISTINCT "{col}" AS v FROM {table} WHERE "{col}" IS NOT NULL LIMIT 25',
-                25)
+                25, sql_dialect="duckdb")
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, f"lifecycle probe '{qualified}' best-effort; skipped",
@@ -9385,7 +9386,7 @@ def _probe_contra_ranges(conn, cols: list, schema_text: str) -> dict:
             r = conn.execute_bounded(
                 "loss_contra_range_probe",
                 f'SELECT MIN("{col}") AS lo, MAX("{col}") AS hi FROM {table} '
-                f'WHERE "{col}" IS NOT NULL', 1)
+                f'WHERE "{col}" IS NOT NULL', 1, sql_dialect="duckdb")
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, f"contra range probe '{key}' best-effort; skipped",

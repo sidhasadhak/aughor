@@ -9608,7 +9608,7 @@ silently (§7).
 
 ---
 
-### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1 BUILT 2026-09-29** on `claude/briefing-cockpits`, not merged)
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1 and GM-2 BUILT 2026-09-29** on `claude/briefing-cockpits`, not merged)
 
 > **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
 > without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
@@ -9665,6 +9665,24 @@ silently (§7).
 > `postgres` while sqlglot 30.8 ships an `exasol` dialect. Not dialect: ALTER COLUMN answers `applied: true` whatever
 > the engine said; EXPLAIN (the skill dry run) and SUMMARIZE (the overview) are refused by the validator everywhere;
 > `db.rows()` still reads any error as "no rows" (GM-4).
+>
+> **Status 2026-09-29, GM-2 BUILT — the census is a ratchet.** `tests/unit/test_sql_door_census.py` walks `aughor/`
+> (an AST walk over the door's method names; the study's regex was never recorded) and holds `docs/SQL_DOORS.json`:
+> 191 sites, one row each, keyed by file, enclosing function, door and label — never by line — with the site's
+> dialect class and author. A new door call fails with the row to add; a row whose call is gone fails; `declared` and
+> `forwards` are read off the call, so a row cannot claim them for a call that does not declare and a declaring call
+> cannot be filed elsewhere; `none` (3) and `unstated` (5) are pinned exactly — a fix lowers its baseline in the same
+> change. Mutation-tested eight ways, each killed by an assertion. **The first cut found nine bug-class sites the
+> study's census had missed**, all platform SQL in DuckDB's spelling, now declared — and measured live on theLook
+> before and after, five of six were silently wrong with no error: the business profile's uniqueness oracle said
+> `orders.order_id` is not unique (`COUNT(DISTINCT "order_id")` counts one string literal), its cardinality oracle
+> counted 1 status for 5, the relationship planner grouped the literals `'status'` and `'gender'` into one row where
+> there are 10 and its type probe failed on `TRY_CAST`, the explore mode's scan counted 1 distinct user for 80,182, and
+> the loss probe read the lifecycle values as `['status']`. Also declared: the profile's value and chart SQL audits
+> and its calibration (the SQL is prompted as runnable DuckDB). **Left in `none`, each with its reason in the file:**
+> the catalog's sample read (PII first — GM-5), the overview's `SUMMARIZE` (refused everywhere) and ALTER COLUMN.
+> **`unstated` (5):** the conversation agent, the explore plan and the ontology enricher write SQL with no dialect in
+> their prompt — the fix is the prompt, measured by a model run, not a declaration.
 
 - **GM-1 · the door owns the dialect.** `execute(label, sql, *, sql_dialect=None)`: `"duckdb"` from platform code
   makes the base door translate for native engines where transpile engines already do; `native_sql` becomes the

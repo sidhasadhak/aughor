@@ -38,7 +38,7 @@ class FakeConn:
     def dry_run(self, _sql):
         return (True, "")
 
-    def execute(self, _hid, _sql):
+    def execute(self, _hid, _sql, sql_dialect=None):
         return _Res(self._scalar)
 
 
@@ -146,7 +146,7 @@ class TestChartSqlAudit:
             dialect = "duckdb"
             def dry_run(self, _s):
                 return (True, "")
-            def execute(self, _h, _s):
+            def execute(self, _h, _s, sql_dialect=None):
                 r = _Res(0)
                 r.rows = rows
                 return r

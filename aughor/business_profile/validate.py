@@ -200,7 +200,7 @@ def make_uniqueness_oracle(conn, table_cols: dict):
         val = None
         try:
             res = conn.execute("fanout-uniq-probe",
-                               f'SELECT COUNT(*) = COUNT(DISTINCT "{col}") FROM {tbl}')
+                               f'SELECT COUNT(*) = COUNT(DISTINCT "{col}") FROM {tbl}', sql_dialect="duckdb")
             if not getattr(res, "error", None):
                 rows = getattr(res, "rows", None) or []
                 if rows and rows[0] and rows[0][0] is not None:
@@ -242,7 +242,7 @@ def make_cardinality_oracle(conn, table_cols: dict):
         val = None
         try:
             res = conn.execute("cardinality-probe",
-                               f'SELECT COUNT(DISTINCT "{col}") FROM {tbl}')
+                               f'SELECT COUNT(DISTINCT "{col}") FROM {tbl}', sql_dialect="duckdb")
             if not getattr(res, "error", None):
                 rows = getattr(res, "rows", None) or []
                 if rows and rows[0] and rows[0][0] is not None:
@@ -320,7 +320,7 @@ def audit_value_sql(value_sql: str, table_cols: dict, conn, unit_or_range: str) 
 
         # 4. live range/boundary check.
         try:
-            res = conn.execute("profile-value-sql", sql)
+            res = conn.execute("profile-value-sql", sql, sql_dialect="duckdb")
             if getattr(res, "error", None):
                 return (False, f"errors: {res.error}")
             val = _first_numeric(getattr(res, "rows", []) or [])
@@ -402,7 +402,7 @@ def audit_chart_sql(chart_sql: str, table_cols: dict, conn) -> tuple[bool, str]:
             pass
 
         try:
-            res = conn.execute("profile-chart-sql", sql)
+            res = conn.execute("profile-chart-sql", sql, sql_dialect="duckdb")
             if getattr(res, "error", None):
                 return (False, f"errors: {res.error}")
             rows = getattr(res, "rows", []) or []

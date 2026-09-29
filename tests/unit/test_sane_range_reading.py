@@ -139,7 +139,7 @@ class _Scalar:
     def dry_run(self, _sql):
         return (True, "")
 
-    def execute(self, _label, _sql):
+    def execute(self, _label, _sql, sql_dialect=None):
         return SimpleNamespace(rows=[[str(self._value)]], error=None, columns=["v"])
 
 

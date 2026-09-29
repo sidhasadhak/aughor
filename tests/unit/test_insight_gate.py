@@ -214,7 +214,7 @@ def test_make_cardinality_oracle_probes_and_caches():
     class _Conn:
         calls = 0
 
-        def execute(self, qid, sql):
+        def execute(self, qid, sql, sql_dialect=None):
             _Conn.calls += 1
 
             class _R:
