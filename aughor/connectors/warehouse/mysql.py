@@ -12,7 +12,7 @@ import time
 from urllib.parse import urlparse
 
 from aughor.connectors.base import Connector
-from aughor.db.dialects import sql_for_engine
+from aughor.db.doors import through_door
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -85,12 +85,12 @@ class MySQLConnection(Connector):
                            d[4] if len(d) > 4 else None, d[5] if len(d) > 5 else None) for d in description]
 
     def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return self._execute(hypothesis_id, sql_for_engine(self, sql, sql_dialect), MAX_ROWS)
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS))
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
                         sql_dialect: str | None = None) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
-        return self._execute(hypothesis_id, sql_for_engine(self, sql, sql_dialect), max(1, max_rows))
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)))
 
     def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, offer_typed_rows, security_pre, security_post

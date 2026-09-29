@@ -24,7 +24,7 @@ from pathlib import Path
 
 from aughor.db.single_flight import single_flight_build
 from aughor.connectors.base import Connector
-from aughor.db.dialects import sql_for_engine
+from aughor.db.doors import through_door
 from aughor.db.connection import MAX_ROWS, QueryResult
 from aughor.kernel.errors import tolerate
 
@@ -137,12 +137,12 @@ class SQLiteConnection(Connector):
         return cols, rows
 
     def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return self._execute(hypothesis_id, sql_for_engine(self, sql, sql_dialect), MAX_ROWS)
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS))
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
                         sql_dialect: str | None = None) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past the 500 cap."""
-        return self._execute(hypothesis_id, sql_for_engine(self, sql, sql_dialect), max(1, max_rows))
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)))
 
     def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         # Gate through the public security interface; the read-only connection

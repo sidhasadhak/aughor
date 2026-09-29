@@ -97,6 +97,7 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         "error": result.error,
         "caveats": list(result.caveats or []) + ([fanout] if fanout else []),
         "guard_receipts": [_receipt_dict(r) for r in receipts],
+        "doors": list(getattr(result, "doors", None) or []),
     }
     if result.error:
         out["repair"] = route_error(result.error, sql, getattr(conn, "dialect", "") or "")
@@ -165,6 +166,7 @@ def query_objects(connection_id: str, args: dict, *, emit: Optional[Emit] = None
         "error": result.error,
         "caveats": list(compiled.caveats) + list(result.caveats or []),
         "guard_receipts": [_receipt_dict(r) for r in receipts],
+        "doors": list(getattr(result, "doors", None) or []),
     }
     if result.error:
         out["instruction"] = ("The compiled query failed to execute — a defect in the object model or the "
@@ -187,7 +189,7 @@ def _surface_primitive_answer(emit: Emit, connection_id: str, sql: str, result: 
     if compiled is not None:
         emit("compiled", {"intent_type": "object_query", "entity": compiled.object_type,
                           "measure": ", ".join(compiled.measures), "dimension": ", ".join(compiled.dimensions)})
-    emit("columns", {"columns": list(result.columns or [])})
+    emit("columns", {"columns": list(result.columns or []), "doors": list(getattr(result, "doors", None) or [])})
     emit("rows", {"rows": list(result.rows or [])[:10000]})
     try:
         import uuid
@@ -332,6 +334,7 @@ def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = No
         "row_count": result.row_count,
         "caveats": list(result.caveats or []),
         "guard_receipts": [_receipt_dict(r) for r in (result.guard_receipts or [])],
+        "doors": list(getattr(result, "doors", None) or []),
     }
     if result.error:
         out["error"] = result.error

@@ -105,7 +105,8 @@ def _step(e: dict, *, gated: bool) -> dict:
         "ok": e.get("ok") if e.get("ok") is not None else p.get("ok"),
         "duration_ms": e.get("duration_ms"), "row_count": e.get("row_count"),
         "sql": str(p.get("sql") or "")[:_SQL_CLIP], "error": str(p.get("error") or ""),
-        "guards": list(p.get("guards") or []), "result_chars": p.get("result_chars"),
+        "guards": list(p.get("guards") or []), "doors": list(p.get("doors") or []),
+        "result_chars": p.get("result_chars"),
         "captured": bool(p.get("captured")),
     }
     for field in STEP_PAYLOAD_FIELDS:

@@ -56,7 +56,7 @@
   "aughor/custom_agents/quality.py::evaluate_agent::execute::__agent_eval_ref__": {"dialect": "native", "author": "stored", "note": "a person's golden SQL"},
   "aughor/dashboard/doors.py::run_guarded::execute_guarded::{query_id}": {"dialect": "native", "author": "stored", "note": "a card's SQL"},
   "aughor/db/connection.py::DatabaseConnection.bulk_read::execute::__bulk__": {"dialect": "door", "author": "door"},
-  "aughor/db/connection.py::DatabaseConnection.execute_bounded::execute::{hypothesis_id}": {"dialect": "forwards", "author": "mixed"},
+  "aughor/db/connection.py::DatabaseConnection.execute_bounded::execute::{hypothesis_id}": {"dialect": "door", "author": "door", "note": "through_door renders the statement for the engine before this call (GM-3)"},
   "aughor/db/connection.py::DatabaseConnection.execute_ibis::execute::{hypothesis_id}": {"dialect": "generated", "author": "door", "note": "ibis compiles in the connection's dialect"},
   "aughor/db/connection.py::DatabaseConnection.execute_typed::execute::{hypothesis_id}": {"dialect": "door", "author": "door"},
   "aughor/db/connection.py::DatabaseConnection.execute_with_params_typed::execute_with_params::{hypothesis_id}": {"dialect": "door", "author": "door"},

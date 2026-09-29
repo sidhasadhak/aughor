@@ -368,6 +368,7 @@ def _explain_analysis(connection_id: str, inv_id: str) -> dict:
         "recommendations": len(report.get("recommendations") or []) if isinstance(report.get("recommendations"), list) else 0,
         "data_gaps": len(report.get("data_gaps") or []) if isinstance(report.get("data_gaps"), list) else 0,
         "guards_clean": _guards_clean(envelope),
+        "doors": _statement_doors(envelope),
         "rechecks": [{"at": c.get("at") or c.get("checked_at"), "status": c.get("status")} for c in rechecks][-3:],
         "verdict": _latest_verdict(str(row.get("id") or "")),
         "departures": departures,
@@ -381,15 +382,33 @@ def _explain_analysis(connection_id: str, inv_id: str) -> dict:
                      + (f" Its full record is at /traces/{out['trace_id']}/trajectory." if out["trace_id"] else "")),
     }
     held = [d for d in departures if d["state"] != "departed"]
+    answered_by = out["doors"][-1] if out["doors"] else None
     out["summary"] = (
         f"{out['analysis_kind'].capitalize()} {out['id']} ({out['status']}): \"{clip(out['question'], 80)}\""
         + (f" — {out['queries']} quer{'ies' if out['queries'] != 1 else 'y'}" if out["queries"] else "")
         + (f", confidence {out['confidence']}" if out["confidence"] not in (None, "") else "")
         + (f"; guards {'clean' if out['guards_clean'] else 'not vouched for'}" if envelope is not None else "; no envelope")
+        + (f"; its answer's query passed {len(answered_by['doors'])} door{'s' if len(answered_by['doors']) != 1 else ''}: "
+           + "; ".join(answered_by["said"]) if answered_by
+           else "; the doors its queries passed were not recorded" if envelope is not None else "")
         + (f"; {len(departures)} departure{'s' if len(departures) != 1 else ''} cite{'' if len(departures) != 1 else 's'} it"
            + (f", {len(held)} held" if held else "") if departures else "")
         + "."
     )
+    return out
+
+
+def _statement_doors(envelope) -> list[dict]:
+    """GM-3 — each statement the run executed, with the doors it passed, in the platform's words and a reader's
+    (`aughor.db.doors.describe`). A run recorded before GM-3 has none, and the summary says so."""
+    if not isinstance(envelope, dict):
+        return []
+    from aughor.db.doors import describe
+    out: list[dict] = []
+    for entry in (envelope.get("provenance") or {}).get("doors") or []:
+        if isinstance(entry, dict) and entry.get("doors"):
+            words = [str(d) for d in entry["doors"]]
+            out.append({"sql": clip(str(entry.get("sql") or ""), _SQL_PREVIEW), "doors": words, "said": describe(words)})
     return out
 
 
@@ -449,8 +468,9 @@ def spotlight_explain_tools(connection_id: str, *, session_id: str = "") -> list
                 "each, what a hold means and what to change), an automation (its "
                 "triggers, steps, last run and recent departures), a metric (its "
                 "lifecycle, definition and tests), an agent (its scope, grants, evaluation "
-                "and recent runs) or an analysis (a run: its question, status, queries, "
-                "confidence, re-checks, verdict and the departures that cite it). Call it "
+                "and recent runs) or an analysis (a run: its question, status, queries, the "
+                "doors each query passed — translated, validated, safety-checked, audited, "
+                "guarded — confidence, re-checks, verdict and the departures that cite it). Call it "
                 "FIRST when the question names one of these by id or name, "
                 "and cite its fields — the remedy text is the same the screen shows. "
                 "For what a law or concept IS in general use platform_help; END your "

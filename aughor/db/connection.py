@@ -20,6 +20,7 @@ import duckdb
 import sqlglot
 
 from aughor.db.dialects import sql_for_engine
+from aughor.db.doors import add as _add_doors, passed as _passed, through_door
 from aughor.db.single_flight import single_flight_build
 from aughor.control_plane.contracts.execution import QueryResult
 
@@ -85,12 +86,15 @@ def _is_internal_query(hypothesis_id: str | None) -> bool:
 def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResult | None:
     """Run safety check. Returns a blocked QueryResult if the query is not allowed, else None."""
     if _is_internal_query(hypothesis_id):
+        _passed("internal")
         return None  # platform plumbing — never block or audit
     try:
         from aughor.security.safety import SafetyChecker, SafetyVerdict
         from aughor.security.audit  import AuditLogger
         result = SafetyChecker.check(sql)
+        _passed("safety-checked")
         if result.verdict == SafetyVerdict.BLOCKED:
+            _passed("blocked:safety")
             AuditLogger.log(
                 connection_id=connection_id,
                 hypothesis_id=hypothesis_id,
@@ -107,6 +111,7 @@ def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResu
                 error=f"[BLOCKED] {result.reason}",
             )
         if result.verdict == SafetyVerdict.SUSPICIOUS:
+            _passed("flagged:suspicious")
             # Log but allow — the query still runs
             AuditLogger.log(
                 connection_id=connection_id,
@@ -119,6 +124,7 @@ def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResu
         # K4-honest — the failure is observable (counter + journal), not silent.
         from aughor.kernel.errors import tolerate
         tolerate(exc, "safety gate errored; failing closed", counter="security.gate_error")
+        _passed("blocked:safety")
         return QueryResult(
             hypothesis_id=hypothesis_id,
             sql=sql,
@@ -227,7 +233,7 @@ def _security_post(
     strictest row budget among all of them applies, and the audit log records the answer under each one, so every
     connection's trail shows the answers its rows reached."""
     if _is_internal_query(hypothesis_id):
-        return result  # platform plumbing — skip PII/audit, but still return rows
+        return result  # platform plumbing — skip PII/audit, but still return rows (the trail already says "internal")
     read_from = list(dict.fromkeys([connection_id, *(c for c in also_read if c)]))
     try:
         from aughor.security.pii     import PiiScanner
@@ -241,6 +247,7 @@ def _security_post(
         # budget touched).
         max_rows = min(get_budget(read_id).max_rows for read_id in read_from)
         if len(result.rows) > max_rows:
+            _passed(f"row-budget:{max_rows}")
             result = QueryResult(
                 hypothesis_id=result.hypothesis_id,
                 sql=result.sql,
@@ -280,6 +287,7 @@ def _security_post(
                 # nothing there at all.
                 pii_blocked = scan.redacted_count
                 pii_count = scan.redacted_count
+                _passed("pii-blocked")
                 # The message carries NO count, and the words the anti-probing guard
                 # watches for stay out of the rebuild below — including out of comments
                 # inside it, since that guard reads the source text. The number of matches
@@ -312,6 +320,9 @@ def _security_post(
                 )
                 pii_count = scan.redacted_count
                 _typed_mirror_redaction(_pre_scan_rows, scan.rows)
+                _passed(f"pii-redacted:{pii_count}")
+            else:
+                _passed("pii-checked")
 
         # 3. Audit log — one record on every connection the answer read
         for read_id in read_from:
@@ -325,6 +336,7 @@ def _security_post(
                 pii_redacted=pii_count,
                 error=result.error,
             )
+        _passed("audited")
     except Exception as exc:
         # Post-exec (PII redaction / budget / audit) stays best-effort: it must
         # NOT drop already-safe rows on a hiccup. But make the swallow observable
@@ -415,11 +427,14 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
             return sql, None
         from aughor.sql.rls import inject_row_filters
         dialect = conn.dialect if getattr(conn, "writes_native_sql", False) else "duckdb"
-        return inject_row_filters(sql, filters, dialect), None
+        filtered = inject_row_filters(sql, filters, dialect)
+        _passed("row-policy")
+        return filtered, None
     except Exception as exc:  # noqa: BLE001 — fail CLOSED: an un-appliable policy blocks, never leaks
         from aughor.kernel.errors import tolerate
         tolerate(exc, "row-policy injection failed; blocking the query (fail-closed)",
                  counter="rbac.row_policy.blocked")
+        _passed("blocked:row-policy")
         return sql, QueryResult(
             hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0,
             error="[ROW POLICY] query blocked — the row-level access policy could not be safely applied")
@@ -656,7 +671,10 @@ def heal_duckdb_refusal(result: QueryResult, sql: str, attempt) -> QueryResult:
     if not rewritten or rewritten == sql:
         return result
     retried = attempt(rewritten)
-    return result if retried.error else retried
+    if retried.error:
+        return result
+    _passed("repaired:julianday")
+    return retried
 
 
 # ── Safety ────────────────────────────────────────────────────────────────────
@@ -775,7 +793,10 @@ class DatabaseConnection(ABC):
         a typed capture there would be an unredacted side channel), or the security
         post-pass disarmed the capture (fail closed, never a redaction bypass)."""
         statement = sql_for_engine(self, sql, sql_dialect)
-        return self._capture_typed(hypothesis_id, lambda: self.execute(hypothesis_id, statement))
+        result, payload = self._capture_typed(hypothesis_id, lambda: self.execute(hypothesis_id, statement))
+        if statement != sql:
+            _add_doors(result, [f"translated:duckdb→{self.dialect}"], first=True)
+        return result, payload
 
     def execute_with_params_typed(self, hypothesis_id: str, sql: str,
                                   params: dict) -> "tuple[QueryResult, dict | None]":
@@ -995,6 +1016,8 @@ class DatabaseConnection(ABC):
             sink = _TYPED_SINK.get()
         finally:
             _TYPED_SINK.reset(token)
+        if statement != sql:
+            _add_doors(result, [f"translated:duckdb→{self.dialect}"], first=True)
         if result.error or not sink or not sink.get("armed"):
             return result, None
         return result, sink
@@ -1009,7 +1032,7 @@ class DatabaseConnection(ABC):
         doesn't override this simply reads ≤ MAX_ROWS, which the join surfaces as PARTIAL);
         DuckDB/Postgres override it to actually return more rows.
         """
-        return self.execute(hypothesis_id, sql_for_engine(self, sql, sql_dialect))
+        return through_door(self, sql, sql_dialect, lambda statement: self.execute(hypothesis_id, statement))
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Validate SQL without returning rows. Returns (ok, error_message).
@@ -1026,9 +1049,12 @@ class DatabaseConnection(ABC):
         if self.dialect == "duckdb":
             return sql
         try:
-            return sqlglot.transpile(sql, read="duckdb", write=self.dialect)[0]
+            out = sqlglot.transpile(sql, read="duckdb", write=self.dialect)[0]
         except Exception:
             return sql  # best-effort — fall back to original
+        if out != sql:
+            _passed(f"translated:duckdb→{self.dialect}")
+        return out
 
     def make_reader(self) -> "DatabaseConnection":
         """Return a connection clone safe for use in a parallel thread.
@@ -1196,12 +1222,12 @@ class DuckDBConnection(DatabaseConnection):
             return sql
 
     def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return self._run(hypothesis_id, sql_for_engine(self, sql, sql_dialect), MAX_ROWS)
+        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, MAX_ROWS))
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
                         sql_dialect: str | None = None) -> QueryResult:
         """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
-        return self._run(hypothesis_id, sql_for_engine(self, sql, sql_dialect), max(1, max_rows))
+        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)))
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
@@ -1225,7 +1251,9 @@ class DuckDBConnection(DatabaseConnection):
         ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
                                allow_metadata=hypothesis_id in _METADATA_LABELS)
         if not ok:
+            _passed("blocked:validation")
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
+        _passed(f"validated:{getattr(self, 'dialect', 'duckdb')}")
 
         # Security pre-check
         conn_id = getattr(self, "_connection_id", "")
@@ -1620,12 +1648,12 @@ class PostgresConnection(DatabaseConnection):
         return sql
 
     def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return self._run(hypothesis_id, sql_for_engine(self, sql, sql_dialect), MAX_ROWS)
+        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, MAX_ROWS))
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
                         sql_dialect: str | None = None) -> QueryResult:
         """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
-        return self._run(hypothesis_id, sql_for_engine(self, sql, sql_dialect), max(1, max_rows))
+        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)))
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
@@ -1644,7 +1672,9 @@ class PostgresConnection(DatabaseConnection):
         ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
                                allow_metadata=hypothesis_id in _METADATA_LABELS)
         if not ok:
+            _passed("blocked:validation")
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
+        _passed(f"validated:{getattr(self, 'dialect', 'duckdb')}")
 
         # Security pre-check
         conn_id = getattr(self, "_connection_id", "")

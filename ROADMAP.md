@@ -9608,7 +9608,7 @@ silently (§7).
 
 ---
 
-### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1 and GM-2 BUILT 2026-09-29** on `claude/briefing-cockpits`, not merged)
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1, GM-2 and GM-3 BUILT 2026-09-29** on `claude/briefing-cockpits`, not merged)
 
 > **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
 > without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
@@ -9683,6 +9683,26 @@ silently (§7).
 > the catalog's sample read (PII first — GM-5), the overview's `SUMMARIZE` (refused everywhere) and ALTER COLUMN.
 > **`unstated` (5):** the conversation agent, the explore plan and the ontology enricher write SQL with no dialect in
 > their prompt — the fix is the prompt, measured by a model run, not a declaration.
+>
+> **Status 2026-09-29, GM-3 BUILT — the path is a receipt.** Every statement's result carries `QueryResult.doors`:
+> the words each door said as the statement passed it (`aughor/db/doors.py`) — `translated:duckdb→bigquery`,
+> `validated:<dialect>`, `safety-checked` or `internal`, `row-policy`, `pii-checked`/`pii-redacted:n`/`pii-blocked`,
+> `row-budget:n`, `audited`, `repaired:<how>`, `blocked:<by>`, and the guard battery's and the quick path's
+> `guarded:<check>` for every check that RAN. Each connection's `execute` opens a fresh trail for its one statement
+> (`through_door`) and stamps the result on the way out, so a step outside a statement — a translation made to store
+> one, a probe the battery runs while judging another — is credited to no statement (mutation-tested seven ways). The
+> path rides the `columns` frame (the web reads `columns` alone from it — no web change, by the user's choice), is
+> kept per statement in the envelope's `provenance.doors` and on the run's record, is recorded on the tool loop's
+> `step` (so the trajectory shows it), and Spotlight's `explain` says it in plain words — or says a run's path was
+> not recorded. **Receipt, live on theLook, two model calls (approved):** a quick question — 31,535 orders Complete
+> — came back with its statement's eight doors on the envelope, the run's record and the trajectory's `run_sql`
+> step; asked which gates that answer passed, Spotlight called `explain` once and answered *"that one statement
+> passed eight doors, in this order"*, naming each. The receipt is honest about what did not happen: no
+> `translated` (the model wrote native BigQuery) and no `validated` (the BigQuery door never parses — the study's
+> finding 5, now visible on every answer). **Not in this wave, by the user's scope:** deep analysis's findings;
+> the quick core (`_answer_core`) is wired but the live turn was routed to the conversation agent; a person's
+> parameterised `/query` (`execute_with_params`) opens no trail, so its doors are `[]` — which `explain` reads as
+> "not recorded", never as "passed no door".
 
 - **GM-1 · the door owns the dialect.** `execute(label, sql, *, sql_dialect=None)`: `"duckdb"` from platform code
   makes the base door translate for native engines where transpile engines already do; `native_sql` becomes the
