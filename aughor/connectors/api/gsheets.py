@@ -200,13 +200,13 @@ class GoogleSheetsConnector(Connector):
         cols = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
         return cols, self._duckdb.fetchall()
 
-    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._duckdb_read(self._duckdb, hypothesis_id, statement, MAX_ROWS))
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._duckdb_read(self._duckdb, hypothesis_id, statement, MAX_ROWS), internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
-                        sql_dialect: str | None = None) -> QueryResult:
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
-        return through_door(self, sql, sql_dialect, lambda statement: self._duckdb_read(self._duckdb, hypothesis_id, statement, max(1, max_rows)))
+        return through_door(self, sql, sql_dialect, lambda statement: self._duckdb_read(self._duckdb, hypothesis_id, statement, max(1, max_rows)), internal=internal)
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         try:

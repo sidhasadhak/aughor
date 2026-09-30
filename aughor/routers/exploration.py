@@ -120,7 +120,7 @@ def _schema_table_set(conn_id: str, schema: str | None) -> set[str] | None:
             "__schema_filter__",
             "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
             f"WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'",
-        )
+         internal=True)
         return {str(r[0]).lower() for r in res.rows}
     except Exception:
         return None

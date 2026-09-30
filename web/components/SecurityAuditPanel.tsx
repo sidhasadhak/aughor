@@ -4,7 +4,7 @@ import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 
 import { callerLabel, connectionLabel } from "@/lib/names";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { formatCount } from "@/lib/format";
+import { fmtDate, formatCount } from "@/lib/format";
 import { getApiBase } from "@/lib/config";
 import { ActivityLog } from "@/components/ActivityLog";
 import {
@@ -42,6 +42,9 @@ interface AuditStats {
   errors: number;
   pii_redacted: number;
   avg_duration_ms: number;
+  /** GM-5 — the platform's own queries (probes, profiling, samples): counted, not listed. */
+  internal_statements?: number;
+  internal_since?: string | null;
 }
 
 interface QueryBudget {
@@ -665,6 +668,14 @@ export function SecurityAuditPanel({
             <StatCard label="Errors"          value={stats.errors ?? 0}                                        accent="var(--red3)" />
             <StatCard label="PII redactions"  value={stats.pii_redacted ?? 0}                                  accent="var(--amb3, #f59e0b)" />
             <StatCard label="Avg duration"    value={stats.avg_duration_ms != null ? `${Math.round(stats.avg_duration_ms)}ms` : "—"} accent="var(--t2)" />
+          </div>
+        )}
+        {/* GM-5 — withheld is said: the log lists what somebody did, and says how many of the platform's own
+            queries it does not list, rather than implying none ran. */}
+        {stats && (stats.internal_statements ?? 0) > 0 && (
+          <div className="aug-fs-ui" style={{ color: "var(--t3)" }} data-testid="audit-not-listed">
+            Not listed here: {formatCount(stats.internal_statements)} queries the platform ran for its own checks —
+            probes, profiling and samples{stats.internal_since ? ` — since ${fmtDate(stats.internal_since, "day")}` : ""}.
           </div>
         )}
 

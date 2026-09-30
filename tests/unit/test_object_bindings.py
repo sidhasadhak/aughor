@@ -126,7 +126,7 @@ def ints(db, sql: str) -> list[int]:
     return [int(v) for v in result.rows[0]]                     # the connection hands cells back as text
 
 
-def rows(db, sql: str) -> list[tuple]:
+def rows(db, sql: str, internal=False) -> list[tuple]:
     result = db.execute("reference", sql)
     assert not result.error, (result.error, sql)
 
@@ -317,7 +317,7 @@ def test_lineage_traces_only_a_column_the_select_passes_through_from_one_of_its_
 
 def test_a_connector_without_typed_results_still_binds_and_the_profile_types_its_pass_through_columns(db, graph):
     class Untyped:                                  # reports columns, never types
-        def execute(self, label, sql, sql_dialect=None):
+        def execute(self, label, sql, sql_dialect=None, internal=False):
             return db.execute(label, sql)
 
     sql = "SELECT p.order_id, p.amount AS settled, p.amount * 2 AS doubled FROM payments p"

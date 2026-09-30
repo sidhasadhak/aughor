@@ -6681,7 +6681,8 @@ def _record_acceptance(inv_id: str, outcome, req: "OutcomeRequest", principal):
             break
     try:
         from aughor.db.measure import run_sql_for
-        run_sql = run_sql_for(connection_id) if (spec and connection_id) else (lambda sql: ([], [], "no connection"))
+        run_sql = (run_sql_for(connection_id, internal=True) if (spec and connection_id)
+                   else (lambda sql: ([], [], "no connection")))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the acceptance baseline could not open the connection; recorded unmeasured",

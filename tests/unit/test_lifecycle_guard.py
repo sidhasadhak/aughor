@@ -134,7 +134,7 @@ def test_lens_wiring_reaches_run_analysis_phase_with_the_guard(monkeypatch):
 
     class _Conn:
         dialect = "duckdb"
-        def execute_bounded(self, tag, sql, max_rows, sql_dialect=None):
+        def execute_bounded(self, tag, sql, max_rows, sql_dialect=None, internal=False):
             if "segment_status" in sql:
                 return _Res([["cancelled"], ["flown"], ["no_show"]])
             if '"status"' in sql:

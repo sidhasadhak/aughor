@@ -164,7 +164,7 @@ def _fetch_right(
         in_list = ", ".join(_sql_literal(v) for v in chunk)
         sql = f"SELECT {sel}, {jk_expr} AS __jk FROM {from_clause} WHERE {jk_expr} IN ({in_list})"
         try:
-            res = right_conn.execute_bounded("__remote_join__", _right_statement(right_conn, sql, subquery), max_rows)
+            res = right_conn.execute_bounded("__remote_join__", _right_statement(right_conn, sql, subquery), max_rows, internal=True)
         except Exception as exc:  # noqa: BLE001 — fail-safe: never raise into the query path
             return [], {}, 0, str(exc)
         if res.error:
@@ -405,7 +405,7 @@ def cross_source_join(
     if blocked is not None:
         return blocked
     left_conn = open_connection_for(left_conn_id)
-    left = left_conn.execute_bounded("__remote_join_left__", left_sql, _MAX_OUT_ROWS)
+    left = left_conn.execute_bounded("__remote_join_left__", left_sql, _MAX_OUT_ROWS, internal=True)
     right_conn = open_connection_for(right_conn_id)
     joined = batched_foreach_join(
         left, left_key, right_conn, right_key,

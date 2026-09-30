@@ -281,7 +281,7 @@ def connection_column_types(conn_id: str, db) -> dict:
         # closed. 50k column-rows covers any realistic schema; fail-open on a driver without it.
         _bounded = getattr(db, "execute_bounded", None)
         r = (_bounded("__trust_coltypes__", _COLTYPES_SQL, 50_000, sql_dialect="duckdb") if _bounded
-             else db.execute("__trust_coltypes__", _COLTYPES_SQL, sql_dialect="duckdb"))
+             else db.execute("__trust_coltypes__", _COLTYPES_SQL, sql_dialect="duckdb", internal=True))
         if r and not r.error:
             ok = True
             for tbl, col, dt in (r.rows or []):

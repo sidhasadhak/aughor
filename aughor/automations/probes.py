@@ -109,7 +109,7 @@ def current_version(conn_id: str, db, table: str, *,
     try:
         bounded = getattr(db, "execute_bounded", None)
         r = (bounded(_PROBE_ID, sql, 2, sql_dialect="duckdb") if bounded
-             else db.execute(_PROBE_ID, sql, sql_dialect="duckdb"))
+             else db.execute(_PROBE_ID, sql, sql_dialect="duckdb", internal=True))
     except Exception as exc:
         return None, f"probe failed: {type(exc).__name__}: {exc}"
     if r is None or r.error:

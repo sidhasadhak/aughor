@@ -42,8 +42,9 @@ def test_an_answer_carries_the_doors_it_passed_in_order(shop):
 
 
 def test_plumbing_says_it_is_plumbing(shop):
-    """A dunder label skips safety, audit and redaction; its path says so instead of saying nothing."""
-    assert shop.execute("__probe__", "SELECT COUNT(*) FROM orders").doors == ["validated:duckdb", "internal"]
+    """A statement declared the platform's own skips safety, audit and redaction; its path says so instead of saying
+    nothing. (A label decided it before GM-5; the declaration does now.)"""
+    assert shop.execute("__probe__", "SELECT COUNT(*) FROM orders", internal=True).doors == ["validated:duckdb", "internal"]
 
 
 def test_a_refusal_is_the_last_door(shop):

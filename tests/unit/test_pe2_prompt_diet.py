@@ -140,7 +140,7 @@ def test_truncation_lands_on_boundaries():
 # ── PE-5: refuse before spending ─────────────────────────────────────────────────
 
 def _conn(count):
-    def execute(label, sql):
+    def execute(label, sql, internal=False):
         return SimpleNamespace(error=None, rows=[[str(count)]])
     return SimpleNamespace(execute=execute)
 

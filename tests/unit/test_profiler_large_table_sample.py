@@ -152,11 +152,11 @@ class _Recorder:
         self.writes_native_sql = dialect != "postgres"
         self.seen: list[str] = []
 
-    def execute(self, label, sql, *, sql_dialect=None):
+    def execute(self, label, sql, *, sql_dialect=None, internal=False):
         self.seen.append(sql_for_engine(self, sql, sql_dialect))
         return SimpleNamespace(error=None, rows=[], columns=[], row_count=0)
 
-    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None):
+    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None, internal=False):
         return self.execute(label, sql, sql_dialect=sql_dialect)
 
 

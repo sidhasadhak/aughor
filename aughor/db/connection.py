@@ -20,74 +20,27 @@ import duckdb
 import sqlglot
 
 from aughor.db.dialects import sql_for_engine
-from aughor.db.doors import add as _add_doors, passed as _passed, through_door
+from aughor.db.doors import add as _add_doors, passed as _passed, statement_is_internal, through_door
 from aughor.db.single_flight import single_flight_build
 from aughor.control_plane.contracts.execution import QueryResult
 
 # Security baseline — imported lazily to avoid circular imports at module load
 
-# Internal/metadata queries the platform issues to inspect its OWN plumbing
-# (catalog browse, schema filter, column probes, freshness checks, profiler scans).
-# These are not user activity and must NOT be safety-scored or audit-logged —
-# otherwise the audit trail is flooded with `current_database()` /
-# `information_schema` noise flagged SUSPICIOUS, drowning out real user queries.
-# Two shapes: dunder labels (`__catalog__`, `__profiler__`, …) and a small
-# allowlist of bare metadata labels used at older call sites.
-_INTERNAL_HYPO_IDS = frozenset({
-    "scan", "_catalog", "sample", "freshness", "columns", "alter_column",
-    "skill_dry_run", "benchmark", "process_map_nodes", "process_map_edges",
-    "lifecycle_counts", "list_schemas",
-})
-
-# Background/system agents whose queries read REAL user data (not the platform's
-# own plumbing): the Scout's exploration scans, the Watcher's monitor evaluations,
-# finding re-validation, and the cross-source federation paths. These carry dunder
-# labels for historical reasons, but they are genuine data activity and MUST flow
-# through the full gate + audit — the "any dunder is internal" rule silently
-# exempted every fleet agent from the Security & Audit trail.
-_AUDITED_AGENT_LABELS = frozenset({
-    "__explorer__",        # Scout — background exploration data queries
-    "__monitor__",         # Watcher — monitor metric evaluation
-    "__monitor_window__",  # Watcher — monitor window anchoring (MAX(ts) probe)
-    "__revalidate__",      # finding re-validation re-runs stored finding SQL
-    "__fix_save__",        # persisting a repaired finding re-runs its SQL
-    # `__fed_driver__` and `__remote_join__` (the federated driver and a join's keyed right reads) left this set on
-    # 2026-09-14. Posted per read, they were redacted BEFORE the join, so a key that looked like PII met none of its
-    # rows, and one connection's row budget cut a join's input, answering from part of it. They are plumbing now,
-    # and the joined answer passes the gate once for every connection it read (`security_post(..., also_read=)`).
-    # WP-1c — model-generated and stored-SQL paths that ran with the gate SKIPPED
-    # (the "any dunder is internal" exemption). Generated SQL must always pass the
-    # AST mutation gate; stored governed SQL gets the same treatment the explorer
-    # and monitors already have. NOTE: a blanket "gate every dunder label" is NOT
-    # safe — platform-authored mutations (e.g. the `alter_column` catalog op) are
-    # legitimate; only genuine data-activity labels belong here.
-    "__agent_eval_ref__",  # custom-agent golden reference SQL (user-authored, re-run)
-    "__agent_eval_gen__",  # custom-agent evaluation SQL (MODEL-GENERATED)
-    "__brief_metric_move__",  # briefing metric-move re-runs governed metric SQL
-    "__ground__",          # insight grounding re-runs stored finding SQL
-})
-
-
-def _is_internal_query(hypothesis_id: str | None) -> bool:
-    """True for platform-internal/metadata queries that should bypass the
-    security audit (dunder labels like ``__catalog__`` or a known metadata id).
-    Agent DATA queries (``_AUDITED_AGENT_LABELS``) are never internal — every
-    query against user data appears in the audit trail, whichever agent ran it."""
-    if not hypothesis_id:
-        return False
-    h = hypothesis_id.strip()
-    if h in _AUDITED_AGENT_LABELS:
-        return False
-    if len(h) >= 4 and h.startswith("__") and h.endswith("__"):
-        return True
-    return h in _INTERNAL_HYPO_IDS
+# GM-5 (ROADMAP §3.49) — a statement is platform plumbing because its CALLER says so (`internal=True` on the door
+# call), never because of how its label is spelled. The label decided it before: any `__dunder__` label, and a
+# hand-listed set of bare ones, skipped the safety check, the audit row and PII redaction, while a second hand-list
+# forced some dunder labels back through. The census found 21 statements a model, a person or a stored definition
+# wrote exempt only by that spelling — a person's bulk SQL and ALTER COLUMN, the model's repaired exploration SQL,
+# the answer re-check — and 24 of the platform's own probes audited as activity. Who may declare it is held by the
+# census (`tests/unit/test_sql_door_census.py`): the platform's own statements, and each exception with its reason.
 
 
 def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResult | None:
     """Run safety check. Returns a blocked QueryResult if the query is not allowed, else None."""
-    if _is_internal_query(hypothesis_id):
+    if statement_is_internal():
         _passed("internal")
-        return None  # platform plumbing — never block or audit
+        _count_internal(connection_id)
+        return None  # platform plumbing — never block or audit; counted, so the audit page can say it ran
     try:
         from aughor.security.safety import SafetyChecker, SafetyVerdict
         from aughor.security.audit  import AuditLogger
@@ -199,6 +152,16 @@ def _typed_mirror_redaction(before, after) -> None:
         sink["armed"] = False
 
 
+def _count_internal(connection_id: str) -> None:
+    """One more platform statement the audit page does not list, but says ran (GM-5). Never blocks the statement."""
+    try:
+        from aughor.security.audit import InternalCounter
+        InternalCounter.count(connection_id)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the internal-statement count is best-effort; the statement runs", counter="audit.internal_count")
+
+
 def gate_user_sql(connection_id: str, label: str, sql: str) -> QueryResult | None:
     """Safety gate for **user-issued** SQL (Query Builder / bulk read).
 
@@ -214,7 +177,8 @@ def gate_user_sql(connection_id: str, label: str, sql: str) -> QueryResult | Non
          slips it under the block threshold — so the inner gate can't be
          trusted for the user surface.
 
-    ``label`` must NOT be a dunder internal id, or the check is bypassed.
+    Called outside any door, so no statement's `internal` declaration is in force: a person's SQL is always checked
+    and audited, whatever its label (GM-5).
     """
     return _security_pre(connection_id, label, sql)
 
@@ -232,7 +196,7 @@ def _security_post(
     ``also_read`` names the other connections an answer's rows were read from — a join across sources. The
     strictest row budget among all of them applies, and the audit log records the answer under each one, so every
     connection's trail shows the answers its rows reached."""
-    if _is_internal_query(hypothesis_id):
+    if statement_is_internal():
         return result  # platform plumbing — skip PII/audit, but still return rows (the trail already says "internal")
     read_from = list(dict.fromkeys([connection_id, *(c for c in also_read if c)]))
     try:
@@ -697,8 +661,8 @@ MAX_ROWS = 500
 _METADATA_HEAD = re.compile(r"^\s*(EXPLAIN|DESCRIBE|DESC|SHOW)\b", re.IGNORECASE)
 
 #: Only this surface may run them. A capability the agent path never asked for is not
-#: widened for the agent path: `_run` passes the flag from its statement LABEL, the
-#: same way `_is_internal_query` already routes on it.
+#: widened for the agent path: `_run` passes the flag from its statement LABEL. (A capability, not an audit
+#: exemption: these statements are still checked and audited — GM-5 moved that off the label.)
 _METADATA_LABELS = frozenset({"query_workbench"})
 
 
@@ -782,7 +746,8 @@ class DatabaseConnection(ABC):
     _ontology = None  # Optional[OntologyGraph] — set by get_schema()
 
     @abstractmethod
-    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None,
+                internal: bool = False) -> QueryResult:
         """Run ``sql`` through this connection's door. ``sql_dialect`` is the dialect the statement was written in:
         ``"duckdb"`` for platform SQL, ``None`` for a statement written for this engine. The door translates
         (`aughor.db.dialects.sql_for_engine`) before its first gate, so a caller declares what it wrote and never
@@ -794,9 +759,9 @@ class DatabaseConnection(ABC):
         and cursor types as a side channel. Returns ``(result, payload)`` where the
         legacy ``result`` is byte-identical to a plain ``execute()`` and ``payload`` is
         ``{rows, types, truncated}`` — or ``None`` when this connector has no capture
-        site, the label is internal (internal queries skip the PII/audit post-pass, so
-        a typed capture there would be an unredacted side channel), or the security
-        post-pass disarmed the capture (fail closed, never a redaction bypass)."""
+        site, or the security post-pass disarmed the capture (fail closed, never a redaction
+        bypass). It takes no `internal` declaration: a typed capture of a statement that skipped the
+        PII and audit post-pass would be an unredacted side channel (GM-5)."""
         statement = sql_for_engine(self, sql, sql_dialect)
         result, payload = self._capture_typed(hypothesis_id, lambda: self.execute(hypothesis_id, statement))
         if statement != sql:
@@ -824,10 +789,9 @@ class DatabaseConnection(ABC):
         Factored out so the bound and unbound paths cannot drift on the parts that are
         about SAFETY rather than about execution: the internal-label skip and the
         fail-closed checks below are the reason a typed payload is not an unredacted
-        side channel, and two copies of them is one copy too many.
+        side channel, and two copies of them is one copy too many. (Neither caller can declare
+        its statement internal, so every capture passes the PII and audit post-pass — GM-5.)
         """
-        if _is_internal_query(hypothesis_id):
-            return run(), None
         token = _TYPED_SINK.set({})
         try:
             result = run()
@@ -932,12 +896,12 @@ class DatabaseConnection(ABC):
     # receives a statement already written for this engine.
 
     def rows(self, sql: str, *, label: str = "__adapter__", sql_dialect: str | None = None,
-             strict: bool = False) -> list:
+             strict: bool = False, internal: bool = False) -> list:
         """Run SQL and return its rows; [] on error, or `QueryRefused` when ``strict``. A declaration
         the door cannot read raises before the run, because swallowing it would read as an empty result."""
         statement = sql_for_engine(self, sql, sql_dialect)
         try:
-            res = self.execute(label, statement)
+            res = self.execute(label, statement, internal=internal)
         except Exception as exc:
             if strict:
                 raise QueryRefused(str(exc)) from exc
@@ -949,10 +913,10 @@ class DatabaseConnection(ABC):
         return list(getattr(res, "rows", None) or [])
 
     def scalar(self, sql: str, *, label: str = "__adapter__", cast=float, sql_dialect: str | None = None,
-               strict: bool = False):
+               strict: bool = False, internal: bool = False):
         """Run SQL and return the first cell coerced via ``cast`` (default float), or None — `QueryRefused`
         on an error when ``strict``."""
-        rs = self.rows(sql, label=label, sql_dialect=sql_dialect, strict=strict)
+        rs = self.rows(sql, label=label, sql_dialect=sql_dialect, strict=strict, internal=internal)
         if not rs:
             return None
         row = rs[0]
@@ -1020,13 +984,14 @@ class DatabaseConnection(ABC):
         demands the other label: its rows never leave the process. They are staged, joined and aggregated, and the
         ANSWER is what passes the post-pass (`aughor.semantic.cross_source`). A caller-facing label is refused, so this
         cannot become the side channel `execute_typed` guards. The payload is ``{rows, types, truncated}``, or None
-        when the connector offers no typed rows, and the caller then refuses rather than guess a type."""
-        if not _is_internal_query(hypothesis_id):
-            raise ValueError(f"read_typed_rows is platform plumbing; {hypothesis_id!r} is not an internal label")
+        when the connector offers no typed rows, and the caller then refuses rather than guess a type.
+
+        It declares its own statement internal (GM-5): plumbing by definition, whatever the caller's label — it used
+        to refuse a label that did not LOOK internal, which let a model-chosen dunder id through and nothing else."""
         statement = sql_for_engine(self, sql, sql_dialect)
         token = _TYPED_SINK.set({})
         try:
-            result = self.execute_bounded(hypothesis_id, statement, max_rows)
+            result = self.execute_bounded(hypothesis_id, statement, max_rows, internal=True)
             sink = _TYPED_SINK.get()
         finally:
             _TYPED_SINK.reset(token)
@@ -1037,7 +1002,7 @@ class DatabaseConnection(ABC):
         return result, sink
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
-                        sql_dialect: str | None = None) -> "QueryResult":
+                        sql_dialect: str | None = None, internal: bool = False) -> "QueryResult":
         """Like :meth:`execute` but may return up to ``max_rows`` rows.
 
         For internal high-volume reads — notably the cross-source join engine, which must read more
@@ -1046,7 +1011,9 @@ class DatabaseConnection(ABC):
         doesn't override this simply reads ≤ MAX_ROWS, which the join surfaces as PARTIAL);
         DuckDB/Postgres override it to actually return more rows.
         """
-        return through_door(self, sql, sql_dialect, lambda statement: self.execute(hypothesis_id, statement))
+        return through_door(self, sql, sql_dialect,
+                            lambda statement: self.execute(hypothesis_id, statement, internal=internal),
+                            internal=internal)
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Validate SQL without returning rows. Returns (ok, error_message).
@@ -1235,13 +1202,17 @@ class DuckDBConnection(DatabaseConnection):
         except Exception:
             return sql
 
-    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, MAX_ROWS))
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None,
+                internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, MAX_ROWS),
+                            internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
-                        sql_dialect: str | None = None) -> QueryResult:
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
-        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)))
+        return through_door(self, sql, sql_dialect,
+                            lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)),
+                            internal=internal)
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
@@ -1661,13 +1632,17 @@ class PostgresConnection(DatabaseConnection):
         sql = _pg_fix_interval_arithmetic(sql)
         return sql
 
-    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, MAX_ROWS))
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None,
+                internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, MAX_ROWS),
+                            internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
-                        sql_dialect: str | None = None) -> QueryResult:
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
-        return through_door(self, sql, sql_dialect, lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)))
+        return through_door(self, sql, sql_dialect,
+                            lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)),
+                            internal=internal)
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,

@@ -294,7 +294,7 @@ def _probe(conn, sql: str, query_id: str):
     direct, the way the guard battery's own probes do — running a probe through the
     battery would have the guards probing the probes. It is written in DuckDB's spelling
     and declared so; the door renders it for the engine (GM-1)."""
-    return conn.execute(query_id, sql, sql_dialect="duckdb")
+    return conn.execute(query_id, sql, sql_dialect="duckdb", internal=True)
 
 
 def premise_check(turn: AnalystTurn, args: dict) -> dict:

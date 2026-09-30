@@ -132,7 +132,7 @@ def _verify_sql(sql: str, scope: Scope) -> Verdict:
             from aughor.sql.grain_guard import grain_check
 
             def _probe(s: str):
-                r = scope.conn.execute("__trust_grain__", s, sql_dialect="duckdb")
+                r = scope.conn.execute("__trust_grain__", s, sql_dialect="duckdb", internal=True)
                 return (not r.error, r.rows, r.error or "")
 
             _grun = grain_check(out, _probe, dialect)

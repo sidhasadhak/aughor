@@ -50,7 +50,7 @@ class _DuckLike:
         self._con = con
         self.sqls: list[str] = []
 
-    def execute(self, label, sql, sql_dialect=None):
+    def execute(self, label, sql, sql_dialect=None, internal=False):
         self.sqls.append(sql)
         try:
             return SimpleNamespace(rows=self._con.execute(sql).fetchall(), error=None)

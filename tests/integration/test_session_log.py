@@ -626,12 +626,11 @@ def test_audited_sql_carries_the_ambient_trace(monkeypatch, tmp_path):
     """audit_log sees EVERY execution, including the quick path that bypasses the
     span-emitting executor — so it is where "which run ran this SQL" becomes
     answerable for all paths at once."""
-    monkeypatch.setenv("AUGHOR_AUDIT_DB", str(tmp_path / "audit.db"))
-    import importlib
-
     from aughor import telemetry
     from aughor.security import audit as audit_mod
-    importlib.reload(audit_mod)
+    # Not a reload: that leaves the rest of the run with second copies of the module's classes (a counter
+    # holding its batch in one, read through the other) and this test's path in place of the suite's.
+    monkeypatch.setattr(audit_mod, "_DB_PATH", tmp_path / "audit.db")
 
     with telemetry.bind_trace("t-sql"):
         audit_mod.AuditLogger.log(connection_id="c1", sql="SELECT 1", row_count=1)

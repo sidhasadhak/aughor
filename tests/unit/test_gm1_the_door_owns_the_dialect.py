@@ -130,7 +130,7 @@ class _Native(DatabaseConnection):
     def __init__(self):
         self.calls: list[tuple[str, object]] = []
 
-    def execute(self, hypothesis_id, sql, *, sql_dialect=None):
+    def execute(self, hypothesis_id, sql, *, sql_dialect=None, internal=False):
         self.calls.append((sql, sql_dialect))
         return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=["n"], rows=[["1"]], row_count=1)
 

@@ -245,7 +245,7 @@ def test_the_daily_reading_runs_once_per_utc_day(monkeypatch):
                         lambda: [{"id": "c1"}, {"id": "c-quiet"}])
     monkeypatch.setattr(sampler, "time_tables",
                         lambda cid: [("orders", "ts", 1)] if cid == "c1" else [])
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid: (lambda sql: (["d", "n"], [], None)))
+    monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid, **kw: (lambda sql: (["d", "n"], [], None)))
     monkeypatch.setattr(sampler, "sample_connection",
                         lambda cid, run_sql, today=None: calls.append(cid) or
                         {"sampled": ["orders"], "errors": {}})
@@ -358,7 +358,7 @@ def test_the_settling_door_serves_the_store_and_takes_a_reading(home, monkeypatc
 
     _fake_profiles(monkeypatch, {"orders": {"primary_timestamp": "created_at", "row_count": 100}})
     monkeypatch.setattr("aughor.db.measure.run_sql_for",
-                        lambda cid: (lambda sql: (["day", "n"], [("2026-09-22", 1745)], None)))
+                        lambda cid, **kw: (lambda sql: (["day", "n"], [("2026-09-22", 1745)], None)))
     taken = client.post("/settling/c1/sample")
     assert taken.status_code == 200 and taken.json()["sampled"] == ["orders"]
     after = client.get("/settling/c1").json()

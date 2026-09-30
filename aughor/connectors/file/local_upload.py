@@ -1335,14 +1335,14 @@ class LocalUploadConnection(Connector):
 
     def execute(self, hypothesis_id: str, sql: str,
                 params: dict | None = None, *,
-                sql_dialect: str | None = None) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, params, MAX_ROWS))
+                sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, params, MAX_ROWS), internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
-                        sql_dialect: str | None = None) -> QueryResult:
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         """Up to ``max_rows`` rows. Without it the Workspace connection read every cross-source key set and keyed
         read through its 2,000-row cap, so a measurement or a join past it was refused."""
-        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, None, max(1, max_rows)))
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, None, max(1, max_rows)), internal=internal)
 
     def _execute(self, hypothesis_id: str, sql: str, params: dict | None, max_rows: int) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post

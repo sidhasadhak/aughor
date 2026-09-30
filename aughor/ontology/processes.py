@@ -410,7 +410,7 @@ class ObjectCounter:
                 else:
                     bounded = getattr(home_db, "execute_bounded", None)
                     result = (bounded("__process_probe__", compiled.sql, max_rows) if callable(bounded)
-                              else home_db.execute("__process_probe__", compiled.sql))
+                              else home_db.execute("__process_probe__", compiled.sql, internal=True))
             except NotMeasurable:
                 raise
             except Exception as exc:  # noqa: BLE001 — a failed count is an unmeasured declaration, not a crash

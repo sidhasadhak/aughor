@@ -171,7 +171,7 @@ def run_settling_samples_daily(*, now: Optional[datetime] = None, force: bool = 
         if not cid or not time_tables(cid):
             continue
         try:
-            result = sample_connection(cid, run_sql_for(cid), today=today)
+            result = sample_connection(cid, run_sql_for(cid, internal=True), today=today)
         except Exception as exc:
             logger.warning("settling sample failed on %s: %s", cid, exc)
             continue

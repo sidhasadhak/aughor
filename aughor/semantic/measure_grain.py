@@ -276,7 +276,7 @@ def detect_measure_grain(db, table: str, measure_col: str, quantity_col: str,
             f"FROM {table} "
             f"WHERE {quantity_col} BETWEEN 1 AND {int(max_qty)} AND {measure_col} IS NOT NULL "
             f"GROUP BY {quantity_col} ORDER BY {quantity_col}"
-        ), sql_dialect="duckdb")
+        ), sql_dialect="duckdb", internal=True)
         if getattr(res, "error", None):
             return "unknown"
         buckets = []

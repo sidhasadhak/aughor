@@ -21,6 +21,9 @@ from contextvars import ContextVar
 from typing import Any, Callable, Iterable, Optional
 
 _TRAIL: ContextVar[Optional[list[str]]] = ContextVar("aughor_door_trail", default=None)
+#: GM-5 — the statement in flight was declared platform plumbing by its caller (`internal=True`). Read by the safety
+#: and audit steps (`db.connection._security_pre/_post`) in place of the label's spelling, which decided it before.
+_INTERNAL: ContextVar[bool] = ContextVar("aughor_door_internal", default=False)
 
 #: Each door word, in plain words. ``{d}`` is the detail after the colon.
 WORDS: dict[str, str] = {
@@ -76,15 +79,27 @@ def add(result: Any, words: Iterable[str], *, first: bool = False) -> Any:
     return result
 
 
-def through_door(conn: Any, sql: str, sql_dialect: Optional[str], run: Callable[[str], Any]) -> Any:
+def statement_is_internal() -> bool:
+    """Whether the statement in flight was declared platform plumbing (GM-5). Outside a door, never: a statement the
+    safety and audit steps see without a declaration is somebody's activity, and is checked and written down."""
+    return _INTERNAL.get()
+
+
+def through_door(conn: Any, sql: str, sql_dialect: Optional[str], run: Callable[[str], Any], *,
+                 internal: bool = False) -> Any:
     """One statement through a connection's door, with the path it took stamped on its result.
 
     The dialect step comes first (`db.dialects.sql_for_engine`, GM-1); ``run`` is the connection's own execution of
     the statement that step returns. The trail is this statement's alone and is closed on the way out, whatever
-    happened inside — a refused statement is stamped with the refusal, an exception leaves no half-written trail."""
+    happened inside — a refused statement is stamped with the refusal, an exception leaves no half-written trail.
+
+    ``internal`` is the caller's declaration that the statement is the platform's own (GM-5): a probe, a profile, a
+    metadata read, a sample — never SQL a model, a person or a stored definition wrote, nor one answering somebody.
+    It holds for this statement alone, as the trail does."""
     from aughor.db.dialects import sql_for_engine
 
     token = _TRAIL.set([])
+    internal_token = _INTERNAL.set(bool(internal))
     try:
         statement = sql_for_engine(conn, sql, sql_dialect)
         if statement != sql:
@@ -94,6 +109,7 @@ def through_door(conn: Any, sql: str, sql_dialect: Optional[str], run: Callable[
             add(result, _TRAIL.get() or [], first=True)
         return result
     finally:
+        _INTERNAL.reset(internal_token)
         _TRAIL.reset(token)
 
 

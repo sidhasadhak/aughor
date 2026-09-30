@@ -12,7 +12,9 @@ API:
 """
 from __future__ import annotations
 
+import atexit
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -117,6 +119,16 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_guard_trace   ON guard_verdicts (trace_id);
         CREATE INDEX IF NOT EXISTS idx_guard_ts      ON guard_verdicts (ts);
         CREATE INDEX IF NOT EXISTS idx_guard_pattern ON guard_verdicts (pattern);
+
+        -- GM-5: the platform's own statements (`internal=True` on the door call) leave no audit row -- a probe is
+        -- not activity -- but the page says how many ran, per connection and day, rather than implying none did.
+        CREATE TABLE IF NOT EXISTS internal_counts (
+            org_id        TEXT    NOT NULL DEFAULT 'default',
+            connection_id TEXT    NOT NULL,
+            day           TEXT    NOT NULL,
+            n             INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (org_id, connection_id, day)
+        );
         PRAGMA journal_mode=WAL;
     """)
     run_migrations(c, _MIGRATIONS, store="audit")
@@ -265,9 +277,92 @@ class AuditLogger:
                     FROM audit_log {where}""",
                 params,
             ).fetchone()
-            return dict(row) if row else {}
+            out = dict(row) if row else {}
         finally:
             c.close()
+        # GM-5 — withheld is said: what the log does not list, and since when it has been counted.
+        out.update(InternalCounter.totals(connection_id=connection_id, org_id=org_id))
+        return out
+
+
+class InternalCounter:
+    """GM-5 — how many statements the platform ran as its own plumbing (`internal=True` on the door call), per
+    connection and day. They leave no audit row, which is the point — a guard probe or a profiler scan is not
+    somebody's activity — but a page that listed only what it audited would imply the rest never ran.
+
+    Counted in memory and written in batches: a guard battery or a profile runs dozens of probes, and a write per
+    probe would cost more than the probe. A batch is written at ``FLUSH_AT`` statements, after ``FLUSH_EVERY_S``,
+    at exit, and before any read, so a count a reader sees is never behind this process."""
+
+    FLUSH_AT = 100
+    FLUSH_EVERY_S = 10.0
+    _lock = threading.Lock()
+    _pending: dict[tuple[str, str, str], int] = {}
+    _pending_n = 0
+    _last_flush = time.monotonic()
+
+    @classmethod
+    def count(cls, connection_id: str) -> None:
+        from aughor.org.context import current_org_id
+        key = (current_org_id() or "default", connection_id or "", time.strftime("%Y-%m-%d", time.gmtime()))
+        with cls._lock:
+            cls._pending[key] = cls._pending.get(key, 0) + 1
+            cls._pending_n += 1
+            due = cls._pending_n >= cls.FLUSH_AT or time.monotonic() - cls._last_flush >= cls.FLUSH_EVERY_S
+        if due:
+            cls.flush()
+
+    @classmethod
+    def flush(cls) -> None:
+        with cls._lock:
+            pending, cls._pending, cls._pending_n = cls._pending, {}, 0
+            cls._last_flush = time.monotonic()
+        if not pending:
+            return
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            c.executemany(
+                """INSERT INTO internal_counts (org_id, connection_id, day, n) VALUES (?,?,?,?)
+                   ON CONFLICT(org_id, connection_id, day) DO UPDATE SET n = n + excluded.n""",
+                [(*key, n) for key, n in pending.items()])
+            c.commit()
+        finally:
+            c.close()
+
+    @classmethod
+    def totals(cls, connection_id: str | None = None, org_id: str | None = None) -> dict[str, Any]:
+        """``{"internal_statements": n, "internal_since": first day counted or None}`` for the scope asked."""
+        cls.flush()
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses, params = [], []
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            if connection_id:
+                clauses.append("connection_id = ?")
+                params.append(connection_id)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            row = c.execute(f"SELECT COALESCE(SUM(n), 0) AS n, MIN(day) AS since FROM internal_counts {where}",
+                            tuple(params)).fetchone()
+            return {"internal_statements": int(row["n"] or 0), "internal_since": row["since"]}
+        finally:
+            c.close()
+
+
+def _flush_at_exit() -> None:
+    """The last batch, written at exit — never an error there: a test run's store may already be gone."""
+    try:
+        InternalCounter.flush()
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).debug("the last internal-statement count could not be written at exit",
+                                          exc_info=True)
+
+
+atexit.register(_flush_at_exit)
 
 
 class GuardVerdicts:

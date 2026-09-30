@@ -19,10 +19,8 @@ from types import SimpleNamespace
 import duckdb
 
 from aughor.db.connection import (
-    _AUDITED_AGENT_LABELS,
     DatabaseConnection,
     DuckDBConnection,
-    _is_internal_query,
 )
 from aughor.control_plane.contracts.execution import QueryResult
 
@@ -41,10 +39,10 @@ def _conn():
 # ── 1c: the four labels are gated ─────────────────────────────────────────────
 
 def test_eval_and_stored_sql_labels_are_audited():
+    """GM-5 — no label exempts a statement; only its caller's `internal=True` declaration does."""
     for label in ("__agent_eval_ref__", "__agent_eval_gen__",
-                  "__brief_metric_move__", "__ground__"):
-        assert label in _AUDITED_AGENT_LABELS
-        assert not _is_internal_query(label), label
+                  "__brief_metric_move__", "__ground__", "__catalog__", "alter_column"):
+        assert "safety-checked" in _conn().execute(label, "SELECT COUNT(*) FROM t").doors, label
 
 
 def test_generated_eval_sql_ast_only_vector_is_blocked():
@@ -78,12 +76,13 @@ def test_plain_select_still_passes_under_audited_labels():
     assert str(r.rows[0][0]) == "2"
 
 
-def test_true_internal_plumbing_labels_remain_exempt():
-    # The platform's own plumbing (e.g. `alter_column`, `__catalog__`) must keep
-    # its exemption — a blanket "gate every dunder" would block legitimate
-    # platform-authored DDL. Only genuine data-activity labels are audited.
-    assert _is_internal_query("__catalog__")
-    assert _is_internal_query("alter_column")
+def test_true_internal_plumbing_is_exempt_by_its_declaration():
+    # The platform's own plumbing keeps its exemption — by declaring it. A person's
+    # ALTER COLUMN is not plumbing (the census's author is `person`): undeclared, it
+    # meets the gate like any write, where its label used to wave it past.
+    assert _conn().execute("__catalog__", "SELECT COUNT(*) FROM t", internal=True).doors[-1] == "internal"
+    r = _conn().execute("alter_column", 'ALTER TABLE t ALTER COLUMN "v" TYPE BIGINT')
+    assert r.error, "a person's write was waved past the gate by its label"
 
 
 # ── 1d: engine read-only posture is recorded ──────────────────────────────────

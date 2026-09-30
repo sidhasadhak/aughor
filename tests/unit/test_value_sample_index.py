@@ -189,14 +189,14 @@ class _FakeDB:
         self.hits = hits or {}
         self.seen = []
 
-    def rows(self, sql, label=None, sql_dialect=None):
+    def rows(self, sql, label=None, sql_dialect=None, internal=False):
         self.seen.append(sql)
         for needle, rows in self.hits.items():
             if needle in sql:
                 return rows
         return []
 
-    def execute(self, label, sql, sql_dialect=None):
+    def execute(self, label, sql, sql_dialect=None, internal=False):
         """The resolver's live probe reads `execute`, which tells an error from no match (GM-4)."""
         from types import SimpleNamespace
         return SimpleNamespace(rows=self.rows(sql, label, sql_dialect), error=None)

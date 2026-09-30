@@ -20,7 +20,7 @@ class ConnLike:
         self._res = _Result(rows, error)
         self.calls = []
 
-    def execute(self, label, sql):
+    def execute(self, label, sql, internal=False):
         self.calls.append((label, sql))
         return self._res
 

@@ -50,7 +50,7 @@ def _meta_row(conn: Any, sql: str) -> Optional[tuple]:
         return tuple(rows[0]) if rows else None
     except Exception:
         try:
-            res = conn.execute("__snapshot__", sql, sql_dialect="duckdb")      # internal id → skips audit
+            res = conn.execute("__snapshot__", sql, sql_dialect="duckdb", internal=True)      # internal id → skips audit
             return tuple(res.rows[0]) if getattr(res, "rows", None) else None
         except Exception:
             return None

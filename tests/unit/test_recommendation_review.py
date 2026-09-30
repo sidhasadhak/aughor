@@ -128,11 +128,11 @@ class TestTheReviewRunsOnceOnItsDate:
     def test_not_due_means_not_asked(self, path):
         self._accepted(path)
         assert O.due_reviews(NOW + timedelta(days=29), path) == []
-        assert O.run_due_reviews(NOW + timedelta(days=29), run_sql_for=lambda c: _run_sql_returning(1), path=path) == []
+        assert O.run_due_reviews(NOW + timedelta(days=29), run_sql_for=lambda c, **kw: _run_sql_returning(1), path=path) == []
 
     def test_due_means_measured_again_and_asked_once(self, path, monkeypatch):
         self._accepted(path)
-        run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=lambda c: _run_sql_returning(1200.0), path=path)
+        run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=lambda c, **kw: _run_sql_returning(1200.0), path=path)
         assert len(run) == 1
         o = run[0]
         assert o.review_value == 1200.0 and o.metric_after == 1200.0 and o.reviewed_at
@@ -140,7 +140,7 @@ class TestTheReviewRunsOnceOnItsDate:
         assert o.review_asked_to == "user:ana" and o.review_asked_at
         assert o.review_question == ('You accepted "Pause the other pilots" on 2026-09-22. total sales was 1,000 then '
                                      '(2026-09-08 → 2026-09-21 (14 days)); it is 1,200 now (2026-10-08 → 2026-10-21 (14 days)). Did it work?')
-        again = O.run_due_reviews(NOW + timedelta(days=31), run_sql_for=lambda c: _run_sql_returning(1300.0), path=path)
+        again = O.run_due_reviews(NOW + timedelta(days=31), run_sql_for=lambda c, **kw: _run_sql_returning(1300.0), path=path)
         assert again == []                                              # asked once
         assert O.load_all_outcomes(path)[0].review_value == 1200.0
 
@@ -154,7 +154,7 @@ class TestTheReviewRunsOnceOnItsDate:
         import aughor.semantic.metrics as M
         monkeypatch.setattr(M, "get_metric", lambda name, path=None, connection_id=None: SimpleNamespace(owner="user:finance-lead"))
         self._accepted(path)
-        run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=lambda c: _run_sql_returning(1200.0), path=path)
+        run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=lambda c, **kw: _run_sql_returning(1200.0), path=path)
         assert run[0].review_asked_to == "user:finance-lead"
 
     def test_a_free_text_owner_does_not_route_so_the_accepter_is_asked(self, path, monkeypatch):
@@ -162,13 +162,13 @@ class TestTheReviewRunsOnceOnItsDate:
         import aughor.semantic.metrics as M
         monkeypatch.setattr(M, "get_metric", lambda name, path=None, connection_id=None: SimpleNamespace(owner="Ana (logistics)"))
         self._accepted(path)
-        run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=lambda c: _run_sql_returning(1200.0), path=path)
+        run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=lambda c, **kw: _run_sql_returning(1200.0), path=path)
         assert run[0].review_asked_to == "user:ana"
 
     def test_a_measurement_that_fails_still_asks_with_the_failure_on_the_record(self, path):
         self._accepted(path)
 
-        def broken(_c):
+        def broken(_c, **kw):
             raise RuntimeError("warehouse down")
         run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=broken, path=path)
         assert run[0].review_value is None and "warehouse down" in run[0].review_note
@@ -202,7 +202,7 @@ class TestTheDoorMeasuresOnAccept:
         import aughor.routers.investigations as R
         monkeypatch.setattr(R, "get_investigation", lambda inv_id: {"id": inv_id, "connection_id": "fixture",
                                                                        "report": {"spec": SPEC}})
-        monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid: _run_sql_returning(42.0))
+        monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid, **kw: _run_sql_returning(42.0))
         r = client.post("/investigations/invX/recommendations/0/outcome",
                         json={"rec_text": "Do the thing", "status": "accepted", "review_days": 14})
         assert r.status_code == 201, r.text
