@@ -293,6 +293,21 @@ class TestIntakeCoverageClamp:
         assert note and "re-anchored" in note
         assert it.observation_end == "2026-09-29" and it.observation_start == "2026-03-31"
 
+    def test_a_cross_sectional_intake_gets_no_comparison_verdict(self):
+        """The Q2 re-run, 2026-09-30: a cross-sectional intake carried a placeholder
+        one-day comparison, the window-length guard judged it against six months, and a
+        duration-artifact caveat opened an answer that compared nothing. The observation
+        rules reach this intake; the comparison ones do not."""
+        it = _intake(cross_sectional=True, observation_start="2026-03-02", observation_end="2026-09-01",
+                     observation_label="Last 6 months", comparison_start="2026-03-01",
+                     comparison_end="2026-03-01", comparison_label="")
+        note = _clamp_intake_to_coverage(it, "2019-01-09", "2026-10-02", question="last 6 months",
+                                         today="2026-09-30", settle_days=29)
+        assert note is None or "DURATION ARTIFACTS" not in note
+        assert (it.comparison_start, it.comparison_end) == ("2026-03-01", "2026-03-01")
+        assert not getattr(it, "no_prior_period", False)
+        assert (it.observation_start, it.observation_end) == ("2026-03-02", "2026-09-01")
+
     def test_missing_range_noop(self):
         it = _intake()
         assert _clamp_intake_to_coverage(it, None, None) is None

@@ -4786,13 +4786,18 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
         tolerate(_exc, "re-anchor is best-effort on malformed dates; leave the window as the "
                  "clip step left it", counter="intake.reanchor_parse_failed")
 
+    # A cross-sectional answer ranks across a dimension and has no comparison window, so the
+    # comparison verdicts below do not apply to it — they judged whatever placeholder the model
+    # left there. On 2026-09-30 a one-day "comparison" against six months put a duration-artifact
+    # caveat on top of a top-10 list. Only the OBSERVATION rules above reach this intake.
+    _xsec = bool(getattr(intake, "cross_sectional", False))
     cs_ = (getattr(intake, "comparison_start", "") or "")[:10]
     ce_ = (getattr(intake, "comparison_end", "") or "")[:10]
     _obs_s0 = (intake.observation_start or "")[:10]
     _obs_e0 = (intake.observation_end or "")[:10]
     _no_overlap = bool(cs_ and ce_) and (ce_ < dmin or cs_ > dmax)
     _self_compare = bool(cs_ and ce_) and (cs_ == _obs_s0 and ce_ == _obs_e0)
-    if cs_ and ce_ and not _no_overlap and not _self_compare:
+    if not _xsec and cs_ and ce_ and not _no_overlap and not _self_compare:
         # partial overlap → clip (a half-empty baseline skews stats)
         ncs, nce, c_changed = _clip(cs_, ce_)
         if c_changed:
@@ -4803,7 +4808,7 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
             )
             if ncs == _obs_s0 and nce == _obs_e0:
                 _self_compare = True          # the clip collapsed it — same verdict below
-    if _no_overlap or _self_compare or not (cs_ and ce_):
+    if not _xsec and (_no_overlap or _self_compare or not (cs_ and ce_)):
         # No usable comparison: the model's window holds no data, or it set the comparison
         # equal to the observation (the old instruction), or it gave none. Prefer the
         # equal-length window immediately before the observation — the analyst's default
@@ -4844,7 +4849,7 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
         _obs_s = (intake.observation_start or "")[:10]
         _obs_e = (intake.observation_end or "")[:10]
         _is_same = (_cs2 == _obs_s and _ce2 == _obs_e)   # comparison already collapsed onto obs
-        if _cs2 and _ce2 and not _is_same:
+        if not _xsec and _cs2 and _ce2 and not _is_same:
             _obs_days = (datetime.fromisoformat(_obs_e) - datetime.fromisoformat(_obs_s)).days + 1
             _cmp_days = (datetime.fromisoformat(_ce2) - datetime.fromisoformat(_cs2)).days + 1
             if (_obs_days > 0 and _cmp_days > 0
