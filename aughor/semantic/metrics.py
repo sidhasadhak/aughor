@@ -616,10 +616,8 @@ def value_query(metric: "MetricDefinition") -> str:
 def compute_value(metric: "MetricDefinition", db) -> MetricValue:
     """Run the governed query on an open connection. Never raises.
 
-    ``__metric_value__`` is an INTERNAL query label (dunder-wrapped, the convention
-    `_is_internal_query` reads and the one `__monitor_window__` already uses): this
-    reads a single aggregate, never rows, so there is nothing for the PII post-pass to
-    redact. A step that reads ROWS must not borrow this label.
+    Audited, not plumbing (GM-5): this runs a governed definition for whoever asked, which is their activity — the
+    user's call on what "internal" covers. Its dunder label used to exempt it; a label exempts nothing now.
     """
     query = value_query(metric)
     try:

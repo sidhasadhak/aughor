@@ -264,7 +264,7 @@ SELECT
     (SELECT COUNT(*) FROM s_a WHERE v IN (SELECT CAST({qb} AS VARCHAR) FROM {tb})) AS matched
 """.strip()
 
-        result = conn.execute("__domain_probe__", probe_sql, sql_dialect="duckdb")
+        result = conn.execute("__domain_probe__", probe_sql, sql_dialect="duckdb", internal=True)
         if result is not None and getattr(result, "error", None) and why is not None:
             from aughor.sql.guard_run import why as _why
             why.append(f"the probe of {table_a}.{col_a} failed: {_why(result.error)}")
@@ -334,7 +334,7 @@ def _probe_overlap_derived(conn: "DatabaseConnection", tree, a: _Side, b: _Side,
     over leaving these joins unchecked (2026-09-29). None on failure, with the reason appended to ``why``."""
     from aughor.sql.guard_run import why as _why
     try:
-        result = conn.execute("__domain_probe__", _derived_probe_sql(tree, a, b))
+        result = conn.execute("__domain_probe__", _derived_probe_sql(tree, a, b), internal=True)
     except Exception as exc:
         why.append(f"the probe of {a.table}.{a.column} failed: {_why(exc)}")
         return None
@@ -385,7 +385,7 @@ SELECT
        SELECT CAST({qb} AS VARCHAR)      FROM {tb} WHERE {qb} IS NOT NULL
    ) AS _u) AS union_d
 """.strip()
-        result = conn.execute("__hll_overlap_probe__", sql, sql_dialect="duckdb")
+        result = conn.execute("__hll_overlap_probe__", sql, sql_dialect="duckdb", internal=True)
         if result and result.rows:
             a_d, b_d, u_d = (int(result.rows[0][0]), int(result.rows[0][1]), int(result.rows[0][2]))
             _, cont_a, _ = overlap_from_hll(a_d, b_d, u_d)
@@ -463,7 +463,7 @@ SELECT
     (SELECT COUNT(*) FROM s_a
         WHERE v IS NOT NULL AND v <> '' AND v IN (SELECT {expr_b} FROM {tb})) AS matched
 """.strip()
-        result = conn.execute("__reconcile_probe__", probe_sql, sql_dialect="duckdb")
+        result = conn.execute("__reconcile_probe__", probe_sql, sql_dialect="duckdb", internal=True)
         if result and result.rows:
             total = int(result.rows[0][0])
             matched = int(result.rows[0][1])
@@ -1011,7 +1011,7 @@ def _probe(conn: "DatabaseConnection", label: str, src: "_Source | str", body: s
     table that does not exist (GM-4)."""
     src = _source(src)
     if src.node is None:
-        return conn.execute(label, body.replace(_SRC_TOKEN, _quote_table(src.name)), sql_dialect="duckdb")
+        return conn.execute(label, body.replace(_SRC_TOKEN, _quote_table(src.name)), sql_dialect="duckdb", internal=True)
     import sqlglot
     import sqlglot.expressions as exp
     probe = sqlglot.parse_one(body.replace(_SRC_TOKEN, _SRC_NAME), read="duckdb")
@@ -1024,7 +1024,7 @@ def _probe(conn: "DatabaseConnection", label: str, src: "_Source | str", body: s
         carried.setdefault(cte.alias_or_name.lower(), cte)
     for cte in carried.values():
         probe = probe.with_(cte.alias_or_name, as_=cte.this.copy())
-    return conn.execute(label, probe.sql(dialect=src.dialect or None))
+    return conn.execute(label, probe.sql(dialect=src.dialect or None), internal=True)
 
 
 def _persisted_value_sample(conn: "DatabaseConnection", t: str, c: str) -> "list[str]":
@@ -1444,7 +1444,7 @@ def check_join_coverage(conn, sql: str) -> "str | None":
         if not m_sum or not m_from:
             return None
         col, base = m_sum.group(1), m_from.group(1)
-        base_res = conn.execute("__coverage_probe__", f"SELECT SUM({col}) FROM {base}")
+        base_res = conn.execute("__coverage_probe__", f"SELECT SUM({col}) FROM {base}", internal=True)
         if getattr(base_res, "error", None) or not base_res.rows or base_res.rows[0][0] is None:
             return None
         base_total = float(base_res.rows[0][0])
@@ -1457,7 +1457,7 @@ def check_join_coverage(conn, sql: str) -> "str | None":
             s = re.search(stop, frame, re.IGNORECASE)
             if s:
                 frame = frame[: s.start()]
-        joined_res = conn.execute("__coverage_probe__", f"SELECT SUM({col}) {frame}")
+        joined_res = conn.execute("__coverage_probe__", f"SELECT SUM({col}) {frame}", internal=True)
         if getattr(joined_res, "error", None) or not joined_res.rows or joined_res.rows[0][0] is None:
             return None
         joined_total = float(joined_res.rows[0][0])

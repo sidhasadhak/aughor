@@ -34,12 +34,12 @@ class _StubConn:
         self.declared: list = []
         self._rows = rows if rows is not None else []
 
-    def execute(self, label, sql, *, sql_dialect=None):
+    def execute(self, label, sql, *, sql_dialect=None, internal=False):
         self.declared.append(sql_dialect)
         self.seen.append(sql_for_engine(self, sql, sql_dialect))
         return SimpleNamespace(error=None, rows=self._rows, columns=[])
 
-    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None):
+    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None, internal=False):
         self.declared.append(sql_dialect)
         self.bounded.append((sql_for_engine(self, sql, sql_dialect), max_rows))
         return SimpleNamespace(error=None, rows=self._rows, row_count=len(self._rows), columns=[])

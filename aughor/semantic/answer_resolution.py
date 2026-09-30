@@ -626,7 +626,7 @@ def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] 
         # every column the warehouse refused was counted as checked — a refused probe answered "absent", and
         # the answer abstained on a value it never looked for (GM-4, measured on theLook 2026-09-29).
         try:
-            res = db.execute("__resolve__", sql, sql_dialect="duckdb")   # DuckDB's CAST; the door renders it
+            res = db.execute("__resolve__", sql, sql_dialect="duckdb", internal=True)   # DuckDB's CAST; the door renders it
             rows = None if getattr(res, "error", None) else list(getattr(res, "rows", None) or [])
         except Exception:
             rows = None          # couldn't probe this column — skip, don't count as "absent"

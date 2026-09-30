@@ -13,12 +13,15 @@ from typing import Callable
 RunSql = Callable[[str], tuple[list, list, object]]
 
 
-def run_sql_for(connection_id: str) -> RunSql:
+def run_sql_for(connection_id: str, *, internal: bool, label: str = "cb2_review") -> RunSql:
+    """``internal`` is the caller's to say, because the callers differ (GM-5): the settling sampler, an outcome's
+    measurement and the sentinel's series are the platform's own statements; a monitor's backtest evaluates the
+    monitor's SQL, which is somebody's, and is audited under its own ``label``."""
     from aughor.db.connection import open_connection_for
     db = open_connection_for(connection_id)
 
     def run_sql(sql: str):
-        res = db.execute("cb2_review", sql, sql_dialect="duckdb")
+        res = db.execute(label, sql, sql_dialect="duckdb", internal=internal)
         return (list(getattr(res, "columns", []) or []), list(getattr(res, "rows", []) or []),
                 getattr(res, "error", None))
     return run_sql

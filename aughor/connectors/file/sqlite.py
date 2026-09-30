@@ -136,13 +136,13 @@ class SQLiteConnection(Connector):
         offer_typed_rows(rows[:self.max_rows], truncated=len(rows) > self.max_rows, types=[])
         return cols, rows
 
-    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS))
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS), internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
-                        sql_dialect: str | None = None) -> QueryResult:
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past the 500 cap."""
-        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)))
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)), internal=internal)
 
     def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         # Gate through the public security interface; the read-only connection

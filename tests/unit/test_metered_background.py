@@ -114,11 +114,12 @@ def test_metered_tick_records_query_in_job_metrics(monkeypatch):
         job_id = submit_background_tick("monitor", _work, conn_id="c1", org_id="default")
         assert job_id, "the tick should have been submitted"
 
-        # Wait for the supervised job to reach a terminal state.
+        # Wait for the supervised job to reach a terminal state AND flush its metrics: the kernel writes the
+        # terminal state first and the metrics in its `finally`, so a read between the two sees none.
         row = None
         for _ in range(100):
             row = jobs_mod.kernel().ledger.job_get(job_id)
-            if row and row["state"] in ("SUCCEEDED", "FAILED", "CANCELLED"):
+            if row and row["state"] in ("SUCCEEDED", "FAILED", "CANCELLED") and row.get("metrics"):
                 break
             time.sleep(0.05)
         assert row and row["state"] == "SUCCEEDED", row

@@ -64,7 +64,7 @@ def _tree(monkeypatch, *, schemas):
         class _DB:
             dialect = "duckdb"
 
-            def execute(self, _tag, sql):
+            def execute(self, _tag, sql, internal=False):
                 class R:
                     rows = ([("main", t, 0)] if "information_schema" in sql else [])
                 if "current_database" in sql:

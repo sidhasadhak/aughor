@@ -83,7 +83,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                 current_db = ""
                 try:
                     # Use db.execute (not db._conn) so this works for LocalUploadConnection too.
-                    res = db.execute("__catalog__", "SELECT current_database()")
+                    res = db.execute("__catalog__", "SELECT current_database()", internal=True)
                     if res.rows:
                         current_db = str(res.rows[0][0])
                 except Exception:
@@ -100,7 +100,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                           AND table_catalog = '{safe_db}'
                         ORDER BY table_schema, table_name
                         """,
-                    ).rows
+                     internal=True).rows
                     # information_schema knows the NAMES but carries no row estimate, so
                     # the count comes from duckdb_tables() as a SECOND, best-effort query
                     # rather than a join. Two reasons it is not merged into the query
@@ -122,7 +122,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                             WHERE internal = false
                               AND database_name = '{safe_db}'
                             """,
-                        ).rows:
+                         internal=True).rows:
                             sizes[(str(_schema), str(_table))] = _as_count(_size)
                     except Exception as exc:
                         logger.debug(
@@ -140,7 +140,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                           AND schema_name NOT IN ('information_schema','temp','pg_catalog')
                         ORDER BY schema_name, table_name
                         """,
-                    ).rows
+                     internal=True).rows
             elif getattr(db, "dialect", "") == "bigquery":
                 # BigQuery has no pg_stat_user_tables and its INFORMATION_SCHEMA is
                 # dataset-scoped, so the Postgres introspection below can never run
@@ -155,7 +155,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                 rows = db.execute(
                     "__catalog__",
                     f"SELECT dataset_id, table_id, row_count FROM `{dataset}.__TABLES__` ORDER BY table_id",
-                ).rows
+                 internal=True).rows
             else:
                 rows = db.execute(
                     "__catalog__",
@@ -173,7 +173,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                           ('information_schema','pg_catalog','pg_toast')
                     ORDER BY t.table_schema, t.table_name
                     """,
-                ).rows
+                 internal=True).rows
             # If schema_name is configured for this connection, filter to that schema only.
             if schema_filter and rows:
                 rows = [r for r in rows if r[0] == schema_filter]

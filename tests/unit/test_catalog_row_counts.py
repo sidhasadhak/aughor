@@ -58,7 +58,7 @@ class _DB:
         self._sizes_raise = sizes_raise
         self.queries: list[str] = []
 
-    def execute(self, _tag, sql):
+    def execute(self, _tag, sql, internal=False):
         self.queries.append(sql)
 
         class _R:

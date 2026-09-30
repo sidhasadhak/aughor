@@ -101,7 +101,7 @@ def validate_sql(conn_id: str, sql: str, *, dialect: str = "duckdb",
             from aughor.sql.grain_guard import grain_check
 
             def _grain_probe(s: str):
-                r = db.execute("__grain_probe__", s, sql_dialect="duckdb")
+                r = db.execute("__grain_probe__", s, sql_dialect="duckdb", internal=True)
                 return (not r.error, r.rows, r.error or "")
 
             _grun = grain_check(sql, _grain_probe, dialect)

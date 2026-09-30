@@ -439,7 +439,7 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
 
     # The portrait is DuckDB's spelling and says so to the door, which renders it for the engine (GM-1).
     def _scan(sql: str):
-        return conn.execute("scan", sql, sql_dialect="duckdb")
+        return conn.execute("scan", sql, sql_dialect="duckdb", internal=True)
 
     portrait_parts: list[str] = []
     # Track the overall data date range found across all tables (for events scoping)

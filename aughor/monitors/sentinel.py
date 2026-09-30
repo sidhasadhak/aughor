@@ -324,7 +324,7 @@ def propose_for_connection(connection_id: str, *, run_sql: Optional[RunSql] = No
     staged, or why nothing was."""
     if run_sql is None:
         from aughor.db.measure import run_sql_for
-        run_sql = run_sql_for(connection_id)
+        run_sql = run_sql_for(connection_id, internal=True)
     try:
         from aughor.settling import learned_lag_days
         settle_days = learned_lag_days(connection_id) or 1

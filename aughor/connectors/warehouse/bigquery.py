@@ -211,13 +211,13 @@ class BigQueryConnection(Connector):
             rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
             return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
 
-    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS))
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS), internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
-                        sql_dialect: str | None = None) -> QueryResult:
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
-        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)))
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)), internal=internal)
 
     def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time

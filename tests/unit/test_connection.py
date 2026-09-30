@@ -118,30 +118,24 @@ def test_safety_is_allowed_interface() -> None:
 
 # ── Internal-query audit bypass ───────────────────────────────────────────────
 
-def test_internal_query_bypasses_audit() -> None:
-    """Platform plumbing (dunder labels + metadata allowlist) is not audited;
-    real user labels are. Keeps the audit trail to genuine user activity."""
-    from aughor.db.connection import _is_internal_query
-
-    # dunder plumbing labels
-    for h in ("__catalog__", "__schema_filter__", "__profiler__", "__bulk__"):
-        assert _is_internal_query(h) is True, h
-    # bare metadata allowlist
-    for h in ("scan", "columns", "freshness", "list_schemas", "sample"):
-        assert _is_internal_query(h) is True, h
-    # genuine user activity must still be audited
-    for h in ("chat", "h1", "inv1", "hypothesis_3"):
-        assert _is_internal_query(h) is False, h
-    # edge cases that must NOT match the dunder shape
-    for h in ("", "__", "_x", None):
-        assert _is_internal_query(h) is False, repr(h)
-
-
-def test_security_pre_skips_internal_query() -> None:
-    """security_pre never blocks an internal query, even a dangerous-looking one."""
+def test_a_label_exempts_nothing() -> None:
+    """GM-5 — the label's spelling used to exempt a statement from the safety check and the audit: any dunder, and a
+    hand-listed set of bare names (`__bulk__` among them, a person's own SQL). Now every label is checked."""
     from aughor.db.connection import security_pre
-    # A DROP would normally be BLOCKED; under an internal label it's not even scored.
-    assert security_pre("c1", "__catalog__", "DROP TABLE x") is None
+    for h in ("__catalog__", "__schema_filter__", "__profiler__", "__bulk__",
+              "scan", "columns", "freshness", "list_schemas", "sample", "chat", "h1", ""):
+        blocked = security_pre("c1", h, "DROP TABLE x")
+        assert blocked is not None and "[BLOCKED]" in (blocked.error or ""), repr(h)
+
+
+def test_security_pre_skips_a_statement_declared_internal() -> None:
+    """The exemption is the caller's declaration, in force for its one statement: a DROP under it is not even
+    scored (the census holds who may declare it — the platform's own statements)."""
+    from aughor.db.connection import security_pre
+    from aughor.db.doors import through_door
+    out = through_door(object(), "DROP TABLE x", None, lambda s: security_pre("c1", "any label", s), internal=True)
+    assert out is None
+    assert security_pre("c1", "any label", "DROP TABLE x") is not None, "the declaration outlived its statement"
 
 
 def test_fleet_agent_data_queries_are_audited() -> None:
@@ -150,13 +144,13 @@ def test_fleet_agent_data_queries_are_audited() -> None:
     revalidate paths) from Security & Audit. The federation paths' reads are
     plumbing since 2026-09-14; their ANSWERS are audited on every connection
     they read (tests/unit/test_security_post_across_connections.py)."""
-    from aughor.db.connection import _AUDITED_AGENT_LABELS, _is_internal_query
+    from aughor.db.connection import security_pre
 
-    for h in _AUDITED_AGENT_LABELS:
-        assert _is_internal_query(h) is False, f"{h} must be audited"
-    # the explorer's information_schema catalog probe stays plumbing —
-    # otherwise the trail floods with 'system catalog access' suspicion noise
-    assert _is_internal_query("__explorer_catalog__") is True
+    for h in ("__explorer__", "__monitor__", "__monitor_window__", "__revalidate__", "__fix_save__"):
+        blocked = security_pre("c1", h, "DROP TABLE x")
+        assert blocked is not None, f"{h} must be checked and audited"
+    # The explorer's information_schema catalog probe stays plumbing by DECLARING it
+    # (`internal=True`); the census ratchet holds every platform statement to that.
 
 
 def test_explorer_query_lands_in_audit_log(tmp_path) -> None:

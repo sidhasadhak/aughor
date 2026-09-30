@@ -45,15 +45,12 @@ def test_query_run_blocks_mutating_sql_on_bulk_path():
     assert "[BLOCKED]" in (r.json()["error"] or "")
 
 
-def test_gate_uses_non_internal_label():
-    """The user-facing label must NOT be a dunder id, or _is_internal_query
-    silently bypasses the check (the original bug)."""
-    from aughor.db.connection import _is_internal_query
-
-    assert _is_internal_query("query_builder") is False
-    # The gate actually blocks a mutating statement under this label.
-    blocked = gate_user_sql("any-conn", "query_builder", "DELETE FROM t")
-    assert blocked is not None and "[BLOCKED]" in (blocked.error or "")
+def test_the_gate_checks_whatever_the_label():
+    """A dunder label used to bypass the check silently (the original bug). GM-5: no label exempts a person's SQL —
+    the gate runs outside any door, where no statement is declared internal."""
+    for label in ("query_builder", "__catalog__", "__bulk__"):
+        blocked = gate_user_sql("any-conn", label, "DELETE FROM t")
+        assert blocked is not None and "[BLOCKED]" in (blocked.error or ""), label
 
 
 def test_read_only_sql_passes_the_gate():

@@ -200,7 +200,7 @@ def make_uniqueness_oracle(conn, table_cols: dict):
         val = None
         try:
             res = conn.execute("fanout-uniq-probe",
-                               f'SELECT COUNT(*) = COUNT(DISTINCT "{col}") FROM {tbl}', sql_dialect="duckdb")
+                               f'SELECT COUNT(*) = COUNT(DISTINCT "{col}") FROM {tbl}', sql_dialect="duckdb", internal=True)
             if not getattr(res, "error", None):
                 rows = getattr(res, "rows", None) or []
                 if rows and rows[0] and rows[0][0] is not None:
@@ -242,7 +242,7 @@ def make_cardinality_oracle(conn, table_cols: dict):
         val = None
         try:
             res = conn.execute("cardinality-probe",
-                               f'SELECT COUNT(DISTINCT "{col}") FROM {tbl}', sql_dialect="duckdb")
+                               f'SELECT COUNT(DISTINCT "{col}") FROM {tbl}', sql_dialect="duckdb", internal=True)
             if not getattr(res, "error", None):
                 rows = getattr(res, "rows", None) or []
                 if rows and rows[0] and rows[0][0] is not None:

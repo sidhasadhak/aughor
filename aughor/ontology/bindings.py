@@ -193,7 +193,7 @@ def measure_binding(db: Any, entity: OntologyEntity, binding: Binding, *, object
            "(SELECT COUNT(*) FROM object_keys WHERE k IN (SELECT k FROM bound_keys WHERE k IS NOT NULL)), "
            "(SELECT COUNT(DISTINCT k) FROM bound_keys WHERE k IS NOT NULL AND k NOT IN (SELECT k FROM object_keys))")
     try:
-        result = db.execute("__binding_probe__", sql, sql_dialect="duckdb")
+        result = db.execute("__binding_probe__", sql, sql_dialect="duckdb", internal=True)
     except Exception as exc:  # noqa: BLE001 — an unprobeable binding is unmeasured, not refuted
         m.note = f"probe raised: {exc}"[:200]
         return m
@@ -220,7 +220,7 @@ def _measure_across(db: Any, object_db: Any, entity: OntologyEntity, binding: Bi
     bk = quote_ident(binding.key)
     counts = f"SELECT COUNT(*), COUNT(b.{bk}), COUNT(DISTINCT b.{bk}) FROM {source}"
     try:
-        result = db.execute("__binding_probe__", counts, sql_dialect="duckdb")
+        result = db.execute("__binding_probe__", counts, sql_dialect="duckdb", internal=True)
     except Exception as exc:  # noqa: BLE001 — an unprobeable binding is unmeasured, not refuted
         m.note = f"probe raised: {exc}"[:200]
         return m
@@ -726,7 +726,7 @@ def describe_with(db: Any) -> Describe:
         sql = f"SELECT * FROM {source} LIMIT 0"
         typed = getattr(db, "execute_typed", None)
         result, payload = (typed("binding_columns", sql, sql_dialect="duckdb") if callable(typed)
-                           else (db.execute("binding_columns", sql, sql_dialect="duckdb"), None))
+                           else (db.execute("binding_columns", sql, sql_dialect="duckdb", internal=True), None))
         if getattr(result, "error", None):
             return {}, result.error
         names = [str(c) for c in (result.columns or [])]

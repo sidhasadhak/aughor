@@ -291,7 +291,7 @@ def run_due_reviews(now: Optional[datetime] = None, *, run_sql_for, path: Path |
         value, label, note = None, "", ""
         if o.spec:
             try:
-                run_sql = run_sql_for(o.connection_id)
+                run_sql = run_sql_for(o.connection_id, internal=True)
                 value, label, note = measure_spec(o.spec, run_sql, end_day=now.date() - timedelta(days=1))
             except Exception as exc:  # noqa: BLE001 — recorded on the row
                 note = f"review measurement failed: {str(exc)[:160]}"

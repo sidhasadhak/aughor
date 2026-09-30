@@ -27,7 +27,7 @@ def probe_fn_for(conn: Any, label: str = "__eval_probe__") -> ProbeFn:
     """
     def probe(sql: str) -> tuple:
         try:
-            result = conn.execute(label, sql, sql_dialect="duckdb")
+            result = conn.execute(label, sql, sql_dialect="duckdb", internal=True)
         except Exception as exc:
             return (False, [], str(exc))
         return (not result.error, result.rows or [], result.error or "")

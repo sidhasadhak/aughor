@@ -231,7 +231,7 @@ def _probe(conn, sql: str):
     """Run a bounded read-only probe. Returns (columns, rows) with rows as lists of
     stringified cells (DuckDB/Postgres emit str cells), or (None, None) on error."""
     try:
-        r = conn.execute(_LABEL, sql)
+        r = conn.execute(_LABEL, sql, internal=True)
     except Exception:
         return None, None
     if getattr(r, "error", None):

@@ -121,6 +121,19 @@ def _declaration(call: ast.Call) -> str:
     return ""
 
 
+def _internal(call: ast.Call, name: str) -> str:
+    """GM-5 — 'internal' when the call declares its statement the platform's own, 'forwards' when it passes on a
+    declaration it was given, else ''. `read_typed_rows` is plumbing by definition and declares itself."""
+    if name == "read_typed_rows":
+        return "internal"
+    for kw in call.keywords:
+        if kw.arg == "internal":
+            if isinstance(kw.value, ast.Constant):
+                return "internal" if kw.value.value is True else ""
+            return "forwards"
+    return ""
+
+
 def _label(call: ast.Call, name: str, src: str) -> str:
     keyword = {"rows": "label", "scalar": "label", "execute_guarded": "query_id"}.get(name)
     if name == "execute" and any(kw.arg == "query_id" for kw in call.keywords):
@@ -154,7 +167,7 @@ class _Walk(ast.NodeVisitor):
         name = f.attr if isinstance(f, ast.Attribute) else (f.id if isinstance(f, ast.Name) else None)
         if name in DOORS and _is_door_call(node, name):
             self.sites.append((".".join(self.scope) or "<module>", name, _label(node, name, self.src),
-                               node.lineno, _declaration(node)))
+                               node.lineno, _declaration(node), _internal(node, name)))
         self.generic_visit(node)
 
 
@@ -167,10 +180,11 @@ def door_sites() -> dict[str, dict]:
         walk = _Walk(src)
         walk.visit(ast.parse(src))
         seen: dict[str, int] = {}
-        for where, door, label, line, declared in walk.sites:
+        for where, door, label, line, declared, internal in walk.sites:
             base = f"{rel}::{where}::{door}::{label}"
             seen[base] = seen.get(base, 0) + 1
-            out[base if seen[base] == 1 else f"{base}#{seen[base]}"] = {"line": line, "machine": declared}
+            out[base if seen[base] == 1 else f"{base}#{seen[base]}"] = {"line": line, "machine": declared,
+                                                                        "internal": internal}
     return out
 
 
@@ -245,3 +259,39 @@ def test_the_bug_classes_only_fall(census, dialect, baseline):
     assert len(now) == baseline, (
         f"only {len(now)} '{dialect}' sites remain — lower the baseline in {Path(__file__).name} to {len(now)} "
         "in this change, so the room cannot be spent on a regression later")
+
+
+# ── GM-5: who may declare a statement the platform's own ────────────────────────────────────────────────────────────
+#
+# `internal=True` on a door call skips the safety check, the audit row and PII redaction. It used to be decided by how
+# the label was spelled, and 21 statements a model, a person or a stored definition wrote were exempt by spelling alone.
+# The call declares it now, and these hold the declaration to the row's `author`: the platform's own statements declare
+# it; nobody else's may. An exception says why, in the row, where a reviewer reads it.
+
+def test_only_the_platform_declares_its_statements_internal(sites, census):
+    wrong = [f"    {key}   (author: {census[key]['author']})" for key in sorted(sites)
+             if key in census and sites[key]["internal"] == "internal"
+             and census[key]["author"] != "platform" and not census[key].get("internal")]
+    assert not wrong, (
+        f"{len(wrong)} door call(s) declare internal=True on a statement the platform did not write — it skips the "
+        "safety check, the audit row and PII redaction. Drop the declaration, or say why in the row's `internal` "
+        "field:\n" + "\n".join(wrong))
+
+
+def test_the_platform_declares_its_own_statements(sites, census):
+    missing = [f"    {key}" for key in sorted(sites)
+               if key in census and census[key]["author"] == "platform" and census[key]["dialect"] != "not-sql"
+               and not sites[key]["internal"] and not census[key].get("audited")]
+    assert not missing, (
+        f"{len(missing)} platform statement(s) with no internal=True — each lands on the audit page as somebody's "
+        "activity. Declare it, or say why it is audited in the row's `audited` field:\n" + "\n".join(missing))
+
+
+def test_an_exception_is_a_reason(census):
+    for key, row in census.items():
+        for field in ("internal", "audited"):
+            if field in row:
+                assert isinstance(row[field], str) and len(row[field].split()) >= 4, (
+                    f"{key}: `{field}` is a reviewer's sentence saying why, not a flag")
+        assert not ("internal" in row and "audited" in row), f"{key}: a row is an exception one way, not both"
+

@@ -1520,7 +1520,7 @@ def column_distinct(conn_id: str, table: str, column: str, schema: "str | None" 
         from aughor.db.quoting import ident_quote
         q = ident_quote(db)
         qt, qc = _quote_ident(table, schema, q), f"{q}{column}{q}"
-        res = db.execute("__distinct__", f"SELECT DISTINCT {qc} AS v FROM {qt} WHERE {qc} IS NOT NULL ORDER BY 1 LIMIT {n}")
+        res = db.execute("__distinct__", f"SELECT DISTINCT {qc} AS v FROM {qt} WHERE {qc} IS NOT NULL ORDER BY 1 LIMIT {n}", internal=True)
         if getattr(res, "error", None):
             return {"values": [], "truncated": False}
         vals = [None if r[0] is None else str(r[0]) for r in (res.rows or [])]

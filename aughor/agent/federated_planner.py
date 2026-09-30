@@ -86,7 +86,7 @@ def plan_federated(question: str, conn_ids: list[str]) -> FederatedPlan:
 def _columns_of(conn, sql: str) -> Optional[list[str]]:
     """The output columns of ``sql`` (as a derived table), or None if it can't be introspected."""
     try:
-        res = conn.execute("__fed_cols__", f"SELECT * FROM ({sql.rstrip().rstrip(';')}) AS _t LIMIT 0")
+        res = conn.execute("__fed_cols__", f"SELECT * FROM ({sql.rstrip().rstrip(';')}) AS _t LIMIT 0", internal=True)
         return list(res.columns) if not res.error else None
     except Exception:
         return None
@@ -170,7 +170,7 @@ def answer_federated(question: str, conn_ids: list[str], *, reconcile: bool = Fa
     import time
     started = time.monotonic()
     driver = plan.steps[0]
-    result = open_connection_for(conn_ids[driver.source]).execute_bounded("__fed_driver__", driver.sql, _DRIVER_CAP)
+    result = open_connection_for(conn_ids[driver.source]).execute_bounded("__fed_driver__", driver.sql, _DRIVER_CAP, internal=True)
     if result.error:
         return FederatedAnswer(result, plan, [f"driver sub-query failed: {result.error}"])
     for i, step in enumerate(plan.steps[1:], start=1):

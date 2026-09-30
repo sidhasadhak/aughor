@@ -126,13 +126,13 @@ class TestAReviewReachesTheOwner:
         spec = {"metric_label": "late dispatch", "metric_sql": "COUNT(*)", "metric_table": "t", "date_column": "t.d", "window_days": 7}
         o = O.log_outcome("inv", 0, "x", "accepted", path=path)
         O.record_acceptance(o, spec=spec, connection_id="c1", accepted_by="user:acc@corp", run_sql=lambda s: ([], [[1.0]], None), now=now, path=path)
-        run = O.run_due_reviews(now + timedelta(days=31), run_sql_for=lambda c: (lambda s: ([], [[2.0]], None)), path=path)
+        run = O.run_due_reviews(now + timedelta(days=31), run_sql_for=lambda c, **kw: (lambda s: ([], [[2.0]], None)), path=path)
         assert run[0].review_asked_to == "user:acc@corp"
         assert "not linked to a person; asked the accepter" in run[0].review_note
         OW.link_owner(ORG, "Ana (logistics)", "user:ana@corp")
         o2 = O.log_outcome("inv2", 0, "y", "accepted", path=path)
         O.record_acceptance(o2, spec=spec, connection_id="c1", accepted_by="user:acc@corp", run_sql=lambda s: ([], [[1.0]], None), now=now, path=path)
-        run = O.run_due_reviews(now + timedelta(days=31), run_sql_for=lambda c: (lambda s: ([], [[2.0]], None)), path=path)
+        run = O.run_due_reviews(now + timedelta(days=31), run_sql_for=lambda c, **kw: (lambda s: ([], [[2.0]], None)), path=path)
         assert [r.review_asked_to for r in run] == ["user:ana@corp"] and run[0].review_note == ""
 
 

@@ -100,7 +100,7 @@ class TestTheExplorerRoutesItsOwnSql:
         """Two period probes call the connector directly, bypassing `_run` — they carried the
         `::VARCHAR` that BigQuery refused outright."""
         src = inspect.getsource(EA)
-        direct = src.count('self._conn.execute("__explorer__", sql, sql_dialect="duckdb")')
+        direct = src.count('self._conn.execute("__explorer__", sql, sql_dialect="duckdb", internal=True)')
         assert direct == 2, f"expected both direct probes declared, found {direct}"
 
     def test_no_filter_clause_survives_in_explorer_sql(self):

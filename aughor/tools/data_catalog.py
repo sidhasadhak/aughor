@@ -247,7 +247,7 @@ def _raw_rows(conn: "DatabaseConnection", sql: str) -> tuple[list[str], list]:
     if getattr(conn, "dialect", "") == "duckdb" and hasattr(conn, "raw_execute"):
         cols, rows, _ = conn.raw_execute(sql)
         return cols, rows
-    result = conn.execute("_catalog", sql, sql_dialect="duckdb")
+    result = conn.execute("_catalog", sql, sql_dialect="duckdb", internal=True)
     return list(getattr(result, "columns", []) or []), list(result.rows)
 
 
@@ -327,7 +327,7 @@ def _fetch_sample(
     quoted_cols = ", ".join('"' + str(c).replace('"', '""') + '"' for c in col_names)
     try:
         # Plain SELECT passes the validator — use the safe execute() path.
-        result = conn.execute("_catalog", f"SELECT {quoted_cols} FROM {_quote_ref(table)} LIMIT 5")
+        result = conn.execute("_catalog", f"SELECT {quoted_cols} FROM {_quote_ref(table)} LIMIT 5", internal=True)
         return result.rows
     except Exception:
         return []

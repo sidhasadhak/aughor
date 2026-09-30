@@ -97,7 +97,7 @@ class FakeConn:
             (["segment_status AS grp"], _SEGMENT_GROUPS),
         ]
 
-    def execute(self, label, sql):
+    def execute(self, label, sql, internal=False):
         self.seen.append(sql)
         for needles, result in self._routes:
             if all(n in sql for n in needles):
@@ -207,12 +207,12 @@ def test_signed_measure_not_chosen_as_measure(report):
 # ── robustness: a failing connection never raises, yields no facts ────────────
 
 class _BoomConn:
-    def execute(self, label, sql):
+    def execute(self, label, sql, internal=False):
         raise RuntimeError("connection is down")
 
 
 class _ErrConn:
-    def execute(self, label, sql):
+    def execute(self, label, sql, internal=False):
         return FakeResult([], [], error="permission denied")
 
 
