@@ -270,10 +270,10 @@ class _StubDB:
     """The test_monitors_guarded stub: id-arithmetic SQL over a two-column schema."""
     dialect = "duckdb"
 
-    def rows(self, sql, label=None, sql_dialect=None):
+    def rows(self, sql, label=None, sql_dialect=None, strict=False):
         return [[999.0]]
 
-    def scalar(self, sql, label=None, cast=float, sql_dialect=None):
+    def scalar(self, sql, label=None, cast=float, sql_dialect=None, strict=False):
         return 999.0
 
     def get_schema(self):

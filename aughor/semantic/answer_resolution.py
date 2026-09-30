@@ -622,8 +622,12 @@ def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] 
     for table, col in cols:
         sql = (f"SELECT CAST({col} AS VARCHAR) FROM {table} "
                f"WHERE lower(CAST({col} AS VARCHAR)) = lower('{lit}') LIMIT 1")
+        # Through `execute`, not the `rows` adapter: `rows` returns [] for an error as well as for no match, and
+        # every column the warehouse refused was counted as checked — a refused probe answered "absent", and
+        # the answer abstained on a value it never looked for (GM-4, measured on theLook 2026-09-29).
         try:
-            rows = db.rows(sql, label="__resolve__", sql_dialect="duckdb")   # DuckDB's CAST; the door renders it
+            res = db.execute("__resolve__", sql, sql_dialect="duckdb")   # DuckDB's CAST; the door renders it
+            rows = None if getattr(res, "error", None) else list(getattr(res, "rows", None) or [])
         except Exception:
             rows = None          # couldn't probe this column — skip, don't count as "absent"
         if rows is None:

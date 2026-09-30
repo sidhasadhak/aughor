@@ -741,15 +741,20 @@ export function SqlMode({
                 ? (verdict.note || "The guards cannot read a parameterised query without values.")
                 : verdict.passed
                   ? "Fan-out, join and filter value-domain, grain and trust checks all passed"
-                  : "Findings are shown in the editor gutter"}
+                  : [verdict.issue_count ? "Findings are shown in the editor gutter" : "",
+                     ...(verdict.unchecked_guards ?? []).map(u => `Not checked (${u.guard}): ${u.reason}`),
+                    ].filter(Boolean).join("\n")}
             >
               {/* "Guards clean" rather than "Checked — clean": this endpoint judges
-                  fan-out, value-domain, grain and trust — never syntax. */}
+                  fan-out, value-domain, grain and trust — never syntax. GM-4: a guard
+                  that could not run is never counted as clean. */}
               {verdict.unchecked
                 ? "Not checked — fill parameters"
                 : verdict.passed
                   ? "Guards clean"
-                  : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
+                  : !verdict.issue_count && verdict.unchecked_guards?.length
+                    ? "Not all checked"
+                    : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
             </span>
           )}
           {/* SE-8E — the assistant, at the toolbar's far right. Opens a pane; nothing

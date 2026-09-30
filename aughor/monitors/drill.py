@@ -55,11 +55,11 @@ class DrillConnection:
         self.outlier = outlier
         self.queries: list[str] = []
 
-    def rows(self, sql: str, label: str = "", sql_dialect: str | None = None) -> list:
+    def rows(self, sql: str, label: str = "", sql_dialect: str | None = None, strict: bool = False) -> list:
         self.queries.append(sql)
         return [tuple(p) for p in self.series]
 
-    def scalar(self, sql: str, label: str = "", cast=float, sql_dialect: str | None = None):
+    def scalar(self, sql: str, label: str = "", cast=float, sql_dialect: str | None = None, strict: bool = False):
         self.queries.append(sql)
         return cast(self.outlier) if cast else self.outlier
 

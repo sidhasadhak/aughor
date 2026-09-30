@@ -141,6 +141,11 @@ def revalidate_finding(dossier: dict, conn) -> dict:
             "the result changed with NO change to the underlying data — the finding's SQL is "
             "non-deterministic or was mis-derived (a trust issue, not a data update)"
         )
+    elif pinned_version:
+        # GM-4 — the pin is there; today's version could not be read (a table the probe cannot reach). Whether
+        # the data moved is unknown, which is not the same as "no pin".
+        interpretation = ("the numbers changed; the finding is pinned to a data version, but the current version "
+                          "could not be read, so whether the data moved is unknown")
     else:
         interpretation = "the numbers changed; no data-version pin was available to attribute the cause"
 

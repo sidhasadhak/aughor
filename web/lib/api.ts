@@ -4048,6 +4048,9 @@ export interface QueryValidation {
    *  when zero things were looked at. */
   unchecked?: boolean;
   note?: string;
+  /** GM-4 — each guard that could not run on this statement, and why (a statement it could
+   *  not parse, a probe the warehouse refused). Any one makes `passed` false. */
+  unchecked_guards?: { guard: string; reason: string }[];
 }
 
 /** `dialect` defaults server-side to the connection's own, so callers that don't know

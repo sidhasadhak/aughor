@@ -29,6 +29,9 @@ class _NoProbes:
     def rows(self, sql, label=""):
         raise AssertionError(f"a live probe ran on the inline form: {sql}")
 
+    def execute(self, label, sql, sql_dialect=None):
+        raise AssertionError(f"a live probe ran on the inline form: {sql}")
+
 
 @pytest.fixture()
 def cached(monkeypatch):

@@ -255,10 +255,10 @@ def test_scheduler_rebinds_connection_org(monkeypatch):
 
     def _fake_run(monitor, db, **kw):
         captured["org"] = current_org_id()
-        return None
+        return runner_mod.MonitorRun()
 
     monkeypatch.setattr(dbconn, "open_connection_for", lambda _cid: _DummyDB())
-    monkeypatch.setattr(runner_mod, "run_monitor", _fake_run)
+    monkeypatch.setattr(runner_mod, "check_monitor", _fake_run)
     try:
         # current org is 'default' here — the rebind must lift it to the connection's org
         scheduler.trigger_now(mon.id)

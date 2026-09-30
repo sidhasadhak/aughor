@@ -144,19 +144,13 @@ def test_bad_sql_is_fail_open():
     conn.execute.assert_not_called()
 
 
-def test_caps_at_max_probes(monkeypatch):
-    """The guard probes at most `_MAX_PROBES` join CONDITIONS, not one per written join.
+def test_every_join_condition_is_probed(monkeypatch):
+    """Every join CONDITION is probed — none past a cap goes unchecked and unsaid (GM-4; the user, 2026-09-29:
+    "probe every join"; of ~2,050 joined statements on theLook, 2 had five or more joins).
 
-    The bound is ABSOLUTE on purpose. A first attempt derived the ceiling from
-    `_MAX_PROBES` itself, which made the test unfalsifiable: raising the cap raised the
-    ceiling with it, so deleting the cap entirely left the assertion green. A budget test
-    whose budget is computed from the thing under test measures nothing.
-
-    48 is the real worst case today: 4 conditions × 2 directions × (1 base probe + 5
-    reconciliation transforms). Reconciliation is unconditional since Wave 3 — it was
-    already elevated in production, so the only thing that changed is that this test can
-    no longer hide the cost by pinning it off. Change either constant deliberately and
-    update this number deliberately with it.
+    The count is ABSOLUTE on purpose, as the capped version's was: a budget computed from the thing under test
+    measures nothing. 60 = 5 conditions × 2 directions × (1 base probe + 5 reconciliation transforms) — linear in
+    the statement's joins now, by that decision. Change the transforms deliberately and this number with them.
     """
     conn = _mock_conn(matched=0, total=100)  # all mismatches to maximise probe count
     sql = """
@@ -166,17 +160,11 @@ def test_caps_at_max_probes(monkeypatch):
     JOIN d ON c.d_id = d.id
     JOIN e ON d.e_id = e.id
     JOIN f ON e.f_id = f.id
-    """                     # 5 join conditions written; only _MAX_PROBES may be probed
-    check_join_value_domains(conn, sql)
-    assert conn.execute.call_count <= 48, (
-        "the per-condition cap is what bounds this — an uncapped guard probes all 5 "
-        "conditions (60 calls) and an unbounded one scales with the query")
-    # Pin the constants the number above is derived from, so a change to either fails HERE
-    # with a readable reason instead of silently widening the budget.
-    from aughor.sql.join_guard import _KEY_TRANSFORMS, _MAX_PROBES
-    assert (_MAX_PROBES, len(_KEY_TRANSFORMS)) == (4, 5), (
-        "probe budget constants moved — re-derive the 48 above: "
-        "_MAX_PROBES × 2 directions × (1 + len(_KEY_TRANSFORMS))")
+    """
+    assert len(check_join_value_domains(conn, sql)) == 5, "a join past the fourth went unprobed"
+    assert conn.execute.call_count == 60
+    from aughor.sql.join_guard import _KEY_TRANSFORMS
+    assert len(_KEY_TRANSFORMS) == 5, "the transforms moved — re-derive the 60 above: 5 × 2 × (1 + transforms)"
 
 
 # ── Real-connection regression (the mock can't catch value stringification) ──
