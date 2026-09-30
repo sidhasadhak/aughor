@@ -19,11 +19,15 @@ harness (measure detection coverage).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import sqlglot
 from sqlglot import exp
+
+if TYPE_CHECKING:
+    from aughor.sql.guard_run import GuardRun
 
 ProbeFn = Callable[[str], tuple]  # probe_fn(sql) -> (ok: bool, rows: list, error: str)
 
@@ -76,19 +80,33 @@ def _additive_aggregates(tree: exp.Expression) -> list[str]:
 def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[FanoutRatioIssue]:
     """Return fan-out findings for `sql`: additive aggregates spanning a join whose other side
     probes as non-unique on its join key. Empty when there is no additive aggregate, no join, or
-    every joined side is unique on its key (i.e. no real fan-out)."""
+    every joined side is unique on its key (i.e. no real fan-out) — and also when the guard could
+    not look; :func:`grain_check` says which (GM-4)."""
+    return grain_check(sql, probe_fn, dialect).findings
+
+
+_JOIN_WORD = re.compile(r"\bJOIN\b", re.IGNORECASE)
+
+
+def grain_check(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> "GuardRun":
+    """The grain guard's run over `sql`: its fan-out findings, and each joined side whose key it could not
+    probe, or the statement it could not parse (GM-4). Never raises."""
+    from aughor.sql.guard_run import GuardRun, why
+    run = GuardRun("grain")
     try:
         tree = sqlglot.parse_one(sql, read=dialect)
     except Exception:
-        return []
+        tree = None
     if tree is None:
-        return []
+        if _JOIN_WORD.search(sql or ""):
+            run.unchecked.append(f"the statement could not be parsed in {dialect}'s dialect to find its join keys")
+        return run
 
     aggregates = _additive_aggregates(tree)
     if not aggregates:
-        return []  # no additive aggregate ⇒ fan-out cannot inflate a number
+        return run  # no additive aggregate ⇒ fan-out cannot inflate a number
 
-    findings: list[FanoutRatioIssue] = []
+    findings: list[FanoutRatioIssue] = run.findings
     seen: set[tuple[str, str]] = set()
 
     for j in tree.find_all(exp.Join):
@@ -127,10 +145,13 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
         expr = quoted[0] if len(quoted) == 1 else " || '-' || ".join(f"CAST({q} AS VARCHAR)" for q in quoted)
         probe = f"SELECT COUNT(*), COUNT(DISTINCT {expr}) FROM {target.sql(dialect='duckdb')}"
         try:
-            ok, rows, _ = probe_fn(probe)
-        except Exception:
-            ok, rows = False, None
-        if not ok or not rows or not rows[0] or len(rows[0]) < 2:
+            ok, rows, err = probe_fn(probe)
+        except Exception as exc:
+            ok, rows, err = False, None, exc
+        if not ok:
+            run.unchecked.append(f"the key {', '.join(keys)} of {rt} could not be probed: {why(err)}")
+            continue
+        if not rows or not rows[0] or len(rows[0]) < 2:
             continue
         total, distinct = _to_int(rows[0][0]), _to_int(rows[0][1])
         if total is None or not distinct or total <= distinct:
@@ -142,7 +163,7 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
     if findings:
         from aughor.stats import bump
         bump("guard.grain_fanout.fired", len(findings))
-    return findings
+    return run
 
 
 def fanout_caveat(findings: list[FanoutRatioIssue]) -> str:

@@ -9608,7 +9608,7 @@ silently (§7).
 
 ---
 
-### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1, GM-2 and GM-3 BUILT 2026-09-29** on `claude/briefing-cockpits`, not merged)
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1, GM-2 and GM-3 BUILT 2026-09-29**, merged #557 · **GM-4 BUILT 2026-09-29**, the guards reading native spelling and derived joins the same day, on `claude/gm4-guard-cannot-run`, committed locally, not pushed)
 
 > **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
 > without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
@@ -9703,6 +9703,85 @@ silently (§7).
 > the quick core (`_answer_core`) is wired but the live turn was routed to the conversation agent; a person's
 > parameterised `/query` (`execute_with_params`) opens no trail, so its doors are `[]` — which `explain` reads as
 > "not recorded", never as "passed no door".
+
+>
+> **Status 2026-09-29, GM-4 BUILT — a guard that cannot run says so.** A guard that could not read a statement
+> returned what a clean statement returns — nothing — and the repair loop, the receipt and the reader took that for
+> "checked". **Measured first, on theLook, no model calls:** on the spelling the model and the cards write there
+> (`` `bigquery-public-data.thelook_ecommerce.orders` ``, backticked and project-qualified) the join and filter
+> guards ran NO statement and reported clean — their neutral parse fails on the hyphen — and GM-3's receipt said
+> `guarded:join-domain` (the API log had the parse failure from a card run minutes before); a dataset-qualified name
+> got both join probes refused (404) and was reported clean the same way; a snapshot fingerprint over `orders` and
+> a table it could not count equalled the fingerprint of `orders` alone, so a move in the left-out table would read
+> as "the finding was mis-derived"; and the answer resolver called a value **absent** from a column the warehouse
+> refused to search (`db.rows` returns `[]` for an error). The grain probe was the exception — it parses in the
+> connection's dialect and ran. **Built:** `aughor/sql/guard_run.py` — a guard's run over one statement is a
+> `GuardRun`: its findings, and each part it could not check with the reason (`unchecked`, the house word). The join,
+> filter and grain guards return one (`join_domain_check`, `filter_domain_check`, `grain_check`; the list-returning
+> names stay for their callers). The battery (`execute_guarded`) and the quick path write `unchecked:<guard>` on the
+> receipt instead of `guarded:<guard>` and carry the reasons as caveats — so a deep analysis whose join could not be
+> checked no longer claims HIGH confidence (WP-1a's cap reads every live caveat). A repair is accepted only by a
+> guard that could re-check it (`GuardRun.cleared`: no findings, and nothing unchecked that was checked before — a
+> fix the guard could not read had passed as "mismatch cleared"). `/query/validate` is not `passed` while any guard
+> could not run and lists them in `unchecked_guards`; the SQL editor's header says "Not all checked" with the
+> reasons. The trust façade's verdict carries them as `info` checks. The snapshot fingerprint is all or nothing, and
+> revalidation says a pinned version could not be read now instead of "no pin". The resolver reads `execute`, so a
+> refused column is not a confirmed absence. The ambiguity probe counts readings that could not run and the answer
+> carries a `caveated` receipt when any did (the probe is opt-in and off on this install — pinned by test, not
+> receipted live). `tests/unit/test_gm4_a_guard_that_cannot_run_says_so.py`, mutation-tested 18 ways, each killed by
+> an assertion. **Receipt, live on theLook, no model calls:** a statement in the native spelling (orders ⋈ users,
+> `status = 'Complete'`) ran through the battery (China 10,810 · United States 7,123 · Brasil 4,458) with `unchecked:join-domain` and `unchecked:filter-domain` on
+> its path and both reasons as caveats; `/query/validate`'s battery answered `passed: false`, 0 issues, two unchecked
+> guards; the bare fabricated join still ran and fired (`guarded:join-domain`); the grain guard ran on the native
+> spelling and found 1.45×; the snapshot over `orders` + an unreadable table is `None`; the resolver answers `None`,
+> not `absent`, and binds `'complete'` → `'Complete'` where it can look. (The three gaps first left here — the
+> guards could not read theLook's native spelling, a monitor read a failed query as "no alert", the join guard
+> probed four joins and said nothing of the rest — are closed in the status below.)
+>
+> **Status 2026-09-29, GM-4 continued — the guards CHECK the native spelling, and what the statement defines.** The
+> user's calls, asked with measurements: probe every join (of ~2,050 joined theLook statements, 2 had five or more);
+> probe a join to a CTE or a subquery, or on an expression, through the statement's own WITH clause, at the cost of
+> recomputing the CTE per probe (64 and 28 of 719 joined statements, which the guard had probed against a table that
+> does not exist, or skipped); a monitor whose query cannot run is recorded as failed and alerts once when it starts
+> failing and once when it runs again; one live quick question on theLook (2 model calls). **Built:** a statement is
+> read in the dialect it was written in (`db.dialects.authored_dialect` — the engine's own on a native engine, DuckDB's
+> where the door translates; the two call sites that spelled that rule inline now read it) and a table keeps its
+> project, so `` `bigquery-public-data.thelook_ecommerce.orders` `` is read and probed as itself. The join guard
+> resolves each side of a join's equality to what it reads (`_join_sides`): a stored table's plain column goes to the
+> platform's probe, anything else to `_probe_overlap_derived`, which is built in the statement's own dialect, carries
+> its CTEs and declares nothing — declaring DuckDB would corrupt the native fragment (GM-1). A self-join of one table
+> or one CTE is not probed: a lagged key (`prev.period = DATE_SUB(curr.period, INTERVAL 12 MONTH)`) overlaps partly
+> by design, and theLook's own year-over-year statement read as a 14% "different entities" mismatch until it was
+> excluded. A reconciliation's expressions are said in the engine's spelling. The filter guard shares all of it: its
+> probes run through `_probe` (a stored table declared DuckDB; a CTE or subquery spliced into a DuckDB-parsed body and
+> rendered in the statement's dialect — 51 of 251 theLook statements filtering a text value filter a CTE's column), the
+> six-column cap is gone, a sibling-column search cut short at sixteen columns is no longer "in no other column", and a
+> refused existence probe no longer binds a literal that may be right to its neighbour. Monitors read strictly
+> (`DatabaseConnection.rows/scalar(strict=True)` raise `QueryRefused`; the default is unchanged for every other
+> caller): `check_monitor` returns the run, the automation effect records a refused query as `failed`, `health_alert`
+> sends one `query_failing` and one `query_runs_again` alert with the alert store as the record, a condition on such a
+> monitor raises `ProbeUnavailable`, the manual test run shows the failure, and an alert about running is never a
+> reading (baseline, trend, debounce). Tests: the GM-4 module (32 cases) and the quick path through the real answer core
+> with a stubbed model; mutation-tested 20 more ways, each killed by an assertion. **Receipt, live on theLook, no model
+> calls:** the native fabricated join now runs and fires (overlap 0.0), the real foreign-key join is clean, `'complete'`
+> binds to `'Complete'` in a stored table and in a CTE's column, and a CTE joined on `DATE_TRUNC(…, MONTH)` is checked
+> by two probes; of 25 of the model's own joined statements, 22 are checked (12 through derived sides) and 3 are
+> unchecked — each names a column that does not exist, the statement's own error. **With two model calls (approved):**
+> a quick question ran its filter guard on the model's native SQL (`guarded:filter-domain`, a finding, nothing
+> unchecked). **It also showed a defect outside GM-4 — FIXED the same day:** the model wrote `u.country = 'Brazil'`
+> where theLook stores `'Brasil'`. The pre-flight bound it; but the quick path's filter guard had read the model's
+> statement BEFORE the pre-flight, so its finding outlived the fix and asked the model for a repair — and the model,
+> told 'Brazil' matches nothing while looking at 'Brasil', wrote 'Brazil' back. The repair was adopted without the
+> filter asked again (the adoption re-check covered the SQL-only checks), and **0** shipped where the answer is
+> **4,458**, with no caveat. Now the guard reads the statement that runs, after the pre-flight; every model repair is
+> asked the filter guard before it is adopted (`join_guard.filter_repair_holds`, the battery's rule too); a novel
+> literal — in no column — is said and never sent for repair; and a finding left on the statement that answers is a
+> caveat (`FilterDomainWarning.caveat`, the battery's words, now in one place). Replayed on theLook with the model's
+> two live outputs scripted, no model called: before, 0 and one repair asked; after, 4,458 and none. **Left, named:** a
+> filter on an unqualified column in a statement with more than one table in any scope is not resolved (the literal
+> extractor counts tables across scopes; shared with object pages and the grounded-literal contract); a literal found
+> in two or more sibling columns is neither repaired nor said; the derived probe ignores the outer statement's WHERE,
+> so a window-limited CTE compares its whole range.
 
 - **GM-1 · the door owns the dialect.** `execute(label, sql, *, sql_dialect=None)`: `"duckdb"` from platform code
   makes the base door translate for native engines where transpile engines already do; `native_sql` becomes the

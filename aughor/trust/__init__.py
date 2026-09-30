@@ -40,6 +40,14 @@ def _tolerate(exc: Exception, where: str, counter: str = "") -> None:
     tolerate(exc, where, counter=counter or "trust.verify")
 
 
+def _unchecked(run, name: str) -> list[Check]:
+    """A guard's parts it could not check, as checks that did not pass and found nothing — `info`, so they
+    neither fail the verdict nor read as a warning, but they are in it (GM-4): a guard that could not run
+    is not omitted from the verdict as if it had passed."""
+    return [Check(name, ok=False, severity=INFO, reason=f"not checked — {reason}", detail={"unchecked": True})
+            for reason in run.unchecked]
+
+
 def verify(artifact: str, scope: Scope | None = None, *, kind: str = "sql") -> Verdict:
     """Verify one artifact against `scope`; return a `Verdict`. Never raises.
 
@@ -108,8 +116,10 @@ def _verify_sql(sql: str, scope: Scope) -> Verdict:
 
         # Join value-domain — live overlap probe of each join's keys.
         try:
-            from aughor.sql.join_guard import check_join_value_domains
-            for w in check_join_value_domains(scope.conn, out):
+            from aughor.sql.join_guard import join_domain_check
+            _jrun = join_domain_check(scope.conn, out)
+            checks.extend(_unchecked(_jrun, "join_domain"))
+            for w in _jrun.findings:
                 reason = w.to_prompt_text() if hasattr(w, "to_prompt_text") else "join value-domain mismatch"
                 checks.append(Check("join_domain", ok=False, severity=WARN, reason=reason,
                                     detail={k: getattr(w, k) for k in ("table_a", "col_a", "table_b", "col_b", "overlap")
@@ -119,13 +129,15 @@ def _verify_sql(sql: str, scope: Scope) -> Verdict:
 
         # Grain / fan-out — live uniqueness probe of each join key.
         try:
-            from aughor.sql.grain_guard import detect_fanout
+            from aughor.sql.grain_guard import grain_check
 
             def _probe(s: str):
                 r = scope.conn.execute("__trust_grain__", s, sql_dialect="duckdb")
                 return (not r.error, r.rows, r.error or "")
 
-            for f in detect_fanout(out, _probe, dialect):
+            _grun = grain_check(out, _probe, dialect)
+            checks.extend(_unchecked(_grun, "grain"))
+            for f in _grun.findings:
                 checks.append(Check("grain", ok=False, severity=WARN, reason=f.caveat(),
                                     detail={"table": f.fanned_table, "join_key": f.join_key,
                                             "ratio": round(f.ratio, 2)}))

@@ -54,7 +54,7 @@ def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
     """Run a monitor immediately (synchronous, for the API test endpoint)."""
     try:
         from aughor.monitors.store import get_monitor, append_alert
-        from aughor.monitors.runner import run_monitor
+        from aughor.monitors.runner import check_monitor, failure_alert
         from aughor.db.connection import open_connection_for
         from aughor.db.registry import get_connection_org
         from aughor.org.context import using_org
@@ -70,7 +70,7 @@ def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
             try:
                 # Manual test endpoint — bypass the anti-flap debounce so the user
                 # always sees the raw verdict, even within a grace window.
-                alert = run_monitor(monitor, db, suppress=False)
+                run = check_monitor(monitor, db, suppress=False)
             finally:
                 try:
                     db.close()
@@ -78,6 +78,11 @@ def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
                     from aughor.kernel.errors import tolerate
                     tolerate(exc, "closing the test-trigger db handle is best-effort; the monitor result is already computed",
                              counter="monitors.scheduler.trigger_now.db_close")
+            if run.failed:
+                # GM-4 — the test run says its query could not run, rather than "no condition met". Shown,
+                # not stored: the scheduled run owns the record and the one alert a failure sends.
+                return failure_alert(monitor, run.failed)
+            alert = run.alert
             if alert is not None:
                 append_alert(alert)
             return alert

@@ -99,11 +99,21 @@ def native_version_id(token: Optional[str]) -> Optional[int]:
 def data_version(conn: Any, tables: Iterable[str]) -> Optional[str]:
     """A token identifying the data ``tables`` held when called — the EXACT native snapshot id
     (``dl:…``) if the storage is version-aware, else a portable fingerprint (``fp:…``) over the
-    finding's tables. ``None`` when nothing is probeable (fail-open). Deterministic per dataset."""
+    finding's tables. ``None`` when any table cannot be probed (fail-open). Deterministic per dataset.
+
+    All or nothing (GM-4): a table whose count could not be read was left out of the fingerprint, which then
+    stood for the other tables alone — the same token as a finding over those tables only. When the left-out
+    table's data moved, revalidation compared equal tokens and told the reader the finding was mis-derived.
+    A version that cannot cover every table is no version, and the callers say so."""
     native = _native_snapshot(conn)
     if native:
         return native
-    sigs = [s for t in sorted({str(x) for x in (tables or [])}) if (s := _table_signature(conn, t))]
+    sigs: list[str] = []
+    for t in sorted({str(x) for x in (tables or [])}):
+        sig = _table_signature(conn, t)
+        if sig is None:
+            return None
+        sigs.append(sig)
     if not sigs:
         return None
     return "fp:" + hashlib.sha256("|".join(sigs).encode()).hexdigest()[:16]

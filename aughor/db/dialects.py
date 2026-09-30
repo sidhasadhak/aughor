@@ -137,6 +137,17 @@ def native_sql(db: object, sql: str) -> str:
 PLATFORM_DIALECT = "duckdb"
 
 
+def authored_dialect(db: object) -> str:
+    """The dialect a statement written for ``db`` is in: the engine's own on one that runs SQL as it is written
+    (`writes_native_sql`: BigQuery, MySQL, Snowflake, Exasol), DuckDB's on one the door translates from DuckDB
+    (DuckDB itself, Postgres). A guard reads a model's or a person's statement in this dialect, and a probe that
+    carries a fragment of one — a CTE, a subquery, a join expression — is rendered in it and declares nothing,
+    since declaring DuckDB would translate the native fragment and corrupt it (GM-1)."""
+    dialect = getattr(db, "dialect", "")
+    native = getattr(db, "writes_native_sql", False) is True
+    return dialect if native and isinstance(dialect, str) and dialect else PLATFORM_DIALECT
+
+
 def sql_for_engine(db: object, sql: str, sql_dialect: str | None) -> str:
     """GM-1 — the door's dialect step: ``sql`` as the engine behind ``db`` must receive it, from the dialect its
     author declared.

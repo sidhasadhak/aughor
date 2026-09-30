@@ -97,8 +97,9 @@ def test_monitor_scenario_reports_a_real_disagreement(monkeypatch):
     comparison would be decorative. (It used to break the LEGACY half — that half was
     deleted with the legacy schedulers, Wave 4 2026-08-06.)
     """
-    monkeypatch.setattr("aughor.monitors.runner.run_monitor",
-                        lambda m, db, suppress=True: None)
+    from aughor.monitors.runner import MonitorRun
+    monkeypatch.setattr("aughor.monitors.runner.check_monitor",
+                        lambda m, db, suppress=True: MonitorRun())
     comparison = SCENARIOS["monitor_alert_via_engine"]()
     assert not comparison.equivalent
     assert comparison.expected["alert_count"] == 1

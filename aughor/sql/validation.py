@@ -55,6 +55,13 @@ def validate_sql(conn_id: str, sql: str, *, dialect: str = "duckdb",
     filter_warnings: list = []
     grain_warnings: list = []
     trust_findings: list = []
+    # GM-4 — each guard that could not run on this statement, and why. Any one of them makes the verdict
+    # not `passed`: an issue count of 0 from a guard that looked at nothing is not a clean bill of health.
+    unchecked_guards: list = []
+
+    def _note_unchecked(run) -> None:
+        unchecked_guards.extend({"guard": run.guard, "reason": reason} for reason in run.unchecked)
+
     try:
         # Fan-out / chasm — static analysis over the connection's schema-derived columns.
         try:
@@ -66,37 +73,43 @@ def validate_sql(conn_id: str, sql: str, *, dialect: str = "duckdb",
             tolerate(exc, "validate: fan-out scan", counter="validate.fanout")
         # Join value-domain — live overlap probe of each join's keys.
         try:
-            from aughor.sql.join_guard import check_join_value_domains
+            from aughor.sql.join_guard import join_domain_check
+            _jrun = join_domain_check(db, sql)
+            _note_unchecked(_jrun)
             join_warnings = [
                 {"table_a": w.table_a, "col_a": w.col_a, "table_b": w.table_b,
                  "col_b": w.col_b, "overlap": w.overlap}
-                for w in check_join_value_domains(db, sql)
+                for w in _jrun.findings
             ]
         except Exception as exc:
             tolerate(exc, "validate: join value-domain", counter="validate.join")
         # Filter value-domain — a guessed enum literal that matches no row but has a near neighbour.
         try:
-            from aughor.sql.join_guard import check_filter_value_domains
+            from aughor.sql.join_guard import filter_domain_check
+            _frun = filter_domain_check(db, sql)
+            _note_unchecked(_frun)
             filter_warnings = [
                 {"table": w.table, "column": w.col, "literal": w.bad_value,
                  "op": w.op, "suggestion": w.suggestion or ""}
-                for w in check_filter_value_domains(db, sql)
+                for w in _frun.findings
             ]
         except Exception as exc:
             tolerate(exc, "validate: filter value-domain", counter="validate.filter")
         # Grain / fan-out — LIVE uniqueness probe of each join key (catches over-counting that
         # depends on the actual data, not just the schema, so it complements the static scan above).
         try:
-            from aughor.sql.grain_guard import detect_fanout
+            from aughor.sql.grain_guard import grain_check
 
             def _grain_probe(s: str):
                 r = db.execute("__grain_probe__", s, sql_dialect="duckdb")
                 return (not r.error, r.rows, r.error or "")
 
+            _grun = grain_check(sql, _grain_probe, dialect)
+            _note_unchecked(_grun)
             grain_warnings = [
                 {"table": f.fanned_table, "join_key": f.join_key,
                  "ratio": round(f.ratio, 2), "caveat": f.caveat()}
-                for f in detect_fanout(sql, _grain_probe, dialect)
+                for f in _grun.findings
             ]
         except Exception as exc:
             tolerate(exc, "validate: grain fan-out", counter="validate.grain")
@@ -143,9 +156,10 @@ def validate_sql(conn_id: str, sql: str, *, dialect: str = "duckdb",
             "grain_warnings": [], "trust_findings": [], "mutation_blockers": [],
         }
     return {
-        "passed": issues == 0,
+        "passed": issues == 0 and not unchecked_guards,
         "issue_count": issues,
         "unchecked": False,
+        "unchecked_guards": unchecked_guards,
         "fanout_hits": fanout_hits,
         "join_warnings": join_warnings,
         "filter_warnings": filter_warnings,

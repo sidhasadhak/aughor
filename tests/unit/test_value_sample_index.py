@@ -196,6 +196,11 @@ class _FakeDB:
                 return rows
         return []
 
+    def execute(self, label, sql, sql_dialect=None):
+        """The resolver's live probe reads `execute`, which tells an error from no match (GM-4)."""
+        from types import SimpleNamespace
+        return SimpleNamespace(rows=self.rows(sql, label, sql_dialect), error=None)
+
 
 def test_exact_sample_hit_binds_offline_without_probing():
     db = _FakeDB(hits={"sales_franchises": [["Mytheresa"]]})

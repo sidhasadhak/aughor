@@ -283,11 +283,16 @@ def execute_guarded(
     # Value-domain join guard: a join on value-disjoint keys produces an
     # unreliable result (0 rows on inner joins, all-NULL right side on outer)
     # without ever erroring. Detect it and feed the regenerate loop below.
+    # GM-4 — a guard that could not run is `unchecked:<guard>` on the receipt, never `guarded:`, and each part
+    # it could not check rides the result as a caveat: an empty finding list is not a clean bill of health.
+    _unchecked_caveats: list[str] = []
     _domain_warnings = []
     try:
-        from aughor.sql.join_guard import check_join_value_domains
-        _domain_warnings = check_join_value_domains(conn, sql)
-        _steps.append("guarded:join-domain")
+        from aughor.sql.join_guard import join_domain_check
+        _jrun = join_domain_check(conn, sql)
+        _domain_warnings = _jrun.findings
+        _steps.append(_jrun.door)
+        _unchecked_caveats.extend(_jrun.caveats())
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "ada join-guard probe best-effort; query proceeds",
@@ -299,9 +304,11 @@ def execute_guarded(
     # column's real domain and feed the same regenerate loop. Chat already does this; ADA didn't.
     _filter_warnings = []
     try:
-        from aughor.sql.join_guard import check_filter_value_domains
-        _filter_warnings = check_filter_value_domains(conn, sql)
-        _steps.append("guarded:filter-domain")
+        from aughor.sql.join_guard import filter_domain_check
+        _frun = filter_domain_check(conn, sql)
+        _filter_warnings = _frun.findings
+        _steps.append(_frun.door)
+        _unchecked_caveats.extend(_frun.caveats())
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "ada filter-guard probe best-effort; query proceeds",
@@ -331,31 +338,17 @@ def execute_guarded(
         _rec = (f" (keys reconcile after normalizing: {_w.reconciliation.label})"
                 if _w.reconciliation else "")
         _guard_caveats.append(
-            f"join guard: {_w.table_a}.{_w.col_a} ↔ {_w.table_b}.{_w.col_b} share only "
+            f"join guard: {_w.label_a} ↔ {_w.label_b} share only "
             f"{_w.overlap:.0%} of sampled values — the join may be unreliable{_rec}")
     for _w in _filter_warnings:
-        if getattr(_w, "column_suggestion", None):
-            _guard_caveats.append(
-                f"filter guard: '{_w.bad_value}' is not a value of {_w.table}.{_w.col} but is a "
-                f"value of {_w.table}.{_w.column_suggestion} — the predicate as written matches "
-                f"no row")
-            continue
-        if getattr(_w, "novel", False):
-            _guard_caveats.append(
-                f"filter guard: '{_w.bad_value}' is not a stored value of {_w.table}.{_w.col} or "
-                f"of any other text column in {_w.table} — the predicate matches no row; the "
-                f"segment is absent, not zero")
-            continue
-        _sugg = f" (did you mean '{_w.suggestion}'?)" if _w.suggestion else ""
-        _guard_caveats.append(
-            f"filter guard: '{_w.bad_value}' is not a stored value of "
-            f"{_w.table}.{_w.col}{_sugg} — the predicate is a silent no-op")
+        _guard_caveats.append(_w.caveat())
     if _idmath_warn:
         _guard_caveats.append(f"id-arithmetic guard: {_idmath_warn}")
     if _zero_diag:
         _guard_caveats.append(f"zero-row check: {_zero_diag}")
 
     def _attach_caveats(res, extra: list[str]):
+        extra = [*extra, *_unchecked_caveats]
         if extra:
             res.caveats = list(dict.fromkeys([*res.caveats, *extra]))
         _add_doors(res, _before, first=True)
@@ -406,7 +399,8 @@ def execute_guarded(
                     for w in _filter_warnings)):
         try:
             from aughor.sql.join_guard import (
-                check_filter_value_domains as _cfvd_det,
+                filter_domain_check as _fdc_det,
+                filter_repair_holds as _holds_det,
                 repair_filter_literals as _repair_det,
             )
             _fixed = _repair_det(sql, _filter_warnings, dialect=getattr(conn, "dialect", "duckdb"))
@@ -415,8 +409,9 @@ def execute_guarded(
                                       {"query_id": query_id, "sql": _fixed,
                                        "dialect": getattr(conn, "dialect", "")}):
                     _det_retry = conn.execute(query_id, _fixed)
+                # A repair the guard could not re-check is not a repair it confirmed (GM-4).
                 if (not _det_retry.error and (_det_retry.row_count > 0 or not _zero_diag)
-                        and not _cfvd_det(conn, _fixed)):
+                        and _holds_det(_frun, _fdc_det(conn, _fixed))):
                     from aughor.stats import stats as _fg_stats
                     _fg_stats.inc("filter_guard.deterministic_repair")
                     _steps.append("repaired:deterministic")
@@ -482,7 +477,8 @@ def execute_guarded(
             # Permissive for transpile-from-DuckDB dialects.
             try:
                 from aughor.sql.capability_check import capability_diagnostics
-                _cap_dialect = conn.dialect if getattr(conn, "writes_native_sql", False) else "duckdb"
+                from aughor.db.dialects import authored_dialect
+                _cap_dialect = authored_dialect(conn)
                 _caps = capability_diagnostics(sql, _cap_dialect)
                 if _caps:
                     from aughor.kernel import metering
@@ -531,17 +527,19 @@ def execute_guarded(
             # actually CLEAR the mismatch — never replace a query with one that still
             # joins on value-disjoint keys (prevention > recovery; never go backwards).
             _accept = not retry.error and (retry.row_count > 0 or not _zero_diag)
+            # A fix the guard could not re-check has not cleared the mismatch — an empty finding list
+            # from a guard that did not run is not a pass (GM-4).
             if _accept and _domain_warnings:
                 try:
-                    from aughor.sql.join_guard import check_join_value_domains as _cjvd
-                    _accept = not _cjvd(conn, fix.fixed_sql)
+                    from aughor.sql.join_guard import join_domain_check as _jdc
+                    _accept = _jdc(conn, fix.fixed_sql).cleared(_jrun)
                 except Exception:
                     _accept = False
             # Never replace a query with one that STILL filters on a non-existent literal.
             if _accept and _filter_warnings_actionable:
                 try:
-                    from aughor.sql.join_guard import check_filter_value_domains as _cfvd
-                    _accept = not _cfvd(conn, fix.fixed_sql)
+                    from aughor.sql.join_guard import filter_domain_check as _fdc, filter_repair_holds
+                    _accept = filter_repair_holds(_frun, _fdc(conn, fix.fixed_sql))
                 except Exception:
                     _accept = False
             # Never accept a "fix" that still multiplies the measure by a key/id column.

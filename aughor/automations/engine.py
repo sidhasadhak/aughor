@@ -273,7 +273,7 @@ def default_probe(cond: Condition, automation: Automation):
     """
     if cond.kind == "metric":
         from aughor.db.connection import open_connection_for
-        from aughor.monitors.runner import run_monitor
+        from aughor.monitors.runner import check_monitor
         from aughor.monitors.store import get_monitor
 
         monitor = get_monitor(cond.monitor_id)
@@ -281,7 +281,7 @@ def default_probe(cond: Condition, automation: Automation):
             raise ProbeUnavailable(f"metric condition names an unknown monitor: {cond.monitor_id}")
         db = open_connection_for(monitor.conn_id)
         try:
-            alert = run_monitor(monitor, db, suppress=False)
+            run = check_monitor(monitor, db, suppress=False)
         finally:
             try:
                 db.close()
@@ -289,6 +289,10 @@ def default_probe(cond: Condition, automation: Automation):
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "closing the probe db handle is best-effort; the verdict is computed",
                          counter="automations.probe.db_close")
+        if run.failed:
+            # GM-4 — a monitor whose query could not run did not find "no alert"; the condition cannot be read.
+            raise ProbeUnavailable(f"metric({monitor.name}): its query could not run — {run.failed[:200]}")
+        alert = run.alert
         if alert is None:
             return False, f"metric({monitor.name}): no alert"
         return True, f"metric({monitor.name}): {alert.severity} — {alert.message[:120]}"
@@ -1291,7 +1295,7 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
     debounce state and the emitted ``monitor.alert`` event are byte-identical to the legacy path;
     the only thing that changed is which loop called it."""
     from aughor.db.connection import open_connection_for
-    from aughor.monitors.runner import run_monitor
+    from aughor.monitors.runner import check_monitor, health_alert
     from aughor.monitors.store import append_alert, get_monitor
 
     monitor_id = str(effect.config.get("monitor_id", ""))
@@ -1301,7 +1305,7 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
                              message="monitor missing or disabled")
     db = open_connection_for(monitor.conn_id)
     try:
-        alert = run_monitor(monitor, db, suppress=True)   # suppress=True — preserve the debounce
+        run = check_monitor(monitor, db, suppress=True)   # suppress=True — preserve the debounce
     finally:
         try:
             db.close()
@@ -1309,6 +1313,15 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "closing the monitor-effect db handle is best-effort; the result is computed",
                      counter="automations.effect.monitor.db_close")
+    # GM-4 — one alert when the monitor's query starts failing, one when it runs again; a failed run is
+    # recorded as failed, never as "no alert".
+    health = health_alert(monitor, run)
+    if health is not None:
+        append_alert(health)
+    if run.failed:
+        return EffectOutcome(kind=effect.kind, target=monitor_id, status="failed",
+                             message=f"the monitor's query could not run: {run.failed[:200]}")
+    alert = run.alert
     if alert is None:
         return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
                              message="no alert")
