@@ -707,7 +707,8 @@ SYNTHESIS_CORE_RULES = """REPORT RULES:
 dimensional answer even when the overall change is normal variance.
 - Every number is either quoted from FULL EVIDENCE or plain arithmetic over two evidence \
 values (a change, a share, a difference). Never estimate — a figure no query returned and no \
-arithmetic reaches is described qualitatively, never manufactured.
+arithmetic reaches is described qualitatively, never manufactured. A total of several rows is \
+quoted from its TOTAL line; a result with none gets no total.
 - If the evidence does not explain WHY, say "the data analysed does not reveal the \
 cause" and name what to check next. A negligible spread is negligible — say so; never \
 present a tiny sub-segment reversal as the driver.

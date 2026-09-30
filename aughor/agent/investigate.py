@@ -4043,7 +4043,33 @@ def _one_phase_evidence(p: InvestigationPhaseResult) -> str:
                 lines.append(" | ".join(str(v) for v in row))
             if f["row_count"] > 20:
                 lines.append(f"... ({f['row_count'] - 20} more rows)")
+            _total = _totals_line(f)
+            if _total:
+                lines.append(_total)
     return "\n".join(lines)
+
+
+def _totals_line(f) -> str:
+    """The total of each additive column over every row of a finding, computed by code.
+
+    A writer that adds rows by hand gets them wrong: an Agent answer gave ten categories'
+    combined revenue as 1,299,882.88 over rows that sum to 1,299,928.70, and a correct total
+    could not have passed the trace check either — no single row holds it. The line gives the
+    writer a figure to quote and the check a figure to find. Empty when nothing adds up
+    (`tools.postproc.column_totals` says which columns do)."""
+    try:
+        from aughor.tools.postproc import column_totals
+        totals = column_totals(f.get("sql") or "", f.get("columns") or [], f.get("rows") or [],
+                               f.get("row_count"))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "column totals are best-effort; the evidence ships without a TOTAL line",
+                 counter="deep_analysis.column_totals_failed")
+        return ""
+    if not totals:
+        return ""
+    return (f"TOTAL over all {len(f.get('rows') or [])} rows of this result, computed by code — quote it, "
+            "never add rows yourself: " + "; ".join(f"{c} {v}" for c, v in totals))
 
 
 def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
@@ -4154,6 +4180,9 @@ def _condense_phase_evidence(p: InvestigationPhaseResult) -> str:
                 lines.append(" | ".join(str(v) for v in row))
             if f["row_count"] > _CONDENSE_ROWS:
                 lines.append(f"... ({f['row_count'] - _CONDENSE_ROWS} more rows)")
+            _total = _totals_line(f)
+            if _total:
+                lines.append(_total)
     return "\n".join(lines)[:_CONDENSE_PHASE_CAP]
 
 
@@ -10253,6 +10282,11 @@ def ada_synthesize(state: AgentState) -> dict:
                     _rc_logging.getLogger(__name__).info(
                         "[ada] report checks still failing after retry: %s",
                         " | ".join(str(v) for v in _violations))
+                    # Item 6: a figure that still does not trace is not published — the sentence
+                    # stating it is withheld and the answer says so.
+                    from aughor.agent.report_checks import withhold_untraced
+                    if withhold_untraced(synth, _violations, question):
+                        _st2.inc("deep_analysis.untraced_figure_withheld")
                     _disclosure = reader_disclosure(_violations)
                     if _disclosure:
                         synth.confidence_justification = (

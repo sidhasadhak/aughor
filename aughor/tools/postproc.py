@@ -79,6 +79,86 @@ def column_floats(columns: list[str], rows: list[Row], col: str | int) -> list[O
     return [_to_float(r[idx]) if idx < len(r) else None for r in rows]
 
 
+# ── column totals ────────────────────────────────────────────────────────────────
+
+def _parsed_as(sql: str, dialect: str):
+    """The statement as sqlglot reads it in ``dialect``; None when it is not that dialect's
+    spelling. Only sqlglot's own parse errors mean that — anything else propagates."""
+    import sqlglot
+    from sqlglot.errors import ParseError, TokenError
+    try:
+        return sqlglot.parse_one(sql, read=dialect)
+    except (ParseError, TokenError):
+        return None
+
+
+def _parsed(sql: str):
+    """The statement in the first dialect that parses it, or None. The finding's SQL is in
+    its engine's own spelling and the finding does not say which."""
+    for dialect in ("bigquery", "duckdb", "snowflake", "mysql", "postgres"):
+        tree = _parsed_as(sql, dialect)
+        if tree is not None:
+            return tree
+    return None
+
+
+def _adds_across_rows(e) -> bool:
+    """A projection whose value adds across the groups it is computed for: a SUM, a COUNT of
+    rows, or a sum or difference of those, under a ROUND / CAST / COALESCE. COUNT(DISTINCT …)
+    does not — a customer who bought in two categories is counted in both — and a ratio, an
+    average or a window value never does."""
+    from sqlglot import exp
+    if e.find(exp.Distinct, exp.Window) is not None:
+        return False
+    while isinstance(e, (exp.Paren, exp.Round, exp.Cast, exp.TryCast, exp.Coalesce, exp.Neg)):
+        e = e.this
+    if isinstance(e, (exp.Add, exp.Sub)):
+        return _adds_across_rows(e.left) and _adds_across_rows(e.right)
+    return isinstance(e, (exp.Sum, exp.Count))
+
+
+def column_totals(sql: str, columns: list[str], rows: list[Row],
+                  row_count: Optional[int] = None) -> list[tuple[str, str]]:
+    """Each additive column's total over EVERY row of a result, as ``(column, total)``.
+
+    Computed here so that no model adds rows: an Agent-mode answer stated the "combined
+    revenue" of ten categories as 1,299,882.88 when its own ten rows sum to 1,299,928.70,
+    and the one repair call kept the wrong figure.
+
+    A column is totalled only when both the name rule above (`is_additive_measure`) and its
+    own projection in the SQL say it adds across rows. Nothing is totalled when the rows in
+    hand are not the whole result (a total of the first page would read as the total), when
+    there are fewer than two, or when the statement has a ROLLUP / CUBE / GROUPING SETS row
+    that already holds a subtotal."""
+    from sqlglot import exp
+    n = len(rows or [])
+    if n < 2 or (row_count or n) > n or not sql:
+        return []
+    tree = _parsed(sql)
+    if tree is None or tree.find(exp.Rollup, exp.Cube, exp.GroupingSets) is not None:
+        return []
+    out: list[tuple[str, str]] = []
+    for i, col in enumerate(columns or []):
+        if not is_additive_measure(str(col), sql):
+            continue
+        defs = [a.this for a in tree.find_all(exp.Alias) if a.alias.lower() == str(col).lower()]
+        if not defs or not all(_adds_across_rows(d) for d in defs):
+            continue
+        cells = [r[i] if i < len(r) else None for r in rows]
+        nums = [_to_float(c) for c in cells]
+        if any(v is None and c not in (None, "", "NULL") for c, v in zip(cells, nums)):
+            continue                        # a non-numeric cell: not a measure column
+        vals = [v for v in nums if v is not None]
+        if len(vals) < 2:
+            continue
+        total = sum(vals)
+        if all(float(v).is_integer() for v in vals):
+            out.append((str(col), str(int(round(total)))))
+        else:
+            out.append((str(col), f"{total:.2f}" if abs(total) >= 1 else f"{total:.6g}"))
+    return out
+
+
 # ── series math (pure) ─────────────────────────────────────────────────────────
 
 def pct_changes(values: list[Optional[float]]) -> list[Optional[float]]:

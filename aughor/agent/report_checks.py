@@ -81,10 +81,14 @@ class Violation(str):
     """
 
     disclosure: str
+    #: The figures a grounding violation found untraced, as the prose wrote them — what
+    #: `withhold_untraced` takes out when the repair attempt did not fix them.
+    figures: tuple
 
-    def __new__(cls, repair: str, disclosure: str = ""):
+    def __new__(cls, repair: str, disclosure: str = "", figures: tuple = ()):
         obj = super().__new__(cls, repair)
         obj.disclosure = disclosure or ""
+        obj.figures = tuple(figures or ())
         return obj
 
 
@@ -265,22 +269,44 @@ def _close(a: float, b: float, rel: float = 0.01) -> bool:
     return b != 0 and abs(a - b) <= abs(b) * rel + 1e-6
 
 
-def _derived_from_evidence(v: float, vals: list[float]) -> bool:
+def _written_tolerance(written: str) -> float:
+    """Half a unit in the last place the figure is written to: 8,022 → 0.5, 406.08 → 0.005."""
+    decimals = len(written.split(".", 1)[1]) if "." in written else 0
+    return 0.5 * 10 ** -decimals + 1e-9
+
+
+#: What follows a figure written as a percentage.
+_PERCENT_AFTER = re.compile(r"\s*(%|percent\b|per cent\b|pp\b|percentage points?\b|points?\b)", re.I)
+
+
+def _derived_from_evidence(v: float, vals: list[float], written: str = "",
+                           percent: bool = True) -> bool:
     """True when `v` is arithmetic the evidence licenses: a percent change ((b−a)/a·100, either
-    sign), a share (b/a·100) or a raw delta (b−a) of two evidence values, within 1%.
+    sign) or a share (b/a·100) of two evidence values within 1%, or their raw delta (b−a) to
+    the precision `v` is written in.
 
     This is the credit the explorer's claim-grounding has carried since its first live run
     (`aughor/explorer/verify.py`) and the deep path's check did not: the Direkteingabe
     specimen's "+26.8%" — (37,925 − 29,903) / 29,903 — was the ONLY figure #36 flagged, and
     the message then presented the two correct quoted figures beside it as fabrications. A
     model that does correct arithmetic over the evidence is not inventing; refusing the
-    arithmetic is the "restriction" half of the Track-A rule, not the "verification" half."""
+    arithmetic is the "restriction" half of the Track-A rule, not the "verification" half.
+
+    Item 6 (2026-09-30) narrowed two credits that let a wrong total through once the true one
+    is in the evidence. A DIFFERENCE is in the evidence's own units, so it must match to the
+    precision it is written in, as a quoted figure must — at 1% a hand-added 1,299,882.88
+    passed as "1,299,928.70 minus some row". A CHANGE or SHARE is a percentage, so it licenses
+    only a figure written as one (``percent``) — at 1%, any 100 in the evidence made every
+    figure near another value "a share of it"."""
+    tol = _written_tolerance(written) if written else None
     for a in vals:
         if a == 0:
             continue
         for b in vals:
-            if _close(v, (b - a) / a * 100.0) or _close(v, abs(b - a) / abs(a) * 100.0) \
-                    or _close(v, b / a * 100.0) or _close(v, b - a):
+            if percent and (_close(v, (b - a) / a * 100.0) or _close(v, abs(b - a) / abs(a) * 100.0)
+                            or _close(v, b / a * 100.0)):
+                return True
+            if (abs(v - (b - a)) <= tol) if tol is not None else _close(v, b - a):
                 return True
     return False
 
@@ -315,12 +341,16 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
     for segment in _SENTENCE_RE.split(prose):
         if _COMPACT_SUFFIX.search(segment):
             continue
-        for n in _NUM_RE.findall(segment):
+        for m in _NUM_RE.finditer(segment):
+            n = m.group(0)
             clean = _clean_number(n)
             f = _float_or_none(clean) if clean else None
             if f is None or abs(f) < 10:
                 continue
-            if clean in have or _derived_from_evidence(f, vals):
+            # "406.10" is the evidence's 406.1 written to cents — the set holds it without the zero
+            bare = clean.rstrip("0").rstrip(".") if "." in clean else clean
+            if clean in have or bare in have or _derived_from_evidence(
+                    f, vals, written=clean, percent=bool(_PERCENT_AFTER.match(segment, m.end()))):
                 continue
             if clean not in bad_figs:
                 bad_figs.append(n.strip("+-"))
@@ -335,7 +365,50 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
         f"{pitfall(36)} these figures are neither quoted from nor derived from the evidence: "
         f"{figs} (in {where}) — replace each with the evidence's own value or describe it "
         "qualitatively.",
-        f"figures in the summary could not be traced to the evidence, quoted or derived: {figs} (#36)")]
+        f"figures in the summary could not be traced to the evidence, quoted or derived: {figs} (#36)",
+        figures=tuple(bad_figs))]
+
+
+def withhold_untraced(synth: Any, violations: list, question: str = "") -> list[str]:
+    """A figure the trace check still refuses after the one repair attempt is not published.
+
+    Before item 6 (2026-09-30) it shipped: the Agent answer to "top 10 categories by revenue"
+    said the ten made 1,299,882.88 together, the check named the figure, the repair kept it,
+    and the only trace of the failure was a clause in the confidence note. Now each sentence
+    of the headline, summary or bottom line that states such a figure is taken out, the
+    summary says a figure was withheld (withheld is said, never implied), and the violation's
+    reader sentence says so in place of repeating the figure. A headline that carried one is
+    replaced by the question. Returns the figures withheld; empty leaves ``synth`` untouched."""
+    held = [v for v in violations or [] if getattr(v, "figures", ())]
+    figs = list(dict.fromkeys(fig for v in held for fig in v.figures))
+    if not figs:
+        return []
+    pats = [re.compile(r"(?<![\d,.])" + re.escape(fig) + r"(?![\d,])") for fig in figs]
+
+    def _carries(text: str) -> bool:
+        return any(p.search(text or "") for p in pats)
+
+    fields = {f: str(getattr(synth, f, "") or "") for f in ("executive_summary", "closing_summary")}
+    kept = {f: [s for s in _SENTENCE_RE.split(t) if s.strip() and not _carries(s)] for f, t in fields.items()}
+    removed = sum(len([s for s in _SENTENCE_RE.split(t) if s.strip()]) - len(kept[f])
+                  for f, t in fields.items())
+    headline_carries = _carries(str(getattr(synth, "headline", "") or ""))
+    if not removed and not headline_carries:
+        return []                           # not found where it was reported: say nothing new
+    for f in fields:
+        setattr(synth, f, " ".join(kept[f]))
+    if headline_carries:
+        synth.headline = (question or "").strip()[:160]
+        removed += 1
+    one = len(figs) == 1
+    note = (f"{'A figure' if one else 'Some figures'} in this answer could not be traced to the "
+            f"query results, so {'the sentence' if removed == 1 else f'the {removed} sentences'} "
+            f"stating {'it' if one else 'them'} {'was' if removed == 1 else 'were'} withheld.")
+    synth.executive_summary = (str(getattr(synth, "executive_summary", "") or "").rstrip()
+                               + " " + note).strip()
+    for v in held:
+        v.disclosure = "a figure that could not be traced to the query results was withheld (#36)"
+    return figs
 
 
 #: Claim words a noise-level ranking cannot support. Tight on purpose: each asserts that a
