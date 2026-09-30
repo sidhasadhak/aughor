@@ -288,12 +288,12 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
 
           {/* Agent trace — the run's thinking, reconstructed from the stored phases so it is
               inspectable when the investigation is viewed later (item 5). Collapsed by default
-              ("Thinking complete", Genie-style); its query nodes open the Source-data drawer. */}
+              ("Thought process", Genie-style); its query nodes open the Source-data drawer. */}
           {reportRaw && (reportType === "investigate" || reportType === "explore") && (
             <details className="group">
               <summary className="cursor-pointer list-none flex items-center gap-2 aug-fs-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
                 <span className="inline-flex h-1.5 w-1.5 rounded-[var(--r-pill)] bg-zinc-500" />
-                Thinking complete
+                Thought process
                 <span className="ml-0.5 text-zinc-500 select-none">
                   <span className="inline group-open:hidden">▶</span>
                   <span className="hidden group-open:inline">▼</span>

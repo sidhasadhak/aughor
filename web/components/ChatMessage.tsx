@@ -24,7 +24,6 @@ import { AnswerProse, readsAsProse } from "@/components/chat/AnswerProse";
 import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
-import { StatusChip } from "@/components/brief/StatusChip";
 import type { ChatTurn, CompiledFrame } from "@/lib/chatTurn";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
@@ -33,7 +32,7 @@ import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
-import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { CurrentThought, ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { DelegationTrail } from "@/components/DelegationTrail";
 import { GuardReceiptChain } from "@/components/GuardReceiptChain";
 import { SqlView } from "@/components/query/SqlView";
@@ -897,15 +896,20 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
   );
 }
 
-// ── Inline agent trace — streams during the turn, auto-collapses when done ──────
+// ── Inline agent trace — closed from the first frame to the last ───────────────────
 // No box: the trace sits directly on the chat background (Genie-style), so it reads as
 // the agent thinking out loud rather than a boxed status widget.
+//
+// At the user's word (2026-09-29) it no longer opens itself while the turn runs. A
+// growing tree pushed the answer down the page as it arrived; now the row shows only the
+// step in hand, replaced as the next one starts, and ends as "Thought process". The whole
+// trace is one click away, during the run and after it.
 function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource?: (data: SourcePanelData) => void }) {
   const running = turn.status === "loading";
-  const [open, setOpen] = useState(running);
+  const [open, setOpen] = useState(false);
   const prevRunning = useRef(running);
   useEffect(() => {
-    // Collapse automatically the moment the turn stops running.
+    // A trace opened by hand mid-run closes the moment the turn stops running.
     if (prevRunning.current && !running) setOpen(false);
     prevRunning.current = running;
   }, [running]);
@@ -913,13 +917,14 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
   const traceState = turnToTraceState(turn, running);
 
   return (
-    <div className="mb-4">
+    <div className="mb-4" role="group" aria-label="Thought process">
       <Button
         variant="ghost"
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
         className="h-auto justify-start gap-2 px-1 py-1 group/trace font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
-        {/* A quiet monochrome label ("Thinking…" / "Thinking complete"), no chrome. */}
+        {/* A quiet monochrome label ("Thinking…" / "Thought process"), no chrome. */}
         <span className="flex items-center gap-2 aug-fs-xs font-medium text-zinc-400">
           {running ? (
             <span className="relative flex h-2 w-2 items-center justify-center">
@@ -928,13 +933,18 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
           ) : (
             <span className="inline-flex h-1.5 w-1.5 rounded-[var(--r-pill)] bg-zinc-500" />
           )}
-          {running ? "Thinking…" : "Thinking complete"}
+          {running ? "Thinking…" : "Thought process"}
           {!running && !open && (
             <span className="text-zinc-500 font-normal">· {traceState.investigationPhases?.length || traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
           )}
         </span>
         <Chevron open={open} />
       </Button>
+      {running && !open && (
+        <div className="pl-1">
+          <CurrentThought state={traceState} />
+        </div>
+      )}
       {open && (
         <div className="pl-1">
           <ThinkingTrace state={traceState} onShowSource={onShowSource} />
@@ -1736,19 +1746,9 @@ export function ChatMessage({
         />
       )}
 
-      {/* ── Tables used + timing — Deep Analysis keeps these here for now; the
-           Insight brief folds them into its own details. (Phase C moves these
-           into the report itself.) ── */}
-      {isDone && isInvestigate && turn.tablesUsed.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          <span className="aug-fs-sm text-zinc-500">Found relevant data</span>
-          {turn.tablesUsed.map(t => (
-            <StatusChip key={t} hue="muted" icon={<Icon name="table" size={16} label="Table" />} className="font-mono">
-              {t}
-            </StatusChip>
-          ))}
-        </div>
-      )}
+      {/* ── Timing. The "Found relevant data" row of table chips that sat here is gone
+           at the user's word (2026-09-29): each query in the trace opens its own SQL and
+           rows in the right panel, which already says which tables an answer read. ── */}
       {isDone && isInvestigate && turn.elapsedMs != null && (
         <p className="aug-fs-xs text-zinc-500 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
