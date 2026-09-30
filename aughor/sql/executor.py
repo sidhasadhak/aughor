@@ -203,6 +203,7 @@ def execute_guarded(
     fix_prompt_template: Optional[str] = None,
     provider_factory: Optional[Callable[..., Any]] = None,
     sql_dialect: Optional[str] = None,
+    metric_rules: Optional[list] = None,
 ):
     """Execute SQL with the guard battery and one self-correction retry. Returns QueryResult.
 
@@ -223,6 +224,13 @@ def execute_guarded(
     ``None`` for a statement written for this engine. It is applied HERE, once, before
     the first guard, so the hardening, the trust gate, the value-domain guards and any
     repair all read the statement the engine will run, not the one the platform wrote.
+
+    `metric_rules` are the declared filters of the metrics the QUESTION targets
+    (`semantic.enforcement.declared_filter_rules`), supplied by the caller's layer for a
+    statement a model wrote. Each is put on the scopes that compute its metric before the
+    statement runs — the first one and any repair of it — and only when the result
+    dry-runs clean. ``None`` (every caller that runs a person's own SQL) leaves the
+    statement exactly as written.
     """
     from pydantic import BaseModel
     from aughor.db.dialects import sql_for_engine
@@ -244,6 +252,51 @@ def execute_guarded(
         _steps.append("guarded:preflight")
         if sql != _unhardened:
             _steps.append("repaired:preflight")
+
+    # A declared metric is its formula AND the rows it is over. The formula reached every
+    # statement of the five runs measured 2026-09-29 and the filter reached none (July
+    # revenue 426,292.28 published, 365,320.51 declared), so the filter is put on the
+    # statement here rather than asked for in a prompt. A rewrite that does not dry-run is
+    # not adopted, and then the result SAYS its figure is off the declared definition.
+    _declared_caveats: list[str] = []
+
+    def _declared(statement: str) -> str:
+        if not metric_rules:
+            return statement
+        try:
+            from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+            from aughor.sql.metric_filter_guard import enforce_metric_filters
+            if "guarded:declared-filter" not in _steps:
+                _steps.append("guarded:declared-filter")
+            _rewritten, _applied = enforce_metric_filters(
+                statement, metric_rules, dialect=getattr(conn, "dialect", "duckdb"))
+            if not _applied:
+                return statement
+            _what = "; ".join(dict.fromkeys(
+                f"{a['metric']} is declared over {a['filter']} on {a['table']}" for a in _applied))
+            if conn.dry_run(_rewritten)[0]:
+                emit_guard_receipt(
+                    "declared_filter", "rewrote_sql",
+                    detail=f"{_what} — every figure this statement computes there is over "
+                           "those rows",
+                    before=statement, after=_rewritten)
+                if "repaired:declared-filter" not in _steps:
+                    _steps.append("repaired:declared-filter")
+                return _rewritten
+            emit_guard_receipt(
+                "declared_filter", "flagged",
+                detail=f"{_what} — the filter could not be added, so it executes as written",
+                before=statement)
+            _declared_caveats.append(
+                f"declared-filter guard: {_what}, and this statement does not apply it — "
+                "its figure is not the declared one")
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "declared-filter guard is fail-open; the statement executes as "
+                           "written", counter="sql.declared_filter_guard")
+        return statement
+
+    sql = _declared(sql)
 
     # AL-01 — route the generated SQL through the one Trust plane's
     # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
@@ -356,6 +409,7 @@ def execute_guarded(
         _guard_caveats.append(f"zero-row check: {_zero_diag}")
 
     def _attach_caveats(res, extra: list[str]):
+        extra = [*extra, *_declared_caveats]
         if extra:
             res.caveats = list(dict.fromkeys([*res.caveats, *extra]))
         _add_doors(res, _before, first=True)
@@ -522,6 +576,9 @@ def execute_guarded(
                 user=fix_prompt,
                 response_model=_Fix,
             )
+            # A repair is a new statement from a model that was not told the declared
+            # filter — it takes the same guard the first one did, before it runs.
+            fix.fixed_sql = _declared(fix.fixed_sql)
             with mlflow_tool_span("sql.execute.retry",
                                   {"query_id": query_id, "sql": fix.fixed_sql,
                                    "dialect": getattr(conn, "dialect", "")}):

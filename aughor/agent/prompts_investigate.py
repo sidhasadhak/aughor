@@ -770,6 +770,7 @@ class IntakeOutput(BaseModel):
     no_prior_period: bool = Field(default=False, description="True when the data holds NO period before the observation window to compare against (set by code from the real date coverage; leave False).")
     descriptive_only: bool = Field(default=False, description="True when the question asks for a breakdown or a count rather than a change or a cause (set by code from the question; leave False).")
     named_dimensions: list[str] = Field(default_factory=list, description="Dimensions the question named outright, matched to real columns (set by code from the question; leave empty).")
+    metric_filters: list[str] = Field(default_factory=list, description="The declared filters of the governed metric this question was matched to — the rows its formula is over (set by code from the metric catalogue; leave empty).")
     yoy_start: Optional[str] = Field(default=None, description="YoY comparison start, or null if data < 13 months")
     yoy_end: Optional[str] = Field(default=None)
     date_column: str = Field(description="Fully qualified: table.column")
@@ -792,13 +793,14 @@ class IntakeOutput(BaseModel):
 #: What the MODEL is actually asked for: `IntakeOutput` minus the fields code overwrites
 #: immediately afterwards.
 #:
-#: Three of the 28 fields carry "(set by code …)" in their own description — `descriptive_only`
+#: Four of the 29 fields carry "(set by code …)" in their own description — `descriptive_only`
 #: (overwritten unconditionally from the question), `no_prior_period` (decided by
-#: `_clamp_intake_to_coverage` from the real date coverage) and `named_dimensions` (resolved from
-#: the question against the schema). The model was being asked to reason about, and emit, values
+#: `_clamp_intake_to_coverage` from the real date coverage), `named_dimensions` (resolved from
+#: the question against the schema) and `metric_filters` (copied from the governed metric the
+#: question was matched to). The model was being asked to reason about, and emit, values
 #: that were thrown away on the next line. That costs its attention as well as the tokens.
 #:
-#: The subset is DERIVED from that marker, not listed beside it: add a fourth code-set field and
+#: The subset is DERIVED from that marker, not listed beside it: add another code-set field and
 #: it leaves the ask automatically, and nothing here has to be remembered. Every excluded field has
 #: a default, so widening back to `IntakeOutput` reproduces exactly the object the code then
 #: overwrites — this is a removal of wasted work, not a behaviour change, and

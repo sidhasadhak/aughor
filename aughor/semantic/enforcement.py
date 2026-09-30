@@ -18,6 +18,8 @@ genuinely different (correct) query is never mislabelled a drift.
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Optional
 
 _WS = re.compile(r"\s+")
@@ -229,3 +231,121 @@ def enforcement_summary(verdicts: list[dict]) -> Optional[dict]:
     drift = [v["metric"] for v in verdicts if v["status"] == "drift"]
     return {"targeted": len(verdicts), "used": used, "drift": drift,
             "enforced": len(drift) == 0}
+
+
+# ── Declared filters: the rows a governed formula is over ─────────────────────
+#
+# `check_metric_enforcement` above compares formula text, so a statement computing
+# `SUM(sale_price)` over every row read "used" against a revenue declared over
+# `status <> 'Cancelled'`. The formula is half the definition. These build the other
+# half as plain rules for `sql.metric_filter_guard`, which the executor applies to a
+# statement a model wrote — the platform side may not import this package, so the rules
+# cross the boundary as dicts.
+
+#: The question the statements now executing are in answer to. A ContextVar so the
+#: phase queries' worker threads (which copy the context) and concurrent turns each
+#: read their own.
+_QUESTION: ContextVar[str] = ContextVar("enforcement_question", default="")
+
+
+@contextmanager
+def answering(question: str):
+    """Everything executed inside is in answer to ``question``."""
+    token = _QUESTION.set(question or "")
+    try:
+        yield
+    finally:
+        _QUESTION.reset(token)
+
+
+def _reach(question: str, metric) -> int:
+    """How much of the question this metric's own words account for — what decides
+    between two metrics the question names at once ("net merchandise revenue" is also a
+    question containing "revenue")."""
+    q = (question or "").lower()
+    name = (getattr(metric, "name", "") or "").lower()
+    label = (getattr(metric, "label", "") or "").lower()
+    spoken = name.replace("_", " ")
+    found = [len(t) for t in (name, spoken, label) if t and t in q]
+    words = [w for w in re.findall(r"[a-z]+", label) if len(w) >= 4]
+    if words and all(w in q for w in words):
+        found.append(sum(len(w) for w in words))
+    return max(found, default=0)
+
+
+def declared_filter_rules(question: str, metrics: list, dialect: str = "duckdb") -> list[dict]:
+    """``[{"metric", "formula", "tables", "filters"}]`` for each metric whose declared
+    filter a statement answering ``question`` must carry.
+
+    Three conditions, each a refusal to guess: the metric is APPROVED (a person stands
+    behind the filter — a draft's is a proposal), the question TARGETS it (``COUNT(id)``
+    is a declared formula, and counting a table is not thereby asking for units sold),
+    and it declares a table and a filter (there is something to put somewhere).
+
+    A metric stored as a one-measure statement is read for its measure, its table and its
+    WHERE (`sql.metric_filter_guard.measure_of`); the ``filters`` field and the statement's
+    own conditions are one list, each said once.
+
+    Two targeted metrics with ONE formula over ONE table and different filters — revenue
+    and net merchandise revenue are both ``SUM(sale_price)`` over order lines — cannot both
+    own a statement's ``SUM(sale_price)``. The one whose words account for more of the
+    question does; a tie makes no rule, and the statement runs as its author wrote it."""
+    from aughor.sql.metric_filter_guard import measure_of, same_condition, same_formula
+
+    found: list[tuple[int, dict]] = []
+    for m in metrics or []:
+        if (getattr(m, "status", "") or "") != "approved" or not _targets(question, m):
+            continue
+        measure = measure_of(getattr(m, "sql", "") or "", dialect)
+        if measure is None:
+            continue
+        tables = measure["tables"] or [
+            str(t).strip() for t in (getattr(m, "tables", None) or []) if str(t).strip()]
+        filters: list[str] = []
+        for f in [*(getattr(m, "filters", None) or []), *measure["filters"]]:
+            f = str(f).strip()
+            if f and not any(same_condition(f, kept, dialect) for kept in filters):
+                filters.append(f)
+        if not tables or not filters:
+            continue
+        found.append((_reach(question, m), {"metric": m.name, "formula": measure["formula"],
+                                            "tables": tables, "filters": filters}))
+
+    def _rivals(a: dict, b: dict) -> bool:
+        return (same_formula(a["formula"], b["formula"], dialect)
+                and {t.lower() for t in a["tables"]} & {t.lower() for t in b["tables"]}
+                and not (len(a["filters"]) == len(b["filters"])
+                         and all(any(same_condition(x, y, dialect) for y in b["filters"])
+                                 for x in a["filters"])))
+
+    out: list[dict] = []
+    for reach, rule in found:
+        others = [(r, o) for r, o in found if o is not rule and _rivals(rule, o)]
+        if any(r >= reach for r, _ in others):
+            continue                            # out-reached, or tied: no rule from this one
+        if not any(o["metric"] == rule["metric"] and same_formula(o["formula"], rule["formula"], dialect)
+                   and {t.lower() for t in o["tables"]} == {t.lower() for t in rule["tables"]}
+                   for o in out):
+            out.append(rule)
+    return out
+
+
+def rules_for_statement(connection_id: str, question: Optional[str] = None,
+                        dialect: str = "duckdb") -> Optional[list]:
+    """The declared-filter rules for a statement about to run on ``connection_id`` — for
+    ``question``, or for the one bound by :func:`answering`. ``dialect`` is the engine's:
+    a stored metric statement is written for it. ``None`` when there is no question or no
+    connection (nothing to enforce, and the executor then leaves the statement exactly as
+    written) and on any failure to read the catalogue."""
+    asked = question if question else _QUESTION.get()
+    if not asked or not connection_id:
+        return None
+    try:
+        from aughor.semantic.metrics import list_metrics
+        return declared_filter_rules(asked, list_metrics(connection_id=connection_id),
+                                     dialect or "duckdb") or None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "declared-filter rules are best-effort; the statement runs as written",
+                 counter="metric.declared_filter_rules")
+        return None

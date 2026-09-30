@@ -77,8 +77,15 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         return {"error": "no sql supplied"}
 
     conn = _connection(connection_id)
+    # The model framed this statement; the declared filters of the metrics the question
+    # targets go on it before it runs. `user_question` when this door was handed one,
+    # else the question the turn bound.
+    from aughor.semantic.enforcement import rules_for_statement
     with collect_guard_receipts() as receipts:
-        result = execute_guarded(conn, sql, query_id="converse")
+        result = execute_guarded(conn, sql, query_id="converse",
+                                 metric_rules=rules_for_statement(
+                                     connection_id, user_question,
+                                     dialect=getattr(conn, "dialect", "") or "duckdb"))
         # The battery's fan-out detector rides `preflight_harden`, which needs a rendered
         # schema this door never passed — so a join that over-counts ran here with no
         # receipt and no caveat (measured 2026-09-11: 2.4× totals, silently). Flagged, not
@@ -99,10 +106,21 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         "guard_receipts": [_receipt_dict(r) for r in receipts],
         "doors": list(getattr(result, "doors", None) or []),
     }
+    # The rows are the EXECUTED statement's. When a guard rewrote or repaired what the
+    # model framed, that statement is the one the rows answer to, and it is what the
+    # evidence, the SQL frame and the writer must be shown. Measured 2026-09-29: the
+    # declared-filter guard excluded cancelled lines, the finding still printed the
+    # statement without the filter, and the report listed "does not distinguish between
+    # order statuses" as a data gap beside a figure that did. Said only when it differs —
+    # an untouched statement is already in the model's own call.
+    ran = (getattr(result, "sql", "") or "").strip()
+    if ran and ran != sql and not result.error:
+        out["sql"] = ran
     if result.error:
         out["repair"] = route_error(result.error, sql, getattr(conn, "dialect", "") or "")
     elif emit is not None:
-        _surface_primitive_answer(emit, connection_id, sql, result, out["guard_receipts"],
+        _surface_primitive_answer(emit, connection_id, out.get("sql") or sql, result,
+                                  out["guard_receipts"],
                                   user_question=user_question, canvas_id=canvas_id)
     return out
 

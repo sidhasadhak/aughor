@@ -263,9 +263,10 @@ def test_investigate_execute_safe_delegates_here(monkeypatch):
     captured = {}
 
     def _fake(conn, sql, *, query_id, schema=None, fix_prompt_template=None,
-              provider_factory=None, sql_dialect=None):
+              provider_factory=None, sql_dialect=None, metric_rules=None):
         captured.update(query_id=query_id, sql=sql, schema=schema,
-                        template=fix_prompt_template, factory=provider_factory)
+                        template=fix_prompt_template, factory=provider_factory,
+                        rules=metric_rules)
         return QueryResult(hypothesis_id=query_id, sql=sql, columns=[], rows=[],
                            row_count=0, error=None)
 
@@ -277,6 +278,7 @@ def test_investigate_execute_safe_delegates_here(monkeypatch):
     assert captured["schema"] == "s"
     assert captured["template"]                     # FIX_SQL_PROMPT threaded through
     assert captured["factory"] is I._provider       # module-late-bound → monkeypatchable
+    assert captured["rules"] is None                # no question bound → nothing to enforce
 
 
 # ── WP-1a (platform review 2026-07-12): the caveat carrier ────────────────────

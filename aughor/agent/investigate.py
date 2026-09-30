@@ -1781,6 +1781,7 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     # meant the analysers ran nowhere on a deep investigation and
     # `format_result_for_llm` had nothing to render. A cross-tab could sit in the
     # evidence with its verdict computable and the narrator would never be told.
+    from aughor.semantic.enforcement import rules_for_statement
     from aughor.tools.executor import attach_stats
     return drop_degenerate_per_record(attach_stats(execute_guarded(
         conn,
@@ -1790,6 +1791,8 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
         fix_prompt_template=FIX_SQL_PROMPT,
         provider_factory=_provider,
         sql_dialect=sql_dialect,
+        metric_rules=rules_for_statement(getattr(conn, "_connection_id", ""),
+                                         dialect=getattr(conn, "dialect", "") or "duckdb"),
     )))
 
 
@@ -4336,6 +4339,9 @@ def _metric_definition_receipt(intake_data: dict) -> str:
         parts: list[str] = []
         if sql:
             parts.append(f"computed as `{sql}`")
+        _declared = [str(f) for f in (intake_data.get("metric_filters") or []) if str(f).strip()]
+        if _declared:
+            parts.append(f"over rows where `{'; '.join(_declared)}` (its declared filter)")
         if _metric_is_composite_ratio(sql):
             # Describe the ACTUAL aggregates (a composite ratio can be value-weighted SUM/SUM OR a
             # count-based COUNT/COUNT — the two can diverge, and which was chosen is the silent call
@@ -5558,13 +5564,26 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     if cand is None:
         return None
     canon_sql = (cand.sql or "").strip()
-    # No-op when the governed formula already matches (whitespace/case-insensitive) — nothing to pin.
+    # The rows the formula is over are the other half of the definition, and the pin used
+    # to carry the expression alone. They are carried only onto the table the metric is
+    # DECLARED on: `units_sold` is `COUNT(id)` over sold inventory, and its filter names a
+    # column an order-line table does not have.
+    _declared_on = {str(t).split(".")[-1].lower() for t in (getattr(cand, "tables", None) or [])}
+    _spec_table = str(getattr(intake, "metric_table", "") or "").split(".")[-1].lower()
+    _filters = ([str(f).strip() for f in (getattr(cand, "filters", None) or []) if str(f).strip()]
+                if _spec_table and _spec_table in _declared_on else [])
+    _over = f" It is declared over rows where {'; '.join(_filters)}." if _filters else ""
+    # The formula needs no pin when the governed one already matches (whitespace/case-
+    # insensitive) — but a parsed formula that matches still said nothing about the rows.
     if re.sub(r"\s+", "", canon_sql.lower()) == re.sub(r"\s+", "", llm_sql.lower()):
-        return None
+        intake.metric_filters = _filters
+        return (f"Metric matches the governed definition of {cand.name}.{_over}"
+                if _filters else None)
     if not _pinned_metric_runs(conn, connection_id, getattr(intake, "metric_table", "") or "", canon_sql):
         return None
     intake.metric_sql = canon_sql
     intake.metric_is_ratio = _metric_is_ratio(canon_sql, intake.metric_label)
+    intake.metric_filters = _filters
     # P4 — the resolution compounds: record it in the Ambiguity Ledger (source=probe) so the same
     # definition burns down per connection and feeds the plan-time prior on every path.
     _crystallize_metric_resolution(
@@ -5573,7 +5592,7 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     return (
         f"Metric pinned to the governed definition of {cand.name}: {canon_sql} "
         f"(the parsed formula was {llm_sql}) — so the breakdown computes on the same decomposable "
-        f"definition every run."
+        f"definition every run.{_over}"
     )
 
 

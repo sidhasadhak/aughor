@@ -8,6 +8,8 @@ descriptions and are overwritten immediately after the call returns:
   descriptive_only   `intake.descriptive_only = _is_descriptive_question(question)` — unconditional
   no_prior_period    decided by `_clamp_intake_to_coverage` from the real date coverage
   named_dimensions   resolved from the question against the schema
+  metric_filters     copied from the governed metric the question was matched to (added
+                     2026-09-29 — the pin carried a formula without the rows it is over)
 
 So the model reasoned about, and emitted, values that were discarded on the next line.
 
@@ -36,7 +38,7 @@ from aughor.agent.prompts_investigate import (
 class TestTheSubsetIsDerived:
     def test_it_excludes_exactly_the_code_set_fields(self):
         assert _CODE_SET_INTAKE_FIELDS == {"descriptive_only", "no_prior_period",
-                                           "named_dimensions"}
+                                           "named_dimensions", "metric_filters"}
         assert set(IntakeOutput.model_fields) - set(IntakeAsk.model_fields) == _CODE_SET_INTAKE_FIELDS
 
     def test_the_marker_is_what_selects_them(self):
@@ -56,7 +58,8 @@ class TestTheSubsetIsDerived:
     def test_the_code_really_does_overwrite_them(self):
         """If a field stopped being code-set, dropping it from the ask would lose it."""
         src = inspect.getsource(I)
-        for name in ("descriptive_only", "no_prior_period", "named_dimensions"):
+        for name in ("descriptive_only", "no_prior_period", "named_dimensions",
+                     "metric_filters"):
             assert f"intake.{name} = " in src, f"{name} is no longer assigned by code"
 
 

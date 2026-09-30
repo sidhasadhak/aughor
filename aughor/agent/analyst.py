@@ -182,6 +182,8 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
             turn.evidence_rows += len(rows)
             cols = result.get("columns") or []
             n = len(turn.phase_tools_run) + 1
+            # The statement that RAN, when a guard changed the one the model framed.
+            ran = result.get("sql") or (args or {}).get("sql", "")
             turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
                 "phase_id": f"adhoc_{n}",
                 "phase_name": _adhoc_title(cols, turn.state.get("question", ""),
@@ -195,7 +197,7 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                     "finding_id": f"adhoc_{n}_1",
                     "title": _adhoc_title(cols, turn.state.get("question", ""),
                                           (args or {}).get("sql", "")),
-                    "sql": (args or {}).get("sql", ""),
+                    "sql": ran,
                     "columns": cols,
                     "rows": rows[:50],
                     "row_count": len(rows),
@@ -279,8 +281,12 @@ def _qtable(name: str) -> str:
 def _guarded(conn, sql: str, query_id: str):
     """Model-authored (or model-influenced) SQL goes through the guard battery — the
     Verifier chokepoint every other path uses."""
+    from aughor.semantic.enforcement import rules_for_statement
     from aughor.sql.executor import execute_guarded
-    return execute_guarded(conn, sql, query_id=query_id)
+    return execute_guarded(conn, sql, query_id=query_id,
+                           metric_rules=rules_for_statement(
+                               getattr(conn, "_connection_id", ""),
+                               dialect=getattr(conn, "dialect", "") or "duckdb"))
 
 
 def _probe(conn, sql: str, query_id: str):
@@ -784,6 +790,9 @@ def _spec_section(intake: dict) -> str:
         return "SPEC: intake produced no spec — inspect the schema before querying."
     lines = ["THE SPEC (resolved by intake; the phase tools default to it):"]
     lines.append(f"  metric: {intake.get('metric_label')} = {intake.get('metric_sql')}")
+    if intake.get("metric_filters"):
+        lines.append("  metric filter (declared, part of the definition): "
+                     + "; ".join(str(f) for f in intake["metric_filters"]))
     lines.append(f"  table: {intake.get('metric_table')} · date column: {intake.get('date_column')}")
     lines.append(f"  observation: {intake.get('observation_label')} "
                  f"({intake.get('observation_start')} → {intake.get('observation_end')})")
@@ -974,42 +983,47 @@ def run_analyst(
                         origin_finding=origin_finding, **seed)
     turn = AnalystTurn(connection_id=eff_conn_id, conn=conn, state=state, emit=emit)
 
-    # Intake — once. The spec anchor: metric resolution, the coverage clamp, the
-    # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
-    # like any other so the user sees the spec land.
-    turn.merge(ada_intake(state, conn), tool="intake")
+    # Every statement this turn runs is in answer to ONE question, and the declared
+    # filters it must carry are that question's (`semantic.enforcement`). Bound for the
+    # intake and the loop — the two places a statement executes — and released after.
+    from aughor.semantic.enforcement import answering
+    with answering(question):
+        # Intake — once. The spec anchor: metric resolution, the coverage clamp, the
+        # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
+        # like any other so the user sees the spec land.
+        turn.merge(ada_intake(state, conn), tool="intake")
 
-    budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
-    tools = analyst_tools(turn, emit=emit, session_id=session_id,
-                          canvas_id=canvas_id, user_question=question)
-    result: LoopResult = run_tool_loop(
-        provider or get_provider("coder"),
-        analyst_system_prompt(eff_conn_id, turn.intake, budget, extra=extra_context),
-        question,
-        tools,
-        max_steps=budget,
-        on_step=on_step,
-        conn_id=eff_conn_id or "",
-        trace_id=state.get("trace_id", "") or "",
-        inv_id=state.get("investigation_id", "") or "",
-        # The analyst is its OWN decider: a different roster (11 tools vs converse's 38)
-        # and a system prompt carrying the resolved spec. Filing its picks under
-        # `converse.tool` made 79% of the live corpus unsegmentable by decider.
-        site="analyst.tool",
-        # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (the intake step's) and cannot be
-        # recomputed, and it is where the analyst's state lives — `_spec_section(intake)` sits
-        # mid-prompt — so it is the argument a shuffle actually swaps. Serialised to a string
-        # so that a capped copy is MARKED truncated rather than silently clipped: a truncated
-        # intake rebuilds a different prompt, and the replay must refuse it.
-        replay_args={
-            "builder": "analyst_system_prompt",
-            "connection_id": eff_conn_id or "",
-            "intake": json.dumps(turn.intake or {}, ensure_ascii=False, sort_keys=True,
-                                 default=str),
-            "budget": int(budget),
-            "extra": extra_context or "",
-        },
-    )
+        budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
+        tools = analyst_tools(turn, emit=emit, session_id=session_id,
+                              canvas_id=canvas_id, user_question=question)
+        result: LoopResult = run_tool_loop(
+            provider or get_provider("coder"),
+            analyst_system_prompt(eff_conn_id, turn.intake, budget, extra=extra_context),
+            question,
+            tools,
+            max_steps=budget,
+            on_step=on_step,
+            conn_id=eff_conn_id or "",
+            trace_id=state.get("trace_id", "") or "",
+            inv_id=state.get("investigation_id", "") or "",
+            # The analyst is its OWN decider: a different roster (11 tools vs converse's 38)
+            # and a system prompt carrying the resolved spec. Filing its picks under
+            # `converse.tool` made 79% of the live corpus unsegmentable by decider.
+            site="analyst.tool",
+            # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (the intake step's) and cannot be
+            # recomputed, and it is where the analyst's state lives — `_spec_section(intake)` sits
+            # mid-prompt — so it is the argument a shuffle actually swaps. Serialised to a string
+            # so that a capped copy is MARKED truncated rather than silently clipped: a truncated
+            # intake rebuilds a different prompt, and the replay must refuse it.
+            replay_args={
+                "builder": "analyst_system_prompt",
+                "connection_id": eff_conn_id or "",
+                "intake": json.dumps(turn.intake or {}, ensure_ascii=False, sort_keys=True,
+                                     default=str),
+                "budget": int(budget),
+                "extra": extra_context or "",
+            },
+        )
 
     answer = (result.answer or "").strip()
     state["_analyst_conclusion"] = answer
