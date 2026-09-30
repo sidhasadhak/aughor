@@ -22,6 +22,7 @@ from aughor.agent.state import (
 )
 from aughor.tools.executor import format_result_for_llm
 from aughor.agent.progress import emit_phase_progress
+from aughor.agent.sql_context import window_filter
 from aughor.tools.stats import analyze_query_result
 from aughor.tools.table_names import bare as _bare  # aliased — local vars named `bare` shadow it
 from aughor import telemetry as _telemetry
@@ -4324,6 +4325,15 @@ _SPEC_DEFAULT_WINDOW_DAYS = 28      # four weeks: the cadence a baseline is comp
 _SPEC_MAX_WINDOW_DAYS = 366
 
 
+def _clock_section(intake_data: dict) -> str:
+    """The date, for the writer: a recommendation was scheduled for "Q1 2026" in September
+    2026 (2026-09-29). One line — the writer writes no SQL, so the engine is not its business."""
+    from aughor.agent.sql_context import today_utc
+    _end = str((intake_data or {}).get("data_coverage_end") or "")[:10]
+    return (f"TODAY: {today_utc()}. A timeline or deadline you write is AFTER this date."
+            + (f" The data runs to {_end}." if _end else ""))
+
+
 def _metric_definition_receipt(intake_data: dict) -> str:
     """T4-1 — a plain-language receipt of HOW the metric was computed, so a silently-chosen definition
     is visible to the reader and can be challenged. Every deep run picks ONE reading of an ambiguous
@@ -4606,7 +4616,10 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
     """
     from datetime import datetime, timedelta, timezone
 
-    if not dmin or not dmax or getattr(intake, "cross_sectional", False):
+    # A cross-sectional intake used to be exempt. Its window still reaches every SQL-writing
+    # prompt through the spec, so the same "last 6 months" the model placed in 2024 was
+    # re-anchored on the temporal path and answered for 2024 on this one (theLook, 2026-09-29).
+    if not dmin or not dmax:
         return None
     notes = []
 
@@ -5238,11 +5251,13 @@ _ADA_SQL_GROUNDING = (
     "metric table. Writing `invoices.order_ts` when the column lives on `orders` is the #1 error; "
     "join orders and write `orders.order_ts`."
     " TEMPORAL GROUNDING: the observation and comparison periods are given to you as EXPLICIT date "
-    "ranges. Filter using those LITERAL dates as DATE literals — e.g. `WHERE orders.order_ts >= "
-    "DATE '2023-03-10' AND orders.order_ts < DATE '2024-03-10'`. NEVER use CURRENT_DATE, NOW(), "
-    "GETDATE(), SYSDATE, or DATE_SUB/DATE_ADD/DATEADD interval arithmetic relative to today — the "
-    "data is HISTORICAL, so a window relative to the current date silently returns ZERO rows (and "
-    "DATE_SUB/DATE_ADD are not DuckDB functions). Use the given literal dates verbatim."
+    "ranges, each with its filter written out — e.g. `WHERE orders.order_ts >= '2023-03-10' AND "
+    "orders.order_ts < '2024-03-10'`. Use that filter verbatim: the end bound is EXCLUSIVE (the day "
+    "after the period's last day), so a TIMESTAMP column keeps the whole last day — `<= '2024-03-09'` "
+    "would keep only its first instant — and a quoted date compares with DATE and TIMESTAMP columns "
+    "alike. NEVER use CURRENT_DATE, NOW(), GETDATE(), SYSDATE, or DATE_SUB/DATE_ADD/DATEADD interval "
+    "arithmetic relative to today — a window anchored on the clock reads days still filling, or "
+    "nothing at all on historical data. The SQL DIALECT line says which engine you are writing for."
 )
 
 
@@ -5782,10 +5797,20 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     origin_finding_section = _render_origin_finding_section(state.get("origin_finding"))
 
+    # The date, in the prompt: a model not told it guesses the year from the sample values
+    # ("last 6 months" landed in 2024 on data running to 2026). The data's own last day is
+    # not known yet — it is probed below from the column this call names — but how long this
+    # source keeps restating its recent days IS known (Idea 4, `settling.learned_lag_days`:
+    # 29 days on theLook), and the settled day the model counts back from must honour it:
+    # told "29 September" the model placed "last 6 months" at 1 April → 29 September, the
+    # clamp then cut the end to 1 September, and the spec said five months (2026-09-30).
+    from aughor.agent.sql_context import learned_settle_days, sql_context as _sql_context
+    _settle_days = learned_settle_days(state.get("connection_id") or "")
     prompt = INTAKE_PROMPT.format(
         question=question,
         schema=schema,
         scan_context=scan,
+        sql_context=_sql_context(conn, settle_days=_settle_days),
         events_section=events_section,
         origin_finding_section=origin_finding_section,
     )
@@ -5838,20 +5863,29 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     _loss_sig = detect_loss_signals(question, schema)
     if _loss_sig:
         prompt = directive_from_signals(_loss_sig) + "\n" + prompt
-
-    try:
-        # `IntakeAsk` is `IntakeOutput` minus the three fields code overwrites on the next
-        # lines (`descriptive_only`, `no_prior_period`, `named_dimensions`). The model was
-        # spending attention and output tokens on values that were discarded; `widen_intake`
-        # restores them at their defaults, which is exactly what the overwrite assumes.
-        intake: IntakeOutput = widen_intake(_provider("coder").complete(
-            system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
-            user=prompt,
-            response_model=IntakeAsk,
-        ))
-    except Exception as e:
-        intake = None
-        intake_error = str(e)
+    intake_error = ""
+    # One more ask on an empty reply. The provider returned no content in 0.6 s twice in
+    # five runs (2026-09-29), and an intake with nothing in it stops the run, or — worse —
+    # leaves the analyst to anchor on CURRENT_DATE and report a month still filling.
+    for _attempt in (1, 2):
+        try:
+            # `IntakeAsk` is `IntakeOutput` minus the fields code overwrites on the next
+            # lines (`descriptive_only`, `no_prior_period`, `named_dimensions`, …). The model
+            # was spending attention and output tokens on values that were discarded;
+            # `widen_intake` restores them at their defaults, which is exactly what the
+            # overwrite assumes.
+            intake: IntakeOutput = widen_intake(_provider("coder").complete(
+                system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
+                user=prompt,
+                response_model=IntakeAsk,
+            ))
+            break
+        except Exception as e:
+            intake = None
+            intake_error = str(e)
+            if _attempt == 1:
+                from aughor.stats import stats as _istats
+                _istats.inc("deep_analysis.intake_retry_empty")
 
     # Code-level validation: collect ALL spec errors and fix them in ONE combined LLM retry
     # (was up to 3 sequential round-trips on the critical path of every investigation). The
@@ -6208,24 +6242,24 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             state.get("connection_id") or "", intake.metric_table or "", intake.date_column or "")
         _cov_min, _cov_max = (_pmn or ""), (_pmx or "")
 
-    if intake is not None and not intake.cross_sectional:
-        # The data's true date span drives temporal windowing (esp. the re-anchor of a
-        # 'last-N' window to the most recent data). The scan PORTRAIT undercounts the max
-        # (it reported 2024-05 when the orders table runs to 2024-12 — mis-anchoring "last
-        # 12 months"); the DB MIN/MAX probe is authoritative. UNION both so neither a short
+    # Idea 4 — the last SETTLED day, not merely the last complete one: `_settle_days` was
+    # read above, before the intake call, and the clamp counts back the same number.
+    from aughor.agent.sql_context import sql_context
+    if intake is not None:
+        # The data's true date span drives the windowing (esp. the re-anchor of a 'last-N'
+        # window to the most recent data). The scan PORTRAIT undercounts the max (it
+        # reported 2024-05 when the orders table runs to 2024-12 — mis-anchoring "last 12
+        # months"); the DB MIN/MAX probe is authoritative. UNION both so neither a short
         # portrait nor a failed probe can shrink the range. ISO date strings → lexical min/max.
+        # Every path, cross-sectional included: the window reaches the SQL prompts either way.
         _smin, _smax = _extract_data_date_range(scan, intake.metric_table or "")
         _cmin = min([d for d in (_smin, _cov_min) if d], default="")
         _cmax = max([d for d in (_smax, _cov_max) if d], default="")
-        # Idea 4 — the last SETTLED day, not merely the last complete one, when the platform
-        # has learned how long this source keeps restating its recent days.
-        try:
-            from aughor.settling import learned_lag_days
-            _settle_days = learned_lag_days(state.get("connection_id") or "") or 1
-        except Exception:
-            _settle_days = 1
         _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""),
                                               settle_days=_settle_days)
+        if _cov_note and intake.cross_sectional:
+            intake.intake_notes = f"{_cov_note} {intake.intake_notes or ''}".strip()
+    if intake is not None and not intake.cross_sectional:
         # Density guard: a comparison window whose date-SPAN survived the clamp but is sparsely
         # populated (internal gap / slow ramp) is still a thin PoP baseline — probe it. Skipped when
         # the span guard already flagged the same window (no double-flag).
@@ -6385,6 +6419,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             intake_dict["observation_end"] = _cov_max
             if intake.cross_sectional or not (intake.observation_label or "").strip():
                 intake_dict["observation_label"] = f"{_cov_min} → {_cov_max}"
+    # The engine and the clock, as every SQL-writing prompt of this run will state them
+    # (`agent/sql_context.py`); built once here, where the data's last day is known.
+    intake_dict["sql_context"] = sql_context(conn, coverage_end=_cov_max or "",
+                                             settle_days=_settle_days)
 
     # Enrich with ontology entity context (best-effort — never crash ada_intake)
     try:
@@ -6409,7 +6447,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # identifiers/expressions (prevents figures drifting between phases).
     try:
         from aughor.agent.explore import build_analysis_ledger
-        analysis_ledger = build_analysis_ledger(state)
+        analysis_ledger = build_analysis_ledger(state, sql_context=intake_dict.get("sql_context", ""))
     except Exception:
         analysis_ledger = ""
 
@@ -6577,6 +6615,7 @@ def run_analysis_phase(
     connection_id: str = "",
     interpret_max_rows: Optional[int] = None,   # None → model-sized (A1 ModelProfile)
     grounding_block: Optional[str] = None,
+    sql_context: str = "",
     sql_transform=None,
     coverage_end: Optional[str] = None,   # CA-0: the data's last date, for the partial-period verdict
 ) -> "_PhaseRun":
@@ -6610,6 +6649,10 @@ def run_analysis_phase(
         grounding_block, conn, connection_id=connection_id, schema=schema, question=question)
     if _block:
         plan_system_eff = f"{plan_system}\n\n{_block}"
+    # The engine and the clock, on every phase by construction: the intake's block when the
+    # caller passes it (it knows the data's last day), the connection's own when not.
+    from aughor.agent.sql_context import sql_context as _sql_context
+    plan_system_eff = f"{plan_system_eff}\n\n{sql_context or _sql_context(conn)}"
 
     # Step 1 — plan (or reuse a preplanned, grain-correct query).
     _preplanned = bool(preplanned is not None and getattr(preplanned, "queries", None))
@@ -6944,12 +6987,13 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     # Step 1: Plan SQL
     _no_prior = bool(intake_data.get("no_prior_period")) or not (comp_start and comp_end)
+    from aughor.agent.sql_context import window_text
     plan_prompt = BASELINE_PLAN_PROMPT.format(
         question=question,
         metric_label=metric_label,
         metric_sql=metric_sql,
-        observation_period=f"{obs_label} ({obs_start} to {obs_end})",
-        comparison_basis=(f"{comp_label} ({comp_start} to {comp_end})" if not _no_prior
+        observation_period=window_text(obs_label, obs_start, obs_end, date_col),
+        comparison_basis=(window_text(comp_label, comp_start, comp_end, date_col) if not _no_prior
                           else "NONE — no period before the observation window exists in the data"),
         date_column=date_col,
         metric_table=metric_table,
@@ -6989,6 +7033,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="No queries produced results.",
         grounding_block=intake_data.get("data_understanding_block"),
+        sql_context=intake_data.get("sql_context", ""),
         coverage_end=intake_data.get("data_coverage_end") or intake_data.get("observation_end"),
     )
     if not _run.ok:
@@ -7283,8 +7328,10 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         observation_period=obs_label,
         obs_start=obs_start,
         obs_end=obs_end,
+        obs_filter=window_filter(date_col, obs_start, obs_end) or "(no date column)",
         comp_start=comp_start,
         comp_end=comp_end,
+        comp_filter=window_filter(date_col, comp_start, comp_end) or "(no comparison window)",
         date_column=date_col,
         metric_table=metric_table,
         schema=schema,
@@ -7300,6 +7347,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         exec_error_msg="Decomposition queries failed.",
         question=question, connection_id=state.get("connection_id", ""),
         grounding_block=intake_data.get("data_understanding_block"),
+        sql_context=intake_data.get("sql_context", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -7400,8 +7448,10 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         observation_period=obs_label,
         obs_start=obs_start,
         obs_end=obs_end,
+        obs_filter=window_filter(date_col, obs_start, obs_end) or "(no date column)",
         comp_start=comp_start,
         comp_end=comp_end,
+        comp_filter=window_filter(date_col, comp_start, comp_end) or "(no comparison window)",
         date_column=date_col,
         metric_table=metric_table,
         schema=schema,
@@ -7418,6 +7468,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         exec_error_msg="Dimensional queries failed.",
         question=question, connection_id=state.get("connection_id", ""),
         grounding_block=intake_data.get("data_understanding_block"),
+        sql_context=intake_data.get("sql_context", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -7520,8 +7571,10 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         observation_period=obs_label,
         obs_start=obs_start,
         obs_end=obs_end,
+        obs_filter=window_filter(date_col, obs_start, obs_end) or "(no date column)",
         comp_start=comp_start,
         comp_end=comp_end,
+        comp_filter=window_filter(date_col, comp_start, comp_end) or "(no comparison window)",
         date_column=date_col,
         metric_table=metric_table,
         schema=schema,
@@ -7540,6 +7593,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="Required tables (sessions, refunds, etc.) not in schema.",
         grounding_block=intake_data.get("data_understanding_block"),
+        sql_context=intake_data.get("sql_context", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -9522,6 +9576,7 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     exec_error_msg=f"{spec['kind']} query failed.",
                     question=question, connection_id=state.get("connection_id", ""),
                     grounding_block=intake_data.get("data_understanding_block"),
+                    sql_context=intake_data.get("sql_context", ""),
                     sql_transform=(_contra_transform if (spec["kind"] == "leakage" and _rate_cols)
                                    else (_lc_transform if spec.get("lifecycle_filter") else None)),
                 )
@@ -10089,6 +10144,7 @@ def ada_synthesize(state: AgentState) -> dict:
     ) if _analyst_note else ""
 
     synth_prompt = _agent_brief + ADA_SYNTHESIZE_PROMPT.format(
+        clock_section=_clock_section(intake_data),
         question=question,
         phases_summary=phases_summary,
         evidence_log=evidence_log,

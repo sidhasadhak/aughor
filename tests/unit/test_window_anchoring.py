@@ -68,11 +68,14 @@ class TestNoChangeWhenAlreadyCorrect:
         assert it.observation_start == "2024-01-01"   # gap ~0 → untouched
         assert it.observation_end == "2024-12-30"
 
-    def test_cross_sectional_untouched(self):
+    def test_cross_sectional_is_anchored_like_any_other(self):
+        """It was exempt; its window still reached every SQL-writing prompt through the spec,
+        and a re-run answered "last 6 months" for 2024 on that path (theLook, 2026-09-29)."""
         it = FakeIntake("2023-01-01", "2023-12-31")
         it.cross_sectional = True
-        assert _clamp_intake_to_coverage(it, *TWO_YR, question="which region is weakest?") is None
-        assert it.observation_start == "2023-01-01"
+        note = _clamp_intake_to_coverage(it, *TWO_YR, question="which region is weakest?")
+        assert note and "re-anchored" in note
+        assert it.observation_end == TWO_YR[1] and it.observation_start == "2024-01-01"
 
     def test_single_year_data_no_phantom_comparison(self):
         # data is ONE year — re-anchor must not invent a prior period. CA-0: the comparison is

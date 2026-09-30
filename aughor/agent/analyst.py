@@ -786,6 +786,7 @@ def _spec_section(intake: dict) -> str:
     """The intake's verdicts as STATE the model reasons from — never re-derived per
     tool. This is what makes the spec carry: a follow-up's anchored metric, windows
     and verdicts are simply true at the start of the turn."""
+    from aughor.agent.sql_context import window_text
     if not intake:
         return "SPEC: intake produced no spec — inspect the schema before querying."
     lines = ["THE SPEC (resolved by intake; the phase tools default to it):"]
@@ -794,14 +795,19 @@ def _spec_section(intake: dict) -> str:
         lines.append("  metric filter (declared, part of the definition): "
                      + "; ".join(str(f) for f in intake["metric_filters"]))
     lines.append(f"  table: {intake.get('metric_table')} · date column: {intake.get('date_column')}")
-    lines.append(f"  observation: {intake.get('observation_label')} "
-                 f"({intake.get('observation_start')} → {intake.get('observation_end')})")
+    # Each window with its filter written out, half-open — the model wrote `<= '2026-07-31'`
+    # on a TIMESTAMP column from a bare "→ 2026-07-31" and dropped the day (2026-09-29).
+    _col = str(intake.get("date_column") or "")
+    lines.append("  observation: " + window_text(
+        str(intake.get("observation_label") or ""), intake.get("observation_start") or "",
+        intake.get("observation_end") or "", _col))
     if intake.get("no_prior_period"):
         lines.append("  comparison: NONE — no period before the observation window exists "
                      "in the data. Describe the window; never decompose it against itself.")
     else:
-        lines.append(f"  comparison: {intake.get('comparison_label')} "
-                     f"({intake.get('comparison_start')} → {intake.get('comparison_end')})")
+        lines.append("  comparison: " + window_text(
+            str(intake.get("comparison_label") or ""), intake.get("comparison_start") or "",
+            intake.get("comparison_end") or "", _col))
     dims = intake.get("dimensions") or []
     if dims:
         lines.append("  dimensions: " + ", ".join(str(d) for d in dims[:12]))
@@ -813,14 +819,22 @@ def _spec_section(intake: dict) -> str:
 
 
 def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
-                          extra: Optional[str] = None) -> str:
+                          extra: Optional[str] = None, sql_context: str = "") -> str:
     """State, not instructions — the converse rule, extended with the analyst's
-    stopping rule. The tools carry the routing; this says what is true."""
+    stopping rule. The tools carry the routing; this says what is true.
+
+    ``sql_context`` is the engine and the clock (`agent/sql_context.py`): the intake's
+    block when it built one, else the caller's from the connection — so a turn whose
+    intake returned nothing still knows the engine and the date. Measured 2026-09-29: the
+    analyst was told neither, wrote `DATEADD` and `DATE_TRUNC('month', …)` for BigQuery,
+    and with no spec anchored on `CURRENT_DATE` into a month still filling."""
     lines = [
         f"You are Aughor's analyst, investigating one question against the connected "
         f"warehouse '{connection_id}'. You work the way a good analyst works: slice, "
         "LOOK at the result, and choose the next slice because of what you saw — "
         "change the dimension, the grain or the window whenever a result argues for it.",
+        "",
+        (intake or {}).get("sql_context") or sql_context or "",
         "",
         _spec_section(intake),
         "",
@@ -996,9 +1010,14 @@ def run_analyst(
         budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
         tools = analyst_tools(turn, emit=emit, session_id=session_id,
                               canvas_id=canvas_id, user_question=question)
+        from aughor.agent.sql_context import learned_settle_days, sql_context as _sql_context
         result: LoopResult = run_tool_loop(
             provider or get_provider("coder"),
-            analyst_system_prompt(eff_conn_id, turn.intake, budget, extra=extra_context),
+            analyst_system_prompt(
+                eff_conn_id, turn.intake, budget, extra=extra_context,
+                sql_context=_sql_context(
+                    conn, coverage_end=(turn.intake or {}).get("data_coverage_end") or "",
+                    settle_days=learned_settle_days(eff_conn_id))),
             question,
             tools,
             max_steps=budget,

@@ -19,6 +19,8 @@ SCHEMA:
 PROFILE CONTEXT (date ranges, row counts, key columns):
 {scan_context}
 
+{sql_context}
+
 {events_section}
 {origin_finding_section}
 TASK: Parse this question into a precise investigation specification.
@@ -260,8 +262,8 @@ BASELINE FINDING: {baseline_summary}
 
 INVESTIGATION SPEC:
   Metric:        {metric_label} → {metric_sql}
-  Observation:   {observation_period}  ({obs_start} to {obs_end})
-  Comparison:    {comp_start} to {comp_end}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
   Date column:   {date_column}
   Primary table: {metric_table}
 
@@ -324,8 +326,8 @@ DECOMPOSITION FINDING: {decomposition_summary}
 
 INVESTIGATION SPEC:
   Metric:        {metric_label} → {metric_sql}
-  Observation:   {observation_period}  ({obs_start} to {obs_end})
-  Comparison:    {comp_start} to {comp_end}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
   Date column:   {date_column}
   Primary table: {metric_table}
 
@@ -600,8 +602,8 @@ DOMINANT FINDING FROM DIMENSIONAL ANALYSIS (Tier-2 output — focus your Tier-3 
 
 INVESTIGATION SPEC:
   Metric:        {metric_label} → {metric_sql}
-  Observation:   {observation_period}  ({obs_start} to {obs_end})
-  Comparison:    {comp_start} to {comp_end}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
   Date column:   {date_column}
   Primary table: {metric_table}
 
@@ -674,6 +676,7 @@ phase_summary: "Behaviorally, [X]. Operationally, [Y]." — two-part finding, ea
 # writes — one named-violation retry beats prophylaxis on every call. The specimen this
 # dieted measured 45% static boilerplate against 22% evidence.
 ADA_SYNTHESIZE_PROMPT = """\
+{clock_section}
 ORIGINAL QUESTION: {question}
 
 INVESTIGATION FINDINGS BY PHASE:

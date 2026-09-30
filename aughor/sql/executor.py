@@ -79,7 +79,7 @@ def preflight_harden(conn: "DatabaseConnection", sql: str, schema: str, *,
 
     Both are SQL→SQL rewrites gated on a clean dry-run (a rewrite is adopted only if
     it binds), so on already-correct SQL this is a no-op. Extracted so every answer
-    path shares the SAME hardening: the ADA runner (below) and the explore loop (which
+    path shares the SAME hardening: the deep-analysis runner (below) and the explore loop (which
     had neither de-fan nor preflight-repair before) both call it. Fail-open — any
     internal hiccup returns the SQL unchanged. ``counter_prefix`` keeps each caller's
     /dev/stats series distinct (``ada.exec_*`` vs ``explore.exec_*``)."""

@@ -274,9 +274,24 @@ class TestIntakeCoverageClamp:
         assert note is None
         assert it.comparison_label == "Prior 12 months"
 
-    def test_cross_sectional_skipped(self):
+    def test_cross_sectional_is_clamped_too(self):
+        """A cross-sectional intake was exempt, and its window still reached every
+        SQL-writing prompt through the spec: the "last 6 months" a model placed in 2024
+        was re-anchored on the temporal path and answered for 2024 on this one (theLook,
+        2026-09-29). The same rules now apply on both."""
         it = _intake(cross_sectional=True)
-        assert _clamp_intake_to_coverage(it, "2024-05-01", "2024-05-17") is None
+        note = _clamp_intake_to_coverage(it, "2024-05-01", "2024-05-17")
+        assert note and "clipped" in note
+        assert (it.observation_start, it.observation_end) == ("2024-05-01", "2024-05-17")
+
+    def test_a_stale_relative_window_is_reanchored_on_a_cross_sectional_intake(self):
+        it = _intake(cross_sectional=True, observation_start="2024-06-01", observation_end="2024-11-30",
+                     observation_label="Last 6 months", comparison_start="2023-12-01",
+                     comparison_end="2024-05-31")
+        note = _clamp_intake_to_coverage(it, "2019-01-09", "2026-10-02", question="last 6 months",
+                                         today="2026-09-30")
+        assert note and "re-anchored" in note
+        assert it.observation_end == "2026-09-29" and it.observation_start == "2026-03-31"
 
     def test_missing_range_noop(self):
         it = _intake()
