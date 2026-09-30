@@ -9608,7 +9608,7 @@ silently (§7).
 
 ---
 
-### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1, GM-2 and GM-3 BUILT 2026-09-29**, merged #557 · **GM-4 BUILT 2026-09-29**, the guards reading native spelling and derived joins the same day, on `claude/gm4-guard-cannot-run`, committed locally, not pushed)
+### 3.49 · Arc GM — the gate map: every input and output through a declared door (DRAFTED 2026-09-26 · ✅ ADOPTED the same day, §6 item 35 · **GM-1, GM-2 and GM-3 BUILT 2026-09-29**, merged #557 · **GM-4 BUILT 2026-09-29**, merged #558 · **GM-5 BUILT 2026-09-30** on `claude/gm5-audit-by-what-it-is`, not merged)
 
 > **Origin.** theLook's Units Sold watch failed 2,283 times on BigQuery because one call site sent platform SQL
 > without the dialect seam. The user: *"we need to know which of the inputs and outputs go through which of the
@@ -9782,6 +9782,41 @@ silently (§7).
 > extractor counts tables across scopes; shared with object pages and the grounded-literal contract); a literal found
 > in two or more sibling columns is neither repaired nor said; the derived probe ignores the outer statement's WHERE,
 > so a window-limited CTE compares its whole range.
+
+>
+> **Status 2026-09-30, GM-5 BUILT — audit and redaction by what the statement is.** **Measured first.** The door
+> exempted a statement from the safety check, the audit row and PII redaction by its LABEL's spelling — any
+> `__dunder__`, plus 12 hand-listed bare names — while a second hand-list of 10 forced some dunder labels back through.
+> Of the census's 188 door calls, 97 were exempt by spelling: 73 the platform's own, and **21 written by a model, a
+> person or a stored definition** (a person's bulk SQL and ALTER COLUMN, the model's repaired exploration SQL, the
+> benchmark, the answer re-check, trusted-query verification, a metric's value, the ontology validator); 24 of the
+> platform's own probes were audited as activity (`cb2_review` — about 2,000 rows a week — was one label shared by five
+> callers); 45 labels were chosen at run time, including ids the model emits. **The user's calls:** "internal" is the
+> platform's OWN statements — probes, profiling, metadata, catalog and UI samples, settling and outcome measurements —
+> wherever their rows go; SQL compiled on somebody's behalf (object queries, a card's figures, governed-metric runs,
+> the as-of replay of a finding, a monitor's evaluation) is the asker's activity and audited; the audit page COUNTS what
+> it does not list; no flag. **Built:** `internal=` is the caller's declaration on every door call (`through_door`
+> carries it for its one statement; `_security_pre/_post` read it), the label rule and both hand-lists retired; all
+> twelve connection classes and the adapters forward it, `read_typed_rows` declares itself, `execute_typed` cannot be
+> internal (its payload always passes the post-pass). 100 platform call sites declare it. The census reads the
+> declaration off every call and holds it to the row's author, both ways — a platform statement declares it, nobody
+> else's may — with seven reviewed exceptions, each with its reason in the row (the per-connection legs of a federated
+> or cross-source answer, whose joined answer passes the gate once; guard probes carrying the statement's fragments);
+> 13 rows were re-authored from `platform` to the asker's (the monitor runner among them, which would otherwise have
+> taken 57% of the audit log out of it). The measurement runner takes `internal` and `label` from each caller (a
+> monitor's backtest is audited as `monitor_backtest`). The audit store counts internal statements per connection and
+> day (`InternalCounter`, batched); `/security/audit/stats` returns `internal_statements` and `internal_since`, and the
+> Security page says *"Not listed here: N queries the platform ran for its own checks — since <date>"*.
+> `tests/unit/test_gm5_audit_by_what_it_is.py` (every connection class carries the declaration to its first gate) and
+> the census's three new assertions. **Receipt, live on theLook, no model calls, before and after on the same
+> statements:** a person's bulk read, the model's repaired SQL and a model-chosen `__q1__` id each left no audit row and
+> handed the caller **3 of 3 emails** before; after, each is audited and redacted (`pii-redacted:3`, 0 of 3); the join
+> guard's own probes are listed in neither, and counted after (2, since 2026-09-30). **Left, named:** the ALTER COLUMN
+> route answers `applied: true` though the gate now blocks the write on every engine (it ran unchecked on native
+> engines before; the route's claim was already wrong — GM-1); the catalog's sample rows reach the model unredacted and
+> UI sample rows are unredacted (the user's call, platform-written anywhere); the measurement runner's callers are not
+> held by the census, only its forwarding call; `_validate`'s workbench metadata rule stays on the label (a capability,
+> not an audit exemption).
 
 - **GM-1 · the door owns the dialect.** `execute(label, sql, *, sql_dialect=None)`: `"duckdb"` from platform code
   makes the base door translate for native engines where transpile engines already do; `native_sql` becomes the

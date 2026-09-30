@@ -467,7 +467,7 @@ def schemas_of_connection(conn_id: str) -> list[str]:
             "SELECT DISTINCT table_schema FROM INFORMATION_SCHEMA.TABLES "
             "WHERE table_type = 'BASE TABLE' AND table_schema NOT IN "
             "('information_schema', 'pg_catalog', 'temp') ORDER BY 1",
-        )
+         internal=True)
         return [str(r[0]) for r in (getattr(res, "rows", None) or []) if r and r[0]]
     except Exception:
         return []

@@ -285,7 +285,7 @@ def read_receipt(pack: Pack, dataset_id: str) -> Optional[dict]:
 # ── the measurements ─────────────────────────────────────────────────────────────────────────────────────────
 
 def _scalar(db, sql: str, label: str) -> Optional[float]:
-    result = db.execute(label, sql)
+    result = db.execute(label, sql, internal=True)
     if result.error:
         raise Gate4Error(result.error)
     if not result.rows or result.rows[0][0] in (None, "NULL", ""):

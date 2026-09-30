@@ -886,7 +886,7 @@ class SchemaExplorer:
             # Direct connector call (this probe does not go through `_run`), so it declares
             # the same dialect: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery rejects
             # the `::` operator outright.
-            r = self._conn.execute("__explorer__", sql, sql_dialect="duckdb")
+            r = self._conn.execute("__explorer__", sql, sql_dialect="duckdb", internal=True)
         except Exception:
             return None
         rows = (r.rows or []) if not getattr(r, "error", None) else []
@@ -940,7 +940,7 @@ class SchemaExplorer:
             # Direct connector call (this probe does not go through `_run`), so it declares
             # the same dialect: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery rejects
             # the `::` operator outright.
-            r = self._conn.execute("__explorer__", sql, sql_dialect="duckdb")
+            r = self._conn.execute("__explorer__", sql, sql_dialect="duckdb", internal=True)
         except Exception:
             return None
         rows = (r.rows or []) if not getattr(r, "error", None) else []
@@ -1260,7 +1260,7 @@ class SchemaExplorer:
                 f"WHERE table_schema {schema_filter} "
                 f"AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name",
                 sql_dialect="duckdb",
-            )
+             internal=True)
             raw_tables = [(row[0], row[1]) for row in (r.rows or [])] if not r.error else []
             # When multiple schemas exist, fully-qualify table names so generated
             # SQL resolves correctly (e.g. bakehouse.sales_franchises).

@@ -246,7 +246,7 @@ def test_the_door_runs_the_same_work(monkeypatch):
     monkeypatch.setattr("aughor.business_profile.store.load", lambda cid, schema=None: None)
     monkeypatch.setattr("aughor.settling.sampler.time_tables", lambda cid: [])
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: [])
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid: (lambda sql: ([], [], None)))
+    monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid, **kw: (lambda sql: ([], [], None)))
     r = TestClient(app).post("/alerts/propose/c-empty")
     assert r.status_code == 200
     body = r.json()

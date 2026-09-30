@@ -174,16 +174,16 @@ def test_typed_mirror_disarms_on_shape_mismatch():
         dbc._TYPED_SINK.reset(token)
 
 
-def test_execute_typed_refuses_internal_labels(typed_conn, tmp_path):
-    """Internal labels skip the PII/audit post-pass — a typed capture there would
-    be an unredacted side channel, so the wrapper never arms it."""
+def test_no_label_disarms_a_typed_read(typed_conn, tmp_path):
+    """A typed read cannot be declared internal, so every one passes the PII/audit post-pass and its capture is
+    armed, whatever the label — an internal-looking one used to skip both (GM-5)."""
     from aughor.db.connection import open_connection_for
     db = open_connection_for(typed_conn)
     try:
-        result, payload = db.execute_typed("__internal__", "SELECT id FROM t")
-        assert payload is None
-        result2, payload2 = db.execute_typed("query_workbench", "SELECT id FROM t")
-        assert payload2 is not None and payload2["armed"]
+        for label in ("__internal__", "query_workbench"):
+            result, payload = db.execute_typed(label, "SELECT id FROM t")
+            assert payload is not None and payload["armed"], label
+            assert "internal" not in result.doors, label
     finally:
         db.close()
 

@@ -111,10 +111,9 @@ def test_an_internal_label_still_skips_the_capture():
         def close(self): ...
 
     probe = _Probe()
-    # `__catalog__`-style dunder labels are what `_is_internal_query` recognises; a
-    # plausible-looking name like "internal_profile" is NOT internal, and asserting against
-    # one would have made this pass for the wrong reason.
-    for label, expect_payload in (("query_workbench", True), ("__catalog__", False)):
+    # GM-5 — no label disarms the capture: a typed read cannot be declared internal, so every one passes the PII and
+    # audit post-pass, whatever its label (an internal-looking `__catalog__` used to skip both, and the capture).
+    for label, expect_payload in (("query_workbench", True), ("__catalog__", True)):
         _r, payload = probe.execute_with_params_typed(label, "SELECT :v", {"v": 1})
         assert (payload is not None) is expect_payload, label
         _r, payload = probe.execute_typed(label, "SELECT 1")

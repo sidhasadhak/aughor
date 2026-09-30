@@ -572,7 +572,7 @@ def test_keys_that_cannot_all_be_read_leave_a_claim_unmeasured_and_unread(source
     from aughor.ontology import sources as SRC
 
     class Partial:
-        def execute_bounded(self, label, sql, max_rows, sql_dialect=None):
+        def execute_bounded(self, label, sql, max_rows, sql_dialect=None, internal=False):
             return QueryResult(hypothesis_id=label, sql=sql, columns=["k"], rows=[["a"], ["b"]], row_count=5)
 
     keys, why = SRC.distinct_keys(Partial(), "t AS o", "o", "k")
@@ -649,8 +649,8 @@ def test_a_query_past_the_home_cap_is_refused_with_the_cap_never_answered_from_p
 def test_the_typed_read_is_plumbing_only_and_says_when_it_stopped(sources):
     db = open_connection_for(sources["whole"])
     try:
-        with pytest.raises(ValueError):
-            db.read_typed_rows("objects", "SELECT 1", 10)
+        # GM-5 — plumbing by definition: it declares its own statement internal, whatever the label.
+        assert db.read_typed_rows("objects", "SELECT 1", 10)[0].doors[-1] == "internal"
         result, payload = db.read_typed_rows(
             "__objects_home__", "SELECT total_amount, order_date FROM ecommerce.orders ORDER BY order_id LIMIT 2", 10)
         assert payload["types"][0].startswith("DECIMAL") and payload["types"][1] == "DATE"
@@ -979,10 +979,10 @@ class ReadAsBigQuery:
             raise ValueError(f"BigQuery reads a double-quoted token as a string, never as a name: {sql[:120]}")
         return sqlglot.transpile(sql, read="bigquery", write="duckdb")[0]
 
-    def execute(self, label, sql, *, sql_dialect=None):
+    def execute(self, label, sql, *, sql_dialect=None, internal=False):
         return self.inner.execute(label, self.read(self.door(sql, sql_dialect)))
 
-    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None):
+    def execute_bounded(self, label, sql, max_rows, *, sql_dialect=None, internal=False):
         return self.inner.execute_bounded(label, self.read(self.door(sql, sql_dialect)), max_rows)
 
     def read_typed_rows(self, label, sql, max_rows, *, sql_dialect=None):

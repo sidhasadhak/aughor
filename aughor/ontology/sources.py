@@ -55,7 +55,7 @@ def distinct_keys(db: Any, from_clause: str, alias: str, column: str) -> tuple[O
     col = f"{alias}.{quote_ident(column)}"
     sql = f"SELECT DISTINCT {col} FROM {from_clause} WHERE {col} IS NOT NULL"
     try:
-        result = db.execute_bounded("__source_keys__", sql, MAX_KEYS + 1, sql_dialect="duckdb")
+        result = db.execute_bounded("__source_keys__", sql, MAX_KEYS + 1, sql_dialect="duckdb", internal=True)
     except Exception as exc:  # noqa: BLE001 — a side that cannot be read is unmeasured, not refuted
         return None, f"its keys could not be read: {exc}"[:200]
     if getattr(result, "error", None):

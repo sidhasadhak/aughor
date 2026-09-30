@@ -154,7 +154,7 @@ def backtest_monitor(monitor: Monitor, *, run_sql: Optional[RunSql] = None,
         return Backtest(monitor.id, "", False, reason=f"nothing to replay: {how}", settle_days=settle_days)
     if run_sql is None:
         from aughor.db.measure import run_sql_for
-        run_sql = run_sql_for(monitor.conn_id)
+        run_sql = run_sql_for(monitor.conn_id, internal=False, label="monitor_backtest")
     from aughor.monitors.sentinel import read_series
     points = read_series(run_sql, sql)
     if not points:

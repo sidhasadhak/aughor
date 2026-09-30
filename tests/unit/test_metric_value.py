@@ -105,18 +105,16 @@ def test_compute_value_never_raises_even_when_the_connector_cannot_run(orders):
     assert got.value is None and "connector is down" in got.error
 
 
-def test_the_value_query_is_labelled_INTERNAL(orders):
-    """`__metric_value__` is dunder-wrapped, which is what `_is_internal_query` reads.
-    It is correct HERE — a single aggregate has nothing for the PII post-pass to redact
-    — and is exactly the label a step that reads ROWS must not borrow."""
+def test_the_value_query_is_audited(orders):
+    """A governed metric's value is its definition run for whoever asked — audited, not plumbing (GM-5, the user's
+    call: SQL that carries a governed or stored definition is the asker's activity). It used to be exempt because
+    its label was dunder-wrapped."""
     seen = {}
 
     class Spy:
-        def execute(self, label, sql):
-            seen["label"] = label
+        def execute(self, label, sql, **kw):
+            seen["label"], seen["internal"] = label, kw.get("internal", False)
             return orders.execute(label, sql)
 
     compute_value(REVENUE, Spy())
-    from aughor.db.connection import _is_internal_query
-    assert seen["label"] == "__metric_value__"
-    assert _is_internal_query(seen["label"])
+    assert seen == {"label": "__metric_value__", "internal": False}

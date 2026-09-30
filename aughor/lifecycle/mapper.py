@@ -39,7 +39,7 @@ def build_process_map(entity_id: str, connection_id: str, schema_name: str | Non
     try:
         # ── Node counts ───────────────────────────────────────────────────────
         node_sql = f"SELECT {col} AS state, COUNT(*) AS cnt FROM {table} GROUP BY {col} ORDER BY cnt DESC LIMIT 100"
-        node_res = db.execute("process_map_nodes", node_sql, sql_dialect="duckdb")
+        node_res = db.execute("process_map_nodes", node_sql, sql_dialect="duckdb", internal=True)
         if node_res.error:
             raise RuntimeError(node_res.error)
 
@@ -88,7 +88,7 @@ GROUP BY prev_state, curr_state
 ORDER BY cnt DESC
 LIMIT 500
 """
-            edge_res = db.execute("process_map_edges", lag_sql, sql_dialect="duckdb")
+            edge_res = db.execute("process_map_edges", lag_sql, sql_dialect="duckdb", internal=True)
             if not edge_res.error and edge_res.rows:
                 has_transitions = True
                 # Compute outgoing totals per from_state for rate calculation

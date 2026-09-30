@@ -67,7 +67,7 @@ def test_detector_matches_statement_position_only(sql, expected):
 
 
 def test_only_the_workbench_label_carries_the_capability():
-    """The gate is the statement LABEL, the same routing `_is_internal_query` uses —
+    """The gate is the statement LABEL (a capability, not an audit exemption — GM-5 took that off the label) —
     so a caller cannot obtain the capability by choosing a different `source`, because
     `source` is a closed allow-list on the request model."""
     from aughor.db.connection import _METADATA_LABELS

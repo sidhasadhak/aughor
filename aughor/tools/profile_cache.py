@@ -327,7 +327,7 @@ def get_or_build_profiles(
                 # by Postgres — the portable spelling.
                 sql = (f"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
                        f"WHERE table_name = '{table}' AND table_schema = '{schema_name}'")
-            col_counts[table] = conn.scalar(sql, label="__profiler__", cast=int) or 0
+            col_counts[table] = conn.scalar(sql, label="__profiler__", cast=int, internal=True) or 0
         except Exception:
             col_counts[table] = 0
 

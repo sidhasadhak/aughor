@@ -612,7 +612,7 @@ def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: l
         query that does belongs in the audit trail."""
         try:
             # `agent.relationship` writes DuckDB (TRY_CAST … AS DOUBLE, double-quoted names); the door renders it
-            res = conn.execute(f"{phase_id}_type_probe", sql, sql_dialect="duckdb")
+            res = conn.execute(f"{phase_id}_type_probe", sql, sql_dialect="duckdb", internal=True)
             if getattr(res, "error", None):
                 return None
             return getattr(res, "rows", None)
@@ -3100,7 +3100,7 @@ def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_labe
         def _probe(sql):
             try:
                 # `sql.ratio_grain` writes DuckDB's quoting; the door renders it (GM-1)
-                r = conn.execute("__ratio_grain_probe__", sql, sql_dialect="duckdb")
+                r = conn.execute("__ratio_grain_probe__", sql, sql_dialect="duckdb", internal=True)
                 return None if getattr(r, "error", None) else r.rows
             except Exception:
                 return None
@@ -3443,7 +3443,7 @@ def _resolve_table_for_column(conn, col: str) -> Optional[str]:
         r = conn.execute(
             "__col_table_probe__",
             "SELECT table_schema, table_name FROM INFORMATION_SCHEMA.COLUMNS "
-            f"WHERE column_name = '{col}' GROUP BY 1, 2", sql_dialect="duckdb")
+            f"WHERE column_name = '{col}' GROUP BY 1, 2", sql_dialect="duckdb", internal=True)
         if r and not getattr(r, "error", None) and r.rows and len(r.rows) == 1:
             sch, tbl = r.rows[0][0], r.rows[0][1]
             return f"{sch}.{tbl}" if sch else tbl
@@ -3461,7 +3461,7 @@ def _independent_global_ratio(conn, sources: dict) -> Optional[float]:
         den = f'{sources["den_agg"]}("{sources["den_col"]}")'
         sql = (f'SELECT (SELECT {num} FROM {sources["num_table"]}) * {sources["scale"]} '
                f'/ NULLIF((SELECT {den} FROM {sources["den_table"]}), 0) AS global_ratio')
-        r = conn.execute("__global_ratio_probe__", sql, sql_dialect="duckdb")
+        r = conn.execute("__global_ratio_probe__", sql, sql_dialect="duckdb", internal=True)
         if r and not getattr(r, "error", None) and r.rows and r.rows[0] and r.rows[0][0] is not None:
             return float(r.rows[0][0])
     except Exception:
@@ -4267,7 +4267,7 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
         ref, col = _resolve_probe_ref(table, date_column)
-        res = db.execute("intake_span", f"SELECT MIN({col}), MAX({col}) FROM {ref}")
+        res = db.execute("intake_span", f"SELECT MIN({col}), MAX({col}) FROM {ref}", internal=True)
         if res.error or not res.rows or len(res.rows[0]) < 2:
             return None, None
         lo, hi = str(res.rows[0][0])[:10], str(res.rows[0][1])[:10]
@@ -4412,7 +4412,7 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
             f"SELECT COUNT(DISTINCT substr(CAST({col} AS VARCHAR), 1, 7)) "
             f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}'",
             sql_dialect="duckdb",
-        )
+         internal=True)
         if res.error or not res.rows or res.rows[0][0] is None:
             # Still fail-open, but no longer SILENT: this probe returning None disables the
             # density guard, and for months on BigQuery it did so on every run with nobody
@@ -4456,7 +4456,7 @@ def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: st
             f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' "
             f"GROUP BY 1 ORDER BY 1",
             sql_dialect="duckdb",
-        )
+         internal=True)
         if res.error or not res.rows:
             # As above: None here disables the TRAILING-PARTIAL guard — the one whose warning
             # a reader needs to not read a half-finished month as a decline.
@@ -5378,7 +5378,7 @@ def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col:
             "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
             f"WHERE table_name = '{bare}'",
             sql_dialect="duckdb",
-        )
+         internal=True)
         if getattr(tres, "error", None) or not getattr(tres, "rows", None):
             return False
         numeric = [
@@ -5399,7 +5399,7 @@ def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col:
                     f"THEN 1.0 ELSE 0.0 END)"
                 )
         probe = f"SELECT {', '.join(checks)} FROM {ref}"
-        res = conn.execute("intake_unit_probe", probe)
+        res = conn.execute("intake_unit_probe", probe, internal=True)
         if getattr(res, "error", None) or not res.rows:
             return False
         row = res.rows[0]
@@ -6671,7 +6671,7 @@ def run_analysis_phase(
                         + (f" AND table_schema = '{_p[0]}'" if len(_p) == 2 else "")
                     )
                     try:
-                        _res = conn.execute("__fanout_schema_probe__", _probe, sql_dialect="duckdb")
+                        _res = conn.execute("__fanout_schema_probe__", _probe, sql_dialect="duckdb", internal=True)
                         _rows = getattr(_res, "rows", None) or []
                         if _rows:
                             _tc[_ref] = [r[0] for r in _rows]
@@ -7602,7 +7602,7 @@ def _degenerate_seed_verdict(conn, metric_table: str, dimensions: list,
         if not metric_table or "." not in metric_table:
             return None
         rows = None
-        res = conn.execute("__xsec_premise__", f"SELECT COUNT(*) FROM {metric_table}")
+        res = conn.execute("__xsec_premise__", f"SELECT COUNT(*) FROM {metric_table}", internal=True)
         if res and not res.error and res.rows and res.rows[0]:
             try:
                 rows = float(str(res.rows[0][0]).replace(",", ""))
@@ -8121,7 +8121,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             def _num(v):
                 try: return float(str(v).replace(",", ""))
                 except Exception: return None
-            _cnt = conn.execute("__xsec_base_rows__", f"SELECT COUNT(*) FROM {metric_table}")
+            _cnt = conn.execute("__xsec_base_rows__", f"SELECT COUNT(*) FROM {metric_table}", internal=True)
             _base_rows = _num(_cnt.rows[0][0]) if (_cnt and _cnt.rows and _cnt.rows[0]) else None
 
             def _scanned_rows(sql):
@@ -8135,7 +8135,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                     for _k in ("group", "having", "order", "limit", "qualify", "distinct"):
                         _tree.set(_k, None)
                     _tree.set("expressions", [_sgx.Count(this=_sgx.Star())])
-                    _r = conn.execute("__xsec_scanned__", _tree.sql(dialect=_dialect))
+                    _r = conn.execute("__xsec_scanned__", _tree.sql(dialect=_dialect), internal=True)
                     return _num(_r.rows[0][0]) if (_r and _r.rows and _r.rows[0]) else None
                 except Exception:
                     return None
@@ -8429,7 +8429,7 @@ def _discover_population_dims(state: AgentState, conn: "DatabaseConnection") -> 
             # table (e.g. many customer_service rows per order_id), the join fans out and would inflate
             # the metric — skip it. This is the guard the first cut missed.
             try:
-                _u = conn.execute("__uniq_probe__", f"SELECT COUNT(*), COUNT(DISTINCT {_jk}) FROM {t}", sql_dialect="duckdb")
+                _u = conn.execute("__uniq_probe__", f"SELECT COUNT(*), COUNT(DISTINCT {_jk}) FROM {t}", sql_dialect="duckdb", internal=True)
                 _tot, _dist = int(_u.rows[0][0]), int(_u.rows[0][1])
                 if _dist < _tot:
                     continue
@@ -8449,7 +8449,7 @@ def _discover_population_dims(state: AgentState, conn: "DatabaseConnection") -> 
                 if ("char" in ty.lower() or "text" in ty.lower()) and len(extra_dims) < 2 \
                         and cl not in {_dim_column(d) for d in extra_dims}:
                     try:
-                        _r = conn.execute("__card_probe__", f"SELECT COUNT(DISTINCT {c}) FROM {t}", sql_dialect="duckdb")
+                        _r = conn.execute("__card_probe__", f"SELECT COUNT(DISTINCT {c}) FROM {t}", sql_dialect="duckdb", internal=True)
                         _nd = int(_r.rows[0][0]) if (_r and _r.rows and _r.rows[0]) else 999
                     except Exception:
                         _nd = 999
@@ -8559,7 +8559,7 @@ def _db_typed_columns(conn: "DatabaseConnection", schema_name: str) -> dict:
             return {}
         res = conn.execute("__temporal_types__",
                            "SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
-                           f"WHERE table_schema = '{schema_name}'", sql_dialect="duckdb")
+                           f"WHERE table_schema = '{schema_name}'", sql_dialect="duckdb", internal=True)
         if getattr(res, "error", None) or not getattr(res, "rows", None):
             return {}
         out: dict = {}
@@ -9350,7 +9350,7 @@ def _probe_lifecycle_values(conn, cols: list) -> dict:
             r = conn.execute_bounded(
                 "loss_lifecycle_probe",
                 f'SELECT DISTINCT "{col}" AS v FROM {table} WHERE "{col}" IS NOT NULL LIMIT 25',
-                25, sql_dialect="duckdb")
+                25, sql_dialect="duckdb", internal=True)
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, f"lifecycle probe '{qualified}' best-effort; skipped",
@@ -9386,7 +9386,7 @@ def _probe_contra_ranges(conn, cols: list, schema_text: str) -> dict:
             r = conn.execute_bounded(
                 "loss_contra_range_probe",
                 f'SELECT MIN("{col}") AS lo, MAX("{col}") AS hi FROM {table} '
-                f'WHERE "{col}" IS NOT NULL', 1, sql_dialect="duckdb")
+                f'WHERE "{col}" IS NOT NULL', 1, sql_dialect="duckdb", internal=True)
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, f"contra range probe '{key}' best-effort; skipped",

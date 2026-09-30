@@ -111,7 +111,7 @@ def measure_display(db: Any, entity: OntologyEntity, name: str, source: str = "p
     col = quote_ident(column)
     sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {from_clause}"
     try:
-        result = db.execute("__display_probe__", sql, sql_dialect="duckdb")
+        result = db.execute("__display_probe__", sql, sql_dialect="duckdb", internal=True)
     except Exception as exc:  # noqa: BLE001 — an unprobeable property is unmeasured, not a failure
         m.note = f"probe raised: {exc}"[:200]
         return m

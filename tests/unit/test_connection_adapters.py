@@ -13,7 +13,7 @@ class _Conn:
     """A minimal connection: implements execute() and inherits the C3 adapters."""
     def __init__(self, rows, error=None):
         self._r = _Res(rows, error)
-    def execute(self, label, sql):
+    def execute(self, label, sql, internal=False):
         return self._r
     rows = DatabaseConnection.rows
     scalar = DatabaseConnection.scalar

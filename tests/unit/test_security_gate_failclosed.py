@@ -49,11 +49,13 @@ def test_execute_fails_closed_end_to_end(tmp_path, monkeypatch):
 
 
 def test_internal_queries_still_bypass_the_gate(monkeypatch):
-    """Dunder-labelled platform plumbing must NOT be affected by fail-closed —
-    it never reaches the checker in the first place."""
+    """Platform plumbing must NOT be affected by fail-closed — it never reaches the checker. What makes it plumbing
+    is its caller's declaration (GM-5), not a dunder label: an undeclared statement fails closed."""
     from aughor.security import safety
     monkeypatch.setattr(safety.SafetyChecker, "check", staticmethod(_boom))
 
     from aughor.db.connection import security_pre
-    # A dunder internal label bypasses the gate entirely → None (proceed).
-    assert security_pre("conn1", "__catalog__", "SELECT 1") is None
+    from aughor.db.doors import through_door
+    assert through_door(object(), "SELECT 1", None, lambda s: security_pre("conn1", "__catalog__", s),
+                        internal=True) is None
+    assert security_pre("conn1", "__catalog__", "SELECT 1") is not None, "a label bypassed the gate"

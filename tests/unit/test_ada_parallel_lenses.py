@@ -211,7 +211,7 @@ class _DiscoverConn:
         self.rows_by_table = rows_by_table          # table -> (total_rows, distinct_join_key)
         self.distinct_by_col = distinct_by_col       # "table.col" -> distinct count
 
-    def execute(self, _id, sql, sql_dialect=None):
+    def execute(self, _id, sql, sql_dialect=None, internal=False):
         import re as _re
         from types import SimpleNamespace
         m = _re.search(r"FROM\s+([\w.]+)", sql)

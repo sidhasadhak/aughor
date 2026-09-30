@@ -30,11 +30,11 @@ class _Counting:
         self.conn = conn
         self.calls = 0
 
-    def execute(self, hyp, sql):
+    def execute(self, hyp, sql, internal=False):
         self.calls += 1
         return self.conn.execute(hyp, sql)
 
-    def execute_bounded(self, hyp, sql, max_rows):
+    def execute_bounded(self, hyp, sql, max_rows, internal=False):
         self.calls += 1
         return self.conn.execute_bounded(hyp, sql, max_rows)
 
@@ -147,10 +147,10 @@ def test_right_query_error_returns_error_result_not_silent_left():
     left = _left(left_conn, "SELECT cust FROM orders")
 
     class _Boom:
-        def execute(self, hyp, sql):
+        def execute(self, hyp, sql, internal=False):
             raise RuntimeError("connection down")
 
-        def execute_bounded(self, hyp, sql, max_rows):
+        def execute_bounded(self, hyp, sql, max_rows, internal=False):
             raise RuntimeError("connection down")
 
     out = batched_foreach_join(left, "cust", _Boom(), "cust", right_table="customers")

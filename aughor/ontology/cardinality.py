@@ -68,7 +68,7 @@ def measure_side(db: Any, table: str, column: str) -> Optional[SideCount]:
     col = quote_ident(column)
     sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {quote_table(table)}"
     try:
-        result = db.execute("__cardinality_probe__", sql, sql_dialect="duckdb")
+        result = db.execute("__cardinality_probe__", sql, sql_dialect="duckdb", internal=True)
     except Exception as exc:  # noqa: BLE001 — a probe that raises is an unmeasurable side, not a build failure
         logger.debug("cardinality probe raised on %s.%s: %s", table, column, exc)
         return None

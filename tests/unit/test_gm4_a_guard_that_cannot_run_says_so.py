@@ -44,7 +44,7 @@ class _Warehouse:
         self.ran: list[str] = []
         self.sent: list[tuple[str, str | None]] = []
 
-    def execute(self, label, sql, *, sql_dialect=None):
+    def execute(self, label, sql, *, sql_dialect=None, internal=False):
         self.ran.append(label)
         self.sent.append((sql, sql_dialect))
         if not label.startswith("__"):
@@ -244,7 +244,7 @@ class _Counts:
     def raw_execute(self, sql):
         raise AttributeError("no raw path")
 
-    def execute(self, label, sql, *, sql_dialect=None):
+    def execute(self, label, sql, *, sql_dialect=None, internal=False):
         for table, n in self.counts.items():
             if f'"{table}"' in sql:
                 return QueryResult(hypothesis_id=label, sql=sql, columns=["n"], rows=[[str(n)]], row_count=1)
@@ -264,7 +264,7 @@ def test_revalidation_says_a_pinned_version_could_not_be_read():
     from aughor.explorer.revalidate import revalidate_finding
 
     class _Moved(_Counts):
-        def execute(self, label, sql, *, sql_dialect=None):
+        def execute(self, label, sql, *, sql_dialect=None, internal=False):
             if label == "__revalidate__":
                 return QueryResult(hypothesis_id=label, sql=sql, columns=["n"], rows=[["42"]], row_count=1)
             return super().execute(label, sql, sql_dialect=sql_dialect)
@@ -282,7 +282,7 @@ def test_a_column_the_warehouse_refused_is_not_a_confirmed_absence():
     assert _db_find_value(_Warehouse(), schema, "Complete") is None          # every probe refused → cannot tell
 
     class _Empty(_Warehouse):
-        def execute(self, label, sql, *, sql_dialect=None):
+        def execute(self, label, sql, *, sql_dialect=None, internal=False):
             return QueryResult(hypothesis_id=label, sql=sql, columns=["v"], rows=[], row_count=0)
     assert _db_find_value(_Empty(), schema, "Complete") == "absent"            # control: looked, and it is not there
 
@@ -375,7 +375,7 @@ def test_a_sibling_search_cut_short_is_not_a_confirmed_absence():
     """The table has more text columns than the search reads: 'Zzyzx' in none of the first sixteen is not
     'in no other column'."""
     class _Wide(_Warehouse):
-        def execute(self, label, sql, *, sql_dialect=None):
+        def execute(self, label, sql, *, sql_dialect=None, internal=False):
             if label == "__filter_sibling_cols__":
                 return QueryResult(hypothesis_id=label, sql=sql, row_count=0, rows=[],
                                    columns=["status"] + [f"c{i}" for i in range(20)])
@@ -398,7 +398,7 @@ def test_a_refused_existence_probe_binds_nothing():
     class _Refuses:
         _connection_id = ""
 
-        def execute(self, label, sql, sql_dialect=None):
+        def execute(self, label, sql, sql_dialect=None, internal=False):
             if label == "__filter_highcard_exists__":
                 return QueryResult(hypothesis_id=label, sql=sql, columns=[], rows=[], row_count=0, error="400 refused")
             return QueryResult(hypothesis_id=label, sql=sql, columns=["v"], rows=[["Mytheresa"]], row_count=1)
@@ -439,7 +439,7 @@ class _Warehouse2Rows:
     def __init__(self):
         self.refusing = True
 
-    def execute(self, label, sql):
+    def execute(self, label, sql, internal=False):
         if self.refusing:
             return QueryResult(hypothesis_id=label, sql=sql, columns=[], rows=[], row_count=0,
                                error="404 Not found: Table orders")

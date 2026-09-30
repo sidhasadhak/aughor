@@ -488,7 +488,7 @@ async def connection_freshness(conn_id: str):
             date_cols = [c for c in cols if _DATE_PAT.search(c)][:1]
             for col in date_cols:
                 try:
-                    result = db.execute("freshness", f'SELECT MAX({q}{col}{q}) AS max_ts FROM {q}{table}{q}')
+                    result = db.execute("freshness", f'SELECT MAX({q}{col}{q}) AS max_ts FROM {q}{table}{q}', internal=True)
                     if not result.error and result.rows and result.rows[0][0] not in (None, "NULL"):
                         val = str(result.rows[0][0])
                         if max_ts is None or val > max_ts:
@@ -524,7 +524,7 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
         try:
             from aughor.db.quoting import qualified_table
             ref = qualified_table(db, safe_table, safe_schema or None)
-            result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}")
+            result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}", internal=True)
             error = result.error
             if error and getattr(db, "_seed_failed", None):
                 # A failed seed materialization presents as "table does not exist" —
@@ -639,7 +639,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         # lowercase form 404'd there and column types came back empty.
                         "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                         f"WHERE {where} ORDER BY ordinal_position",
-                    )
+                     internal=True)
                     if res.rows:
                         cols = [{"name": r[0], "type": norm_type(str(r[1]))} for r in res.rows]
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
@@ -648,7 +648,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                 try:
                     from aughor.db.quoting import qualified_table
                     fq = qualified_table(db, safe_table, safe_schema or None)
-                    res = db.execute("columns", f"SELECT * FROM {fq} LIMIT 0")
+                    res = db.execute("columns", f"SELECT * FROM {fq} LIMIT 0", internal=True)
                     cols = [{"name": c, "type": ""} for c in res.columns]
                     return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:

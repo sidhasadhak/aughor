@@ -919,7 +919,7 @@ def _scan_one_subq(subq: "SubQuestion", schema_context: str, conn: "DatabaseConn
     def _timed(sql: str) -> tuple[list[str], list[list]]:
         t0 = _time.time()
         try:
-            result = conn.execute(subq.id + "_scan", sql, sql_dialect="duckdb")
+            result = conn.execute(subq.id + "_scan", sql, sql_dialect="duckdb", internal=True)
             if _time.time() - t0 > _TIMEOUT:
                 return [], []
             return result.columns, result.rows

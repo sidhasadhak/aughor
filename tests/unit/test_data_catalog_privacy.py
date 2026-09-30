@@ -51,7 +51,7 @@ class FakeConn:
         cols = self._tables[m.group(1)]["cols"]
         return ["column_name", "column_type", "null"], [[n, t, "YES"] for n, t in cols], None
 
-    def execute(self, _tag, sql):
+    def execute(self, _tag, sql, internal=False):
         self.sample_sql.append(sql)
         m = re.match(r'SELECT (.+) FROM "([^"]+)" LIMIT 5', sql)
         if not m:

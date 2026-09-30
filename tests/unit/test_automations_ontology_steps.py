@@ -234,11 +234,9 @@ def test_exactly_the_cap_is_allowed(warehouse):
     assert out.status == "executed" and out.data["count"] == MAX_FAN_OUT
 
 
-def test_the_row_query_is_NOT_labelled_internal(warehouse):
-    """The counterpart of the metric's label. `__…__` marks a query internal, which skips
-    the PII/audit post-pass — correct for one aggregate, wrong for rows that may carry
-    names and addresses into a chain that posts them somewhere."""
-    from aughor.db.connection import _is_internal_query
+def test_the_row_query_is_NOT_declared_internal(warehouse):
+    """`internal=True` skips the PII/audit post-pass — wrong for a stored query's rows, which may carry names and
+    addresses into a chain that posts them somewhere (GM-5: the call declares it; the label does not)."""
     seen: dict = {}
     _query(qid="tq_label")
 
@@ -249,9 +247,10 @@ def test_the_row_query_is_NOT_labelled_internal(warehouse):
         db = real(conn_id)
         inner = db.execute_bounded
 
-        def _capture(label, sql, max_rows):
+        def _capture(label, sql, max_rows, **kw):
             seen["label"] = label
-            return inner(label, sql, max_rows)
+            seen["internal"] = kw.get("internal", False)
+            return inner(label, sql, max_rows, **kw)
 
         db.execute_bounded = _capture       # type: ignore[method-assign]
         return db
@@ -262,7 +261,7 @@ def test_the_row_query_is_NOT_labelled_internal(warehouse):
             Effect(kind="trusted_query", alias="rows", config={"query_id": "tq_label"}), AUTO)
     finally:
         dbmod.open_connection_for = real    # type: ignore[assignment]
-    assert not _is_internal_query(seen["label"]), seen["label"]
+    assert seen["internal"] is False, seen
     assert AUTO.id in seen["label"] and "rows" in seen["label"]
 
 

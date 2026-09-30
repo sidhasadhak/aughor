@@ -30,4 +30,4 @@ def settling_sample_now(connection_id: str, principal=Depends(get_principal)) ->
     file the counts. Idempotent within a day — a second reading replaces the first."""
     from aughor.db.measure import run_sql_for
     from aughor.settling.sampler import sample_connection
-    return sample_connection(connection_id, run_sql_for(connection_id))
+    return sample_connection(connection_id, run_sql_for(connection_id, internal=True))
