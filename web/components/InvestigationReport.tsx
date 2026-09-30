@@ -285,7 +285,7 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
       {/* A completeness warning is NOT machinery — it changes what the number means, so it
           sits with the number, styled like the trust advisory it resembles. */}
       {warning && (
-        <div className="aug-fs-xs text-amber-400/90 leading-relaxed">⚠ {warning}</div>
+        <div className="aug-fs-xs text-zinc-400 leading-relaxed">⚠ {warning}</div>
       )}
 
       {/* Interpretation narrative */}
@@ -394,7 +394,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
           summary prose (and once promoted into a report headline). Rendered as an advisory,
           visually distinct from findings. */}
       {(phase.caveats ?? []).map((c, i) => (
-        <div key={`cav-${i}`} className="aug-fs-xs text-amber-400/90 leading-relaxed pl-2">⚠ {c}</div>
+        <div key={`cav-${i}`} className="aug-fs-xs text-zinc-400 leading-relaxed pl-2">⚠ {c}</div>
       ))}
       {/* A running phase with nothing rendered yet — name the wait so the gap reads as progress,
           not a frozen chart (the per-phase interpret is a slow LLM round-trip). */}
@@ -415,7 +415,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
                 shipped but rendered NOWHERE in web — only the CLI showed it. Both ends of
                 a feature existed while the feature did not. */}
             {f.trust_caveat && (
-              <div className="aug-fs-xs text-amber-400/90 leading-relaxed">⚠ {f.trust_caveat}</div>
+              <div className="aug-fs-xs text-zinc-400 leading-relaxed">⚠ {f.trust_caveat}</div>
             )}
             {f.interpretation && <BriefProse text={f.interpretation} muted />}
           </div>
@@ -481,7 +481,7 @@ export function InvestigationReportView({
       {/* Degraded-report banner FIRST: when synthesis failed, the reader learns it where
           they start reading — not from confidence_justification on the last page. */}
       {report.degraded && (
-        <div className="rounded-md border border-amber-700/30 px-3 py-2 aug-fs-xs text-amber-400/90"
+        <div className="rounded-md border border-amber-700/30 px-3 py-2 aug-fs-xs text-zinc-300"
              style={{ background: "color-mix(in srgb, var(--amb3) 5%, var(--bg-0))" }}>
           ⚠ Narrative synthesis was unavailable — this report is assembled directly from the
           phase findings below.{" "}
@@ -502,7 +502,7 @@ export function InvestigationReportView({
       <BriefMeta
         items={[
           report.total_change_label
-            ? <span key="tc" className={`tabular-nums font-medium ${!/\d/.test(report.total_change_label) ? "text-zinc-400" : report.total_change_label.trim().startsWith("-") ? "text-red-400" : "text-emerald-400"}`}>{report.total_change_label}</span>
+            ? <span key="tc" className="tabular-nums font-medium">{report.total_change_label}</span>
             : null,
           periodStr || null,
           // Clean-output policy: the confidence verdict + justification are gone from the

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOpenInQuery } from "@/lib/openInQuery";
 import { SqlResultTable } from "@/components/AugTable";
 import {
@@ -32,16 +32,17 @@ import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
-import { CurrentThought, ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { ThinkingTrace, latestThought, turnToTraceState } from "@/components/ThinkingTrace";
 import { DelegationTrail } from "@/components/DelegationTrail";
 import { GuardReceiptChain } from "@/components/GuardReceiptChain";
 import { SqlView } from "@/components/query/SqlView";
+import { formatSql } from "@/lib/query/format";
 import { ToolTrail } from "@/components/ToolTrail";
 import { ProposalCardById } from "@/components/ProposalCard";
 import { approverName } from "@/lib/auth";
 import { AnswerParts } from "@/components/chat/AnswerParts";
 import { FixItForm } from "@/components/FixItForm";
-import { InFlightFindings, RunProgressCard } from "@/components/RunProgressCard";
+import { InFlightFindings } from "@/components/RunProgressCard";
 import { ContextRibbon } from "@/components/ContextRibbon";
 import { PlanGateCard } from "@/components/PlanGateCard";
 import { ClarifyGateCard } from "@/components/ClarifyGateCard";
@@ -526,6 +527,9 @@ export function SourcePanel({
   const objectColumns = useObjectKeyColumns(connectionId);
   const objectTitles = useObjectTitles(rows, columns, objectColumns, connectionId);
   const openInQuery = useOpenInQuery();
+  // Shown laid out one clause per line, as the SQL editor's Format button lays it out; the
+  // statement copied or opened in the Query Builder is the one that ran, as it was written.
+  const readableSql = useMemo(() => (sql ? formatSql(sql, null) : ""), [sql]);
 
   // Detect each date column's true grain once (from the full column), so weekly
   // buckets render as "Jan 5" not four identical "Jan 2026" rows.
@@ -637,7 +641,7 @@ export function SourcePanel({
             )}
           </div>
           <div className="flex-1 overflow-auto min-h-0" style={{ background: "var(--code-bg)" }}>
-            <SqlView sql={sql} />
+            <SqlView sql={readableSql} />
           </div>
         </div>
       )}
@@ -900,10 +904,11 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
 // No box: the trace sits directly on the chat background (Genie-style), so it reads as
 // the agent thinking out loud rather than a boxed status widget.
 //
-// At the user's word (2026-09-29) it no longer opens itself while the turn runs. A
-// growing tree pushed the answer down the page as it arrived; now the row shows only the
-// step in hand, replaced as the next one starts, and ends as "Thought process". The whole
-// trace is one click away, during the run and after it.
+// At the user's word (2026-09-29, 2026-09-30) it is ONE row, closed, during the run and
+// after it. While the turn runs the row says only the latest thing the run is doing —
+// replaced as the next update arrives — and it ends as "Thought process". The steps, the
+// tools the model called, any delegation and the guards that intervened all sit inside it,
+// one click away; none of them is a row of its own, and the wait has no progress box.
 function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource?: (data: SourcePanelData) => void }) {
   const running = turn.status === "loading";
   const [open, setOpen] = useState(false);
@@ -915,6 +920,10 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
   }, [running]);
 
   const traceState = turnToTraceState(turn, running);
+  // The stream's own status line is the freshest word on what the run is doing; the
+  // trace's step in hand stands in before the first one arrives.
+  const latest = turn.statusText || latestThought(traceState) || "Thinking…";
+  const steps = traceState.investigationPhases?.length || traceState.subQuestions?.length || traceState.hypotheses?.length || 0;
 
   return (
     <div className="mb-4" role="group" aria-label="Thought process">
@@ -922,32 +931,36 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
         variant="ghost"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className="h-auto justify-start gap-2 px-1 py-1 group/trace font-normal hover:bg-transparent dark:hover:bg-transparent"
+        className="h-auto max-w-full justify-start gap-2 px-1 py-1 group/trace font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
-        {/* A quiet monochrome label ("Thinking…" / "Thought process"), no chrome. */}
-        <span className="flex items-center gap-2 aug-fs-xs font-medium text-zinc-400">
+        {/* A quiet monochrome row, no chrome: the latest update while running, then "Thought process". */}
+        <span className="flex min-w-0 items-center gap-2 aug-fs-xs font-medium text-zinc-400">
           {running ? (
-            <span className="relative flex h-2 w-2 items-center justify-center">
+            <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
               <span className="relative inline-flex rounded-[var(--r-pill)] h-1.5 w-1.5 bg-zinc-400 aug-pulse-dot" />
             </span>
           ) : (
-            <span className="inline-flex h-1.5 w-1.5 rounded-[var(--r-pill)] bg-zinc-500" />
+            <span className="inline-flex h-1.5 w-1.5 shrink-0 rounded-[var(--r-pill)] bg-zinc-500" />
           )}
-          {running ? "Thinking…" : "Thought process"}
-          {!running && !open && (
-            <span className="text-zinc-500 font-normal">· {traceState.investigationPhases?.length || traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
+          {running ? (
+            <span key={latest} className="min-w-0 truncate aug-anim-fade">{latest}</span>
+          ) : (
+            <>
+              Thought process
+              {!open && steps > 0 && (
+                <span className="text-zinc-500 font-normal">· {steps} {steps === 1 ? "step" : "steps"}</span>
+              )}
+            </>
           )}
         </span>
         <Chevron open={open} />
       </Button>
-      {running && !open && (
-        <div className="pl-1">
-          <CurrentThought state={traceState} />
-        </div>
-      )}
       {open && (
         <div className="pl-1">
           <ThinkingTrace state={traceState} onShowSource={onShowSource} />
+          <ToolTrail steps={turn.converseSteps} streaming={running} />
+          <DelegationTrail hops={turn.delegations} streaming={running} />
+          <GuardReceiptChain receipts={turn.guardReceipts} streaming={running} />
         </div>
       )}
     </div>
@@ -1544,6 +1557,9 @@ export function ChatMessage({
     ? !!(turn.deepReport ?? turn.report ?? turn.exploreReport ?? turn.dossierReport)
     : turn.status === "done";
   const isDone = turn.status === "done" || hasResult;
+  // An Agent turn's process — its steps, the tools it called, any delegation, the guards
+  // that intervened — lives in its one thinking row; a turn without that row shows them itself.
+  const thinkingRow = isInvestigate && (turn.status === "loading" || isDone || turn.status === "error");
   // Quick-mode scaffold-then-fill: the backend delivers a quick answer's data at
   // `done` (not incrementally), so instead of bare thinking-dots we mount the
   // Brief as a shimmer scaffold for the whole wait — a preview of the answer's
@@ -1619,9 +1635,11 @@ export function ChatMessage({
               </div>
             </div>
           ) : (
+            // No box (the user, 2026-09-30): the question is coloured text — purple for an
+            // Agent question, blue for a Quick one — in the tokens the mode labels use.
             <div
-              className="px-3.5 py-2 rounded-[var(--r3)] aug-fs-sm font-semibold text-white leading-snug"
-              style={{ background: isInvestigate ? "var(--vio-solid)" : "var(--blue-solid)" }}
+              className="py-1 aug-fs-sm font-semibold leading-snug"
+              style={{ color: isInvestigate ? "var(--vio5)" : "var(--blue5)" }}
             >
               {turn.question}
             </div>
@@ -1630,13 +1648,11 @@ export function ChatMessage({
       </div>
 
       {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
-      {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
-        <InlineAgentTrace turn={turn} onShowSource={onShowSource} />
-      )}
+      {thinkingRow && <InlineAgentTrace turn={turn} onShowSource={onShowSource} />}
 
       {/* ── CI-6a: the converse body's tool trail — which tools the model chose this
              turn; renders nothing on quick/deep turns (no steps) ── */}
-      <ToolTrail steps={turn.converseSteps} streaming={turn.status === "loading"} />
+      {!thinkingRow && <ToolTrail steps={turn.converseSteps} streaming={turn.status === "loading"} />}
 
       {/* ── AV-1/AV-2: the answer's structured half — the parts the model composed
              through `present`, validated server-side, each an established organ.
@@ -1657,12 +1673,12 @@ export function ChatMessage({
       {/* ── VA-2: work this turn handed to a named specialist. Sits under the tool
              trail because a delegation IS a tool call — this says who answered it.
              Renders nothing when nothing was delegated (most turns) ── */}
-      <DelegationTrail hops={turn.delegations} streaming={turn.status === "loading"} />
+      {!thinkingRow && <DelegationTrail hops={turn.delegations} streaming={turn.status === "loading"} />}
 
       {/* ── B2: guard interventions as a Chain of Thought — both modes; renders
              nothing when no guard fired (most turns) ── */}
       {turn.compiled && <CompiledBadge compiled={turn.compiled} />}
-      <GuardReceiptChain receipts={turn.guardReceipts} streaming={turn.status === "loading"} />
+      {!thinkingRow && <GuardReceiptChain receipts={turn.guardReceipts} streaming={turn.status === "loading"} />}
 
       {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}
       {turn.planPending && onApprovePlan && onRejectPlan && (
@@ -1707,13 +1723,11 @@ export function ChatMessage({
             </>
           ) : (
             <>
-              {/* FL-5 — the wait as ONE card: current activity, a progress bar only
-                  when a real denominator exists, a mono line of counts; the FL-2
-                  transport notices ride inside so the wait is one block, not a stack */}
-              <RunProgressCard turn={turn}>
-                <ChainStateNotice turn={turn} />
-                <SlowTurnHint turn={turn} />
-              </RunProgressCard>
+              {/* No progress box (the user, 2026-09-30): the thinking row above carries
+                  the latest update. The FL-2 transport notices still speak when a hop
+                  falls back or the turn goes quiet — they render nothing otherwise. */}
+              <ChainStateNotice turn={turn} />
+              <SlowTurnHint turn={turn} />
               {/* FL-5 — findings land as prose while the run works */}
               <InFlightFindings turn={turn} />
               {/* Live deep analysis phase stream — show completed phases as they arrive */}

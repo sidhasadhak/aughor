@@ -72,8 +72,10 @@ export function SqlView({
   const parts = useMemo(() => renderHighlighted(code ?? "", dialect), [code, dialect]);
 
   return (
+    // Wrapped, never scrolled sideways (the user, 2026-09-30): a statement shown to be READ
+    // sits in a narrow side panel, where one long line hid everything after its first clause.
     <pre
-      className={`aug-fs-ui font-code overflow-x-auto whitespace-pre p-3 leading-[1.65] ${className ?? ""}`}
+      className={`aug-fs-ui font-code whitespace-pre-wrap break-words p-3 leading-[1.65] ${className ?? ""}`}
       style={{ background: "transparent", color: "var(--t2)", margin: 0, ...style }}
     >
       {parts}

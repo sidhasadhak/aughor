@@ -328,11 +328,17 @@ function Drawer({ receiptId, preloaded, onClose }: {
                 </Section>
               )}
 
-              {(rec.metrics.used.length > 0 || rec.metrics.drifted.length > 0 || rec.metrics.available.length > 0) && (
+              {(rec.metrics.used.length > 0 || rec.metrics.drifted.length > 0 || rec.metrics.available.length > 0
+                || rec.metrics.proposed.length > 0) && (
                 <Section title="Governed metrics">
                   <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                     {rec.metrics.used.map((m, i) => <StatusChip key={`u:${i}`} hue="positive" strength="soft">{m} · governed ✓</StatusChip>)}
-                    {rec.metrics.drifted.map((m, i) => <StatusChip key={`d:${i}`} hue="caution" strength="soft">⚠ {m.metric} · non-governed</StatusChip>)}
+                    {rec.metrics.drifted.map((m, i) => <StatusChip key={`d:${i}`} hue="caution" strength="soft" title={m.detail ?? undefined}>⚠ {m.metric} · non-governed</StatusChip>)}
+                    {rec.metrics.proposed.map((m, i) => (
+                      <StatusChip key={`p:${i}`} hue="accent" strength="soft"
+                        title={m.detail ?? "Define this metric in the Semantic Layer to enforce it"}>
+                        define {m.metric}
+                      </StatusChip>))}
                     {rec.metrics.available.map((m, i) => <StatusChip key={`a:${i}`} hue="muted" strength="soft">{m}</StatusChip>)}
                   </div>
                   {/* PX-5 — the provenance panel ON the answer: whose definition this
@@ -412,68 +418,6 @@ function Drawer({ receiptId, preloaded, onClose }: {
   );
 }
 
-/** The at-a-glance chips: what this answer's receipt says, without opening anything.
- *
- *  B-9's inline badge row, restored after the S2 collapse removed the second panel that
- *  carried it — but fed by the UNIFIED receipt rather than the retired per-mode route, and
- *  by the SAME fetch the drawer uses. The old arrangement cost two components and two
- *  requests per answer; this is one of each.
- *
- *  Every chip states something the receipt actually carries. `trusted` says "in scope"
- *  rather than "verified" for the same reason the drawer does: the pattern was shown to
- *  the model, not demonstrably used by it.
- */
-function GlanceChips({ rec }: { rec: PublicReceipt }) {
-  const trusted = rec.guards.filter(g => g.action === "trusted").length;
-  const fired = rec.guards.filter(g => g.action !== "trusted").length;
-  const learned = rec.learning
-    ? (rec.learning.resolutions_crystallized || 0)
-    : 0;
-  const chips: React.ReactNode[] = [];
-
-  rec.metrics.used.forEach((m, i) => chips.push(
-    <StatusChip key={`u${i}`} hue="info" strength="soft">{m} · governed</StatusChip>));
-  rec.metrics.drifted.forEach((m, i) => chips.push(
-    <StatusChip key={`d${i}`} hue="caution" strength="soft" title={m.detail ?? undefined}>
-      {m.metric} · non-governed
-    </StatusChip>));
-  rec.metrics.proposed.forEach((m, i) => chips.push(
-    <StatusChip key={`p${i}`} hue="accent" strength="soft"
-      title={m.detail ?? "Define this metric in the Semantic Layer to enforce it"}>
-      define {m.metric}
-    </StatusChip>));
-  const flagged = rec.guards.filter(g => g.action === "flagged").length;
-  if (fired > 0) chips.push(
-    <GuardChip key="g" verdict={flagged > 0 ? "warned" : "passed"}
-      title={flagged > 0 ? `${flagged} of them flagged something a reader must know` : undefined}>
-      {fired} guard{fired !== 1 ? "s" : ""} fired
-    </GuardChip>);
-  if (trusted > 0) chips.push(
-    <StatusChip key="t" hue="info" strength="soft"
-      title="Verified query patterns were put in front of the model — not proof this answer reused one">
-      {trusted} trusted pattern{trusted !== 1 ? "s" : ""} in scope
-    </StatusChip>);
-  if (rec.resolved_readings.length > 0) chips.push(
-    <StatusChip key="r" hue="info" strength="soft">
-      {rec.resolved_readings.length === 1 ? "resolved reading"
-        : `${rec.resolved_readings.length} resolved readings`}
-    </StatusChip>);
-  if (learned > 0) chips.push(
-    <StatusChip key="l" hue="positive" strength="soft">the loop learned something</StatusChip>);
-  if (rec.activations.length > 0) chips.push(
-    <StatusChip key="a" hue="positive" strength="soft">
-      {rec.activations.length} capabilit{rec.activations.length !== 1 ? "ies" : "y"}
-    </StatusChip>);
-
-  // Nothing notable fired — say what the answer rests on rather than showing an empty row.
-  if (chips.length === 0) chips.push(
-    <StatusChip key="s" hue="muted" strength="soft">
-      {rec.input_tables.length} source{rec.input_tables.length !== 1 ? "s" : ""} · executed SQL
-    </StatusChip>);
-
-  return <>{chips}</>;
-}
-
 export function WhyThisNumber({ receiptId }: { receiptId: string }) {
   const [open, setOpen] = useState(false);
   const [rec, setRec] = useState<PublicReceipt | null>(null);
@@ -490,9 +434,9 @@ export function WhyThisNumber({ receiptId }: { receiptId: string }) {
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
-        <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
-        {rec && <GlanceChips rec={rec} />}
+      {/* The link alone (the user, 2026-09-30): the row of receipt chips under every answer
+          is gone — metrics, guards, readings and sources are all in the drawer it opens. */}
+      <div style={{ display: "flex", alignItems: "center", marginTop: 6 }}>
         <Button size="xs" variant="ghost" onClick={() => setOpen(true)}
           style={{ color: "var(--t3)" }} aria-label="Why this number — open the Trust Receipt">
           Why this number →

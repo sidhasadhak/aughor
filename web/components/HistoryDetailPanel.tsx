@@ -271,14 +271,14 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 </div>
               )}
             </div>
-            {/* The user's input, AS THEY TYPED IT — the same right-aligned bubble the live
-                chat shows, so a restored run still reads as the conversation it was. */}
+            {/* The user's input, AS THEY TYPED IT — right-aligned as the live chat shows it,
+                so a restored run still reads as the conversation it was. No box (the user,
+                2026-09-30): purple text for an Agent question, blue for a Quick one. */}
             <div className="flex justify-end">
               <div style={{
-                maxWidth: "75%", background: "var(--vio2, rgba(139,92,246,0.25))",
-                border: "1px solid var(--vio3, rgba(139,92,246,0.4))",
-                borderRadius: 12, padding: "8px 14px",
-                fontSize: 15, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
+                maxWidth: "75%", padding: "4px 0",
+                fontSize: 15, fontWeight: 600, lineHeight: 1.5,
+                color: reportType === "direct" ? "var(--blue5)" : "var(--vio5)",
               }}>
                 {localizeCurrency(inv.question)}
               </div>
@@ -360,7 +360,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
         <div style={{
           position: "absolute", bottom: 0, left: 0, right: 0,
           height: 260, pointerEvents: "none", zIndex: 1,
-          background: "linear-gradient(to bottom, transparent 0%, #0d0e11 60%)",
+          background: "linear-gradient(to bottom, transparent 0%, var(--bg-canvas) 60%)",
         }} />
       )}
 

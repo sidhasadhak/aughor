@@ -11,9 +11,8 @@
  *
  * This is the CHAT surface's renderer; the Briefing keeps `BriefProse`, whose
  * hand-rolled scope (paragraphs + tables) matches a surface the model does not
- * free-write into. Both share ONE inline-figure rule (`renderEmphasis`), so a
- * signed delta reads emerald/red identically everywhere and an id fragment never
- * does (its boundary fix lives there).
+ * free-write into. Both share ONE inline rule (`renderEmphasis`): bold or normal text,
+ * never a colour (the user, 2026-09-30).
  *
  * The surface is DESIGNED, not open: `skipHtml`, an element allowlist, and every
  * element mapped — headings render as bold paragraphs (a chat answer has no place
@@ -107,7 +106,8 @@ const COMPONENTS = {
   strong: ({ children }: ElProps) => (
     <strong className="font-semibold">{withInline(children)}</strong>
   ),
-  em: ({ children }: ElProps) => <em className="italic">{withInline(children)}</em>,
+  // Bold or normal text only (the user, 2026-09-30): an emphasis the model marks reads as normal.
+  em: ({ children }: ElProps) => <>{withInline(children)}</>,
   del: ({ children }: ElProps) => <del>{withInline(children)}</del>,
   blockquote: ({ children }: ElProps) => (
     <blockquote className="border-l-2 border-zinc-700 pl-3 my-1 text-zinc-400">

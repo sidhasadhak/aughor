@@ -337,10 +337,9 @@ function StepDot({ status }: { status: StepStatus; verdict?: Verdict }) {
   );
 }
 
-/** The closed trace while a turn runs: only the step in hand, replaced as the next one
- *  starts. The same dot and the same type a step has in the open trace, so opening it
- *  shows the line the reader was already watching, in its place. */
-export function CurrentThought({ state }: { state: InvestigationState }) {
+/** The label the closed trace shows while a turn runs: the step in hand, replaced as the
+ *  next one starts. Null before any step exists. */
+export function latestThought(state: InvestigationState): string | null {
   const steps = deriveSteps(state);
   // Which line is "the latest" takes three preferences, because two of the steps are not
   // news. The route is settled in the first second, and the trailing "Analysing the
@@ -353,19 +352,7 @@ export function CurrentThought({ state }: { state: InvestigationState }) {
     ?? [...steps].reverse().find(s => landed(s) && !placeholder(s.id))
     ?? steps.find(s => s.status === "running")
     ?? [...steps].reverse().find(landed);
-  if (!step) return null;
-  return (
-    <div className="py-1">
-      <div key={`${step.id}:${step.label}`} className="flex items-center gap-3 aug-anim-fade">
-        <div className="flex items-center justify-center w-3.5 shrink-0">
-          <StepDot status={step.status} />
-        </div>
-        <p className="min-w-0 truncate text-xs leading-snug text-zinc-100 font-medium">
-          <TypeLine text={step.label} active={step.status === "running"} />
-        </p>
-      </div>
-    </div>
-  );
+  return step?.label ?? null;
 }
 
 export interface SourceOpen {

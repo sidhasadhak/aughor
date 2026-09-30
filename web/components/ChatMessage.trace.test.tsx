@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 /**
- * The Agent's thinking row, at the user's word (2026-09-29):
+ * The Agent's thinking row, at the user's word (2026-09-29, 2026-09-30):
  *
- *   - it stays CLOSED while the turn runs, and shows only the step in hand — replaced as
- *     the next one starts — instead of a tree that grows and pushes the answer down;
+ *   - it is ONE row, CLOSED while the turn runs, saying only the latest update — replaced
+ *     as the next one arrives — instead of a tree that grows and pushes the answer down;
+ *   - the tools the model called and the guards that intervened are inside it, not rows of
+ *     their own, and the wait has no progress box under it;
  *   - it ends as "Thought process", still closed, and opens by hand to the steps;
  *   - the "Found relevant data" row of table chips is gone: each query in the trace opens
  *     its own SQL and rows.
@@ -50,16 +52,37 @@ const row = () => within(screen.getByRole("group", { name: "Thought process" }))
 const toggle = () => row().getByRole("button");
 
 describe("the thinking row", () => {
-  it("is closed while the turn runs and shows only the step in hand", async () => {
+  it("is closed while the turn runs and says only the step in hand", () => {
     render(<ChatMessage turn={RUNNING} />);
-    expect(row().getByText("Thinking…")).toBeInTheDocument();
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
-    // typed out a character at a time, as a live step is
-    expect(await row().findByText("Breaking the metric into its drivers", {}, { timeout: 4000 }))
-      .toBeInTheDocument();
+    expect(toggle()).toHaveTextContent("Breaking the metric into its drivers");
+    // one line: no separate "Thinking…" label above the step
+    expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
     // the finished step is in the trace, not on the row
     expect(row().queryByText("Revenue rose against the prior period.")).not.toBeInTheDocument();
     expect(row().queryByText("Agent")).not.toBeInTheDocument();
+  });
+
+  it("says the stream's latest update, which is fresher than the trace's step", () => {
+    render(<ChatMessage turn={turn({ status: "loading", statusText: "Analyzing intake…", phases: [] })} />);
+    expect(toggle()).toHaveTextContent("Analyzing intake…");
+    // once: the progress box that repeated it, with its line of counts, is gone
+    expect(screen.getAllByText("Analyzing intake…")).toHaveLength(1);
+  });
+
+  it("keeps the tools called and the guards that intervened inside it", () => {
+    const withTrails = turn({
+      status: "loading", statusText: "Analyzing intake…", phases: [],
+      converseSteps: [{ index: 0, tool: "run_sql", ok: true, detail: "", resultChars: 10 }],
+      guardReceipts: [{ guard: "declared_filter", action: "rewrote_sql", detail: "status <> 'Cancelled'" }],
+    });
+    render(<ChatMessage turn={withTrails} />);
+    expect(screen.queryByText("1 step taken")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 guard intervened")).not.toBeInTheDocument();
+    expect(screen.queryByText(/guard fired/)).not.toBeInTheDocument();
+    fireEvent.click(toggle());
+    expect(row().getByText("1 step taken")).toBeInTheDocument();
+    expect(row().getByText("1 guard intervened")).toBeInTheDocument();
   });
 
   it("shows the conclusion that landed last while nothing more specific is running", () => {
@@ -70,7 +93,7 @@ describe("the thinking row", () => {
       phases: [phase("baseline", "complete", "Revenue rose against the prior period."),
                phase("decompose", "complete", "Order volume carries the rise.")],
     })} />);
-    expect(row().getByText("Order volume carries the rise.")).toBeInTheDocument();
+    expect(toggle()).toHaveTextContent("Order volume carries the rise.");
     expect(row().queryByText("Revenue rose against the prior period.")).not.toBeInTheDocument();
     expect(row().queryByText("Analysing the data…")).not.toBeInTheDocument();
   });
@@ -86,13 +109,11 @@ describe("the thinking row", () => {
     expect(await row().findByText("Classifying question…", {}, { timeout: 4000 })).toBeInTheDocument();
   });
 
-  it("opens by hand mid-run to the whole trace, and the row's single line gives way to it", async () => {
+  it("opens by hand mid-run to the whole trace", () => {
     render(<ChatMessage turn={RUNNING} />);
     fireEvent.click(toggle());
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(row().getByText("Revenue rose against the prior period.")).toBeInTheDocument();
-    expect(await row().findAllByText("Breaking the metric into its drivers", {}, { timeout: 4000 }))
-      .toHaveLength(1);
   });
 
   it("ends as Thought process, closed, and opens by hand to the steps", () => {
@@ -106,6 +127,12 @@ describe("the thinking row", () => {
     fireEvent.click(toggle());
     expect(row().getByText("Revenue rose against the prior period.")).toBeInTheDocument();
     expect(row().getByText("Order volume carries the rise.")).toBeInTheDocument();
+  });
+
+  it("gives no step count when it has none to give", () => {
+    render(<ChatMessage turn={turn({ status: "done", phases: [] })} />);
+    expect(toggle()).toHaveTextContent("Thought process");
+    expect(toggle()).not.toHaveTextContent("0 steps");
   });
 
   it("closes a trace that was opened by hand the moment the turn stops running", () => {
