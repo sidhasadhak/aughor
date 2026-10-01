@@ -10182,6 +10182,103 @@ library is the wrong tool — the tab (CT-4) and the versions (CT-3) stand, over
 is wrong, and the closed vocabulary is not closing; (3) if an approved cockpit is not reopened within a week,
 the board was not wanted — counted from the session log the way AV-M counts uptake, which read 3 of 42.
 
+### 3.51 · Arc DE — the database edge: what dbx teaches (DRAFTED 2026-10-02 at the user's *"lets write a proper dbx roadmap first"* · ✅ ADOPTED the same day, §6 item 37, every clause as recommended · DE-6 removed before adoption · nothing built)
+
+> **Origin.** The user, on `t8y2/dbx` — an open-source database manager claiming "100+ databases" — *"I think there
+> is a lot we can learn from it. Let's scan it, Deep, and check what's there for us?"*, then, on a screenshot of its
+> data grid, *"Do we have a better SQL editor? Especially the result table part or DBX does?"*. The study is
+> `docs/DBX_STUDY_2026-10-01.md`: dbx read at `e56754f`, Aughor on `main` at `f02c8f22`, four areas compared by
+> four readers plus a comparison of the two result grids, and every claim about Aughor that a wave rests on
+> re-checked by hand (its §7 says which were and which were not).
+
+> **What the survey found.** dbx's "100+" is 108 product names over 85 declared connection types: 33 native drivers
+> and 47 behind one sidecar protocol. It is a tool for administering databases, and most of its bulk is the write
+> side, which Aughor refuses. What it does better on the read side: one classifier that knows the reads that can
+> write; a central policy for outside agents; an engine declared once, with its dialect bound separately; metadata
+> that says what it knows; typed connection errors; and a result grid with types in the header, row numbers,
+> right-click filters, distinct-value lists, and paging through the whole result.
+> **What the comparison showed about Aughor.** (1) Native engines' doors skip the parse step, and the safety checker
+> alone lets write-capable statements through: run in-process, `/*!50000 DROP TABLE users */` is rated SUSPICIOUS,
+> which is logged and allowed, and MySQL executes an executable comment on a session that is not read-only;
+> `INTO OUTFILE` and `LOCK IN SHARE MODE` are rated SAFE. The gate-map study named the skipped step on 2026-09-26
+> (its finding 5) and no GM wave took it. (2) On Postgres, `SELECT set_config('default_transaction_read_only','off',false)`
+> is rated SAFE and turns the pooled session's read-only backstop off. (3) The MCP client sends no principal, so
+> identity mode refuses every MCP call; the key is compared with `!=`; four MCP tools read the stores in their own
+> process instead of through the API. (4) No engine reads declared keys; the pool counts a connection with no
+> health check as healthy (all but Postgres and SQLite). (5) CSV export lets formulas through; upload suggestions
+> turn `02134` into 2134. Exasol declared as `postgres` and ALTER COLUMN answering `applied: true` were already
+> §3.49's "left, named, not fixed"; DE-3a and DE-1 take them.
+> **Where Aughor stays ahead:** schema context for the model, join inference (dbx's ER match and field lineage
+> produced measured false positives), audit and PII, provenance, value search, and the results pane beyond the
+> grid (multi-statement results, chart tabs, pin, schedule, share, a signed record per run, NULL distinct from
+> empty). The editors are level.
+
+> **Status 2026-10-02 — ADOPTED** (§6 item 37; the user: *"adopt all as recommended and commit locally"*). DE-1 ships without a flag; the
+> agent policy lives with the organisation's settings and defaults to `run`, with `act` given only by a person;
+> Trino proves DE-3b, its container's download asked when the wave starts; column lineage rides the receipt; four
+> refusals are recorded as §4.7; dbx's code is not copied. Nothing is built. Next: DE-1's pre-check.
+
+**The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
+
+- **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each
+  connection's own dialect, so the next connector cannot skip it; `SafetyChecker`'s syntax-tree checks take the
+  dialect; `sql/readonly.py` learns executable comments, locking clauses and the side-effect functions (advisory
+  locks, `GET_LOCK`, a `set_config` of a read-only setting); MySQL opens its session read-only, Postgres refuses the
+  statement that would turn its backstop off, and an engine with no session-level read-only says so in the doors on
+  the result; the door census asserts that every connector validates; the ALTER COLUMN endpoint reads the door's
+  answer instead of reporting `applied: true`; schema samples and value lists reach the model fenced as untrusted
+  data with a cap per value, as query rows already are (moved from DE-6 at the user's word, 2026-10-02).
+  **Pre-check:** the parse step over theLook's
+  newest 2,000 audited statements and the golden set, counting valid SQL it would refuse. **Receipt:** the study's
+  nine statements before and after through the real doors, one live MySQL refusal, the pre-check's count, a sample
+  value worded as an instruction reaching the prompt inside the fence; mutation-tested. Small; no flag (§6 item 37(b)).
+- **DE-2 · An outside agent is a principal with a policy.** DE-2a (small): the MCP client presents a principal; the
+  key is compared in constant time; `--http` requires a bearer token and sets its host allowlist after the host.
+  DE-2b (medium): one policy per organisation — `read`, `run` (explorations and analyses, which spend model calls),
+  `act` — with connection and tool allowlists, kept with the organisation's settings, enforced in the API, disallowed
+  tools hidden and refused by name with stable codes, the environment only able to narrow it, every call audited
+  with its principal; Aughor's tools carry `readOnlyHint` / `destructiveHint`. DE-2c (small): the knowledge tools go
+  through the API. VA-10 (§3.5) keeps identity; DE-2 adds the outside agent as a kind of principal.
+- **DE-3 · An engine is one declaration.** DE-3a (small): Exasol declares `exasol`. DE-3b (medium): each engine
+  declared once — identity, secret fields, install extra, sqlglot dialect, native or transpiled, parameter style,
+  writer rules, refused constructs, support tier, metadata strategy — with the registry, `catalog.json` and the three
+  web maps generated from it and a drift test (Exasol touches 14 non-test files today). DE-3c (medium): typed
+  metadata — columns, primary and foreign keys, comments, each *supported*, *unsupported* or *unknown* — with a
+  coverage table held by a test; declared foreign keys join the join inference as its strongest signal, still
+  checked against values. DE-3d (small): typed connection errors; a connection error evicts the pooled connection;
+  only `internal=True` statements are retried; every warehouse connector answers `is_healthy`.
+- **DE-4 · Column lineage over the statements we run.** sqlglot's `qualify` and `lineage` over every executed
+  statement: output, filter, join and group columns, each edge marked certain, likely or possible. The edges ride
+  the receipt that already records tables (§6 item 37(f)). Caveats become per column, receipts name columns, and a
+  column change shows what reads it. **Pre-check:** a reader resolved 130 of 136 output columns on the golden set at
+  ~4.7 ms a query; re-measure there and on theLook's BigQuery statements.
+- **DE-5 · The result grid reads like a database tool** (continues SE-8). DE-5a (hours): the type under each column
+  name, a row-number column. DE-5b (small): a right-click cell menu feeding the existing filter chips. DE-5c (small):
+  distinct-value lists in the column filter, from the rows or from the value index, saying which. DE-5d (medium):
+  "count all rows" and "load more" for a cut result, through the door. DE-5e (medium): JSON-tree, image and geometry
+  viewers. DE-5f (medium): open a value's related rows through the ontology's verified joins. Hygiene, small: CSV
+  export neutralises formulas; uploads keep leading zeros and oversized integers as text.
+- ~~**DE-6 · The agent loop and the hand-off.**~~ *Removed by the user 2026-10-02 ("Remove: DE-6. Move DE-6.1 into
+  DE-1").* Its first part, schema samples fenced as data, moved into DE-1; the rest — the tool-result rule (today's
+  stands), a skill installer, `--json` on the CLI, a slim MCP package — leaves the plan. The numbers were kept.
+- **DE-7 · Recorded, not scheduled:** a JDBC bridge for self-hosted installs, behind the door, waiting for someone to
+  ask for an engine with no Python driver.
+
+**Order:** DE-1 → DE-2a → DE-3a, DE-3d → DE-5a–c with DE-5's hygiene → DE-4 → DE-3b → DE-3c → DE-2b → DE-2c →
+DE-5d–f.
+
+**Not this** (§6 item 37(g) records the first four in §4): the write side — editing, DDL generation, schema-diff
+deploy, transfer, clean-up rules that null out values; raw-SQL MCP tools and a read/write default; a tokenless
+localhost bridge; importing other tools' saved passwords with their vendors' keys; hand-written dialect files
+(sqlglot is the dialect layer); dbx's lineage and ER-match code; its in-memory data compare; a canvas renderer
+before a measurement asks for one. Code built from this arc names each feature for what it does, never for dbx;
+and while dbx's licence reads Apache-2.0 at the root and AGPL-3.0 in `agents/`, the arc takes ideas, not code.
+
+**Falsifiers:** DE-1's parse step is the wrong tool for a dialect where the pre-check finds it refusing more than a
+handful of real statements — there the door states the limit and the token-level checks carry it; DE-4 is not
+worth building if resolution on theLook's BigQuery statements falls well below the golden set's; DE-5d is wrong if
+loading more costs the warehouse more than re-running with a higher limit (bytes billed, measured on theLook).
+
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -10305,6 +10402,21 @@ own agents is the moat, and an export hands it to another vendor's. An RDF/OWL e
 the same answer. Re-propose only with new facts: a customer on Fabric asking, and Fabric's published
 item-definition format verified against Microsoft's documentation (the playground's `fabric.ts` is a community
 implementation, not a contract).
+
+### 4.7 · What dbx does that Aughor will not — REFUSED (2026-10-02)
+
+The dbx study (`docs/DBX_STUDY_2026-10-01.md`, §5) compared a tool for administering databases with a platform that
+answers from them, and Arc DE (§3.51) took what serves the read side. Four of dbx's features contradict an
+invariant here; §6 item 37(g) records them as refused, at the user's *"adopt all as recommended and commit locally"*:
+- **Its write side** — inline row editing, DDL generated across engines, schema-diff deploy, data transfer, and
+  clean-up rules that set overflowing values to NULL. Aughor writes nothing to a customer's warehouse.
+- **MCP tools that take raw SQL, and a read/write default** when no policy is saved. Aughor's MCP tools ask
+  questions; an outside agent's reach is a policy a person sets (DE-2), and its default is `run`, never `act`.
+- **A localhost bridge with no token** for opening a table in the app, guarded only by a content type and a
+  loopback Host header. A link does the same job without a listening port.
+- **Importing another tool's saved passwords** by decrypting them with that vendor's fixed key (DBeaver, Navicat).
+  A credential is a governed object here (§3.4); an import, if ever wanted, takes host, port and database, and
+  the person enters the secret.
 
 ## 5 · Sequencing
 
@@ -11155,6 +11267,12 @@ the browser** · **measure the premise before building.**
 > library for CT-1, and (f) the model calls of CT-5's receipt.
 > **Amended 2026-09-28, later still:** (d) decided at the user's *"Yes, install it and start CT-1 and CT-2"*; both
 > waves built the same day, and the library KEPT on CT-1's numbers at the user's word. Open under item 36: (f).
+> **Amended 2026-10-02:** item 37 (Arc DE, the database edge, §3.51) arrived at the user's *"lets write a proper dbx
+> roadmap first"* and is **OPEN** — eight clauses, each with a recommendation; nothing in the arc is built.
+> **Amended 2026-10-02, later:** the user removed DE-6 and moved its first part (schema samples fenced as data) into
+> DE-1; item 37(e) is withdrawn with it. Open: item 37's other seven clauses.
+> **Amended 2026-10-02, later still:** item 37 DECIDED — *"adopt all as recommended and commit locally"*; the seven open clauses
+> were taken as recommended and the four refusals recorded as §4.7. Nothing from Arc DE is open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -11887,6 +12005,39 @@ the browser** · **measure the premise before building.**
     by anyone; a person's cockpits are Ledger artifacts keyed by connection, person and cockpit; and "adjust before
     keeping" is kept as two versions in one act — the model's draft, then the person's changes — so the history
     says which was whose. Waves CT-7 to CT-10, §3.50.
+37. ✅ **DECIDED 2026-10-02 — Arc DE, the database edge, adopted with every clause as recommended** (the user:
+    *"adopt all as recommended and commit locally"*; the arc arrived the same day at their *"lets write a proper dbx roadmap first"*, after the
+    survey of `t8y2/dbx` and the comparison of the two result grids; the study is `docs/DBX_STUDY_2026-10-01.md`,
+    the arc §3.51). Eight clauses, each with a recommendation; (e) was withdrawn with DE-6 the same day, so seven were
+    open; all seven were decided together. Adopting the plan is not a yes to a download, a paid
+    model run or a push.
+    **(a) ✅ DECIDED as recommended — adopt Arc DE as drafted** — five waves and DE-7 recorded, in §3.51's order, with its refusals and its three
+    falsifiers (DE-6 was removed by the user before adoption).
+    *Recommended: yes.* DE-1 closes a hole the gate-map study named and no wave took; the rest is measured.
+    **(b) ✅ DECIDED as recommended — DE-1 ships without a flag.** The invariant puts features behind flags that are off by default; a read-only
+    promise that can be switched off is not one, and a flag left off would keep the hole. *Recommended: no flag,*
+    with the pre-check's count of valid statements the parse step would refuse on the table before it merges.
+    **(c) ✅ DECIDED as recommended — where the agent policy lives, and its default.** *Recommended:* with the organisation's settings
+    (`orgsettings/`), not a new store; and an install with no saved policy runs at `run` — today's exposure, made
+    explicit — with `act` given only by a person. The alternative is `read`, the safest default, which takes
+    `explore` and `deep_analysis` away from every existing MCP set-up until someone opens them.
+    **(d) ✅ DECIDED as recommended — the engine that proves DE-3b.** *Recommended: Trino*, because sqlglot speaks it, it has a Python driver, and
+    a local container gives a live receipt without a cloud account — the container's download is asked for when the
+    wave starts. Alternatives: Redshift (the Postgres wire protocol, but a receipt needs an AWS account), SQL Server,
+    ClickHouse.
+    **(e) ⤳ WITHDRAWN 2026-10-02 with DE-6** (the user: *"Remove: DE-6"*). It asked whether the agent loop should
+    cap a tool's result as dbx does (12,000 characters, head and tail, the cut said) or keep today's rule —
+    every result whole, the budget warning only (`llm/context_budget.py:42`). Today's rule stands; re-ask only with
+    a measured turn lost to a context-length error.
+    **(f) ✅ DECIDED as recommended — where column lineage lives.** *Recommended: on the receipt*, beside the tables it already records, with
+    `govern/lineage.py` reading it instead of scanning text. A lineage store of its own only if the receipt cannot
+    hold the edges — one store per concept.
+    **(g) ✅ DECIDED as recommended, recorded as §4.7 — record four refusals in §4**: dbx's write side; raw-SQL MCP tools and a read/write default; a tokenless
+    localhost bridge; importing other tools' saved passwords with their vendors' keys. *Recommended: yes* — each
+    contradicts an invariant (read-only, governed, credentials as governed objects). The rest of §3.51's "Not this"
+    stays in the arc as "not now".
+    **(h) ✅ DECIDED as recommended — ideas, not code.** dbx's root `LICENSE` is Apache-2.0 and `agents/README.md` says AGPL-3.0. *Recommended:*
+    no dbx code is copied into Aughor until that is resolved; the arc's waves re-implement from the idea.
 
 ---
 
