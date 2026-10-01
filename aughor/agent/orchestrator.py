@@ -3,7 +3,7 @@ findings across phases into a typed report.
 
 Two responsibilities, both deterministic by design:
 
-1. **Phase plan (decompose).** Today ADA's phase path is emergent: each router gate
+1. **Phase plan (decompose).** Today the deep-analysis phase path is emergent: each router gate
    (``route_after_baseline`` …) decides the next node from one runtime signal. That is
    correct but invisible — there is no declared "here is what I intend to run". The
    Orchestrator derives, at intake, the SAME plan those deterministic routers will
@@ -268,6 +268,21 @@ def _phase_significance_signal(p: dict) -> Optional[bool]:
     return False
 
 
+def _states_normal_variance(p: dict) -> bool:
+    """Whether the phase SAYS the change is within normal variance — in code-written words: the stats.py marker on
+    its summary, or a verdict note on one of its findings.
+
+    A phase whose findings carry no flag claims nothing, and claiming nothing is not saying "within normal variance":
+    the Question Intake's spec table and a grid of declared breakdowns were named on that side of a significance
+    contradiction whenever any other phase flagged a finding, and the writer was ordered to resolve a tension nobody
+    stated. Replayed over the 254 stored reports of two phases or more (2026-10-01): 155 such contradictions, every
+    one naming the Question Intake; 13 once a phase that claims nothing takes no side."""
+    if _CODE_SIG_NEG.search(str(p.get("summary") or "")):
+        return True
+    return any(_CODE_NOTE_NEG.search(str(f.get("stat_note") or ""))
+               for f in (p.get("findings") or []) if isinstance(f, dict))
+
+
 def detect_contradictions(phases: Any) -> ContradictionReport:
     """Deterministically scan phases for direct factual contradictions, as a typed report.
     Same two detection classes the legacy string scanner used:
@@ -294,8 +309,9 @@ def detect_contradictions(phases: Any) -> ContradictionReport:
                 sig.append(name)
                 continue
             if signal is False:
-                neg.append(name)
-                continue
+                if _states_normal_variance(p):
+                    neg.append(name)
+                continue                # unflagged findings: no claim, and no side of a contradiction
             # no structured signal: fall back to the prose, with negated forms removed
             # BEFORE the positive scan so "no significant variation" is not read as both.
             stripped = _SIG_NEGATIVE.sub(" ", s)

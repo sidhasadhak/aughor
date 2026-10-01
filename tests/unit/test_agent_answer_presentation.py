@@ -38,6 +38,17 @@ def test_an_average_stands_for_the_count_it_was_taken_over():
             == "avg_hours_to_ship and avg_hours_to_deliver by distribution_center")
 
 
+def test_two_measures_on_one_row_are_both_named():
+    """The fulfilment answer's overall row (2026-10-01) was titled "overall_avg_shipped_to_delivered_days by
+    overall_avg_placed_to_shipped_days" — one measure cut by the other."""
+    cols = ["overall_avg_placed_to_shipped_days", "overall_avg_shipped_to_delivered_days"]
+    assert _adhoc_title(cols, "q", "", [["1.4981", "2.4970"]]) == (
+        "overall_avg_placed_to_shipped_days and overall_avg_shipped_to_delivered_days")
+    # a cut still reads "measure by cut" — on one row, and a number down many rows is the cut
+    assert _adhoc_title(["category", "revenue"], "q", "", [["Jeans", "220935.5"]]) == "revenue by category"
+    assert _adhoc_title(["age", "users"], "q", "", [["30", "120"], ["31", "95"]]) == "users by age"
+
+
 def test_a_rate_whose_parts_do_not_divide_into_it_is_one_measure_among_others():
     rows = [["Email", "901", "106", "0.2"], ["Search", "12351", "1157", "0.3"]]
     assert _adhoc_title(SOURCES[0], "q", "", rows) == (

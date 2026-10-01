@@ -1076,13 +1076,15 @@ def _question_named_dimensions(question: str, schema: str, prefer_table: str = "
     words = {_norm_col(w) for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", question)}
     words -= {_norm_col(w) for w in _DIM_STOPWORDS}
     hits, seen = [], set()
+    measured = _norm_col((prefer_table or "").split(".")[-1])
     for table, col in schema_columns(schema):
         # A column named after its OWN table is that table's key — `flight_id` on
         # `flights`. Grouping by it yields one row per record, so the noun "flights"
         # naming it is the subject of the question, never its breakdown. `route_id` on
         # the same table is a real dimension, which is why the `_id` suffix cannot be
-        # the test.
-        if _norm_col(col) == _norm_col(table.split(".")[-1]):
+        # the test. The metric table's key is the subject wherever it sits: "an order"
+        # named `order_items.order_id` for a measure on `orders` (theLook, 2026-10-01).
+        if _norm_col(col) == _norm_col(table.split(".")[-1]) or (measured and _norm_col(col) == measured):
             continue
         if _norm_col(col) in words and f"{table}.{col}" not in seen:
             seen.add(f"{table}.{col}")
@@ -6532,13 +6534,18 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # question over dated data trends as well as ranks, so that line had a report asserting "no time
     # comparison" on page one while a baseline phase measured a period-over-period shift inside it.
     _spec_has_axis = (intake.date_column or "").strip().upper() not in ("", "NONE")
+    # A question that asks to SEE the data is measured across its groups, not scanned for a weakness it never
+    # named: "which centres are slowest" read "rank the metric … to find where value is weakest, and trend it …
+    # whether the weakness is growing" (theLook fulfilment, 2026-10-01), and nothing of the kind ran.
+    _describe = question_shape(question) == "describe"
     if intake.cross_sectional:
         _spec_rows = [
             ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
-            ["Approach", "Cross-sectional — rank the metric across dimensions to find where value is "
-                         "weakest" + (f", and trend it on {intake.date_column} to see whether the "
-                                      "weakness is growing" if _spec_has_axis
-                                      else " (no usable time axis in reach — no temporal check)")],
+            ["Approach", "Cross-sectional — measure each group the question names, side by side" if _describe
+             else "Cross-sectional — rank the metric across dimensions to find where value is "
+                  "weakest" + (f", and trend it on {intake.date_column} to see whether the "
+                               "weakness is growing" if _spec_has_axis
+                               else " (no usable time axis in reach — no temporal check)")],
             ["Primary table", intake.metric_table],
             ["Dimensions", ", ".join(intake.dimensions[:8])],
         ]
@@ -6595,6 +6602,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     phase = _phase_result(
         "intake", "Question Intake", "🔍", "complete",
         (
+            f"Measuring {_measures_label(intake.model_dump())} for each group the question names."
+            if intake.cross_sectional and _describe else
             f"Scanning {intake.metric_label} across {len(intake.dimensions)} dimensions to find where value is weakest."
             if intake.cross_sectional else
             f"Measuring {_measures_label(intake.model_dump())} over {intake.observation_label or 'all the data'}."
@@ -10486,6 +10495,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # named (a targeted fix beats prophylaxis on every call), and a draft that still
     # fails ships with its violations disclosed and its confidence capped — never a loop,
     # never a silent pass.
+    _withheld: list = []                # the sentences withheld below, kept on the report unshown
     if synth is not None:
         try:
             from aughor.agent.report_checks import run_report_checks
@@ -10532,7 +10542,7 @@ def ada_synthesize(state: AgentState) -> dict:
                 # Item 6: a figure that still does not trace is not published — the sentence
                 # stating it is withheld and the answer says so.
                 from aughor.agent.report_checks import withhold_untraced
-                if withhold_untraced(synth, _violations, question):
+                if withhold_untraced(synth, _violations, question, record=_withheld):
                     _st2.inc("deep_analysis.untraced_figure_withheld")
                 _disclosure = reader_disclosure(_violations, repaired=_as_written is None)
                 if _disclosure:
@@ -10824,6 +10834,11 @@ def ada_synthesize(state: AgentState) -> dict:
     # word was taken to mean and where the analysis started.
     if intake_data.get("ontology_frame"):
         answer_report["frame"] = intake_data["ontology_frame"]
+
+    # What the answer said and the trace check withheld, as written — on the record, never rendered: the answer
+    # already says a sentence was withheld, and this is what a person auditing the run reads to learn which.
+    if _withheld:
+        answer_report["withheld"] = _withheld
 
     # Also produce a legacy AnalysisReport for backward compat (history, cache)
     from aughor.agent.state import AnalysisReport, Finding

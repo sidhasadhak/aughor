@@ -9,6 +9,7 @@ now gets a roster and a stopping rule for measuring, and its answer is the analy
 """
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -224,6 +225,16 @@ def test_a_ratio_holding_a_distinct_count_is_named_a_ratio_and_a_sum_is_totalled
     said = dict(untotalled(sql, ["category", "total_revenue", "average_order_value"], rows, 2))
     assert list(said) == ["average_order_value"] and said["average_order_value"].startswith("an average or a ratio")
     assert untotalled(sql, ["category", "total_revenue", "average_order_value"], rows[:1], 2) == []   # not all in hand
+
+
+def test_the_describe_rules_give_an_answer_no_figure_to_copy():
+    """Re-run #6 (2026-10-01): the alike rule's example, "every centre takes 3.95–4.01 days", was the fulfilment
+    question's own range of total days — a sum of two averages no row holds — and that answer then had a sentence
+    withheld as untraced. A figure in a rule is a figure an answer can copy; the range is read from the rows."""
+    from aughor.agent.analyst import _describe_rules
+    text = " ".join(_describe_rules(7))
+    assert re.findall(r"\d", text) == ["7"]                 # the budget, and no other figure
+    assert "each read from a row" in text
 
 
 def test_the_describe_rule_never_adds_up_a_column_under_no_total():

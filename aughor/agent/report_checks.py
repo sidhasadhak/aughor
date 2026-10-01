@@ -387,7 +387,8 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
         figures=tuple(bad_figs))]
 
 
-def withhold_untraced(synth: Any, violations: list, question: str = "") -> list[str]:
+def withhold_untraced(synth: Any, violations: list, question: str = "",
+                      record: Optional[list] = None) -> list[str]:
     """A figure the trace check still refuses after the one repair attempt is not published.
 
     Before item 6 (2026-09-30) it shipped: the Agent answer to "top 10 categories by revenue"
@@ -396,28 +397,36 @@ def withhold_untraced(synth: Any, violations: list, question: str = "") -> list[
     of the headline, summary or bottom line that states such a figure is taken out, the
     summary says a figure was withheld (withheld is said, never implied), and the violation's
     reader sentence says so in place of repeating the figure. A headline that carried one is
-    replaced by the question. Returns the figures withheld; empty leaves ``synth`` untouched."""
+    replaced by the question. Returns the figures withheld; empty leaves ``synth`` untouched.
+
+    ``record`` receives each sentence taken out, as written — ``{"from", "text", "figures"}``
+    — for the report to keep unshown. Without it the sentence was gone: the fulfilment answer
+    of 2026-10-01 withheld its opening sentence and nothing said what that sentence had been."""
     held = [v for v in violations or [] if getattr(v, "figures", ())]
     figs = list(dict.fromkeys(fig for v in held for fig in v.figures))
     if not figs:
         return []
-    pats = [re.compile(r"(?<![\d,.])" + re.escape(fig) + r"(?![\d,])") for fig in figs]
+    pats = [(fig, re.compile(r"(?<![\d,.])" + re.escape(fig) + r"(?![\d,])")) for fig in figs]
 
-    def _carries(text: str) -> bool:
-        return any(p.search(text or "") for p in pats)
+    def _carried(text: str) -> list[str]:
+        return [fig for fig, p in pats if p.search(text or "")]
 
     fields = {f: str(getattr(synth, f, "") or "") for f in ("executive_summary", "closing_summary")}
-    kept = {f: [s for s in _SENTENCE_RE.split(t) if s.strip() and not _carries(s)] for f, t in fields.items()}
-    removed = sum(len([s for s in _SENTENCE_RE.split(t) if s.strip()]) - len(kept[f])
-                  for f, t in fields.items())
-    headline_carries = _carries(str(getattr(synth, "headline", "") or ""))
-    if not removed and not headline_carries:
+    split = {f: [s for s in _SENTENCE_RE.split(t) if s.strip()] for f, t in fields.items()}
+    out = [{"from": f, "text": s.strip(), "figures": _carried(s)}
+           for f, sentences in split.items() for s in sentences if _carried(s)]
+    headline = str(getattr(synth, "headline", "") or "")
+    if _carried(headline):
+        out.insert(0, {"from": "headline", "text": headline.strip(), "figures": _carried(headline)})
+    if not out:
         return []                           # not found where it was reported: say nothing new
     for f in fields:
-        setattr(synth, f, " ".join(kept[f]))
-    if headline_carries:
+        setattr(synth, f, " ".join(s for s in split[f] if not _carried(s)))
+    if out[0]["from"] == "headline":
         synth.headline = (question or "").strip()[:160]
-        removed += 1
+    removed = len(out)
+    if record is not None:
+        record.extend(out)
     one = len(figs) == 1
     note = (f"{'A figure' if one else 'Some figures'} in this answer could not be traced to the "
             f"query results, so {'the sentence' if removed == 1 else f'the {removed} sentences'} "

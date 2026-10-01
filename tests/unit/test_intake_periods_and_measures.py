@@ -146,6 +146,7 @@ def run(monkeypatch):
         state = {"question": question, "schema_context": "TABLE: orders\n  created_at TIMESTAMP\n",
                  "scan_context": "", "connection_id": "", "scope_schema": ""}
         out = I.ada_intake(state, conn=object())
+        _run.phase = out["investigation_phases"][0]
         return out["_ada_intake"], out["investigation_phases"][0]["findings"][0]["rows"]
     return _run
 
@@ -196,6 +197,20 @@ def test_with_no_coverage_measured_the_invented_window_still_goes(run, monkeypat
     assert (spec["observation_start"], spec["observation_end"], spec["observation_label"]) == ("", "", "")
     from aughor.agent.analyst import _spec_section
     assert "observation: all the data — the question names no period." in _spec_section(spec)
+
+
+def test_a_question_that_asks_to_see_the_groups_is_not_described_as_a_weakness_scan(run):
+    """Q4's spec (2026-10-01) read "rank the metric across dimensions to find where value is weakest, and trend it
+    … to see whether the weakness is growing" — for a question asking how long each centre takes."""
+    spec, rows = run(Q4, metric_label="average days to ship", metric_sql="AVG(x)", cross_sectional=True)
+    assert spec["cross_sectional"] is True
+    assert ["Approach", "Cross-sectional — measure each group the question names, side by side"] in rows
+    assert run.phase["summary"] == "Measuring average days to ship for each group the question names."
+    spec, rows = run("Where are we losing money on orders?", metric_label="margin", metric_sql="SUM(x)",
+                     cross_sectional=True)
+    assert next(r[1] for r in rows if r[0] == "Approach").startswith(
+        "Cross-sectional — rank the metric across dimensions to find where value is weakest")
+    assert "where value is weakest" in run.phase["summary"]
 
 
 def test_a_window_dated_but_not_named_is_named_from_its_dates(run):

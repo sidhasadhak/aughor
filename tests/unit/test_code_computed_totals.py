@@ -128,6 +128,55 @@ def test_a_headline_stating_one_is_replaced_by_the_question():
     assert "the 2 sentences stating it were withheld" in synth.executive_summary
 
 
+def test_what_is_withheld_is_kept_as_written_for_the_record():
+    """The fulfilment answer of 2026-10-01 withheld its opening sentence, and nothing kept what it had said."""
+    synth = _draft()
+    synth.headline = "Top 10 categories made $1,299,882.88"
+    record: list = []
+    v = check_grounding(synth.headline + ". " + synth.executive_summary, _evidence())
+    withhold_untraced(synth, v, "Which 10 categories?", record=record)
+    assert record == [
+        {"from": "headline", "text": "Top 10 categories made $1,299,882.88", "figures": ["1,299,882.88"]},
+        {"from": "executive_summary", "figures": ["1,299,882.88"],
+         "text": "The top 10 categories generated a combined revenue of $1,299,882.88."}]
+    assert "1,299,882.88" not in synth.headline + synth.executive_summary
+
+
+def _a_describe_run(monkeypatch, conclusion: str) -> dict:
+    """An Agent answer in the analyst's own words, synthesized with no model to call."""
+    import aughor.agent.investigate as I
+
+    def _no_model(role):
+        raise AssertionError(f"a describe answer asked a model ({role})")
+    monkeypatch.setattr(I, "_provider", _no_model)
+    finding = {"finding_id": "f", "title": "avg_days by distribution_center", "sql": "SELECT …", "error": None,
+               "columns": ["distribution_center", "avg_days", "order_count"], "row_count": 2,
+               "rows": [["Houston TX", "1.49", "7502"], ["Memphis TN", "1.50", "7836"]], "chart_type": "auto",
+               "interpretation": "", "key_numbers": [], "is_significant": False, "stat_note": None}
+    state = {"question": "How long does an order take to ship, by distribution center?", "connection_id": "",
+             "investigation_id": "", "_analyst_conclusion": conclusion,
+             "_ada_intake": {"question_shape": "describe", "metric_label": "average days to ship",
+                             "metric_sql": "AVG(x)", "metric_table": "orders", "cross_sectional": True},
+             "investigation_phases": [{"phase_id": "adhoc_2", "phase_name": "avg_days by distribution_center",
+                                       "status": "complete", "summary": "", "findings": [finding]}]}
+    return I.ada_synthesize(state)["answer_report"]
+
+
+def test_the_report_keeps_the_withheld_sentence_and_never_prints_it(monkeypatch):
+    report = _a_describe_run(monkeypatch, "Across all 59,911 orders, every centre ships in 1.49–1.50 days. "
+                                          "Houston TX takes 1.49 days.")
+    assert report.get("withheld") == [{"from": "headline", "figures": ["59,911"],
+                                   "text": "Across all 59,911 orders, every centre ships in 1.49–1.50 days"}]
+    assert "59,911" not in report["headline"] + report["executive_summary"]
+    from aughor.export.document import build_export_doc
+    doc = build_export_doc({"question": "q", "report": report})
+    assert not any("59,911" in str(vars(b)) for b in doc.blocks)
+
+
+def test_an_answer_with_nothing_withheld_carries_no_record(monkeypatch):
+    assert "withheld" not in _a_describe_run(monkeypatch, "Houston TX takes 1.49 days; Memphis TN 1.50.")
+
+
 def test_nothing_to_withhold_leaves_the_answer_as_written():
     synth = _draft()
     assert withhold_untraced(synth, [], "q") == []

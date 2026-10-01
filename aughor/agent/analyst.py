@@ -229,7 +229,10 @@ def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None) 
     SCOPE that distinguishes it from another cut of the same shape."""
     cols = [str(c) for c in (columns or []) if str(c).strip()]
     if len(cols) == 2:
-        base = f"{cols[1]} by {cols[0]}"
+        # One row cuts nothing: two measures side by side are "a and b" — Q4's overall row
+        # (2026-10-01) was titled "overall_avg_shipped_… by overall_avg_placed_…".
+        one_row = isinstance(rows, (list, tuple)) and len(rows) == 1
+        base = (_measured_cut(cols, rows) if one_row else "") or f"{cols[1]} by {cols[0]}"
     elif len(cols) == 1:
         base = str(cols[0])
     else:
@@ -950,8 +953,9 @@ def _describe_rules(budget: int) -> list[str]:
         "When you stop, write the answer the reader will read, in plain prose. Open with "
         "the answer itself in one sentence, with its figures — what leads, what trails, by "
         "how much — never a definition or a restatement of the question. Groups within a "
-        "few percent of each other are alike: say so with their range ('every centre takes "
-        "3.95–4.01 days'), and name no leader or laggard the data does not separate. Then "
+        "few percent of each other are alike: say so with their range — the lowest and the "
+        "highest group's own value, each read from a row — and name no leader or laggard "
+        "the data does not separate. Then "
         "the figures asked for, as a table when there are several rows, with the period and "
         "the definition used; then anything the data could not answer. A total or share "
         "across rows is quoted from the result's `totals`, never added up by hand, and a "
