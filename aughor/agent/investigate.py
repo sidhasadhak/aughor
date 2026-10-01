@@ -3371,6 +3371,11 @@ def _dedupe_repeated_caveats(phases: list) -> None:
     seen_caveats: set = set()
     seen_interps: set = set()
     for ph in phases or []:
+        # A phase a re-run replaced is never drawn: its copy of a caveat must not count as the one
+        # shown and blank the drawn result's (2026-10-01, fulfilment — a hidden over-count warning
+        # was "first" and the identical one beside it read as blank).
+        if ph.get("_hidden"):
+            continue
         for f in ph.get("findings") or []:
             cav = (f.get("trust_caveat") or "").strip()
             if cav:

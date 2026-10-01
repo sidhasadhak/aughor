@@ -243,6 +243,14 @@ def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None) 
     return f"{base} — {scope}" if scope else base
 
 
+def _same_rows(finding: dict, rows: list, row_count: Any) -> bool:
+    """Whether a recorded finding holds exactly these rows, in any order — the same result."""
+    def _key(rs: Any) -> list:
+        return sorted([str(v) for v in r] for r in list(rs or [])[:50])
+    return (bool(rows) and int(finding.get("row_count") or 0) == int(row_count or len(rows))
+            and _key(finding.get("rows")) == _key(rows))
+
+
 def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
     """Pass a tool result through, and make its rows part of the investigation.
 
@@ -270,11 +278,23 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
             # columns, the earlier carried a warning and this one carries none. Kept in the run
             # (hidden, with what replaced it) — the trace still shows the correction; the answer
             # no longer shows the flawed table beside the right one (2026-10-01, fulfilment).
+            # A re-run that returns a flagged result's rows UNCHANGED corrected nothing, however it
+            # was written: it carries that warning, read by the model on this very result, and
+            # replaces only its own copies. The fulfilment answer's last query (2026-10-01, evening)
+            # re-wrote a join flagged as an over-count through two CTEs, came back with the flagged
+            # rows to the last digit, and replaced four warnings with a table that carried none.
             if not [c for c in (result.get("caveats") or []) if c]:
-                for _p in turn.state.get("investigation_phases") or []:
-                    _f = (_p.get("findings") or [{}])[0]
-                    if (str(_p.get("phase_id", "")).startswith("adhoc_") and not _p.get("_hidden")
-                            and _f.get("trust_caveat") and list(_f.get("columns") or []) == list(cols)):
+                def _first(_p: dict) -> dict:
+                    return (_p.get("findings") or [{}])[0]
+                earlier = [_p for _p in turn.state.get("investigation_phases") or []
+                           if str(_p.get("phase_id", "")).startswith("adhoc_") and not _p.get("_hidden")
+                           and list(_first(_p).get("columns") or []) == list(cols)]
+                same = [_p for _p in earlier if _same_rows(_first(_p), rows, result.get("row_count"))]
+                carried = list(dict.fromkeys(c for c in (_first(_p).get("trust_caveat") for _p in same) if c))
+                if carried:
+                    result["caveats"] = list(result.get("caveats") or []) + carried
+                for _p in earlier:
+                    if any(_p is _s for _s in same) or (not carried and _first(_p).get("trust_caveat")):
                         _p["_hidden"] = True
                         _p["superseded_by"] = f"adhoc_{n}"
             title = _adhoc_title(cols, turn.state.get("question", ""), (args or {}).get("sql", ""), rows)

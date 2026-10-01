@@ -131,11 +131,12 @@ def test_without_such_a_table_it_still_says_parent_first():
 
 # ── A query re-run to correct a flagged one replaces it on the page ───────────────────
 
-def _record(turn, columns, caveats):
+def _record(turn, columns, caveats, rows=(("a", 1),)):
     from aughor.agent.analyst import _record_evidence
-    _record_evidence(turn, {"sql": "SELECT 1"}, {"columns": columns, "rows": [["a", 1]],
-                                                 "row_count": 1, "caveats": caveats})
+    out = _record_evidence(turn, {"sql": "SELECT 1"}, {"columns": columns, "rows": [list(r) for r in rows],
+                                                       "row_count": len(rows), "caveats": caveats})
     turn.phase_tools_run.append("run_sql")
+    return out
 
 
 def test_a_corrected_rerun_hides_the_flagged_result_and_nothing_else():
@@ -144,7 +145,7 @@ def test_a_corrected_rerun_hides_the_flagged_result_and_nothing_else():
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": []})
     _record(turn, ["centre", "days"], ["time-order guard: shipped_at is earlier than created_at …"])
     _record(turn, ["month", "days"], [])                       # a different cut: stays
-    _record(turn, ["centre", "days"], [])                       # the corrected re-run
+    _record(turn, ["centre", "days"], [], rows=(("a", 2),))    # the corrected re-run
     first, other, fixed = turn.state["investigation_phases"]
     assert first["_hidden"] and first["superseded_by"] == fixed["phase_id"]
     assert not other.get("_hidden") and not fixed.get("_hidden")
@@ -158,6 +159,37 @@ def test_a_rerun_that_is_flagged_too_replaces_nothing():
     _record(turn, ["centre", "days"], ["time-order guard: …"])
     _record(turn, ["centre", "days"], ["time-order guard: …"])
     assert not any(p.get("_hidden") for p in turn.state["investigation_phases"])
+
+
+def test_a_rerun_returning_the_flagged_rows_unchanged_carries_the_warning():
+    """The fulfilment answer's last query (2026-10-01, evening) re-wrote a join flagged as an over-count through two
+    CTEs, came back with the flagged rows to the last digit, and replaced four warnings with a table carrying none."""
+    from aughor.agent.analyst import AnalystTurn
+    from aughor.agent.investigate import _evidence_confidence_ceiling
+    turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": []})
+    over = "possible over-count: AVG(o.lead) over orders is taken across the join to order_items …"
+    flagged_rows = (("Chicago IL", "1.5064156373665947"), ("Houston TX", "1.492280657713069"))
+    _record(turn, ["centre", "days"], ["time-order guard: …"], rows=(("Chicago IL", "0.58"), ("Houston TX", "0.56")))
+    _record(turn, ["centre", "days"], [over], rows=flagged_rows)
+    out = _record(turn, ["centre", "days"], [], rows=flagged_rows[::-1])     # the same rows, written another way
+    time_order, flagged, again = turn.state["investigation_phases"]
+    assert out["caveats"] == [over]                                          # the model reads it on this result
+    assert again["findings"][0]["trust_caveat"] == over and not again.get("_hidden")
+    assert flagged.get("_hidden") and flagged.get("superseded_by") == again["phase_id"]   # one table, its warning
+    assert not time_order.get("_hidden")                       # a copy of another result corrects nothing
+    assert _evidence_confidence_ceiling(turn.state["investigation_phases"])[0] != "HIGH"
+    from aughor.agent.analyst import _same_rows                # a preview alike over more rows is not a copy
+    assert not _same_rows({"rows": [["a", "1"]], "row_count": 25}, [["a", "1"]], 26)
+
+
+def test_a_shown_result_keeps_a_warning_a_hidden_copy_also_had():
+    from aughor.agent.investigate import _dedupe_repeated_caveats
+    w = "possible over-count: …"
+    phases = [{"phase_id": "adhoc_2", "_hidden": True, "findings": [{"trust_caveat": w}]},
+              {"phase_id": "adhoc_3", "findings": [{"trust_caveat": w}]},
+              {"phase_id": "adhoc_4", "findings": [{"trust_caveat": w}]}]
+    _dedupe_repeated_caveats(phases)
+    assert [p["findings"][0]["trust_caveat"] for p in phases] == [w, w, None]   # drawn once, where it is drawn
 
 
 # ── A statement that filters the backwards rows out is told how many it left (2026-10-01) ─
