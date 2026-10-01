@@ -954,7 +954,8 @@ def _describe_rules(budget: int) -> list[str]:
         "3.95–4.01 days'), and name no leader or laggard the data does not separate. Then "
         "the figures asked for, as a table when there are several rows, with the period and "
         "the definition used; then anything the data could not answer. A total or share "
-        "across rows is quoted from the result's `totals`, never added up by hand; an "
+        "across rows is quoted from the result's `totals`, never added up by hand, and a "
+        "column under `no_total` is never added up at all; an "
         "overall average comes from a query that computes it without the GROUP BY — never "
         "one group's value, never an average of the groups' averages. No recommendations, "
         "no speculation about causes.",

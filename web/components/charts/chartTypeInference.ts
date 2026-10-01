@@ -25,7 +25,7 @@
 import {
   isIdLike, INSTRUMENTATION_COL as INSTRUMENTATION,
   SHARE_COL, CHANGE_METRIC_COL as CHANGE_METRIC, ADDITIVE_COL,
-  countUnique, classifyColumns, isUngraphableGrid, plottedMeasures,
+  countUnique, classifyColumns, isUngraphableGrid, plottedMeasures, uniqueLabelBand,
   GEO_NAME_COL, LAT_COL, LON_COL,
 } from "./columnRoles";
 
@@ -284,6 +284,13 @@ export function inferChartType(
   //                             a 20-slice pie is unreadable, a 20-bar long tail buries it)
   //   • otherwise (rates, averages, ranking) → BAR     (comparison / ranking)
   if (catIdx !== undefined) {
+    // A result whose first label repeats beside a label each row owns: one bar per row, coloured
+    // by the repeating label — a rate or an average stacked on a shared band reads as nonsense.
+    const own = uniqueLabelBand(columns, rows, catIdxs, numericIdxs);
+    if (own) {
+      const y = numericIdxs.length >= 2 ? chooseMultiMeasure(columns, rows, numericIdxs).barIdx : numericIdxs[0];
+      return { type: "bar", xCol: own.band, yCols: [y], ...(own.group !== undefined ? { colorCol: own.group } : {}) };
+    }
     const uniqueCatCount = countUnique(rows, catIdx);
 
     if (numericIdxs.length >= 2) {

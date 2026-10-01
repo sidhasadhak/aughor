@@ -120,10 +120,15 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         # Item 6, for the model reading these rows: each additive column's total over EVERY
         # row, computed by code — quoted, never added up by hand (a hand-added total was off
         # by 45.82 on ten rows, 2026-09-30). Present only when a column adds up.
-        from aughor.tools.postproc import column_totals
+        from aughor.tools.postproc import column_totals, untotalled
         _totals = column_totals(ran or sql, out["columns"], rows, result.row_count)
         if _totals:
             out["totals"] = dict(_totals)
+        # And the aggregates that do NOT add up, each with why — said before the model adds them:
+        # a distinct count per centre was summed into an order count 38% too high (2026-10-01).
+        _no_total = untotalled(ran or sql, out["columns"], rows, result.row_count)
+        if _no_total:
+            out["no_total"] = dict(_no_total)
     if result.error:
         out["repair"] = route_error(result.error, sql, getattr(conn, "dialect", "") or "")
     elif emit is not None:

@@ -188,3 +188,44 @@ def test_the_analyst_measures_on_the_measures_table_and_acts_on_a_caveat():
     p = analyst_system_prompt("c", {}, 10, shape="describe")
     assert "Groups within a few percent of each other are alike" in p
     assert "never one group's value, never an average of the groups' averages" in p
+
+
+# ── 2026-10-01, re-run #5 — what may not be added up is said, with why ───────────────────
+
+Q4_RERUN = ("WITH order_metrics AS (SELECT o.order_id, DATE_DIFF(CAST(o.shipped_at AS DATE), CAST(o.created_at AS "
+            "DATE), DAY) AS days_placed_to_shipped, ii.product_distribution_center_id FROM orders AS o JOIN order_items "
+            "AS oi ON o.order_id = oi.order_id JOIN inventory_items AS ii ON oi.inventory_item_id = ii.id GROUP BY 1, 2, 3) "
+            "SELECT dc.name AS distribution_center, AVG(om.days_placed_to_shipped) AS avg_days_placed_to_shipped, "
+            "COUNT(DISTINCT om.order_id) AS order_count FROM order_metrics AS om JOIN distribution_centers AS dc "
+            "ON om.product_distribution_center_id = dc.id GROUP BY 1")
+
+
+def test_run_sql_says_which_columns_do_not_add_up_and_why(monkeypatch):
+    """Q4's re-run counted distinct orders per centre; the centres' counts add to 59,911 where the
+    orders number 43,457, and the sentence carrying such a sum was withheld."""
+    from aughor.agent import converse_tools as ct
+    monkeypatch.setattr(ct, "_connection", lambda cid: SimpleNamespace(get_schema=lambda: ""))
+    result = SimpleNamespace(sql="", columns=["distribution_center", "avg_days_placed_to_shipped", "order_count"],
+                             rows=[["Houston TX", "1.488", "7502"], ["Memphis TN", "1.502", "7836"]],
+                             row_count=2, error=None, caveats=[])
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: result)
+    out = ct.run_sql("c1", {"sql": Q4_RERUN})
+    assert "totals" not in out
+    assert out["no_total"]["order_count"].startswith("counts distinct values per row")
+    assert out["no_total"]["avg_days_placed_to_shipped"].startswith("an average or a ratio per row")
+    assert "distribution_center" not in out["no_total"]
+
+
+def test_a_ratio_holding_a_distinct_count_is_named_a_ratio_and_a_sum_is_totalled_not_named():
+    from aughor.tools.postproc import untotalled
+    sql = ("SELECT category, SUM(sale_price) AS total_revenue, SUM(sale_price) / COUNT(DISTINCT order_id) "
+           "AS average_order_value FROM order_items GROUP BY 1")
+    rows = [["Jeans", "220935.50", "100.79"], ["Swim", "114013.31", "57.76"]]
+    said = dict(untotalled(sql, ["category", "total_revenue", "average_order_value"], rows, 2))
+    assert list(said) == ["average_order_value"] and said["average_order_value"].startswith("an average or a ratio")
+    assert untotalled(sql, ["category", "total_revenue", "average_order_value"], rows[:1], 2) == []   # not all in hand
+
+
+def test_the_describe_rule_never_adds_up_a_column_under_no_total():
+    from aughor.agent.analyst import analyst_system_prompt
+    assert "a column under `no_total` is never added up at all" in analyst_system_prompt("c", {}, 10, shape="describe")

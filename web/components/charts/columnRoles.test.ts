@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { classifyColumns, percentRates, plottedMeasures, rateParts, tooFewToCompare } from "@/components/charts/columnRoles";
+import { classifyColumns, percentRates, plottedMeasures, rateParts, tooFewToCompare, uniqueLabelBand } from "@/components/charts/columnRoles";
 import { inferChartType } from "@/components/charts/chartTypeInference";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { seriesTrend } from "@/components/brief/Sparkline";
@@ -160,5 +160,39 @@ describe("a rate over a handful of records cannot set the scale", () => {
     const rows = TODAY.rows.slice(1);
     const spec = resolveVegaSpec({ columns: TODAY.columns, rows, chartType: "auto" })?.spec as unknown as Spec;
     expect(JSON.stringify(spec)).not.toContain("__shown");
+  });
+});
+
+describe("several cuts in one result chart one bar per row, coloured by the cut", () => {
+  // The re-run of 2026-10-01: both cuts in one result, `dimension` repeating beside `value`.
+  const COMBINED = {
+    columns: ["dimension", "value", "cohort_size", "repeaters", "repeat_rate"],
+    rows: [["country", "Colombia", "2", "1", "0.5"], ["country", "Poland", "49", "6", "0.12244897959183673"],
+           ["country", "China", "5976", "599", "0.1002342704149933"], ["country", "Spain", "722", "60", "0.08310249307479224"],
+           ["traffic_source", "Display", "717", "77", "0.10739191073919108"],
+           ["traffic_source", "Search", "12384", "1172", "0.09463824289405685"],
+           ["traffic_source", "Facebook", "1003", "83", "0.08275174476570289"]],
+  };
+  type Enc = { x?: { field?: string }; y?: { field?: string }; color?: { field?: string } };
+
+  it("the label each row owns is the band; the repeating one is the colour", () => {
+    expect(uniqueLabelBand(COMBINED.columns, COMBINED.rows, [0, 1], [4])).toEqual({ band: 1, group: 0 });
+    expect(inferChartType(COMBINED.columns, COMBINED.rows)).toMatchObject({ type: "bar", xCol: 1, yCols: [4], colorCol: 0 });
+  });
+
+  it("an explicit bar hint draws it the same way", () => {
+    for (const chartType of ["auto", "bar"]) {
+      const enc = (resolveVegaSpec({ columns: COMBINED.columns, rows: COMBINED.rows, chartType })?.spec as { encoding: Enc })
+        .encoding;
+      const band = [enc.x?.field, enc.y?.field].find((f) => f === "value");
+      expect([band, enc.color?.field]).toEqual(["value", "dimension"]);
+    }
+  });
+
+  it("a total over a repeating label stays a stacked composition", () => {
+    const g = { columns: ["region", "product", "revenue"],
+                rows: [["North", "A", "100"], ["North", "B", "50"], ["South", "C", "80"]] };
+    expect(uniqueLabelBand(g.columns, g.rows, [0, 1], [2])).toBeNull();
+    expect(inferChartType(g.columns, g.rows)?.xCol).toBe(0);
   });
 });

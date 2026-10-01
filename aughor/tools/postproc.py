@@ -159,6 +159,50 @@ def column_totals(sql: str, columns: list[str], rows: list[Row],
     return out
 
 
+def untotalled(sql: str, columns: list[str], rows: list[Row],
+               row_count: Optional[int] = None) -> list[tuple[str, str]]:
+    """Each aggregate column `column_totals` will not total, as ``(column, why)`` — said to the
+    model reading the rows, so it does not add them up itself.
+
+    The Q4 re-run of 2026-10-01 counted distinct orders per distribution centre; its opening
+    sentence was withheld by the trace check, and the centres' counts add to 59,911 where the
+    orders number 43,457 — an order whose items ship from two centres is in both rows. Only a
+    column whose own projection is an aggregate that does not add (a distinct count, an
+    average, a ratio, a window value) is named; a dimension, or a result not wholly in hand,
+    says nothing here."""
+    from sqlglot import exp
+    n = len(rows or [])
+    if n < 2 or (row_count or n) > n or not sql:
+        return []
+    tree = _parsed(sql)
+    if tree is None:
+        return []
+    totalled = {c for c, _ in column_totals(sql, columns, rows, row_count)}
+    out: list[tuple[str, str]] = []
+    for col in columns or []:
+        if str(col) in totalled:
+            continue
+        defs = [a.this for a in tree.find_all(exp.Alias) if a.alias.lower() == str(col).lower()]
+        if not defs or not any(d.find(exp.AggFunc, exp.Window) is not None for d in defs):
+            continue
+        def _top(e):
+            while isinstance(e, (exp.Paren, exp.Round, exp.Cast, exp.TryCast, exp.Coalesce)):
+                e = e.this
+            return e
+        if any(isinstance(_top(d), exp.Count) and _top(d).find(exp.Distinct) is not None for d in defs):
+            why = ("counts distinct values per row: one value can fall in more than one row, so "
+                   "these rows do not add up to a total")
+        elif any(d.find(exp.Window) is not None for d in defs):
+            why = "a running or window value per row: these rows do not add up to a total"
+        elif all(_adds_across_rows(d) for d in defs):
+            continue                            # adds, but its name or cells kept it from `totals`
+        else:
+            why = ("an average or a ratio per row: these rows do not add up — an overall figure "
+                   "comes from the same measure computed without the GROUP BY")
+        out.append((str(col), why))
+    return out
+
+
 # ── series math (pure) ─────────────────────────────────────────────────────────
 
 def pct_changes(values: list[Optional[float]]) -> list[Optional[float]]:

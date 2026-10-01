@@ -17,7 +17,7 @@
 import { chartDateFormat, cleanLabel, detectGranularity } from "@/lib/format";
 import { currencySymbol, effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
 import { classifyColumns, isIdLike, isUngraphableGrid, percentRates, plottedMeasures, tooFewToCompare,
-         HORIZONTAL_MAX_CATS, TOO_FEW_TO_COMPARE } from "@/components/charts/columnRoles";
+         uniqueLabelBand, HORIZONTAL_MAX_CATS, TOO_FEW_TO_COMPARE } from "@/components/charts/columnRoles";
 import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
 import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
@@ -306,7 +306,12 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // down, and category labels need the room), and vertically when x is time (a trend reads
   // across). Only `bar_vertical` forces the upright form. Encoding the same rule here is
   // what stops the Phase 2 diff from flagging every explicit `bar` as a regression.
-  const bandCol = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol);
+  // An explicit bar over a result whose first label repeats beside a label each row owns takes
+  // the owned label as its band and the repeating one as its colour — as `auto` does.
+  const ownBand = !inferred && /^bar/.test(hint)
+    ? uniqueLabelBand(columns, rows, catIdxs, plottedMeasures(columns, rows, numericIdxs)) : null;
+  const bandCol = inferred ? columns[inferred.xCol]
+    : ownBand ? columns[ownBand.band] : (catCols[0] ?? dateCol);
   const isTimeX = bandCol === dateCol;
   // Density decides too: past HORIZONTAL_MAX_CATS distinct categories a lying-down ranking
   // either shrinks below legibility or needs a scrollbar, so it stands up.
@@ -418,8 +423,10 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const userMeasure = chosenMeasure && columns.includes(chosenMeasure) ? chosenMeasure : null;
   const measure = tf ? tf.derived
     : (userMeasure ?? (inferred?.yCols?.length ? columns[inferred.yCols[0]] : firstMeasure));
-  const band = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol ?? columns[0]);
-  const inferredSeries = inferred?.colorCol != null ? columns[inferred.colorCol] : undefined;
+  const band = inferred ? columns[inferred.xCol]
+    : ownBand ? columns[ownBand.band] : (catCols[0] ?? dateCol ?? columns[0]);
+  const inferredSeries = inferred?.colorCol != null ? columns[inferred.colorCol]
+    : ownBand?.group !== undefined ? columns[ownBand.group] : undefined;
   const base: Record<string, unknown> = { $schema: "https://vega.github.io/schema/vega-lite/v6.json", data };
   if (tf) base.transform = tf.transform;
   if (title) base.title = title;
@@ -613,6 +620,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     ? { x: valueEnc, y: bandEnc, opacity: exOpacity ?? fewOpacity ?? SELECT_OPACITY }
     : { x: bandEnc, y: valueEnc, opacity: exOpacity ?? fewOpacity ?? SELECT_OPACITY };
   if (exColor) encoding.color = exColor;
+  // One bar per row, coloured by the label its rows share (`uniqueLabelBand`).
+  else if (inferredSeries) encoding.color = { field: inferredSeries, type: "nominal", sort: null };
 
   /**
    * The exhibit grammar, as encodings. `severity` ramps the measure through the config's

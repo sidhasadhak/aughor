@@ -264,6 +264,28 @@ export function plottedMeasures(columns: string[], rows: unknown[][], numericIdx
   return kept.length ? kept : numericIdxs;
 }
 
+/**
+ * The bar's band when the first label REPEATS across rows while another label is unique to each:
+ * a result that stacks several cuts in one table (`[dimension, value, …]` — "country / China",
+ * "traffic_source / Email"), or a grouping beside the label each row owns. A rate or an average
+ * cannot be stacked, so the bar is the label each row owns, coloured by the repeating one when it
+ * has few values. Null when the first label is already unique, when no other label is, or when
+ * every measure adds up — a stacked total is a composition, and stays one.
+ *
+ * Measured 2026-10-01: the Agent's repeat-rate answer put its source and country cuts in one
+ * result, and the chart drew all 18 rates on two bars, "country" and "traffic_source".
+ */
+export function uniqueLabelBand(columns: string[], rows: unknown[][], catIdxs: number[],
+                                measureIdxs: number[]): { band: number; group?: number } | null {
+  if (catIdxs.length < 2 || !measureIdxs.length) return null;
+  const first = catIdxs[0];
+  if (countUnique(rows, first) >= rows.length) return null;
+  if (measureIdxs.every((i) => ADDITIVE_COL.test(columns[i] || "") && !SHARE_COL.test(columns[i] || ""))) return null;
+  const band = catIdxs.find((i) => i !== first && countUnique(rows, i) === rows.length);
+  if (band === undefined) return null;
+  return countUnique(rows, first) <= 8 ? { band, group: first } : { band };
+}
+
 /** Fewer records than this behind a rate, and it is too few to compare with the others: a rate of
  *  1 in 2 reads 50%. The rule of thumb for a proportion that stops moving with a few records. */
 export const TOO_FEW_TO_COMPARE = 30;
