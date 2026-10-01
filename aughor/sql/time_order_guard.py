@@ -57,6 +57,9 @@ class Inverted:
     #: The statement's own filter leaves these rows out (`WHERE end >= start`): the counts are
     #: of the rows it would measure without that filter.
     left_out: bool = False
+    #: The column ``table`` and its one parent both carry, named for the parent (`order_id`
+    #: for `orders`) — how to bring the parent in. "" when there is no such column.
+    join_on: str = ""
 
     @property
     def share(self) -> float:
@@ -76,7 +79,8 @@ class Inverted:
         if self.parents:
             names = " and ".join(self.parents)
             what = (f"Measure from the record {rows} belongs to first — {names} also "
-                    f"{'carries' if len(self.parents) == 1 else 'carry'} {end} and {start}")
+                    f"{'carries' if len(self.parents) == 1 else 'carry'} {end} and {start}"
+                    + (f" (join it on {self.join_on})" if self.join_on else ""))
         else:
             what = f"Measure from the timestamps of the record {rows} belongs to, if it carries its own"
         if self.left_out:
@@ -200,6 +204,19 @@ def _parents(table: str, end: str, start: str, column_types: dict) -> tuple:
     return tuple(sorted(t for t, cols in carrying.items() if cols == {end, start} and t != table)[:2])
 
 
+def _join_on(table: str, parent: str, column_types: dict) -> str:
+    """The column ``table`` and ``parent`` both carry that is named for the parent —
+    `order_id` for `orders` — or "". Told only "orders also carries shipped_at", the analyst
+    of 2026-10-01 did not bring orders in; the key is how to."""
+    cols: dict[str, set] = {}
+    for key in column_types or {}:
+        t, _, c = str(key).rpartition(".")
+        if t:
+            cols.setdefault(t.split(".")[-1].lower(), set()).add(c.lower())
+    key = f"{parent.lower().removesuffix('s')}_id"
+    return key if key in cols.get(table.lower(), set()) and key in cols.get(parent.lower(), set()) else ""
+
+
 def probe_sql(tree: exp.Expression, scope: exp.Select, pairs: list, dialect: str) -> str:
     """Two counts per pair over the scope's own rows: how many run backwards, how many are
     measured at all. Grouping, ordering and limits go — the question is about every row the
@@ -290,4 +307,6 @@ def time_order_check(conn: Any, sql: str, dialect: str = "duckdb",
             types = {}
         for f in run.findings:
             f.parents = _parents(f.table, f.end.split(".")[-1].lower(), f.start.split(".")[-1].lower(), types)
+            if len(f.parents) == 1 and f.table:
+                f.join_on = _join_on(f.table, f.parents[0], types)
     return run

@@ -62,6 +62,11 @@ _CHANGE_VERB = (
 #: slightly"), conjunctions, numbers and currency/percent marks.
 _NOT_AN_OBJECT = (
     r"by|from|to|in|on|at|of|over|since|during|between|across|after|before|until|through"
+    # More prepositions: "the repeat rate generally increased THROUGHOUT the year" was refused
+    # as a transitive (causal) use on a describe answer (theLook, 2026-10-01) — `through` is
+    # here, but the alternation ends at a word boundary, so `throughout` never matched it.
+    r"|throughout|within|among|amongst|into|toward|towards|around|beyond|under|above|below"
+    r"|along|amid|alongside|upon|onto|via|despite"
     r"|per|for|with|as|than|compared|versus|vs\.?|relative|against|and|but|or|nor|while|when"
     r"|where|which|that|because|due|again|also|only|mostly|largely|overall|notably|materially"
     r"|marginally|slightly|sharply|significantly|markedly|steadily|modestly|substantially"

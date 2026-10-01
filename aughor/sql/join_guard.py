@@ -147,6 +147,73 @@ def _same_source(a: _Side, b: _Side) -> bool:
             and a.source.name.lower() == b.source.name.lower())
 
 
+def _scope_sources(select) -> dict:
+    """The row sources ``select`` itself reads — its FROM and JOINs, not deeper — by the names its
+    columns may qualify them with."""
+    import sqlglot.expressions as exp
+    nodes = []
+    from_ = select.args.get("from_") or select.args.get("from")
+    if from_ is not None:
+        nodes.append(from_.this)
+    nodes += [j.this for j in select.args.get("joins") or []]
+    out: dict = {}
+    for n in nodes:
+        if isinstance(n, (exp.Table, exp.Subquery)):
+            out.setdefault((n.alias_or_name or "").lower(), n)
+            if isinstance(n, exp.Table) and n.name:
+                out.setdefault(n.name.lower(), n)
+    return out
+
+
+def _stored_origin(tree, source, column: str, depth: int = 0) -> "tuple[str, str] | None":
+    """The stored ``(table, column)`` that ``column`` of ``source`` reads, followed through the
+    statement's CTEs and subqueries — None when the column is computed, or the trail is lost
+    (a UNION, a qualifier it cannot place, a source it cannot see)."""
+    import sqlglot.expressions as exp
+    if source is None or depth > 8:
+        return None
+    if isinstance(source, exp.Table):
+        cte = None
+        if not source.db and not source.catalog:
+            name = (source.name or "").lower()
+            cte = next((c for c in tree.find_all(exp.CTE) if c.alias_or_name.lower() == name), None)
+        if cte is None:
+            return _table_name(source).lower(), column.lower()
+        select = cte.this
+    elif isinstance(source, exp.Subquery):
+        select = source.this
+    else:
+        return None
+    if not isinstance(select, exp.Select):
+        return None
+    proj = next((e for e in select.expressions
+                 if isinstance(e, exp.Star) or (e.alias_or_name or "").lower() == column.lower()), None)
+    inner = proj.this if isinstance(proj, exp.Alias) else proj
+    sources = _scope_sources(select)
+    if isinstance(inner, exp.Star):
+        return (_stored_origin(tree, next(iter(sources.values())), column, depth + 1)
+                if len(sources) == 1 else None)
+    if not isinstance(inner, exp.Column):
+        return None
+    qual = (inner.table or "").lower()
+    src = sources.get(qual) if qual else (next(iter(sources.values())) if len(sources) == 1 else None)
+    return _stored_origin(tree, src, inner.name, depth + 1)
+
+
+def _one_domain(tree, a: "_Side", b: "_Side") -> bool:
+    """Both keys are views of ONE stored column — `monthly_cohorts.user_id` and
+    `repeat_orders.user_id`, each read from `orders.user_id` through the statement's CTEs.
+    Their values come from one domain by construction, so a low overlap is what the
+    statement's filters select, never a mismatch: on theLook's repeat-rate query (2026-10-01)
+    the 2025 cohorts and the repeaters shared 13% of values — the repeat rate itself — and the
+    guard called the join unreliable."""
+    import sqlglot.expressions as exp
+    if not (isinstance(a.expr, exp.Column) and isinstance(b.expr, exp.Column)):
+        return False
+    origin_a = _stored_origin(tree, a.source, a.expr.name)
+    return origin_a is not None and origin_a == _stored_origin(tree, b.source, b.expr.name)
+
+
 def _join_sides(tree, dialect: str | None) -> "tuple[list[tuple[_Side, _Side]], list[str]]":
     """Each equality a JOIN … ON makes between two row sources, as a pair of sides, each pair once — and, for
     each equality the guard cannot attribute to one source per side, why (an unqualified column, a side mixing
@@ -608,6 +675,10 @@ def join_domain_check(
         run.unchecked.extend(unreadable)
         for a, b in pairs:
             if not (a.plain and b.plain):
+                if _one_domain(tree, a, b):
+                    from aughor.stats import bump
+                    bump("guard.join_domain.one_domain")
+                    continue
                 failed: list[str] = []
                 overlaps = [o for o in (_probe_overlap_derived(conn, tree, a, b, failed),
                                         _probe_overlap_derived(conn, tree, b, a, failed)) if o is not None]

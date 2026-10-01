@@ -16,8 +16,8 @@
 
 import { chartDateFormat, cleanLabel, detectGranularity } from "@/lib/format";
 import { currencySymbol, effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
-import { classifyColumns, isIdLike, isUngraphableGrid, percentRates, plottedMeasures,
-         HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
+import { classifyColumns, isIdLike, isUngraphableGrid, percentRates, plottedMeasures, tooFewToCompare,
+         HORIZONTAL_MAX_CATS, TOO_FEW_TO_COMPARE } from "@/components/charts/columnRoles";
 import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
 import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
@@ -570,14 +570,27 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // so the longest bar's label walked off the plot into the legend gutter. When labels
   // are on, the value scale gets headroom via Vega-Lite's own domainMax — the label
   // then lands inside the plot by construction, whatever the data.
+  /**
+   * A rate over a handful of records is drawn faded, after the others, and cannot set the scale:
+   * its bar stops at the edge the other rows set, labelled with its value and its count. On theLook's
+   * repeat-rate answer (2026-10-01) Colombia — 2 customers, 1 repeat, 50% — stretched the country
+   * chart to 50% and flattened every comparable country into the bottom fifth of it.
+   */
+  const few = tooFewToCompare(columns, rows, numericIdxs, measure);
   let labelHeadroom: { scale?: Record<string, unknown> } = {};
-  if (showLabels) {
+  let scaleMax = 0;
+  if (showLabels || few.rows.size) {
     const mi = columns.indexOf(measure);
-    const vals = rows.map((r) => Number(r[mi])).filter(Number.isFinite);
+    const vals = rows.filter((_, i) => !few.rows.has(i)).map((r) => Number(r[mi])).filter(Number.isFinite);
     const mx = vals.length ? Math.max(...vals) : 0;
-    if (mx > 0) labelHeadroom = { scale: { domainMax: (pctScaled ? mx / 100 : mx) * 1.12 } };
+    if (mx > 0) {
+      scaleMax = (pctScaled ? mx / 100 : mx) * 1.12;
+      labelHeadroom = { scale: { domainMax: scaleMax } };
+    }
   }
-  const valueEnc = { field: valueField, type: "quantitative", ...labelHeadroom,
+  const fewTest = few.rows.size && scaleMax > 0 ? `datum['${few.den}'] < ${TOO_FEW_TO_COMPARE}` : "";
+  const barField = fewTest ? "__shown" : valueField;
+  const valueEnc = { field: barField, type: "quantitative", ...labelHeadroom,
                      axis: valueAxis(axisTitle(yTitle, measure),
                                      pct ? ".1%" : format, pct ? "" : moneyPrefix(measure)) };
   const bandEnc = {
@@ -593,9 +606,12 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // silently overwritten — the param compiled, the click registered, and nothing dimmed.
   const exColor = exhibitColor();
   const exOpacity = emphasisOpacity();
+  const fewOpacity = fewTest
+    ? { condition: [{ test: fewTest, value: 0.35 }, { param: "picked", value: 1 }], value: 0.28 }
+    : null;
   const encoding: Record<string, unknown> = horizontal
-    ? { x: valueEnc, y: bandEnc, opacity: exOpacity ?? SELECT_OPACITY }
-    : { x: bandEnc, y: valueEnc, opacity: exOpacity ?? SELECT_OPACITY };
+    ? { x: valueEnc, y: bandEnc, opacity: exOpacity ?? fewOpacity ?? SELECT_OPACITY }
+    : { x: bandEnc, y: valueEnc, opacity: exOpacity ?? fewOpacity ?? SELECT_OPACITY };
   if (exColor) encoding.color = exColor;
 
   /**
@@ -663,17 +679,23 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const layers: Record<string, unknown>[] = [
     { mark: { type: "bar", tooltip: true }, params: [SELECT_PARAM(band)] },
   ];
-  const pctTransform = pctScaled
-    ? [{ calculate: `datum['${measure}'] / 100`, as: valueField }]
-    : [];
+  const pctTransform = [
+    ...(pctScaled ? [{ calculate: `datum['${measure}'] / 100`, as: valueField }] : []),
+    ...(fewTest ? [{ calculate: `${fewTest} ? min(datum['${valueField}'], ${scaleMax}) : datum['${valueField}']`,
+                     as: barField }] : []),
+  ];
+  /** A too-few row's label carries its count, so a faded bar still says why it is faded. */
+  function withFewCount(label: string): string {
+    return fewTest ? `(${label}) + (${fewTest} ? ' · n=' + datum['${few.den}'] : '')` : label;
+  }
   if (showLabels) {
     layers.push({
       mark: { type: "text", align: horizontal ? "left" : "center", baseline: "middle",
               dx: horizontal ? 5 : 0, dy: horizontal ? 0 : -8 },
       // A calculate rather than `format`, so the mark labels read in the same casing as the
       // axis beside them instead of 6.6k next to 6.6K.
-      transform: [{ calculate: pct ? SI_TEXT(valueField, ".1%", "")
-                                   : SI_TEXT(valueField, valueFormat(format), moneyPrefix(measure)),
+      transform: [{ calculate: withFewCount(pct ? SI_TEXT(valueField, ".1%", "")
+                                                : SI_TEXT(valueField, valueFormat(format), moneyPrefix(measure))),
                     as: "__valueLabel" }],
       encoding: { text: { field: "__valueLabel", type: "nominal" } },
     });
@@ -692,9 +714,13 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
       const withTf = pctTransform.length ? { transform: pctTransform } : {};
       // `order: "asc"` means the query asked for the BOTTOM of the ranking, so lead with the
       // row it led with instead of burying it at the far end.
-      const sorted = horizontal
-        ? { data: { values: orderedValues(measure, exhibit?.order === "asc") } }
-        : {};
+      const ordered = horizontal ? orderedValues(measure, exhibit?.order === "asc") : data.values;
+      // Too-few rows go after the others, never first, in either orientation.
+      const fewLast = fewTest
+        ? [...ordered.filter((d) => !(Number(d[few.den]) < TOO_FEW_TO_COMPARE)),
+           ...ordered.filter((d) => Number(d[few.den]) < TOO_FEW_TO_COMPARE)]
+        : ordered;
+      const sorted = horizontal || fewTest ? { data: { values: fewLast } } : {};
       return all.length > 1
         ? { ...base, ...sorted, ...withTf, layer: all, encoding }
         : { ...base, ...sorted, ...withTf, ...all[0], encoding };

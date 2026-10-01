@@ -949,11 +949,15 @@ def _describe_rules(budget: int) -> list[str]:
         "",
         "When you stop, write the answer the reader will read, in plain prose. Open with "
         "the answer itself in one sentence, with its figures — what leads, what trails, by "
-        "how much — never a definition or a restatement of the question. Then the figures "
-        "asked for, as a table when there are several rows, with the period and the "
-        "definition used; then anything the data could not answer. A total or share across "
-        "rows is quoted from the result's `totals`, never added up by hand. No "
-        "recommendations, no speculation about causes.",
+        "how much — never a definition or a restatement of the question. Groups within a "
+        "few percent of each other are alike: say so with their range ('every centre takes "
+        "3.95–4.01 days'), and name no leader or laggard the data does not separate. Then "
+        "the figures asked for, as a table when there are several rows, with the period and "
+        "the definition used; then anything the data could not answer. A total or share "
+        "across rows is quoted from the result's `totals`, never added up by hand; an "
+        "overall average comes from a query that computes it without the GROUP BY — never "
+        "one group's value, never an average of the groups' averages. No recommendations, "
+        "no speculation about causes.",
     ]
 
 
@@ -987,6 +991,13 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
         "A result shows you at most 20 rows. When it says `truncated`, the rows you see "
         "are not the result: ask for what you need with GROUP BY, or ORDER BY … LIMIT — "
         "never state a range, a spread or a pattern from the rows shown.",
+        "",
+        "Each measure in THE SPEC is defined on its own table. To cut it by a column that "
+        "lives elsewhere, JOIN that table to the measure's — never re-measure it on the "
+        "other table's own columns of the same name. A result whose caveat says how to "
+        "measure instead (the record to measure from, the rows it left out) is not yet an "
+        "answer: re-measure the way it says, then answer from that result. Leaving out the "
+        "rows a guard flagged is not a re-measure.",
         "",
         *(_describe_rules(budget) if shape == "describe" else [
             f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "

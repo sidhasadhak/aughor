@@ -237,3 +237,20 @@ def test_a_rerun_that_leaves_the_rows_out_does_not_replace_the_flagged_one():
     for sql in (SHIP, LEFT_OUT):
         _record(turn, ["hours"], execute_guarded(conn, sql, query_id="q").caveats)
     assert not any(p.get("_hidden") for p in turn.state["investigation_phases"])
+
+
+def test_the_warning_says_how_to_bring_the_parent_in_when_both_carry_its_key():
+    """Told only that orders "also carries" the two timestamps, the analyst never joined it
+    (2026-10-01). When the child and its one parent both carry the parent's key, say so."""
+    import uuid
+    conn = DuckDBConnection.__new__(DuckDBConnection)
+    conn._path, conn._conn, conn._schema_name = Path(":memory:"), duckdb.connect(":memory:"), None
+    conn._connection_id = f"time-order-{uuid.uuid4().hex[:8]}"
+    conn._conn.execute("CREATE TABLE order_items (order_id INT, created_at TIMESTAMP, shipped_at TIMESTAMP)")
+    conn._conn.execute("CREATE TABLE orders (order_id INT, created_at TIMESTAMP, shipped_at TIMESTAMP)")
+    for i in range(10):
+        ship = "2026-01-01 08:00" if i < 3 else "2026-01-03 08:00"
+        conn._conn.execute(f"INSERT INTO order_items VALUES ({i}, TIMESTAMP '2026-01-02 08:00', TIMESTAMP '{ship}')")
+    sql = "SELECT AVG(date_diff('hour', created_at, shipped_at)) AS hours FROM order_items"
+    text = " ".join(execute_guarded(conn, sql, query_id="q").caveats)
+    assert "orders also carries shipped_at and created_at (join it on order_id)" in text

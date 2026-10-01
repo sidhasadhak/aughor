@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { classifyColumns, percentRates, plottedMeasures, rateParts } from "@/components/charts/columnRoles";
+import { classifyColumns, percentRates, plottedMeasures, rateParts, tooFewToCompare } from "@/components/charts/columnRoles";
 import { inferChartType } from "@/components/charts/chartTypeInference";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { seriesTrend } from "@/components/brief/Sparkline";
@@ -123,5 +123,42 @@ describe("the trend strip trends the measure its chart plots", () => {
     expect(t?.values.at(-1)).toBeCloseTo(0.12068, 5);
     expect(t?.lastDelta).toBeCloseTo(0.12068019747668678 / 0.10660205935796487 - 1, 6);
     expect(col(COHORTS, inferChartType(COHORTS.columns, COHORTS.rows)?.yCols[0])).toBe("repeat_rate");
+  });
+});
+
+describe("a rate over a handful of records cannot set the scale", () => {
+  // The re-run of 2026-10-01 (theLook regenerated overnight): Colombia, 2 customers, 1 repeat.
+  const TODAY = {
+    columns: RATE_COLS("country"),
+    rows: [["Colombia", "2", "1", "0.5"], ["Poland", "49", "6", "0.12244897959183673"],
+           ["Belgium", "223", "25", "0.11210762331838565"], ["China", "5976", "599", "0.1002342704149933"],
+           ["Spain", "722", "60", "0.08310249307479224"]],
+  };
+  type Spec = { transform?: { calculate: string; as: string }[]; data: { values: Record<string, unknown>[] };
+                encoding: Record<string, { field?: string; scale?: { domainMax?: number }; condition?: unknown }>;
+                layer?: { transform?: { calculate: string }[] }[] };
+
+  it("reads the count behind each rate, and only a row with too few is too few", () => {
+    const few = tooFewToCompare(TODAY.columns, TODAY.rows, [1, 2, 3], "repeat_rate");
+    expect([few.den, [...few.rows]]).toEqual(["total_first_time_customers", [0]]);      // Poland's 49 stands
+    const allSmall = TODAY.rows.map((r) => [r[0], "5", "1", "0.2"]);
+    expect(tooFewToCompare(TODAY.columns, allSmall, [1, 2, 3], "repeat_rate").rows.size).toBe(0);
+  });
+
+  it("is faded, placed last, stopped at the scale the others set, and labelled with its count", () => {
+    const spec = resolveVegaSpec({ columns: TODAY.columns, rows: TODAY.rows, chartType: "auto", showLabels: true })
+      ?.spec as unknown as Spec;
+    const value = spec.encoding.x.field === "__shown" ? spec.encoding.x : spec.encoding.y;
+    expect(value.field).toBe("__shown");
+    expect(value.scale?.domainMax).toBeCloseTo(0.12244897959183673 * 1.12, 6);   // Poland sets it, not Colombia
+    expect(JSON.stringify(spec.encoding.opacity.condition)).toContain("total_first_time_customers'] < 30");
+    expect(spec.data.values.map((d) => d.country).at(-1)).toBe("Colombia");
+    expect(JSON.stringify(spec.layer)).toContain("' · n=' + datum['total_first_time_customers']");
+  });
+
+  it("a result with enough behind every rate is drawn as before", () => {
+    const rows = TODAY.rows.slice(1);
+    const spec = resolveVegaSpec({ columns: TODAY.columns, rows, chartType: "auto" })?.spec as unknown as Spec;
+    expect(JSON.stringify(spec)).not.toContain("__shown");
   });
 });

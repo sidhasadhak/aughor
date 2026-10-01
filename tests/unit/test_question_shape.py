@@ -173,3 +173,18 @@ def test_the_disclosure_says_whether_a_repair_was_attempted():
     v = [Violation("fix it", "a figure could not be traced (#36)")]
     assert reader_disclosure(v).startswith("Deterministic checks after the repair attempt:")
     assert reader_disclosure(v, repaired=False).startswith("Deterministic checks on this answer:")
+
+
+def test_the_analyst_measures_on_the_measures_table_and_acts_on_a_caveat():
+    """Q4's re-run (2026-10-01): the spec measured shipping time on `orders`; the analyst cut it
+    by centre on `order_items`, kept the 30% of rows a guard flagged out of it twice, and opened
+    with one centre's figure as the overall and a "slowest" over a 0.06-day spread."""
+    from aughor.agent.analyst import analyst_system_prompt
+    for shape in ("describe", "diagnose"):
+        p = analyst_system_prompt("c", {}, 10, shape=shape)
+        assert "JOIN that table to the measure's" in p
+        assert "re-measure the way it says, then answer from that result" in p
+        assert "Leaving out the rows a guard flagged is not a re-measure." in p
+    p = analyst_system_prompt("c", {}, 10, shape="describe")
+    assert "Groups within a few percent of each other are alike" in p
+    assert "never one group's value, never an average of the groups' averages" in p

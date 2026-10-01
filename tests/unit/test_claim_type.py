@@ -240,3 +240,16 @@ def test_an_ordinary_magnitude_does_not_manufacture_a_match():
     """406.08 must not ground a claimed 40608 — the scale widening is bounded to rate ranges."""
     v = check_grounding("The total was 40608 units.", "item | total\nwidget | 406.08")
     assert v
+
+
+def test_a_change_across_a_period_is_descriptive_and_a_change_to_a_thing_is_not():
+    """theLook, 2026-10-01: a correct describe answer — "the repeat rate … generally increased
+    throughout the year" — was refused as causal and capped, because `throughout` was read as
+    the verb's object (the list held `through`, which a word boundary keeps from matching)."""
+    from aughor.agent.claim_type import overreaching_sentences
+    said = ("The 90-day repeat rate for customers who placed their first order in 2025 generally "
+            "increased throughout the year, starting at 6.2% for the January cohort and rising to 13.1%.")
+    assert overreaching_sentences(said, "descriptive") == []
+    assert overreaching_sentences("Revenue increased within the quarter.", "descriptive") == []
+    assert overreaching_sentences("The promotion increased throughput across every centre.", "descriptive") \
+        == [("The promotion increased throughput across every centre.", "increased throughput")]

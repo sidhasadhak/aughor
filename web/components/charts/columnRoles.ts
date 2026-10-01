@@ -264,6 +264,30 @@ export function plottedMeasures(columns: string[], rows: unknown[][], numericIdx
   return kept.length ? kept : numericIdxs;
 }
 
+/** Fewer records than this behind a rate, and it is too few to compare with the others: a rate of
+ *  1 in 2 reads 50%. The rule of thumb for a proportion that stops moving with a few records. */
+export const TOO_FEW_TO_COMPARE = 30;
+
+/**
+ * The rows whose rate rests on too few records to compare — read from the rate's own denominator,
+ * beside it in the result (`rateParts`) — and that denominator's column. Empty unless some row has
+ * enough: when every group is small, none is smaller than the others.
+ */
+export function tooFewToCompare(columns: string[], rows: unknown[][], numericIdxs: number[],
+                                rateCol: string): { den: string; rows: Set<number> } {
+  const r = columns.indexOf(rateCol);
+  const part = r < 0 ? undefined : rateParts(columns, rows, numericIdxs).find((p) => p.rate === r);
+  const few = new Set<number>();
+  if (part) {
+    rows.forEach((row, i) => {
+      const n = Number(row[part.den]);
+      if (Number.isFinite(n) && n < TOO_FEW_TO_COMPARE) few.add(i);
+    });
+  }
+  return few.size && few.size < rows.length && part
+    ? { den: columns[part.den], rows: few } : { den: "", rows: new Set() };
+}
+
 /**
  * The rates in this result that read as PERCENTAGES with no unit declared: a rate whose numerator
  * and denominator are beside it, written ×100 or as a fraction that never exceeds 1 — a share of
