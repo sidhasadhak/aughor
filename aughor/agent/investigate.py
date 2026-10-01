@@ -250,7 +250,10 @@ def route_after_intake(state: AgentState) -> str:
     if state.get("_intake_failed"):
         return "intake_failed"
     intake = state.get("_ada_intake") or {}
-    if intake.get("descriptive_only"):
+    # Item 4: a question that asks to see the data and compares no periods has no baseline
+    # to run — the breakdown is its instrument, as it is for `descriptive_only`.
+    if intake.get("descriptive_only") or (intake.get("comparison_asked") is False
+                                          and not intake.get("cross_sectional")):
         return "deep_breakdown"
     return "ada_cross_section" if intake.get("cross_sectional") else "ada_baseline"
 
@@ -1146,6 +1149,114 @@ def question_shape(question: str) -> str:
     if _ASKS_WHY_RE.search(q) or _ASKS_ADVICE_RE.search(q) or _is_diagnostic_question(q):
         return "diagnose"
     return "describe" if _ASKS_TO_READ_RE.search(q) else "diagnose"
+
+
+#: A period the question NAMES: a year, a month, a quarter, a date, or a relative window
+#: ("last 6 months", "this year", "recently"). A grain is not a period: "each month",
+#: "monthly" and "per week" say how to cut the data, not which of it to read.
+_PERIOD_NAMED_RE = re.compile(
+    r"\b(?:19|20)\d{2}\b|\b\d{4}-\d{2}(?:-\d{2})?\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b"
+    r"|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sept?(?:ember)?"
+    r"|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\b(?:in|of|during|since|until)\s+may\b"
+    r"|\b(?:q[1-4]|h[12]|ytd|mtd|qtd|year[-\s]to[-\s]date|month[-\s]to[-\s]date|yesterday|today|"
+    r"tonight|recent(?:ly)?|lately)\b"
+    r"|\b(?:last|past|previous|prior|this|current|recent|trailing|rolling)\s+(?:\d+\s+|few\s+)?"
+    r"(?:days?|weeks?|months?|quarters?|years?|fiscal\s+years?|fy|periods?|seasons?)\b",
+    re.I)
+#: A question that asks to COMPARE periods — a change, a movement, a "vs".
+_COMPARISON_ASKED_RE = re.compile(
+    r"\b(?:vs\.?|versus|compar\w*|chang\w*|grow\w*|grew|increas\w*|decreas\w*|declin\w*|drop\w*|"
+    r"fell|fall(?:s|en|ing)?|rose|ris(?:e|es|en|ing)|jump\w*|spik\w*|surg\w*|plung\w*|shr[iau]nk\w*|"
+    r"improv\w*|worsen\w*|trend\w*|over\s+time|than\s+(?:last|before|previous|prior|the\s+previous)|"
+    r"(?:week|month|quarter|year|period)[-\s](?:over|on)[-\s](?:week|month|quarter|year|period)|"
+    r"yoy|mom|qoq|wow)\b", re.I)
+
+
+def periods_asked(question: str) -> tuple[bool, bool]:
+    """``(period_named, comparison_asked)`` — what a question that asks to SEE the data
+    says about time. Item 4, decided by code from the question like `question_shape`.
+
+    The intake used to fill a window and a comparison for every question. Measured on the
+    theLook Agent runs of 2026-09-29 and 2026-10-01: "how long does it take an order to go
+    from placed to shipped to delivered" (no period) was answered for 1 August to 2
+    September 2026; a 2025 cohort question was headlined, then labelled, "Full Year 2025 vs
+    Full Year 2024 (YoY)". A question that names no period is answered over all the data,
+    and one that asks to compare nothing compares nothing.
+
+    A diagnose question keeps both: an investigation is framed against a period and a
+    baseline, and its tools read them. Conservative the other way too: any change or
+    comparison word keeps the comparison, and a change question names its period implicitly
+    (the most recent complete one)."""
+    q = question or ""
+    if question_shape(q) != "describe":
+        return True, True
+    asked = bool(_COMPARISON_ASKED_RE.search(q)) or _is_temporal_change_question(q)
+    return asked or bool(_PERIOD_NAMED_RE.search(q)), asked
+
+
+def _top_level_parts(sql: str) -> list[str]:
+    """``sql`` split at the commas outside any parentheses or quotes — verbatim."""
+    parts, cur, depth, quote = [], [], 0, ""
+    for ch in sql or "":
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"`":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+            continue
+        cur.append(ch)
+    parts.append("".join(cur))
+    return [p.strip() for p in parts if p.strip()]
+
+
+_MEASURE_ALIAS_RE = re.compile(r"^(.*?)\s+AS\s+[`\"]?([A-Za-z_][A-Za-z0-9_]*)[`\"]?\s*$", re.I | re.S)
+
+
+def _one_expression_per_measure(intake) -> None:
+    """A metric_sql holding several measures becomes the first, and the rest `other_measures`.
+
+    The intake held ONE metric, so a question asking two put both in one field: theLook's
+    fulfilment intake (2026-10-01) carried `AVG(TIMESTAMP_DIFF(…)) AS avg_hours_to_ship,
+    AVG(TIMESTAMP_DIFF(…)) AS avg_hours_to_deliver` as its metric — a SELECT list, not an
+    expression, in a field every phase wraps as one. Split at the top-level commas and kept
+    verbatim (never re-generated, so the dialect it was written in survives); each alias,
+    when there is one, names its measure."""
+    parts = _top_level_parts(getattr(intake, "metric_sql", "") or "")
+    if len(parts) < 2:
+        return
+    from aughor.agent.prompts_investigate import IntakeMeasure
+
+    def _split(part: str) -> tuple[str, str]:
+        m = _MEASURE_ALIAS_RE.match(part)
+        return (m.group(1).strip(), m.group(2).replace("_", " ")) if m else (part, "")
+
+    (first_sql, first_label), rest = _split(parts[0]), [_split(p) for p in parts[1:]]
+    intake.metric_sql = first_sql
+    if first_label:
+        intake.metric_label = first_label
+    intake.other_measures = [IntakeMeasure(label=label or sql, sql=sql) for sql, label in rest] \
+        + list(getattr(intake, "other_measures", None) or [])
+
+
+def _intake_from(asked):
+    """The model's answer as a full `IntakeOutput`, one expression per measure."""
+    from aughor.agent.prompts_investigate import widen_intake
+    intake = widen_intake(asked)
+    _one_expression_per_measure(intake)
+    return intake
+
+
+def _measures_label(intake_data: dict) -> str:
+    """Every measure the intake holds, by name: the first and each other one."""
+    labels = [str((intake_data or {}).get("metric_label") or "").strip()] + [
+        str((m or {}).get("label") or "").strip() for m in ((intake_data or {}).get("other_measures") or [])]
+    return " · ".join(lb for lb in labels if lb)
 
 
 def _framing_note(intake_data: dict) -> str:
@@ -3847,7 +3958,7 @@ def _degraded_report(question: str, phases: list, intake_data: dict, *,
         headline=headline,
         executive_summary=exec_summary,
         closing_summary="",   # a deterministic report authors no separate bottom line
-        metric=intake_data.get("metric_label", ""),
+        metric=_measures_label(intake_data),
         observation_period=(intake_data.get("data_coverage_label", "") if _xsec
                             else intake_data.get("observation_label", "")),
         metric_definition=_metric_definition_receipt(intake_data),
@@ -4442,6 +4553,9 @@ def _metric_definition_receipt(intake_data: dict) -> str:
         coverage = (intake_data.get("data_coverage_label") or "").strip()
         if coverage:
             parts.append(f"over data spanning {coverage}")
+        for _m in intake_data.get("other_measures") or []:
+            if (_m or {}).get("sql"):
+                parts.append(f"and {(_m.get('label') or 'another measure')} computed as `{_m['sql']}`")
         body = "; ".join(parts)
         return f"{label or 'Metric'} — {body}." if body else ""
     except Exception:
@@ -4845,7 +4959,10 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
             )
             if ncs == _obs_s0 and nce == _obs_e0:
                 _self_compare = True          # the clip collapsed it — same verdict below
-    if not _xsec and (_no_overlap or _self_compare or not (cs_ and ce_)):
+    # A question that asks to compare no periods gets none: the clamp used to supply "the
+    # equal-length window immediately preceding" whenever the model left the comparison
+    # empty, so a describe question still came back framed as one period against another.
+    if not _xsec and getattr(intake, "comparison_asked", True) and (_no_overlap or _self_compare or not (cs_ and ce_)):
         # No usable comparison: the model's window holds no data, or it set the comparison
         # equal to the observation (the old instruction), or it gave none. Prefer the
         # equal-length window immediately before the observation — the analyst's default
@@ -5854,7 +5971,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     (falling back to the schema-string parse) when a connection isn't supplied.
     """
     from aughor.agent.prompts_investigate import (
-        INTAKE_PROMPT, IntakeAsk, IntakeOutput, widen_intake)
+        INTAKE_PROMPT, IntakeAsk, IntakeOutput)
 
     question = state["question"]
     # Size the intake caps to the bound model's window (Layer A, §5b.3): unchanged on a
@@ -5948,7 +6065,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             # was spending attention and output tokens on values that were discarded;
             # `widen_intake` restores them at their defaults, which is exactly what the
             # overwrite assumes.
-            intake: IntakeOutput = widen_intake(_provider("coder").complete(
+            intake: IntakeOutput = _intake_from(_provider("coder").complete(
                 system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                 user=prompt,
                 response_model=IntakeAsk,
@@ -5998,7 +6115,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 "comparison window that actually contains data)."
             )
             try:
-                intake = widen_intake(_provider("coder").complete(
+                intake = _intake_from(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=retry_prompt,
                     response_model=IntakeAsk,
@@ -6162,7 +6279,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 "another table, pick the closest single-column proxy instead. Return the fixed spec."
             )
             try:
-                _retry = widen_intake(_provider("coder").complete(
+                _retry = _intake_from(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=retry_prompt,
                     response_model=IntakeAsk,
@@ -6195,7 +6312,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             r"(price|amount|revenue|cost|total|spend|value|sales|mrr|gmv|fee|charge)", _msql, re.IGNORECASE)
         if not _has_money_col and re.search(r"\bCOUNT\s*\(", _msql, re.IGNORECASE):
             try:
-                _retry2 = widen_intake(_provider("coder").complete(
+                _retry2 = _intake_from(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=prompt + (
                         "\n\nCORRECTION REQUIRED: the question is about MONEY, but the previous "
@@ -6326,6 +6443,14 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # months"); the DB MIN/MAX probe is authoritative. UNION both so neither a short
         # portrait nor a failed probe can shrink the range. ISO date strings → lexical min/max.
         # Every path, cross-sectional included: the window reaches the SQL prompts either way.
+        # Item 4: the periods the question asked for, and no others — decided before the clamp,
+        # which reads `comparison_asked` and would otherwise supply a preceding window.
+        intake.period_named, intake.comparison_asked = periods_asked(question)
+        if not intake.comparison_asked:
+            intake.comparison_start = intake.comparison_end = intake.comparison_label = ""
+            intake.yoy_start = intake.yoy_end = None
+        if not intake.period_named:
+            intake.observation_start = intake.observation_end = intake.observation_label = ""
         _smin, _smax = _extract_data_date_range(scan, intake.metric_table or "")
         _cmin = min([d for d in (_smin, _cov_min) if d], default="")
         _cmax = max([d for d in (_smax, _cov_max) if d], default="")
@@ -6333,6 +6458,18 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                                               settle_days=_settle_days)
         if _cov_note and intake.cross_sectional:
             intake.intake_notes = f"{_cov_note} {intake.intake_notes or ''}".strip()
+        # No period named: the answer covers all the data, and its window says so — explicit
+        # for the SQL writer, plain for the reader.
+        if not intake.period_named and _cmin and _cmax:
+            intake.observation_start, intake.observation_end = _cmin[:10], _cmax[:10]
+            intake.observation_label = f"All data ({_cmin[:10]} → {_cmax[:10]})"
+        # A window dated but not named is named from its dates. The labels are optional since
+        # the periods are, and the Q5 re-run (2026-10-01) dated 2025 without naming it — the
+        # report's period came out blank.
+        for _s, _e, _l in (("observation_start", "observation_end", "observation_label"),
+                           ("comparison_start", "comparison_end", "comparison_label")):
+            if getattr(intake, _s) and getattr(intake, _e) and not (getattr(intake, _l) or "").strip():
+                setattr(intake, _l, _window_label(getattr(intake, _s), getattr(intake, _e)))
     if intake is not None and not intake.cross_sectional:
         # Density guard: a comparison window whose date-SPAN survived the clamp but is sparsely
         # populated (internal gap / slow ramp) is still a thin PoP baseline — probe it. Skipped when
@@ -6408,15 +6545,24 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         if _spec_has_axis:
             _spec_rows.insert(2, ["Date column", intake.date_column])
     else:
+        _obs_row = (intake.observation_label
+                    if intake.observation_start and intake.observation_start in (intake.observation_label or "")
+                    else f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"
+                    if intake.observation_start else (intake.observation_label or "All data"))
         _spec_rows = [
             ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
-            ["Observation", f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"],
+            ["Observation", _obs_row],
             ["Comparison", (f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"
                             if (intake.comparison_start and intake.comparison_end) else intake.comparison_label)],
             ["Date column", intake.date_column],
             ["Primary table", intake.metric_table],
             ["Dimensions", ", ".join(intake.dimensions[:8])],
         ]
+        if not intake.comparison_asked:
+            _spec_rows = [r for r in _spec_rows if r[0] != "Comparison"]
+    # Every measure the question asked for, not only the first.
+    for _i, _m in enumerate(intake.other_measures or [], start=1):
+        _spec_rows.insert(_i, ["Measure", f"{_m.label} ({_m.sql})"])
 
     if _frame_block and _frame is not None and _frame.reading:
         _spec_rows.append(["Read as", _frame.reading])
@@ -6451,6 +6597,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         (
             f"Scanning {intake.metric_label} across {len(intake.dimensions)} dimensions to find where value is weakest."
             if intake.cross_sectional else
+            f"Measuring {_measures_label(intake.model_dump())} over {intake.observation_label or 'all the data'}."
+            if not intake.comparison_asked else
             f"Measuring {intake.metric_label} in {intake.observation_label} vs {intake.comparison_label}."
         ),
         [finding],
@@ -10632,7 +10780,7 @@ def ada_synthesize(state: AgentState) -> dict:
             headline=synth.headline,
             executive_summary=synth.executive_summary,
             closing_summary=(getattr(synth, "closing_summary", "") or "").strip(),
-            metric=intake_data.get("metric_label", ""),
+            metric=_measures_label(intake_data),
             observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
             metric_definition=_metric_definition_receipt(intake_data),
             spec=_measurable_spec(intake_data),

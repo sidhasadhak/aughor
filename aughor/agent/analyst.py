@@ -895,6 +895,8 @@ def _spec_section(intake: dict) -> str:
         return "SPEC: intake produced no spec — inspect the schema before querying."
     lines = ["THE SPEC (resolved by intake; the phase tools default to it):"]
     lines.append(f"  metric: {intake.get('metric_label')} = {intake.get('metric_sql')}")
+    for _m in intake.get("other_measures") or []:
+        lines.append(f"  also asked: {(_m or {}).get('label')} = {(_m or {}).get('sql')}")
     if intake.get("metric_filters"):
         lines.append("  metric filter (declared, part of the definition): "
                      + "; ".join(str(f) for f in intake["metric_filters"]))
@@ -902,10 +904,15 @@ def _spec_section(intake: dict) -> str:
     # Each window with its filter written out, half-open — the model wrote `<= '2026-07-31'`
     # on a TIMESTAMP column from a bare "→ 2026-07-31" and dropped the day (2026-09-29).
     _col = str(intake.get("date_column") or "")
-    lines.append("  observation: " + window_text(
-        str(intake.get("observation_label") or ""), intake.get("observation_start") or "",
-        intake.get("observation_end") or "", _col))
-    if intake.get("no_prior_period"):
+    if intake.get("observation_start") or intake.get("period_named", True):
+        lines.append("  observation: " + window_text(
+            str(intake.get("observation_label") or ""), intake.get("observation_start") or "",
+            intake.get("observation_end") or "", _col))
+    else:
+        lines.append("  observation: all the data — the question names no period.")
+    if intake.get("comparison_asked") is False:
+        lines.append("  comparison: none — the question asks to compare no periods; compare none.")
+    elif intake.get("no_prior_period"):
         lines.append("  comparison: NONE — no period before the observation window exists "
                      "in the data. Describe the window; never decompose it against itself.")
     else:
