@@ -61,7 +61,7 @@ jobs:
       # No monitor, automation or exploration clock in a smoke run.
       AUGHOR_DISABLE_SCHEDULERS: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install (macOS, Linux)
         if: runner.os != 'Windows'
