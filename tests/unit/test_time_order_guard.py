@@ -182,6 +182,21 @@ def test_a_rerun_returning_the_flagged_rows_unchanged_carries_the_warning():
     assert not _same_rows({"rows": [["a", "1"]], "row_count": 25}, [["a", "1"]], 26)
 
 
+def test_a_stop_with_every_result_flagged_is_not_an_answer_yet():
+    """2026-10-01, 22:37: three queries, each flagged, and the analyst answered from one of them — "Chicago and
+    Memphis are the slowest to ship", which per order no centre is."""
+    from aughor.agent.analyst import AnalystTurn, _every_result_warned
+    spec = {"phase_id": "intake", "findings": [{"columns": ["field", "value"], "rows": [["Metric", "days"]]}]}
+    turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": [spec]})
+    assert _every_result_warned(turn) is None                                # nothing measured, nothing to hold
+    _record(turn, ["centre", "days"], ["time-order guard: shipped_at is earlier …"], rows=(("a", "0.58"),))
+    _record(turn, ["centre", "days"], ["possible over-count: …"], rows=(("a", "1.51"),))
+    why = _every_result_warned(turn)
+    assert why and "- time-order guard" in why and "- possible over-count" in why
+    _record(turn, ["centre", "days"], [], rows=(("a", "1.50"),))            # re-measured as a warning said
+    assert _every_result_warned(turn) is None
+
+
 def test_a_shown_result_keeps_a_warning_a_hidden_copy_also_had():
     from aughor.agent.investigate import _dedupe_repeated_caveats
     w = "possible over-count: …"

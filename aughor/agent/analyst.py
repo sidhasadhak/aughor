@@ -296,6 +296,26 @@ def _same_rows(finding: dict, rows: list, row_count: Any) -> bool:
             and _key(finding.get("rows")) == _key(rows))
 
 
+def _every_result_warned(turn: "AnalystTurn") -> Optional[str]:
+    """Why a stop is not an answer yet — every result the turn has shown carries a guard's
+    warning — or None. The loop hands it back once (`run_tool_loop`'s ``stop_check``).
+
+    The fulfilment question run of 2026-10-01, 22:37: three queries, each flagged (two on item
+    timestamps, one over-counting orders), and the analyst stopped with tool calls to spare and
+    answered from one of them — "Chicago and Memphis are the slowest to ship", which per order
+    no centre is. The second of six such runs; the rule in its prompt did not hold."""
+    findings = [f for p in turn.state.get("investigation_phases") or []
+                if p.get("phase_id") != "intake" and not p.get("_hidden")
+                for f in (p.get("findings") or []) if f.get("rows")]
+    warnings = list(dict.fromkeys((f.get("trust_caveat") or "").strip() for f in findings))
+    if not findings or "" in warnings:
+        return None
+    return ("Every result you have carries a guard's warning, so none of them is an answer yet:\n"
+            + "\n".join(f"- {w[:600]}" for w in warnings[:4])
+            + "\nRe-measure the way a warning says — the record to measure from, the rows it keeps — "
+              "and answer from that result. If the data cannot be measured that way, answer and say so.")
+
+
 def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
     """Pass a tool result through, and make its rows part of the investigation.
 
@@ -1266,6 +1286,7 @@ def run_analyst(
             # and a system prompt carrying the resolved spec. Filing its picks under
             # `converse.tool` made 79% of the live corpus unsegmentable by decider.
             site="analyst.tool",
+            stop_check=lambda _answer: _every_result_warned(turn),
             # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (the intake step's) and cannot be
             # recomputed, and it is where the analyst's state lives — `_spec_section(intake)` sits
             # mid-prompt — so it is the argument a shuffle actually swaps. Serialised to a string

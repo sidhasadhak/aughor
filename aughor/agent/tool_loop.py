@@ -119,6 +119,7 @@ def run_tool_loop(
     inv_id: str = "",
     site: str = "converse.tool",
     replay_args: Optional[dict] = None,
+    stop_check: Optional[Callable[[str], Optional[str]]] = None,
 ) -> LoopResult:
     """Run one converse turn to an answer, or until the budget runs out.
 
@@ -150,6 +151,11 @@ def run_tool_loop(
     segmented by decider at all, which is what every judgment measurement over it needs.
     The default stays ``"converse.tool"`` so a caller that has not been updated keeps the
     label its rows already carry rather than silently starting a third population.
+
+    ``stop_check`` reads an answer the model stopped with and returns why it is not one yet,
+    or None. Its reason goes back to the model ONCE per turn, with the draft, while two calls
+    remain to re-measure and answer again; a second stop is the answer. ``None`` (every caller
+    but the analyst) leaves the loop exactly as it was.
     """
     by_name = {t.name: t for t in tools}
     wire = [t.as_wire() for t in tools]
@@ -167,6 +173,7 @@ def run_tool_loop(
     # One nudge per turn. A model that goes silent twice is not stalling on a
     # formatting slip, and re-asking would spend the whole budget on silence.
     nudged = False
+    held = False                  # one hand-back of an answer `stop_check` refused, likewise
 
     def _record(step: LoopStep, *, result: Any = None, elapsed_ms: Optional[float] = None) -> None:
         """Append, announce and RECORD, together. Four branches record a step and all
@@ -180,7 +187,7 @@ def run_tool_loop(
         if on_step is not None:
             on_step(step)
 
-    for _ in range(budget):
+    for call_index in range(budget):
         turn: ToolTurn = provider.complete_with_tools(
             system, question, wire, history=history or None)
 
@@ -194,6 +201,16 @@ def run_tool_loop(
 
         if not turn.chose_tool:
             if (turn.text or "").strip():
+                # Handed back once, with the draft, when the caller says it is not an answer
+                # yet — and only while a call to re-measure and one to answer remain.
+                why = (stop_check(turn.text) if stop_check is not None and not held
+                       and budget - call_index - 1 >= 2 else None)
+                if why:
+                    held = True
+                    _record(LoopStep(tool="(answer held)", arguments={}, ok=False, detail=why[:300]))
+                    history.extend([{"role": "assistant", "content": turn.text},
+                                    {"role": "user", "content": why}])
+                    continue
                 return LoopResult(answer=turn.text, steps=steps, stop_reason="answered")
             # The model chose no tool AND wrote nothing. Returning that as an answer
             # hands the caller an empty string it can only report as a failure — and

@@ -260,6 +260,31 @@ def test_run_analyst_streams_phases_and_synthesizes(monkeypatch, traffic_db, fau
     assert seen["n_phases"] == 2
 
 
+def test_a_stop_over_flagged_rows_alone_goes_back_to_the_analyst_once(monkeypatch, traffic_db, faux_llm):
+    """The run's loop carries the check (`_every_result_warned`): the first stop over a flagged result is handed
+    back, and the second is the conclusion."""
+    from aughor.llm.faux import FauxToolCall
+    seen = {}
+
+    def _flagged(state, conn):
+        return {"investigation_phases": state.get("investigation_phases", []) + [{
+            "phase_id": "baseline", "phase_name": "Baseline", "phase_icon": "📊", "status": "complete",
+            "summary": "", "findings": [{"finding_id": "b1", "title": "t", "sql": "SELECT 1",
+                                          "columns": ["day", "sessions"], "rows": [["2026-08-01", 30]],
+                                          "row_count": 1, "error": None, "interpretation": "", "key_numbers": [],
+                                          "chart_type": "line", "stat_note": None, "is_significant": False,
+                                          "trust_caveat": "time-order guard: shipped_at is earlier …"}]}]}
+
+    _patch_seams(monkeypatch, traffic_db,
+                 intake=lambda state, conn=None: {"_ada_intake": {"metric_label": "sessions"},
+                                                  "investigation_phases": []},
+                 baseline=_flagged,
+                 synthesize=lambda state: seen.setdefault("conclusion", state.get("_analyst_conclusion")) and {})
+    faux_llm.set_responses([FauxToolCall(payload={}, name="baseline"), "first answer", "second answer"])
+    an.run_analyst("conn-t", "why did traffic move?", persist=False)
+    assert seen["conclusion"] == "second answer"
+
+
 def test_run_analyst_with_no_report_returns_the_prose(monkeypatch, traffic_db, faux_llm):
     """A loop that concludes without any phase landing is a direct answer, not a
     report-shaped shell — and not a failure."""

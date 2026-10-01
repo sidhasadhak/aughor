@@ -285,6 +285,28 @@ def test_a_second_silence_ends_the_turn_as_silent_not_as_budget(provider):
     assert len(result.steps) == 1                  # one nudge, then it stops
 
 
+def test_an_answer_the_caller_refuses_is_handed_back_once_with_its_draft(provider):
+    """The analyst stopped with every result flagged and answered from one of them (2026-10-01, 22:37)."""
+    from aughor.llm import faux
+    set_responses(["Chicago is slowest", FauxToolCall(payload={"sql": "SELECT 2"}, name="run_sql"),
+                   "no centre stands out", *["held again"] * 8])
+    why = "Every result you have carries a guard's warning."
+    result = run_tool_loop(provider, "sys", "q", [_tool()], max_steps=10, stop_check=lambda answer: why)
+
+    assert result.answer == "no centre stands out"              # the second stop is the answer
+    assert [s.tool for s in result.steps] == ["(answer held)", "run_sql"]
+    shown = faux.calls()[-2].kwargs["messages"]                  # the call after the hand-back
+    assert shown[-2:] == [{"role": "assistant", "content": "Chicago is slowest"}, {"role": "user", "content": why}]
+
+
+def test_no_check_and_no_road_left_keep_the_first_answer(provider):
+    set_responses(["Chicago is slowest"])
+    assert run_tool_loop(provider, "sys", "q", [_tool()]).answer == "Chicago is slowest"
+    set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"), "Chicago is slowest", "after a hold"])
+    result = run_tool_loop(provider, "sys", "q", [_tool()], max_steps=3, stop_check=lambda a: "not yet")
+    assert result.answer == "Chicago is slowest"                # one call left: no room to re-measure
+
+
 def test_the_nudge_does_not_let_the_turn_exceed_its_budget(provider):
     """The recovery must not become an extra step the ceiling does not cover."""
     set_responses(["", *[FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql")] * 20])

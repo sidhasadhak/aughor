@@ -177,6 +177,29 @@ def test_an_answer_with_nothing_withheld_carries_no_record(monkeypatch):
     assert "withheld" not in _a_describe_run(monkeypatch, "Houston TX takes 1.49 days; Memphis TN 1.50.")
 
 
+def test_an_untraced_figure_under_a_table_takes_its_line_and_leaves_the_table():
+    """2026-10-01, 22:37: a note under the answer's table said "38,047 order items" (the rows hold 43,907), and the
+    sentence cut — from a header cell's "Avg." to the note's full stop — took the whole table out with it."""
+    from aughor.agent.report_checks import Violation
+    table = ("| Distribution Center | Avg. Days (Placed to Shipped) |\n| :--- | :--- |\n"
+             "| Chicago IL | 1.48 |\n| Memphis TN | 1.47 |")
+    summary = ("The table shows the average days by centre.\n\n" + table
+               + "\n\n*Note: These figures are based on 38,047 order items. About 29.7% were excluded.*")
+    synth = SimpleNamespace(headline="h", executive_summary=summary, closing_summary="")
+    record: list = []
+    withhold_untraced(synth, [Violation("fix", "", figures=("38,047",))], "q", record=record)
+    assert "by centre.\n\n" + table in synth.executive_summary            # the table, and the line that sets it off
+    assert "About 29.7% were excluded.*" in synth.executive_summary
+    assert "38,047" not in synth.executive_summary
+    assert synth.executive_summary.endswith("\n\nA figure in this answer could not be traced to the query results, "
+                                            "so the sentence stating it was withheld.")
+    assert record == [{"from": "executive_summary", "figures": ["38,047"],
+                       "text": "*Note: These figures are based on 38,047 order items."}]
+    row = SimpleNamespace(headline="h", executive_summary=summary, closing_summary="")
+    withhold_untraced(row, [Violation("fix", "", figures=("1.47",))], "q")    # a row's figure takes the row
+    assert "| Memphis TN | 1.47 |" not in row.executive_summary and "| Chicago IL | 1.48 |" in row.executive_summary
+
+
 def test_nothing_to_withhold_leaves_the_answer_as_written():
     synth = _draft()
     assert withhold_untraced(synth, [], "q") == []

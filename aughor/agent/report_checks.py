@@ -431,17 +431,34 @@ def withhold_untraced(synth: Any, violations: list, question: str = "",
     def _carried(text: str) -> list[str]:
         return [fig for fig, p in pats if p.search(text or "")]
 
+    # What is taken out is a LINE's unit: a table row whole, any other line by its sentences. Cut
+    # by sentences alone, an answer's table was one "sentence" from a header cell's "Avg." to the
+    # note beneath it, and an untraced figure in the note took the table too (2026-10-01, 22:37).
+    def _units(text: str) -> list[list[str]]:
+        return [[line] if line.lstrip().startswith("|") else [s for s in _SENTENCE_RE.split(line) if s.strip()]
+                for line in text.split("\n")]
+
+    def _kept(text: str, lines: list[list[str]]) -> str:
+        kept = []
+        for line, units in zip(text.split("\n"), lines):
+            stay = [u for u in units if not _carried(u)]
+            if not units or len(stay) == len(units):
+                kept.append(line)           # untouched, blank lines and table rows as written
+            elif stay:
+                kept.append(" ".join(u.strip() for u in stay))
+        return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+
     fields = {f: str(getattr(synth, f, "") or "") for f in ("executive_summary", "closing_summary")}
-    split = {f: [s for s in _SENTENCE_RE.split(t) if s.strip()] for f, t in fields.items()}
-    out = [{"from": f, "text": s.strip(), "figures": _carried(s)}
-           for f, sentences in split.items() for s in sentences if _carried(s)]
+    lines = {f: _units(t) for f, t in fields.items()}
+    out = [{"from": f, "text": u.strip(), "figures": _carried(u)}
+           for f, ls in lines.items() for units in ls for u in units if _carried(u)]
     headline = str(getattr(synth, "headline", "") or "")
     if _carried(headline):
         out.insert(0, {"from": "headline", "text": headline.strip(), "figures": _carried(headline)})
     if not out:
         return []                           # not found where it was reported: say nothing new
-    for f in fields:
-        setattr(synth, f, " ".join(s for s in split[f] if not _carried(s)))
+    for f, text in fields.items():
+        setattr(synth, f, _kept(text, lines[f]))
     if out[0]["from"] == "headline":
         synth.headline = (question or "").strip()[:160]
     removed = len(out)
@@ -451,8 +468,9 @@ def withhold_untraced(synth: Any, violations: list, question: str = "",
     note = (f"{'A figure' if one else 'Some figures'} in this answer could not be traced to the "
             f"query results, so {'the sentence' if removed == 1 else f'the {removed} sentences'} "
             f"stating {'it' if one else 'them'} {'was' if removed == 1 else 'were'} withheld.")
-    synth.executive_summary = (str(getattr(synth, "executive_summary", "") or "").rstrip()
-                               + " " + note).strip()
+    summary = str(getattr(synth, "executive_summary", "") or "").rstrip()
+    # A paragraph of its own under an answer laid out in lines — never the last row of its table.
+    synth.executive_summary = (summary + ("\n\n" if "\n" in summary else " ") + note).strip()
     for v in held:
         v.disclosure = "a figure that could not be traced to the query results was withheld (#36)"
     return figs
