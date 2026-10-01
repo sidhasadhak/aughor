@@ -25,7 +25,7 @@
 import {
   isIdLike, INSTRUMENTATION_COL as INSTRUMENTATION,
   SHARE_COL, CHANGE_METRIC_COL as CHANGE_METRIC, ADDITIVE_COL,
-  countUnique, classifyColumns, isUngraphableGrid,
+  countUnique, classifyColumns, isUngraphableGrid, plottedMeasures,
   GEO_NAME_COL, LAT_COL, LON_COL,
 } from "./columnRoles";
 
@@ -208,9 +208,12 @@ export function inferChartType(
   // Chart-grammar gate: a stats/entity-profile grid is a table, never a chart.
   if (isUngraphableGrid(columns, rows)) return null;
 
-  const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
+  const { dateIdxs, numericIdxs: allNumeric, catIdxs } = classifyColumns(columns, rows);
 
-  if (!numericIdxs.length) return null;
+  if (!allNumeric.length) return null;
+  // What a chart of this result plots: a rate's own numerator and denominator, and the row
+  // count beside an average, are there to make it checkable and stay in the table.
+  const numericIdxs = plottedMeasures(columns, rows, allNumeric);
 
   // CA-4 form-by-job: ONE ROW is a headline number, not a one-bar bar chart —
   // the stat tile is the form.
@@ -266,9 +269,10 @@ export function inferChartType(
 
   // ── NO TIME AXIS ─────────────────────────────────────────────────────────
 
-  // Two pure numerics, no category → scatter (correlation / outlier detection)
-  if (numericIdxs.length === 2 && catIdx === undefined && rows.length >= 10) {
-    return { type: "scatter", xCol: numericIdxs[0], yCols: [numericIdxs[1]] };
+  // Two pure numerics, no category → scatter (correlation / outlier detection). A relation
+  // puts both columns on axes, so it reads every numeric column, support included.
+  if (allNumeric.length === 2 && catIdx === undefined && rows.length >= 10) {
+    return { type: "scatter", xCol: allNumeric[0], yCols: [allNumeric[1]] };
   }
 
   // Category present, no time axis. WHEN-TO-USE (pick the chart by data shape + intent,

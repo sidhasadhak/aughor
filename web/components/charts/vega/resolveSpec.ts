@@ -16,7 +16,8 @@
 
 import { chartDateFormat, cleanLabel, detectGranularity } from "@/lib/format";
 import { currencySymbol, effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
-import { classifyColumns, isIdLike, isUngraphableGrid, HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
+import { classifyColumns, isIdLike, isUngraphableGrid, percentRates, plottedMeasures,
+         HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
 import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
 import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
@@ -271,6 +272,10 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const _allNum = numericIdxs.map((i) => columns[i]);
   const _realNum = _allNum.filter((c) => !isIdLike(c) && !/(^|_)(id)$/i.test(c));
   const numCols = _realNum.length ? _realNum : _allNum;
+  // The measure an explicit hint plots when nothing chose one: the first the chart would plot
+  // under `auto` too — never a rate's own numerator ahead of the rate.
+  const firstMeasure = plottedMeasures(columns, rows, numericIdxs)
+    .map((i) => columns[i]).find((c) => numCols.includes(c)) ?? numCols[0];
   /**
    * An identifier can be categorical too. `franchiseID` holds 1 and 2, which classifies as a
    * dimension, and taking the first one labelled the axis "1, 2" while `franchise_name` sat
@@ -365,9 +370,18 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     return isMoneyColumn(col) ? effectiveCurrencySymbol() : "";
   };
 
-  const measureIsPercent = (col: string): boolean =>
-    String(columnUnits?.[col] ?? "").toLowerCase() === "percent";
+  /**
+   * A declared unit decides. With none declared, a rate whose numerator and denominator sit
+   * beside it in the result is a share of a whole, and reads as one: the Agent's own queries
+   * carry no units, and its repeat rate drew an axis of 0.07 … 0.12.
+   */
+  const ratePercent = percentRates(columns, rows, numericIdxs);
+  const measureIsPercent = (col: string): boolean => {
+    const unit = String(columnUnits?.[col] ?? "").toLowerCase();
+    return unit === "percent" || (!unit && ratePercent.has(col));
+  };
   const percentAlreadyScaled = (col: string): boolean => {
+    if (!columnUnits?.[col] && ratePercent.has(col)) return ratePercent.get(col) === true;
     const i = columns.indexOf(col);
     if (i < 0) return false;
     const vals = rows.map((r) => Number(r[i])).filter((v) => Number.isFinite(v));
@@ -403,7 +417,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // the column it plots). Only with neither does inference pick the y.
   const userMeasure = chosenMeasure && columns.includes(chosenMeasure) ? chosenMeasure : null;
   const measure = tf ? tf.derived
-    : (userMeasure ?? (inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0]));
+    : (userMeasure ?? (inferred?.yCols?.length ? columns[inferred.yCols[0]] : firstMeasure));
   const band = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol ?? columns[0]);
   const inferredSeries = inferred?.colorCol != null ? columns[inferred.colorCol] : undefined;
   const base: Record<string, unknown> = { $schema: "https://vega.github.io/schema/vega-lite/v6.json", data };
@@ -415,6 +429,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     const ext = resolveExtendedForm(type, {
       columns, rows, data, numCols, catCols, dateCol, measure, band,
       format, xTitle, yTitle, showLabels, base, exhibit,
+      plotted: (inferred?.yCols?.length ? inferred.yCols : plottedMeasures(columns, rows, numericIdxs))
+        .map((i) => columns[i]).filter((c) => numCols.includes(c)),
     });
     // A form that cannot be built from THIS data (a scatter with one measure, a point map
     // with no coordinates) refuses rather than approximating — the same contract as the
@@ -428,7 +444,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     // A counter reads ONE number straight off the row, so it uses the real column — the
     // derived name a transform introduces exists only inside the chart's dataflow, and
     // indexOf would return -1 and quietly render 0.
-    const rawMeasure = inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0];
+    const rawMeasure = inferred?.yCols?.length ? columns[inferred.yCols[0]] : firstMeasure;
     const v = Number(rows[0]?.[columns.indexOf(rawMeasure)] ?? 0);
     return {
       tier: 1, resolved: "counter", defaultH: 140, xCategories: 0,
@@ -484,6 +500,9 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     const xValues = rows.map((r) => r[columns.indexOf(x)]);
     // A series that crosses a year boundary keeps its year, whatever the grain.
     const xMultiYear = new Set(xValues.map((v) => String(v ?? "").slice(0, 4))).size > 1;
+    const linePct = measureIsPercent(measure);
+    const lineScaled = linePct && percentAlreadyScaled(measure);
+    const lineField = lineScaled ? `${measure}__frac` : measure;
     const enc: Record<string, unknown> = {
       x: {
         field: x,
@@ -508,7 +527,10 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
           ...(xIsDate ? { format: chartDateFormat(detectGranularity(x, xValues), xMultiYear) } : {}),
         },
       },
-      y: { field: measure, type: "quantitative", axis: valueAxis(axisTitle(yTitle, measure), format) },
+      // A percentage reads as one on a trend too: this axis ignored the unit the bar path
+      // honours, so a rate's line read 0.07 … 0.12 beside a table saying 6.9% … 12.1%.
+      y: { field: lineField, type: "quantitative",
+           axis: valueAxis(axisTitle(yTitle, measure), linePct ? ".1%" : format) },
     };
     // `sort: null` keeps the series in DATA order. Vega-Lite sorts a nominal domain
     // alphabetically by default, which hands the same series a different hue than the
@@ -518,6 +540,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
       tier: 1, resolved: seriesCol ? "multi-line" : "line", defaultH: 300, xCategories: 0,
       spec: {
         ...base,
+        ...(lineScaled ? { transform: [...((base.transform as Record<string, unknown>[]) ?? []),
+                                       { calculate: `datum['${measure}'] / 100`, as: lineField }] } : {}),
 
         // A line plus its points: the point layer is the hover target and the ≥8px marker
         // the mark spec asks for, and it keeps a single-observation series visible. Only the
@@ -648,7 +672,9 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
               dx: horizontal ? 5 : 0, dy: horizontal ? 0 : -8 },
       // A calculate rather than `format`, so the mark labels read in the same casing as the
       // axis beside them instead of 6.6k next to 6.6K.
-      transform: [{ calculate: SI_TEXT(valueField, valueFormat(format), moneyPrefix(measure)), as: "__valueLabel" }],
+      transform: [{ calculate: pct ? SI_TEXT(valueField, ".1%", "")
+                                   : SI_TEXT(valueField, valueFormat(format), moneyPrefix(measure)),
+                    as: "__valueLabel" }],
       encoding: { text: { field: "__valueLabel", type: "nominal" } },
     });
   }

@@ -20,6 +20,9 @@ export interface FormCtx {
   rows: unknown[][];
   data: { values: Record<string, unknown>[] };
   numCols: string[];
+  /** The measures the chart plots — inference's choice, else `plottedMeasures`: a rate's own
+   *  numerator and denominator and the count beside an average stay out of a fold. */
+  plotted?: string[];
   catCols: string[];
   dateCol?: string;
   measure: string;
@@ -187,13 +190,16 @@ export function resolveExtendedForm(type: string, c: FormCtx): FormResult | null
        * a second y-axis. One scale, no second axis.
        */
       if (!series) {
-        if (numCols.length < 2) return null;
+        // The measures the chart plots, not every number in the result: folding them all put
+        // an item count beside two hour averages on one "Value" axis (theLook, 2026-10-01).
+        const folded = c.plotted?.length ? c.plotted : numCols;
+        if (folded.length < 2) return null;
         return {
           resolved: grouped ? "grouped-bar" : "stacked-bar", defaultH: 320,
           xCategories: new Set(rows.map((r) => r[columns.indexOf(bandField)])).size,
           spec: {
             ...base,
-            transform: [{ fold: numCols, as: ["__measure", "__value"] }],
+            transform: [{ fold: folded, as: ["__measure", "__value"] }],
             mark: { type: "bar", tooltip: true },
             encoding: {
               x: { field: bandField, type: dateCol === bandField ? "temporal" : "nominal",

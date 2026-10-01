@@ -158,3 +158,82 @@ def test_a_rerun_that_is_flagged_too_replaces_nothing():
     _record(turn, ["centre", "days"], ["time-order guard: …"])
     _record(turn, ["centre", "days"], ["time-order guard: …"])
     assert not any(p.get("_hidden") for p in turn.state["investigation_phases"])
+
+
+# ── A statement that filters the backwards rows out is told how many it left (2026-10-01) ─
+
+LEFT_OUT = SHIP.replace("FROM items", "FROM items WHERE shipped_at >= created_at")
+
+
+def test_a_filter_that_drops_the_backwards_rows_is_named_with_what_it_left_out():
+    """Told to measure from `orders`, the Agent re-ran its fulfilment query with exactly this
+    filter. Counted over the filtered rows the guard found nothing, and the re-run replaced the
+    flagged result at HIGH confidence — ship times 1 to 4.4 hours short per centre."""
+    r = execute_guarded(_conn(inverted=3), LEFT_OUT, query_id="q")
+    assert not r.error
+    assert ("time-order guard: the statement leaves out the rows where shipped_at is earlier than "
+            "created_at — 30.0% of the rows it would measure (3 of 10) — so its result covers only "
+            "the rows whose timestamps happen to agree.") in " ".join(r.caveats)
+
+
+def test_every_spelling_of_the_filter_is_read_and_a_filter_on_something_else_is_not():
+    for where in ("created_at <= shipped_at", "shipped_at > created_at", "NOT (shipped_at < created_at)",
+                  "date_diff('hour', created_at, shipped_at) >= 0",
+                  "0 < date_diff('hour', created_at, shipped_at)", "id >= 0 AND (shipped_at >= created_at)"):
+        run = T.time_order_check(_conn(inverted=3), SHIP.replace("FROM items", f"FROM items WHERE {where}"), "duckdb")
+        assert [(f.inverted, f.measured, f.left_out) for f in run.findings] == [(3, 10, True)], where
+    run = T.time_order_check(_conn(inverted=3), SHIP.replace("FROM items", "FROM items WHERE id >= 0"), "duckdb")
+    assert [(f.inverted, f.measured, f.left_out) for f in run.findings] == [(3, 10, False)]
+
+
+Q4_RERUN = ("SELECT dc.name AS distribution_center, "
+            "AVG(TIMESTAMP_DIFF(oi.shipped_at, oi.created_at, HOUR)) AS avg_hours_to_ship, "
+            "AVG(TIMESTAMP_DIFF(oi.delivered_at, oi.shipped_at, HOUR)) AS avg_hours_to_deliver, "
+            "COUNT(oi.id) AS order_count FROM `order_items` AS oi "
+            "JOIN `inventory_items` AS ii ON oi.inventory_item_id = ii.id "
+            "JOIN `distribution_centers` AS dc ON ii.product_distribution_center_id = dc.id "
+            "WHERE oi.created_at >= '2026-08-01' AND oi.created_at < '2026-09-03' "
+            "AND oi.shipped_at >= oi.created_at AND oi.delivered_at >= oi.shipped_at "
+            "GROUP BY 1 ORDER BY avg_hours_to_ship + avg_hours_to_deliver DESC")
+
+
+def test_the_probe_lifts_only_the_filters_that_order_a_pair():
+    """The 2026-10-01 re-run, as it ran on BigQuery: its window stays, its two order filters go."""
+    tree = sqlglot.parse_one(Q4_RERUN, read="bigquery")
+    [(scope, pairs)] = T.duration_pairs(tree)
+    assert T.left_out_pairs(scope, pairs) == {0, 1}
+    probe = T.probe_sql(tree, scope, pairs, "bigquery")
+    assert "oi.shipped_at >= oi.created_at" not in probe and "oi.delivered_at >= oi.shipped_at" not in probe
+    assert "oi.created_at >= '2026-08-01'" in probe and "oi.created_at < '2026-09-03'" in probe
+
+
+def _three_stamps():
+    """Ten rows: 0–2 shipped before they were created, 3–4 delivered before they shipped."""
+    conn = _conn(inverted=0)
+    conn._conn.execute("CREATE TABLE parcels (id INT, created_at TIMESTAMP, shipped_at TIMESTAMP, "
+                       "delivered_at TIMESTAMP)")
+    for i in range(10):
+        ship = "2026-01-01 08:00" if i < 3 else "2026-01-03 08:00"
+        deliver = "2026-01-02 08:00" if i in (3, 4) else "2026-01-05 08:00"
+        conn._conn.execute(f"INSERT INTO parcels VALUES ({i}, TIMESTAMP '2026-01-02 08:00', "
+                           f"TIMESTAMP '{ship}', TIMESTAMP '{deliver}')")
+    return conn
+
+
+def test_a_pair_nothing_filtered_is_still_counted_over_the_statements_own_rows():
+    sql = ("SELECT AVG(date_diff('hour', created_at, shipped_at)) AS ship, "
+           "AVG(date_diff('hour', shipped_at, delivered_at)) AS deliver "
+           "FROM parcels WHERE shipped_at >= created_at")
+    run = T.time_order_check(_three_stamps(), sql, "duckdb")
+    assert [(f.end, f.inverted, f.measured, f.left_out) for f in run.findings] == [
+        ("shipped_at", 3, 10, True),       # what the filter left out, of the rows it would measure
+        ("delivered_at", 2, 7, False)]     # backwards among the 7 rows the statement kept
+
+
+def test_a_rerun_that_leaves_the_rows_out_does_not_replace_the_flagged_one():
+    from aughor.agent.analyst import AnalystTurn
+    turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": []})
+    conn = _conn(inverted=3)
+    for sql in (SHIP, LEFT_OUT):
+        _record(turn, ["hours"], execute_guarded(conn, sql, query_id="q").caveats)
+    assert not any(p.get("_hidden") for p in turn.state["investigation_phases"])

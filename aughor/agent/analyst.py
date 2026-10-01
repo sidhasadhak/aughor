@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -146,7 +147,83 @@ def _adhoc_scope(sql: str) -> str:
         return ""
 
 
-def _adhoc_title(columns: list, question: str, sql: str = "") -> str:
+#: The column roles a result's title reads — the ones `plottedMeasures` in
+#: web/components/charts/columnRoles.ts reads, so a title names what its chart plots.
+_SHARE_NAME_RE = re.compile(r"(share|pct|percent|rate|ratio|proportion)", re.I)
+_AVERAGE_NAME_RE = re.compile(r"(^|_)(avg|average|mean)(_|$)", re.I)
+_COUNT_NAME_RE = re.compile(r"(^|_)(count|cnt|num|n)(_|$)", re.I)
+_SUPPORT_NAME_RE = re.compile(r"(^|_)(numerator|denominator)(_total)?$|^n$|^event_count$", re.I)
+_KEY_NAME_RE = re.compile(r"(_id|_key|_code|_pk|_uuid|_guid|_sk|_hash)$|^id$", re.I)
+_GRAIN_NAME_RE = re.compile(r"^(date|month|week|period|quarter|day|year)$"
+                            r"|^[a-z]+_(fy|year|quarter|qtr|month|week|half)$", re.I)
+_WRITTEN_DECIMALS_RE = re.compile(r"-?\d*\.(\d+)")
+
+
+def _as_number(value: Any) -> Optional[float]:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _is_ratio_of(rows: list, r: int, a: int, b: int, scale: int) -> bool:
+    """Column ``r`` equals ``scale`` × ``a`` ÷ ``b`` on every row holding all three, to the
+    precision ``r`` was written at ("6.9" is anything within 0.05) — and on two rows at least."""
+    checked = 0
+    for row in rows:
+        x, av, bv = _as_number(row[r]), _as_number(row[a]), _as_number(row[b])
+        if x is None or av is None or bv is None or bv == 0:
+            continue
+        want = scale * av / bv
+        written = _WRITTEN_DECIMALS_RE.fullmatch(str(row[r]).strip())
+        if abs(x - want) > max(0.5 * 10 ** -len(written.group(1)) if written else 0.0, abs(want) * 1e-9):
+            return False
+        checked += 1
+    return checked >= 2
+
+
+def _measured_cut(cols: list, rows: Any) -> str:
+    """'<what it measures> by <what it is cut by>' for a result of three or more columns,
+    read from its rows; "" when the rows do not say.
+
+    A rate stands for its own numerator and denominator when they are in the result (checked
+    on the values, as the chart checks them), and an average for the row count beside it: the
+    title names what the chart plots. The question, cut at 80 characters, titled each of the
+    2026-10-01 repeat-rate answer's three results — the same words over three different tables,
+    printed three times apiece in its PDF."""
+    width = len(cols)
+    rows = [list(r) for r in (rows or []) if isinstance(r, (list, tuple)) and len(r) >= width]
+    if not rows:
+        return ""
+    numeric = [i for i, c in enumerate(cols)
+               if not _KEY_NAME_RE.search(c) and not _GRAIN_NAME_RE.search(c)
+               and any(_as_number(r[i]) is not None for r in rows)
+               and all(_as_number(r[i]) is not None for r in rows if r[i] not in (None, ""))]
+    support: set[int] = set()
+    for r in (i for i in numeric if _SHARE_NAME_RE.search(cols[i])):
+        parts = next(((a, b) for a in numeric for b in numeric if len({r, a, b}) == 3
+                      and (_is_ratio_of(rows, r, a, b, 1) or _is_ratio_of(rows, r, a, b, 100))), None)
+        support.update(parts or ())
+    if any(_AVERAGE_NAME_RE.search(cols[i]) for i in numeric):
+        support.update(i for i in numeric
+                       if _COUNT_NAME_RE.search(cols[i]) and not _AVERAGE_NAME_RE.search(cols[i]))
+    support.update(i for i in numeric if _SUPPORT_NAME_RE.search(cols[i]))
+    measures = [cols[i] for i in numeric if i not in support] or [cols[i] for i in numeric]
+    cuts = [c for i, c in enumerate(cols) if i not in numeric]
+    if not measures:
+        return ""
+
+    def _listed(names: list) -> str:
+        names = names[:3] + ([f"{len(names) - 3} more"] if len(names) > 3 else [])
+        return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+    return f"{_listed(measures)} by {_listed(cuts)}" if cuts else _listed(measures)
+
+
+def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None) -> str:
     """A name for a query the model framed itself. It supplies no title — the phase
     tools get theirs from a plan — so it comes from the shape of what came back, plus the
     SCOPE that distinguishes it from another cut of the same shape."""
@@ -156,7 +233,9 @@ def _adhoc_title(columns: list, question: str, sql: str = "") -> str:
     elif len(cols) == 1:
         base = str(cols[0])
     else:
-        return (question or "Query result").strip()[:80]
+        base = _measured_cut(cols, rows)
+        if not base:
+            return (question or "Query result").strip()[:80]
     scope = _adhoc_scope(sql)
     return f"{base} — {scope}" if scope else base
 
@@ -195,10 +274,10 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                             and _f.get("trust_caveat") and list(_f.get("columns") or []) == list(cols)):
                         _p["_hidden"] = True
                         _p["superseded_by"] = f"adhoc_{n}"
+            title = _adhoc_title(cols, turn.state.get("question", ""), (args or {}).get("sql", ""), rows)
             turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
                 "phase_id": f"adhoc_{n}",
-                "phase_name": _adhoc_title(cols, turn.state.get("question", ""),
-                                           (args or {}).get("sql", "")),
+                "phase_name": title,
                 "phase_icon": "🔎",
                 "status": "complete",
                 # Empty: the narrator writes the prose from the evidence log, and a
@@ -206,8 +285,7 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                 "summary": "",
                 "findings": [{
                     "finding_id": f"adhoc_{n}_1",
-                    "title": _adhoc_title(cols, turn.state.get("question", ""),
-                                          (args or {}).get("sql", "")),
+                    "title": title,
                     "sql": ran,
                     "columns": cols,
                     "rows": rows[:50],

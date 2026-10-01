@@ -12,6 +12,13 @@ counts, over the same FROM, JOIN and WHERE, how often the end precedes the start
 runs backwards on at least :data:`INVERTED_SHARE` of the rows it measures is a finding, carried
 as a caveat with its share. It never rewrites and never blocks: the reader and the model decide
 what to measure from instead, and the caveat says what is wrong with this one.
+
+A statement that FILTERS the backwards rows out (`WHERE shipped_at >= created_at`) is asked
+the same question with that filter lifted. Measured 2026-10-01: told to measure from `orders`,
+the Agent re-ran its fulfilment query with exactly that filter; the guard, counting over the
+filtered rows, found none and said nothing; the re-run replaced the flagged result and the
+answer went out at HIGH confidence — ship times 1 to 4.4 hours short per centre, and the
+second-slowest centre misnamed. Leaving the rows out is a finding too, with how many it left.
 """
 from __future__ import annotations
 
@@ -47,14 +54,18 @@ class Inverted:
     #: the record these rows belong to, usually (`orders` for `order_items`).
     table: str = ""
     parents: tuple = field(default_factory=tuple)
+    #: The statement's own filter leaves these rows out (`WHERE end >= start`): the counts are
+    #: of the rows it would measure without that filter.
+    left_out: bool = False
 
     @property
     def share(self) -> float:
         return self.inverted / self.measured if self.measured else 0.0
 
     def detail(self) -> str:
-        return (f"{self.end} is earlier than {self.start} on {self.share:.1%} of the rows measured "
+        said = (f"{self.end} is earlier than {self.start} on {self.share:.1%} of the rows measured "
                 f"({self.inverted:,} of {self.measured:,})")
+        return f"{said}; the statement's filter leaves them out" if self.left_out else said
 
     def caveat(self) -> str:
         """What to do, parent first: the 2026-10-01 re-run dropped 30% of `order_items` rows
@@ -68,6 +79,11 @@ class Inverted:
                     f"{'carries' if len(self.parents) == 1 else 'carry'} {end} and {start}")
         else:
             what = f"Measure from the timestamps of the record {rows} belongs to, if it carries its own"
+        if self.left_out:
+            return (f"time-order guard: the statement leaves out the rows where {self.end} is earlier "
+                    f"than {self.start} — {self.share:.1%} of the rows it would measure "
+                    f"({self.inverted:,} of {self.measured:,}) — so its result covers only the rows "
+                    f"whose timestamps happen to agree. {what}.")
         return (f"time-order guard: {self.detail()} — a duration between them is negative there, "
                 f"and an average over them is pulled down. {what}; leaving the backwards rows out "
                 "keeps only the ones whose timestamps happen to agree.")
@@ -103,6 +119,67 @@ def duration_pairs(tree: exp.Expression) -> list[tuple[exp.Select, list[tuple[ex
     return out
 
 
+def _bare(e: Optional[exp.Expression]) -> Optional[exp.Expression]:
+    while isinstance(e, exp.Paren):
+        e = e.this
+    return e
+
+
+def _same_column(a: Optional[exp.Column], b: exp.Column) -> bool:
+    """The same column, read through a qualifier only one side wrote (`shipped_at`, `oi.shipped_at`)."""
+    if a is None or a.name.lower() != b.name.lower():
+        return False
+    return not a.table or not b.table or a.table.lower() == b.table.lower()
+
+
+def _is_zero(e: Optional[exp.Expression]) -> bool:
+    e = _bare(e)
+    return isinstance(e, exp.Literal) and not e.is_string and e.this in ("0", "0.0")
+
+
+def _keeps_ordered(pred: exp.Expression, end: exp.Column, start: exp.Column) -> bool:
+    """Does ``pred`` keep only the rows where ``end`` is not before ``start`` — the filter that
+    leaves the backwards rows out? `end >= start`, `start <= end` (strict too), `NOT end < start`,
+    or the duration itself `>= 0` / `> 0`, through any cast."""
+    p = _bare(pred)
+
+    def cmp(node, kinds, left, right) -> bool:
+        node = _bare(node)
+        return (isinstance(node, kinds) and _same_column(_column(node.this), left)
+                and _same_column(_column(node.expression), right))
+
+    def diff(node) -> bool:
+        node = _bare(node)
+        return (isinstance(node, _DIFFS) and _same_column(_column(node.this), end)
+                and _same_column(_column(node.expression), start))
+
+    if isinstance(p, exp.Not):
+        return cmp(p.this, exp.LT, end, start) or cmp(p.this, exp.GT, start, end)
+    if cmp(p, (exp.GTE, exp.GT), end, start) or cmp(p, (exp.LTE, exp.LT), start, end):
+        return True
+    if isinstance(p, (exp.GTE, exp.GT)):
+        return diff(p.this) and _is_zero(p.expression)
+    if isinstance(p, (exp.LTE, exp.LT)):
+        return _is_zero(p.this) and diff(p.expression)
+    return False
+
+
+def _conjuncts(e: Optional[exp.Expression]) -> list[exp.Expression]:
+    e = _bare(e)
+    if e is None:
+        return []
+    if isinstance(e, exp.And):
+        return _conjuncts(e.this) + _conjuncts(e.expression)
+    return [e]
+
+
+def left_out_pairs(scope: exp.Select, pairs: list) -> set[int]:
+    """The pairs whose backwards rows ``scope``'s own WHERE leaves out."""
+    where = scope.args.get("where")
+    preds = _conjuncts(where.this) if where is not None else []
+    return {i for i, (end, start) in enumerate(pairs) if any(_keeps_ordered(p, end, start) for p in preds)}
+
+
 def _table_of(col: exp.Column, scope: exp.Select) -> str:
     """The table a column is read from in ``scope``: its qualifier resolved through the scope's
     own FROM and JOINs, or the scope's only table when it is unqualified. "" when unknown."""
@@ -126,17 +203,32 @@ def _parents(table: str, end: str, start: str, column_types: dict) -> tuple:
 def probe_sql(tree: exp.Expression, scope: exp.Select, pairs: list, dialect: str) -> str:
     """Two counts per pair over the scope's own rows: how many run backwards, how many are
     measured at all. Grouping, ordering and limits go — the question is about every row the
-    duration is taken over — and the statement's CTEs come along, since the scope may read them."""
+    duration is taken over — and the statement's CTEs come along, since the scope may read them.
+
+    A filter that leaves a pair's backwards rows out is lifted, so that pair is counted over the
+    rows the statement would measure without it; a pair nothing filtered is still counted over
+    the statement's own rows — the lifted filters become its condition."""
     probe = scope.copy()
     for key in ("group", "order", "limit", "offset", "having", "qualify", "distinct"):
         probe.set(key, None)
+    lifted: list[exp.Expression] = []
+    where = probe.args.get("where")
+    if where is not None:
+        kept = []
+        for pred in _conjuncts(where.this):
+            (lifted if any(_keeps_ordered(pred, e, s) for e, s in pairs) else kept).append(pred)
+        if lifted:
+            probe.set("where", exp.Where(this=exp.and_(*kept)) if kept else None)
+    filtered = left_out_pairs(scope, pairs)
     cols = []
     for i, (end, start) in enumerate(pairs):
         e, s = end.sql(dialect=dialect), start.sql(dialect=dialect)
+        own = "" if i in filtered or not lifted else \
+            " AND ".join(f"({p.sql(dialect=dialect)})" for p in lifted) + " AND "
         cols.append(sqlglot.parse_one(
-            f"SUM(CASE WHEN {e} < {s} THEN 1 ELSE 0 END) AS inverted_{i}", read=dialect))
+            f"SUM(CASE WHEN {own}{e} < {s} THEN 1 ELSE 0 END) AS inverted_{i}", read=dialect))
         cols.append(sqlglot.parse_one(
-            f"SUM(CASE WHEN {e} IS NOT NULL AND {s} IS NOT NULL THEN 1 ELSE 0 END) AS measured_{i}",
+            f"SUM(CASE WHEN {own}{e} IS NOT NULL AND {s} IS NOT NULL THEN 1 ELSE 0 END) AS measured_{i}",
             read=dialect))
     probe.set("expressions", cols)
     for key in ("with_", "with"):
@@ -168,6 +260,7 @@ def time_order_check(conn: Any, sql: str, dialect: str = "duckdb",
         return None
     for scope, pairs in scopes:
         names = ", ".join(f"{e.sql()} − {s.sql()}" for e, s in pairs)
+        filtered = left_out_pairs(scope, pairs)
         try:
             result = conn.execute("__time_order_probe__", probe_sql(tree, scope, pairs, dialect),
                                   internal=True)
@@ -186,7 +279,7 @@ def time_order_check(conn: Any, sql: str, dialect: str = "duckdb",
                 continue
             if measured and inverted and inverted / measured >= INVERTED_SHARE:
                 run.findings.append(Inverted(end.sql(), start.sql(), inverted, measured,
-                                             table=_table_of(end, scope)))
+                                             table=_table_of(end, scope), left_out=i in filtered))
     if run.findings and column_types is not None:
         try:
             types = column_types() or {}
