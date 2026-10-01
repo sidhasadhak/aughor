@@ -109,6 +109,18 @@ _NEGATION_RE = re.compile(
     r"|little|minimal|negligible)\b(?:\s+\w+){0,4}\s+", re.I)
 
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+#: The report check reads a markdown answer: a table row, a heading and a note each end a
+#: line, not a sentence. Split on lines too, so a flagged "sentence" is the line that said it
+#: — not a twelve-row table quoted up to the caveat under it.
+_REPORT_UNIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+#: A sentence about how far the NUMBERS can be trusted — small samples, few records,
+#: volatility — speaks about the measurement, not the business, and claims no cause in the
+#: data: "small sample sizes may lead to volatile rates" (a live answer, 2026-10-01).
+_RELIABILITY_RE = re.compile(
+    r"\b(?:sample\s+sizes?|small\s+samples?|too\s+few|few\s+(?:customers|users|records|rows|orders"
+    r"|observations|data\s+points)|small\s+(?:bases?|counts?|groups?|cohorts?)|low\s+(?:counts?"
+    r"|volumes?)|volatil\w*|noisy|noise|unreliable|margin\s+of\s+error|confidence\s+intervals?)\b",
+    re.I)
 
 
 def is_at_least(claim_type: Optional[str], minimum: str) -> bool:
@@ -235,7 +247,9 @@ def overreaching_sentences(prose: str, claim_type: str) -> list[tuple[str, str]]
     if not forbidden:
         return []
     out: list[tuple[str, str]] = []
-    for sentence in _SENTENCE_RE.split(prose):
+    for sentence in _REPORT_UNIT_RE.split(prose):
+        if _RELIABILITY_RE.search(sentence):
+            continue
         stripped = _NEGATION_RE.sub(" ", sentence)
         for _name, rx in forbidden:
             m = rx.search(stripped)

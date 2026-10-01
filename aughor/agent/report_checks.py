@@ -92,7 +92,7 @@ class Violation(str):
         return obj
 
 
-def reader_disclosure(violations: list) -> str:
+def reader_disclosure(violations: list, *, repaired: bool = True) -> str:
     """The one sentence the REPORT carries when checks still fail after the repair attempt.
 
     Built from each violation's `.disclosure`; a plain string (a check that predates the
@@ -110,7 +110,11 @@ def reader_disclosure(violations: list) -> str:
             parts.append(d)
     if not parts:
         return ""
-    return "Deterministic checks after the repair attempt: " + "; ".join(parts) + "."
+    # An answer in the analyst's own words (item 3) has no writer and so no repair attempt:
+    # the disclosure says what happened, not what happens on the writer's path.
+    lead = ("Deterministic checks after the repair attempt: " if repaired
+            else "Deterministic checks on this answer: ")
+    return lead + "; ".join(parts) + "."
 
 
 def _float_or_none(s: str) -> Optional[float]:
@@ -277,10 +281,15 @@ def _written_tolerance(written: str) -> float:
 
 #: What follows a figure written as a percentage.
 _PERCENT_AFTER = re.compile(r"\s*(%|percent\b|per cent\b|pp\b|percentage points?\b|points?\b)", re.I)
+#: What follows a figure written as a multiple ("1.5x", "2.3 times").
+_RATIO_AFTER = re.compile(r"\s*(x\b|×|times\b|-?fold\b)", re.I)
+#: A significance THRESHOLD ("p > 0.05", "α = 0.01") is a convention the prose states, not a
+#: measurement the evidence holds — the p-value measured is what the evidence carries.
+_THRESHOLD_BEFORE = re.compile(r"(?:\bp(?:-value)?|α|\balpha)\s*[<>=≤≥]{1,2}\s*$", re.I)
 
 
 def _derived_from_evidence(v: float, vals: list[float], written: str = "",
-                           percent: bool = True) -> bool:
+                           percent: bool = True, ratio: bool = False) -> bool:
     """True when `v` is arithmetic the evidence licenses: a percent change ((b−a)/a·100, either
     sign) or a share (b/a·100) of two evidence values within 1%, or their raw delta (b−a) to
     the precision `v` is written in.
@@ -307,6 +316,8 @@ def _derived_from_evidence(v: float, vals: list[float], written: str = "",
                             or _close(v, b / a * 100.0)):
                 return True
             if (abs(v - (b - a)) <= tol) if tol is not None else _close(v, b - a):
+                return True
+            if ratio and _close(v, b / a):          # "Jeans took 1.5x Sweaters' revenue"
                 return True
     return False
 
@@ -345,12 +356,19 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
             n = m.group(0)
             clean = _clean_number(n)
             f = _float_or_none(clean) if clean else None
-            if f is None or abs(f) < 10:
+            # A small WHOLE number is a rank, a count of segments or a list number —
+            # coincidental and not worth a retry. A small figure written with decimals is a
+            # measurement: "approximately 3.98 days across all centres" was an average the
+            # model computed itself (2026-10-01), and it went unchecked because it was < 10.
+            if f is None or (abs(f) < 10 and "." not in clean):
+                continue
+            if _THRESHOLD_BEFORE.search(segment[:m.start()]):
                 continue
             # "406.10" is the evidence's 406.1 written to cents — the set holds it without the zero
             bare = clean.rstrip("0").rstrip(".") if "." in clean else clean
             if clean in have or bare in have or _derived_from_evidence(
-                    f, vals, written=clean, percent=bool(_PERCENT_AFTER.match(segment, m.end()))):
+                    f, vals, written=clean, percent=bool(_PERCENT_AFTER.match(segment, m.end())),
+                    ratio=bool(_RATIO_AFTER.match(segment, m.end()))):
                 continue
             if clean not in bad_figs:
                 bad_figs.append(n.strip("+-"))

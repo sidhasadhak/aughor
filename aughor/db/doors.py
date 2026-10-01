@@ -61,6 +61,7 @@ GUARDS: dict[str, str] = {
     "ratio-of-sums": "ratio-of-sums",
     "chasm": "aggregate-over-chasm",
     "grain": "join-key grain",
+    "time-order": "time-order",
 }
 
 

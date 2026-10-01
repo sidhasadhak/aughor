@@ -441,6 +441,33 @@ def execute_guarded(
                      counter="trust.e1_live")
             return []
 
+    # A duration between two timestamps that run backwards on a real share of rows: the
+    # statement is correct SQL and its average is still wrong (theLook, 2026-10-01 — items
+    # recorded as shipped before they were created on 19,360 of 33,272 rows, and a fulfilment
+    # time published as 3.12 days whose true value is 3.98). Checked on the statement that RAN,
+    # at exit, like E1; a statement measuring no duration is not probed and says nothing.
+    def _time_order_caveats(res) -> list[str]:
+        if getattr(res, "error", None) or not getattr(res, "sql", ""):
+            return []
+        try:
+            from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+            from aughor.sql.time_order_guard import time_order_check
+            from aughor.sql.trust_checks import connection_column_types
+            _trun = time_order_check(
+                conn, res.sql, getattr(conn, "dialect", "duckdb") or "duckdb",
+                column_types=lambda: connection_column_types(getattr(conn, "_connection_id", ""), conn))
+            if _trun is None:
+                return []
+            _steps.append(_trun.door)
+            for _f in _trun.findings:
+                emit_guard_receipt("time_order", "flagged", detail=_f.detail(), before=res.sql)
+            return [_f.caveat() for _f in _trun.findings] + _trun.caveats()
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "the time-order guard is advisory; the result proceeds uncaveated",
+                     counter="sql.time_order_guard")
+            return []
+
     # CA-2 — a filter literal the guard can bind DETERMINISTICALLY (a stored-value spelling,
     # or the same value in a sibling column of the same table) is repaired without a model
     # call: AST surgery, dry-run, and the guard re-probed on the result. The deep path's
@@ -471,7 +498,8 @@ def execute_guarded(
                     _fg_stats.inc("filter_guard.deterministic_repair")
                     _steps.append("repaired:deterministic")
                     _det_retry.sql = _fixed
-                    return _attach_caveats(_det_retry, _e1_caveats(_fixed))
+                    return _attach_caveats(_det_retry, [*_e1_caveats(_fixed),
+                                                        *_time_order_caveats(_det_retry)])
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "deterministic filter repair is best-effort; the model fix loop "
@@ -489,7 +517,8 @@ def execute_guarded(
         # the guards above have run; return the raw result WITH its caveats attached
         # (previously they were dropped here — the WP-1a swallow seam).
         if fix_prompt_template is None or provider_factory is None:
-            return _attach_caveats(result, [*_guard_caveats, *_e1_caveats(result.sql)])
+            return _attach_caveats(result, [*_guard_caveats, *_e1_caveats(result.sql),
+                                            *_time_order_caveats(result)])
 
         class _Fix(BaseModel):
             fixed_sql: str
@@ -627,4 +656,5 @@ def execute_guarded(
     # A NOVEL-literal caveat (CA-2) never enters the fix block above, so it is attached here —
     # the only knowledge the reader has that the zero is an absence, not a measurement.
     _novel_caveats = [c for c in _guard_caveats if "the segment is absent, not zero" in c]
-    return _attach_caveats(result, [*_novel_caveats, *_e1_caveats(result.sql)])
+    return _attach_caveats(result, [*_novel_caveats, *_e1_caveats(result.sql),
+                                    *_time_order_caveats(result)])

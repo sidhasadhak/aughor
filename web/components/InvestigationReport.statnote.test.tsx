@@ -133,3 +133,18 @@ describe("phases that share a kind all render", () => {
     expect(screen.getByText(/Decomposition by channel/)).toBeInTheDocument();
   });
 });
+
+describe("an answer in the analyst's own words", () => {
+  it("renders its table as a table and has no empty headline", () => {
+    // Item 3 (2026-09-30): a question that asks to see the data is answered by the
+    // analyst's conclusion, whose table must read as a table rather than as pipes.
+    const report = {
+      ...(reportWith("") as object), headline: "",
+      executive_summary: "Fulfilment takes about 3 days.\n\n| Centre | Days |\n| :--- | :--- |\n| NY/NJ | 3.12 |",
+    } as never;
+    const { container } = render(<ReportView report={report} />);
+    expect(container.querySelector("table")?.textContent).toContain("NY/NJ");
+    expect(container.textContent).not.toContain("| NY/NJ |");
+    expect(container.querySelector("h2")).toBeNull();
+  });
+});

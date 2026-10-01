@@ -133,3 +133,24 @@ def test_nothing_to_withhold_leaves_the_answer_as_written():
     assert withhold_untraced(synth, [], "q") == []
     assert withhold_untraced(synth, ["#12: a plain string violation"], "q") == []
     assert synth.executive_summary == _draft().executive_summary
+
+
+# ── A small figure written with decimals is a measurement too (2026-10-01) ────────────
+
+CENTRES = "centre | total_days\nNY/NJ | 4.0378\nLos Angeles | 4.0048\nNew Orleans | 3.9312"
+
+
+def test_a_small_decimal_is_checked_and_a_small_whole_number_is_not():
+    """Q4's headline gave "approximately 3.98 days across all distribution centers" — the
+    model's own average of the centre averages — and #36 never looked, because it was < 10."""
+    v = check_grounding("Orders take about 3.98 days across all centres.", CENTRES)
+    assert v and v[0].figures == ("3.98",)
+    assert check_grounding("NY/NJ is slowest at 4.04 days.", CENTRES) == []      # quoted, rounded
+    assert check_grounding("The 3 slowest centres are in the east.", CENTRES) == []
+
+
+def test_a_rate_a_ratio_and_a_threshold_are_read_as_what_they_are():
+    rates = "cohort | repeat_rate\n2025-01 | 0.06946\n2025-12 | 0.12068"
+    assert check_grounding("January's repeat rate was 6.9%.", rates) == []        # fraction → percent
+    assert check_grounding("December's rate is 1.74x January's.", rates) == []    # b / a, as a multiple
+    assert check_grounding("The months differ (p < 0.05).", rates) == []           # a convention

@@ -184,6 +184,17 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
             n = len(turn.phase_tools_run) + 1
             # The statement that RAN, when a guard changed the one the model framed.
             ran = result.get("sql") or (args or {}).get("sql", "")
+            # A query re-run to correct one a guard flagged REPLACES it on the page: the same
+            # columns, the earlier carried a warning and this one carries none. Kept in the run
+            # (hidden, with what replaced it) — the trace still shows the correction; the answer
+            # no longer shows the flawed table beside the right one (2026-10-01, fulfilment).
+            if not [c for c in (result.get("caveats") or []) if c]:
+                for _p in turn.state.get("investigation_phases") or []:
+                    _f = (_p.get("findings") or [{}])[0]
+                    if (str(_p.get("phase_id", "")).startswith("adhoc_") and not _p.get("_hidden")
+                            and _f.get("trust_caveat") and list(_f.get("columns") or []) == list(cols)):
+                        _p["_hidden"] = True
+                        _p["superseded_by"] = f"adhoc_{n}"
             turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
                 "phase_id": f"adhoc_{n}",
                 "phase_name": _adhoc_title(cols, turn.state.get("question", ""),
@@ -200,13 +211,19 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                     "sql": ran,
                     "columns": cols,
                     "rows": rows[:50],
-                    "row_count": len(rows),
+                    # The RESULT's size, not the preview's: `run_sql` hands the model 20
+                    # rows, and recording 20 made a 700-row grid read as complete — and
+                    # let a total of the preview pass as the total of every row (item 6).
+                    "row_count": int(result.get("row_count") or len(rows)),
                     "error": None,
                     "interpretation": "",
                     "key_numbers": [],
                     "chart_type": "auto",
                     "stat_note": None,
                     "is_significant": False,
+                    # What the guards said about these rows reaches the page and the
+                    # writer, not only the model that ran the query.
+                    "trust_caveat": " ".join(str(c) for c in (result.get("caveats") or []) if c),
                 }],
                 "skipped_reason": None,
                 "caveats": [],
@@ -639,10 +656,16 @@ _WINDOW_PROPS = {
 #: the built roster and not merely that the dropped ones are absent.
 _ANALYST_PLATFORM_TOOLS = frozenset({"propose_context_note"})
 
+#: The tools that explain a movement or hunt a weakness. A question that asks to SEE the
+#: data (`investigate.question_shape` → "describe") is not offered them: each one frames its
+#: finding as a change or a shortfall, and a roster the model can see is a roster it spends
+#: turns on — Q5 (2026-09-29) was answered with an unasked year-over-year comparison.
+_INVESTIGATION_TOOLS = frozenset({"baseline", "decompose", "premise_check", "cross_section"})
+
 
 def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
                   session_id: str = "", canvas_id: Optional[str] = None,
-                  user_question: str = "") -> list[ToolSpec]:
+                  user_question: str = "", shape: str = "diagnose") -> list[ToolSpec]:
     """The analyst's roster: the phase library as tools, the deterministic probes, the
     warehouse primitives, and the ONE platform tool that is analysis business. Bound by
     closure like every converse tool — the model cannot name a connection, session or
@@ -656,7 +679,7 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
     from aughor.agent.platform_tools import platform_tools
 
     cid = turn.connection_id
-    return [
+    roster = [
         ToolSpec(
             name="baseline",
             description=(
@@ -777,6 +800,9 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
         ),
     ] + [t for t in platform_tools(cid, session_id=session_id)
          if t.name in _ANALYST_PLATFORM_TOOLS]
+    if shape == "describe":
+        roster = [t for t in roster if t.name not in _INVESTIGATION_TOOLS]
+    return roster
 
 
 # ── The prompt ────────────────────────────────────────────────────────────────
@@ -818,8 +844,37 @@ def _spec_section(intake: dict) -> str:
     return "\n".join(lines)
 
 
+def _describe_rules(budget: int) -> list[str]:
+    """The stopping rule for a question that asks to SEE the data (item 3). Its conclusion
+    is published as the answer (`investigate._conclusion_as_answer`), so it is written for
+    the reader, not for a writer to rework."""
+    return [
+        f"You have at most {budget} tool calls. This question asks to SEE the data, not why "
+        "it moved. STOPPING RULE: stop as soon as your results answer every part of it — "
+        "each figure it asks for, over the period and across the cuts it names. Do not look "
+        "for causes, drivers or anomalies it did not ask about, and compare periods only "
+        "where it asks.",
+        "",
+        "Each cut the question names ('by traffic source and country') is measured on its "
+        "own, pooled over everything else — one GROUP BY per cut, with the count behind "
+        "each rate. A finer grid (month × source × country) splits the rows into cells too "
+        "small to compare and does not answer it. Show every group of a cut, or say how "
+        "many you left out. Order a table by the measure, with any group too small to "
+        "compare (a handful of records) after the others and marked — never at the top.",
+        "",
+        "When you stop, write the answer the reader will read, in plain prose. Open with "
+        "the answer itself in one sentence, with its figures — what leads, what trails, by "
+        "how much — never a definition or a restatement of the question. Then the figures "
+        "asked for, as a table when there are several rows, with the period and the "
+        "definition used; then anything the data could not answer. A total or share across "
+        "rows is quoted from the result's `totals`, never added up by hand. No "
+        "recommendations, no speculation about causes.",
+    ]
+
+
 def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
-                          extra: Optional[str] = None, sql_context: str = "") -> str:
+                          extra: Optional[str] = None, sql_context: str = "",
+                          shape: str = "diagnose") -> str:
     """State, not instructions — the converse rule, extended with the analyst's
     stopping rule. The tools carry the routing; this says what is true.
 
@@ -844,16 +899,22 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
         "number you do not state. Significance comes from the z_score tool or a "
         "phase's own stats line, never from your own arithmetic.",
         "",
-        f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "
-        "stop the moment a cause is named WITH ITS SIZE (which segment, how much of "
-        "the change it carries) — or, if the data cannot answer, stop and say plainly "
-        "what it cannot tell and what to check next. Do not spend remaining budget "
-        "re-confirming what the evidence already shows.",
+        "A result shows you at most 20 rows. When it says `truncated`, the rows you see "
+        "are not the result: ask for what you need with GROUP BY, or ORDER BY … LIMIT — "
+        "never state a range, a spread or a pattern from the rows shown.",
         "",
-        "When you stop, write your conclusion as plain prose: the cause and its size, "
-        "the evidence that carries it, and what you could not test. The report is "
-        "assembled from the phases you ran plus this conclusion — a slice you never "
-        "ran is a claim you cannot make.",
+        *(_describe_rules(budget) if shape == "describe" else [
+            f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "
+            "stop the moment a cause is named WITH ITS SIZE (which segment, how much of "
+            "the change it carries) — or, if the data cannot answer, stop and say plainly "
+            "what it cannot tell and what to check next. Do not spend remaining budget "
+            "re-confirming what the evidence already shows.",
+            "",
+            "When you stop, write your conclusion as plain prose: the cause and its size, "
+            "the evidence that carries it, and what you could not test. The report is "
+            "assembled from the phases you ran plus this conclusion — a slice you never "
+            "ran is a claim you cannot make.",
+        ]),
     ]
     if extra:
         lines += ["", extra]
@@ -1008,8 +1069,11 @@ def run_analyst(
         turn.merge(ada_intake(state, conn), tool="intake")
 
         budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
+        # Item 3: measure-and-state or investigate, decided by code from the question.
+        from aughor.agent.investigate import question_shape
+        shape = (turn.intake or {}).get("question_shape") or question_shape(question)
         tools = analyst_tools(turn, emit=emit, session_id=session_id,
-                              canvas_id=canvas_id, user_question=question)
+                              canvas_id=canvas_id, user_question=question, shape=shape)
         from aughor.agent.sql_context import learned_settle_days, sql_context as _sql_context
         result: LoopResult = run_tool_loop(
             provider or get_provider("coder"),
@@ -1017,7 +1081,8 @@ def run_analyst(
                 eff_conn_id, turn.intake, budget, extra=extra_context,
                 sql_context=_sql_context(
                     conn, coverage_end=(turn.intake or {}).get("data_coverage_end") or "",
-                    settle_days=learned_settle_days(eff_conn_id))),
+                    settle_days=learned_settle_days(eff_conn_id)),
+                shape=shape),
             question,
             tools,
             max_steps=budget,
@@ -1041,6 +1106,7 @@ def run_analyst(
                                      default=str),
                 "budget": int(budget),
                 "extra": extra_context or "",
+                "shape": shape,
             },
         )
 

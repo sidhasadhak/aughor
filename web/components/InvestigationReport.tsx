@@ -18,6 +18,7 @@ import React, { useState } from "react";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { SqlResultTable } from "@/components/AugTable";
+import { AnswerProse } from "@/components/chat/AnswerProse";
 /** Open the right-side Source-data drawer (data + SQL + Query Builder) for a finding. Typed inline
  *  (structurally = ChatMessage's SourcePanelData) to avoid a circular import with ChatMessage. */
 type ShowSource = (data: { columns: string[]; rows: unknown[][]; sql: string | null; title: string }) => void;
@@ -493,11 +494,13 @@ export function InvestigationReportView({
           )}
         </div>
       )}
-      <BriefHeadline>{report.headline}</BriefHeadline>
+      {report.headline?.trim() && <BriefHeadline>{report.headline}</BriefHeadline>}
       {/* Skip a summary that only restates the headline (the fallback path can emit both
-          from the same sentence) — one text, rendered once. */}
+          from the same sentence) — one text, rendered once. Rendered as markdown: a question
+          that asks to see the data is answered in the analyst's own words (item 3), whose
+          table and list must read as a table and a list, not as pipes and asterisks. */}
       {report.executive_summary && report.executive_summary.trim() !== report.headline?.trim()
-        && <BriefProse text={report.executive_summary} />}
+        && <AnswerProse text={report.executive_summary} />}
 
       <BriefMeta
         items={[

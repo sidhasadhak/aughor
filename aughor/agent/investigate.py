@@ -1111,6 +1111,43 @@ def _is_descriptive_question(question: str) -> bool:
     return bool(_DESCRIPTIVE_ASK_RE.search(q))
 
 
+#: Words that ask WHY — for a cause, a driver or an explanation. Narrower than
+#: `_CAUSE_WORDS_RE` on purpose: "which months grew or shrank the most" asks WHAT moved,
+#: which is still a question about the data, and that class counts "grew" as a cause.
+_ASKS_WHY_RE = re.compile(
+    r"\b(why|reasons?|caus\w*|drove|drive[sn]?|driv(?:er|ers|ing)|behind|explain\w*|"
+    r"contribut\w*|attribut\w*|responsible|root)\b", re.I)
+#: Words that ask what to DO about the data, or where something is wrong in it.
+_ASKS_ADVICE_RE = re.compile(
+    r"\b(should|optimi[sz]\w*|improve\w*|recommend\w*|opportunit\w*|anomal\w*|unusual|"
+    r"reduce)\b|\bhow (?:can|could|should) we\b", re.I)
+#: The ask to read the data: a question word, or a request to see or compare it.
+_ASKS_TO_READ_RE = re.compile(
+    r"\b(what|what's|which|who|when|where|how (?:many|much|long|often|has|have|had|did|does|"
+    r"do|is|are|was|were)|show|list|give me|display|compare|rank)\b", re.I)
+
+
+def question_shape(question: str) -> str:
+    """How an Agent turn should work the question: ``"describe"`` or ``"diagnose"``.
+
+    A describe question asks to SEE the data — a figure, a ranking, a trend, a comparison
+    across segments or periods. It is answered by measuring what was asked and stating it.
+    Everything else keeps the investigation it always had: asking why, asking what to do,
+    or hunting where value is weak or lost (`_is_diagnostic_question`).
+
+    Measured 2026-09-29 on five theLook questions, all of the describe shape: the analyst,
+    told to stop only "when a cause is named with its size", answered an unasked 2024-vs-2025
+    comparison; and where it did answer — a table of all ten distribution centres, a table
+    of twelve months — the writer replaced it with speculation, a recommendation over a
+    0.15-day spread and data gaps nobody asked about. Decided by code from the question
+    alone, like `descriptive_only`, and conservative: only a clear ask to read, with no why,
+    advice or weakness vocabulary, is "describe" — anything unclear keeps the investigation."""
+    q = question or ""
+    if _ASKS_WHY_RE.search(q) or _ASKS_ADVICE_RE.search(q) or _is_diagnostic_question(q):
+        return "diagnose"
+    return "describe" if _ASKS_TO_READ_RE.search(q) else "diagnose"
+
+
 def _framing_note(intake_data: dict) -> str:
     """How synthesis must FRAME this run, decided from the design.
 
@@ -5036,7 +5073,10 @@ def _evidence_confidence_ceiling(phases) -> tuple[str, str]:
             if _SIG_NOT_ASSESSABLE_RE.search(str(f.get("stat_note") or "")):
                 reasons.append("the baseline is too short for a significance verdict")
                 break
-    caveats = [f.get("trust_caveat") for p in (phases or []) if isinstance(p, dict)
+    # Only what the reader is shown: a hidden phase — pruned, or replaced by a corrected
+    # re-run of the same cut — puts no advisory beneath the answer.
+    caveats = [f.get("trust_caveat") for p in (phases or [])
+               if isinstance(p, dict) and not p.get("_hidden")
                for f in (p.get("findings") or []) if f.get("trust_caveat")]
     if caveats:
         reasons.append("a trust advisory fired on the evidence: " + str(caveats[0])
@@ -6457,8 +6497,11 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # (`agent/sql_context.py`); built once here, where the data's last day is known.
     intake_dict["sql_context"] = sql_context(conn, coverage_end=_cov_max or "",
                                              settle_days=_settle_days)
+    # Item 3: how an Agent turn works this question — measure and state it ("describe"), or
+    # investigate it ("diagnose"). Decided by code from the question, like `descriptive_only`.
+    intake_dict["question_shape"] = question_shape(question)
 
-    # Enrich with ontology entity context (best-effort — never crash ada_intake)
+    # Enrich with ontology entity context (best-effort — never crash the intake)
     try:
         from aughor.ontology.store import load_latest_ontology
         onto = load_latest_ontology(state.get("connection_id", ""))
@@ -9914,6 +9957,45 @@ def _apply_adversarial_refutation(synth, verdict) -> None:
             "refutation: " + obj + " " + (getattr(synth, "confidence_justification", "") or "")).strip()
 
 
+def _lead_sentence(text: str) -> tuple[str, str]:
+    """``(headline, rest)``: the conclusion's opening sentence as its headline when it is a
+    plain sentence short enough to be one, else no headline and the whole text."""
+    t = (text or "").strip()
+    first_para = t.split("\n\n", 1)[0]
+    if not first_para or first_para.lstrip()[:1] in "#|*-" or "\n" in first_para.strip():
+        return "", t
+    lead = re.split(r"(?<=[.!?])\s+", first_para.strip(), maxsplit=1)[0]
+    if len(lead) > 240:
+        return "", t
+    return lead.rstrip(".").strip(), t[len(lead):].strip()
+
+
+def _conclusion_as_answer(state, intake_data: dict, question: str):
+    """Item 3 — a question that asks to SEE the data is answered in the analyst's own words.
+
+    The analyst measured what was asked and wrote it up; for Q3 and Q4 (2026-09-29) that
+    write-up was the best answer the run produced — a table of twelve months, a table of ten
+    distribution centres, each with a one-line reading — and the writer's report that
+    replaced it added an average nobody computed, a recommendation and data gaps. So a
+    describe question takes the conclusion as its answer, with no writer call: the report
+    checks still run on it and a figure that does not trace is still withheld.
+
+    None when the question is not the describe shape (`question_shape`) or no analyst
+    concluded — the phase graph and every diagnose question keep the writer."""
+    conclusion = (state.get("_analyst_conclusion") or "").strip()
+    shape = (intake_data or {}).get("question_shape") or question_shape(question)
+    if shape != "describe" or not conclusion:
+        return None
+    from aughor.agent.prompts_investigate import ADASynthesisModel
+    headline, body = _lead_sentence(conclusion)
+    return ADASynthesisModel(
+        headline=headline, executive_summary=body or conclusion, closing_summary="",
+        total_change_label="", attribution_waterfall=[], confidence="HIGH",
+        confidence_justification=("Stated from the rows this turn's queries returned; each "
+                                  "figure was checked against them."),
+        recommendations=[], data_gaps=[])
+
+
 @_telemetry.node_span("ada_synthesize")
 def ada_synthesize(state: AgentState) -> dict:
     """
@@ -10096,60 +10178,65 @@ def ada_synthesize(state: AgentState) -> dict:
         tolerate(_exc, "metric-targets section is advisory; synthesis proceeds without "
                        "benchmark targets", counter="deep_analysis.synth_context")
 
-    # Build playbook section — match playbook entries against this investigation's context
-    playbook_section = ""
-    try:
-        from aughor.playbook.retriever import (
-            retrieve_for_metric_and_phases,
-            build_playbook_prompt_section,
-            build_causal_playbook_section,
-            filter_by_approach,
-        )
-        labels: list[str] = []
-        if intake_data.get("metric_label"):
-            labels.append(intake_data["metric_label"])
-        for phase in phases:
-            if phase.get("title"):
-                labels.append(phase["title"])
-        labels.append(question)
-        from aughor.business_profile.metric_kb import industry_scope
-        _conn = state.get("connection_id") or ""
-        matched = retrieve_for_metric_and_phases(
-            labels, limit=5,
-            industry=industry_scope(_conn, state.get("scope_schema") or None) if _conn else None)
-        # PE-3: a cross-sectional report never receives change-triggered entries —
-        # the specimen carried five "When GMV up…" patterns it was told to PREFER,
-        # inside a prompt whose own note said the question is not temporal.
-        matched = filter_by_approach(
-            matched, cross_sectional=bool(intake_data.get("cross_sectional")))
-        causal_section = build_causal_playbook_section(question, conn_id=state.get("connection_id", ""))
-        playbook_section = causal_section + build_playbook_prompt_section(matched)
-    except Exception as _exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(_exc, "playbook section is advisory; synthesis proceeds without playbook "
-                       "guidance", counter="deep_analysis.synth_context")
+    # Item 3: a describe question is answered in the analyst's own words (no writer call),
+    # so the writer's context — playbook, uploaded documents, org insights — is not gathered.
+    _as_written = _conclusion_as_answer(state, intake_data, question)
+    playbook_section = external_context_section = org_intelligence_section = ""
+    if _as_written is None:
+        # Build playbook section — match playbook entries against this investigation's context
+        playbook_section = ""
+        try:
+            from aughor.playbook.retriever import (
+                retrieve_for_metric_and_phases,
+                build_playbook_prompt_section,
+                build_causal_playbook_section,
+                filter_by_approach,
+            )
+            labels: list[str] = []
+            if intake_data.get("metric_label"):
+                labels.append(intake_data["metric_label"])
+            for phase in phases:
+                if phase.get("title"):
+                    labels.append(phase["title"])
+            labels.append(question)
+            from aughor.business_profile.metric_kb import industry_scope
+            _conn = state.get("connection_id") or ""
+            matched = retrieve_for_metric_and_phases(
+                labels, limit=5,
+                industry=industry_scope(_conn, state.get("scope_schema") or None) if _conn else None)
+            # PE-3: a cross-sectional report never receives change-triggered entries —
+            # the specimen carried five "When GMV up…" patterns it was told to PREFER,
+            # inside a prompt whose own note said the question is not temporal.
+            matched = filter_by_approach(
+                matched, cross_sectional=bool(intake_data.get("cross_sectional")))
+            causal_section = build_causal_playbook_section(question, conn_id=state.get("connection_id", ""))
+            playbook_section = causal_section + build_playbook_prompt_section(matched)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "playbook section is advisory; synthesis proceeds without playbook "
+                           "guidance", counter="deep_analysis.synth_context")
 
-    # Build external context section from uploaded documents
-    external_context_section = ""
-    try:
-        from aughor.knowledge.indexer import build_external_context_section
-        external_context_section = build_external_context_section(
-            question, top_k=4, canvas_id=state.get("canvas_id"),
-            connection_id=state.get("connection_id") or None)
-    except Exception as _exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(_exc, "external-document context is advisory; synthesis proceeds without "
-                       "uploaded-document grounding", counter="deep_analysis.synth_context")
+        # Build external context section from uploaded documents
+        external_context_section = ""
+        try:
+            from aughor.knowledge.indexer import build_external_context_section
+            external_context_section = build_external_context_section(
+                question, top_k=4, canvas_id=state.get("canvas_id"),
+                connection_id=state.get("connection_id") or None)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "external-document context is advisory; synthesis proceeds without "
+                           "uploaded-document grounding", counter="deep_analysis.synth_context")
 
-    # Build org-wide intelligence section from promoted canvas insights
-    org_intelligence_section = ""
-    try:
-        from aughor.knowledge.org_intelligence import build_org_intelligence_section
-        org_intelligence_section = build_org_intelligence_section(question, top_k=5)
-    except Exception as _exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(_exc, "org-intelligence section is advisory; synthesis proceeds without "
-                       "promoted canvas insights", counter="deep_analysis.synth_context")
+        # Build org-wide intelligence section from promoted canvas insights
+        org_intelligence_section = ""
+        try:
+            from aughor.knowledge.org_intelligence import build_org_intelligence_section
+            org_intelligence_section = build_org_intelligence_section(question, top_k=5)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "org-intelligence section is advisory; synthesis proceeds without "
+                           "promoted canvas insights", counter="deep_analysis.synth_context")
 
     # agents.user_defined — the active persona's standing instructions lead the
     # synthesis prompt (mirrors the quick path's rules_block seam; the document
@@ -10219,19 +10306,24 @@ def ada_synthesize(state: AgentState) -> dict:
         return prov.complete(system=_synth_system, user=synth_prompt,
                              response_model=ADASynthesisModel)
 
-    try:
-        # Don't block the investigation on a hung LLM call — abandon the worker, keep the
-        # fallback. Abandoned means stopped: its in-flight request finishes, but a failed
-        # stream no longer launches a blocking redo behind the rescue that replaced it.
-        from aughor.kernel.cancellation import run_bounded
-        synth: ADASynthesisModel = run_bounded(
-            _run_synth, _synth_timeout,
-            abandoned=f"synthesis passed its {_synth_timeout:g}s bound; the rescue took over")
-    except Exception as e:
-        synth = None
-        if isinstance(e, _cf.TimeoutError):
-            from aughor.stats import stats as _s
-            _s.inc("deep_analysis.synthesis_timeout")
+    synth = _as_written
+    if synth is not None:
+        from aughor.stats import stats as _sa
+        _sa.inc("deep_analysis.answered_in_analyst_words")
+    else:
+        try:
+            # Don't block the investigation on a hung LLM call — abandon the worker, keep the
+            # fallback. Abandoned means stopped: its in-flight request finishes, but a failed
+            # stream no longer launches a blocking redo behind the rescue that replaced it.
+            from aughor.kernel.cancellation import run_bounded
+            synth = run_bounded(
+                _run_synth, _synth_timeout,
+                abandoned=f"synthesis passed its {_synth_timeout:g}s bound; the rescue took over")
+        except Exception as e:
+            synth = None
+            if isinstance(e, _cf.TimeoutError):
+                from aughor.stats import stats as _s
+                _s.inc("deep_analysis.synthesis_timeout")
 
     # CI-5a — before conceding to the deterministic fallback, one bounded attempt on
     # the FAST role. A slow narrator was the whole cause of the 28% fallback rate;
@@ -10253,7 +10345,9 @@ def ada_synthesize(state: AgentState) -> dict:
             from aughor.stats import stats as _stl
             _stl.inc(f"deep_analysis.report_check_licence.{_licence or 'none'}")
             _violations = run_report_checks(synth, question, evidence_log, phases, _licence)
-            if _violations:
+            # The one repair is the writer's; an answer in the analyst's own words has no
+            # writer, so what fails is withheld or disclosed below without a model call.
+            if _violations and _as_written is None:
                 from aughor.stats import stats as _st
                 _st.inc("deep_analysis.report_check_retry")
                 try:
@@ -10272,32 +10366,32 @@ def ada_synthesize(state: AgentState) -> dict:
                     tolerate(_exc, "report-check retry is best-effort; the first draft "
                                    "ships with its violations disclosed",
                              counter="deep_analysis.report_check_retry_failed")
-                if _violations:
-                    from aughor.stats import stats as _st2
-                    from aughor.agent.report_checks import reader_disclosure
-                    _st2.inc("deep_analysis.report_check_violations_shipped")
-                    if synth.confidence == "HIGH":
-                        synth.confidence = "MEDIUM"
-                    # CA-0: the READER gets the disclosure, never the repair instruction. The
-                    # violation strings are written for the model ("replace each with the
-                    # evidence's own value …"); concatenating them here shipped that
-                    # second-person text into the PDF's Confidence section on 10 of 144
-                    # stored reports. The instruction still reaches the log for the operator.
-                    import logging as _rc_logging
-                    _rc_logging.getLogger(__name__).info(
-                        "[ada] report checks still failing after retry: %s",
-                        " | ".join(str(v) for v in _violations))
-                    # Item 6: a figure that still does not trace is not published — the sentence
-                    # stating it is withheld and the answer says so.
-                    from aughor.agent.report_checks import withhold_untraced
-                    if withhold_untraced(synth, _violations, question):
-                        _st2.inc("deep_analysis.untraced_figure_withheld")
-                    _disclosure = reader_disclosure(_violations)
-                    if _disclosure:
-                        synth.confidence_justification = (
-                            (synth.confidence_justification or "").rstrip()
-                            + " " + _disclosure
-                        ).strip()
+            if _violations:
+                from aughor.stats import stats as _st2
+                from aughor.agent.report_checks import reader_disclosure
+                _st2.inc("deep_analysis.report_check_violations_shipped")
+                if synth.confidence == "HIGH":
+                    synth.confidence = "MEDIUM"
+                # CA-0: the READER gets the disclosure, never the repair instruction. The
+                # violation strings are written for the model ("replace each with the
+                # evidence's own value …"); concatenating them here shipped that
+                # second-person text into the PDF's Confidence section on 10 of 144
+                # stored reports. The instruction still reaches the log for the operator.
+                import logging as _rc_logging
+                _rc_logging.getLogger(__name__).info(
+                    "[ada] report checks still failing after retry: %s",
+                    " | ".join(str(v) for v in _violations))
+                # Item 6: a figure that still does not trace is not published — the sentence
+                # stating it is withheld and the answer says so.
+                from aughor.agent.report_checks import withhold_untraced
+                if withhold_untraced(synth, _violations, question):
+                    _st2.inc("deep_analysis.untraced_figure_withheld")
+                _disclosure = reader_disclosure(_violations, repaired=_as_written is None)
+                if _disclosure:
+                    synth.confidence_justification = (
+                        (synth.confidence_justification or "").rstrip()
+                        + " " + _disclosure
+                    ).strip()
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "report checks are best-effort; an unverified report is the "
