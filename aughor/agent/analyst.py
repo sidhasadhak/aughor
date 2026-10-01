@@ -185,6 +185,56 @@ def _is_ratio_of(rows: list, r: int, a: int, b: int, scale: int) -> bool:
     return checked >= 2
 
 
+def _numeric_columns(cols: list, rows: list) -> list[int]:
+    """The columns that hold a measure: a number on every row that has a value, named neither
+    as a key nor as a time grain."""
+    return [i for i, c in enumerate(cols)
+            if not _KEY_NAME_RE.search(c) and not _GRAIN_NAME_RE.search(c)
+            and any(_as_number(r[i]) is not None for r in rows)
+            and all(_as_number(r[i]) is not None for r in rows if r[i] not in (None, ""))]
+
+
+def _rate_parts(cols: list, rows: list, numeric: list[int]) -> list[tuple[int, int, int]]:
+    """``(rate, numerator, denominator)`` for each rate-named column whose own parts are in the
+    result — checked on the values, as `rateParts` in columnRoles.ts checks them."""
+    out = []
+    for r in (i for i in numeric if _SHARE_NAME_RE.search(cols[i])):
+        parts = next(((a, b) for a in numeric for b in numeric if len({r, a, b}) == 3
+                      and (_is_ratio_of(rows, r, a, b, 1) or _is_ratio_of(rows, r, a, b, 100))), None)
+        if parts:
+            out.append((r, *parts))
+    return out
+
+
+#: A rate over fewer records than this is not compared with the others — the chart's rule
+#: (`TOO_FEW_TO_COMPARE` in web/components/charts/columnRoles.ts), handed to the analyst too.
+_TOO_FEW_TO_COMPARE = 30
+
+
+def _too_few_to_compare(cols: list, rows: Any) -> dict:
+    """``{group: records}`` for each row whose rate rests on fewer than 30 records — its own
+    denominator, beside it in the result. Empty when no rate's parts are in the result, when the
+    rows carry no label to name a group by, and when every row is that small (there is nothing
+    larger to compare them with).
+
+    The repeat-rate answer of 2026-10-01 said "many groups represent small sample sizes" where
+    one country of thirteen (Colombia, two first-time buyers) and no traffic source was: the
+    model was left to guess what the rows already said."""
+    cols = [str(c) for c in (cols or [])]
+    rows = [list(r) for r in (rows or []) if isinstance(r, (list, tuple)) and len(r) >= len(cols)]
+    numeric = _numeric_columns(cols, rows) if rows else []
+    labels = [i for i in range(len(cols)) if i not in numeric]
+    out: dict = {}
+    if not labels:
+        return out
+    for _rate, _num, den in _rate_parts(cols, rows, numeric):
+        small = {" · ".join(str(row[i]) for i in labels): int(n)
+                 for row in rows if (n := _as_number(row[den])) is not None and n < _TOO_FEW_TO_COMPARE}
+        if len(small) < len(rows):
+            out.update(small)
+    return out
+
+
 def _measured_cut(cols: list, rows: Any) -> str:
     """'<what it measures> by <what it is cut by>' for a result of three or more columns,
     read from its rows; "" when the rows do not say.
@@ -198,15 +248,10 @@ def _measured_cut(cols: list, rows: Any) -> str:
     rows = [list(r) for r in (rows or []) if isinstance(r, (list, tuple)) and len(r) >= width]
     if not rows:
         return ""
-    numeric = [i for i, c in enumerate(cols)
-               if not _KEY_NAME_RE.search(c) and not _GRAIN_NAME_RE.search(c)
-               and any(_as_number(r[i]) is not None for r in rows)
-               and all(_as_number(r[i]) is not None for r in rows if r[i] not in (None, ""))]
+    numeric = _numeric_columns(cols, rows)
     support: set[int] = set()
-    for r in (i for i in numeric if _SHARE_NAME_RE.search(cols[i])):
-        parts = next(((a, b) for a in numeric for b in numeric if len({r, a, b}) == 3
-                      and (_is_ratio_of(rows, r, a, b, 1) or _is_ratio_of(rows, r, a, b, 100))), None)
-        support.update(parts or ())
+    for _rate, num, den in _rate_parts(cols, rows, numeric):
+        support.update((num, den))
     if any(_AVERAGE_NAME_RE.search(cols[i]) for i in numeric):
         support.update(i for i in numeric
                        if _COUNT_NAME_RE.search(cols[i]) and not _AVERAGE_NAME_RE.search(cols[i]))
@@ -272,6 +317,11 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
             turn.evidence_rows += len(rows)
             cols = result.get("columns") or []
             n = len(turn.phase_tools_run) + 1
+            # Which groups are too small to compare is counted here, from each rate's own
+            # denominator, and read by the model with the rows (`_too_few_to_compare`).
+            _small = _too_few_to_compare(cols, rows)
+            if _small:
+                result["too_few"] = _small
             # The statement that RAN, when a guard changed the one the model framed.
             ran = result.get("sql") or (args or {}).get("sql", "")
             # A query re-run to correct one a guard flagged REPLACES it on the page: the same
@@ -967,8 +1017,9 @@ def _describe_rules(budget: int) -> list[str]:
         "own, pooled over everything else — one GROUP BY per cut, with the count behind "
         "each rate. A finer grid (month × source × country) splits the rows into cells too "
         "small to compare and does not answer it. Show every group of a cut, or say how "
-        "many you left out. Order a table by the measure, with any group too small to "
-        "compare (a handful of records) after the others and marked — never at the top.",
+        "many you left out. Order a table by the measure, with each group a result lists "
+        "under `too_few` after the others and marked with its count — never at the top. "
+        "Those are the groups too small to compare: name them, and call no other group small.",
         "",
         "When you stop, write the answer the reader will read, in plain prose. Open with "
         "the answer itself in one sentence, with its figures — what leads, what trails, by "

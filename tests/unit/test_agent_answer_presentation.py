@@ -70,6 +70,29 @@ def test_the_scope_still_rides_and_rows_that_say_nothing_keep_the_question():
     assert _adhoc_title(*COHORTS[:1], QUESTION, "", None) == QUESTION[:80]
 
 
+COUNTRIES = (["country", "total_first_orders", "repeat_customers", "repeat_rate"],
+             [["Colombia", "2", "1", "0.5"], ["Poland", "49", "6", "0.12244897959183673"],
+              ["Spain", "722", "60", "0.08310249307479224"]])
+
+
+def test_the_groups_too_small_to_compare_are_counted_and_handed_to_the_analyst():
+    """The repeat-rate answer of 2026-10-01 said "many groups represent small sample sizes" where one country of
+    thirteen (Colombia, two first-time buyers) and no traffic source was."""
+    from aughor.agent.analyst import AnalystTurn, _record_evidence, _too_few_to_compare
+    assert _too_few_to_compare(*COUNTRIES) == {"Colombia": 2}               # Poland's 49 compares
+    assert _too_few_to_compare(*SOURCES) == {}
+    all_small = [COUNTRIES[1][0], ["Peru", "3", "1", "0.3333333333333333"]]
+    assert _too_few_to_compare(COUNTRIES[0], all_small) == {}               # nothing larger to compare with
+    unparted = [r[:3] + ["0.2"] for r in COUNTRIES[1]]                      # a rate its columns do not make
+    assert _too_few_to_compare(COUNTRIES[0], unparted) == {}
+    turn = AnalystTurn(connection_id="c", conn=None, state={"question": QUESTION, "investigation_phases": []})
+    out = _record_evidence(turn, {"sql": "SELECT 1"}, {"columns": COUNTRIES[0], "rows": COUNTRIES[1], "row_count": 3})
+    assert out.get("too_few") == {"Colombia": 2}                            # read by the model with the rows
+    from aughor.agent.analyst import analyst_system_prompt
+    rule = analyst_system_prompt("c", {}, 10, shape="describe")
+    assert "under `too_few`" in rule and "call no other group small" in rule
+
+
 def test_the_analyst_records_one_title_for_the_phase_and_its_finding():
     from aughor.agent.analyst import AnalystTurn, _record_evidence
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": QUESTION, "investigation_phases": []})

@@ -198,6 +198,23 @@ def test_a_small_decimal_is_checked_and_a_small_whole_number_is_not():
     assert check_grounding("The 3 slowest centres are in the east.", CENTRES) == []
 
 
+# ── Two values of one row, added up, are traced (2026-10-01, evening) ─────────────────
+
+STAGES = ("distribution_center | avg_days_placed_to_shipped | avg_days_shipped_to_delivered | order_count\n"
+          "Houston TX | 1.4882697947214047 | 2.5203945614502823 | 7502\n"
+          "Charleston SC | 1.5021151370240915 | 2.45116792348721 | 5437")
+
+
+def test_two_values_of_one_row_added_up_are_traced_and_a_sum_across_rows_is_not():
+    """The fulfilment answer said its centres took "3.95 to 4.01 days" from placed to delivered — each centre's two
+    averages added, true to the digit — and the sentence was withheld as untraced."""
+    assert check_grounding("Orders take 3.95 to 4.01 days from placed to delivered.", STAGES) == []
+    v = check_grounding("Orders take 4.02 days.", STAGES)       # Charleston's shipping + Houston's delivery
+    assert v and v[0].figures == ("4.02",)
+    v = check_grounding("Orders take 3.96 days.", STAGES)       # a hundredth off a row's sum, as written
+    assert v and v[0].figures == ("3.96",)
+
+
 def test_a_rate_a_ratio_and_a_threshold_are_read_as_what_they_are():
     rates = "cohort | repeat_rate\n2025-01 | 0.06946\n2025-12 | 0.12068"
     assert check_grounding("January's repeat rate was 6.9%.", rates) == []        # fraction → percent

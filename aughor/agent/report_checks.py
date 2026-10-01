@@ -322,6 +322,23 @@ def _derived_from_evidence(v: float, vals: list[float], written: str = "",
     return False
 
 
+def _row_pair_sums(evidence: str) -> list[float]:
+    """The sum of each two numbers in ONE row of a result table in the evidence (cells joined by
+    ` | `) — two stages of one record added up. The fulfilment answer of 2026-10-01 said its
+    centres took "3.95 to 4.01 days" from placed to delivered: each centre's two averages added,
+    true to the digit, and the sentence was withheld as untraced. Within a row only: a sum across
+    rows is a total, and a total is quoted from the TOTAL line or not at all (item 6)."""
+    sums: list[float] = []
+    for line in (evidence or "").splitlines():
+        if " | " not in line:
+            continue
+        cells = [c.strip() for c in line.split(" | ")]
+        nums = [f for f in (_float_or_none(_clean_number(c)) for c in cells if _NUM_RE.fullmatch(c))
+                if f is not None]
+        sums.extend(a + b for i, a in enumerate(nums) for b in nums[i + 1:])
+    return sums
+
+
 def check_grounding(prose: str, evidence: str) -> list[str]:
     """Every substantial number in the report's headline prose must exist in the evidence —
     quoted, or DERIVED from it by the arithmetic an analyst is allowed to do.
@@ -347,6 +364,7 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
         return []
     have = _evidence_number_set(evidence)
     vals = _evidence_values(evidence)
+    row_sums = _row_pair_sums(evidence)
     bad_figs: list[str] = []
     contexts: list[str] = []
     for segment in _SENTENCE_RE.split(prose):
@@ -370,6 +388,8 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
                     f, vals, written=clean, percent=bool(_PERCENT_AFTER.match(segment, m.end())),
                     ratio=bool(_RATIO_AFTER.match(segment, m.end()))):
                 continue
+            if any(abs(f - s) <= _written_tolerance(clean) for s in row_sums):
+                continue                    # two values of one row added, to the precision written
             if clean not in bad_figs:
                 bad_figs.append(n.strip("+-"))
             ctx = segment.strip()
