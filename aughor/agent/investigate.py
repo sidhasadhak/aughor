@@ -5010,7 +5010,12 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
         _obs_s = (intake.observation_start or "")[:10]
         _obs_e = (intake.observation_end or "")[:10]
         _is_same = (_cs2 == _obs_s and _ce2 == _obs_e)   # comparison already collapsed onto obs
-        if not _xsec and _cs2 and _ce2 and not _is_same:
+        # Only a window the data's START cut short: the monthly-revenue intake of 2026-10-02 set its
+        # "comparison" to the observation's own last month, seven years after the data begins, and
+        # this guard called it "Prior ~1 month(s) available (data begins 2019-01-11)" and put a
+        # duration-artifact warning on an answer that compared months.
+        _clipped = bool(dmin) and _cs2 <= dmin[:10]
+        if not _xsec and _cs2 and _ce2 and not _is_same and _clipped:
             _obs_days = (datetime.fromisoformat(_obs_e) - datetime.fromisoformat(_obs_s)).days + 1
             _cmp_days = (datetime.fromisoformat(_ce2) - datetime.fromisoformat(_cs2)).days + 1
             if (_obs_days > 0 and _cmp_days > 0
@@ -5291,7 +5296,7 @@ def _reframe_on_trust_caveat(synth, phases) -> bool:
                 f"⚠ {TRUST_BANNER} and the figures below are NOT reliable: {lead} "
                 "Do not read the numbers or ranking as fact until they are recomputed. "
             )
-            synth.executive_summary = (reframe + _es).strip()[:900]
+            synth.executive_summary = (reframe + _es).strip()
         # A wrong number carried into the conclusion can't underwrite a confident verdict.
         if getattr(synth, "confidence", "") != "LOW":
             synth.confidence = "LOW"
@@ -5332,7 +5337,9 @@ def _reframe_on_pop_duration_mismatch(synth, intake_data, question: str = "") ->
     )
     _es = synth.executive_summary or ""
     if "duration artifact" not in _es.lower() and "run-rate" not in _es.lower():
-        synth.executive_summary = (_reframe + _es).strip()[:900]
+        # Put in front of the answer, never in place of its end: cut to 900 characters, an
+        # answer's table stopped at "| 2026" (2026-10-02, monthly revenue).
+        synth.executive_summary = (_reframe + _es).strip()
     _gap = ("The prior period is far shorter than the observation window, so no like-for-like absolute "
             "period-over-period comparison is possible; average per-period run-rate is used instead.")
     _gaps = list(getattr(synth, "data_gaps", None) or [])
@@ -5853,14 +5860,18 @@ def _metrics_materially_diverge(a: float, b: float) -> bool:
     return abs(a - b) / denom >= _METRIC_DIVERGENCE_REL
 
 
-def _lookup_metric_resolution(connection_id: str, metric_label: str):
+def _lookup_metric_resolution(connection_id: str, metric_label: str, *, by_a_person: bool = False):
     """The crystallized resolution of this metric's definition on this connection, or None. Matches on
-    the ``definition of {label}`` subject. Fail-open (a lookup error → None → the caller asks/pins)."""
+    the ``definition of {label}`` subject. ``by_a_person`` admits only a person's — a clarify answer or a
+    reviewer's verdict — never a reading the intake pinned itself (source ``probe``). Fail-open (a lookup
+    error → None → the caller asks/pins)."""
     if not (connection_id and metric_label):
         return None
     try:
         from aughor.semantic.ambiguity_ledger import retrieve_resolutions
         for res, _score in retrieve_resolutions(f"definition of {metric_label}", connection_id):
+            if by_a_person and res.resolution_source not in ("user", "verdict"):
+                continue
             if metric_label.lower() in (res.subject or "").lower():
                 return res
     except Exception as exc:
@@ -5889,7 +5900,10 @@ def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
     if not (label and metric_table):
         return None
-    res = _lookup_metric_resolution(connection_id, label)
+    # A person's choice, never the intake's own earlier pin: on 2026-09-29 the one-metric intake pinned
+    # units_sold's COUNT(id) to "total revenue and units sold", recorded it as a probe, and every run
+    # after bound COUNT(id) to "total revenue" as "your previously-chosen reading".
+    res = _lookup_metric_resolution(connection_id, label, by_a_person=True)
     sql = (getattr(res, "resolved_sql", "") or "").strip() if res is not None else ""
     if not sql or not _is_substitutable_metric_sql(sql):
         return None
@@ -5899,8 +5913,8 @@ def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional
         return None
     intake.metric_sql = sql
     intake.metric_is_ratio = _metric_is_ratio(sql, label)
-    return (f"Using your previously-chosen reading of {label} ({getattr(res, 'resolved_reading', '')}): "
-            f"{sql}.")
+    who = "your previously-chosen" if res.resolution_source == "user" else "a reviewer's"
+    return f"Using {who} reading of {label} ({getattr(res, 'resolved_reading', '')}): {sql}."
 
 
 def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, question: str) -> Optional[dict]:
@@ -10655,7 +10669,7 @@ def ada_synthesize(state: AgentState) -> dict:
             )
             _es = synth.executive_summary or ""
             if "changed over time" not in _es.lower():
-                synth.executive_summary = (_reframe + _es).strip()[:900]
+                synth.executive_summary = (_reframe + _es).strip()
             _gap = ("No period-over-period analysis was performed, so the temporal driver of any "
                     "change over time remains unidentified.")
             _gaps = list(synth.data_gaps or [])

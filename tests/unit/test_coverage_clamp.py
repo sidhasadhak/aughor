@@ -308,6 +308,39 @@ class TestIntakeCoverageClamp:
         assert not getattr(it, "no_prior_period", False)
         assert (it.observation_start, it.observation_end) == ("2026-03-02", "2026-09-01")
 
+    def test_a_comparison_the_data_start_did_not_cut_is_not_called_a_short_prior(self):
+        """2026-10-02, monthly revenue: the intake's "comparison" was the observation's own last month, seven
+        years after the data begins; the guard called it "Prior ~1 month(s) available (data begins 2019-01-11)",
+        and a duration-artifact warning opened an answer that compared months."""
+        it = _intake(observation_start="2025-09-01", observation_end="2026-08-31", observation_label="Sep 2025 – Aug 2026",
+                     comparison_start="2026-08-01", comparison_end="2026-08-31", comparison_label="Previous month")
+        note = _clamp_intake_to_coverage(it, "2019-01-11", "2026-10-01")
+        assert it.comparison_label == "Previous month"
+        assert note is None or "duration artifact" not in note.lower()
+
+    def test_a_warning_put_in_front_of_an_answer_never_cuts_it(self):
+        from aughor.agent.investigate import _POP_MISMATCH_SIGNATURE, _reframe_on_pop_duration_mismatch
+        table = "\n".join(f"| {y}-{m:02d}-01 | completed orders | {m * 1000} |"
+                          for y in (2024, 2025, 2026) for m in range(1, 13))
+        synth = SimpleNamespace(executive_summary="Revenue by month:\n\n| Month | Kind | Revenue |\n" + table,
+                                attribution_waterfall=[], data_gaps=[])
+        assert len(synth.executive_summary) > 900
+        assert _reframe_on_pop_duration_mismatch(synth, {"intake_notes": _POP_MISMATCH_SIGNATURE})
+        assert synth.executive_summary.startswith("The observation and prior windows differ sharply")
+        assert synth.executive_summary.endswith("| 2026-12-01 | completed orders | 12000 |")   # to its last row
+
+    def test_the_trust_banner_is_put_in_front_and_cuts_nothing(self):
+        from aughor.agent.investigate import _reframe_on_trust_caveat
+        table = "\n".join(f"| {y}-{m:02d}-01 | completed orders | {m * 1000 + 73} |"
+                          for y in (2024, 2025, 2026) for m in range(1, 13))
+        synth = SimpleNamespace(headline="h", executive_summary="Refund rate is 73.0%.\n\n" + table,
+                                confidence="HIGH", confidence_justification="", data_gaps=[])
+        phases = [{"findings": [{"trust_caveat": "conditioned denominator: the rate is corrupt",
+                                 "rows": [["Fragrance", 73.0]]}]}]
+        assert len(synth.executive_summary) > 900 and _reframe_on_trust_caveat(synth, phases)
+        assert synth.executive_summary.startswith("⚠ ")
+        assert synth.executive_summary.endswith("| 2026-12-01 | completed orders | 12073 |")
+
     def test_missing_range_noop(self):
         it = _intake()
         assert _clamp_intake_to_coverage(it, None, None) is None
