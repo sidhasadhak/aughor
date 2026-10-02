@@ -81,6 +81,9 @@ class AnalystTurn:
     #: an ad-hoc query left it looking at nothing and the run was declared a total
     #: failure over its own correct numbers. This is the evidence it could not see.
     evidence_rows: int = 0
+    #: What code measured before the first call (`_measure_declared`): ``(sql, result as the model
+    #: reads a tool result)`` — handed to the model as results, never as calls it made.
+    measured_by_code: list = field(default_factory=list)
 
     @property
     def intake(self) -> dict:
@@ -416,6 +419,33 @@ def _every_result_warned(turn: "AnalystTurn") -> Optional[str]:
               "and answer from that result. If the data cannot be measured that way, answer and say so.")
 
 
+def _not_the_declared(turn: "AnalystTurn", cols: list, sql: str) -> dict:
+    """``{column: why}`` for each column of the model's own statement named after a further measure
+    that code measured by its declared definition (`_measure_declared`) while the statement does not
+    read that definition's table — the analyst's `COUNT(id) AS units_sold` over order lines beside the
+    governed units sold, 6,012 against 7,027 (theLook, 2026-10-02). Read by the model with the rows."""
+    measured = [d for d in (turn.state.get("_ada_intake") or {}).get("measure_definitions") or []
+                if isinstance(d, dict) and d.get("measured") and d.get("table")]
+    if not measured or not sql:
+        return {}
+    read = {str(t).split(".")[-1].lower() for t in _tables_of(sql)}
+
+    def _words(text: Any) -> set:
+        return set(re.findall(r"[a-z0-9]+", str(text or "").lower()))
+    out: dict = {}
+    for d in measured:
+        table = str(d["table"]).split(".")[-1].lower()
+        if not read or table in read:
+            continue
+        names = [w for w in (_words(d.get("metric")), _words(d.get("label"))) if w]
+        for c in cols:
+            if any(n <= _words(c) for n in names):
+                out[str(c)] = (f"not the declared {d.get('label')}: code measured that by its definition on "
+                               f"{d['table']} as {(d.get('measured') or {}).get('value')} — this column counts rows of "
+                               f"{', '.join(sorted(read))}")
+    return out
+
+
 def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
     """Pass a tool result through, and make its rows part of the investigation.
 
@@ -447,6 +477,10 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                                            (turn.state.get("_ada_intake") or {}).get("observation_start", ""))
             if _first:
                 result["first_change_missing"] = _first
+            # And a column named after a measure code measured by its definition, counted elsewhere.
+            _elsewhere = _not_the_declared(turn, cols, (args or {}).get("sql", ""))
+            if _elsewhere:
+                result["not_the_declared_measure"] = _elsewhere
             # The statement that RAN, when a guard changed the one the model framed.
             ran = result.get("sql") or (args or {}).get("sql", "")
             # A query re-run to correct one a guard flagged REPLACES it on the page: the same
@@ -1195,6 +1229,21 @@ def _measure_declared(turn: "AnalystTurn", run_sql_tool: Callable[[dict], Any], 
         rows = result.get("rows") if isinstance(result, dict) else None
         if rows and rows[0] and len(phases) > before:
             definition["measured"] = {"result": phases[-1].get("phase_id"), "value": str(rows[0][0])}
+            turn.measured_by_code.append((sql, json.dumps(result, default=str)))
+
+
+def _measured_preface(turn: "AnalystTurn") -> str:
+    """What code measured before the first call, as results the model reads with the question.
+
+    Q1's units sold was measured by its declared definition (7,027) and named in the spec, and the
+    analyst counted order lines in revenue's statement and stated its own 6,012 (theLook, 2026-10-02):
+    a figure in its instructions was not a figure it had read from a result, and its rule is to state
+    only those. Handed over as results — never as a call the model did not make (`tool_loop._exchange`)."""
+    if not turn.measured_by_code:
+        return ""
+    return "\n".join(["Measured for you by code before your first call, through the same run_sql tool and "
+                      "guards — tool results, already among this turn's results:",
+                      *(f"run_sql: {sql}\n→ {payload}" for sql, payload in turn.measured_by_code)])
 
 
 def _describe_rules(budget: int) -> list[str]:
@@ -1259,8 +1308,9 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
         "",
         "Every query — yours and the phase tools' — runs through the guard battery; "
         "receipts and caveats come back with the rows, and what a guard says outranks "
-        "what a number implies. A number you did not read from a tool result is a "
-        "number you do not state. Significance comes from the z_score tool or a "
+        "what a number implies. A number you did not read from a tool result — yours, or one "
+        "measured for you by code before your first call — is a number you do not state. "
+        "Significance comes from the z_score tool or a "
         "phase's own stats line, never from your own arithmetic.",
         "",
         "A result shows you at most 20 rows. When it says `truncated`, the rows you see "
@@ -1474,6 +1524,7 @@ def run_analyst(
             # `converse.tool` made 79% of the live corpus unsegmentable by decider.
             site="analyst.tool",
             stop_check=lambda _answer: _every_result_warned(turn),
+            preface=_measured_preface(turn),
             # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (the intake step's) and cannot be
             # recomputed, and it is where the analyst's state lives — `_spec_section(intake)` sits
             # mid-prompt — so it is the argument a shuffle actually swaps. Serialised to a string

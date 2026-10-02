@@ -140,3 +140,36 @@ def test_a_staged_note_is_ripe_at_first_sighting():
     assert rec.support == 1 and rec.ripe
     metric = REC.OntologyRecommendation(id="m1", kind="metric", target_id="x", entity="orders", support=1)
     assert not metric.ripe
+
+
+# ── a note that names a governed metric waits for a person (2026-10-02) ────────────────────
+
+def test_a_column_note_naming_a_governed_metric_is_staged(monkeypatch):
+    """Verbatim, the note theLook's Q1 analyst applied to `order_items.status` — high confidence, with
+    evidence, and false for units sold, which the catalogue declares on inventory items with the
+    cancelled lines in. Applied, it rode into every later prompt that read the column."""
+    from types import SimpleNamespace
+    catalogue = [SimpleNamespace(name="revenue", label="Revenue"),
+                 SimpleNamespace(name="units_sold", label="Units Sold"),
+                 SimpleNamespace(name="average_order_value_aov", label="Average Order Value (AOV)")]
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: catalogue)
+
+    out = _propose(table="order_items", column="status",
+                   note="revenue and units_sold are calculated excluding 'Cancelled' orders.",
+                   evidence="The guard battery automatically applied a filter 'status <> 'Cancelled''")
+    assert out.ok and out.action == "staged", out
+    assert load_table_config("c1", "public", "order_items").get("status") is None, "nothing applied"
+    assert "revenue" in out.reason and REC.get_recommendation("c1", "public", out.recommendation_id) is not None
+    # named by its label, without the abbreviation in brackets
+    by_label = _propose(column="aov_note", note="average order value counts every line, cancelled ones too")
+    assert by_label.action == "staged" and "average_order_value_aov" in by_label.reason
+    # a plural names it too; a note that names no metric still applies directly
+    assert _propose(column="gross", note="gross revenues include the cancelled lines").action == "staged"
+    assert _propose().action == "applied"
+
+
+def test_a_catalogue_that_cannot_be_read_leaves_notes_routed_as_before(monkeypatch):
+    def _unreadable(connection_id=None):
+        raise OSError("catalogue unreadable")
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", _unreadable)
+    assert _propose(note="revenue and units_sold are calculated excluding cancelled").action == "applied"

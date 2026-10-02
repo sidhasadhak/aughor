@@ -597,5 +597,32 @@ def test_the_analyst_is_handed_the_figure_code_measured(monkeypatch, traffic_db,
             "sold_at, over rows where sold_at IS NOT NULL; measured that way over the observation by "
             "code: 7027 — state that figure; do not measure it again") in system
     assert "adhoc_" not in system, "a result's id is the platform's, never a word for the reader"
+    assert "yours, or one measured for you by code before your first call" in system
+    # …and read as a result, with the question: the figure in its instructions lost to its own count
+    asked = faux_llm.calls()[0].user
+    assert asked.startswith(Q1 + "\n\nMeasured for you by code before your first call")
+    assert f"run_sql: {UNITS_SQL}" in asked and '"rows": [["7027"]]' in asked
     landed = [p["phase"] for t, p in frames if t == "phase_complete" and p["phase"]["phase_id"] == "adhoc_2"]   # the intake is phase 1
     assert [p["phase_name"] for p in landed] == ["units_sold — 2026-07-01 → 2026-07-31"]
+
+
+def test_a_column_named_for_a_measure_code_measured_is_marked_when_counted_elsewhere():
+    """The analyst's `COUNT(id) AS units_sold` over order lines, beside the governed units sold that code
+    had measured on inventory items — 6,012 against 7,027. The mark rides the rows the model reads."""
+    intake = _q1_intake()
+    intake["measure_definitions"][0]["measured"] = {"result": "adhoc_2", "value": "7027"}
+    turn = an.AnalystTurn(connection_id="c", conn=None, state={"question": Q1, "_ada_intake": intake,
+                                                              "investigation_phases": []})
+    lines = "SELECT SUM(sale_price) AS total_revenue, COUNT(id) AS units_sold FROM order_items"
+    marked = an._not_the_declared(turn, ["total_revenue", "units_sold"], lines)
+    assert list(marked) == ["units_sold"]
+    assert "7027" in marked["units_sold"] and "inventory_items" in marked["units_sold"]
+    assert "order_items" in marked["units_sold"]
+    # on its own table, it is the declared measure; no measure measured, nothing to mark
+    assert an._not_the_declared(turn, ["units_sold"], "SELECT COUNT(id) AS units_sold FROM inventory_items") == {}
+    bare = an.AnalystTurn(connection_id="c", conn=None, state={"question": Q1, "_ada_intake": _q1_intake()})
+    assert an._not_the_declared(bare, ["units_sold"], lines) == {}
+    # and the model reads it with the rows
+    result = an._record_evidence(turn, {"sql": lines}, {"columns": ["total_revenue", "units_sold"],
+                                                      "rows": [["359224.30", "6012"]], "row_count": 1})
+    assert list(result.get("not_the_declared_measure") or {}) == ["units_sold"]

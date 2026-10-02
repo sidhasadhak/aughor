@@ -380,3 +380,31 @@ def test_a_call_the_model_never_made_is_not_invented(provider, scripted, why):
     assert invented == [], f"{why}: a function call was invented for it"
     assert any(m["role"] == "user" and "tool" in str(m.get("content", "")).lower()
                for m in messages[1:]), f"{why}: the feedback never reached the model"
+
+
+# ── what the caller measured before the first step (2026-10-02) ───────────────────────────────
+# Code measured Q1's units sold by its declared definition before the analyst's first step; named only
+# in its instructions, the figure lost to the analyst's own count of order lines.
+
+def test_a_preface_rides_the_question_and_invents_no_call(provider):
+    """Read with the question, as results — never as a call the model did not make (Gemini refuses one
+    that carries no signature of its own)."""
+    from aughor.llm import faux
+
+    set_responses(["7,027 units"])
+    run_tool_loop(provider, "sys", "how many units?", [_tool()], preface="run_sql: SELECT … → 7027")
+    messages = faux.calls()[-1].kwargs["messages"]
+    assert [m["role"] for m in messages] == ["system", "user"]
+    assert messages[1]["content"] == "how many units?\n\nrun_sql: SELECT … → 7027"
+
+    set_responses(["four"])                                     # none: the question as it always was
+    run_tool_loop(provider, "sys", "what is 2+2?", [_tool()])
+    assert faux.calls()[-1].kwargs["messages"][1]["content"] == "what is 2+2?"
+
+
+def test_a_spent_budget_still_writes_up_with_the_preface(provider):
+    from aughor.llm import faux
+
+    set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"), "7,027 units"])
+    run_tool_loop(provider, "sys", "how many units?", [_tool()], max_steps=1, preface="measured: 7027")
+    assert faux.calls()[-1].kwargs["messages"][1]["content"] == "how many units?\n\nmeasured: 7027"

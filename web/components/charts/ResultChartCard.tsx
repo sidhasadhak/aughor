@@ -29,7 +29,7 @@ import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
 import { classifyColumns, availableChartTypes, inferChartType, ALL_CHART_TYPES, CHART_TYPE_LABEL, TYPE_TO_HINT, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
-import { isUngraphableGrid } from "@/components/charts/columnRoles";
+import { isUngraphableGrid, offeredMeasures } from "@/components/charts/columnRoles";
 import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
 import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
@@ -185,7 +185,9 @@ export function ResultChartCard({
     [exhibitProp, chartConfig],
   );
 
-  const metricCols = useMemo(() => numericIdxs.map((i) => columns[i]), [numericIdxs, columns]);
+  // Every measure but the period before's own value (`offeredMeasures`): a column that is the
+  // series shifted one row is not a thing to plot, and Q3's growth chart plotted it (2026-10-02).
+  const metricCols = useMemo(() => offeredMeasures(columns, numericIdxs).map((i) => columns[i]), [numericIdxs, columns]);
   const dimCols = useMemo(
     () => [...dateIdxs, ...catIdxs].map((i) => columns[i]),
     [dateIdxs, catIdxs, columns],

@@ -14,10 +14,11 @@
  * which is precisely why a resolved chart cannot be persisted.
  */
 
-import { chartDateFormat, cleanLabel, detectGranularity } from "@/lib/format";
+import { chartDateFormat, cleanLabel, detectGranularity, fmtDate, type Gran } from "@/lib/format";
 import { currencySymbol, effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
-import { classifyColumns, isIdLike, isUngraphableGrid, percentRates, plottedMeasures, tooFewToCompare,
-         uniqueLabelBand, HORIZONTAL_MAX_CATS, TOO_FEW_TO_COMPARE } from "@/components/charts/columnRoles";
+import { classifyColumns, isIdLike, isPriorPeriodCol, isUngraphableGrid, percentRates, plottedMeasures,
+         tooFewToCompare, uniqueLabelBand, CHANGE_METRIC_COL, HORIZONTAL_MAX_CATS, PERCENT_CHANGE_COL,
+         TOO_FEW_TO_COMPARE } from "@/components/charts/columnRoles";
 import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
 import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
@@ -180,6 +181,15 @@ const SELECT_OPACITY = { condition: { param: "picked", value: 1 }, value: 0.28 }
 /** Rows-as-arrays → rows-as-objects, the shape Vega-Lite consumes directly. */
 function toRecords(columns: string[], rows: unknown[][]): Record<string, unknown>[] {
   return rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])));
+}
+
+/** One tick per period of the series' grain — a stride of periods past eighteen. `%b %Y` labels on
+ *  the default ticks repeated a month ("Aug 2025 Aug 2025 Sep 2025 …") once a chart was wide enough
+ *  for two ticks a month (theLook Q3, 2026-10-02). A sub-day grain keeps the default ticks. */
+function periodTicks(gran: Gran, periods: number): Record<string, unknown> {
+  const unit = gran === "quarter" ? "month" : gran;
+  if (!["day", "week", "month", "year"].includes(unit)) return {};
+  return { tickCount: { interval: unit, step: (gran === "quarter" ? 3 : 1) * Math.max(1, Math.ceil(periods / 18)) } };
 }
 
 /** The value-axis number format. `~s` (SI) is the default because warehouse measures are
@@ -383,7 +393,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const ratePercent = percentRates(columns, rows, numericIdxs);
   const measureIsPercent = (col: string): boolean => {
     const unit = String(columnUnits?.[col] ?? "").toLowerCase();
-    return unit === "percent" || (!unit && ratePercent.has(col));
+    return unit === "percent" || (!unit && (ratePercent.has(col)
+      || (CHANGE_METRIC_COL.test(col) && PERCENT_CHANGE_COL.test(col))));    // `pct_change`, `growth_rate`
   };
   const percentAlreadyScaled = (col: string): boolean => {
     if (!columnUnits?.[col] && ratePercent.has(col)) return ratePercent.get(col) === true;
@@ -531,7 +542,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
          */
         axis: {
           ...bandAxis(axisTitle(xTitle, x)),
-          ...(xIsDate ? { format: chartDateFormat(detectGranularity(x, xValues), xMultiYear) } : {}),
+          ...(xIsDate ? { format: chartDateFormat(detectGranularity(x, xValues), xMultiYear),
+                          ...periodTicks(detectGranularity(x, xValues), new Set(xValues.map(String)).size) } : {}),
         },
       },
       // A percentage reads as one on a trend too: this axis ignored the unit the bar path
@@ -568,6 +580,13 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const pct = measureIsPercent(measure);
   const pctScaled = pct && percentAlreadyScaled(measure);
   const valueField = pctScaled ? `${measure}__frac` : measure;
+  // A change reads signed — rises and falls in the config's diverging pair. Over time it is one bar
+  // per period, in time order, labelled as the table labels the period; a period with no change (the
+  // month read only to give the next one its change) is no bar at all.
+  const isChange = CHANGE_METRIC_COL.test(measure) && !isPriorPeriodCol(measure);
+  const bandValues = rows.map((r) => r[columns.indexOf(band)]);
+  const bandGran = dateCol && band === dateCol ? detectGranularity(band, bandValues) : null;
+  const changeByPeriod = isChange && bandGran !== null;
   // Titles bind to the CHANNEL, not the screen axis: the editor's "X axis" section IS
   // the dimension and its "Y axis" IS the measure, so each title must follow its field
   // through an orientation flip. This form was the one literal-axis outlier (delta-bar,
@@ -601,9 +620,14 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
                      axis: valueAxis(axisTitle(yTitle, measure),
                                      pct ? ".1%" : format, pct ? "" : moneyPrefix(measure)) };
   const bandEnc = {
-    field: band,
-    type: (dateCol === band ? "temporal" : "nominal") as string,
-    axis: bandAxis(axisTitle(xTitle, band)),
+    field: changeByPeriod ? "__period" : band,
+    type: (changeByPeriod ? "ordinal" : dateCol === band ? "temporal" : "nominal") as string,
+    axis: {
+      ...bandAxis(axisTitle(xTitle, band)),
+      ...(bandGran && !changeByPeriod
+        ? { format: chartDateFormat(bandGran, new Set(bandValues.map((v) => String(v ?? "").slice(0, 4))).size > 1),
+            ...periodTicks(bandGran, new Set(bandValues.map(String)).size) } : {}),
+    },
     // Lead with the largest — the ranking the question implies. Ties break stably.
     // Data order, always: see orderedValues above for why an encoding sort cannot be trusted.
     sort: null,
@@ -622,6 +646,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   if (exColor) encoding.color = exColor;
   // One bar per row, coloured by the label its rows share (`uniqueLabelBand`).
   else if (inferredSeries) encoding.color = { field: inferredSeries, type: "nominal", sort: null };
+  else if (isChange) encoding.color = { field: measure, type: "quantitative",
+                                        scale: { type: "threshold", domain: [0], range: "diverging" }, legend: null };
 
   /**
    * The exhibit grammar, as encodings. `severity` ramps the measure through the config's
@@ -729,7 +755,14 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
         ? [...ordered.filter((d) => !(Number(d[few.den]) < TOO_FEW_TO_COMPARE)),
            ...ordered.filter((d) => Number(d[few.den]) < TOO_FEW_TO_COMPARE)]
         : ordered;
-      const sorted = horizontal || fewTest ? { data: { values: fewLast } } : {};
+      const byPeriod = changeByPeriod
+        ? [...data.values]
+            .filter((d) => d[measure] !== null && d[measure] !== "" && Number.isFinite(Number(d[measure])))
+            .sort((a, b) => String(a[band]).localeCompare(String(b[band])))
+            .map((d) => ({ ...d, __period: fmtDate(String(d[band] ?? ""), bandGran ?? "month") }))
+        : null;
+      const sorted = byPeriod ? { data: { values: byPeriod } }
+        : horizontal || fewTest ? { data: { values: fewLast } } : {};
       return all.length > 1
         ? { ...base, ...sorted, ...withTf, layer: all, encoding }
         : { ...base, ...sorted, ...withTf, ...all[0], encoding };

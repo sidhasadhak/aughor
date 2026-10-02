@@ -9,7 +9,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { classifyColumns, percentRates, plottedMeasures, rateParts, tooFewToCompare, uniqueLabelBand } from "@/components/charts/columnRoles";
+import { classifyColumns, isPriorPeriodCol, offeredMeasures, percentRates, plottedMeasures, rateParts,
+         tooFewToCompare, uniqueLabelBand } from "@/components/charts/columnRoles";
+import { fmtDate } from "@/lib/format";
 import { inferChartType } from "@/components/charts/chartTypeInference";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { seriesTrend } from "@/components/brief/Sparkline";
@@ -208,8 +210,80 @@ describe("an empty change is empty, however the rows spell it", () => {
            ["2025-10-01", "58007.770038604736", "50543.93006324768", "0.14767035262230793"]],
   };
 
-  it("reads the change columns as the measures they are, and charts the months as a line", () => {
+  it("reads the change columns as the measures they are", () => {
     expect(classifyColumns(GROWTH.columns, GROWTH.rows)).toEqual({ dateIdxs: [0], numericIdxs: [1, 2, 3], catIdxs: [] });
-    expect(inferChartType(GROWTH.columns, GROWTH.rows)?.type).toBe("line");
+  });
+
+  // ── a change per period is charted as the change (2026-10-02) ──────────────────────────────────────
+  // The growth result then drew a line of monthly revenue — a copy of the trend above it — and, picked
+  // from the chart's list, "Prev Month Revenue": the growth rate beside them, the answer to "which months
+  // grew or shrank the most", was never drawn.
+  const LATER = {
+    columns: ["month", "monthly_revenue", "revenue_change", "pct_change"],
+    rows: [["2025-08-01", "55965.77", "NULL", "NULL"], ["2025-09-01", "50543.93", "-5421.84", "-0.0969"],
+           ["2025-10-01", "58007.77", "7463.84", "0.1477"], ["2025-11-01", "64251.70", "6243.93", "0.1076"]],
+  };
+
+  it("is one bar per period of the percent change, which leads an absolute one", () => {
+    expect(inferChartType(GROWTH.columns, GROWTH.rows)).toMatchObject({ type: "bar", xCol: 0, yCols: [3] });
+    expect(inferChartType(LATER.columns, LATER.rows)).toMatchObject({ type: "bar", xCol: 0, yCols: [3] });
+    const absolute = LATER.rows.map((r) => r.slice(0, 3));
+    expect(inferChartType(LATER.columns.slice(0, 3), absolute)).toMatchObject({ type: "bar", xCol: 0, yCols: [2] });
+    // no change in the result: the trend line, as before
+    expect(inferChartType(["month", "revenue"], LATER.rows.map((r) => r.slice(0, 2)))?.type).toBe("line");
+  });
+
+  it("reads signed, in time order, labelled as the table labels the period, as a percentage — and the first month, which has no change, is no bar", () => {
+    const spec = resolveVegaSpec({ columns: GROWTH.columns, rows: [...GROWTH.rows].reverse(), chartType: "auto" })
+      ?.spec as { data: { values: Record<string, unknown>[] }; encoding: Record<string, Record<string, unknown>> };
+    const { x, y, color } = spec.encoding;
+    expect([x.field, x.type, y.field]).toEqual(["__period", "ordinal", "growth_rate"]);
+    expect((y.axis as { format?: string }).format).toBe(".1%");
+    expect(color).toMatchObject({ field: "growth_rate", scale: { type: "threshold", domain: [0], range: "diverging" } });
+    expect(spec.data.values.map((v) => v.month)).toEqual(["2025-09-01", "2025-10-01"]);
+    expect(spec.data.values[0].__period).toBe(fmtDate("2025-09-01", "month"));
+  });
+
+  it("never plots or offers the period before's own value", () => {
+    expect(plottedMeasures(GROWTH.columns, GROWTH.rows, [1, 2, 3])).toEqual([1, 3]);
+    expect(offeredMeasures(GROWTH.columns, [1, 2, 3])).toEqual([1, 3]);
+    expect(offeredMeasures(["month", "prev_revenue"], [1])).toEqual([1]);       // nothing else to offer: it stays
+    expect(isPriorPeriodCol("revenue_vs_prev")).toBe(false);                      // a change, not the level before
+    // beside a group it still marks the comparison, and the lines are the series, never the lag
+    const regions = {
+      columns: ["month", "region", "revenue", "prev_revenue"],
+      rows: [["2025-08-01", "North", "100", "90"], ["2025-08-01", "South", "80", "85"],
+             ["2025-09-01", "North", "110", "100"], ["2025-09-01", "South", "70", "80"],
+             ["2025-10-01", "North", "120", "110"], ["2025-10-01", "South", "75", "70"]],
+    };
+    expect(inferChartType(regions.columns, regions.rows)).toMatchObject({ type: "multi-line", yCols: [2], colorCol: 1 });
+    // past nine groups too — the comparison it marks keeps the lines, not a heatmap of levels
+    const ten = ["2025-08-01", "2025-09-01"].flatMap((m) =>
+      Array.from({ length: 10 }, (_, g) => [m, `R${g}`, String(100 + g), String(90 + g)]));
+    expect(inferChartType(regions.columns, ten)).toMatchObject({ type: "multi-line", yCols: [2], colorCol: 1 });
+  });
+});
+
+describe("a time axis has one tick per period", () => {
+  // "%b %Y" on the default ticks repeated a month — "Aug 2025 Aug 2025 Sep 2025 …" — once the chart was
+  // wide enough for two ticks a month (theLook Q3, 2026-10-02).
+  const months = (n: number) => Array.from({ length: n }, (_, i) =>
+    [`${2023 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}-01`, String(100 + i)]);
+  type Axis = { tickCount?: unknown; format?: string };
+  const xAxis = (columns: string[], rows: string[][], chartType: string) =>
+    ((resolveVegaSpec({ columns, rows, chartType })?.spec as { encoding: { x: { axis: Axis } } }).encoding.x.axis);
+
+  it("a month a tick, a stride past eighteen periods, a day a tick on a daily series", () => {
+    expect(xAxis(["month", "revenue"], months(13), "line").tickCount).toEqual({ interval: "month", step: 1 });
+    expect(xAxis(["month", "revenue"], months(40), "line").tickCount).toEqual({ interval: "month", step: 3 });
+    const days = Array.from({ length: 30 }, (_, i) => [`2026-07-${String(i + 1).padStart(2, "0")}`, String(i)]);
+    expect(xAxis(["day", "revenue"], days, "line").tickCount).toEqual({ interval: "day", step: 2 });
+    const quarters = ["2025-01-01", "2025-04-01", "2025-07-01", "2025-10-01"].map((q, i) => [q, String(i)]);
+    expect(xAxis(["quarter", "revenue"], quarters, "line").tickCount).toEqual({ interval: "month", step: 3 });
+  });
+
+  it("bars over time too, with the period's own label", () => {
+    expect(xAxis(["month", "revenue"], months(13), "bar")).toMatchObject({ tickCount: { interval: "month", step: 1 },
+                                                                         format: "%b %Y" });
   });
 });

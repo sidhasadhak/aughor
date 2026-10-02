@@ -24,7 +24,7 @@
 
 import {
   isIdLike, INSTRUMENTATION_COL as INSTRUMENTATION,
-  SHARE_COL, CHANGE_METRIC_COL as CHANGE_METRIC, ADDITIVE_COL,
+  SHARE_COL, CHANGE_METRIC_COL as CHANGE_METRIC, PERCENT_CHANGE_COL as PERCENT_CHANGE, ADDITIVE_COL, isPriorPeriodCol,
   countUnique, classifyColumns, isUngraphableGrid, plottedMeasures, uniqueLabelBand,
   GEO_NAME_COL, LAT_COL, LON_COL,
 } from "./columnRoles";
@@ -229,8 +229,17 @@ export function inferChartType(
 
   // ── TIME SERIES (date column present) ────────────────────────────────────
   if (dateIdx !== undefined) {
-    // No category → pure single line
+    // No category → pure single line — unless the result measures a CHANGE per period. Then the
+    // change is what it adds, and it reads as one bar per period, signed: Q3's growth result drew a
+    // line of monthly revenue, a copy of the trend above it, and never the growth the question asked
+    // about ("which months grew or shrank the most", theLook 2026-10-02). A percent change leads an
+    // absolute one.
     if (catIdx === undefined) {
+      const changes = numericIdxs.filter((i) => CHANGE_METRIC.test(columns[i]));
+      if (changes.length) {
+        const pick = changes.find((i) => PERCENT_CHANGE.test(columns[i])) ?? changes[0];
+        return { type: "bar", xCol: dateIdx, yCols: [pick] };
+      }
       return { type: "line", xCol: dateIdx, yCols: numericIdxs };
     }
 
@@ -240,7 +249,9 @@ export function inferChartType(
     // Check if ANY numeric column is a change/delta/growth metric.
     // These are COMPARISON questions (MoM, YoY, WoW, delta, growth rate).
     // Heatmap is for DISTRIBUTION exploration — never for change data.
-    const hasChangeMetric = numericIdxs.some(i => CHANGE_METRIC.test(columns[i]));
+    // The period before's own value (`prev_revenue`) signals the comparison too, but is never the Y.
+    const hasChangeMetric = numericIdxs.some(i => CHANGE_METRIC.test(columns[i]))
+      || allNumeric.some(i => isPriorPeriodCol(columns[i]));
 
     if (hasChangeMetric) {
       // Change/delta metrics are TREND questions: period on X, delta on Y, one line per series.

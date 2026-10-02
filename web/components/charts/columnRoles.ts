@@ -31,9 +31,22 @@ export const SHARE_COL = /(share|pct|percent|rate|ratio|proportion)/i;
 // Change / delta / period-over-period metric column names.
 // When ANY numeric column matches this pattern the question is a COMPARISON question
 // (MoM, YoY, delta, growth rate) — heatmap and stacked-bar are the wrong charts.
-// Also catches lag/prev/prior columns — their presence signals a POP query even when
-// no explicit delta column was computed.
-export const CHANGE_METRIC_COL = /(change|delta|growth|mom|yoy|wow|qoq|pct_change|percent_change|_chg$|_diff$|vs_prev|^prev_|_prev$|^prior_|_prior$|^lag_|_lag$)/i;
+export const CHANGE_METRIC_COL = /(change|delta|growth|mom|yoy|wow|qoq|pct_change|percent_change|_chg$|_diff$|vs_prev)/i;
+
+/** The period before's own value beside its series — a LAG column, `prev_month_revenue`. Its
+ *  presence still signals a period-over-period query, but it is the series shifted by one row, not
+ *  a change: it counted as one, and a chart of Q3's growth result plotted "Prev Month Revenue" —
+ *  August's revenue against September — where the growth rate beside it was the answer (theLook,
+ *  2026-10-02). Never plotted, never offered as a measure while another is there. */
+export const PRIOR_PERIOD_COL = /(^prev_|_prev$|^previous_|^prior_|_prior$|^lag_|_lag$)/i;
+
+/** A change column that is a PERCENT change — `pct_change`, `growth_rate` — leads an absolute one
+ *  (`revenue_change`) on a chart, and reads as a percentage. */
+export const PERCENT_CHANGE_COL = /(pct|percent|rate|ratio)/i;
+
+export function isPriorPeriodCol(col: string): boolean {
+  return PRIOR_PERIOD_COL.test(col) && !CHANGE_METRIC_COL.test(col);   // `revenue_vs_prev` is a change
+}
 
 /** Ordinal / identifier columns — never abbreviate or treat as a measure. */
 export const ORDINAL_COL = /(year|month|day|week|rank|_id$|^id$)/i;
@@ -262,7 +275,15 @@ export function plottedMeasures(columns: string[], rows: unknown[][], numericIdx
     }
   }
   for (const i of numericIdxs) if (INSTRUMENTATION_COL.test(columns[i] || "")) support.add(i);
+  for (const i of numericIdxs) if (isPriorPeriodCol(columns[i] || "")) support.add(i);
   const kept = numericIdxs.filter((i) => !support.has(i));
+  return kept.length ? kept : numericIdxs;
+}
+
+/** The measures a chart offers to plot: every numeric column but the period before's own value
+ *  (`isPriorPeriodCol`) — unless that leaves none. */
+export function offeredMeasures(columns: string[], numericIdxs: number[]): number[] {
+  const kept = numericIdxs.filter((i) => !isPriorPeriodCol(columns[i] || ""));
   return kept.length ? kept : numericIdxs;
 }
 

@@ -120,6 +120,7 @@ def run_tool_loop(
     site: str = "converse.tool",
     replay_args: Optional[dict] = None,
     stop_check: Optional[Callable[[str], Optional[str]]] = None,
+    preface: str = "",
 ) -> LoopResult:
     """Run one converse turn to an answer, or until the budget runs out.
 
@@ -156,6 +157,11 @@ def run_tool_loop(
     or None. Its reason goes back to the model ONCE per turn, with the draft, while two calls
     remain to re-measure and answer again; a second stop is the answer. ``None`` (every caller
     but the analyst) leaves the loop exactly as it was.
+
+    ``preface`` is what the caller measured before the first step — tool results the model did not
+    ask for and must still read as results. It rides the question's own message, never as a tool
+    call the model did not make (see `_exchange`); the decision records keep the bare question.
+    Empty (every caller but the analyst) leaves the loop exactly as it was.
     """
     by_name = {t.name: t for t in tools}
     wire = [t.as_wire() for t in tools]
@@ -187,9 +193,10 @@ def run_tool_loop(
         if on_step is not None:
             on_step(step)
 
+    asked = f"{question}\n\n{preface}" if preface else question
     for call_index in range(budget):
         turn: ToolTurn = provider.complete_with_tools(
-            system, question, wire, history=history or None)
+            system, asked, wire, history=history or None)
 
         if turn.malformed:
             # The model DID choose — it just wrote the arguments badly. Telling it so is
@@ -282,7 +289,7 @@ def run_tool_loop(
             # `history` has not had THIS step appended yet (that is the next line), so an
             # empty history here means the model decided with nothing but system + question
             # + tools in front of it: the only rows a shuffled control can rebuild faithfully.
-            if not history and replay_args:
+            if not history and not preface and replay_args:
                 _capture_replay(decision_id, site, question, wire, provider, prompt_fingerprint,
                                 replay_args, trace_id=trace_id)
         # The remaining-step count rides the RESULT, not the system prompt: it changes
@@ -301,7 +308,7 @@ def run_tool_loop(
     # the caller's out-of-steps sentence, exactly as before this existed.
     try:
         final = provider.complete_with_tools(
-            system + "\n\n" + _FINAL_TURN, question, [], history=history or None)
+            system + "\n\n" + _FINAL_TURN, asked, [], history=history or None)
         text = (final.text or "").strip()
         if text:
             return LoopResult(answer=text, steps=steps, stop_reason="budget_answered")
