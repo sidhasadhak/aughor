@@ -205,13 +205,15 @@ function valueFormat(format?: string | null): string {
  * The app's own compact number, as a Vega expression: 6642 → "6.6K", 26766377 → "26.8M".
  * d3's `~s` renders "6.642k" and "26.766377M", which is neither what lib/format produces nor
  * what any other number on the page looks like — a print chart reading 6.642K beside a card
- * reading 6.6K is the kind of difference a reader notices and cannot explain.
+ * reading 6.6K is the kind of difference a reader notices and cannot explain. Under a thousand it
+ * keeps four significant digits — 787.4, as the app writes it; it printed the raw value, and a bar of
+ * Q3's monthly change read "€787.420043826" (2026-10-02) — and a small tick stays itself (0.002).
  */
 const COMPACT = (v: string) =>
   `(abs(${v}) >= 1e9 ? format(${v}/1e9,'.1f')+'B'` +
   ` : abs(${v}) >= 1e6 ? format(${v}/1e6,'.1f')+'M'` +
   ` : abs(${v}) >= 1e3 ? format(${v}/1e3,'.1f')+'K'` +
-  ` : format(${v},''))`;
+  ` : format(${v},'.4~r'))`;
 const SI = (inner: string) => `replace(replace(${inner}, 'k', 'K'), 'G', 'B')`;
 // A caller-supplied format wins; the default SI goes through the app's compact form.
 const SI_LABEL = (f: string, prefix: string) =>
