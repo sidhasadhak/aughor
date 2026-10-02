@@ -148,3 +148,27 @@ describe("an answer in the analyst's own words", () => {
     expect(container.querySelector("h2")).toBeNull();
   });
 });
+
+/** "If it's a single number being displayed, does one really need a table?" (2026-10-02): a finding of
+ *  one row reads as its figures; a finding of many rows with no chart keeps its table. */
+describe("a finding of one row reads as its figures", () => {
+  const withRows = (columns: string[], rows: (string | number | null)[][], chart_type = "auto") => ({
+    headline: "In July 2026, 7,027 units were sold", executive_summary: "", confidence: "HIGH",
+    phases: [{ phase_id: "adhoc_2", phase_name: "units_sold — 2026-07-01 → 2026-07-31", phase_icon: "",
+      status: "complete", summary: "", caveats: [],
+      findings: [{ finding_id: "f1", title: "units_sold — 2026-07-01 → 2026-07-31", claim: "", interpretation: "",
+        sql: "SELECT 1", columns, rows, row_count: rows.length, key_numbers: [], chart_type,
+        stat_note: null, is_significant: false }] }],
+  }) as never;
+
+  it("not as a one-row table under a disclosure", () => {
+    render(<ReportView report={withRows(["units_sold"], [["7027"]])} />);
+    expect(screen.getByText("7,027")).toBeInTheDocument();
+    expect(screen.queryByText(/Data · 1 rows/)).not.toBeInTheDocument();
+  });
+
+  it("many rows with no chart keep their table", () => {
+    render(<ReportView report={withRows(["name"], [["a"], ["b"]], "none")} />);
+    expect(screen.getByText(/Data · 2 rows/)).toBeInTheDocument();
+  });
+});

@@ -17,6 +17,7 @@ import { Pending } from "@/components/ui/motion";
 import React, { useState } from "react";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { FindingFigures, isOneRecord } from "@/components/FindingFigures";
 import { SqlResultTable } from "@/components/AugTable";
 import { AnswerProse } from "@/components/chat/AnswerProse";
 /** Open the right-side Source-data drawer (data + SQL + Query Builder) for a finding. Typed inline
@@ -239,6 +240,8 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
   const { verdict, warning } = splitStatNote(finding.stat_note);
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
+  // One record is its figures in a line, never a one-row table (`FindingFigures`).
+  const oneRecord = hasData && !hasChart && isOneRecord(finding.columns, finding.rows as unknown[][]);
   // CA-4 "title = claim": the claim leads the figure; the query's descriptive
   // name stays on the source-data affordance below.
   const headline = finding.claim?.trim() || finding.title;
@@ -308,8 +311,9 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
         <p className="aug-text-xs text-red-400 font-mono">{finding.error}</p>
       )}
 
-      {/* Data table (collapsed) — only when no chart */}
-      {hasData && !hasChart && (
+      {/* One record — its figures; otherwise the data table (collapsed) when there is no chart */}
+      {oneRecord && <FindingFigures columns={finding.columns} row={finding.rows[0] as unknown[]} />}
+      {hasData && !hasChart && !oneRecord && (
         <FindingTable columns={finding.columns} rows={finding.rows} label="Data" />
       )}
       {/* The per-finding SQL + "Open in Query Builder" used to live here; for a swifter
