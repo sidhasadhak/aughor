@@ -330,6 +330,70 @@ def declared_filter_rules(question: str, metrics: list, dialect: str = "duckdb")
     return out
 
 
+def declared_filter_notes(sql: str, connection_id: str, dialect: str = "duckdb") -> list[str]:
+    """What a person's own SQL is told when it measures a declared metric over that metric's table
+    without the metric's filter — one sentence per measure, never a rewrite.
+
+    A statement run from the SQL Editor met no guard: `SELECT SUM(sale_price) FROM order_items`
+    quietly counted cancelled lines and read as revenue (2026-10-02). The agent's guard adds the
+    filter, because the agent answers a question that asked for the metric; a person's statement
+    asked for nothing but itself, so it runs as written and is told what it is not. Unlike the
+    agent's rules, every approved metric is read — there is no question to say which is meant —
+    and metrics that share one formula over one table are named together, each with its filter.
+    Empty when the statement deals with each filter (applies it, or cuts or filters by its column)
+    and on any failure to read the catalogue or the statement."""
+    if not (sql or "").strip() or not connection_id:
+        return []
+    try:
+        from aughor.semantic.metrics import list_metrics
+        from aughor.sql.metric_filter_guard import (
+            enforce_metric_filters, measure_of, same_condition, same_formula,
+        )
+        missed: list[dict] = []
+        for m in list_metrics(connection_id=connection_id) or []:
+            if (getattr(m, "status", "") or "") != "approved":
+                continue
+            measure = measure_of(getattr(m, "sql", "") or "", dialect)
+            if measure is None:
+                continue
+            tables = measure["tables"] or [str(t).strip() for t in (getattr(m, "tables", None) or []) if str(t).strip()]
+            filters: list[str] = []
+            for f in [*(getattr(m, "filters", None) or []), *measure["filters"]]:
+                f = str(f).strip()
+                if f and not any(same_condition(f, kept, dialect) for kept in filters):
+                    filters.append(f)
+            if not tables or not filters:
+                continue
+            rule = {"metric": m.name, "formula": measure["formula"], "tables": tables, "filters": filters}
+            _, applied = enforce_metric_filters(sql, [rule], dialect)
+            if applied:
+                missed.append({**rule, "label": str(getattr(m, "label", "") or m.name),
+                               "table": applied[0]["table"]})
+        notes: list[str] = []
+        while missed:
+            first = missed.pop(0)
+            group = [first] + [o for o in missed if same_formula(o["formula"], first["formula"], dialect)
+                               and o["table"].lower() == first["table"].lower()]
+            missed = [o for o in missed if o not in group]
+            what = f"{first['formula']} over {first['table']}"
+            if len(group) == 1:
+                notes.append(f"declared filter: {what} is the declared metric {first['label']}, which keeps "
+                             f"{' AND '.join(first['filters'])} — this statement does not, so its figure is "
+                             f"not {first['label']}. It ran as written.")
+            else:
+                named = " and ".join(f"{g['label']} ({' AND '.join(g['filters'])})" for g in group)
+                none = "neither filter" if len(group) == 2 else "none of their filters"
+                notes.append(f"declared filter: {what} is declared as {named} — this statement applies "
+                             f"{none}, so its figure is {'neither' if len(group) == 2 else 'none of them'}. "
+                             "It ran as written.")
+        return notes
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "declared-filter notes are best-effort; the statement's result stands without them",
+                 counter="metric.declared_filter_notes")
+        return []
+
+
 def rules_for_statement(connection_id: str, question: Optional[str] = None,
                         dialect: str = "duckdb") -> Optional[list]:
     """The declared-filter rules for a statement about to run on ``connection_id`` — for

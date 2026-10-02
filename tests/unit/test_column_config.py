@@ -397,3 +397,31 @@ def test_column_config_put_accepts_a_note_only_edit(client, store):
     assert flags["note"] == "EUR cents, not euros"
     assert flags["visible"] is True, "a note-only edit leaves the flags at their defaults"
     assert flags["source"] == "human"
+
+
+# ── A note is cleared by a person, and kept (2026-10-02) ──────────────────────────────
+# A false agent note on theLook's `order_items.status` rode into every later prompt that read the
+# column, and the only way to remove it was to edit the YAML by hand: the route refused an empty
+# note, and the writer wrote a note only when it had text.
+
+def test_a_person_clears_a_note_and_the_note_is_superseded_not_deleted(client, store):
+    def put(**body):
+        return client.put("/ontology/column-config", params={"connection_id": "fixture"},
+                          json={"table": "sales", "column": "status", **body})
+    assert put(note="excludes Cancelled orders").status_code == 200
+    r = put(note="")
+    assert r.status_code == 200
+    flags = r.json()["flags"]
+    assert flags["note"] == ""
+    assert [(h["note"], h["superseded_by"]) for h in flags["note_history"]] == [("excludes Cancelled orders", "human")]
+    # a flag edit leaves the note — and its history — alone; so does sending the same note again
+    assert put(visible=False).json()["flags"]["note_history"] == flags["note_history"]
+    assert put(note="").json()["flags"]["note_history"] == flags["note_history"]
+
+
+def test_a_note_that_was_never_replaced_keeps_its_file_as_it_was(store):
+    set_column_flags("c", "s", "sales", "status", note="first")
+    text = next(Path(store).rglob("sales.yaml")).read_text()
+    assert "note_history" not in text
+    set_column_flags("c", "s", "sales", "status", note="second")
+    assert load_table_config("c", "s", "sales")["status"].note_history[0]["note"] == "first"

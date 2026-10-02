@@ -91,3 +91,13 @@ def test_ambiguous_bare_column_multi_table_unchanged():
 
 def test_empty_sql_unchanged():
     assert reanchor_trailing_window("", FakeDB("2026-01-01"), "duckdb") == ""
+
+
+def test_a_cte_is_not_taken_for_a_second_table():
+    """The CTE names were read from `with`, which sqlglot 30.x leaves empty: `recent` counted as a real table
+    beside `orders`, a bare date column looked ambiguous, and the window never moved."""
+    db = FakeDB("2026-05-17")
+    sql = ("WITH recent AS (SELECT * FROM orders) SELECT COUNT(*) FROM recent "
+           "WHERE created_at >= '2026-01-01' AND created_at < '2026-02-01'")
+    assert reanchor_trailing_window(sql, db, "duckdb") != sql
+    assert db.queries == ["SELECT MAX(created_at) FROM orders"]

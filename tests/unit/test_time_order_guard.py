@@ -10,6 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import uuid
+
 import duckdb
 import sqlglot
 
@@ -24,7 +26,7 @@ def _conn(inverted: int, total: int = 10):
     conn = DuckDBConnection.__new__(DuckDBConnection)
     conn._path = Path(":memory:")
     conn._conn = duckdb.connect(":memory:")
-    conn._connection_id = "test"
+    conn._connection_id = f"test-{uuid.uuid4().hex[:8]}"      # each a database of its own
     conn._schema_name = None
     conn._conn.execute("CREATE TABLE items (id INT, created_at TIMESTAMP, shipped_at TIMESTAMP)")
     for i in range(total):
@@ -301,3 +303,34 @@ def test_the_warning_says_how_to_bring_the_parent_in_when_both_carry_its_key():
     sql = "SELECT AVG(date_diff('hour', created_at, shipped_at)) AS hours FROM order_items"
     text = " ".join(execute_guarded(conn, sql, query_id="q").caveats)
     assert "orders also carries shipped_at and created_at (join it on order_id)" in text
+
+
+def test_a_filter_that_left_nothing_out_is_said_so():
+    """Q4's answer (2026-10-01) said it measured "orders with valid timestamps": the filter excluded none."""
+    run = T.time_order_check(_conn(0), SHIP + " WHERE shipped_at >= created_at", "duckdb")
+    assert not run.findings
+    assert run.notes and "leaves out no rows" in run.notes[0] and "none of the 10" in run.notes[0]
+    assert not T.time_order_check(_conn(0), SHIP, "duckdb").notes, "nothing filtered, nothing to say"
+
+
+def test_the_same_rows_are_probed_once():
+    """Durations over the same rows — by month, by centre, overall — probe the same SQL; one probe serves them."""
+    conn, probes = _conn(3), []
+    real = conn.execute
+
+    def counted(hid, sql, **kw):
+        probes.append(hid)
+        return real(hid, sql, **kw)
+    conn.execute = counted
+    first = T.time_order_check(conn, SHIP, "duckdb")
+    again = T.time_order_check(conn, SHIP.replace("AVG", "MAX"), "duckdb")
+    assert probes == ["__time_order_probe__"]
+    assert [f.inverted for f in first.findings] == [f.inverted for f in again.findings] == [3]
+
+
+def test_another_schema_of_the_same_connection_is_probed_afresh():
+    conn = _conn(3)
+    T.time_order_check(conn, SHIP, "duckdb")
+    conn._schema_name = "other"
+    conn._conn.execute("UPDATE items SET shipped_at = TIMESTAMP '2026-01-05 08:00'")
+    assert T.time_order_check(conn, SHIP, "duckdb").findings == []

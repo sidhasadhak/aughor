@@ -899,6 +899,51 @@ ASSOCIATION_NULL_DIRECTIVE = (
 )
 
 
+#: A column that names or reaches a person — a cut by it lists people one row each, not groups. The
+#: term ENDS the name: `user_email` reaches a person, `email_opt_in` and `is_mobile` are cuts.
+_IDENTIFYING_COL_RE = re.compile(
+    r"(?:^|_)(?:e_?mail(?:_?address)?|phone(?:_?(?:number|no))?|mobile_?(?:number|phone|no)|ssn|"
+    r"ip_?addr(?:ess)?|password|passwd|card_?(?:number|no)|first_?name|last_?name|full_?name|"
+    r"street(?:_?address)?|address_?line\d?)$|^mobile$", re.I)
+#: The profiler's concepts for the same (`tools/profiler.py`): an email, a phone, an IP address.
+_IDENTIFYING_CONCEPTS = ("contact.", "net.ip_address")
+
+
+def _drop_identifying_dimensions(intake, connection_id: str = "") -> list[str]:
+    """Take the columns that identify a person out of the dimensions the intake offers to cut by —
+    an email, a phone, a name, an address — and say so in its notes. Returns what was taken out.
+
+    Q5's intake (2026-10-01) offered `users.email` for drill-down: grouped by it, a breakdown lists
+    customers one row each, by their address. Read from the column's name and, where the profiler
+    is sure, its concept. A dimension the question itself names is put back in front afterwards —
+    a person who asks for a cut by email gets one."""
+    dims = list(getattr(intake, "dimensions", None) or [])
+    if not dims:
+        return []
+    concepts: dict = {}
+    if connection_id:
+        try:
+            from aughor.tools.profile_cache import load_concepts
+            concepts = load_concepts(connection_id) or {}
+        except Exception as exc:  # noqa: BLE001 — the column's name still decides
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "column concepts unreadable; identifying dimensions are read from names",
+                     counter="deep_analysis.identifying_dims")
+
+    def identifies(dim: str) -> bool:
+        table, _, column = str(dim).rpartition(".")
+        concept = str(concepts.get((table.split(".")[-1], column)) or "")
+        return bool(_IDENTIFYING_COL_RE.search(column)) or concept.startswith(_IDENTIFYING_CONCEPTS)
+
+    dropped = [d for d in dims if identifies(d)]
+    if dropped:
+        intake.dimensions = [d for d in dims if d not in dropped]
+        intake.intake_notes = (
+            f"NOT OFFERED AS DIMENSIONS: {', '.join(dropped)} — each identifies a person; a cut by one lists "
+            "people, not groups. " + (getattr(intake, "intake_notes", "") or "")).strip()
+    return dropped
+
+
 def _drop_self_referential_segment(intake) -> Optional[str]:
     """Clear a driver segment that is built from the metric's own columns. Returns the
     reason when one was dropped, so the caller can leave a receipt and a test can assert
@@ -6306,6 +6351,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # construction. Drop it before it can route the phase, and say why in the notes —
         # a contrast that silently disappears is as hard to debug as one that lies.
         _drop_self_referential_segment(intake)
+        _drop_identifying_dimensions(intake, state.get("connection_id") or "")
         _stamp_claim_type(intake, question)
         # What the question ASKED for, decided from the question alone. A listing is not
         # a comparison that failed, and a report that apologises for a prior period the
@@ -10214,17 +10260,51 @@ def _apply_adversarial_refutation(synth, verdict) -> None:
             "refutation: " + obj + " " + (getattr(synth, "confidence_justification", "") or "")).strip()
 
 
-def _lead_sentence(text: str) -> tuple[str, str]:
-    """``(headline, rest)``: the conclusion's opening sentence as its headline when it is a
-    plain sentence short enough to be one, else no headline and the whole text."""
+#: Where a sentence ends — not after an abbreviation a figure follows ("vs. 2025", "e.g. 3 days").
+_SENTENCE_END_RE = re.compile(r"(?<!\bvs)(?<!\be\.g)(?<!\bi\.e)(?<!\bapprox)(?<!\bincl)(?<!\bexcl)[.!?](?=\s)")
+#: A date or a year in prose — a period's name, not a figure the answer found.
+_PROSE_DATE_RE = re.compile(
+    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?\b(?:,?\s*\d{4})?"
+    r"|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?(?:,?\s*\d{4})?"
+    r"|\b\d{4}-\d{2}(?:-\d{2})?\b|\b(?:19|20)\d{2}\b", re.I)
+
+
+def _states_a_figure(sentence: str, question: str = "") -> bool:
+    """Does the sentence state a number the question did not — once dates and years are set aside?
+    "The following table lists the 10 product categories with the highest revenue between March 4,
+    2026, and September 3, 2026" headed Q2's answer (2026-10-02): every number in it was the
+    question's or a date, and the reader's first line answered nothing."""
+    asked = {n.strip(".,") for n in re.findall(r"\d[\d,.]*", question or "")}
+    return any(n.strip(".,") not in asked for n in re.findall(r"\d[\d,.]*", _PROSE_DATE_RE.sub(" ", sentence)))
+
+
+def _lead_sentence(text: str, question: str = "") -> tuple[str, str]:
+    """``(headline, rest)``: the conclusion's opening sentence as its headline, else no headline
+    and the whole text.
+
+    No headline when the answer opens with a table or a list, or with a sentence that states no
+    figure of its own — that announces the answer rather than giving it. A sentence too long to
+    head the page heads it by its first clause that carries a figure, the rest of the sentence
+    opening the body; failing that, cut at a word. A long opener used to leave the answer with no
+    headline at all, and its receipt then filed the question as the headline."""
     t = (text or "").strip()
     first_para = t.split("\n\n", 1)[0]
     if not first_para or first_para.lstrip()[:1] in "#|*-" or "\n" in first_para.strip():
         return "", t
-    lead = re.split(r"(?<=[.!?])\s+", first_para.strip(), maxsplit=1)[0]
-    if len(lead) > 240:
+    para = first_para.strip()
+    end = _SENTENCE_END_RE.search(para)
+    lead = para[:end.end()] if end else para
+    if not _states_a_figure(lead, question):
         return "", t
-    return lead.rstrip(".").strip(), t[len(lead):].strip()
+    rest = t[len(lead):].strip()
+    if len(lead) <= 240:
+        return lead.rstrip(".").strip(), rest
+    for cut in reversed([m for m in re.finditer(r";\s+|\s+—\s+|:\s+", lead) if m.start() <= 240]):
+        head, tail = lead[:cut.start()].strip(), lead[cut.end():].strip()
+        if _states_a_figure(head, question) and tail:
+            sep = "\n\n" if lead == para else " "
+            return head, (tail[:1].upper() + tail[1:] + (sep + rest if rest else "")).strip()
+    return lead[:240].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…", t
 
 
 def _conclusion_as_answer(state, intake_data: dict, question: str):
@@ -10244,7 +10324,7 @@ def _conclusion_as_answer(state, intake_data: dict, question: str):
     if shape != "describe" or not conclusion:
         return None
     from aughor.agent.prompts_investigate import ADASynthesisModel
-    headline, body = _lead_sentence(conclusion)
+    headline, body = _lead_sentence(conclusion, question)
     return ADASynthesisModel(
         headline=headline, executive_summary=body or conclusion, closing_summary="",
         total_change_label="", attribution_waterfall=[], confidence="HIGH",

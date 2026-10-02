@@ -449,8 +449,8 @@ def test_two_cuts_of_the_same_shape_get_distinguishable_titles():
     t_obs = _adhoc_title(cols, "Where are we losing money?", obs)
     t_cmp = _adhoc_title(cols, "Where are we losing money?", cmp_)
     assert t_obs != t_cmp, "an observation/comparison pair must not share a title"
-    assert "2025-02-01" in t_obs and "2025-01-01" in t_cmp
-    assert t_obs.startswith("returned_cost by product_brand")
+    assert "Feb 2025" in t_obs and "1 Jan" in t_cmp
+    assert t_obs.startswith("Returned cost by product brand")
 
 
 def test_a_scoping_filter_is_named_but_the_metric_definition_is_not():
@@ -463,16 +463,16 @@ def test_a_scoping_filter_is_named_but_the_metric_definition_is_not():
            "WHERE order_items.created_at >= '2025-02-01' "
            "AND inventory_items.product_department = 'Men' GROUP BY 1")
     title = _adhoc_title(["product_category", "returned_cost"], "q", sql)
-    assert "product_department = Men" in title
-    assert "Returned" not in title, "the metric's own filter is not the cut's scope"
+    assert "product department = Men" in title
+    assert "Returned" not in title.split(" where ", 1)[1], "the metric's own filter is not the cut's scope"
 
 
 def test_a_query_with_no_scope_keeps_the_bare_title():
     """Fail-open: an unscoped or unparseable query yields exactly the old title."""
     from aughor.agent.analyst import _adhoc_title
 
-    assert _adhoc_title(["a", "b"], "q", "SELECT a, SUM(b) FROM t GROUP BY 1") == "b by a"
-    assert _adhoc_title(["a", "b"], "q", "") == "b by a"
+    assert _adhoc_title(["a", "b"], "q", "SELECT a, SUM(b) FROM t GROUP BY 1") == "B by a"
+    assert _adhoc_title(["a", "b"], "q", "") == "B by a"
     assert _adhoc_title([], "the question", "") == "the question"
 
 
@@ -603,7 +603,35 @@ def test_the_analyst_is_handed_the_figure_code_measured(monkeypatch, traffic_db,
     assert asked.startswith(Q1 + "\n\nMeasured for you by code before your first call")
     assert f"run_sql: {UNITS_SQL}" in asked and '"rows": [["7027"]]' in asked
     landed = [p["phase"] for t, p in frames if t == "phase_complete" and p["phase"]["phase_id"] == "adhoc_2"]   # the intake is phase 1
-    assert [p["phase_name"] for p in landed] == ["units_sold — 2026-07-01 → 2026-07-31"]
+    assert [p["phase_name"] for p in landed] == ["Units sold — Jul 2026"]
+
+
+def test_the_answer_carries_its_questions_shape(monkeypatch, traffic_db, faux_llm):
+    """A describe answer measured what was asked and tested no hypotheses; the trace called every Agent
+    answer "Multi-hypothesis analysis" (2026-10-02). The shape rides the report, streamed and stored."""
+    frames = []
+
+    def _fake_intake(state, conn=None):
+        return {"_ada_intake": _q1_intake(), "investigation_phases": [{
+            "phase_id": "intake", "phase_name": "Question Intake", "phase_icon": "🎯",
+            "status": "complete", "summary": "spec", "findings": []}]}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_fake_intake,
+                 synthesize=lambda state: {"answer_report": {"headline": "h", "phases": []}})
+    monkeypatch.setattr("aughor.agent.converse_tools.run_sql", lambda cid, args, **kw: {
+        "columns": ["units_sold"], "rows": [["7027"]], "row_count": 1, "caveats": []})
+    faux_llm.set_responses(["July 2026: 7,027 units sold."])
+    an.run_analyst("conn-t", Q1, persist=False, emit=lambda t, p: frames.append((t, p)))
+    reports = [p["answer_report"] for t, p in frames if t == "answer_report"]
+    assert [r.get("question_shape") for r in reports] == ["describe"]
+
+
+def test_the_route_frame_names_the_shape_the_analyst_serves():
+    """Said before the report lands, so the trace is right while the run streams."""
+    import inspect
+    from aughor.routers import investigations
+    src = inspect.getsource(investigations)
+    assert '_route_ev["question_shape"] = _shape_of(req.question or "")' in src
 
 
 def test_a_column_named_for_a_measure_code_measured_is_marked_when_counted_elsewhere():

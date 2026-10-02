@@ -385,9 +385,10 @@ def _derived_probe_sql(tree, a: _Side, b: _Side) -> str:
     for cte in carried.values():
         probe = probe.with_(cte.alias_or_name, as_=cte.this.copy())
     probe = probe.with_(_SIDE_CTE, as_=side_a)
-    with_ = tree.args.get("with")
+    # sqlglot keeps a statement's WITH under "with_" (30.x); "with" was the key before it.
+    with_ = tree.args.get("with_") or tree.args.get("with")
     if with_ is not None and with_.args.get("recursive"):
-        probe.args["with"].set("recursive", True)
+        (probe.args.get("with_") or probe.args.get("with")).set("recursive", True)
     return probe.sql(dialect=a.dialect or None)
 
 

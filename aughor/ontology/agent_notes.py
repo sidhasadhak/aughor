@@ -158,6 +158,14 @@ def _route_column(conn: str, schema: str, table: str, column: str, note: str,
                       session_id,
                       why=f"the column already carries a HUMAN note ({existing.note[:80]!r}); "
                           "an agent never overwrites a person — staged for review instead")
+    cleared = next((h for h in reversed(existing.note_history if existing is not None else [])
+                    if h.get("superseded_by") == "human"), None)
+    if cleared and not (existing.note or "").strip():
+        # A person removed this column's note: their "not this" is durable, and an agent does
+        # not quietly write a note back over it.
+        return _stage(conn, schema, "column", table, column, note, evidence, confidence, session_id,
+                      why=f"a person cleared this column's note on {str(cleared.get('superseded_at'))[:10]}; "
+                          "an agent's note waits for their review")
     if ("column", confidence) not in DIRECT_APPLY:
         return _stage(conn, schema, "column", table, column, note, evidence, confidence,
                       session_id, why=f"confidence {confidence!r} is not high enough to apply directly")

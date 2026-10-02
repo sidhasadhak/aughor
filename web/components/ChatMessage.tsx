@@ -37,6 +37,9 @@ import { DelegationTrail } from "@/components/DelegationTrail";
 import { GuardReceiptChain } from "@/components/GuardReceiptChain";
 import { SqlView } from "@/components/query/SqlView";
 import { formatSql } from "@/lib/query/format";
+import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
+import { fileSlug, rawCells } from "@/components/TableActions";
+import { figureValue } from "@/components/FindingFigures";
 import { ToolTrail } from "@/components/ToolTrail";
 import { ProposalCardById } from "@/components/ProposalCard";
 import { approverName } from "@/lib/auth";
@@ -145,26 +148,14 @@ function sortRowsForDisplay(columns: string[], rows: unknown[][]): unknown[][] {
   });
 }
 
-// ── CSV download helper ───────────────────────────────────────────────────────
-function downloadCsv(columns: string[], rows: unknown[][], title: string) {
-  const esc = (v: unknown) => {
-    const s = String(v ?? "");
-    return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [
-    columns.map(esc).join(","),
-    ...rows.map(r => (r as unknown[]).map(esc).join(",")),
-  ].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement("a"), {
-    href: url,
-    download: `${title.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}.csv`,
-  });
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+/** A source table's cell: the full figure, as a result table reads it — "7,027", never "7.0K". The
+ *  source panel is where a reader checks a number against the answer, so it does not round one
+ *  (2026-10-02: Q1's 7,027 units opened as "7.0K"). Dates read at their grain. */
+function sourceCell(col: string, val: unknown, gran?: Gran): string {
+  if (val === null || val === "NULL") return "—";
+  const s = String(val);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return fmtDate(s, gran ?? granFromName(col) ?? "day");
+  return figureValue(col, val);
 }
 
 function fmt(col: string, val: unknown, gran?: Gran): string {
@@ -559,7 +550,7 @@ export function SourcePanel({
           <Button
             variant="ghost"
             size="icon-xs"
-            onClick={() => downloadCsv(columns, rows, title)}
+            onClick={() => downloadCsv(csvFilename(fileSlug(title)), toCsv(columns, rawCells(rows)))}
             title="Download as CSV"
             className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60"
           >
@@ -609,7 +600,7 @@ export function SourcePanel({
                     <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                       {objectType && value != null && value !== ""
                         ? objectLinkRender(objectType, { connectionId, titles: objectTitles })(value)
-                        : fmt(col, value, granByCol[ci])}
+                        : sourceCell(col, value, granByCol[ci])}
                     </td>
                   );
                 })}

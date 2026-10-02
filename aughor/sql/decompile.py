@@ -56,7 +56,7 @@ def decompile_sql(sql: str, dialect: str = "duckdb") -> dict:
 
     if not isinstance(tree, exp.Select):
         return {"ok": False, "reason": "Only a single SELECT can be imported (no set-ops / DDL)."}
-    if tree.args.get("with") or tree.find(exp.With):
+    if tree.find(exp.With):
         return {"ok": False, "reason": "Queries with CTEs (WITH …) can't be imported into the builder."}
 
     # FROM must be a single base table (a subquery source has no chip representation).

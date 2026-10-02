@@ -5551,6 +5551,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         _route_ev["body"] = "converse"
     if _use_analyst:
         _route_ev["body"] = "analyst"
+        from aughor.agent.investigate import question_shape as _shape_of
+        _route_ev["question_shape"] = _shape_of(req.question or "")
     # The route receipt measures the memory it injected — turns and chars — the same
     # discipline PE-1 applied to prompt spend: a feature you cannot see the size of is
     # one you cannot tell is working. `reconstructed` distinguishes server-rebuilt memory

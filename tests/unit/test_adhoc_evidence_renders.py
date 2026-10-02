@@ -53,7 +53,7 @@ def test_the_finding_is_named_from_the_shape_of_the_result():
     """`run_sql` supplies no title — the phase tools get theirs from a plan."""
     t = _Turn()
     an._record_evidence(t, {"sql": "SELECT 1"}, _RESULT)
-    assert t.state["investigation_phases"][0]["findings"][0]["title"] == "n_flights by route_id"
+    assert t.state["investigation_phases"][0]["findings"][0]["title"] == "N flights by route ID"
 
 
 def test_it_streams_as_a_phase_so_the_turn_shows_its_work_live():

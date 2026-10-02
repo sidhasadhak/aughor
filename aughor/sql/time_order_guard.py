@@ -23,7 +23,9 @@ second-slowest centre misnamed. Leaving the rows out is a finding too, with how 
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
 import sqlglot
@@ -41,6 +43,30 @@ _DIFFS = (exp.DateDiff, exp.TimestampDiff, exp.DatetimeDiff)
 #: What may wrap a column inside a duration without changing which moment it is.
 _WRAPPERS = (exp.Cast, exp.TryCast, exp.Paren, exp.Date, exp.TsOrDsToDate)
 _DIFF_WORD = re.compile(r"\b(date|timestamp|datetime)_?diff\b", re.I)
+
+#: Probe counts by (connection, probe SQL). The probe drops a statement's projections, grouping,
+#: order and limit, so the durations one run measures over the same rows — by month, by centre,
+#: overall, a repair of the same statement — probe the same SQL, and its counts do not change
+#: within minutes. One probe per distinct set of rows, not one per statement.
+_PROBE_CACHE: dict[tuple[str, str, str, str], tuple[float, list]] = {}
+_PROBE_TTL_S = 600.0
+_PROBE_CACHE_MAX = 256
+
+
+def _probe(conn: Any, sql: str) -> Any:
+    """The probe's result, from a recent identical probe on this connection when there is one. Keyed
+    by the schema and dataset too: one connection reads several, and the same SQL reads other rows."""
+    conn_id = str(getattr(conn, "_connection_id", "") or "")
+    key = (conn_id, str(getattr(conn, "_schema_name", "") or ""), str(getattr(conn, "_dataset", "") or ""), sql)
+    hit = _PROBE_CACHE.get(key) if conn_id else None
+    if hit is not None and time.monotonic() - hit[0] < _PROBE_TTL_S:
+        return SimpleNamespace(rows=hit[1], error=None)
+    result = conn.execute("__time_order_probe__", sql, internal=True)
+    if conn_id and not getattr(result, "error", None) and getattr(result, "rows", None):
+        if len(_PROBE_CACHE) >= _PROBE_CACHE_MAX:
+            _PROBE_CACHE.pop(next(iter(_PROBE_CACHE)))
+        _PROBE_CACHE[key] = (time.monotonic(), [list(r) for r in result.rows])
+    return result
 
 
 @dataclass
@@ -279,8 +305,7 @@ def time_order_check(conn: Any, sql: str, dialect: str = "duckdb",
         names = ", ".join(f"{e.sql()} − {s.sql()}" for e, s in pairs)
         filtered = left_out_pairs(scope, pairs)
         try:
-            result = conn.execute("__time_order_probe__", probe_sql(tree, scope, pairs, dialect),
-                                  internal=True)
+            result = _probe(conn, probe_sql(tree, scope, pairs, dialect))
         except Exception as exc:  # noqa: BLE001 — a probe that raised is a part not checked
             run.unchecked.append(f"{names}: {why(exc)}")
             continue
@@ -297,6 +322,12 @@ def time_order_check(conn: Any, sql: str, dialect: str = "duckdb",
             if measured and inverted and inverted / measured >= INVERTED_SHARE:
                 run.findings.append(Inverted(end.sql(), start.sql(), inverted, measured,
                                              table=_table_of(end, scope), left_out=i in filtered))
+            elif i in filtered and measured and not inverted:
+                # The filter keeps rows that were all in order anyway. Q4's answer (2026-10-01) said it
+                # measured "orders with valid timestamps" over a filter that excluded none.
+                run.notes.append(f"time-order guard: the statement's filter keeping {end.sql()} at or after "
+                                 f"{start.sql()} leaves out no rows — none of the {measured:,} it measures run "
+                                 "backwards — so the result is over every row; say no rows were excluded.")
     if run.findings and column_types is not None:
         try:
             types = column_types() or {}

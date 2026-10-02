@@ -119,12 +119,13 @@ def test_the_sentence_stating_an_untraced_figure_is_withheld_and_the_answer_says
     assert "1,299,882.88" not in reader_disclosure(v) and "withheld" in reader_disclosure(v)
 
 
-def test_a_headline_stating_one_is_replaced_by_the_question():
+def test_a_headline_stating_one_is_withheld_and_never_replaced_by_the_question():
+    """The question as a headline answered nothing (Q2, 2026-10-02): the page is left without one."""
     synth = _draft()
     synth.headline = "Top 10 categories made $1,299,882.88"
     v = check_grounding(synth.headline, _evidence())
     withhold_untraced(synth, v, "Which 10 categories?")
-    assert synth.headline == "Which 10 categories?"
+    assert synth.headline == ""
     assert "the 2 sentences stating it were withheld" in synth.executive_summary
 
 

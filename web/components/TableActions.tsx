@@ -62,7 +62,8 @@ export async function copyTable(t: TableData): Promise<boolean> {
   }
 }
 
-function slug(name: string): string {
+/** A name made safe for a file name: "Revenue by region" → "revenue-by-region"; "table" when nothing is left. */
+export function fileSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "table";
 }
 
@@ -77,7 +78,7 @@ export function TableActions({ read, name = "table" }: { read: () => TableData |
   };
   const download = () => {
     const t = read();
-    if (t) downloadCsv(csvFilename(slug(name)), toCsv(t.columns, t.rows));
+    if (t) downloadCsv(csvFilename(fileSlug(name)), toCsv(t.columns, t.rows));
   };
   return (
     <div className="flex items-center gap-0.5">

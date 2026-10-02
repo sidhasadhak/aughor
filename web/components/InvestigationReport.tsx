@@ -17,7 +17,7 @@ import { Pending } from "@/components/ui/motion";
 import React, { useState } from "react";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
-import { FindingFigures, isOneRecord } from "@/components/FindingFigures";
+import { FigureSources, FindingFigures, isOneRecord } from "@/components/FindingFigures";
 import { SqlResultTable } from "@/components/AugTable";
 import { AnswerProse } from "@/components/chat/AnswerProse";
 /** Open the right-side Source-data drawer (data + SQL + Query Builder) for a finding. Typed inline
@@ -236,11 +236,12 @@ function sourceLabel(title: string): string {
   return t.length > 46 ? t.slice(0, 46).trimEnd() + "…" : t;
 }
 
-function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFinding; onShowSource?: ShowSource }) {
+function EvidenceBlock({ finding, onShowSource, answer = "" }: { finding: InvestigationFinding; onShowSource?: ShowSource; answer?: string }) {
   const { verdict, warning } = splitStatNote(finding.stat_note);
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
-  // One record is its figures in a line, never a one-row table (`FindingFigures`).
+  // One record is its figures in a line, never a one-row table — and only those the answer does
+  // not already state (`FindingFigures`).
   const oneRecord = hasData && !hasChart && isOneRecord(finding.columns, finding.rows as unknown[][]);
   // CA-4 "title = claim": the claim leads the figure; the query's descriptive
   // name stays on the source-data affordance below.
@@ -312,7 +313,7 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
       )}
 
       {/* One record — its figures; otherwise the data table (collapsed) when there is no chart */}
-      {oneRecord && <FindingFigures columns={finding.columns} row={finding.rows[0] as unknown[]} />}
+      {oneRecord && <FindingFigures columns={finding.columns} row={finding.rows[0] as unknown[]} answer={answer} />}
       {hasData && !hasChart && !oneRecord && (
         <FindingTable columns={finding.columns} rows={finding.rows} label="Data" />
       )}
@@ -324,15 +325,22 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
 
 // ── Phase — a flat narrative section (no accordion, no chevron, no indent) ─────
 
-function PhaseSection({ phase, onShowSource, execSummary }: { phase: InvestigationPhase; onShowSource?: ShowSource; execSummary?: string }) {
+// The deterministic synthesis fallback STITCHES the phase summaries into the executive
+// summary — re-printing a phase's summary below it reads the same paragraph twice
+// (three times counting the headline). A summary the head already carries is skipped.
+const _norm = (s: string) => s.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
+const restated = (summary: string, execSummary?: string) =>
+  !!summary && !!execSummary && _norm(execSummary).includes(_norm(summary));
+
+/** A finding the body draws at all. */
+const drawn = (f: { interpretation: string; columns: string[]; error?: string }) =>
+  !!(f.interpretation || f.columns.length > 0 || f.error);
+
+function PhaseSection({ phase, onShowSource, execSummary, answer }: { phase: InvestigationPhase; onShowSource?: ShowSource; execSummary?: string; answer?: string }) {
   if (phase.status === "skipped") return null;
-  const findings = phase.findings.filter(f => f.interpretation || f.columns.length > 0 || f.error);
+  const findings = phase.findings.filter(drawn);
   if (!phase.summary && findings.length === 0) return null;
-  // The deterministic synthesis fallback STITCHES the phase summaries into the executive
-  // summary — re-printing this phase's summary below it reads the same paragraph twice
-  // (three times counting the headline). Skip a summary the head already carries.
-  const _norm = (s: string) => s.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
-  const summaryRedundant = !!phase.summary && !!execSummary && _norm(execSummary).includes(_norm(phase.summary));
+  const summaryRedundant = restated(phase.summary, execSummary);
 
   return (
     // Clean-output policy (Genie-style): no phase-machinery header ("CROSS-SECTIONAL
@@ -340,9 +348,29 @@ function PhaseSection({ phase, onShowSource, execSummary }: { phase: Investigati
     // narrative; which internal phase produced a finding is process, not insight.
     <BriefSection>
       {phase.summary && !summaryRedundant && <BriefProse text={phase.summary} />}
-      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} />)}
+      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} answer={answer} />)}
     </BriefSection>
   );
+}
+
+/** The results behind a simple answer, or null. Simple: every result the body would draw is one record —
+ *  no chart, no table — and nothing rides it but its figures (no reading, no warning, no verdict, no
+ *  error, no phase summary of its own). Q1 (2026-10-02): two figures, both in the sentence, then both
+ *  again as "evidence". Anything more keeps the full layout. */
+function simpleResults(phases: AnswerReport["phases"], execSummary?: string) {
+  const results = [];
+  for (const phase of phases) {
+    if (phase.summary?.trim() && !restated(phase.summary, execSummary)) return null;
+    for (const f of phase.findings.filter(drawn)) {
+      const { verdict, warning } = splitStatNote(f.stat_note);
+      const hasData = f.columns.length > 0 && f.rows.length > 0;
+      const hasChart = hasData && f.chart_type !== "none" && f.rows.length >= 2;
+      if (!hasData || hasChart || !isOneRecord(f.columns, f.rows as unknown[][])
+          || f.interpretation || f.error || f.key_numbers?.length || verdict || warning) return null;
+      results.push({ ...f, rows: f.rows as unknown[][] });
+    }
+  }
+  return results.length ? results : null;
 }
 
 // ── Recommended actions — numbered, bold-lead, muted trailing meta ─────────────
@@ -476,10 +504,17 @@ export function InvestigationReportView({
   const executedQueries = report.phases.reduce(
     (n, p) => n + (p.findings ?? []).filter(f => (f.sql ?? "").trim() && !f.error).length, 0);
 
-  const periodStr = [
-    report.observation_period,
-    report.comparison_basis ? `vs ${report.comparison_basis}` : "",
-  ].filter(Boolean).join(" ");
+  // What the answer says in words — a figure or a period it states is not printed again below it.
+  const answer = [report.headline, report.executive_summary, report.closing_summary].filter(Boolean).join("\n");
+  const says = (s?: string) => !!s && answer.toLowerCase().includes(s.toLowerCase());
+  const simple = simpleResults(analysisPhases, report.executive_summary);
+
+  const periodStr = says(report.observation_period) && (!report.comparison_basis || says(report.comparison_basis))
+    ? ""
+    : [
+      report.observation_period,
+      report.comparison_basis ? `vs ${report.comparison_basis}` : "",
+    ].filter(Boolean).join(" ");
 
   return (
     <Brief>
@@ -520,9 +555,15 @@ export function InvestigationReportView({
 
       <QuestionFrame frame={report.frame ?? frame} />
 
-      {/* `phase_id` names the phase's KIND — a report can hold two `decomposition` phases. */}
-      {withUniqueKeys(analysisPhases, p => p.phase_id).map(([key, phase]) => (
-        <PhaseSection key={key} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} />
+      {/* A simple answer's results are its figures, already in the sentence: one line of where
+          each came from. Otherwise each phase, its exhibits and their sources. `phase_id` names
+          the phase's KIND — a report can hold two `decomposition` phases. */}
+      {simple ? (
+        <BriefSection>
+          <FigureSources results={simple} answer={answer} onShowSource={onShowSource} />
+        </BriefSection>
+      ) : withUniqueKeys(analysisPhases, p => p.phase_id).map(([key, phase]) => (
+        <PhaseSection key={key} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} answer={answer} />
       ))}
 
       {/* Bottom line — a short closing summary that lands the answer at the END of the

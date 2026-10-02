@@ -278,7 +278,24 @@ def _typed_response(result, payload: dict, limit: int, duration_ms: float,
 
 @router.post("/query/run")
 async def query_run(body: _QueryRunRequest, request: Request):
-    """Execute a SQL query against a registered connection."""
+    """Execute a SQL query against a registered connection — as written. A statement that measures
+    a declared metric without the metric's filter is told so in its caveats, never rewritten
+    (`semantic.enforcement.declared_filter_notes`)."""
+    out = await _query_run(body, request)
+    if isinstance(out, dict) and not out.get("error"):
+        from aughor.db.connection import open_connection_for
+        from aughor.semantic.enforcement import declared_filter_notes
+        try:
+            dialect = getattr(open_connection_for(body.conn_id), "dialect", "duckdb") or "duckdb"
+        except Exception:  # noqa: BLE001 — a note read in the default dialect is still a note
+            dialect = "duckdb"
+        notes = await asyncio.to_thread(declared_filter_notes, body.sql, body.conn_id, dialect)
+        if notes:
+            out["caveats"] = list(out.get("caveats") or []) + notes
+    return out
+
+
+async def _query_run(body: _QueryRunRequest, request: Request):
     import time as _t
     from aughor.db.connection import (
         open_connection_for, gate_user_sql, is_metadata_statement,

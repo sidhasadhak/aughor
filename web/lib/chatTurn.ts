@@ -239,6 +239,8 @@ export interface ChatTurn {
     ambiguous: boolean;
     forced: string | null;
     downgradedFrom: string | null;
+    /** The question's shape when the analyst serves it — "describe" measures what was asked. */
+    shape?: string;
   } | null;
 
   agent: {
@@ -398,6 +400,7 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
       ambiguous: Boolean(d.ambiguous),
       forced: (d.forced as string) ?? null,
       downgradedFrom: (d.downgraded_from as string) ?? null,
+      shape: (d.question_shape as string) ?? "",
     };
     // The router decided the depth — set the turn's effective mode so the
     // existing renderers (quick vs investigate) work unchanged.

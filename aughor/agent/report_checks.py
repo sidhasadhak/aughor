@@ -417,7 +417,9 @@ def withhold_untraced(synth: Any, violations: list, question: str = "",
     of the headline, summary or bottom line that states such a figure is taken out, the
     summary says a figure was withheld (withheld is said, never implied), and the violation's
     reader sentence says so in place of repeating the figure. A headline that carried one is
-    replaced by the question. Returns the figures withheld; empty leaves ``synth`` untouched.
+    withheld with it, and the answer has no headline: it used to be replaced by the question,
+    which headed the page with a sentence that answered nothing. Returns the figures withheld;
+    empty leaves ``synth`` untouched.
 
     ``record`` receives each sentence taken out, as written — ``{"from", "text", "figures"}``
     — for the report to keep unshown. Without it the sentence was gone: the fulfilment answer
@@ -460,7 +462,7 @@ def withhold_untraced(synth: Any, violations: list, question: str = "",
     for f, text in fields.items():
         setattr(synth, f, _kept(text, lines[f]))
     if out[0]["from"] == "headline":
-        synth.headline = (question or "").strip()[:160]
+        synth.headline = ""
     removed = len(out)
     if record is not None:
         record.extend(out)

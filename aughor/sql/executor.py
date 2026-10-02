@@ -461,7 +461,7 @@ def execute_guarded(
             _steps.append(_trun.door)
             for _f in _trun.findings:
                 emit_guard_receipt("time_order", "flagged", detail=_f.detail(), before=res.sql)
-            return [_f.caveat() for _f in _trun.findings] + _trun.caveats()
+            return [_f.caveat() for _f in _trun.findings] + _trun.notes + _trun.caveats()
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "the time-order guard is advisory; the result proceeds uncaveated",

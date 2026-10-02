@@ -1417,7 +1417,7 @@ def build_parent_fanout_rewrite(sql: str, finding: "FanoutIssue", dialect: str =
         sel = sqlglot.parse_one(sql, read=dialect)
     except Exception:
         return None
-    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+    if not isinstance(sel, exp.Select) or sel.args.get("with_") or sel.args.get("with"):
         return None  # only a single flat SELECT (detect_fanout already excludes CTE sources)
 
     alias_to_table = {(t.alias_or_name or "").lower(): t.name.lower() for t in sel.find_all(exp.Table)}
@@ -1554,7 +1554,7 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutIssue", dialect: str = 
         sel = sqlglot.parse_one(sql, read=dialect)
     except Exception:
         return None
-    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+    if not isinstance(sel, exp.Select) or sel.args.get("with_") or sel.args.get("with"):
         return None
 
     alias_to_table = {(t.alias_or_name or "").lower(): t.name.lower() for t in sel.find_all(exp.Table)}
@@ -1786,7 +1786,7 @@ def _extract_dim_ratio(sql: str, table_cols: dict | None = None, dialect: str = 
         sel = sqlglot.parse_one(sql, read=dialect)
     except Exception:
         return None
-    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+    if not isinstance(sel, exp.Select) or sel.args.get("with_") or sel.args.get("with"):
         return None  # CTE/derived sources are already the fix
 
     # Exactly two RAW base tables (FROM + one JOIN), no subqueries.

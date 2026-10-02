@@ -27,7 +27,7 @@ export function turnToTraceState(turn: ChatTurn, running: boolean): Investigatio
     cachedQuestion: turn.cachedQuestion,
     humanFeedback: null,
     queryMode: turn.queryMode as InvestigationState["queryMode"],
-    routeReasoning: null,
+    routeReasoning: shapeReading(turn.route?.shape || turn.deepReport?.question_shape),
     routeConfidence: null,
     subQuestions: turn.subQuestions,
     subqAnswers: turn.subqAnswers,
@@ -35,6 +35,12 @@ export function turnToTraceState(turn: ChatTurn, running: boolean): Investigatio
     investigationPhases: turn.phases,
     deepReport: turn.deepReport,
   };
+}
+
+/** What the route step says of a question's shape: a describe answer measured what was asked and
+ *  tested no hypotheses — "Multi-hypothesis analysis" was said of every Agent answer. */
+export function shapeReading(shape?: string | null): string | null {
+  return shape === "describe" ? "Measured what was asked" : null;
 }
 
 type StepStatus = "pending" | "running" | "done" | "error";

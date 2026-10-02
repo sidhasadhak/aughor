@@ -173,3 +173,14 @@ def test_a_catalogue_that_cannot_be_read_leaves_notes_routed_as_before(monkeypat
         raise OSError("catalogue unreadable")
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", _unreadable)
     assert _propose(note="revenue and units_sold are calculated excluding cancelled").action == "applied"
+
+
+def test_a_note_a_person_cleared_is_not_written_back_by_an_agent():
+    """Clearing a note is durable intent (2026-10-02): the person's "not this" is the authority, so the
+    agent's next note on that column waits for their review instead of applying directly."""
+    assert _propose().action == "applied"
+    set_column_flags("c1", "public", "orders", "amount", note="")
+    out = _propose()
+    assert out.ok and out.action == "staged", out
+    assert "cleared this column's note" in out.reason
+    assert load_table_config("c1", "public", "orders")["amount"].note == ""

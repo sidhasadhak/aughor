@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { ReportView } from "@/components/ReportView";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
-import { ThinkingTrace } from "@/components/ThinkingTrace";
+import { ThinkingTrace, shapeReading } from "@/components/ThinkingTrace";
 import { SourcePanel, type SourcePanelData } from "@/components/ChatMessage";
 import { formatTimestamp } from "@/lib/format";
 import type { Hypothesis, QueryCitation, Report, AnswerReport, ExplorationReport, SubQuestion, SubQuestionAnswer, InvestigationState } from "@/lib/types";
@@ -56,7 +56,7 @@ function investigationToTraceState(
     cachedQuestion: null,
     humanFeedback: null,
     queryMode,
-    routeReasoning: null,
+    routeReasoning: shapeReading(deep?.question_shape),
     routeConfidence: null,
     subQuestions: (reportRaw?.sub_questions ?? []) as SubQuestion[],
     subqAnswers: (reportRaw?.subq_answers ?? []) as SubQuestionAnswer[],

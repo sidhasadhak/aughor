@@ -138,3 +138,25 @@ describe("the clipboard", () => {
       .toBe("<table><thead><tr><th>&lt;b&gt;</th></tr></thead><tbody><tr><td>a &amp; &quot;b&quot;</td></tr></tbody></table>");
   });
 });
+
+describe("a result table's money", () => {
+  it("reads to the cent", () => {
+    render(<SqlResultTable columns={["total_revenue"]} rows={[["359224.30043935776"], ["-5421.8"]]} />);
+    expect(screen.getByText("359,224.30")).toBeTruthy();
+    expect(screen.getByText("-5,421.80")).toBeTruthy();
+  });
+});
+
+describe("the source panel behind an answer's figure", () => {
+  it("shows the figure whole and downloads through the one CSV writer", async () => {
+    const { SourcePanel } = await import("@/components/ChatMessage");
+    render(<SourcePanel columns={["units_sold"]} rows={[["7027"]]} sql="SELECT COUNT(id) AS units_sold FROM inventory_items"
+                        title="Units sold — Jul 2026" onClose={() => {}} />);
+    expect(screen.getByText("7,027")).toBeTruthy();
+    expect(screen.queryByText("7.0K")).toBeNull();
+    fireEvent.click(screen.getByTitle("Download as CSV"));
+    const [name, body] = vi.mocked(downloadCsv).mock.calls[0];
+    expect(name).toMatch(/^units-sold-jul-2026-\d{4}-/);
+    expect(body).toBe("units_sold\r\n7027");
+  });
+});

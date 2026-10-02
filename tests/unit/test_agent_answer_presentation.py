@@ -29,13 +29,13 @@ CENTRES = (["distribution_center", "avg_hours_to_ship", "avg_hours_to_deliver", 
 # ── A result is titled by what it measures and what it is cut by ──────────────────────
 
 def test_a_rate_beside_its_own_parts_titles_the_result():
-    assert _adhoc_title(*COHORTS[:1], QUESTION, "", COHORTS[1]) == "repeat_rate by cohort_month"
-    assert _adhoc_title(*SOURCES[:1], QUESTION, "", SOURCES[1]) == "repeat_rate by traffic_source"
+    assert _adhoc_title(*COHORTS[:1], QUESTION, "", COHORTS[1]) == "Repeat rate by cohort month"
+    assert _adhoc_title(*SOURCES[:1], QUESTION, "", SOURCES[1]) == "Repeat rate by traffic source"
 
 
 def test_an_average_stands_for_the_count_it_was_taken_over():
     assert (_adhoc_title(*CENTRES[:1], "q", "", CENTRES[1])
-            == "avg_hours_to_ship and avg_hours_to_deliver by distribution_center")
+            == "Avg hours to ship and avg hours to deliver by distribution center")
 
 
 def test_two_measures_on_one_row_are_both_named():
@@ -43,30 +43,30 @@ def test_two_measures_on_one_row_are_both_named():
     overall_avg_placed_to_shipped_days" — one measure cut by the other."""
     cols = ["overall_avg_placed_to_shipped_days", "overall_avg_shipped_to_delivered_days"]
     assert _adhoc_title(cols, "q", "", [["1.4981", "2.4970"]]) == (
-        "overall_avg_placed_to_shipped_days and overall_avg_shipped_to_delivered_days")
+        "Overall avg placed to shipped days and overall avg shipped to delivered days")
     # a cut still reads "measure by cut" — on one row, and a number down many rows is the cut
-    assert _adhoc_title(["category", "revenue"], "q", "", [["Jeans", "220935.5"]]) == "revenue by category"
-    assert _adhoc_title(["age", "users"], "q", "", [["30", "120"], ["31", "95"]]) == "users by age"
+    assert _adhoc_title(["category", "revenue"], "q", "", [["Jeans", "220935.5"]]) == "Revenue by category"
+    assert _adhoc_title(["age", "users"], "q", "", [["30", "120"], ["31", "95"]]) == "Users by age"
 
 
 def test_a_rate_whose_parts_do_not_divide_into_it_is_one_measure_among_others():
     rows = [["Email", "901", "106", "0.2"], ["Search", "12351", "1157", "0.3"]]
     assert _adhoc_title(SOURCES[0], "q", "", rows) == (
-        "total_first_time_customers, repeat_customers and repeat_rate by traffic_source")
+        "Total first time customers, repeat customers and repeat rate by traffic source")
 
 
 def test_a_rate_written_as_a_rounded_percentage_still_finds_its_parts():
     cols = ["country", "customers", "repeaters", "repeat_pct"]
     rows = [["Belgium", "233", "25", "10.7"], ["Australia", "406", "30", "7.4"]]
-    assert _adhoc_title(cols, "q", "", rows) == "repeat_pct by country"
+    assert _adhoc_title(cols, "q", "", rows) == "Repeat pct by country"
     rows[1][3] = "7.6"                                  # 7.39 is not 7.6 at one decimal
-    assert _adhoc_title(cols, "q", "", rows).startswith("customers, repeaters and repeat_pct")
+    assert _adhoc_title(cols, "q", "", rows).startswith("Customers, repeaters and repeat pct")
 
 
 def test_the_scope_still_rides_and_rows_that_say_nothing_keep_the_question():
     sql = "SELECT … FROM orders WHERE created_at >= '2025-01-01' AND created_at < '2026-01-01'"
     assert _adhoc_title(*COHORTS[:1], QUESTION, sql, COHORTS[1]) == (
-        "repeat_rate by cohort_month — 2025-01-01 → 2025-12-31")      # `< 2026-01-01` ends on 12-31
+        "Repeat rate by cohort month — 2025")      # `< 2026-01-01` ends on 12-31: the whole year
     assert _adhoc_title(*COHORTS[:1], QUESTION, "", None) == QUESTION[:80]
 
 
@@ -83,16 +83,16 @@ def test_a_window_ends_on_the_last_day_it_includes():
     said its period ended on 09-03 — the half-open bound printed as the end."""
     def title(where: str) -> str:
         return _adhoc_title(TOTALS, "q", LINES + where, ONE_ROW)
-    assert title(JULY) == "total_revenue and units_sold — 2026-07-01 → 2026-07-31"
-    assert title("created_at >= '2026-07-01' AND created_at <= '2026-07-31'").endswith("— 2026-07-01 → 2026-07-31")
+    assert title(JULY) == "Total revenue and units sold — Jul 2026"
+    assert title("created_at >= '2026-07-01' AND created_at <= '2026-07-31'").endswith("— Jul 2026")
     assert title("created_at >= TIMESTAMP '2026-07-01' AND created_at < TIMESTAMP '2026-08-01 00:00:00'"
-                 ).endswith("— 2026-07-01 → 2026-07-31")
+                 ).endswith("— Jul 2026")
     # a bound that is not the start of a day keeps part of that day
-    assert title("created_at >= '2026-07-01' AND created_at < '2026-08-01 12:00:00'").endswith("→ 2026-08-01")
-    assert title("created_at >= '2026-07-01' AND created_at < '2026-07-02'").endswith("— 2026-07-01")
+    assert title("created_at >= '2026-07-01' AND created_at < '2026-08-01 12:00:00'").endswith("— 1 Jul – 1 Aug 2026")
+    assert title("created_at >= '2026-07-01' AND created_at < '2026-07-02'").endswith("— 1 Jul 2026")
     # an observation and its comparison read as the span they cover, earliest first
     assert title("(created_at >= '2026-07-01' AND created_at < '2026-08-01') OR "
-                 "(created_at >= '2026-06-01' AND created_at < '2026-07-01')").endswith("— 2026-06-01 → 2026-07-31")
+                 "(created_at >= '2026-06-01' AND created_at < '2026-07-01')").endswith("— Jun – Jul 2026")
 
 
 def test_three_results_over_different_rows_get_three_titles():
@@ -103,12 +103,12 @@ def test_three_results_over_different_rows_get_three_titles():
     titles = [_adhoc_title(TOTALS, "q", f"{LINES}{JULY} AND {cond}", ONE_ROW, declared=declared,
                            dialect="bigquery")
               for cond in ("status = 'Cancelled'", "status != 'Cancelled'", "status = 'Complete'")]
-    assert titles == ["total_revenue and units_sold where status = Cancelled — 2026-07-01 → 2026-07-31",
-                      "total_revenue and units_sold — 2026-07-01 → 2026-07-31",
-                      "total_revenue and units_sold where status = Complete — 2026-07-01 → 2026-07-31"]
+    assert titles == ["Total revenue and units sold where status = Cancelled — Jul 2026",
+                      "Total revenue and units sold — Jul 2026",
+                      "Total revenue and units sold where status = Complete — Jul 2026"]
     # with no metric declaring it, the exclusion is the query's own and is named
     assert _adhoc_title(TOTALS, "q", f"{LINES}{JULY} AND status != 'Cancelled'", ONE_ROW) == (
-        "total_revenue and units_sold where status ≠ Cancelled — 2026-07-01 → 2026-07-31")
+        "Total revenue and units sold where status ≠ Cancelled — Jul 2026")
 
 
 def test_a_title_names_lists_and_exclusions_from_the_where_alone():
@@ -117,9 +117,9 @@ def test_a_title_names_lists_and_exclusions_from_the_where_alone():
            "WHERE status IN ('Complete', 'Shipped') AND country NOT IN ('Spain') "
            "AND order_month = '2026-07-01' GROUP BY 1")
     assert _adhoc_title(cols, "q", sql, rows) == (
-        "revenue by category where status in Complete, Shipped, country not in Spain")
+        "Revenue by category where status in Complete, Shipped, country not in Spain")
     many = "SELECT category, SUM(x) AS revenue FROM t WHERE status IN ('A', 'B', 'C', 'D') GROUP BY 1"
-    assert _adhoc_title(cols, "q", many, rows) == "revenue by category where status in A, B, C and 1 more"
+    assert _adhoc_title(cols, "q", many, rows) == "Revenue by category where status in A, B, C and 1 more"
 
 
 COUNTRIES = (["country", "total_first_orders", "repeat_customers", "repeat_rate"],
@@ -174,7 +174,7 @@ def test_the_analyst_records_one_title_for_the_phase_and_its_finding():
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": QUESTION, "investigation_phases": []})
     _record_evidence(turn, {"sql": "SELECT 1"}, {"columns": COHORTS[0], "rows": COHORTS[1], "row_count": 3})
     phase = turn.state["investigation_phases"][-1]
-    assert phase["phase_name"] == phase["findings"][0]["title"] == "repeat_rate by cohort_month"
+    assert phase["phase_name"] == phase["findings"][0]["title"] == "Repeat rate by cohort month"
 
 
 # ── The PDF prints the answer as it is written, and a title once ──────────────────────
@@ -275,3 +275,16 @@ def test_a_result_a_corrected_rerun_replaced_is_not_printed(monkeypatch):
         phase("adhoc_3", "the re-run"), phase("adhoc_2", "the flagged one", _hidden=True, superseded_by="adhoc_3")]}}
     doc = D.build_export_doc(inv)
     assert [b.text for b in doc.blocks if b.kind == "heading"] == ["the re-run"]
+
+
+def test_a_title_is_written_in_words_a_reader_reads():
+    """"units_sold — 2026-07-01 → 2026-07-31" titled Q1's figure and its source (2026-10-02): column
+    names are for SQL, and a reader says a period, not its first and last ISO days."""
+    from aughor.agent.analyst import _window_words, _words
+    assert _words("units_sold") == "units sold" and _words("avg_aov_usd") == "avg AOV USD"
+    assert [_window_words(w) for w in ("2026-07-01 → 2026-07-31", "2025-08-01 → 2026-08-31",
+                                       "2025-01-01 → 2025-12-31", "2026-03-04 → 2026-09-03",
+                                       "2026-07-01 → 2026-07-15", "2025-12-15 → 2026-01-14",
+                                       "2026-07-01", "not a window")] == [
+        "Jul 2026", "Aug 2025 – Aug 2026", "2025", "4 Mar – 3 Sep 2026",
+        "1–15 Jul 2026", "15 Dec 2025 – 14 Jan 2026", "1 Jul 2026", "not a window"]

@@ -266,3 +266,23 @@ def test_the_intake_ties_its_further_measures_and_says_so_in_the_spec(run, monke
     assert ["Measure", "units sold (COUNT(id)) — the governed units_sold on inventory_items, dated by sold_at, "
                        "over rows where sold_at IS NOT NULL"] in rows
     assert spec["measure_definitions"][0]["date_column"] == "sold_at"
+
+
+def test_columns_that_identify_people_are_not_offered_as_dimensions(monkeypatch):
+    """Q5's intake (2026-10-01) offered `users.email` to group by: a cut by it lists customers one row each."""
+    from types import SimpleNamespace
+    from aughor.agent import investigate as I
+    from aughor.tools import profile_cache
+    monkeypatch.setattr(profile_cache, "load_concepts", lambda conn: {("users", "contact"): "contact.email"})
+    intake = SimpleNamespace(intake_notes="", dimensions=[
+        "users.email", "users.country", "users.traffic_source", "users.first_name", "users.contact",
+        "orders.status", "users.user_email", "products.brand"])
+    assert I._drop_identifying_dimensions(intake, "c") == ["users.email", "users.first_name", "users.contact",
+                                                          "users.user_email"]
+    assert intake.dimensions == ["users.country", "users.traffic_source", "orders.status", "products.brand"]
+    assert intake.intake_notes.startswith("NOT OFFERED AS DIMENSIONS: users.email")
+    assert I._drop_identifying_dimensions(SimpleNamespace(intake_notes="", dimensions=["users.state"]), "") == []
+    # a flag or a domain is a cut, not a person
+    kept = SimpleNamespace(intake_notes="", dimensions=["events.is_mobile", "users.email_opt_in", "users.email_domain",
+                                                        "users.phone_number", "users.mobile"])
+    assert I._drop_identifying_dimensions(kept, "") == ["users.phone_number", "users.mobile"]

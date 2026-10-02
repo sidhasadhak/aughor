@@ -67,6 +67,7 @@ def test_the_describe_rule_asks_for_the_answer_not_a_cause():
     described = analyst_system_prompt("c", {}, 12, shape="describe")
     diagnosed = analyst_system_prompt("c", {}, 12)
     assert "asks to SEE the data" in described and "`totals`" in described
+    assert "one that announces what follows" in described, "Q2's opener announced its table (2026-10-02)"
     assert "cause is named WITH ITS SIZE" not in described
     assert "cause is named WITH ITS SIZE" in diagnosed
 
@@ -83,6 +84,33 @@ def test_the_lead_sentence_heads_the_answer_and_a_table_first_answer_has_no_head
         "Fulfilment takes about 3 days at every centre", CONCLUSION.split("\n\n", 1)[1])
     table_first = "| a | b |\n| - | - |\n| 1 | 2 |"
     assert I._lead_sentence(table_first) == ("", table_first)
+
+
+Q2 = ("Which 10 product categories brought in the most revenue in the last 6 months, and what is the "
+      "average order value for each?")
+TABLE = "| Category | Revenue |\n| :--- | :--- |\n| Outerwear & Coats | $237,836.63 |"
+
+
+def test_a_lead_that_announces_the_answer_does_not_head_it():
+    """Q2's answer (2026-10-02) opened "The following table lists the 10 product categories … between
+    March 4, 2026, and September 3, 2026": its numbers were the question's and the period's."""
+    announced = ("The following table lists the 10 product categories with the highest revenue between "
+                 "March 4, 2026, and September 3, 2026, along with their average order value (AOV).\n\n" + TABLE)
+    assert I._lead_sentence(announced, Q2) == ("", announced)
+    answered = "Outerwear & Coats brought in the most, $237,836.63, of the 10.\n\n" + TABLE
+    assert I._lead_sentence(answered, Q2) == ("Outerwear & Coats brought in the most, $237,836.63, of the 10", TABLE)
+
+
+def test_a_long_lead_heads_the_answer_by_its_first_clause_and_a_sentence_runs_past_vs():
+    clause = "Outerwear & Coats led with $237,836.63 at an AOV of $150.82"
+    tail = "jeans followed with $214,128.38, " + ", ".join(f"category {i} with ${i},000" for i in range(12))
+    head, body = I._lead_sentence(f"{clause}; {tail}.\n\n{TABLE}", Q2)
+    assert head == clause and body.startswith("Jeans followed with $214,128.38") and body.endswith(TABLE)
+    unbroken = "Revenue rose " + " ".join(f"by {i} points" for i in range(60)) + "."
+    head, body = I._lead_sentence(unbroken)
+    assert head.endswith("…") and len(head) <= 241 and body == unbroken
+    assert I._lead_sentence("July was $117,163.37 vs. $98,000 in June. Then more.")[0] == (
+        "July was $117,163.37 vs. $98,000 in June")
 
 
 def test_only_a_describe_question_with_a_conclusion_is_answered_in_the_analysts_words():

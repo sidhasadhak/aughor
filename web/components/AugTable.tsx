@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme, type ThemeConfig } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
-import { cleanLabel, formatTableNumber, formatPercent, displayCellValue } from "@/lib/format";
+import { cleanLabel, formatMoney, formatTableNumber, formatPercent, displayCellValue } from "@/lib/format";
 import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
 import { sqlColKey, sqlRowObjects } from "@/lib/sqlTable";
 import { useOrgSettings } from "@/lib/useOrgSettings";
@@ -155,13 +155,13 @@ function fmt(col: string, v: unknown): React.ReactNode {
       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatPercent(n, 1)}</span>;
     }
   }
-  // Monetary columns — prefix the configured reporting currency symbol (when one is set).
+  // Monetary columns — to the cent, with the currency symbol when one is known. A column that names
+  // its own currency (refund_chf → CHF) overrides the workspace default. 359,224.30 read "359,224.3"
+  // (2026-10-02): an amount that drops its last zero reads unlike the cents beside it.
   if (isMoneyColumn(col)) {
     const money = Number(v);
-    // A column that names its own currency (refund_chf → CHF) overrides the workspace default.
-    const sym = columnCurrencySymbol(col);
-    if (sym && !isNaN(money) && s.trim() !== "") {
-      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{sym}{formatTableNumber(money)}</span>;
+    if (!isNaN(money) && s.trim() !== "") {
+      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatMoney(money, columnCurrencySymbol(col))}</span>;
     }
   }
   // Large / numeric cells — the FULL number with separators, never K/M/B: a column is read

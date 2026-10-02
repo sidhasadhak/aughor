@@ -142,6 +142,42 @@ def _adhoc_window(text: str) -> str:
     return days[0] if len(days) == 1 else f"{days[0]} → {days[-1]}"
 
 
+_MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+#: Initialisms a column name spells — the set web/lib/format.ts `ABBREVS` upper-cases in a label.
+_INITIALISMS = frozenset("usd id uk us eu vat sku url api crm gmv mrr arr ltv cac ctr aov roi pnl gp kpi "
+                         "cogs nps arpu cpa cpc cpm sla sql etl csv upc ean gtin ytd mtd qtd yoy".split())
+
+
+def _words(name: str) -> str:
+    """A column's name as words — ``units_sold`` → "units sold", ``aov`` → "AOV". Names are for SQL;
+    a title is read (2026-10-02: "units_sold — 2026-07-01 → 2026-07-31" over Q1's figure)."""
+    return " ".join(w.upper() if w.lower() in _INITIALISMS else w
+                    for w in re.split(r"[_\s]+", str(name or "").strip()) if w)
+
+
+def _window_words(window: str) -> str:
+    """``_adhoc_window``'s days as a reader says them: a whole month "Jul 2026", whole months
+    "Aug 2025 – Aug 2026", a whole year "2025", days "4 Mar – 3 Sep 2026" or "1–31 Jul 2026"
+    trimmed of what they share. Anything else is left as written."""
+    try:
+        days = [date.fromisoformat(p.strip()) for p in window.split("→")]
+    except ValueError:
+        return window
+    m = lambda d: _MONTH_ABBR[d.month - 1]                       # noqa: E731
+    if len(days) == 1:
+        return f"{days[0].day} {m(days[0])} {days[0].year}"
+    a, b = days[0], days[-1]
+    if a.day == 1 and (b + timedelta(days=1)).day == 1:          # whole months
+        if a.year == b.year and a.month == 1 and b.month == 12:
+            return str(a.year)
+        if (a.year, a.month) == (b.year, b.month):
+            return f"{m(a)} {a.year}"
+        return f"{m(a)} – {m(b)} {a.year}" if a.year == b.year else f"{m(a)} {a.year} – {m(b)} {b.year}"
+    if a.year != b.year:
+        return f"{a.day} {m(a)} {a.year} – {b.day} {m(b)} {b.year}"
+    return f"{a.day}–{b.day} {m(a)} {a.year}" if a.month == b.month else f"{a.day} {m(a)} – {b.day} {m(b)} {a.year}"
+
+
 def _and_parts(node: Any) -> list:
     from sqlglot import exp
     while isinstance(node, exp.Paren):
@@ -162,13 +198,13 @@ def _value_filter(cond: Any) -> str:
         col, lit = (node.this, node.expression) if isinstance(node.this, exp.Column) else (node.expression, node.this)
         if not isinstance(col, exp.Column) or not isinstance(lit, exp.Literal) or _ADHOC_DATEY.search(col.name):
             return ""
-        return f"{col.name} {'=' if isinstance(node, exp.EQ) != negated else '≠'} {lit.this}"
+        return f"{_words(col.name)} {'=' if isinstance(node, exp.EQ) != negated else '≠'} {lit.this}"
     if (isinstance(node, exp.In) and isinstance(node.this, exp.Column) and node.expressions
             and all(isinstance(e, exp.Literal) for e in node.expressions)
             and not _ADHOC_DATEY.search(node.this.name)):
         values = [str(e.this) for e in node.expressions]
         listed = ", ".join(values[:3]) + (f" and {len(values) - 3} more" if len(values) > 3 else "")
-        return f"{node.this.name} {'not in' if negated else 'in'} {listed}"
+        return f"{_words(node.this.name)} {'not in' if negated else 'in'} {listed}"
     return ""
 
 
@@ -347,7 +383,7 @@ def _measured_cut(cols: list, rows: Any) -> str:
         return ""
 
     def _listed(names: list) -> str:
-        names = names[:3] + ([f"{len(names) - 3} more"] if len(names) > 3 else [])
+        names = [_words(n) for n in names[:3]] + ([f"{len(names) - 3} more"] if len(names) > 3 else [])
         return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
     return f"{_listed(measures)} by {_listed(cuts)}" if cuts else _listed(measures)
@@ -365,9 +401,9 @@ def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None, 
         # One row cuts nothing: two measures side by side are "a and b" — Q4's overall row
         # (2026-10-01) was titled "overall_avg_shipped_… by overall_avg_placed_…".
         one_row = isinstance(rows, (list, tuple)) and len(rows) == 1
-        base = (_measured_cut(cols, rows) if one_row else "") or f"{cols[1]} by {cols[0]}"
+        base = (_measured_cut(cols, rows) if one_row else "") or f"{_words(cols[1])} by {_words(cols[0])}"
     elif len(cols) == 1:
-        base = str(cols[0])
+        base = _words(cols[0])
     else:
         base = _measured_cut(cols, rows)
         if not base:
@@ -377,9 +413,10 @@ def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None, 
         kept = ", ".join(_adhoc_filters(text, declared, dialect)[:3]) if text else ""
     except Exception:                     # noqa: BLE001 — a statement that does not parse names no filter
         kept = ""
-    window = _adhoc_window(text)
+    window = _window_words(_adhoc_window(text))
     title = f"{base} where {kept if len(kept) <= 60 else kept[:59] + '…'}" if kept else base
-    return f"{title} — {window}" if window else title
+    title = f"{title} — {window}" if window else title
+    return title[:1].upper() + title[1:]
 
 
 def _declared_filters(turn: "AnalystTurn", dialect: str) -> list[str]:
@@ -1271,7 +1308,9 @@ def _describe_rules(budget: int) -> list[str]:
         "",
         "When you stop, write the answer the reader will read, in plain prose. Open with "
         "the answer itself in one sentence, with its figures — what leads, what trails, by "
-        "how much — never a definition or a restatement of the question. Groups within a "
+        "how much — never a definition or a restatement of the question. That sentence is the "
+        "headline the reader sees first: it states a figure read from a row, and one that "
+        "announces what follows (\"The following table lists…\") answers nothing. Groups within a "
         "few percent of each other are alike: say so with their range — the lowest and the "
         "highest group's own value, each read from a row — and name no leader or laggard "
         "the data does not separate. Then "
@@ -1557,6 +1596,9 @@ def run_analyst(
             logger.warning("analyst: synthesis failed; the phases stand without a report",
                            exc_info=True)
     if report is not None:
+        # The question's shape rides the report — a describe answer measured what was asked and
+        # tested no hypotheses, and the trace said "Multi-hypothesis analysis" over every one.
+        report["question_shape"] = shape
         emit("tables_used", {"tables": sorted({
             str(t) for p in (state.get("investigation_phases") or [])
             for f in (p.get("findings") or [])

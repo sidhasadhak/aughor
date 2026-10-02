@@ -491,3 +491,47 @@ def test_the_pin_carries_the_filter_only_onto_the_declared_table(monkeypatch, sp
     note = I._pin_canonical_metric(intake, "c1", "", None)
     assert intake.metric_filters == carried
     assert ("declared over rows where status <> 'Cancelled'" in (note or "")) == bool(carried)
+
+
+# ── A person's own SQL is told, never rewritten (2026-10-02) ──────────────────────────
+# "SQL run in the SQL Editor skips the declared-filter guard, so a hand-written SUM(sale_price) quietly
+# includes cancelled lines" — the user chose: run it as written, and say what it is not.
+
+def _catalogue(monkeypatch):
+    from aughor.semantic import metrics as M
+    net = _metric(name="net_merchandise_revenue", label="Net Merchandise Revenue",
+                  filters=["status NOT IN ('Cancelled', 'Returned')"])
+    units = _metric(name="units_sold", label="Units Sold", sql="COUNT(id)",
+                    tables=["inventory_items"], filters=["sold_at IS NOT NULL"])
+    draft = _metric(name="gross", label="Gross", status="proposed", filters=["status = 'Complete'"])
+    monkeypatch.setattr(M, "list_metrics", lambda connection_id=None: [_metric(), net, units, draft])
+
+
+def test_a_statement_measuring_a_declared_metric_without_its_filter_is_told(monkeypatch):
+    _catalogue(monkeypatch)
+    notes = E.declared_filter_notes("SELECT SUM(sale_price) FROM order_items", "c", "bigquery")
+    assert len(notes) == 1, "one formula over one table is one note, naming every metric it is declared as"
+    note = notes[0]
+    assert note.startswith("declared filter: SUM(sale_price) over order_items is declared as Revenue "
+                           "(status <> 'Cancelled') and Net Merchandise Revenue")
+    assert "applies neither filter" in note and note.endswith("It ran as written.")
+    units = " ".join(E.declared_filter_notes("SELECT COUNT(id) AS n FROM inventory_items", "c", "bigquery"))
+    assert "the declared metric Units Sold, which keeps sold_at IS NOT NULL" in units
+
+
+def test_a_statement_that_deals_with_the_filter_is_told_nothing(monkeypatch):
+    _catalogue(monkeypatch)
+    for sql in ("SELECT SUM(sale_price) FROM order_items WHERE status <> 'Cancelled'",
+                "SELECT status, SUM(sale_price) FROM order_items GROUP BY status",
+                "SELECT COUNT(id) FROM inventory_items WHERE sold_at IS NOT NULL",
+                "SELECT COUNT(*) FROM users"):
+        assert E.declared_filter_notes(sql, "c", "bigquery") == [], sql
+    assert E.declared_filter_notes("", "c") == [] and E.declared_filter_notes("SELECT 1", "") == []
+
+
+def test_the_editors_run_carries_the_note(client, monkeypatch):
+    from aughor.semantic import enforcement
+    monkeypatch.setattr(enforcement, "declared_filter_notes", lambda sql, conn, dialect="duckdb": ["told"])
+    r = client.post("/query/run", json={"conn_id": "fixture", "sql": "SELECT 1 AS one", "use_cache": False})
+    assert r.status_code == 200
+    assert "told" in r.json()["caveats"] and r.json()["rows"]
