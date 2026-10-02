@@ -26,6 +26,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { renderEmphasis } from "@/components/brief/BriefProse";
+import { ProseTable } from "@/components/TableActions";
 
 /** A bare id in prose — a uuid, or the repo's own prefixed ids (`ua_…`, `sb_…`). */
 const ID_RE =
@@ -142,12 +143,8 @@ const COMPONENTS = {
       {children}
     </pre>
   ),
-  // The table treatment BriefProse established, kept identical here.
-  table: ({ children }: ElProps) => (
-    <div className="overflow-x-auto my-2">
-      <table className="aug-text-ui border-collapse">{children}</table>
-    </div>
-  ),
+  // The table treatment BriefProse established, kept identical here — with Copy and CSV.
+  table: ({ children }: ElProps) => <ProseTable>{children}</ProseTable>,
   th: ({ children }: ElProps) => (
     <th className="text-left font-medium text-zinc-400 px-2 py-1 border-b border-zinc-700">
       {withInline(children)}

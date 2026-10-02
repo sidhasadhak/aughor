@@ -15,6 +15,7 @@
 
 import React from "react";
 import { localizeCurrency } from "@/lib/orgSettings";
+import { ProseTable } from "@/components/TableActions";
 
 const EMPHASIS_RE = /(\*\*[^*]+\*\*|\*[^*\n]+\*)/g;
 
@@ -121,30 +122,28 @@ export function renderProseBlocks(text: string): React.ReactNode[] {
       if (body.length) {
         flush();
         out.push(
-          <div key={`t${out.length}`} className="overflow-x-auto my-2">
-            <table className="aug-text-ui border-collapse">
-              <thead>
-                <tr>
-                  {header.map((h, hi) => (
-                    <th key={hi} className="text-left font-medium text-zinc-400 px-2 py-1 border-b border-zinc-700">
-                      {renderEmphasis(h)}
-                    </th>
+          <ProseTable key={`t${out.length}`}>
+            <thead>
+              <tr>
+                {header.map((h, hi) => (
+                  <th key={hi} className="text-left font-medium text-zinc-400 px-2 py-1 border-b border-zinc-700">
+                    {renderEmphasis(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {body.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((c, ci) => (
+                    <td key={ci} className="text-zinc-300 px-2 py-1 border-b border-zinc-800 whitespace-nowrap">
+                      {renderEmphasis(c)}
+                    </td>
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {body.map((row, ri) => (
-                  <tr key={ri}>
-                    {row.map((c, ci) => (
-                      <td key={ci} className="text-zinc-300 px-2 py-1 border-b border-zinc-800 whitespace-nowrap">
-                        {renderEmphasis(c)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>,
+              ))}
+            </tbody>
+          </ProseTable>,
         );
         i = j - 1;
         continue;

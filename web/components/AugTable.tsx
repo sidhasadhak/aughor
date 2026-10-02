@@ -17,6 +17,7 @@ import { cleanLabel, formatTableNumber, formatPercent, displayCellValue } from "
 import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
 import { sqlColKey, sqlRowObjects } from "@/lib/sqlTable";
 import { useOrgSettings } from "@/lib/useOrgSettings";
+import { rawCells, TableActions } from "@/components/TableActions";
 
 // ── Theme-mode hook ──────────────────────────────────────────────────────────
 // Ant Design's theme tokens must be real colors (it derives shades), so we can't
@@ -206,6 +207,8 @@ interface SqlResultTableProps {
   totals?: boolean;
   /** Max rendered width (px) per cell — long text truncates with an ellipsis + tooltip. Default 320. */
   maxColWidth?: number;
+  /** Names the CSV a reader downloads from the table's Copy / CSV actions. Default "table". */
+  name?: string;
 }
 
 export function SqlResultTable({
@@ -215,6 +218,7 @@ export function SqlResultTable({
   columnOverrides = {},
   totals = true,
   maxColWidth = 320,
+  name = "table",
 }: SqlResultTableProps) {
   // Re-render when org settings change (currency/date) so the inline cell formatting
   // below re-reads them — tables previously read at render but never subscribed.
@@ -310,15 +314,19 @@ export function SqlResultTable({
 
   return (
     <div className="flex flex-col gap-1.5">
-      {showToggle && (
+      {rows.length > 0 && (
         <div className="flex items-center">
-          <button
+          {showToggle && (<button
             onClick={() => setShowTotals(v => !v)}
             title="Show a totals row summing numeric columns"
             className={`aug-fs-xs px-2 py-0.5 rounded border transition-colors ${showTotals ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
           >
             Σ Totals {showTotals ? "on" : "off"}
-          </button>
+          </button>)}
+          {/* Every row, raw: the grid shows a hundred a page, and its header is a separate table. */}
+          <div className="ml-auto">
+            <TableActions name={name} read={() => ({ columns, rows: rawCells(rows as unknown[][]) })} />
+          </div>
         </div>
       )}
       <AugTable<Record<string, unknown>>
