@@ -219,3 +219,50 @@ def test_a_window_dated_but_not_named_is_named_from_its_dates(run):
                      observation_start="2025-01-01", observation_end="2025-12-31", observation_label="")
     assert spec["observation_label"] == "January–December 2025"
     assert ["Observation", "January–December 2025 (2025-01-01 → 2025-12-31)"] in rows
+
+
+# ── Each further measure follows its governed definition (2026-10-02) ─────────────────
+
+def test_a_further_measure_follows_its_governed_definition_and_cogs_is_no_count(monkeypatch):
+    """theLook, 2026-10-02: "how many units were sold in July" counted the order lines July's revenue was measured
+    on (6,012); the declared units_sold counts inventory items by the day they sold (7,027). The user's decision:
+    units sold follows the declared metric. And the matcher that took "cost of goods sold" for units_sold on the
+    word "sold" must not now reach a further measure."""
+    from types import SimpleNamespace
+    from aughor.agent.analyst import _spec_section
+    from aughor.agent.prompts_investigate import IntakeMeasure
+    units = SimpleNamespace(name="units_sold", label="Units Sold", sql="COUNT(id)", tables=["inventory_items"],
+                            filters=["sold_at IS NOT NULL"], rank=1)
+    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics", lambda *a, **k: [units])
+    monkeypatch.setattr("aughor.semantic.metrics.get_metric", lambda name, **k: SimpleNamespace(time_column="sold_at"))
+    monkeypatch.setattr(I, "_pinned_metric_runs", lambda conn, cid, table, sql: table == "inventory_items")
+    it = _intake(metric_label="total revenue", metric_sql="SUM(sale_price)", metric_table="order_items")
+    it.other_measures = [IntakeMeasure(label="units sold", sql="COUNT(*)"),
+                         IntakeMeasure(label="cost of goods sold", sql="SUM(cost)")]
+    notes = I._pin_other_measures(it, "c", "", None)
+    assert [m.sql for m in it.other_measures] == ["COUNT(id)", "SUM(cost)"]
+    assert it.measure_definitions == [{"label": "units sold", "metric": "units_sold", "table": "inventory_items",
+                                       "date_column": "sold_at", "filters": ["sold_at IS NOT NULL"]}]
+    assert notes == ["units sold is the governed units_sold: COUNT(id) on inventory_items, dated by sold_at, "
+                     "over rows where sold_at IS NOT NULL."]
+    d = it.model_dump()
+    assert ("also asked: units sold = COUNT(id) — the governed units_sold on inventory_items, dated by sold_at, "
+            "over rows where sold_at IS NOT NULL; measure it on that table, by that date, in a query of its own"
+            in _spec_section(d))
+    assert ("and units sold computed as `COUNT(id)` — the governed units_sold on inventory_items, dated by sold_at"
+            in I._metric_definition_receipt(d))
+
+
+def test_the_intake_ties_its_further_measures_and_says_so_in_the_spec(run, monkeypatch):
+    from types import SimpleNamespace
+    units = SimpleNamespace(name="units_sold", label="Units Sold", sql="COUNT(id)", tables=["inventory_items"],
+                            filters=["sold_at IS NOT NULL"], rank=1)
+    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics", lambda *a, **k: [units])
+    monkeypatch.setattr("aughor.semantic.metrics.get_metric", lambda name, **k: SimpleNamespace(time_column="sold_at"))
+    monkeypatch.setattr(I, "_pinned_metric_runs", lambda conn, cid, table, sql: table == "inventory_items")
+    spec, rows = run(Q1, metric_label="total revenue", metric_sql="SUM(sale_price)",
+                     other_measures=[{"label": "units sold", "sql": "COUNT(*)"}],
+                     observation_start="2026-07-01", observation_end="2026-07-31", observation_label="July 2026")
+    assert ["Measure", "units sold (COUNT(id)) — the governed units_sold on inventory_items, dated by sold_at, "
+                       "over rows where sold_at IS NOT NULL"] in rows
+    assert spec["measure_definitions"][0]["date_column"] == "sold_at"

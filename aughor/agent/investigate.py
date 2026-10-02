@@ -4562,7 +4562,8 @@ def _metric_definition_receipt(intake_data: dict) -> str:
             parts.append(f"over data spanning {coverage}")
         for _m in intake_data.get("other_measures") or []:
             if (_m or {}).get("sql"):
-                parts.append(f"and {(_m.get('label') or 'another measure')} computed as `{_m['sql']}`")
+                parts.append(f"and {(_m.get('label') or 'another measure')} computed as `{_m['sql']}`"
+                             + measure_definition_text(intake_data.get("measure_definitions"), _m.get("label")))
         body = "; ".join(parts)
         return f"{label or 'Metric'} — {body}." if body else ""
     except Exception:
@@ -5657,6 +5658,19 @@ def _is_substitutable_metric_sql(sql: str) -> bool:
     return bool(re.search(r"\b(SUM|COUNT|AVG|MIN|MAX)\s*\(", up))
 
 
+#: The words that make a measure a sum of money, and those that make it a count of things.
+_MONEY_WORDS = frozenset({"revenue", "sales", "sale", "profit", "margin", "cost", "costs", "spend", "gmv",
+                          "income", "earnings", "loss", "losses", "money", "price", "prices", "amount", "value"})
+_COUNT_WORDS = frozenset({"units", "unit", "quantity", "qty", "count", "number"})
+
+
+def _measure_kind(text: str) -> str:
+    """``money`` or ``count`` when a measure's words say only one of them, else ""."""
+    words = set(re.findall(r"[a-z]+", (text or "").lower()))
+    money, count = bool(words & _MONEY_WORDS), bool(words & _COUNT_WORDS)
+    return "money" if money and not count else "count" if count and not money else ""
+
+
 def _match_canonical_metric(metric_label: str, metric_sql: str, metrics: list):
     """Deterministically match the intake's metric to a governed ``CanonicalMetric`` on DISTINCTIVE
     tokens. ``_label_tokens`` drops structural/measure words, so 'Fragrance refund rate' → {fragrance,
@@ -5668,6 +5682,7 @@ def _match_canonical_metric(metric_label: str, metric_sql: str, metrics: list):
     if not label_toks:
         return None
     intake_ratio = _metric_is_ratio(metric_sql, metric_label)
+    label_kind = _measure_kind(metric_label)
     best = None
     best_key = None
     for m in metrics:
@@ -5675,6 +5690,11 @@ def _match_canonical_metric(metric_label: str, metric_sql: str, metrics: list):
             continue
         canon_toks = _label_tokens(f"{getattr(m, 'name', '')} {getattr(m, 'label', '')}")
         if not canon_toks or not canon_toks <= label_toks:
+            continue
+        # A sum of money is never a count of things: units_sold's one distinctive word, "sold", is in "total
+        # cost of goods sold", and COGS was pinned to COUNT(id) (theLook, 2026-09-23).
+        canon_kind = _measure_kind(f"{getattr(m, 'name', '')} {getattr(m, 'label', '')}")
+        if label_kind and canon_kind and label_kind != canon_kind:
             continue
         ratio_align = int(_metric_is_ratio(m.sql, getattr(m, "label", "")) == intake_ratio)
         key = (ratio_align, int(getattr(m, "rank", 0)), len(canon_toks))
@@ -5814,6 +5834,62 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
         f"(the parsed formula was {llm_sql}) — so the breakdown computes on the same decomposable "
         f"definition every run.{_over}"
     )
+
+
+def measure_definition_text(defs, label) -> str:
+    """" — the governed X on T, dated by D, over rows where F" for a further measure tied to its governed
+    definition (`_pin_other_measures`); "" for one that is not."""
+    d = next((d for d in defs or [] if isinstance(d, dict) and d.get("label") == label), None)
+    if not d:
+        return ""
+    return (f" — the governed {d.get('metric')} on {d.get('table')}"
+            + (f", dated by {d['date_column']}" if d.get("date_column") else "")
+            + (f", over rows where {'; '.join(d['filters'])}" if d.get("filters") else ""))
+
+
+def _pin_other_measures(intake, connection_id: str, schema_text: str, conn) -> list[str]:
+    """Tie each further measure the question asks for to its governed definition, as the first is tied: the
+    formula, the table it is declared on, the date that puts its rows in a range, and the rows it is over —
+    recorded on ``intake.measure_definitions`` for the analyst's spec and the report's receipt. Returns a
+    transparency note per measure tied.
+
+    "How many units were sold in July" counted the order lines July's revenue was measured on, with
+    revenue's filter, where the declared units_sold counts inventory items by the day they sold (theLook,
+    2026-10-02: 6,012 against 7,027). The user's decision: units sold follows the declared metric.
+    Fail-open — a measure no governed metric matches, or whose formula does not run on its table, stays
+    as the intake wrote it."""
+    measures = list(getattr(intake, "other_measures", None) or [])
+    if not measures:
+        return []
+    try:
+        from aughor.semantic.canonical import resolve_planning_metrics
+        from aughor.semantic.metrics import get_metric
+        metrics = resolve_planning_metrics(connection_id, schema_text=schema_text or "")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "governed metrics for the further measures are best-effort; each keeps its formula",
+                 counter="deep_analysis.measure_pin")
+        return []
+    notes, defs = [], []
+    for m in measures:
+        cand = _match_canonical_metric(m.label, m.sql, metrics or [])
+        table = next((str(t) for t in (getattr(cand, "tables", None) or []) if str(t).strip()), "") if cand else ""
+        if not table or not _pinned_metric_runs(conn, connection_id, table, cand.sql):
+            continue
+        try:
+            declared = get_metric(cand.name, connection_id=connection_id)
+        except Exception:                       # noqa: BLE001 — a catalogue that does not read gives no date
+            declared = None
+        date_column = str(getattr(declared, "time_column", "") or "")
+        filters = [str(f).strip() for f in (getattr(cand, "filters", None) or []) if str(f).strip()]
+        m.sql = cand.sql
+        defs.append({"label": m.label, "metric": cand.name, "table": table, "date_column": date_column,
+                     "filters": filters})
+        notes.append(f"{m.label} is the governed {cand.name}: {cand.sql} on {table}"
+                     + (f", dated by {date_column}" if date_column else "")
+                     + (f", over rows where {'; '.join(filters)}" if filters else "") + ".")
+    intake.measure_definitions = defs
+    return notes
 
 
 # ── P4 clarify_gate: detect a MATERIAL metric-reading divergence and ask, not guess ────
@@ -6408,6 +6484,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         _pin_note = _pin_canonical_metric(intake, _conn_id, _full_schema, conn)
         if _pin_note:
             _metric_note = f"{_metric_note} {_pin_note}".strip() if _metric_note else _pin_note
+    # Each further measure follows its governed definition too (`_pin_other_measures`).
+    if intake is not None:
+        for _m_note in _pin_other_measures(intake, _conn_id, _full_schema, conn):
+            _metric_note = f"{_metric_note} {_m_note}".strip() if _metric_note else _m_note
 
     # A leakage rate must RISE as money is lost. Bound to SUM(net)/SUM(gross) it measures
     # revenue RETAINED, and every downstream reading inverts with it — the scan ranks
@@ -6588,7 +6668,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             _spec_rows = [r for r in _spec_rows if r[0] != "Comparison"]
     # Every measure the question asked for, not only the first.
     for _i, _m in enumerate(intake.other_measures or [], start=1):
-        _spec_rows.insert(_i, ["Measure", f"{_m.label} ({_m.sql})"])
+        _spec_rows.insert(_i, ["Measure", f"{_m.label} ({_m.sql})"
+                                          + measure_definition_text(intake.measure_definitions, _m.label)])
 
     if _frame_block and _frame is not None and _frame.reading:
         _spec_rows.append(["Read as", _frame.reading])

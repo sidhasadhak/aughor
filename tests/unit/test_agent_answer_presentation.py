@@ -93,6 +93,30 @@ def test_the_groups_too_small_to_compare_are_counted_and_handed_to_the_analyst()
     assert "under `too_few`" in rule and "call no other group small" in rule
 
 
+MONTHLY = (["month", "monthly_revenue", "revenue_change", "pct_change"],
+           [["2026-07-01", "109975.57", "17173.15", "18.5"], ["2025-10-01", "58007.77", "7463.84", "14.77"],
+            ["2025-12-01", "59989.80", "-4261.90", "-6.63"], ["2025-09-01", "50543.93", "NULL", "NULL"]])
+
+
+def test_the_first_period_s_missing_change_is_named_to_the_analyst():
+    """2026-10-02: each month's change was taken inside the twelve months asked; September 2025's came back empty,
+    and the answer called December "the only decline" when September had fallen 9.7% against August."""
+    from aughor.agent.analyst import AnalystTurn, _first_change_missing, _record_evidence, analyst_system_prompt
+    first = {"period": "2025-09-01", "columns": ["revenue_change", "pct_change"]}
+    assert _first_change_missing(*MONTHLY, "2025-09-01") == first
+    with_base = (MONTHLY[0], [r if r[0] != "2025-09-01" else ["2025-09-01", "50543.93", "-5421.84", "-9.69"]
+                              for r in MONTHLY[1]] + [["2025-08-01", "55965.77", "NULL", "NULL"]])
+    assert _first_change_missing(*with_base, "2025-09-01") == {}          # the month before was read too
+    assert _first_change_missing(*MONTHLY, "") == {}                      # no window asked
+    noted = (MONTHLY[0] + ["note"], [r + ([""] if r[0] == "2025-09-01" else ["promo"]) for r in MONTHLY[1]])
+    assert _first_change_missing(*noted, "2025-09-01") == first           # a word missing is no change missing
+    turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": [],
+                                                            "_ada_intake": {"observation_start": "2025-09-01"}})
+    out = _record_evidence(turn, {"sql": "SELECT 1"}, {"columns": MONTHLY[0], "rows": MONTHLY[1], "row_count": 4})
+    assert out.get("first_change_missing") == first                       # read by the model with the rows
+    assert "`first_change_missing`" in analyst_system_prompt("c", {}, 10, shape="describe")
+
+
 def test_the_analyst_records_one_title_for_the_phase_and_its_finding():
     from aughor.agent.analyst import AnalystTurn, _record_evidence
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": QUESTION, "investigation_phases": []})

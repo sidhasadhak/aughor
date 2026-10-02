@@ -235,6 +235,42 @@ def _too_few_to_compare(cols: list, rows: Any) -> dict:
     return out
 
 
+_PERIOD_VALUE_RE = re.compile(r"^\d{4}-\d{2}")
+_EMPTY_CELLS = frozenset({"", "null", "none", "nan"})
+
+
+def _first_change_missing(cols: list, rows: Any, observation_start: str) -> dict:
+    """``{"period", "columns"}`` when the FIRST period the question asks about has no value in a column every
+    later period has one in — a change against the period before, which the statement's own window left out
+    (the period before lies outside it). Empty when a period before the window was read too, and when the
+    question names no window.
+
+    The monthly-revenue answer of 2026-10-02 took each month's change inside the twelve months asked, so
+    September 2025's came back empty — and the answer called December "the only decline" when September
+    had fallen 9.7% against August."""
+    start = (observation_start or "")[:10]
+    cols = [str(c) for c in (cols or [])]
+    rows = [list(r) for r in (rows or []) if isinstance(r, (list, tuple)) and len(r) >= len(cols)]
+    if not start or len(rows) < 3:
+        return {}
+    period = next((i for i, c in enumerate(cols)
+                   if _GRAIN_NAME_RE.search(c) or all(_PERIOD_VALUE_RE.match(str(r[i])) for r in rows)), None)
+    if period is None:
+        return {}
+    first = min(rows, key=lambda r: str(r[period]))
+    p = str(first[period])[:10]
+    n = min(len(p), len(start))
+    if p[:n] < start[:n]:
+        return {}
+
+    def _empty(v: Any) -> bool:
+        return v is None or str(v).strip().lower() in _EMPTY_CELLS
+    columns = [cols[i] for i in range(len(cols))
+               if i != period and _empty(first[i])
+               and all(_as_number(r[i]) is not None for r in rows if r is not first)]
+    return {"period": p, "columns": columns} if columns else {}
+
+
 def _measured_cut(cols: list, rows: Any) -> str:
     """'<what it measures> by <what it is cut by>' for a result of three or more columns,
     read from its rows; "" when the rows do not say.
@@ -342,6 +378,11 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
             _small = _too_few_to_compare(cols, rows)
             if _small:
                 result["too_few"] = _small
+            # And when the first period asked has no change against the one before it (`_first_change_missing`).
+            _first = _first_change_missing(cols, rows,
+                                           (turn.state.get("_ada_intake") or {}).get("observation_start", ""))
+            if _first:
+                result["first_change_missing"] = _first
             # The statement that RAN, when a guard changed the one the model framed.
             ran = result.get("sql") or (args or {}).get("sql", "")
             # A query re-run to correct one a guard flagged REPLACES it on the page: the same
@@ -988,8 +1029,11 @@ def _spec_section(intake: dict) -> str:
         return "SPEC: intake produced no spec — inspect the schema before querying."
     lines = ["THE SPEC (resolved by intake; the phase tools default to it):"]
     lines.append(f"  metric: {intake.get('metric_label')} = {intake.get('metric_sql')}")
+    from aughor.agent.investigate import measure_definition_text
     for _m in intake.get("other_measures") or []:
-        lines.append(f"  also asked: {(_m or {}).get('label')} = {(_m or {}).get('sql')}")
+        _defined = measure_definition_text(intake.get("measure_definitions"), (_m or {}).get("label"))
+        lines.append(f"  also asked: {(_m or {}).get('label')} = {(_m or {}).get('sql')}" + _defined
+                     + ("; measure it on that table, by that date, in a query of its own" if _defined else ""))
     if intake.get("metric_filters"):
         lines.append("  metric filter (declared, part of the definition): "
                      + "; ".join(str(f) for f in intake["metric_filters"]))
@@ -1039,7 +1083,11 @@ def _describe_rules(budget: int) -> list[str]:
         "small to compare and does not answer it. Show every group of a cut, or say how "
         "many you left out. Order a table by the measure, with each group a result lists "
         "under `too_few` after the others and marked with its count — never at the top. "
-        "Those are the groups too small to compare: name them, and call no other group small.",
+        "Those are the groups too small to compare: name them, and call no other group small. "
+        "A change against the period before is asked of every period the question covers, the "
+        "first included: its period before lies outside the window, so read one period earlier "
+        "(where the data holds it). A result that lists `first_change_missing` left that change "
+        "out — measure it before you answer.",
         "",
         "When you stop, write the answer the reader will read, in plain prose. Open with "
         "the answer itself in one sentence, with its figures — what leads, what trails, by "
