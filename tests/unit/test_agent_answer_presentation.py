@@ -66,8 +66,60 @@ def test_a_rate_written_as_a_rounded_percentage_still_finds_its_parts():
 def test_the_scope_still_rides_and_rows_that_say_nothing_keep_the_question():
     sql = "SELECT … FROM orders WHERE created_at >= '2025-01-01' AND created_at < '2026-01-01'"
     assert _adhoc_title(*COHORTS[:1], QUESTION, sql, COHORTS[1]) == (
-        "repeat_rate by cohort_month — 2025-01-01 → 2026-01-01")
+        "repeat_rate by cohort_month — 2025-01-01 → 2025-12-31")      # `< 2026-01-01` ends on 12-31
     assert _adhoc_title(*COHORTS[:1], QUESTION, "", None) == QUESTION[:80]
+
+
+# ── A title says the rows its result is over (2026-10-02) ─────────────────────────────
+
+JULY = "created_at >= '2026-07-01' AND created_at < '2026-08-01'"
+LINES = "SELECT SUM(sale_price) AS total_revenue, COUNT(id) AS units_sold FROM order_items WHERE "
+TOTALS = ["total_revenue", "units_sold"]
+ONE_ROW = [["359224.30043935776", "6012"]]
+
+
+def test_a_window_ends_on_the_last_day_it_includes():
+    """July was titled "2026-07-01 → 2026-08-01", and Q2's chart "→ 2026-09-04" under a label that
+    said its period ended on 09-03 — the half-open bound printed as the end."""
+    def title(where: str) -> str:
+        return _adhoc_title(TOTALS, "q", LINES + where, ONE_ROW)
+    assert title(JULY) == "total_revenue and units_sold — 2026-07-01 → 2026-07-31"
+    assert title("created_at >= '2026-07-01' AND created_at <= '2026-07-31'").endswith("— 2026-07-01 → 2026-07-31")
+    assert title("created_at >= TIMESTAMP '2026-07-01' AND created_at < TIMESTAMP '2026-08-01 00:00:00'"
+                 ).endswith("— 2026-07-01 → 2026-07-31")
+    # a bound that is not the start of a day keeps part of that day
+    assert title("created_at >= '2026-07-01' AND created_at < '2026-08-01 12:00:00'").endswith("→ 2026-08-01")
+    assert title("created_at >= '2026-07-01' AND created_at < '2026-07-02'").endswith("— 2026-07-01")
+    # an observation and its comparison read as the span they cover, earliest first
+    assert title("(created_at >= '2026-07-01' AND created_at < '2026-08-01') OR "
+                 "(created_at >= '2026-06-01' AND created_at < '2026-07-01')").endswith("— 2026-06-01 → 2026-07-31")
+
+
+def test_three_results_over_different_rows_get_three_titles():
+    """July's cancelled lines, the rest, and the completed ones — titled alike, they read as one figure
+    three times (59,704.10, 359,224.30, 418,928.40 under one title, theLook 2026-10-02). Revenue's own
+    declared filter is part of revenue, so it is not repeated in the title."""
+    declared = ["status <> 'Cancelled'"]
+    titles = [_adhoc_title(TOTALS, "q", f"{LINES}{JULY} AND {cond}", ONE_ROW, declared=declared,
+                           dialect="bigquery")
+              for cond in ("status = 'Cancelled'", "status != 'Cancelled'", "status = 'Complete'")]
+    assert titles == ["total_revenue and units_sold where status = Cancelled — 2026-07-01 → 2026-07-31",
+                      "total_revenue and units_sold — 2026-07-01 → 2026-07-31",
+                      "total_revenue and units_sold where status = Complete — 2026-07-01 → 2026-07-31"]
+    # with no metric declaring it, the exclusion is the query's own and is named
+    assert _adhoc_title(TOTALS, "q", f"{LINES}{JULY} AND status != 'Cancelled'", ONE_ROW) == (
+        "total_revenue and units_sold where status ≠ Cancelled — 2026-07-01 → 2026-07-31")
+
+
+def test_a_title_names_lists_and_exclusions_from_the_where_alone():
+    cols, rows = ["category", "revenue"], [["Jeans", "1"], ["Swim", "2"]]
+    sql = ("SELECT category, SUM(CASE WHEN status = 'Returned' THEN sale_price END) AS revenue FROM t "
+           "WHERE status IN ('Complete', 'Shipped') AND country NOT IN ('Spain') "
+           "AND order_month = '2026-07-01' GROUP BY 1")
+    assert _adhoc_title(cols, "q", sql, rows) == (
+        "revenue by category where status in Complete, Shipped, country not in Spain")
+    many = "SELECT category, SUM(x) AS revenue FROM t WHERE status IN ('A', 'B', 'C', 'D') GROUP BY 1"
+    assert _adhoc_title(cols, "q", many, rows) == "revenue by category where status in A, B, C and 1 more"
 
 
 COUNTRIES = (["country", "total_first_orders", "repeat_customers", "repeat_rate"],

@@ -196,3 +196,20 @@ describe("several cuts in one result chart one bar per row, coloured by the cut"
     expect(inferChartType(g.columns, g.rows)?.xCol).toBe(0);
   });
 });
+
+describe("an empty change is empty, however the rows spell it", () => {
+  // Q3's growth result as stored (theLook, 2026-10-02): the first month read had no month before it, so
+  // its LAG came back NULL — and the rows carry a SQL NULL as the string "NULL". Read as a value, it made
+  // both change columns categories, and the answer's chart was a heatmap of raw floats.
+  const GROWTH = {
+    columns: ["month", "monthly_revenue", "prev_month_revenue", "growth_rate"],
+    rows: [["2025-08-01", "55965.769986867905", "NULL", "NULL"],
+           ["2025-09-01", "50543.93006324768", "55965.769986867905", "-0.09687778663444517"],
+           ["2025-10-01", "58007.770038604736", "50543.93006324768", "0.14767035262230793"]],
+  };
+
+  it("reads the change columns as the measures they are, and charts the months as a line", () => {
+    expect(classifyColumns(GROWTH.columns, GROWTH.rows)).toEqual({ dateIdxs: [0], numericIdxs: [1, 2, 3], catIdxs: [] });
+    expect(inferChartType(GROWTH.columns, GROWTH.rows)?.type).toBe("line");
+  });
+});

@@ -188,6 +188,62 @@ def test_a_filter_is_added_once_however_often_the_formula_appears():
     assert len(applied) == 1 and out.count("status <> 'Cancelled'") == 1
 
 
+# ── Naming the column is not dealing with it (2026-10-02) ────────────────────────────
+
+#: Verbatim: the Q1 analyst's fourth statement, written after the guard had filtered its revenue
+#: three times. Left alone because it NAMED `status`, it put every cancelled line into July's
+#: revenue — 418,928.40 published, 359,224.30 declared.
+Q1_NOT_NULL = ("SELECT\n    SUM(sale_price) AS total_revenue,\n    COUNT(id) AS units_sold\n"
+               "FROM order_items\nWHERE created_at >= '2026-07-01' AND created_at < '2026-08-01'\n"
+               "AND status IS NOT NULL")
+
+
+@pytest.mark.parametrize("why, sql", [
+    ("keeps every status, the cancelled one with them", Q1_NOT_NULL),
+    ("excludes another status and keeps the cancelled one",
+     "SELECT SUM(sale_price) FROM order_items WHERE status <> 'Returned'"),
+    ("a NOT IN that leaves the cancelled one in",
+     "SELECT SUM(sale_price) FROM order_items WHERE status NOT IN ('Returned')"),
+    ("a value spelled another way is not the declared one — it keeps 'Cancelled'",
+     "SELECT SUM(sale_price) FROM order_items WHERE status <> 'cancelled'"),
+    ("a list that reads another column keeps whatever that column holds",
+     "SELECT SUM(oi.sale_price) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id "
+     "WHERE oi.status IN (o.status)"),
+])
+def test_a_condition_that_keeps_the_excluded_rows_still_gets_the_filter(why, sql):
+    out, applied = _guard(sql)
+    assert applied == [{"metric": "revenue", "table": "order_items", "filter": "status <> 'Cancelled'"}], why
+    assert out.count("status <> 'Cancelled'") == 1, why
+
+
+@pytest.mark.parametrize("why, sql", [
+    ("names the excluded value — it measures the cancelled rows",
+     "SELECT SUM(sale_price) FROM order_items WHERE status = 'Cancelled'"),
+    ("is the declared filter, written by the analyst",
+     "SELECT SUM(sale_price) FROM order_items WHERE status != 'Cancelled'"),
+    ("excludes it among others",
+     "SELECT SUM(sale_price) FROM order_items WHERE status NOT IN ('Cancelled', 'Returned')"),
+    ("keeps only the statuses it lists",
+     "SELECT SUM(sale_price) FROM order_items WHERE status IN ('Complete', 'Shipped')"),
+    ("keeps only the status it names, under a function",
+     "SELECT SUM(sale_price) FROM order_items WHERE LOWER(status) = 'complete'"),
+])
+def test_a_condition_that_chose_its_rows_is_left_alone(why, sql):
+    out, applied = _guard(sql)
+    assert applied == [] and out == sql, why
+
+
+def test_a_filter_that_names_no_value_is_dealt_with_by_any_condition_on_its_column():
+    """`sold_at IS NOT NULL` is about the column itself: a window on `sold_at` has dealt with it."""
+    windowed = ("SELECT COUNT(id) FROM inventory_items "
+                "WHERE sold_at >= '2026-07-01' AND sold_at < '2026-08-01'")
+    assert _guard(windowed, rules=(UNITS,)) == (windowed, [])
+    out, applied = _guard("SELECT COUNT(id) FROM inventory_items WHERE created_at >= '2026-07-01'",
+                          rules=(UNITS,))
+    assert applied == [{"metric": "units_sold", "table": "inventory_items", "filter": "sold_at IS NOT NULL"}]
+    assert out.count("NOT inventory_items.sold_at IS NULL") == 1     # sqlglot's spelling of IS NOT NULL
+
+
 # ── Which metrics make rules ─────────────────────────────────────────────────────────
 
 def _metric(**kw):

@@ -92,11 +92,13 @@ export function isNumeric(v: unknown): boolean {
  *  Prevents NULL-heavy leading rows (e.g. first month of MoM lag queries) from
  *  mis-classifying numeric columns as categorical. A 20-row cap breaks LAG/LEAD
  *  queries where the first N rows (one per category for the first period) are all
- *  NULL — so we scan everything. */
+ *  NULL — so we scan everything. A result's rows carry a SQL NULL as the string "NULL"
+ *  (as `isDeadColumn` reads it): taken for a value, it made Q3's two change columns
+ *  categories and its chart a heatmap of raw floats (theLook, 2026-10-02). */
 export function firstNonNull(rows: unknown[][], colIdx: number): unknown {
   for (let i = 0; i < rows.length; i++) {
     const v = (rows[i] as unknown[])[colIdx];
-    if (v !== null && v !== undefined && v !== "") return v;
+    if (v !== null && v !== undefined && v !== "" && v !== "NULL") return v;
   }
   return rows[0]?.[colIdx as number];
 }

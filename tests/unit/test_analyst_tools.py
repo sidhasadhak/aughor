@@ -509,3 +509,93 @@ def test_the_scan_tool_runs_the_declared_breakdowns_once_before_the_first_scan(t
     assert calls == ["frame_breakdowns", "cross_section", "cross_section"]
     an.cross_section(_turn(traffic_db), {"dimension": "channel_lvl0"})        # a fresh turn whose FIRST scan is pinned: runs
     assert calls[-2:] == ["frame_breakdowns", "cross_section"]
+
+
+# ── A further measure tied to a governed metric is measured by code (2026-10-02) ──────────────────────
+# "What was total revenue and how many units were sold in July 2026?": told that units sold is the governed
+# units_sold — inventory items by the day they sold — and to measure it in a query of its own, the analyst
+# counted order lines inside revenue's statement four times, the last with `status IS NOT NULL` so that
+# revenue's declared filter would leave it alone, and published revenue with every cancelled line in it.
+
+Q1 = "What was total revenue and how many units were sold in July 2026?"
+UNITS_DEF = {"label": "units sold", "metric": "units_sold", "table": "inventory_items",
+             "date_column": "sold_at", "filters": ["sold_at IS NOT NULL"]}
+UNITS_SQL = ("SELECT COUNT(id) AS units_sold FROM inventory_items WHERE sold_at IS NOT NULL "
+             "AND sold_at >= '2026-07-01' AND sold_at < '2026-08-01'")
+
+
+def _q1_intake(**changes) -> dict:
+    return {"metric_label": "total revenue", "metric_sql": "SUM(sale_price)", "metric_table": "order_items",
+            "date_column": "order_items.created_at", "observation_start": "2026-07-01",
+            "observation_end": "2026-07-31", "observation_label": "July 2026", "period_named": True,
+            "comparison_asked": False, "cross_sectional": False, "named_dimensions": [],
+            "other_measures": [{"label": "units sold", "sql": "COUNT(id)"}],
+            "measure_definitions": [dict(UNITS_DEF)], "dimensions": [], "data_understanding_block": "",
+            **changes}
+
+
+def test_a_declared_measure_is_measured_on_its_table_by_its_own_date():
+    assert an._declared_measure_sql(_q1_intake(), UNITS_DEF, "COUNT(id)") == UNITS_SQL
+    # no period named: every row its definition keeps
+    assert an._declared_measure_sql(_q1_intake(period_named=False), UNITS_DEF, "COUNT(id)") == (
+        "SELECT COUNT(id) AS units_sold FROM inventory_items WHERE sold_at IS NOT NULL")
+    # a period asked of a measure with no date of its own, or a measure with no formula, is not measured
+    assert an._declared_measure_sql(_q1_intake(), {**UNITS_DEF, "date_column": ""}, "COUNT(id)") == ""
+    assert an._declared_measure_sql(_q1_intake(), UNITS_DEF, "") == ""
+
+
+@pytest.mark.parametrize("why, changes, question, shape", [
+    ("a cut is named", {"named_dimensions": ["products.category"]}, Q1, "describe"),
+    ("groups are compared", {"cross_sectional": True}, Q1, "describe"),
+    ("periods are compared", {"comparison_asked": True}, Q1, "describe"),
+    ("a series is asked", {}, "How many units were sold each month in 2026?", "describe"),
+    ("a why question", {}, Q1, "diagnose"),
+])
+def test_only_a_question_asking_one_figure_is_measured_by_code(why, changes, question, shape):
+    assert an._asks_one_figure(_q1_intake(), Q1, "describe")
+    assert not an._asks_one_figure(_q1_intake(**changes), question, shape), why
+
+
+def test_a_figure_is_recorded_only_for_the_result_it_landed_as():
+    def turn():
+        return an.AnalystTurn(connection_id="c", conn=None, state={
+            "question": Q1, "_ada_intake": _q1_intake(), "investigation_phases": [{"phase_id": "intake"}]})
+    landed = turn()
+
+    def _lands(args):
+        landed.state["investigation_phases"].append({"phase_id": "adhoc_1"})
+        return {"columns": ["units_sold"], "rows": [["7027"]]}
+    an._measure_declared(landed, _lands, "describe")
+    assert landed.intake["measure_definitions"][0]["measured"] == {"result": "adhoc_1", "value": "7027"}
+    # rows that never became a result give the analyst no figure to quote — least of all the intake's
+    lost = turn()
+    an._measure_declared(lost, lambda args: {"columns": ["units_sold"], "rows": [["7027"]]}, "describe")
+    assert "measured" not in lost.intake["measure_definitions"][0]
+
+
+def test_the_analyst_is_handed_the_figure_code_measured(monkeypatch, traffic_db, faux_llm):
+    ran, frames = [], []
+
+    def _fake_intake(state, conn=None):
+        return {"_ada_intake": _q1_intake(), "investigation_phases": [{
+            "phase_id": "intake", "phase_name": "Question Intake", "phase_icon": "🎯",
+            "status": "complete", "summary": "spec", "findings": []}]}
+
+    def _run_sql(cid, args, **kw):
+        ran.append(args["sql"])
+        return {"columns": ["units_sold"], "rows": [["7027"]], "row_count": 1, "caveats": []}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_fake_intake, synthesize=lambda state: {})
+    monkeypatch.setattr("aughor.agent.converse_tools.run_sql", _run_sql)
+    faux_llm.set_responses(["July 2026: 7,027 units sold."])
+
+    an.run_analyst("conn-t", Q1, persist=False, emit=lambda t, p: frames.append((t, p)))
+
+    assert ran == [UNITS_SQL], "code measures units sold before the analyst's first call, as declared"
+    system = faux_llm.calls()[0].system
+    assert ("also asked: units sold = COUNT(id) — the governed units_sold on inventory_items, dated by "
+            "sold_at, over rows where sold_at IS NOT NULL; measured that way over the observation by "
+            "code: 7027 — state that figure; do not measure it again") in system
+    assert "adhoc_" not in system, "a result's id is the platform's, never a word for the reader"
+    landed = [p["phase"] for t, p in frames if t == "phase_complete" and p["phase"]["phase_id"] == "adhoc_2"]   # the intake is phase 1
+    assert [p["phase_name"] for p in landed] == ["units_sold — 2026-07-01 → 2026-07-31"]

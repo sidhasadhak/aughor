@@ -15,10 +15,11 @@ formula there gets the declared filter on its own WHERE.
 
 Two refusals keep it from answering a different question than the one asked:
 
-- a scope that already names a column the filter names — in its WHERE, a JOIN, its
-  GROUP BY or its projection — is left alone. "Revenue by status" and "how much was
-  cancelled" have dealt with `status` on purpose, and a filter added there would delete
-  the row the question is about;
+- a scope that has dealt with a column the filter names is left alone: it groups, shows
+  or orders by it, or a condition on it keeps only the values it lists or names a value the
+  filter names (`_dealt_with`). "Revenue by status" and "how much was cancelled" have dealt
+  with `status` on purpose, and a filter added there would delete the row the question is
+  about. Naming the column is not enough: `status IS NOT NULL` keeps every cancelled line;
 - the rules are the caller's, and the caller passes only metrics the QUESTION targets
   (`semantic.enforcement.declared_filter_rules`). `COUNT(id)` is a declared formula too,
   and a statement that counts a table is not thereby asking for units sold.
@@ -178,10 +179,43 @@ def _computes(select: exp.Select, formula: exp.Expression, ref: str, only_ref: b
     return False
 
 
-def _names(select: exp.Select, column: str, ref: str) -> bool:
+def _dealt_with(select: exp.Select, column: str, ref: str, values: set) -> bool:
+    """Has this scope chosen its own rows of ``column`` — so that the declared filter on it would
+    answer a different question? ``values`` are the ones the filter names, as written.
+
+    It has when it shows the column — groups, projects or orders by it, every value in sight
+    ("revenue by status") — and when a condition on the column keeps only the values it lists
+    (``status = 'Complete'``, ``IN (…)``) or names a value the filter names (``status =
+    'Cancelled'`` measures the cancelled rows; ``status <> 'Cancelled'`` IS the filter). A
+    condition that does neither keeps the rows the filter is there to remove: the analyst wrote
+    ``status IS NOT NULL`` after the guard had filtered its statement three times, and July's
+    revenue was published with every cancelled line in it — 418,928.40 where the declared figure
+    is 359,224.30 (theLook, 2026-10-02). Naming the column was all this used to ask. A filter that
+    names no value (``sold_at IS NOT NULL``) is about the column itself, and any condition on the
+    column has dealt with it."""
     want, ref = column.lower(), ref.lower()
-    return any(c.name.lower() == want and (not c.table or c.table.lower() == ref)
-               for c in _own(select, exp.Column))
+    for col in _own(select, exp.Column):
+        if col.name.lower() != want or (col.table and col.table.lower() != ref):
+            continue
+        if not values:
+            return True
+        cond = col.find_ancestor(exp.Predicate, exp.Select)
+        if not isinstance(cond, exp.Predicate):
+            return True                                  # shown, grouped or ordered by
+        if {str(lit.this) for lit in cond.find_all(exp.Literal)} & values:
+            return True                                  # names what the filter is about
+        outer = cond.parent
+        while isinstance(outer, exp.Paren):
+            outer = outer.parent
+        if isinstance(outer, exp.Not):
+            continue                                     # an exclusion that names none of it
+        if isinstance(cond, exp.EQ) and any(isinstance(side, exp.Literal)
+                                            for side in (cond.this, cond.expression)):
+            return True                                  # keeps only the value it names
+        if (isinstance(cond, exp.In) and cond.expressions
+                and all(isinstance(e, exp.Literal) for e in cond.expressions)):
+            return True                                  # keeps only the values it lists
+    return False
 
 
 def _hands_on(inner: exp.Select, formula: exp.Expression, tables: set) -> Optional[exp.Table]:
@@ -267,7 +301,9 @@ def enforce_metric_filters(sql: str, rules: list, dialect: str = "duckdb") -> tu
                             continue
                         done.add(key)
                         columns = {c.name for c in cond.find_all(exp.Column)}
-                        if not columns or any(_names(select, c, ref) or _names(scope, c, here)
+                        values = {str(lit.this) for lit in cond.find_all(exp.Literal)}
+                        if not columns or any(_dealt_with(select, c, ref, values)
+                                              or _dealt_with(scope, c, here, values)
                                               for c in columns):
                             continue            # a scope has dealt with it — leave it alone
                         for col in cond.find_all(exp.Column):

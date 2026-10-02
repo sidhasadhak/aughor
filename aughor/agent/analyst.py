@@ -103,48 +103,94 @@ class AnalystTurn:
         return fresh
 
 
-#: Date bounds and simple equality filters in a WHERE clause — the two things that make one
-#: ad-hoc cut different from another of the same SHAPE. Bounded and anchored; never a parser.
-_ADHOC_DATE_RE = re.compile(r"""[><]=?\s*(?:TIMESTAMP\s*)?['"](\d{4}-\d{2}-\d{2})""", re.I)
-_ADHOC_EQ_RE = re.compile(r"""(?:\w+\.)?(\w+)\s*=\s*['"]([^'"]{1,40})['"]""")
+#: A date bound in a WHERE clause — its operator, the day, and whatever follows the day inside
+#: the quotes (a time, a zone). Bounded and anchored; never a parser.
+_ADHOC_BOUND_RE = re.compile(r"""([><]=?)\s*(?:TIMESTAMP\s*)?['"](\d{4}-\d{2}-\d{2})([^'"]{0,40})['"]""", re.I)
+#: What may follow the day in a bound that is the START of that day.
+_ADHOC_MIDNIGHT_RE = re.compile(r"(?:[ T]00:00(?::00(?:\.0+)?)?)?\s*(?:Z|UTC|[+-]00(?::?00)?)?", re.I)
 _ADHOC_DATEY = re.compile(r"(_at|date|day|month|year|period)$", re.I)
 
 
-def _adhoc_scope(sql: str) -> str:
-    """The date window and equality filters of an ad-hoc query, as a short qualifier.
+def _adhoc_window(text: str) -> str:
+    """The dates an ad-hoc query reads, ending on the LAST DAY IT INCLUDES.
 
     The title below is derived from the RESULT SHAPE, so two queries returning the same columns
     get the same name however differently they were scoped. That is harmless until the loop does
     what a good analyst does and runs one cut over two periods: the report then shows
     "returned_cost by product_brand" twice, with different numbers and nothing saying one is
-    February and the other January — an observation/comparison PAIR reads as a repeat. (It read
-    that way to me, and I called it redundant compute before reading the WHERE clauses.)
+    February and the other January — an observation/comparison PAIR reads as a repeat.
 
-    Best-effort by construction: an unparsed scope yields "" and the title is exactly what it
-    was before.
-    """
-    try:
-        text = " ".join((sql or "").split())
-        if not text:
-            return ""
-        dates = _ADHOC_DATE_RE.findall(text)
-        parts: list[str] = []
-        if dates:
-            uniq = list(dict.fromkeys(dates))
-            parts.append(uniq[0] if len(uniq) == 1 else f"{uniq[0]} → {uniq[-1]}")
-        for col, val in _ADHOC_EQ_RE.findall(text):
-            # A status/date equality is usually the METRIC's own definition (the CASE WHEN), not
-            # the cut's scope — naming it would title every phase with the same word.
-            if _ADHOC_DATEY.search(col) or col.lower() in ("status", "state"):
-                continue
-            piece = f"{col} = {val}"
-            if piece not in parts:
-                parts.append(piece)
-            if len(parts) >= 3:
-                break
-        return ", ".join(parts)[:60]
-    except Exception:
+    A query reads a period half-open — `created_at < '2026-08-01'` is July — and the title printed
+    that bound as the end: July was "2026-07-01 → 2026-08-01", and a chart titled "→ 2026-09-04" sat
+    under a label that said its period ended on 09-03 (theLook, 2026-10-02). A bound kept with `<`
+    at the start of a day ends the day before it. A query with no bound on one side keeps the dates
+    it names, first to last."""
+    bounds = _ADHOC_BOUND_RE.findall(text)
+    if not bounds:
         return ""
+    lowers = [day for op, day, _ in bounds if op.startswith(">")]
+    uppers = [(date.fromisoformat(day) - timedelta(days=1)).isoformat()
+              if op == "<" and _ADHOC_MIDNIGHT_RE.fullmatch(rest) else day
+              for op, day, rest in bounds if op.startswith("<")]
+    if lowers and uppers:
+        start, end = min(lowers), max(uppers)
+        return start if end <= start else f"{start} → {end}"
+    days = list(dict.fromkeys(day for _, day, _ in bounds))
+    return days[0] if len(days) == 1 else f"{days[0]} → {days[-1]}"
+
+
+def _and_parts(node: Any) -> list:
+    from sqlglot import exp
+    while isinstance(node, exp.Paren):
+        node = node.this
+    return _and_parts(node.this) + _and_parts(node.expression) if isinstance(node, exp.And) else [node]
+
+
+def _value_filter(cond: Any) -> str:
+    """``status = Cancelled`` for a condition that keeps a column to values it names — ``=``,
+    ``<>``, ``IN``, each negated or not — or "" for any other condition. A date bound is the
+    window's to say."""
+    from sqlglot import exp
+    negated = isinstance(cond, exp.Not)
+    node = cond.this if negated else cond
+    while isinstance(node, exp.Paren):
+        node = node.this
+    if isinstance(node, (exp.EQ, exp.NEQ)):
+        col, lit = (node.this, node.expression) if isinstance(node.this, exp.Column) else (node.expression, node.this)
+        if not isinstance(col, exp.Column) or not isinstance(lit, exp.Literal) or _ADHOC_DATEY.search(col.name):
+            return ""
+        return f"{col.name} {'=' if isinstance(node, exp.EQ) != negated else '≠'} {lit.this}"
+    if (isinstance(node, exp.In) and isinstance(node.this, exp.Column) and node.expressions
+            and all(isinstance(e, exp.Literal) for e in node.expressions)
+            and not _ADHOC_DATEY.search(node.this.name)):
+        values = [str(e.this) for e in node.expressions]
+        listed = ", ".join(values[:3]) + (f" and {len(values) - 3} more" if len(values) > 3 else "")
+        return f"{node.this.name} {'not in' if negated else 'in'} {listed}"
+    return ""
+
+
+def _adhoc_filters(text: str, declared: Any = (), dialect: str = "") -> list[str]:
+    """The conditions of an ad-hoc query's WHERE clauses that keep a column to values it names.
+
+    Read from the WHERE alone: a `CASE WHEN status = 'Returned'` in the projection is the metric's
+    own definition, not the rows the query reads, and naming it would title every phase of the run
+    with the same words — which is why `status` was once never named at all. That left three of
+    July's results under ONE title — the cancelled lines, the rest, and every line — over figures
+    of 59,704.10, 359,224.30 and 418,928.40 (theLook, 2026-10-02). A filter a metric of the
+    question DECLARES is left out: it is part of that measure, and the receipt says it.
+
+    Best-effort by construction: an unparsed statement names no filter."""
+    from sqlglot import exp, parse_one
+    from aughor.sql.metric_filter_guard import same_condition
+    tree = parse_one(text, read=dialect or None)
+    out: list[str] = []
+    for where in tree.find_all(exp.Where):
+        for cond in _and_parts(where.this):
+            piece = _value_filter(cond)
+            if piece and not any(same_condition(cond.sql(dialect=dialect or None), str(d), dialect or "duckdb")
+                                 for d in declared or ()):
+                out.append(piece)
+    return list(dict.fromkeys(out))
 
 
 #: The column roles a result's title reads — the ones `plottedMeasures` in
@@ -304,10 +350,13 @@ def _measured_cut(cols: list, rows: Any) -> str:
     return f"{_listed(measures)} by {_listed(cuts)}" if cuts else _listed(measures)
 
 
-def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None) -> str:
+def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None, *,
+                 declared: Any = (), dialect: str = "") -> str:
     """A name for a query the model framed itself. It supplies no title — the phase
     tools get theirs from a plan — so it comes from the shape of what came back, plus the
-    SCOPE that distinguishes it from another cut of the same shape."""
+    SCOPE that distinguishes it from another cut of the same shape: the values its rows are
+    kept to, then its dates. ``declared`` are the filters the question's metrics declare
+    (`_adhoc_filters`); ``dialect`` is the engine the statement was written for."""
     cols = [str(c) for c in (columns or []) if str(c).strip()]
     if len(cols) == 2:
         # One row cuts nothing: two measures side by side are "a and b" — Q4's overall row
@@ -320,8 +369,23 @@ def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None) 
         base = _measured_cut(cols, rows)
         if not base:
             return (question or "Query result").strip()[:80]
-    scope = _adhoc_scope(sql)
-    return f"{base} — {scope}" if scope else base
+    text = " ".join((sql or "").split())
+    try:
+        kept = ", ".join(_adhoc_filters(text, declared, dialect)[:3]) if text else ""
+    except Exception:                     # noqa: BLE001 — a statement that does not parse names no filter
+        kept = ""
+    window = _adhoc_window(text)
+    title = f"{base} where {kept if len(kept) <= 60 else kept[:59] + '…'}" if kept else base
+    return f"{title} — {window}" if window else title
+
+
+def _declared_filters(turn: "AnalystTurn", dialect: str) -> list[str]:
+    """The filters the question's metrics declare — part of those measures, so no result's title
+    repeats them (`_adhoc_filters`)."""
+    from aughor.semantic.enforcement import rules_for_statement
+    rules = rules_for_statement(getattr(turn, "connection_id", ""), turn.state.get("question", ""),
+                                dialect=dialect or "duckdb") or []
+    return [str(f) for r in rules for f in (r.get("filters") or [])]
 
 
 def _same_rows(finding: dict, rows: list, row_count: Any) -> bool:
@@ -408,7 +472,9 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                     if any(_p is _s for _s in same) or (not carried and _first(_p).get("trust_caveat")):
                         _p["_hidden"] = True
                         _p["superseded_by"] = f"adhoc_{n}"
-            title = _adhoc_title(cols, turn.state.get("question", ""), (args or {}).get("sql", ""), rows)
+            _dialect = getattr(getattr(turn, "conn", None), "dialect", "") or ""
+            title = _adhoc_title(cols, turn.state.get("question", ""), (args or {}).get("sql", ""), rows,
+                                 declared=_declared_filters(turn, _dialect), dialect=_dialect)
             turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
                 "phase_id": f"adhoc_{n}",
                 "phase_name": title,
@@ -1031,9 +1097,14 @@ def _spec_section(intake: dict) -> str:
     lines.append(f"  metric: {intake.get('metric_label')} = {intake.get('metric_sql')}")
     from aughor.agent.investigate import measure_definition_text
     for _m in intake.get("other_measures") or []:
-        _defined = measure_definition_text(intake.get("measure_definitions"), (_m or {}).get("label"))
-        lines.append(f"  also asked: {(_m or {}).get('label')} = {(_m or {}).get('sql')}" + _defined
-                     + ("; measure it on that table, by that date, in a query of its own" if _defined else ""))
+        _label = (_m or {}).get("label")
+        _defined = measure_definition_text(intake.get("measure_definitions"), _label)
+        _measured = next((d.get("measured") for d in intake.get("measure_definitions") or []
+                          if isinstance(d, dict) and d.get("label") == _label and d.get("measured")), None)
+        lines.append(f"  also asked: {_label} = {(_m or {}).get('sql')}" + _defined + (
+            f"; measured that way over the observation by code: {_measured['value']} — state that "
+            "figure; do not measure it again" if _measured else
+            "; measure it on that table, by that date, in a query of its own" if _defined else ""))
     if intake.get("metric_filters"):
         lines.append("  metric filter (declared, part of the definition): "
                      + "; ".join(str(f) for f in intake["metric_filters"]))
@@ -1064,6 +1135,66 @@ def _spec_section(intake: dict) -> str:
     if intake.get("intake_notes"):
         lines.append(f"  intake notes: {str(intake.get('intake_notes'))[:400]}")
     return "\n".join(lines)
+
+
+#: A question that asks for a figure PER period asks for a series, not one figure.
+_PER_PERIOD_RE = re.compile(r"\b(?:each|every|per|by)\s+(?:day|week|month|quarter|year)\b"
+                            r"|\b(?:daily|weekly|monthly|quarterly|yearly|annual(?:ly)?)\b", re.I)
+
+
+def _asks_one_figure(intake: dict, question: str, shape: str) -> bool:
+    """Whether the question asks each of its measures as ONE figure over its window: it asks to see
+    the data, names no cut, compares no periods and asks for no series."""
+    return (shape == "describe" and not intake.get("cross_sectional") and not intake.get("named_dimensions")
+            and intake.get("comparison_asked") is False and not _PER_PERIOD_RE.search(question or ""))
+
+
+def _declared_measure_sql(intake: dict, definition: dict, formula: str) -> str:
+    """The statement that measures one further measure by its declared definition: its formula on its
+    table, over its filters, with ITS OWN date in the observation (half-open) — or over all its rows
+    when the question names no period. "" when the period is asked and the measure has no date."""
+    table = str(definition.get("table") or "").strip()
+    if not table or not formula:
+        return ""
+    conds = [str(f).strip() for f in definition.get("filters") or [] if str(f).strip()]
+    if intake.get("period_named", True):
+        start, end = str(intake.get("observation_start") or "")[:10], str(intake.get("observation_end") or "")[:10]
+        day = str(definition.get("date_column") or "").strip()
+        if not (start and end and day):
+            return ""
+        after = (date.fromisoformat(end) + timedelta(days=1)).isoformat()
+        conds += [f"{day} >= '{start}'", f"{day} < '{after}'"]
+    alias = re.sub(r"[^a-z0-9]+", "_", str(definition.get("metric") or definition.get("label") or "")
+                   .lower()).strip("_") or "measure"
+    return f"SELECT {formula} AS {alias} FROM {table}" + (f" WHERE {' AND '.join(conds)}" if conds else "")
+
+
+def _measure_declared(turn: "AnalystTurn", run_sql_tool: Callable[[dict], Any], shape: str) -> None:
+    """Measure each further measure tied to a governed metric BY CODE, through the run_sql tool's own
+    body (guards, frames, evidence), and record the figure on its definition for the spec.
+
+    "What was total revenue and how many units were sold in July 2026?": the analyst was told units
+    sold is the governed units_sold — inventory items by the day they sold — and to measure it in a
+    query of its own. It counted order lines in revenue's statement instead, four times, the last
+    time with `status IS NOT NULL` so that revenue's declared filter would leave it alone, and
+    published revenue with every cancelled line in it (theLook, 2026-10-02). Only the figure over
+    the whole window is measured here, so only a question that asks for that figure is."""
+    intake = turn.intake
+    if not _asks_one_figure(intake, turn.state.get("question", ""), shape):
+        return
+    formulas = {m.get("label"): m.get("sql") for m in intake.get("other_measures") or [] if isinstance(m, dict)}
+    for definition in intake.get("measure_definitions") or []:
+        if not isinstance(definition, dict):
+            continue
+        sql = _declared_measure_sql(intake, definition, str(formulas.get(definition.get("label")) or ""))
+        if not sql:
+            continue
+        before = len(turn.state.get("investigation_phases") or [])
+        result = run_sql_tool({"sql": sql})
+        phases = turn.state.get("investigation_phases") or []
+        rows = result.get("rows") if isinstance(result, dict) else None
+        if rows and rows[0] and len(phases) > before:
+            definition["measured"] = {"result": phases[-1].get("phase_id"), "value": str(rows[0][0])}
 
 
 def _describe_rules(budget: int) -> list[str]:
@@ -1314,6 +1445,14 @@ def run_analyst(
         shape = (turn.intake or {}).get("question_shape") or question_shape(question)
         tools = analyst_tools(turn, emit=emit, session_id=session_id,
                               canvas_id=canvas_id, user_question=question, shape=shape)
+        # A further measure tied to a governed metric is measured by code before the analyst's
+        # first call, and the spec hands it the figure (`_measure_declared`).
+        try:
+            _measure_declared(turn, next(t.run for t in tools if t.name == "run_sql"), shape)
+        except Exception as exc:                  # noqa: BLE001 — the analyst then measures it itself
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a declared further measure is measured by code best-effort; the analyst "
+                          "measures it otherwise", counter="analyst.declared_measure")
         from aughor.agent.sql_context import learned_settle_days, sql_context as _sql_context
         result: LoopResult = run_tool_loop(
             provider or get_provider("coder"),
