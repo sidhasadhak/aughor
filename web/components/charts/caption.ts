@@ -12,16 +12,37 @@
  * keeps the title.
  */
 import { inferChartType } from "@/components/charts/chartTypeInference";
-import { classifyColumns, plottedMeasures } from "@/components/charts/columnRoles";
-import { cleanLabel } from "@/lib/format";
+import { classifyColumns, isNumeric, plottedMeasures } from "@/components/charts/columnRoles";
+import { MONTHS_SHORT, cleanLabel } from "@/lib/format";
 
 /** The forms that draw their y columns as they are: one mark series per measure, by the x column. */
 const DRAWS_ITS_MEASURES = new Set(["bar", "grouped-bar", "line", "multi-line", "area", "stacked-bar"]);
 
-/** A column as words in a sentence: "average_order_value" → "average order value", "aov" → "AOV". */
+/** A month's first day, as the x column of a month-grain result holds it. */
+const MONTH_START = /^(\d{4})-(\d{2})-01/;
+
+/** A column as words in a sentence: "average_order_value" → "average order value", "aov" → "AOV". A percent
+ *  change reads as a change — its axis carries the % ("Pct change by month", 2026-10-03). */
 function phrase(col: string): string {
   return cleanLabel(col).split(" ")
-    .map((w) => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase())).join(" ");
+    .map((w) => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase())).join(" ")
+    .replace(/^(?:pct|percent|perc) (?=(?:change|growth|increase|decrease|diff|difference|delta)\b)/, "");
+}
+
+/** The months a chart draws when it draws fewer than its result holds, as titles name them ("Sep 2025 –
+ *  Aug 2026", "Sep – Nov 2025"): a change has none for the month it is measured from, and Q3's change chart,
+ *  drawn from September 2025, was captioned "Aug 2025 – Aug 2026" (2026-10-03). "" when it draws every month
+ *  or its x column holds no months. */
+function drawnMonths(rows: unknown[][], x: number, measures: number[]): string {
+  const months = (rs: unknown[][]) => rs.map((r) => String(r[x] ?? "")).sort();
+  const all = months(rows);
+  const drawn = months(rows.filter((r) => measures.some((i) => isNumeric(r[i]))));
+  if (!drawn.length || (drawn[0] === all[0] && drawn[drawn.length - 1] === all[all.length - 1])) return "";
+  const a = drawn[0].match(MONTH_START), b = drawn[drawn.length - 1].match(MONTH_START);
+  if (!a || !b) return "";
+  const m = (g: RegExpMatchArray) => MONTHS_SHORT[Number(g[2]) - 1];
+  if (a[1] === b[1] && a[2] === b[2]) return `${m(a)} ${a[1]}`;
+  return a[1] === b[1] ? `${m(a)} – ${m(b)} ${a[1]}` : `${m(a)} ${a[1]} – ${m(b)} ${b[1]}`;
 }
 
 function listed(names: string[]): string {
@@ -34,13 +55,16 @@ export function chartCaption(title: string, columns: string[], rows: unknown[][]
   if (!title || String(chartType ?? "auto").toLowerCase() !== "auto") return title;
   const inferred = inferChartType(columns, rows);
   if (!inferred || !DRAWS_ITS_MEASURES.has(inferred.type) || !inferred.yCols.length) return title;
-  const drawn = (inferred.type === "grouped-bar" ? inferred.yCols : inferred.yCols.slice(0, 1)).map((i) => columns[i]);
+  const drawnIdx = inferred.type === "grouped-bar" ? inferred.yCols : inferred.yCols.slice(0, 1);
+  const drawn = drawnIdx.map((i) => columns[i]);
+  const months = inferred.xCol >= 0 ? drawnMonths(rows, inferred.xCol, drawnIdx) : "";
+  const period = (text: string) => (months ? text.replace(/ — [^—]*$/, ` — ${months}`) : text);
   const measured = plottedMeasures(columns, rows, classifyColumns(columns, rows).numericIdxs).map((i) => columns[i]);
-  if (measured.every((m) => drawn.includes(m))) return title;
+  if (measured.every((m) => drawn.includes(m))) return period(title);
   const by = [inferred.xCol, inferred.colorCol]
     .filter((i): i is number => typeof i === "number" && i >= 0)
     .map((i) => phrase(columns[i]));
   const cut = title.search(/ where | — /);
   const caption = `${listed(drawn.map(phrase))}${by.length ? ` by ${listed(by)}` : ""}${cut >= 0 ? title.slice(cut) : ""}`;
-  return caption.charAt(0).toUpperCase() + caption.slice(1);
+  return period(caption.charAt(0).toUpperCase() + caption.slice(1));
 }

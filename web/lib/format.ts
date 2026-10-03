@@ -416,7 +416,37 @@ export function detectGranularity(col: string, values: unknown[]): Gran {
   return "day";
 }
 
-const _MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A cell that names a month by its first day: "2025-09-01", or "2025-09". */
+const MONTH_CELL = /^(\d{4})-(0[1-9]|1[0-2])(?:-01)?$/;
+const isTableRow = (line: string) => line.trim().startsWith("|");
+
+/** A markdown table column whose every cell names a month by its first day reads as months — "Sep 2025", as
+ *  the titles and axes beside it read. Q3's answer table wrote "2025-09-01" under an axis reading "Sep 2025"
+ *  (2026-10-03). Two rows at least: one first-of-month date may be the day itself. */
+export function monthsInTables(text: string): string {
+  const lines = text.split("\n");
+  for (let i = 0; i + 2 < lines.length; i++) {
+    if (!isTableRow(lines[i]) || !/^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) continue;   // a header and its rule
+    let end = i + 2;
+    while (end < lines.length && isTableRow(lines[end])) end++;
+    const body = lines.slice(i + 2, end).map((line) => line.split("|"));
+    if (body.length >= 2) {
+      const width = Math.min(...body.map((parts) => parts.length));
+      for (let c = 1; c < width; c++) {
+        if (!body.every((parts) => MONTH_CELL.test(parts[c].trim()))) continue;
+        for (const parts of body) {
+          const [, year, month] = parts[c].trim().match(MONTH_CELL)!;
+          parts[c] = ` ${MONTHS_SHORT[Number(month) - 1]} ${year} `;
+        }
+      }
+      lines.splice(i + 2, end - i - 2, ...body.map((parts) => parts.join("|")));
+    }
+    i = end - 1;
+  }
+  return lines.join("\n");
+}
 
 /** Render a date per a user date_format token. Pulls Y-M-D straight from the string
  *  (no Date parse) so a "…T00:00:00" timestamp never drifts a day across the local
@@ -425,7 +455,7 @@ function applyUserDateFormat(dateStr: string, pref: string): string {
   const m = dateStr.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
   if (!m) return dateStr;
   const [, yyyy, mm, dd = "01"] = m;
-  const mmm = _MONTHS_SHORT[parseInt(mm, 10) - 1] ?? mm;
+  const mmm = MONTHS_SHORT[parseInt(mm, 10) - 1] ?? mm;
   switch (pref) {
     case "YYYY-MM-DD": return `${yyyy}-${mm}-${dd}`;
     case "DD/MM/YYYY": return `${dd}/${mm}/${yyyy}`;
@@ -468,7 +498,7 @@ export function fmtDate(v: string, gran: Gran): string {
     default:
       // The chart axes' own month names (d3's `%b`): the viewer's locale wrote "Sept 2025" under a
       // change chart beside a trend whose axis read "Sep 2025" (2026-10-03).
-      return `${_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+      return `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
   }
 }
 

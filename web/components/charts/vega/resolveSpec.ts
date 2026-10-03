@@ -270,6 +270,10 @@ function valueAxis(title: string | null | undefined, format?: string | null, pre
     // Grid BEHIND the marks. Vega-Lite lifts a gridded axis above the marks by default,
     // which drew ruled lines straight through the bars.
     zindex: 0,
+    // A label near either end aligns to it rather than centring past it. Flush applies within 1px by
+    // default, and the headroom bar labels get left Q2's last tick ~14px short of the end: "250.0K",
+    // centred, ran past the chart's edge and was cut (2026-10-03). 24px is half the widest compact label.
+    labelFlush: 24,
   };
 }
 function bandAxis(title: string | null | undefined) {

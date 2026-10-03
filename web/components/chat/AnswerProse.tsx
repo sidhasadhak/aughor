@@ -27,6 +27,7 @@ import remarkGfm from "remark-gfm";
 
 import { renderEmphasis } from "@/components/brief/BriefProse";
 import { ProseTable } from "@/components/TableActions";
+import { monthsInTables } from "@/lib/format";
 
 /** A bare id in prose — a uuid, or the repo's own prefixed ids (`ua_…`, `sb_…`). */
 const ID_RE =
@@ -179,7 +180,7 @@ export function AnswerProse({ text, className = "", caret = false }: {
         unwrapDisallowed
         components={COMPONENTS}
       >
-        {text}
+        {monthsInTables(text)}
       </ReactMarkdown>
       {caret && <span className="aug-caret" aria-hidden="true" />}
     </div>

@@ -255,3 +255,31 @@ describe("a month axis labels every month", () => {
   });
 });
 
+/** Q2's ranking (2026-10-03): its last value tick, "250.0K", centred ~14px short of the end, ran past the chart's
+ *  edge and was cut. Every value label stays inside the plot, at any width. */
+describe("a value axis keeps its end labels inside the chart", () => {
+  const Q2 = [["Outerwear & Coats", "229793.89", "150.78"], ["Jeans", "213177.98", "102.64"], ["Sweaters", "139504.09", "76.90"],
+    ["Swim", "117253.80", "60.28"], ["Fashion Hoodies & Sweatshirts", "115836.57", "56.40"], ["Suits & Sport Coats", "104985.21", "123.22"],
+    ["Sleep & Lounge", "98155.39", "50.91"], ["Tops & Tees", "88963.76", "43.93"], ["Shorts", "83797.55", "46.74"], ["Dresses", "80372.45", "88.03"]];
+
+  it.each([500, 725])("on a ranking %ipx wide", async (width) => {
+    const out = resolveVegaSpec({ columns: ["category", "total_revenue", "average_order_value"], rows: Q2,
+                                  chartType: "auto", showLabels: true })!;
+    const compiled = vl.compile({ ...out.spec, width, height: out.defaultH } as Parameters<typeof vl.compile>[0],
+                                { config }).spec;
+    const view = new View(parse(compiled), { renderer: "none" });
+    await view.runAsync();
+    const ends: number[] = [];
+    const walk = (nodes: { items?: unknown[]; text?: unknown; role?: string; bounds?: { x2: number } }[] | undefined,
+                  role = "") => {
+      for (const n of nodes ?? []) {
+        const r = n.role || role;
+        if (r === "axis-label" && typeof n.text === "string" && /K$/.test(n.text)) ends.push(n.bounds!.x2);
+        walk(n.items as typeof nodes, r);
+      }
+    };
+    walk((view.scenegraph() as unknown as { root?: { items?: [] } }).root?.items);
+    expect(ends.length).toBeGreaterThan(3);
+    expect(Math.max(...ends)).toBeLessThanOrEqual(view.width());
+  });
+});

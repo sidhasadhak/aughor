@@ -1369,6 +1369,12 @@ def _comparison_basis(intake_data: dict) -> str:
     """
     if intake_data.get("cross_sectional") or intake_data.get("descriptive_only"):
         return ""
+    # A comparison inside the window measured is no baseline: Q3's line read "September 2025–August
+    # 2026 vs Month-over-Month (MoM)" over August 2026, one of its own twelve months (2026-10-03).
+    cs, ce = (intake_data.get("comparison_start") or "")[:10], (intake_data.get("comparison_end") or "")[:10]
+    os_, oe = (intake_data.get("observation_start") or "")[:10], (intake_data.get("observation_end") or "")[:10]
+    if cs and ce and os_ and oe and os_ <= cs and ce <= oe:
+        return ""
     return intake_data.get("comparison_label", "")
 
 
@@ -5276,12 +5282,24 @@ def _trailing_partial_decision(intake, monthly_counts) -> "str | None":
     return None
 
 
-def _flag_trailing_partial(intake, conn_id: str, table: str, date_col: str) -> "str | None":
+#: A question that reads its data period by period — "monthly", "by month", "each week", "over time".
+_BY_PERIOD_RE = re.compile(
+    r"\b(?:monthly|weekly|daily|quarterly|yearly|over\s+time|month\s+by\s+month"
+    r"|(?:by|each|per|every)\s+(?:month|week|day|quarter|year))\b", re.I)
+
+
+def _flag_trailing_partial(intake, conn_id: str, table: str, date_col: str,
+                           question: str = "") -> "str | None":
     """Trailing-partial guard — the profiler computes `trailing_partial` for the whole table, but
     the intake window selection never consumed it, so an incomplete final month reads as a sharp
     drop. Probe the observation window's monthly volumes and flag a likely-incomplete final period.
-    Skipped for a cross-sectional intake or a window with no dates."""
+    Skipped for a cross-sectional intake, a window with no dates, and an answer that reads no period
+    by period: Q2 ranked ten categories over six months ending on the settled day 4 September by
+    design, and its period line said "September 2026 may be incomplete" (2026-10-03). A question that
+    compares periods or cuts by one keeps the guard."""
     if getattr(intake, "cross_sectional", False):
+        return None
+    if not getattr(intake, "comparison_asked", True) and not _BY_PERIOD_RE.search(question or ""):
         return None
     os_ = (getattr(intake, "observation_start", "") or "")[:10]
     oe_ = (getattr(intake, "observation_end", "") or "")[:10]
@@ -6701,6 +6719,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # Trailing-partial guard: an incomplete final observation month reads as a false drop.
         _tp_note = _flag_trailing_partial(
             intake, state.get("connection_id") or "", intake.metric_table or "", intake.date_column or "",
+            question=state.get("question", ""),
         )
         _notes = " ".join(n for n in (_cov_note, _dens_note, _tp_note) if n)
         if _notes:

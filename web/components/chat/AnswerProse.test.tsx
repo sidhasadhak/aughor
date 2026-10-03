@@ -12,6 +12,17 @@ import { describe, expect, it, vi } from "vitest";
 import { AnswerProse, readsAsProse } from "@/components/chat/AnswerProse";
 
 describe("AnswerProse", () => {
+  it("reads a column of months' first days as months, and leaves a column of days alone", () => {
+    // Q3 (2026-10-03): the answer's table wrote "2025-09-01" under an axis reading "Sep 2025".
+    const { container } = render(<AnswerProse text={"| Month | Revenue |\n| :--- | :--- |\n| 2025-09-01 | $54,076 |\n"
+      + "| 2025-10-01 | $60,410 |\n\n| Day | Orders |\n| --- | --- |\n| 2026-03-01 | 12 |\n| 2026-03-02 | 14 |"} />);
+    const cells = [...container.querySelectorAll("td")].map((td) => td.textContent);
+    expect(cells).toEqual(["Sep 2025", "$54,076", "Oct 2025", "$60,410", "2026-03-01", "12", "2026-03-02", "14"]);
+    // one row: its first-of-month date may be the day itself
+    const one = render(<AnswerProse text={"| Day | Orders |\n| --- | --- |\n| 2026-03-01 | 12 |"} />);
+    expect(one.container.querySelector("td")?.textContent).toBe("2026-03-01");
+  });
+
   it("renders inline code as a copyable chip — never a literal backtick", async () => {
     const writeText = vi.fn();
     Object.assign(navigator, { clipboard: { writeText } });

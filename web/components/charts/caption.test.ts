@@ -19,9 +19,14 @@ describe("a chart's caption", () => {
     expect(chartCaption(Q2_TITLE, Q2.columns, Q2.rows, "auto")).toBe("Revenue by category — 4 Mar – 3 Sep 2026");
   });
 
-  it("names the change a change chart draws, with the title's filter", () => {
+  it("names the change a change chart draws, with the title's filter and the months it draws", () => {
+    // the change starts a month after the result does: Q3's chart drew September 2025 on (2026-10-03)
     expect(chartCaption(Q3_TITLE, Q3.columns, Q3.rows, "auto"))
-      .toBe("Revenue change by month where status = Complete — Aug 2025 – Aug 2026");
+      .toBe("Revenue change by month where status = Complete — Sep – Nov 2025");
+    const pct = Q3.columns.slice(0, 3).concat("pct_change");
+    const rows = Q3.rows.map((r) => [...r.slice(0, 3), r[3] === "NULL" ? "NULL" : String(Number(r[3]) / 50000)]);
+    expect(chartCaption("Monthly revenue, prev month revenue and pct change by month where status = Complete — Aug – Nov 2025",
+      pct, rows, "auto")).toBe("Change by month where status = Complete — Sep – Nov 2025");
   });
 
   it("keeps the title where the chart draws every measure, or where a chart type was chosen", () => {
