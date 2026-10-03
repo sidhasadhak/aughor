@@ -174,7 +174,20 @@ async def _lifespan(app: "FastAPI"):
         await _start_continuous_exploration_loop()
         await _start_monitor_scheduler()
         await _start_automation_heartbeat()
+        # AO-2b — the Slack supervisor as a child of the API, behind its flag. Off, this
+        # issues nothing and spawns nothing; a failure to start is on its status route.
+        try:
+            from aughor.slackbots.managed import start_managed_supervisor
+            _port = os.environ.get("AUGHOR_PORT") or os.environ.get("PORT") or "8000"
+            start_managed_supervisor(api_url=f"http://127.0.0.1:{_port}")
+        except Exception as exc:                        # noqa: BLE001 — never aborts boot
+            logger.warning("managed Slack supervisor not started: %s", exc)
     yield
+    try:
+        from aughor.slackbots.managed import stop_managed_supervisor
+        stop_managed_supervisor()
+    except Exception:                                   # noqa: BLE001
+        logger.debug("managed Slack supervisor stop failed", exc_info=True)
     # ── Shutdown ───────────────────────────────────────────────────────────────
     # Background loops (supervisor, ontology refresh) are cancelled by event-loop
     # teardown, and the kernel's boot_recovery fails any job orphaned by the stop
@@ -224,7 +237,10 @@ _api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
 #: (a client with no token yet must be able to learn how to get one). Exact literal,
 #: not a bare `/auth/` prefix: this list matches by `startswith`, and a prefix would
 #: silently exempt anything that later mounts under it.
-_AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/", "/auth/config")
+_AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/", "/auth/config",
+                # AO-2d — Slack's browser redirect after an install carries no key; the
+                # route verifies a sealed state instead. Its own prefix, deliberately.
+                "/slack-bots/oauth/")
 
 
 def api_key_configured() -> bool:

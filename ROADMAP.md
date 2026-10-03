@@ -10334,7 +10334,13 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > AO-4 ✅ — the agent's page is the whole agent: Doors, Alerts and Spend tabs beside Overview, Runs, Map, Quality
 > and Setup; a connection picker in the context bar; every "Open automation" carries its id and lands on it; Hub
 > rows are links; `?tab=integrations` resolves; a "?" per layer opens the arc's help; the six words are explained
-> once where they appear; the built-in agent's page has its Map block. Next: AO-2b, AO-2c, AO-2d.
+> once where they appear; the built-in agent's page has its Map block. AO-2b ✅ (flag `slack.managed_supervisor`,
+> off) — the API spawns, watches and restarts the supervisor with its own key; the spike is decided by reading:
+> the bot is TypeScript end to end, so spawn-and-watch keeps one implementation. AO-2c ✅ — agent mode by
+> default with its events, one-way, the README rewritten. AO-2d ✅ — one configuration token creates the app
+> from the rendered manifest; an Install button on HTTPS; the app-level token stays one paste (Slack has no API
+> for it — the falsifier met and said). AO-2f ✅ — a home channel on the record. The AO-2 measure is still owed:
+> no Slack workspace was touched. Next: AO-6, AO-7, AO-5.
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

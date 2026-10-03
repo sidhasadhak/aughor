@@ -345,7 +345,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # discriminant and in comments; `test_arc_ao_3` reads the rendered strings.
         r"(?i)charter", ("web",),
         ("web/lib/api.ts", "web/components/FleetOverviewPanel.tsx",
-         "web/components/AgenticAgentsPanel.tsx"),
+         "web/components/AgenticAgentsPanel.tsx",
+         # AO-4: reads the rule's wire field `charter_id` (a built-in agent's scope) to
+         # say "only built-in …" on screen. The same reason as the three above.
+         "web/components/agentops/AgentAlertRulesPanel.tsx"),
         "not a user-facing word; the roster lists 'agents'",
     ),
     "investigation_in_web": (

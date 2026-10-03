@@ -44,8 +44,8 @@ const BLANK = {
   name: "", metric: "error_rate", comparator: "gt" as Comparator, threshold: 0.25,
   window_minutes: 15, debounce_minutes: 30, check_cron: "*/5 * * * *",
   severity: "warning" as const, channel: "", enabled: true,
-  // AO-4 — the scope the engine always honoured and the form never offered: "" is the
-  // whole fleet, an id narrows the rule to one custom agent.
+  // AO-4 — the scope the engine always honoured and the form never offered: "" is
+  // every agent, an id narrows the rule to one custom agent.
   agent_id: "",
 };
 
@@ -222,7 +222,7 @@ export function AgentAlertRulesPanel({ agentId = "", agentName = "" }: {
             ) : (
               <select className="aug-input" value={draft.agent_id}
                 onChange={e => setDraft(d => ({ ...d, agent_id: e.target.value }))}>
-                <option value="">the whole fleet</option>
+                <option value="">every agent</option>
                 {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             )}
@@ -253,7 +253,7 @@ export function AgentAlertRulesPanel({ agentId = "", agentName = "" }: {
                   {" · "}quiet {rule.debounce_minutes}m
                   {rule.channel ? ` · via ${rule.channel}` : " · in-app"}
                   {rule.agent_id ? ` · only ${agentLabel(rule.agent_id)}`
-                    : rule.charter_id ? ` · only ${rule.charter_id}` : " · whole fleet"}
+                    : rule.charter_id ? ` · only built-in ${rule.charter_id}` : " · every agent"}
                 </div>
                 {verdicts[rule.id] && (
                   <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 2 }}>

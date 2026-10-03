@@ -25,12 +25,15 @@ import {
   type IntegrationProvider,
   deleteSlackBot,
   getConnections,
+  getManagedSupervisor,
   getSlackBots,
   getSupervisorKeyStatus,
   issueSupervisorKey,
   listUserAgents,
+  restartManagedSupervisor,
   updateSlackBot,
   type Connection,
+  type ManagedSupervisorStatus,
   type SlackBotSummary,
   type UserAgent,
 } from "@/lib/api";
@@ -70,7 +73,7 @@ export function IntegrationsPanel() {
   const [connections, setConnections] = useState<Connection[]>([]);
   /** The record whose edit form is open, and the form's draft. One at a time. */
   const [editBot, setEditBot] = useState<string | null>(null);
-  const [botDraft, setBotDraft] = useState({ name: "", agent_id: "", connection_id: "" });
+  const [botDraft, setBotDraft] = useState({ name: "", agent_id: "", connection_id: "", channel_id: "" });
   /** The connection a NEW app asks on. Defaults to the chosen agent's own binding, which
    *  is the pairing the ask door insists on; a bot created with none used to fall back to
    *  the supervisor's default and be refused on every @mention. */
@@ -84,6 +87,8 @@ export function IntegrationsPanel() {
   const [freshKey, setFreshKey] = useState("");
   // AO-2e — until when the key a Regenerate replaced still opens the door.
   const [graceUntil, setGraceUntil] = useState("");
+  // AO-2b — the managed supervisor's state, read beside the bots.
+  const [supervisor, setSupervisor] = useState<ManagedSupervisorStatus | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -102,6 +107,9 @@ export function IntegrationsPanel() {
         setBots(b);
         setAgents(a);
         setConnections(c);
+        // AO-2b — read apart from the three above: an older API without the route must
+        // not blank the bots, and the block simply does not render without an answer.
+        getManagedSupervisor().then(setSupervisor).catch(() => setSupervisor(null));
         setKeyIssued((await getSupervisorKeyStatus().catch(() => null))?.issued ?? false);
       }
     } catch (e) {
@@ -374,7 +382,7 @@ export function IntegrationsPanel() {
                               onClick={() => {
                                 setEditBot(editing ? null : b.id);
                                 setBotDraft({ name: b.name, agent_id: b.agent_id,
-                                  connection_id: b.connection_id });
+                                  connection_id: b.connection_id, channel_id: b.channel_id ?? "" });
                               }}>
                               {editing ? "Cancel" : "Edit"}
                             </Button>
@@ -437,6 +445,10 @@ export function IntegrationsPanel() {
                                   <option key={c.id} value={c.id}>{c.name}</option>
                                 ))}
                               </select>
+                              {/* AO-2f — an optional home channel on the record. */}
+                              <input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
+                                aria-label="Home channel" placeholder="Home channel — #name or C… (optional)"
+                                onChange={e => setBotDraft(d => ({ ...d, channel_id: e.target.value }))} />
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <Button variant="default" size="xs" disabled={busy === b.id}
                                   onClick={() => saveBot(b, botDraft)}>
@@ -460,6 +472,33 @@ export function IntegrationsPanel() {
                     supervise is a control asking to be ignored. It exists so the fix
                     for "the API refused to serve bot credentials" is a button here
                     rather than a shell export and a restart. */}
+                {/* AO-2b — the supervisor the API runs itself, when the flag is on: its
+                    state in a sentence, and the one control. Off, one line says how it
+                    is started by hand. */}
+                {p.alt_door === "slack_app" && bots.length > 0 && supervisor && (
+                  <div className="aug-fs-xs" style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
+                    paddingTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ color: supervisor.state === "running" ? "var(--grn4)"
+                      : supervisor.state === "off" ? "var(--t3)" : "var(--amb4)", flex: 1 }}>
+                      {supervisor.state === "off"
+                        ? "Supervisor: started by hand — cd bots/slack && npm run dev (turn on "
+                          + "slack.managed_supervisor to let the API run it)"
+                        : supervisor.state === "running"
+                          ? `Supervisor: run by the API · pid ${supervisor.pid} · since ${formatDateTime(supervisor.started_at)}`
+                            + (supervisor.restarts ? ` · restarted ${supervisor.restarts}×` : "")
+                          : `Supervisor: ${supervisor.state} — ${supervisor.last_error || "no reason recorded"}`}
+                    </span>
+                    {supervisor.managed && (
+                      <Button variant="ghost" size="xs" disabled={busy === "supervisor"}
+                        onClick={async () => {
+                          setBusy("supervisor"); setError("");
+                          try { setSupervisor(await restartManagedSupervisor()); }
+                          catch (e) { setError((e as Error).message); }
+                          finally { setBusy(""); }
+                        }}>Restart</Button>
+                    )}
+                  </div>
+                )}
                 {p.alt_door === "slack_app" && bots.length > 0 && (
                   <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
                     paddingTop: 10 }}>

@@ -126,7 +126,7 @@ export function AgenticOpsWorkspace({
     onLayerChange("automations");
     onOpenAutomations?.();
   }, [onLayerChange, onOpenAutomations]);
-  const openAgent = useCallback((id: string, kind: "charter" | "persona" = "persona") => {
+  const openAgent = useCallback((id: string, kind: NonNullable<typeof agentFocus>["kind"] = "persona") => {
     setAgentFocus({ id, kind });
     onLayerChange("agents");
   }, [onLayerChange]);

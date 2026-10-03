@@ -11821,6 +11821,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/slack-bots/apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Slack App
+         * @description Create the Slack app from the manifest Aughor renders, with Slack's own API.
+         *
+         *     Measured 2026-10-03: twenty manual steps across four surfaces and five pasted
+         *     secrets. After this call the app exists, its signing secret is stored, and an
+         *     OAuth client is on the record — so on an HTTPS deployment the install is a button
+         *     (`GET /slack-bots/{id}/install`). What stays by hand is the app-level token: Slack
+         *     offers no API for it, and the response says so (`needs`), never pretending.
+         */
+        post: operations["create_slack_app_slack_bots_apps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/slack-bots/manifest": {
         parameters: {
             query?: never;
@@ -11837,6 +11863,27 @@ export interface paths {
          *     from a README drifts from the code the first time either changes.
          */
         get: operations["slack_bot_manifest_slack_bots_manifest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/slack-bots/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Slack Bot Oauth Callback
+         * @description Slack's redirect after the install: the code becomes the bot token on the record.
+         *     Open (no key) because the browser carries none; the sealed state is the authority.
+         */
+        get: operations["slack_bot_oauth_callback_slack_bots_oauth_callback_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11902,6 +11949,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/slack-bots/supervisor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Managed Supervisor Status
+         * @description What the API knows about the supervisor it runs (flag `slack.managed_supervisor`):
+         *     off, running (pid), restarting, stopped or failed — with the reason named.
+         */
+        get: operations["managed_supervisor_status_slack_bots_supervisor_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/slack-bots/supervisor-key": {
         parameters: {
             query?: never;
@@ -11934,6 +12002,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/slack-bots/supervisor/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Managed Supervisor Restart */
+        post: operations["managed_supervisor_restart_slack_bots_supervisor_restart_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/slack-bots/{bot_id}": {
         parameters: {
             query?: never;
@@ -11951,6 +12036,27 @@ export interface paths {
         head?: never;
         /** Update Slack Bot */
         patch: operations["update_slack_bot_slack_bots__bot_id__patch"];
+        trace?: never;
+    };
+    "/slack-bots/{bot_id}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Slack Bot Install
+         * @description Send the browser to Slack's install page for this app. The state is the bot id,
+         *     sealed, so the callback cannot be pointed at another record.
+         */
+        get: operations["slack_bot_install_slack_bots__bot_id__install_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/spotlight/tools": {
@@ -15407,6 +15513,40 @@ export interface components {
              */
             title: string;
         };
+        /**
+         * SlackAppCreate
+         * @description One configuration token, from api.slack.com/apps → Your App Configuration Tokens.
+         *     Used once, never stored.
+         */
+        SlackAppCreate: {
+            /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /**
+             * Agent View
+             * @default true
+             */
+            agent_view: boolean;
+            /** Config Token */
+            config_token: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Name
+             * @default Aughor
+             */
+            name: string;
+        };
         /** SlackArrival */
         SlackArrival: {
             /**
@@ -15448,6 +15588,11 @@ export interface components {
              * @default
              */
             bot_token: string;
+            /**
+             * Channel Id
+             * @default
+             */
+            channel_id: string;
             /**
              * Connection Id
              * @default
@@ -37642,6 +37787,39 @@ export interface operations {
             };
         };
     };
+    create_slack_app_slack_bots_apps_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackAppCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     slack_bot_manifest_slack_bots_manifest_get: {
         parameters: {
             query?: {
@@ -37649,6 +37827,39 @@ export interface operations {
                 description?: string;
                 agent_id?: string;
                 agent_view?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_bot_oauth_callback_slack_bots_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
             };
             header?: never;
             path?: never;
@@ -37729,6 +37940,26 @@ export interface operations {
             };
         };
     };
+    managed_supervisor_status_slack_bots_supervisor_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     supervisor_key_status_slack_bots_supervisor_key_get: {
         parameters: {
             query?: never;
@@ -37750,6 +37981,26 @@ export interface operations {
         };
     };
     issue_supervisor_key_slack_bots_supervisor_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    managed_supervisor_restart_slack_bots_supervisor_restart_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -37845,6 +38096,37 @@ export interface operations {
                 "application/json": components["schemas"]["SlackBotBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_bot_install_slack_bots__bot_id__install_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

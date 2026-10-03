@@ -37,9 +37,10 @@ from aughor.util.time import now_iso_z
 
 NAME_MAX = 80
 
-#: The three Slack secrets. Named once so the encrypt / decrypt / mask paths cannot
-#: drift apart — a field added to one and missed by another is how a token leaks.
-SECRET_FIELDS = ("bot_token", "app_token", "signing_secret")
+#: The Slack secrets. Named once so the encrypt / decrypt / mask paths cannot drift
+#: apart — a field added to one and missed by another is how a token leaks.
+#: `client_secret` (AO-2d) joins the three when Aughor created the app itself.
+SECRET_FIELDS = ("bot_token", "app_token", "signing_secret", "client_secret")
 
 
 class SlackBot(BaseModel):
@@ -77,8 +78,18 @@ class SlackBot(BaseModel):
     team_id: str = ""
     slack_app_id: str = ""
     bot_user_id: str = ""       # the bot's own Slack user id, from auth.test
-    #: Must match the app's manifest mode. See the module docstring.
+    #: Must match the app's manifest mode. See the module docstring. AO-2c: True for an
+    #: app Aughor renders now (Slack closed the legacy view to new apps on 2026-08-20),
+    #: and one-way — an app switched to agent mode cannot be switched back.
     agent_view: bool = False
+    #: AO-2d — set when Aughor created the app from a configuration token: the OAuth
+    #: client that installs it to a workspace. `client_secret` is encrypted like the rest.
+    client_id: str = ""
+    client_secret: str = ""
+    #: AO-2f — an optional home channel (`C…` id or `#name`): where an automation posting
+    #: AS this bot lands when it names no channel, and what the card shows as "posts to".
+    #: "" means no default; a bot answers mentions wherever it is invited regardless.
+    channel_id: str = ""
 
     created_at: str = Field(default_factory=now_iso_z)
     updated_at: str = Field(default_factory=now_iso_z)

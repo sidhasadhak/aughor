@@ -164,3 +164,255 @@ def test_a_second_supervisor_does_not_erase_the_first(client, slack_ok):
     rows = {x["id"]: x for x in client.get("/slack-bots").json()["bots"]}
     assert rows[a]["listening"]["supervisor_id"] == "h1:1"
     assert rows[b]["listening"]["supervisor_id"] == "h2:2"
+
+
+# ── AO-2c · agent mode by default, and one-way ──────────────────────────────────────
+
+def test_a_new_manifest_is_in_agent_mode_with_its_events():
+    from aughor.slackbots.manifest import AGENT_EVENTS, BOT_EVENTS, render_manifest
+    m = render_manifest(name="x")
+    assert "agent_view" in m["features"]
+    assert "assistant:write" in m["oauth_config"]["scopes"]["bot"]
+    events = m["settings"]["event_subscriptions"]["bot_events"]
+    assert events == list(BOT_EVENTS) + list(AGENT_EVENTS), \
+        "the README told a person to add these by hand; the manifest must carry them"
+    assert "redirect_urls" not in m["oauth_config"], "no public origin, no redirect"
+    legacy = render_manifest(name="x", agent_view=False)
+    assert "agent_view" not in legacy["features"]
+    assert legacy["settings"]["event_subscriptions"]["bot_events"] == list(BOT_EVENTS)
+
+
+def test_the_manifest_route_defaults_to_agent_mode_and_carries_the_callback(client, monkeypatch):
+    body = client.get("/slack-bots/manifest").json()
+    assert body["agent_view"] is True
+    assert "agent_view" in body["manifest"]["features"]
+    monkeypatch.setenv("AUGHOR_PUBLIC_API_URL", "https://aughor.example.com")
+    body = client.get("/slack-bots/manifest").json()
+    assert body["manifest"]["oauth_config"]["redirect_urls"] == \
+        ["https://aughor.example.com/slack-bots/oauth/callback"]
+    monkeypatch.setenv("AUGHOR_PUBLIC_API_URL", "http://aughor.example.com")
+    assert "redirect_urls" not in client.get("/slack-bots/manifest").json()["manifest"]["oauth_config"], \
+        "Slack refuses a non-HTTPS redirect; better none than a wrong one"
+
+
+def test_agent_mode_is_one_way(client, slack_ok):
+    r = client.post("/slack-bots", json={
+        "name": "agentic", "bot_token": "xoxb-x", "app_token": "xapp-x", "signing_secret": "s",
+        "agent_view": True})
+    assert r.status_code == 200, r.text
+    bot = r.json()
+    body = {"name": "agentic", "enabled": True, "agent_id": "", "connection_id": "",
+            "agent_view": False}
+    r = client.patch(f"/slack-bots/{bot['id']}", json=body)
+    assert r.status_code == 409
+    assert "one-way" in r.json()["detail"]
+    assert client.patch(f"/slack-bots/{bot['id']}", json={**body, "agent_view": True}).status_code == 200
+
+
+# ── AO-2d · one configuration token ────────────────────────────────────────────────
+
+def _created(app_id="A123"):
+    return True, {"ok": True, "app_id": app_id,
+                  "credentials": {"client_id": "111.222", "client_secret": "cs-secret",
+                                  "verification_token": "v", "signing_secret": "sig-secret"},
+                  "oauth_authorize_url": "https://slack.com/oauth/v2/authorize?x"}
+
+
+def test_creating_the_app_from_one_token_stores_what_slack_returned(client, monkeypatch):
+    from aughor.slackbots import apps
+    seen: dict = {}
+
+    def _create(token, manifest):
+        seen["token"] = token
+        seen["manifest"] = manifest
+        return _created()
+
+    monkeypatch.setattr(apps, "create_app", _create)
+    r = client.post("/slack-bots/apps", json={"config_token": "xoxe.xoxp-cfg", "name": "Look Bot",
+                                              "agent_id": "ua_1", "connection_id": "c1"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert seen["token"] == "xoxe.xoxp-cfg"
+    assert seen["manifest"]["display_information"]["name"] == "Look Bot"
+    assert "agent_view" in seen["manifest"]["features"]
+    bot = body["bot"]
+    assert bot["slack_app_id"] == "A123" and bot["agent_id"] == "ua_1"
+    assert bot["enabled"] is False and "not installed" in bot["disabled_reason"]
+    assert bot["signing_secret"].startswith("sig-") and "secret" not in bot["signing_secret"], "masked"
+    assert bot["client_secret"] != "cs-secret", "a secret never leaves the server in clear"
+    assert body["needs"] == ["bot_token", "app_token"]
+    assert body["oauth_available"] is False and body["install_url"] == ""
+    assert "AUGHOR_PUBLIC_API_URL" in body["steps"][0]
+    assert "no API" in body["steps"][1]
+    # The configuration token was used once and is nowhere on the record.
+    from aughor.slackbots import store
+    raw = store.get_bot_decrypted(bot["id"])
+    assert raw.client_secret == "cs-secret" and raw.signing_secret == "sig-secret"
+    assert "xoxe" not in raw.model_dump_json()
+
+
+def test_a_refused_manifest_is_slacks_own_words(client, monkeypatch):
+    from aughor.slackbots import apps
+    monkeypatch.setattr(apps, "create_app", lambda t, m: (False, {
+        "error": "invalid_manifest: features.agent_view: unknown field"}))
+    r = client.post("/slack-bots/apps", json={"config_token": "t", "name": "x"})
+    assert r.status_code == 422 and "unknown field" in r.json()["detail"]
+
+
+def test_the_install_is_a_button_only_with_a_public_https_origin(client, monkeypatch):
+    from aughor.slackbots import apps
+    monkeypatch.setattr(apps, "create_app", lambda t, m: _created())
+    bot = client.post("/slack-bots/apps", json={"config_token": "t", "name": "x"}).json()["bot"]
+    assert client.get(f"/slack-bots/{bot['id']}/install", follow_redirects=False).status_code == 409
+    monkeypatch.setenv("AUGHOR_PUBLIC_API_URL", "https://aughor.example.com")
+    r = client.get(f"/slack-bots/{bot['id']}/install", follow_redirects=False)
+    assert r.status_code == 302, r.text
+    loc = r.headers["location"]
+    assert loc.startswith("https://slack.com/oauth/v2/authorize?")
+    assert "client_id=111.222" in loc and "assistant%3Awrite" in loc and "state=" in loc
+
+
+def test_the_callback_turns_the_code_into_the_bot_token_and_waits_for_the_app_token(
+        client, monkeypatch, slack_ok):
+    from aughor.slackbots import apps, store
+    monkeypatch.setattr(apps, "create_app", lambda t, m: _created())
+    monkeypatch.setenv("AUGHOR_PUBLIC_API_URL", "https://aughor.example.com")
+    bot = client.post("/slack-bots/apps", json={"config_token": "t", "name": "x"}).json()["bot"]
+    state = client.get(f"/slack-bots/{bot['id']}/install", follow_redirects=False) \
+        .headers["location"].split("state=")[1].split("&")[0]
+    from urllib.parse import unquote
+    state = unquote(state)
+    monkeypatch.setattr(apps, "exchange_code", lambda cid, cs, code, uri: (True, {
+        "ok": True, "access_token": "xoxb-installed", "team": {"id": "T9"}, "bot_user_id": "U9"}))
+    r = client.get(f"/slack-bots/oauth/callback?code=c0de&state={state}", follow_redirects=False)
+    assert r.status_code == 200, r.text            # no AUGHOR_WEB_URL → JSON, not a redirect
+    assert r.json()["outcome"] == "installed"
+    raw = store.get_bot_decrypted(bot["id"])
+    assert raw.bot_token == "xoxb-installed"
+    assert raw.enabled is False and "app-level token" in raw.disabled_reason
+    # The last paste: the app-level token. Then it is live.
+    monkeypatch.setattr("aughor.routers.slackbots._verify", lambda b: b)
+    r = client.patch(f"/slack-bots/{bot['id']}", json={
+        "name": "x", "enabled": False, "agent_id": "", "connection_id": "",
+        "agent_view": True, "app_token": "xapp-pasted"})
+    assert r.status_code == 200, r.text
+    after = store.get_bot_decrypted(bot["id"])
+    assert after.enabled is True and after.disabled_reason == "" and after.app_token == "xapp-pasted"
+    assert after.client_id == "111.222", "the app's identity survives the edit"
+
+
+def test_a_forged_state_is_refused(client):
+    assert client.get("/slack-bots/oauth/callback?code=c&state=sb_whatever").status_code == 400
+
+
+# ── AO-2b · the managed supervisor ──────────────────────────────────────────────────
+
+class _Proc:
+    def __init__(self, pid=4242):
+        self.pid, self._code, self.terminated = pid, None, False
+
+    def poll(self):
+        return self._code
+
+    def exit(self, code):
+        self._code = code
+
+    def terminate(self):
+        self.terminated = True
+        self._code = -15
+
+    def wait(self, timeout=None):
+        return self._code
+
+
+def _tmp_supervisor(tmp_path):
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "node_modules").mkdir()
+    return tmp_path
+
+
+def test_off_by_default_spawns_nothing(tmp_path):
+    from aughor.slackbots.managed import ManagedSupervisor, managed_status
+    spawned: list = []
+    host = ManagedSupervisor(api_url="http://127.0.0.1:8000", runtime_key="k",
+                             cwd=_tmp_supervisor(tmp_path), spawn=lambda *a: spawned.append(a) or _Proc(),
+                             flag_enabled=lambda name: False)
+    assert host.start() == "off" and spawned == []
+    assert host.status().state == "off" and host.status().managed is False
+    assert managed_status()["flag"] is False and managed_status()["state"] == "off"
+
+
+def test_on_it_spawns_the_supervisor_with_its_own_key_and_the_api_url(tmp_path, monkeypatch):
+    from aughor.slackbots import managed
+    spawned: list = []
+    monkeypatch.setattr(managed.ManagedSupervisor, "_npx", staticmethod(lambda: "/usr/bin/npx"))
+    host = managed.ManagedSupervisor(api_url="http://127.0.0.1:8010", runtime_key="managed-key",
+                                     cwd=_tmp_supervisor(tmp_path),
+                                     spawn=lambda cmd, cwd, env: spawned.append((cmd, cwd, env)) or _Proc(),
+                                     flag_enabled=lambda name: True)
+    assert host.start() == "running"
+    cmd, cwd, env = spawned[0]
+    assert cmd == ["/usr/bin/npx", "tsx", "src/index.ts"] and cwd == tmp_path
+    assert env["AUGHOR_API_URL"] == "http://127.0.0.1:8010"
+    assert env["AUGHOR_RUNTIME_KEY"] == "managed-key" and env["AUGHOR_MANAGED_BY_API"] == "1"
+    assert "SLACK_BOT_TOKEN" not in env
+    s = host.status()
+    assert s.state == "running" and s.pid == 4242 and s.managed and s.flag
+    host.stop()
+    assert spawned[0] and host.status().state == "stopped"
+
+
+def test_a_missing_precondition_is_said_not_tried(tmp_path, monkeypatch):
+    from aughor.slackbots import managed
+    monkeypatch.setattr(managed.ManagedSupervisor, "_npx", staticmethod(lambda: ""))
+    (tmp_path / "package.json").write_text("{}")          # no node_modules, no npx
+    spawned: list = []
+    host = managed.ManagedSupervisor(api_url="u", runtime_key="k", cwd=tmp_path,
+                                     spawn=lambda *a: spawned.append(a) or _Proc(),
+                                     flag_enabled=lambda name: True)
+    assert host.start() == "failed" and spawned == []
+    s = host.status()
+    assert "node_modules" in s.last_error and "npx" in s.last_error
+    assert len(s.preconditions) == 2
+
+
+def test_an_exited_child_is_restarted_after_a_backoff(tmp_path, monkeypatch):
+    import time as _t
+    from aughor.slackbots import managed
+    monkeypatch.setattr(managed, "_WATCH_S", 0.01)
+    monkeypatch.setattr(managed, "BACKOFF_S", (0.01,))
+    monkeypatch.setattr(managed.ManagedSupervisor, "_npx", staticmethod(lambda: "/usr/bin/npx"))
+    procs: list = []
+
+    def _spawn(cmd, cwd, env):
+        p = _Proc(pid=100 + len(procs))
+        procs.append(p)
+        return p
+
+    host = managed.ManagedSupervisor(api_url="u", runtime_key="k", cwd=_tmp_supervisor(tmp_path),
+                                     spawn=_spawn, flag_enabled=lambda name: True)
+    assert host.start() == "running"
+    procs[0].exit(1)
+    deadline = _t.time() + 3
+    while len(procs) < 2 and _t.time() < deadline:
+        _t.sleep(0.02)
+    host.stop()
+    assert len(procs) >= 2, "the child was not restarted"
+    s = host.status()
+    assert s.restarts >= 1 and s.last_exit_code == 1
+
+
+def test_the_managed_key_opens_the_runtime_route_and_a_regenerate_does_not_touch_it(client, slack_ok):
+    from aughor.slackbots import store
+    managed_key = store.issue_managed_key()
+    assert store.supervisor_key_matches(managed_key)
+    client.post("/slack-bots/supervisor-key")
+    client.post("/slack-bots/supervisor-key")
+    assert store.supervisor_key_matches(managed_key), "a person's rotation must not darken the managed child"
+    assert client.get("/slack-bots/runtime", headers={"X-Aughor-Runtime-Key": managed_key}).status_code == 200
+
+
+def test_the_supervisor_routes_say_off_and_refuse_a_restart_when_unmanaged(client):
+    body = client.get("/slack-bots/supervisor").json()
+    assert body["flag"] is False and body["state"] == "off"
+    assert client.post("/slack-bots/supervisor/restart").status_code == 409

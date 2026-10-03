@@ -41,12 +41,27 @@ BOT_SCOPES = [
 #: reaction removed is not subscribed — a verdict is not un-said by taking the emoji back.
 BOT_EVENTS = ["app_mention", "message.im", "reaction_added"]
 
+#: AO-2c — the events agent mode needs, which `bots/slack/README.md` told a person to add
+#: by hand while the manifest left them out: the Agents & AI Apps surface opens a session
+#: on `app_home_opened`, follows the user with `app_context_changed`, and the native stop
+#: button and the title arrive as `agent_session_*`. Rendered when `agent_view` is on, so
+#: the manifest and the README no longer disagree.
+AGENT_EVENTS = ["app_home_opened", "app_context_changed", "agent_session_stopped",
+                "agent_session_title_changed"]
 
-def render_manifest(*, name: str, description: str = "", agent_view: bool = False) -> dict:
+
+def render_manifest(*, name: str, description: str = "", agent_view: bool = True,
+                    redirect_url: str = "") -> dict:
     """The manifest as a dict; the caller serialises it as JSON.
 
     JSON, never YAML: Slack's YAML tab rejected this manifest with "can't translate"
     during RC-1's live setup, and the failure names nothing a user can act on.
+
+    ``agent_view`` defaults to True (AO-2c, §6 item 38(f)): Slack closed the legacy
+    assistant view to new apps on 2026-08-20 and retires it in February 2027, so a new
+    app is in agent mode or it is on borrowed time. ``redirect_url`` (AO-2d): the API's
+    OAuth callback, when the deployment has a public HTTPS origin — it is what lets the
+    install be a button rather than a paste.
     """
     display_name = (name or "Aughor").strip()[:35]
     manifest = {
@@ -70,6 +85,8 @@ def render_manifest(*, name: str, description: str = "", agent_view: bool = Fals
             "token_rotation_enabled": False,
         },
     }
+    if redirect_url:
+        manifest["oauth_config"]["redirect_urls"] = [redirect_url]
     if agent_view:
         # Slack's Agent/Assistant surface: the native stop button and the session
         # lifecycle RC-2's progress cards ride on.
@@ -78,4 +95,5 @@ def render_manifest(*, name: str, description: str = "", agent_view: bool = Fals
         }
         manifest["features"]["agent_view"] = {}
         manifest["oauth_config"]["scopes"]["bot"].append("assistant:write")
+        manifest["settings"]["event_subscriptions"]["bot_events"] += list(AGENT_EVENTS)
     return manifest

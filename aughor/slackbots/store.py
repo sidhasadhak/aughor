@@ -120,19 +120,42 @@ def supervisor_key_status() -> dict:
     }
 
 
-def supervisor_key_matches(candidate: str) -> bool:
-    """Constant-time comparison against the stored key — or, inside the grace window,
-    against the one it replaced. False when none is issued."""
-    row = _key_row()
-    if not row or not candidate:
+#: AO-2b — the key the API hands the supervisor it spawns itself. Its own row, so a
+#: person's "Regenerate" (the operator's key above) never darkens the managed child,
+#: and the managed child's key is never shown to anyone.
+_MANAGED_KEY_ROW = "supervisor-managed"
+
+
+def issue_managed_key() -> str:
+    raw = secrets.token_urlsafe(32)
+    _KEYS.upsert({"id": _MANAGED_KEY_ROW, "key": encrypt_secret(raw), "created_at": now_iso_z()})
+    return raw
+
+
+def _managed_key_matches(candidate: str) -> bool:
+    row = next((r for r in _KEYS.all() if r.get("id") == _MANAGED_KEY_ROW), None)
+    if not row:
         return False
     stored = decrypt_secret(str(row.get("key", "")) or "") or ""
-    if stored and hmac.compare_digest(stored, candidate):
-        return True
-    if _previous_still_valid(row):
-        previous = decrypt_secret(str(row.get("previous_key", "")) or "") or ""
-        return bool(previous) and hmac.compare_digest(previous, candidate)
-    return False
+    return bool(stored) and hmac.compare_digest(stored, candidate)
+
+
+def supervisor_key_matches(candidate: str) -> bool:
+    """Constant-time comparison against the stored key — or, inside the grace window,
+    against the one it replaced — or against the managed child's own key. False when
+    none is issued."""
+    if not candidate:
+        return False
+    row = _key_row()
+    if row:
+        stored = decrypt_secret(str(row.get("key", "")) or "") or ""
+        if stored and hmac.compare_digest(stored, candidate):
+            return True
+        if _previous_still_valid(row):
+            previous = decrypt_secret(str(row.get("previous_key", "")) or "") or ""
+            if previous and hmac.compare_digest(previous, candidate):
+                return True
+    return _managed_key_matches(candidate)
 
 
 # ── Liveness (AO-2a): what the supervisor said it has open, and when ──────────────

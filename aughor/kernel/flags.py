@@ -86,6 +86,8 @@ FLAG_ENV = {
     # Receipt on the GRADUATION_QUEUE tombstone below.
     "ask.converse": "AUGHOR_ASK_CONVERSE",
     "ask.query_objects": "AUGHOR_ASK_QUERY_OBJECTS",
+    # AO-2b (2026-10-03): the API spawns, watches and restarts the Slack supervisor.
+    "slack.managed_supervisor": "AUGHOR_SLACK_MANAGED_SUPERVISOR",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "framing.choice_confidence": "AUGHOR_FRAMING_CHOICE_CONFIDENCE",
     "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
@@ -322,6 +324,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "slack.managed_supervisor": {
+        "label": "Run the Slack bot supervisor from the API",
+        "description": "The API starts the Slack socket supervisor (bots/slack) itself when it boots, watches it, and restarts it with a backoff when it exits — so a Slack bot listens without anyone opening a terminal. Integrations → Slack shows the process's state and a Restart button, and the bot card reads listening from its heartbeat. Needs Node.js and bots/slack/node_modules (the installer provisions them when this is on). Off by default → nothing is spawned; the supervisor is started by hand with `npm run dev`, exactly as today.",
+    },
     "grounding.data_profiles": {
         "label": "Show the SQL writer what the data holds, not only its schema",
         "description": "Adds a DATA PROFILE block to the quick answer's prompt for the tables the question was linked to: each table's row count and date range, and per column the values a low-cardinality column takes, a measure's range and median, and null rates of 20% or more — read from the profiler's cache, so no question pays for profiling, and held under 2,400 characters with any table left out named. Off by default → the prompt is exactly as today.",
@@ -608,6 +614,15 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc AO-2b (ROADMAP §3.52), queued 2026-10-03. No model call, no prompt: it graduates on
+    # the arc's own measure, which is a clock, not a grid.
+    "slack.managed_supervisor": "receipt: on a fresh install with the flag on, the API starts the "
+                                "supervisor at boot, a bot card reads *listening since …* within a "
+                                "minute, a killed child is back within the backoff, and Create agent → "
+                                "a Slack answer takes one person, no terminal, under five minutes "
+                                "(§3.52's AO-2 measure) on two machines. Falsifier: not under ten "
+                                "minutes on a fresh clone → spawn-and-watch is the wrong shape and "
+                                "the in-process Socket Mode spike is reopened.",
     # Arc CT-4 (ROADMAP §3.50), queued 2026-09-28. It adds no model call and changes no prompt,
     # so there is no grid to buy: it graduates on being USED.
     "cockpit.composed": "receipt: on theLook, a person opens a Data Canvas's Cockpit tab and sees "

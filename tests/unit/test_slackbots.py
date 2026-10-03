@@ -123,7 +123,10 @@ def test_manifest_grants_what_the_transport_actually_calls():
     assert "app_mentions:read" in scopes, "the mention that starts a turn"
     assert "chat:write" in scopes, "posting the answer"
     assert "files:write" in scopes, "RC-2 uploads a chart PNG and a CSV"
-    assert set(scopes) == set(BOT_SCOPES)
+    # AO-2c: a new app is in agent mode, and that surface is the one extra scope.
+    assert set(scopes) == set(BOT_SCOPES) | {"assistant:write"}
+    legacy = render_manifest(name="salesbot", agent_view=False)["oauth_config"]["scopes"]["bot"]
+    assert set(legacy) == set(BOT_SCOPES)
 
 
 def test_manifest_is_socket_mode_with_no_public_url():

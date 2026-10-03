@@ -4343,6 +4343,11 @@ export interface SlackBotSummary {
   listening: { supervisor_id: string; since: string; last_seen_at: string } | null;
   /** Why nothing is listening, with the command to start it; "" while listening. */
   liveness_hint: string;
+  /** AO-2d — set when Aughor created the app itself: the OAuth client that installs it. */
+  client_id?: string;
+  slack_app_id?: string;
+  /** AO-2f — optional home channel (`C…` or `#name`); "" means none. */
+  channel_id?: string;
   team_id: string;
   bot_user_id: string;
   /** DS-5 — the agent this bot is a door ONTO. On the wire since RC-5 (`to_safe_dict`
@@ -4364,6 +4369,12 @@ export interface SlackBotPatch {
   agent_id: string;
   connection_id: string;
   agent_view: boolean;
+  /** AO-2d — a token pasted to finish an app Aughor created; absent means "keep stored". */
+  bot_token?: string;
+  app_token?: string;
+  signing_secret?: string;
+  /** AO-2f — the home channel; carried by `patchBodyFor` like the rest. */
+  channel_id?: string;
 }
 
 /** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
@@ -4911,6 +4922,60 @@ export async function updateSlackBot(id: string, body: SlackBotPatch): Promise<S
 /** Delete a record. Its tokens go with it and the supervisor closes the socket on its
  *  next reconcile; automations that post as it report "unknown Slack bot" until they
  *  are re-pointed — the caller says so before asking. */
+/** AO-2d — Aughor creates the Slack app itself from ONE configuration token (used once,
+ *  never stored). The response says what is still by hand (`needs`), the install URL when
+ *  the deployment has a public HTTPS origin, and the steps in a person's words. */
+export interface SlackAppCreated {
+  bot: SlackBotSummary;
+  app_id: string;
+  /** API-relative: `/slack-bots/{id}/install`, or "" when no public HTTPS origin is set. */
+  install_url: string;
+  manage_url: string;
+  needs: string[];
+  oauth_available: boolean;
+  steps: string[];
+}
+
+export async function createSlackApp(body: {
+  config_token: string; name: string; description?: string;
+  agent_id?: string; connection_id?: string; agent_view?: boolean;
+}): Promise<SlackAppCreated> {
+  const res = await fetch(`${getApiBase()}/slack-bots/apps`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Slack app (${res.status})`);
+  }
+  return res.json();
+}
+
+/** AO-2b — what the API knows about the supervisor it runs (flag `slack.managed_supervisor`). */
+export interface ManagedSupervisorStatus {
+  flag: boolean; managed: boolean;
+  state: "off" | "starting" | "running" | "restarting" | "stopped" | "failed";
+  pid: number | null; started_at: string; restarts: number;
+  last_exit_code: number | null; last_error: string;
+  command: string[]; cwd: string; preconditions: string[];
+}
+
+export async function getManagedSupervisor(): Promise<ManagedSupervisorStatus> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor`);
+  if (!res.ok) throw new Error(`Could not read the supervisor's state (${res.status})`);
+  return res.json();
+}
+
+export async function restartManagedSupervisor(): Promise<ManagedSupervisorStatus> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor/restart`, { method: "POST" });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not restart the supervisor (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function deleteSlackBot(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/slack-bots/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) {

@@ -28,7 +28,11 @@ import { useCallback, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { createSlackBot, getSlackBotManifest, type SlackManifest } from "@/lib/api";
+import {
+  createSlackApp, createSlackBot, getSlackBotManifest, updateSlackBot,
+  type SlackAppCreated, type SlackManifest,
+} from "@/lib/api";
+import { getApiBase } from "@/lib/config";
 
 /** Sizes come from the type scale via `aug-fs-*` classes on the elements, never as a
  *  literal here — a `fontSize` inside a style object is exactly what the design-token
@@ -77,6 +81,17 @@ export function AgentSlackDoor({
   skipLabel?: string;
 }) {
   const [appName, setAppName] = useState(agentName || "Aughor");
+  // AO-2d — the one-token path: a configuration token creates the app from the manifest
+  // Aughor renders; what remains is an install (a button on HTTPS, a paste elsewhere) and
+  // the app-level token, which Slack offers no API for.
+  const [configToken, setConfigToken] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [app, setApp] = useState<SlackAppCreated | null>(null);
+  const [pastedBotToken, setPastedBotToken] = useState("");
+  const [pastedAppToken, setPastedAppToken] = useState("");
+  const [finishing, setFinishing] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const [byHand, setByHand] = useState(false);
   const [manifest, setManifest] = useState<SlackManifest | null>(null);
   const [rendering, setRendering] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -154,6 +169,46 @@ export function AgentSlackDoor({
 
   const haveAll = !!(botToken.trim() && appToken.trim() && signingSecret.trim());
 
+  const createApp = useCallback(async () => {
+    setCreating(true);
+    setError("");
+    try {
+      const made = await createSlackApp({
+        config_token: configToken.trim(), name: appName.trim() || agentName || "Aughor",
+        agent_id: agentId, connection_id: connectionId, agent_view: true,
+      });
+      // The token was used once; nothing on this screen keeps it.
+      setConfigToken("");
+      setApp(made);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCreating(false);
+    }
+  }, [configToken, appName, agentName, agentId, connectionId]);
+
+  const finish = useCallback(async () => {
+    if (!app) return;
+    setFinishing(true);
+    setError("");
+    try {
+      const b = app.bot;
+      await updateSlackBot(b.id, {
+        name: b.name, enabled: false, agent_id: b.agent_id, connection_id: b.connection_id,
+        agent_view: b.agent_view,
+        ...(pastedBotToken.trim() ? { bot_token: pastedBotToken.trim() } : {}),
+        ...(pastedAppToken.trim() ? { app_token: pastedAppToken.trim() } : {}),
+      });
+      setPastedBotToken(""); setPastedAppToken("");
+      setFinished(true);
+      setCreated(b.name || b.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setFinishing(false);
+    }
+  }, [app, pastedBotToken, pastedAppToken]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div>
@@ -162,13 +217,109 @@ export function AgentSlackDoor({
           {intro ? emphasise(intro) : (<>
             Optional. A Slack app lets people @mention <strong>{agentName || "this agent"}</strong> in
             a channel, and lets a scheduled automation post as it — the “post the daily numbers”
-            step. Aughor renders the app manifest; you create the app in Slack and paste three
-            values back.
+            step. One configuration token lets Aughor create the app itself; then an install
+            and one more token, and it listens.
           </>)}
         </div>
       </div>
 
+      {/* ── the one-token path (AO-2d) ── */}
+      {!byHand && (
+        <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14 }}>
+          <div className="aug-fs-sm" style={{ fontWeight: 500, marginBottom: 8 }}>
+            1 · Let Aughor create the app
+          </div>
+          {!app ? (
+            <>
+              <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8 }}>
+                At api.slack.com/apps → <strong>Your App Configuration Tokens</strong> → Generate,
+                copy the token and paste it here. It is used once to create the app from the
+                manifest Aughor renders (agent mode, Socket Mode, every scope) and is never stored.
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                  <label className="aug-fs-xs" style={labelStyle}>App name — what Slack will show</label>
+                  <input className="aug-fs-ui" style={inputStyle} value={appName}
+                    onChange={e => setAppName(e.target.value)} placeholder="Aughor" />
+                </div>
+                <div style={{ flex: "2 1 320px", minWidth: 0 }}>
+                  <label className="aug-fs-xs" style={labelStyle}>Configuration token</label>
+                  <input className="aug-fs-ui" style={inputStyle} value={configToken} autoComplete="off"
+                    spellCheck={false} onChange={e => setConfigToken(e.target.value)} placeholder="xoxe.xoxp-…" />
+                </div>
+                <Button variant="default" size="sm" onClick={createApp}
+                  disabled={creating || !configToken.trim()}>
+                  {creating ? "Creating in Slack…" : "Create the app"}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="aug-fs-sm" style={{ color: "var(--chart-2)" }}>
+              App <strong>{app.bot.name}</strong> created in Slack ({app.app_id}); its signing secret
+              is stored. Two steps remain — both are said below, neither is hidden.
+              {app.manage_url && (
+                <>{" "}<a href={app.manage_url} target="_blank" rel="noreferrer">Open it at api.slack.com ↗</a></>
+              )}
+            </div>
+          )}
+
+          {app && !finished && (
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div className="aug-fs-sm" style={{ fontWeight: 500 }}>2 · Install it to your workspace</div>
+              {app.oauth_available && app.install_url ? (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <Button variant="default" size="sm"
+                    onClick={() => { window.location.href = `${getApiBase()}${app.install_url}`; }}>
+                    Install to Slack
+                  </Button>
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                    Slack asks you to approve the scopes and sends the bot token back here.
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{app.steps[0]}</div>
+                  <input className="aug-fs-ui" style={inputStyle} value={pastedBotToken} autoComplete="off"
+                    spellCheck={false} onChange={e => setPastedBotToken(e.target.value)} placeholder="xoxb-…" />
+                </>
+              )}
+              <div className="aug-fs-sm" style={{ fontWeight: 500 }}>3 · The app-level token (the one Slack has no API for)</div>
+              <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{app.steps[1]}</div>
+              <input className="aug-fs-ui" style={inputStyle} value={pastedAppToken} autoComplete="off"
+                spellCheck={false} onChange={e => setPastedAppToken(e.target.value)} placeholder="xapp-…" />
+              <Button variant="default" size="sm" style={{ alignSelf: "flex-start" }}
+                disabled={finishing || !pastedAppToken.trim() || (!app.oauth_available && !pastedBotToken.trim())}
+                onClick={finish}>
+                {finishing ? "Verifying with Slack…" : "Finish — the bot goes live"}
+              </Button>
+            </div>
+          )}
+          {finished && (
+            <div className="aug-fs-sm" style={{ color: "var(--chart-2)", marginTop: 10 }}>
+              Slack bot <strong>{created}</strong> is live. Invite it to the channel you want it
+              to post in; the bot card says when a supervisor is listening for it.
+            </div>
+          )}
+          {!app && (
+            <div style={{ marginTop: 10 }}>
+              <Button variant="ghost" size="xs" onClick={() => setByHand(true)}>
+                Do it by hand instead — paste the manifest at api.slack.com
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {byHand && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          The manual path: Aughor renders the manifest, you create the app in Slack and paste
+          three values back.{" "}
+          <Button variant="ghost" size="xs" onClick={() => setByHand(false)}>Use one token instead</Button>
+        </div>
+      )}
+
       {/* ── 1 · the manifest ── */}
+      {byHand && (<>
       <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14 }}>
         <div className="aug-fs-sm" style={{ fontWeight: 500, marginBottom: 8 }}>
           1 · Generate the app manifest
@@ -254,6 +405,7 @@ export function AgentSlackDoor({
           </>
         )}
       </div>
+      </>)}
 
       {error && (
         <div className="aug-fs-sm" style={{ color: "var(--red4)" }}>{error}</div>

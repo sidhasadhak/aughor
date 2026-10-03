@@ -16,33 +16,40 @@ progress, its chart and its table — back out.
 
 ## What it needs from your Slack app
 
-The bot answers mentions with the scopes from the Chat SDK's stock manifest.
-Three of the four RC-2 surfaces need more than that, and **they fail quietly
-without it** — Slack's structured streaming chunks are skipped with a
-debug-level log line, so a bot missing these scopes looks perfectly healthy
-while showing none of it.
+**Since RC-5 the app is made from the manifest Aughor renders** (`GET
+/slack-bots/manifest`, or the Slack door on an agent's Create flow / Integrations
+→ Slack), and since AO-2c that manifest is complete: agent mode (Slack's Agents &
+AI Apps — the legacy assistant view closed to new apps on 2026-08-20 and retires
+in February 2027), every scope below, Socket Mode, and the agent-mode events. An
+app made from it needs none of the hand steps that used to follow. With one
+configuration token (AO-2d) Aughor creates the app in Slack itself; what stays
+by hand is the install (a button on an HTTPS deployment) and the app-level
+token, which Slack offers no API for.
+
+The surfaces, and what each needs — all of it in the rendered manifest:
 
 | Surface | Needs | Without it |
 |---|---|---|
-| Streamed answer, threading, follow-ups | the stock manifest | works |
-| Progress cards during a deep run | Agents & AI Apps + `assistant:write` | silently absent; answer still arrives |
-| Native stop button → server-side cancel | Agents & AI Apps + `assistant:write` | no stop button exists |
+| Streamed answer, threading, follow-ups | the base scopes | works |
+| Progress cards during a deep run | agent mode + `assistant:write` | silently absent; answer still arrives |
+| Native stop button → server-side cancel | agent mode + `assistant:write` | no stop button exists |
 | Chart PNG and CSV attachments | `files:write` | the upload fails; the inline table still posts |
-| Inline table, deep link | the stock manifest | works |
+| Inline table, deep link | the base scopes | works |
 
-To turn the rest on, at [api.slack.com/apps](https://api.slack.com/apps):
+**Only for an app created before 2026-10-03 from the old manifest**, at
+[api.slack.com/apps](https://api.slack.com/apps):
 
 1. **OAuth & Permissions → Bot Token Scopes** — add `assistant:write` and
    `files:write` to what is already there.
-2. **Agents & AI Apps** — enable it. (This is the `agent_view` experience;
-   Slack deprecated the older `assistant_view` and retires it in February 2027.)
+2. **Agents & AI Apps** — enable it. This is one-way: Aughor's record follows
+   (`agent_view`), and refuses to be switched back, because Slack will not.
 3. **Event Subscriptions → Subscribe to bot events** — add `app_home_opened`,
    `app_context_changed`, `agent_session_stopped`, `agent_session_title_changed`
    alongside the existing `app_mention` and `message.*` events.
 4. **Reinstall the app to the workspace.** Scope changes do not take effect
    until you do, and this is the step that is easy to skip.
-5. Set `SLACK_AGENT_VIEW=1` in `.env.local` — see below for why it is a flag
-   and not an assumption.
+5. Single-bot mode only (the three `SLACK_*` vars): set `SLACK_AGENT_VIEW=1` in
+   `.env.local`. A bot read from Aughor's registry carries the mode on its record.
 
 To check what the installed token actually has:
 
