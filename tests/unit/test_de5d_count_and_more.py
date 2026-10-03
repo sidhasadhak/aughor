@@ -75,12 +75,28 @@ def test_the_run_honours_its_limit_up_to_the_row_budget_and_says_which_cut_it(co
     assert (len(whole["rows"]), whole["truncated"], whole["cut_by"]) == (10, False, None)
 
 
-def test_a_parameterised_run_is_still_capped_by_the_connector_and_says_so(conn):
-    # The bound path has no bounded read, so the connector's 500-row cap applies below the limit asked
-    # for — and the response says `cap`, not `limit`: the person did not choose 500.
+def test_a_parameterised_run_honours_its_limit_too(conn):
+    # DE-5d's first cut left the bound path at the connector's 500-row cap; closing the arc gave
+    # `execute_with_params` the rows the caller asked for, like the unbound read.
     body = _run(conn, "SELECT * FROM t WHERE id >= :lo ORDER BY id", 1000, params={"lo": 0})
     assert body["error"] is None, body["error"]
-    assert (len(body["rows"]), body["truncated"], body["cut_by"]) == (500, True, "cap")
+    assert (len(body["rows"]), body["truncated"], body["cut_by"]) == (1000, True, "limit")
+    whole = _run(conn, "SELECT * FROM t WHERE id < :n ORDER BY id", 500, params={"n": 10})
+    assert (len(whole["rows"]), whole["truncated"], whole["cut_by"]) == (10, False, None)
+
+
+def test_a_connector_cap_below_the_limit_is_still_said_as_the_cap():
+    # The word survives for a connector with no bounded read: fewer rows than asked, no budget word.
+    from aughor.routers.query import _cut_by
+
+    class _R:
+        doors = ["validated:duckdb", "safety-checked", "audited"]
+
+    assert _cut_by(_R(), True, 500, 1000) == "cap"
+    assert _cut_by(_R(), True, 1000, 1000) == "limit"
+    _R.doors = ["validated:duckdb", "row-budget:10000", "audited"]
+    assert _cut_by(_R(), True, 10_000, 50_000) == "budget"
+    assert _cut_by(_R(), False, 10, 500) is None
 
 
 # ── 2 · count all rows: the total, its as-of, the door ────────────────────────────────────────────

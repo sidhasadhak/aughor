@@ -23,6 +23,7 @@ import { setOrgSettingsCache } from "@/lib/orgSettings";
 import { CHART_PALETTE_NAMES, chartPaletteLabel } from "@/lib/chartPalettes";
 import { Button } from "@/components/ui/button";
 import { OrgByokSection } from "@/components/OrgByokSection";
+import { AgentPolicySection } from "@/components/AgentPolicySection";
 import { OrgIndustriesSection } from "@/components/OrgIndustriesSection";
 import { OrgPlaybookSection } from "@/components/OrgPlaybookSection";
 import { OrgPrioritiesSection } from "@/components/OrgPrioritiesSection";
@@ -255,6 +256,10 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           deployments configure models in Settings ▸ Models; showing this there would
           be two places to set the same three fields, one of which cannot differ. */}
       {scope === "app" && multiTenant && <OrgByokSection />}
+
+      {/* DE-2b — what an outside agent (MCP) may do here. Every install has the policy, so it is not
+          gated on multi-tenancy; it saves itself, like the BYOK block, because it is its own row. */}
+      {scope === "app" && <AgentPolicySection />}
 
       {error && <div style={{ fontSize: 11, color: "var(--red4)" }}>{error}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

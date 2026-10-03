@@ -10658,6 +10658,36 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > lineage count and GEOGRAPHY, the Trino container, Postgres and MySQL metadata reads, BigQuery bytes) wait
 > for the machine that holds the connections.
 
+> **Status 2026-10-03 — Arc DE CLOSED from the build machine** on `claude/focused-hamilton-8w0q1f`, not merged.
+> What the waves left named and buildable here is built. *(a)* The typed response carries each output column's
+> SOURCE table column from DE-4's lineage (`columns_typed[i].source`), only where the lineage names one column
+> as the alias's output and the output IS that column (`c.name`, `name AS who`) — an expression over it
+> (`total * 2`) carries none, said by a `computed` key on the receipt's own lineage row — so the grid reads a
+> column of a JOINED statement live (DE-5c) and opens its related rows (DE-5f) through that column's own table
+> and schema, where before both knew a table only when the statement read exactly one. *(b)* The bound path
+> honours the limit: `execute_with_params(max_rows=)` on the base, DuckDB, Postgres, the Workspace and the
+> out-of-module connectors, so a parameterised run of 1,000 returns 1,000, and `cap` is said only by a connector
+> with no bounded read. *(c)* Settings ▸ Organization gains the agent-policy section DE-2b's routes lacked: the
+> policy in force in one sentence (set by whom and when, or the default set by nobody, and what the environment
+> narrowed), the three levels with their meanings, the two allowlists, Save and Return to the default, disabled
+> without `admin.manage_org` and saying so, a refusal in the server's words. *(d)* `scripts/de_live_receipts.py`
+> runs every owed live receipt in one command on the machine that holds the connections and writes
+> `docs/DE_LIVE_RECEIPT_<date>.md` — DE-1's parse-step audit and a MySQL refusal beside the session's read-only
+> flag, DE-3b's Trino statement through the door, DE-3c's metadata rows on each engine, DE-4's lineage count,
+> DE-5d's bytes per page against a re-run (the cost words on the trail), DE-5e's first geometry and the encoding
+> it arrives in — each step failing on its own; dry-run end to end here against a scratch DuckDB connection
+> (exit 0, five sections, the metadata read finding the declared key). *Receipt:* `tests/unit/test_de_close.py`
+> (14) — a joined statement's columns each carry their own table column and the computed one carries none, the
+> shape unchanged otherwise, `_output_sources` on the receipt's own rows, ten output expressions told bare from
+> computed, related rows opened from a joined statement's column through its source; the bound run at 1,000 and
+> `cap` still said where it applies (`test_de5d_count_and_more.py`); web `AgentPolicySection.test.tsx` (6) and
+> one case each in `ResultsGrid` and `ResultsPanel` for a joined statement; tsc, the seven gates, ruff and the
+> vocabulary ratchet green. *Owed, now one command:* `uv run python scripts/de_live_receipts.py --connection
+> 8233e4fd --mysql <id> --postgres <id> --trino <id>` on the machine that holds theLook; its output file is the
+> arc's live receipt. *Left, by decision:* paging a BigQuery result from the job's own result table; a PostGIS
+> column still named by its OID on the typed response; no map under a geometry; DE-7's JDBC bridge, recorded,
+> not scheduled.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

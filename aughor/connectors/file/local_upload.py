@@ -1435,7 +1435,8 @@ class LocalUploadConnection(Connector):
 
     # ── DatabaseConnection ABC ─────────────────────────────────────────────────
 
-    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict, *,
+                            max_rows: int | None = None) -> QueryResult:
         """SE-4 H — bind values on the Workspace connection.
 
         This class is DuckDB-backed but is NOT a `DuckDBConnection`, so it inherits
@@ -1451,12 +1452,16 @@ class LocalUploadConnection(Connector):
         """
         from aughor.sql.params import expand_list_params
         sql, params = expand_list_params(sql, params or {})
-        return self.execute(hypothesis_id, sql, params=params)
+        return self.execute(hypothesis_id, sql, params=params, max_rows=max_rows)
 
     def execute(self, hypothesis_id: str, sql: str,
                 params: dict | None = None, *,
-                sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, params, MAX_ROWS), internal=internal)
+                sql_dialect: str | None = None, internal: bool = False,
+                max_rows: int | None = None) -> QueryResult:
+        # DE-5d (closing): `max_rows` is the rows the caller asked for; None means the per-call cap.
+        return through_door(self, sql, sql_dialect,
+                            lambda statement: self._execute(hypothesis_id, statement, params, max(1, max_rows or MAX_ROWS)),
+                            internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
                         sql_dialect: str | None = None, internal: bool = False) -> QueryResult:

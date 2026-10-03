@@ -3847,6 +3847,10 @@ export interface TypedColumn {
   name: string;
   /** Normalised type name from the backend (`norm_type`) — drives alignment. */
   type: string;
+  /** DE-close — the one table column this output column reads, from DE-4's lineage; absent for a
+   *  computed column, a star the tracer could not expand, or a result from an older server. With it, a
+   *  column of a joined statement can be read live and its related rows opened. */
+  source?: { table: string; column: string; confidence?: string | null };
 }
 
 export interface TypedQueryResult {
@@ -3871,6 +3875,59 @@ export interface TypedQueryResult {
    *  label for the pager. A run's result has neither. */
   params?: Record<string, unknown>;
   label?: string;
+}
+
+// ── DE-2b — the organisation's agent policy: what an outside agent (MCP) may do ──────────────────
+
+export interface AgentPolicy {
+  level: "read" | "run" | "act";
+  /** Connection ids the agent may touch; null means all. */
+  connections: string[] | null;
+  /** Tool names the agent may call; null means all. */
+  tools: string[] | null;
+  set_by: string;
+  updated_at: string;
+  /** `default` (nobody set one), `saved` (a person did), `narrowed` (the environment narrowed the saved one). */
+  source: "default" | "saved" | "narrowed";
+  narrowed_by: string[];
+}
+
+export interface AgentPolicyView {
+  effective: AgentPolicy;
+  saved: AgentPolicy | null;
+  environment: { level: string | null; connections: string[] | null; tools: string[] | null };
+  levels: string[];
+}
+
+export async function getAgentPolicy(): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Could not read the agent policy");
+  }
+  return res.json();
+}
+
+export async function updateAgentPolicy(body: { level: "read" | "run" | "act"; connections?: string[] | null; tools?: string[] | null }): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not save the agent policy");
+  }
+  return res.json();
+}
+
+export async function clearAgentPolicy(): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not clear the agent policy");
+  }
+  return res.json();
 }
 
 /** DE-5f — one join touching a column, with its evidence in the catalog's words. */

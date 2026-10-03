@@ -98,15 +98,16 @@ export function ResultsGrid({
   onAddFilter,
   truncated,
   fetchDistinct,
-  sourceTable,
+  columnSource,
   fetchRelated,
   onOpenRelated,
 }: {
   columns: string[];
   columnsTyped?: TypedColumn[];
   rows: Cell[][];
-  /** DE-5f — the one table the statement reads, when it reads one; the related-rows entry needs it. */
-  sourceTable?: string;
+  /** DE-5f — the table column a result column reads, when one is known (the statement's one table, or
+   *  DE-4's lineage on a joined statement); null for a column no table owns. The related-rows entry needs it. */
+  columnSource?: (column: string) => { table: string; column: string } | null;
   /** DE-5f — the joins touching a column of that table, with their evidence. */
   fetchRelated?: (column: string) => Promise<RelatedJoinsAnswer>;
   /** DE-5f — open the rows on the other side of one join for one value. */
@@ -150,7 +151,7 @@ export function ResultsGrid({
   const [picker, setPicker] = useState<number | null>(null);
   // DE-5f — the related-rows picker: which cell asked, and where the menu was.
   const [related, setRelated] = useState<{ column: string; value: Cell; x: number; y: number } | null>(null);
-  const canRelate = !!sourceTable && !!fetchRelated && !!onOpenRelated && !transposed;
+  const canRelate = !!columnSource && !!fetchRelated && !!onOpenRelated && !transposed;
   const fetchJoinsFor = useCallback(() => fetchRelated!(related!.column), [fetchRelated, related]);
 
   const numeric = useMemo(() => {
@@ -686,14 +687,16 @@ export function ResultsGrid({
           onFilter={phrase => onAddFilter?.(phrase)}
           onPickValues={() => setPicker(menu.col)}
           onOpenValue={() => setShowValue(true)}
-          onRelated={canRelate ? () => setRelated({ column: menu.column, value: menu.value, x: menu.x, y: menu.y }) : undefined}
+          onRelated={canRelate && columnSource!(menu.column)
+            ? () => setRelated({ column: menu.column, value: menu.value, x: menu.x, y: menu.y })
+            : undefined}
           onClose={() => setMenu(null)}
         />
       )}
       {related && canRelate && (
         <RelatedRowsPicker
           key={`${shapeKey}|${related.column}|${String(related.value)}`}
-          table={sourceTable!} column={related.column} value={related.value}
+          table={columnSource!(related.column)?.table ?? ""} column={related.column} value={related.value}
           fetchJoins={fetchJoinsFor}
           onOpen={join => onOpenRelated!(join, related.column, related.value)}
           onClose={() => setRelated(null)}

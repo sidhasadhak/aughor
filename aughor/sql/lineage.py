@@ -74,6 +74,15 @@ class OutputColumn:
     tables: tuple[str, ...] = ()
 
 
+def is_bare_column(expression: str) -> bool:
+    """True when an output expression is a column reference and nothing more — `c.name`, `name AS who`,
+    `"t"."c"` — so the output's values ARE that column's. False for any expression over it (`total * 2`,
+    `CAST(x AS INT)`, `COUNT(*)`), whose values are its own."""
+    import re
+    text = re.sub(r'\s+AS\s+[\w"`\[\]]+\s*$', "", expression or "", flags=re.I).strip()
+    return bool(text) and bool(re.match(r'^(?:[\w"`\[\]]+\s*\.\s*)*[\w"`\[\]]+$', text))
+
+
 @dataclass
 class ColumnLineage:
     dialect: str | None
@@ -86,12 +95,16 @@ class ColumnLineage:
     note: str | None = None
 
     def edges(self) -> list[dict[str, Any]]:
-        """The edges as the receipt carries them — flat, JSON-ready, one per (role, column)."""
+        """The edges as the receipt carries them — flat, JSON-ready, one per (role, column). An output edge says
+        whether the output IS the column (`direct`: `c.name`, `name AS who`) or an expression over it (`total * 2`):
+        the values of the first are the column's, the values of the second are not, and a reader that looks a
+        column up live needs the difference."""
         out: list[dict[str, Any]] = []
         for o in self.outputs:
+            direct = is_bare_column(o.expression)
             for s in o.sources:
                 out.append({"role": "output", "as": o.name, "table": s.table, "column": s.column,
-                            "confidence": o.confidence})
+                            "confidence": o.confidence, "direct": direct})
             if not o.sources and o.tables:
                 for t in o.tables:
                     out.append({"role": "output", "as": o.name, "table": t, "column": None,

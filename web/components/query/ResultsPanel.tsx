@@ -218,39 +218,67 @@ export function ResultsPanel({
   // table: then a result column is that table's column by name. A join, a CTE or a computed column
   // has no one table to ask, and the picker says the rows on screen are a sample instead.
   const sourceTable = useMemo(() => (result?.sql ? singleTable(result.sql) : null), [result?.sql]);
+  // DE-close — the table column a result column reads: DE-4's lineage on the typed response first (so a
+  // joined statement's columns are each their own table's), else the one-table rule. Null for a column no
+  // table owns (a computed column, a star the tracer could not expand): nothing is read live or opened for it.
+  const typedSources = useMemo(() => {
+    const out = new Map<string, { table: string; schema?: string; column: string }>();
+    for (const c of result?.columns_typed ?? []) {
+      if (!c.source) continue;
+      const parts = c.source.table.split(".").filter(Boolean);
+      out.set(c.name, { table: parts[parts.length - 1] ?? c.source.table,
+        schema: parts.length > 1 ? parts[parts.length - 2] : undefined, column: c.source.column });
+    }
+    return out;
+  }, [result?.columns_typed]);
+  const columnSource = useMemo(() => {
+    if (!connId || (!sourceTable && typedSources.size === 0)) return undefined;
+    return (column: string): { table: string; schema?: string; column: string } | null => {
+      const typed = typedSources.get(column);
+      if (typed) return typed;
+      if (sourceTable) return { table: sourceTable.table, schema: sourceTable.schema, column };
+      return null;
+    };
+  }, [connId, sourceTable, typedSources]);
+
   const fetchDistinct = useMemo(() => {
-    if (!connId || !sourceTable) return undefined;
-    const { table, schema } = sourceTable;
+    if (!connId || !columnSource) return undefined;
     return async (column: string) => {
+      const src = columnSource(column);
+      if (!src) return null;
       const { getColumnDistinct } = await import("@/lib/api");
-      const r = await getColumnDistinct(connId, table, column, schema);
-      const source = schema ? `${schema}.${table}` : table;
+      const r = await getColumnDistinct(connId, src.table, src.column, src.schema);
+      const table = src.schema ? `${src.schema}.${src.table}` : src.table;
+      const source = src.column === column ? table : `${table} (${src.column})`;
       // DE-5d: a table the route could not read is a typed refusal, and the picker says it in the
       // engine's words. An empty list with no error is an empty column, and the rows then speak.
       if (r.error) return { values: [], truncated: false, source, error: r.error };
       return r.values.length ? { values: r.values, truncated: r.truncated, source } : null;
     };
-  }, [connId, sourceTable]);
+  }, [connId, columnSource]);
 
-  // DE-5f — the rows related to a value, through the joins the data bears out. Offered on the same terms
-  // as the live read: the statement reads exactly one table, so a result column is that table's column.
+  // DE-5f — the rows related to a value, through the joins the data bears out. Offered for a column whose
+  // table column is known (above), on a joined statement too.
   const fetchRelated = useMemo(() => {
-    if (!connId || !sourceTable) return undefined;
-    const { table, schema } = sourceTable;
+    if (!connId || !columnSource) return undefined;
     return async (column: string) => {
+      const src = columnSource(column);
+      if (!src) return { table: "", column, joins: [], ontology: "not built" as const };
       const { getRelatedJoins } = await import("@/lib/api");
-      return getRelatedJoins(connId, table, column, schema);
+      return getRelatedJoins(connId, src.table, src.column, src.schema);
     };
-  }, [connId, sourceTable]);
+  }, [connId, columnSource]);
   const onOpenRelated = useMemo(() => {
-    if (!connId || !sourceTable || !onAppendResult) return undefined;
-    const { table, schema } = sourceTable;
+    if (!connId || !columnSource || !onAppendResult) return undefined;
     return async (join: RelatedJoin, column: string, value: Cell) => {
       setRelatedError("");
+      const src = columnSource(column);
+      if (!src) { setRelatedError(`no table owns ${column}, so its related rows cannot be opened`); return; }
       try {
         const { openRelatedRows } = await import("@/lib/api");
         const r = await openRelatedRows(connId, {
-          table, column, value, otherTable: join.other_table, otherColumn: join.other_column, schema,
+          table: src.table, column: src.column, value, otherTable: join.other_table, otherColumn: join.other_column,
+          schema: src.schema,
         }, nextPage);
         // A refusal is said where the person is looking, not opened as an empty page.
         if (r.error && r.code) setRelatedError(r.error);
@@ -259,7 +287,7 @@ export function ResultsPanel({
         setRelatedError(e instanceof Error ? e.message : "the related rows could not be opened");
       }
     };
-  }, [connId, sourceTable, onAppendResult, nextPage]);
+  }, [connId, columnSource, onAppendResult, nextPage]);
 
   // DE-5b — a chip from a click on the grid: the same object a typed phrase makes, and the bar
   // opens with it, so the chip is seen the moment it narrows the rows.
@@ -553,7 +581,7 @@ export function ResultsPanel({
                 onAddFilter={addFilterPhrase}
                 truncated={!!result.truncated}
                 fetchDistinct={fetchDistinct}
-                sourceTable={sourceTable?.table}
+                columnSource={columnSource}
                 fetchRelated={fetchRelated}
                 onOpenRelated={onOpenRelated}
               />

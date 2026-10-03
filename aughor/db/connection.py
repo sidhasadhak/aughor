@@ -813,7 +813,7 @@ class DatabaseConnection(ABC):
         return result, payload
 
     def execute_with_params_typed(self, hypothesis_id: str, sql: str,
-                                  params: dict) -> "tuple[QueryResult, dict | None]":
+                                  params: dict, *, max_rows: int | None = None) -> "tuple[QueryResult, dict | None]":
         """`execute_with_params` under the same capture. The typed side channel and
         binding were built in separate waves and never introduced: `/query` chose
         `execute_with_params` OR `execute_typed`, so parameterising a query returned
@@ -824,8 +824,14 @@ class DatabaseConnection(ABC):
         `LocalUploadConnection._run` — so a bound query was already offering typed rows,
         into a sink nobody had set. A computed capture is not a delivered one.
         """
-        return self._capture_typed(
-            hypothesis_id, lambda: self.execute_with_params(hypothesis_id, sql, params))
+        # DE-5d (closing): the bound read, like the unbound one, returns up to the rows the caller asked for.
+        # The keyword travels only when a cap was asked for, so a connector written before it (a test's
+        # stub, an out-of-tree class) still answers an uncapped read.
+        if max_rows:
+            run = lambda: self.execute_with_params(hypothesis_id, sql, params, max_rows=max_rows)  # noqa: E731
+        else:
+            run = lambda: self.execute_with_params(hypothesis_id, sql, params)  # noqa: E731
+        return self._capture_typed(hypothesis_id, run)
 
     def _capture_typed(self, hypothesis_id: str, run) -> "tuple[QueryResult, dict | None]":
         """Run `run()` with a typed sink armed, and return (result, payload).
@@ -903,8 +909,9 @@ class DatabaseConnection(ABC):
             return False
 
     def execute_with_params(self, hypothesis_id: str, sql: str,
-                            params: dict) -> "QueryResult":
-        """Run ``sql`` with ``:name`` parameters supplied as real BIND VALUES.
+                            params: dict, *, max_rows: int | None = None) -> "QueryResult":
+        """Run ``sql`` with ``:name`` parameters supplied as real BIND VALUES. ``max_rows`` (DE-5d) is the
+        rows the caller asked for; None means the connector's per-call cap.
 
         Named ``execute_with_params`` and not ``execute_bound`` on purpose: this class
         already has ``execute_bounded``, which means a ROW cap and nothing to do with
@@ -1268,7 +1275,8 @@ class DuckDBConnection(DatabaseConnection):
                             lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)),
                             internal=internal)
 
-    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict, *,
+                            max_rows: int | None = None) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
         # before the dialect translate: sqlglot re-spells `:c` as the engine's own
         # placeholder on the way through `_run`, and an expansion scanning for `:name`
@@ -1278,7 +1286,8 @@ class DuckDBConnection(DatabaseConnection):
         sql, params = expand_list_params(sql, params or {})
         # Through the door like every other statement (DE-1): a bound statement is written for this engine and
         # declares no dialect, and the door is where the parse step and the engine's posture are recorded now.
-        return through_door(self, sql, None, lambda statement: self._run(hypothesis_id, statement, MAX_ROWS, params=params))
+        return through_door(self, sql, None,
+                            lambda statement: self._run(hypothesis_id, statement, max(1, max_rows or MAX_ROWS), params=params))
 
     def _run(self, hypothesis_id: str, sql: str, max_rows: int,
              params: dict | None = None) -> QueryResult:
@@ -1707,7 +1716,8 @@ class PostgresConnection(DatabaseConnection):
                             lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)),
                             internal=internal)
 
-    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict, *,
+                            max_rows: int | None = None) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
         # before the dialect translate: sqlglot re-spells `:c` as the engine's own
         # placeholder on the way through `_run`, and an expansion scanning for `:name`
@@ -1716,7 +1726,8 @@ class PostgresConnection(DatabaseConnection):
         from aughor.sql.params import expand_list_params
         sql, params = expand_list_params(sql, params or {})
         # Through the door like every other statement (DE-1) — see `DuckDBConnection.execute_with_params`.
-        return through_door(self, sql, None, lambda statement: self._run(hypothesis_id, statement, MAX_ROWS, params=params))
+        return through_door(self, sql, None,
+                            lambda statement: self._run(hypothesis_id, statement, max(1, max_rows or MAX_ROWS), params=params))
 
     def _run(self, hypothesis_id: str, sql: str, max_rows: int,
              params: dict | None = None) -> QueryResult:

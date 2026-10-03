@@ -156,11 +156,13 @@ describe("DE-5b — the right-click menu feeds the filter chips", () => {
       expect(screen.queryByTestId("cell-related")).toBeNull();
     });
 
+    const ordersOwnsAll = (c: string) => ({ table: "orders", column: c });
+
     it("lists each join with its evidence, offers the ones the data bears out, and opens through the owner", async () => {
       const fetchRelated = vi.fn(async () => JOINS);
       const onOpenRelated = vi.fn();
       render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}}
-        sourceTable="orders" fetchRelated={fetchRelated} onOpenRelated={onOpenRelated} />);
+        columnSource={ordersOwnsAll} fetchRelated={fetchRelated} onOpenRelated={onOpenRelated} />);
       fireEvent.contextMenu(screen.getByText("Complete"));
       fireEvent.click(screen.getByTestId("cell-related"));
       await waitFor(() => expect(screen.getAllByTestId("related-join")).toHaveLength(2));
@@ -179,7 +181,7 @@ describe("DE-5b — the right-click menu feeds the filter chips", () => {
 
     it("says when no verified join touches the column, and whether an ontology is built", async () => {
       render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}}
-        sourceTable="orders" fetchRelated={async () => ({ ...JOINS, joins: [] })} onOpenRelated={() => {}} />);
+        columnSource={ordersOwnsAll} fetchRelated={async () => ({ ...JOINS, joins: [] })} onOpenRelated={() => {}} />);
       fireEvent.contextMenu(screen.getByText("Shipped"));
       fireEvent.click(screen.getByTestId("cell-related"));
       await waitFor(() => expect(screen.getByTestId("related-note")).toHaveTextContent(
@@ -188,10 +190,22 @@ describe("DE-5b — the right-click menu feeds the filter chips", () => {
 
     it("is not offered on a NULL", () => {
       render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}}
-        sourceTable="orders" fetchRelated={async () => JOINS} onOpenRelated={() => {}} />);
+        columnSource={ordersOwnsAll} fetchRelated={async () => JOINS} onOpenRelated={() => {}} />);
       fireEvent.contextMenu(screen.getByText("∅"));
       expect(screen.getByTestId("cell-menu")).toBeInTheDocument();
       expect(screen.queryByTestId("cell-related")).toBeNull();
+    });
+
+    it("DE-close — on a joined statement, offered only on a column some table owns", () => {
+      // `status` is orders'; `total` is a computed column with no one source.
+      const ownsStatusOnly = (c: string) => (c === "status" ? { table: "orders", column: "status" } : null);
+      render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}}
+        columnSource={ownsStatusOnly} fetchRelated={async () => JOINS} onOpenRelated={() => {}} />);
+      fireEvent.contextMenu(screen.getByText("10"));
+      expect(screen.queryByTestId("cell-related")).toBeNull();
+      fireEvent.keyDown(window, { key: "Escape" });
+      fireEvent.contextMenu(screen.getByText("Complete"));
+      expect(screen.getByTestId("cell-related")).toBeInTheDocument();
     });
   });
 

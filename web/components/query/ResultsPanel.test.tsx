@@ -102,6 +102,33 @@ describe("DE-5f — a result opened from a cell is a page of its own", () => {
   });
 });
 
+describe("DE-close — a joined statement's columns are each their own table's", () => {
+  it("offers related rows on a column DE-4's lineage traced, and reads its values from that table", async () => {
+    api.getColumnDistinct.mockResolvedValue({ values: ["Complete", "Shipped", "Returned"], truncated: false });
+    const joined = result({
+      sql: "SELECT o.id, c.name FROM orders o JOIN customers c ON c.id = o.buyer",
+      columns: ["id", "name"],
+      columns_typed: [
+        { name: "id", type: "BIGINT", source: { table: "shop.orders", column: "id", confidence: "certain" } },
+        { name: "name", type: "VARCHAR", source: { table: "shop.customers", column: "name", confidence: "certain" } },
+      ],
+      rows: [[1, "Ada"], [2, "Bo"]], row_count: 2, truncated: true, cut_by: "limit",
+    });
+    render(
+      <ResultsPanel results={[joined]} resultIdx={0} onResultIdx={() => {}} error="" running={false}
+        connId="c1" pageSize={2} runKey={1} onAppendResult={() => {}} />,
+    );
+    // A join: the one-table rule says nothing, the lineage says each column's table.
+    fireEvent.contextMenu(screen.getByText("Ada"));
+    expect(screen.getByTestId("cell-related")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    // The live read goes to the column's own table and schema.
+    fireEvent.click(screen.getAllByTestId("grid-col-pick")[1]);
+    await waitFor(() => expect(api.getColumnDistinct).toHaveBeenCalledWith("c1", "customers", "name", "shop"));
+    await waitFor(() => expect(screen.getByTestId("picker-source")).toHaveTextContent("From the table shop.customers, read live"));
+  });
+});
+
 describe("DE-5d — Count all rows", () => {
   it("asks the server for the statement with the run's bound values and shows the total with its as-of", async () => {
     api.countQueryRows.mockResolvedValue({

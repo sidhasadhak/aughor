@@ -192,8 +192,9 @@ class Connector(DatabaseConnection):
         """
         raise NotImplementedError
 
-    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict):
-        """Run `sql` with `:name` parameters as real bind values.
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict, *, max_rows: int | None = None):
+        """Run `sql` with `:name` parameters as real bind values. ``max_rows`` (DE-5d) is the rows the caller
+        asked for; None means this connector's per-call cap.
 
         Order matters and follows `DuckDBConnection._run`: the safety pre-check and the row
         policy see the ``:name`` form, which sqlglot parses as a Placeholder in every
@@ -202,12 +203,13 @@ class Connector(DatabaseConnection):
         NOWHERE earlier; Postgres's ``%(name)s``, translated up here, fails sqlglot outright.
         """
         if not self.param_style:
-            return super().execute_with_params(hypothesis_id, sql, params)
+            return super().execute_with_params(hypothesis_id, sql, params, max_rows=max_rows)
         # Through the door like every other statement (DE-1): a bound statement is written for this engine and
         # declares no dialect, and the door is where the parse step and the engine's posture are recorded now.
-        return through_door(self, sql, None, lambda statement: self._execute_bound(hypothesis_id, statement, params))
+        return through_door(self, sql, None,
+                            lambda statement: self._execute_bound(hypothesis_id, statement, params, max_rows=max_rows))
 
-    def _execute_bound(self, hypothesis_id: str, sql: str, params: dict):
+    def _execute_bound(self, hypothesis_id: str, sql: str, params: dict, *, max_rows: int | None = None):
         """The bound run behind `execute_with_params`'s door: the gates, the render to the driver's spelling, the
         driver call and the post-pass."""
         import time
@@ -235,8 +237,9 @@ class Connector(DatabaseConnection):
         _t0 = time.monotonic()
         try:
             columns, rows_raw = self._bind_execute(rendered, bind_params)
+            cap = max(1, max_rows or self.max_rows)
             rows = [[str(v) if v is not None else "NULL" for v in row]
-                    for row in rows_raw[:self.max_rows]]
+                    for row in rows_raw[:cap]]
             result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=columns,
                                  rows=rows, row_count=len(rows_raw))
         except Exception as e:

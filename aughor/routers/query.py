@@ -146,33 +146,70 @@ class _QueryRunRequest(BaseModel):
     params: Optional[dict] = None
 
 
-def _write_builder_receipt(conn_id: str, sql: str, db=None) -> Optional[str]:
+def _column_lineage(conn_id: str, sql: str, db=None) -> list:
+    """DE-4's lineage rows for one statement — the columns it read, qualified against the schema text
+    already cached for the connection when there is one, never rendered for this. Best-effort: [] when
+    the tracer cannot say, and the receipt keeps its tables."""
+    try:
+        from aughor.routers._shared import peek_schema_cached
+        from aughor.trust.lineage_edges import column_edges, dialect_for_connection
+        dialect = getattr(db, "dialect", None) or dialect_for_connection(conn_id)
+        return column_edges([sql], dialect=dialect, schema_text=peek_schema_cached(conn_id))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "column lineage is best-effort; the receipt keeps its tables",
+                 counter="query.builder_receipt_columns")
+        return []
+
+
+def _output_sources(rows) -> dict[str, dict]:
+    """DE-close — each output column's one source, from the lineage rows: ``alias → {table, column,
+    confidence}`` only where exactly one column row names the alias as its output. A computed column
+    (two sources), a star the tracer could not expand, or a column it traced to a table alone has none —
+    the grid then falls back to the one-table rule (`singleTable`) or offers nothing, never a guess."""
+    import json as _json
+    from aughor.trust.lineage_edges import RELATION
+    by_alias: dict[str, list[dict]] = {}
+    for rel, ref, detail in rows or []:
+        if rel != RELATION or not str(ref).startswith("column:"):
+            continue
+        try:
+            d = _json.loads(detail or "{}")
+        except (TypeError, ValueError):
+            continue
+        if "output" not in (d.get("roles") or []):
+            continue
+        table, _, column = str(ref)[len("column:"):].rpartition(".")
+        computed = set(d.get("computed") or [])
+        for alias in d.get("as") or []:
+            if alias in computed:
+                # an expression over the column (`total * 2`): its values are not the column's
+                by_alias.setdefault(str(alias), []).extend([{}, {}])
+                continue
+            by_alias.setdefault(str(alias), []).append(
+                {"table": table, "column": column, "confidence": d.get("confidence")})
+    return {alias: sources[0] for alias, sources in by_alias.items() if len(sources) == 1}
+
+
+def _write_builder_receipt(conn_id: str, sql: str, db=None, lineage_rows: list | None = None) -> Optional[str]:
     """WP-10: a signed provenance receipt for a Query Builder run — the exact SQL that ran +
     its input tables, resolvable via GET /receipt/{id} (so "Why this number" opens the same
     drawer as an answer). Best-effort. Keyed by the SQL hash, so re-running the same query
     versions one receipt rather than spamming the ledger.
 
-    DE-4: the columns the statement read ride beside the tables, qualified against the schema
-    text already cached for the connection when there is one — never rendered for this."""
+    DE-4: the columns the statement read ride beside the tables (`lineage_rows`, computed once by the
+    caller when it also wants them for the response, else here)."""
     try:
         import hashlib
         from aughor.kernel.ledger import Ledger
         from aughor.sql.tables import extract_tables
+        from aughor.trust.lineage_edges import payload_columns
         tables = sorted({t.table for t in extract_tables(sql) if t.table})
         key = f"builder:{conn_id}:{hashlib.sha1(sql.encode('utf-8')).hexdigest()[:12]}"
         lineage = [("source_sql", "sql", sql)] + [("input", f"table:{t}", None) for t in tables]
-        columns: list[str] = []
-        try:
-            from aughor.routers._shared import peek_schema_cached
-            from aughor.trust.lineage_edges import column_edges, dialect_for_connection, payload_columns
-            dialect = getattr(db, "dialect", None) or dialect_for_connection(conn_id)
-            rows = column_edges([sql], dialect=dialect, schema_text=peek_schema_cached(conn_id))
-            lineage.extend(rows)
-            columns = payload_columns(rows)
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "column lineage is best-effort; the receipt keeps its tables",
-                     counter="query.builder_receipt_columns")
+        rows = _column_lineage(conn_id, sql, db) if lineage_rows is None else lineage_rows
+        lineage.extend(rows)
+        columns = payload_columns(rows)
         return Ledger.default().artifact_write(
             "builder", key,
             {"question": "Query Builder run", "headline": "", "sql": sql, "tables": tables,
@@ -286,7 +323,8 @@ def _cut_by(result, truncated: bool, shown: int, limit: int) -> Optional[str]:
 
 
 def _typed_response(result, payload: dict, limit: int, duration_ms: float,
-                    receipt_id, caveats: list[str], requested_sql: str = "") -> dict:
+                    receipt_id, caveats: list[str], requested_sql: str = "",
+                    sources: dict | None = None) -> dict:
     """Assemble the format:"typed" response from an execute_typed payload. Rows are
     sliced back to the requested limit (the n+1 probe row never leaves the server);
     the probe row arriving is what makes `truncated` honest."""
@@ -306,7 +344,11 @@ def _typed_response(result, payload: dict, limit: int, duration_ms: float,
             return _infer_col_type(r[idx] for r in rows)
         return norm_type(raw)
 
-    columns_typed = [{"name": c, "type": _one_type(i, raw_types[i])} for i, c in enumerate(cols)]
+    # DE-close: a column that DE-4's lineage traced to one table column carries it, so the grid can read
+    # that column's values live and open its related rows on a joined statement too.
+    columns_typed = [{"name": c, "type": _one_type(i, raw_types[i]),
+                      **({"source": sources[c]} if sources and c in sources else {})}
+                     for i, c in enumerate(cols)]
     return {
         "columns": cols,
         "columns_typed": columns_typed,
@@ -491,8 +533,9 @@ async def _query_run(body: _QueryRunRequest, request: Request):
                     # every connector that has one — but the route picked
                     # `execute_with_params` OR `execute_typed`, so the rows went into a
                     # sink nobody had set and a parameterised query came back untyped.
+                    _want = _limit + 1 if (_limit > 0 and not _is_metadata) else None
                     result, typed_payload = db.execute_with_params_typed(
-                        _source, sql, _params)
+                        _source, sql, _params, max_rows=_want)
                 elif _params:
                     result = db.execute_with_params(_source, sql, _params)
                 elif _typed:
@@ -541,12 +584,14 @@ async def _query_run(body: _QueryRunRequest, request: Request):
 
     # WP-10: a successful run gets a signed receipt so the UI can open "Why this number".
     # Record the user's ORIGINAL SQL (not the internal LIMIT-wrapped form the executor ran).
-    receipt_id = _write_builder_receipt(body.conn_id, body.sql, db) if not result.error else None
+    lineage_rows = _column_lineage(body.conn_id, body.sql, db) if not result.error else []
+    receipt_id = _write_builder_receipt(body.conn_id, body.sql, db, lineage_rows=lineage_rows) if not result.error else None
     caveats = list(getattr(result, "caveats", []) or [])
 
     if _typed and typed_payload is not None:
         typed = _typed_response(result, typed_payload, _limit, duration_ms,
-                                receipt_id, caveats, requested_sql=body.sql)
+                                receipt_id, caveats, requested_sql=body.sql,
+                                sources=_output_sources(lineage_rows))
         if body.use_cache and not result.error:
             from aughor.db.matcache import put_cache
             # Cache what the RESPONSE says, not what the cursor returned: `_typed_response`
@@ -753,7 +798,7 @@ async def query_more(body: _QueryMoreRequest, request: Request):
         t0 = _t.monotonic()
         try:
             if _params:
-                result, payload = db.execute_with_params_typed(_source, _sql, _params)
+                result, payload = db.execute_with_params_typed(_source, _sql, _params, max_rows=_limit + 1)
             else:
                 result, payload = db.execute_typed(_source, _sql, max_rows=_limit + 1)
         finally:
@@ -900,7 +945,7 @@ async def query_related(body: _RelatedRowsRequest, request: Request):
     def _work():
         t0 = _t.monotonic()
         try:
-            result, payload = db.execute_with_params_typed(_source, _wrapped, _params)
+            result, payload = db.execute_with_params_typed(_source, _wrapped, _params, max_rows=_limit + 1)
         finally:
             _close_quietly(db)
         return result, payload, (_t.monotonic() - t0) * 1000

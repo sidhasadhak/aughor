@@ -89,6 +89,10 @@ def column_edges(sqls: Iterable[str], *, dialect: str | None = None, schema_text
             slot["roles"].add(e["role"])
             if e.get("as"):
                 slot["as"].add(e["as"])
+                # DE-close: an output that is an expression over this column, not the column itself —
+                # a reader looking the column up live must not take the expression's values for its own.
+                if e.get("role") == "output" and e.get("direct") is False:
+                    slot.setdefault("computed", set()).add(e["as"])
             if e.get("note"):
                 slot["note"] = e["note"]
             c = e.get("confidence")
@@ -101,6 +105,8 @@ def column_edges(sqls: Iterable[str], *, dialect: str | None = None, schema_text
         detail: dict[str, Any] = {"roles": sorted(s["roles"]), "confidence": s["confidence"]}
         if s["as"]:
             detail["as"] = sorted(s["as"])
+        if s.get("computed"):
+            detail["computed"] = sorted(s["computed"])
         if s.get("note"):
             detail["note"] = s["note"]
         rows.append((RELATION, ref, json.dumps(detail, separators=(",", ":"))))
