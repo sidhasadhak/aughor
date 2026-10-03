@@ -729,15 +729,24 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
                         pass
 
     def _work():
+        refused: str
         try:
             # DuckDB syntax (best-effort; many connectors don't support ALTER COLUMN TYPE)
             sql = f'ALTER TABLE {ref} ALTER COLUMN "{safe_col}" TYPE {safe_type}'
-            db.execute("alter_column", sql)
-            return {
-                "ok": True, "applied": True, "override_only": False, "sql": sql,
-                "message": f"Column {safe_col} changed to {safe_type}.",
-            }
+            result = db.execute("alter_column", sql)
+            if not result.error:
+                return {
+                    "ok": True, "applied": True, "override_only": False, "sql": sql,
+                    "message": f"Column {safe_col} changed to {safe_type}.",
+                }
+            # DE-1 (ROADMAP §3.51) — the door's answer is the answer. A refused statement comes back as a result
+            # with an error, not a raise, and this route read only the raise: every door refuses an ALTER (Aughor
+            # writes nothing to a warehouse), so it answered `applied: true` whatever the engine said — the
+            # gate-map census row for this site, §3.49's leftover. A refusal takes the path a driver error took.
+            refused = result.error
         except Exception as e:
+            refused = str(e)
+        try:
             # For local_upload, the sidecar column_types were updated above, so the
             # table is genuinely recreated with the new type on the next connection
             # open. Re-register the file in the current ephemeral DB so it takes
@@ -762,17 +771,18 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
                     }
                 except Exception:
                     logger.warning("local_upload type recreation failed for %s.%s", safe_table, safe_col, exc_info=True)
-            # Other connectors: ALTER is unsupported and we cannot rewrite the source.
-            # We saved a DISPLAY-ONLY override (catalog shows the new type) but the
+            # Other connectors: the door refused the ALTER, or the engine cannot run it, and we cannot
+            # rewrite the source. We saved a DISPLAY-ONLY override (catalog shows the new type) but the
             # underlying column type is unchanged and queries still use the real type.
             # Be honest about this — do NOT claim the column was changed.
             return {
                 "ok": True, "applied": False, "override_only": True, "sql": None,
-                "error": str(e),
+                "error": refused,
                 "message": (
                     f"Saved a display override: the catalog will show {safe_col} as {safe_type}, "
-                    f"but this connector does not support changing the column type, so the database "
-                    f"column is unchanged and queries still use its real type."
+                    f"but Aughor does not change a column's type in the database (the statement was "
+                    f"refused: {refused}), so the database column is unchanged and queries still use "
+                    f"its real type."
                 ),
             }
         finally:

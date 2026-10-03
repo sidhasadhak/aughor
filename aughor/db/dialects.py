@@ -131,6 +131,22 @@ def native_sql(db: object, sql: str) -> str:
         return sql
 
 
+def known_dialect(dialect: str | None) -> str | None:
+    """``dialect`` when sqlglot has a dialect of that name, else None — sqlglot's generic parser (DE-1).
+
+    The parse step reads a statement in the dialect of the engine behind the door. An engine sqlglot has no dialect
+    for is parsed as standard SQL rather than refused outright: a refusal of every statement would say nothing about
+    the statement, and the token-level checks carry the rest. Every connector shipped here declares a dialect
+    sqlglot knows; this is the floor for one that does not."""
+    if not dialect:
+        return None
+    try:
+        from sqlglot.dialects.dialect import Dialect
+        return dialect if Dialect.get(dialect) is not None else None
+    except Exception:  # noqa: BLE001 — a parser that cannot say is the generic parser
+        return None
+
+
 #: GM-1 — the one dialect a statement may declare it was written in. Platform code writes DuckDB's: a probe, a
 #: series, a keyed read. A statement written for the engine itself — the model's under the writer rules, a person's,
 #: one sqlglot rendered in the connection's own dialect — declares nothing.

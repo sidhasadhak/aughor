@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Literal
 
 from aughor.db.connection import DatabaseConnection
+from aughor.db.doors import through_door
 from aughor.db.single_flight import single_flight_build
 
 
@@ -167,13 +168,19 @@ class Connector(DatabaseConnection):
         will run. The rewrite to the driver's own spelling happens at the driver call and
         NOWHERE earlier; Postgres's ``%(name)s``, translated up here, fails sqlglot outright.
         """
+        if not self.param_style:
+            return super().execute_with_params(hypothesis_id, sql, params)
+        # Through the door like every other statement (DE-1): a bound statement is written for this engine and
+        # declares no dialect, and the door is where the parse step and the engine's posture are recorded now.
+        return through_door(self, sql, None, lambda statement: self._execute_bound(hypothesis_id, statement, params))
+
+    def _execute_bound(self, hypothesis_id: str, sql: str, params: dict):
+        """The bound run behind `execute_with_params`'s door: the gates, the render to the driver's spelling, the
+        driver call and the post-pass."""
         import time
         from aughor.control_plane.contracts.execution import QueryResult
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
         from aughor.sql.params import ParamRenderError, expand_list_params, render_for_engine
-
-        if not self.param_style:
-            return super().execute_with_params(hypothesis_id, sql, params)
 
         sql = sql.strip().rstrip(";")
         if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):

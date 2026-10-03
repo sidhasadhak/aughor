@@ -21,6 +21,8 @@ class ExasolConnection(Connector):
     connector_category = "warehouse"
     dialect = "postgres"  # Exasol speaks standard SQL; postgres transpile is the closest fit
     writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    # DE-1 — Exasol has no session-level read-only; the door's checks are the read-only boundary, said on the doors.
+    engine_read_only = False
 
     def __init__(
         self,

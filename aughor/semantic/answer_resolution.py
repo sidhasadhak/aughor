@@ -266,6 +266,8 @@ def _columns_grain(cols) -> Optional[str]:
     return best
 
 
+from aughor.util.prompt_safety import unfence
+
 # schema line: "  colname  TYPE" optionally "  -- [v1, v2, …]"
 _COL_LINE = re.compile(r"^\s{2}(\w+)\s+([A-Za-z][\w()]*)")
 _ANNOT = re.compile(r"--\s*\[([^\]]*)\]")
@@ -305,7 +307,8 @@ def _parse_schema(schema: str):
         vm = _VALUES_LINE.match(line)
         if vm:
             col = vm.group(1)
-            vals = [v.strip() for v in vm.group(2).split(",") if v.strip()]
+            # The renderer fences the list as data (DE-1); the fence comes off before the split.
+            vals = [v.strip() for v in unfence(vm.group(2)).split(",") if v.strip()]
             if vals and (cur, col) not in seen:
                 domains.append((cur, col, vals))
                 seen.add((cur, col))
@@ -316,7 +319,7 @@ def _parse_schema(schema: str):
             tables[cur].append(col)
             am = _ANNOT.search(line)
             if am:
-                vals = [v.strip() for v in am.group(1).split(",") if v.strip()]
+                vals = [v.strip() for v in unfence(am.group(1)).split(",") if v.strip()]
                 if vals and (cur, col) not in seen:
                     domains.append((cur, col, vals))
                     seen.add((cur, col))

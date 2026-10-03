@@ -118,5 +118,7 @@ def check_sql_safety(body: dict):
     sql = body.get("sql", "")
     if not sql:
         raise HTTPException(status_code=400, detail="sql field required")
-    result = SafetyChecker.check(sql)
+    # DE-1 — an optional `dialect` has the syntax-tree checks read the statement as that engine would.
+    dialect = body.get("dialect") or None
+    result = SafetyChecker.check(sql, dialect=str(dialect) if dialect else None)
     return {"verdict": result.verdict, "reason": result.reason, "score": result.score}

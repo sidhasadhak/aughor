@@ -541,6 +541,10 @@ def _seed_table_names(seed_path: str, removed_schemas: set, removed_tables: set)
 class LocalUploadConnection(Connector):
     connector_category = "file"
     dialect = "duckdb"
+    # DE-1 — the Workspace is an in-memory DuckDB this connector fills from the uploaded files, writable by
+    # construction; the door's checks are the read-only boundary for a person's or a model's statement, and every
+    # result's doors say so (`engine-read-write`).
+    engine_read_only = False
 
     def __init__(
         self,

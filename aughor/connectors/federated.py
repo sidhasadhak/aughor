@@ -41,6 +41,9 @@ class FederatedConnection(Connector):
     """Unified DuckDB namespace across multiple heterogeneous connections."""
 
     connector_category = "warehouse"
+    # DE-1 — an in-memory DuckDB this connector attaches sources into is writable by construction; the door's
+    # checks are the read-only boundary, said on every result's doors.
+    engine_read_only = False
     dialect            = "duckdb"
 
     def __init__(

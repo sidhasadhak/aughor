@@ -56,8 +56,14 @@ class MySQLConnection(Connector):
             charset="utf8mb4",
             cursorclass=pymysql.cursors.DictCursor,
             connect_timeout=30,
+            # DE-1 (ROADMAP §3.51) — the engine backs the door's promise, as Postgres's `default_transaction_read_only`
+            # does: every statement in this session runs in a read-only transaction and the server refuses a write
+            # (error 1792) the door did not. An `init_command` runs again on every reconnect — `ping(reconnect=True)`
+            # in `_execute` — so a dropped connection cannot come back writable.
+            init_command="SET SESSION TRANSACTION READ ONLY",
             **ssl_opts,
         )
+        self.engine_read_only = True
 
     param_style = "pyformat"
 

@@ -114,7 +114,7 @@
   "aughor/routers/catalog.py::get_catalog_tree._quick_schemas::execute::__catalog__#4": {"dialect": "native", "author": "platform", "note": "the DuckDB branch"},
   "aughor/routers/catalog.py::get_catalog_tree._quick_schemas::execute::__catalog__#5": {"dialect": "native", "author": "platform", "note": "the BigQuery branch"},
   "aughor/routers/catalog.py::get_catalog_tree._quick_schemas::execute::__catalog__#6": {"dialect": "native", "author": "platform", "note": "the Postgres branch"},
-  "aughor/routers/connections.py::alter_table_column._work::execute::alter_column": {"dialect": "none", "author": "person", "note": "ALTER TABLE written with DuckDB's quoting; the route also reports applied: true whatever the engine said"},
+  "aughor/routers/connections.py::alter_table_column._work::execute::alter_column": {"dialect": "none", "author": "person", "note": "ALTER TABLE written with DuckDB's quoting; every door refuses it, and since DE-1 the route reads that refusal (applied: false, override_only: true) where it reported applied: true whatever the engine said"},
   "aughor/routers/connections.py::connection_freshness._work::execute::freshness": {"dialect": "generated", "author": "platform", "note": "db.quoting"},
   "aughor/routers/connections.py::table_columns._work::execute::columns": {"dialect": "portable", "author": "platform", "note": "INFORMATION_SCHEMA"},
   "aughor/routers/connections.py::table_columns._work::execute::columns#2": {"dialect": "generated", "author": "platform", "note": "db.quoting"},

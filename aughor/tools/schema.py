@@ -668,10 +668,11 @@ def inject_value_annotations(
                         and sem_type in ('dimension', 'flag', 'ordinal')
                         and all(len(str(v)) <= 60 for v in top_values)
                     ):
-                        vals = ", ".join(str(v) for v in top_values[:15])
+                        # The profile's values are data too (DE-1): fenced as the renderer fences its own lists.
+                        from aughor.db.schema_render import format_value_list
                         # Replace any first-run sampling annotation with richer profile data
                         base_line = re.sub(r'\s+--\s+\[.*\]$', '', line)
-                        line = f"{base_line}  -- [{vals}]"
+                        line = f"{base_line}  -- [{format_value_list(top_values[:15])}]"
 
         result.append(line)
 

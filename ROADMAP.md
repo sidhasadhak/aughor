@@ -10218,6 +10218,39 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > Trino proves DE-3b, its container's download asked when the wave starts; column lineage rides the receipt; four
 > refusals are recorded as §4.7; dbx's code is not copied. Nothing is built. Next: DE-1's pre-check.
 
+> **Status 2026-10-03 — DE-1 BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first:* the golden
+> set's 53 statements parsed in all five dialects, 0 refused (`scripts/de1_parse_step_precheck.py --golden`);
+> theLook's audit was not reachable from the build machine, and the same script counts it where it lives
+> (`--connection 8233e4fd --limit 2000`) — that count is owed before merge, and the falsifier reads it. *Built:* the
+> parse step runs in `_security_pre`, the one step every connector's door calls, in the dialect `through_door` records
+> for the engine behind it — so BigQuery, Snowflake, MySQL, Exasol, SQLite, MotherDuck and every file and API connector
+> validate where only the built-in two did, and `execute_with_params` goes through the door too (it had no trail at
+> all); `SafetyChecker.check(sql, dialect)`; `sql/readonly.py` refuses a lock clause (sqlglot's `locks`), the
+> side-effect functions (`set_config`, the advisory locks, `GET_LOCK`, `RELEASE_LOCK`, `BENCHMARK`, `pg_notify`…), a
+> command inside a `BEGIN … END` block and, below the tree, an executable comment and `INTO OUTFILE`/`DUMPFILE`;
+> MySQL connects with `init_command="SET SESSION TRANSACTION READ ONLY"`, which its reconnect re-runs; BigQuery,
+> Snowflake, Exasol, MotherDuck and the in-memory DuckDB connectors declare `engine_read_only = False`, and every
+> result's doors say `engine-read-write` (a connector that declares nothing says `engine-undeclared`); `_validate`
+> blanks quoted identifiers before its keyword pre-scan (`SELECT "copy" FROM ads` is a read) and admits `EXCEPT` and
+> `INTERSECT` roots; SUMMARIZE joins the editor's metadata reads, since the Workspace is parsed now; the ALTER COLUMN
+> route reads the door's refusal (`applied: false, override_only: true`); schema samples and value lists reach the
+> model capped per value, cleaned and fenced inline as data, the Data Catalog's sample rows likewise, and the value
+> readers take the fence off. *Receipt:* `tests/unit/test_de1_read_only_at_every_door.py` runs the study's nine
+> statements and five siblings through every connection class's `execute` and `execute_bounded` against a driver
+> that fails on contact — 14 classes, every statement refused before the driver, and a plain read parsed in each
+> class's own dialect (Snowflake's `col:field` passes its door and fails BigQuery's); a value worded as an
+> instruction reaches the rendered schema inside the fence, a `</data>` inside a value is neutralised, a control
+> character does not reach the prompt; GM-3's receipt test now reads a BigQuery path as
+> `translated → engine-read-write → validated:bigquery → safety-checked → …`; 12 mutations, each disabling one new
+> check, every one killed by the test file (a 13th, a per-value cleaning pass beside the fence's own, survived
+> because the fence already cleans — the redundant pass was removed). *Not done here:* the live MySQL refusal (no
+> MySQL on the build machine).
+> *Left, named:* an unquoted keyword-named column (`SELECT copy FROM ads`) is still refused by the pre-scan, on every
+> engine now as on DuckDB before; `gate_user_sql` and the cross-source gates run outside a door and parse nothing — the
+> statement is parsed at the door it then goes through, except Postgres's ConnectorX bulk read, which never reaches a
+> door (pre-existing); no text fallback for a lock clause when the statement does not parse (`PIVOT … FOR share IN
+> (…)` would match), since an unparseable statement is refused at the door anyway. Next: DE-2a.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

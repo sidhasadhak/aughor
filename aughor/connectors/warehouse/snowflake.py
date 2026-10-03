@@ -22,6 +22,9 @@ class SnowflakeConnection(Connector):
     connector_category = "warehouse"
     dialect = "snowflake"
     writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    # DE-1 — Snowflake has no session-level read-only; the door's checks are the read-only boundary, and every
+    # result's doors say so (`engine-read-write`). A read-only ROLE is the operator's grant, not this session's.
+    engine_read_only = False
 
     def __init__(
         self,

@@ -101,6 +101,9 @@ class BigQueryConnection(Connector):
     connector_category = "warehouse"
     dialect = "bigquery"
     writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    # DE-1 — BigQuery has no session-level read-only (IAM is the operator's grant, not this session's); the door's
+    # checks are the read-only boundary, and every result's doors say so (`engine-read-write`).
+    engine_read_only = False
 
     def __init__(
         self,

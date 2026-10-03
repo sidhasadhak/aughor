@@ -51,6 +51,9 @@ def _parse_s3_dsn(dsn: str, meta: dict) -> dict:
 class S3Connection(Connector):
     connector_category = "file"
     dialect = "duckdb"
+    # DE-1 — an in-memory DuckDB this connector fills itself is writable by construction; the door's checks are the
+    # read-only boundary, said on every result's doors.
+    engine_read_only = False
 
     def __init__(
         self,
