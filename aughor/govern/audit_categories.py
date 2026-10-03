@@ -72,6 +72,11 @@ KIND_CATEGORY: dict[str, str] = {
     # auditable. Filed as data_access because that is what an auditor asking "who saw
     # what" filters on; the `kind` separates it from query execution within that view.
     "trace.payload_access": "data_access",
+    # DE-2b — every call an outside agent (the MCP client) makes to the API, allowed or
+    # refused, with its principal, the tool it named, the level the route needed and the
+    # policy's, and bounded arguments. Data access because that is the question an auditor
+    # asks of an agent: what did it reach, as whom.
+    "mcp.tool_call": "data_access",
     # MI-1 — the two feedback doors. Both have been writing to the ledger since they
     # shipped, neither was categorized, so the governance feed could not show that a
     # person had ever graded anything. They are split by design (`chat.feedback` keys on
@@ -213,6 +218,10 @@ def _from_ledger(kind: str, limit: int) -> list[AuditEvent]:
 def _summarize(kind: str, p: dict) -> str:
     """A one-line, reader-facing description. Per-kind because the interesting field
     differs, and a generic dump of the payload is not a summary."""
+    if kind == "mcp.tool_call":
+        verdict = "allowed" if p.get("allowed") else f"refused ({p.get('code') or '?'})"
+        return (f"agent {p.get('actor') or 'mcp'} called {p.get('tool') or p.get('route') or '?'}"
+                f" — {verdict}; needs {p.get('required_level') or '?'}, policy {p.get('policy_level') or '?'}")
     if kind == "action.approval":
         return f"{p.get('decision', '?')} {p.get('action', '?')} on {p.get('scope') or '*'}"
     if kind == "govern.tag":
@@ -377,6 +386,7 @@ SESSION_EVENT_KINDS: frozenset[str] = frozenset({"llm_call", "decision_replay"})
 _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("data_access", _from_audit_table),
     ("data_access", lambda n: _from_ledger("trace.payload_access", n)),
+    ("data_access", lambda n: _from_ledger("mcp.tool_call", n)),
     ("action_decision", lambda n: _from_ledger("action.approval", n)),
     ("governance_change", lambda n: _from_ledger("govern.tag", n)),
     ("governance_change", lambda n: _from_ledger("metric.governance", n)),

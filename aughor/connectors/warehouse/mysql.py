@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from aughor.connectors.base import Connector
 from aughor.db.doors import through_door
+from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -56,10 +57,27 @@ class MySQLConnection(Connector):
             charset="utf8mb4",
             cursorclass=pymysql.cursors.DictCursor,
             connect_timeout=30,
+            # DE-1 (ROADMAP §3.51) — the engine backs the door's promise, as Postgres's `default_transaction_read_only`
+            # does: every statement in this session runs in a read-only transaction and the server refuses a write
+            # (error 1792) the door did not. An `init_command` runs again on every reconnect — `ping(reconnect=True)`
+            # in `_execute` — so a dropped connection cannot come back writable.
+            init_command="SET SESSION TRANSACTION READ ONLY",
             **ssl_opts,
         )
+        self.engine_read_only = True
 
     param_style = "pyformat"
+
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): the driver's own ping, WITHOUT reconnecting — a pooled
+        connection that would need reconnecting is one the pool should not hand out."""
+        try:
+            if self._conn is None or not getattr(self._conn, "open", False):
+                return False
+            self._conn.ping(reconnect=False)
+            return True
+        except Exception:
+            return False
 
     def _bind_execute(self, sql: str, params: dict):
         with self._conn.cursor() as cur:
@@ -127,7 +145,7 @@ class MySQLConnection(Connector):
                 pass
             result = QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=str(e),
+                columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
             )
         elapsed_ms = (time.monotonic() - _t0) * 1000
         return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)

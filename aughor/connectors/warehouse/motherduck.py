@@ -26,6 +26,9 @@ MAX_ROWS = 2000
 class MotherDuckConnection(Connector):
     connector_category = "warehouse"
     dialect = "duckdb"
+    # DE-1 — `duckdb.connect("md:…")` below opens the user's MotherDuck database read-write (the read-only open the
+    # local DuckDB connection attempts is not offered here), so the door's checks are the read-only boundary.
+    engine_read_only = False
 
     def __init__(
         self,
@@ -51,6 +54,10 @@ class MotherDuckConnection(Connector):
         self._conn = duckdb.connect(target)
 
     param_style = "duckdb"
+
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): the MotherDuck handle answers `SELECT 1`."""
+        return self._handle_answers(self._conn)
 
     def _bind_execute(self, sql: str, params: dict):
         self._conn.execute(sql, params)

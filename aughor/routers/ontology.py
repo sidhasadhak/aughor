@@ -640,8 +640,12 @@ def get_context_graph_lineage(
     node_id: Optional[str] = Query(default=None),
     table: Optional[str] = Query(default=None),
     schema_name: Optional[str] = Query(default=None),
+    column: Optional[str] = Query(default=None),
 ):
     """Wave P4 — what depends on this node, with the expression that would break.
+
+    DE-4: ``column`` narrows the walk to the dependents whose receipt read that column of the
+    table; a dependent whose columns were never traced is kept and says so.
 
     The lineage walker (`govern/lineage.py`) has been built and tested since Wave G7 with
     no route and no caller: the question "what breaks if this table changes" was answerable
@@ -674,9 +678,9 @@ def get_context_graph_lineage(
     elif root not in cg.nodes:
         raise HTTPException(status_code=404, detail=f"No node `{root}` in this graph")
 
-    report = dependents_of(cg, root)
+    report = dependents_of(cg, root, column=column)
     node = cg.nodes.get(root)
-    return {"connection_id": connection_id, "node_id": root,
+    return {"connection_id": connection_id, "node_id": root, "column": column,
             "label": getattr(node, "label", "") or root,
             **report.to_dict()}
 

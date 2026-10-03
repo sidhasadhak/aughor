@@ -62,18 +62,30 @@ class PriorsResult:
         return bool(self.trusted or self.corrections or self.resolutions)
 
 
-def _match_corrections(question: str, connection_id: str, limit: int) -> list[dict]:
+def _match_corrections(question: str, connection_id: str, limit: int,
+                       agent_id: str = "") -> list[dict]:
+    """The corrections that resemble this question. AO-7a: when an agent is answering,
+    its OWN lessons are read first — a correction a reviewer gave this agent outranks one
+    given to another on the same connection — then the connection's, deduplicated."""
     qtok = _tokens(question)
     if not qtok:
         return []
     out: list[tuple[float, dict]] = []
-    for row in list_corrections(connection_id, limit=50):
-        ctok = _tokens(row.get("headline", "")) | _tokens(row.get("note", ""))
-        if not ctok:
-            continue
-        score = len(qtok & ctok) / len(qtok)
-        if score >= _MIN_CORRECTION_SCORE:
-            out.append((round(score, 3), row))
+    seen: set = set()
+    pools = ([list_corrections(connection_id, limit=50, agent_id=agent_id)] if agent_id else []) \
+        + [list_corrections(connection_id, limit=50)]
+    for tier, pool in enumerate(pools):
+        for row in pool:
+            if row.get("id") in seen:
+                continue
+            ctok = _tokens(row.get("headline", "")) | _tokens(row.get("note", ""))
+            if not ctok:
+                continue
+            score = len(qtok & ctok) / len(qtok)
+            if score >= _MIN_CORRECTION_SCORE:
+                seen.add(row.get("id"))
+                # The agent's own tier sorts ahead at equal resemblance.
+                out.append((round(score, 3) + (1.0 if tier == 0 and agent_id else 0.0), row))
     out.sort(key=lambda x: x[0], reverse=True)
     return [r for _s, r in out[:limit]]
 
@@ -175,7 +187,7 @@ def build_priors_section(question: str, connection_id: str, **kwargs) -> str:
 
 
 def build_corrections_section(question: str, connection_id: str, max_corrections: int = 3,
-                              *, org_id: str = "") -> str:
+                              *, org_id: str = "", agent_id: str = "") -> str:
     """Resolved-ambiguity + past-correction prompt text — the non-trusted priors — PLUS the
     Wave-C connection-graph read-back. This is the piece the LIVE answer paths inject (the
     chat/direct SQL path and the plan node), which ALREADY inject verified query patterns
@@ -194,7 +206,8 @@ def build_corrections_section(question: str, connection_id: str, max_corrections
         from aughor.kernel.errors import tolerate
         tolerate(exc, "ambiguity-ledger retrieval is best-effort", counter="priors.resolutions")
     try:
-        corrections = _match_corrections(question, connection_id, max_corrections)
+        corrections = _match_corrections(question, connection_id, max_corrections,
+                                         agent_id=agent_id)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "verdict-correction retrieval is best-effort", counter="priors.corrections")

@@ -381,6 +381,37 @@ function Drawer({ receiptId, preloaded, onClose }: {
                 </Section>
               )}
 
+              {/* DE-4 — the columns this number rests on, each with how surely the parser bound
+                  it. A receipt that fell back to tables says why; one from before columns were
+                  traced says that, rather than reading as "no columns". */}
+              {rec.columns && rec.columns.level === "column" && (rec.columns.columns.length > 0 || rec.columns.tables_only.length > 0) && (
+                <Section title={`Columns read · ${rec.columns.columns.length}`}>
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }} data-testid="receipt-columns">
+                    {rec.columns.columns.map((c, i) => (
+                      <StatusChip key={`c:${i}`} hue={c.confidence === "certain" ? "muted" : "caution"} strength="soft"
+                        title={`${c.roles.join(", ")} · ${c.confidence ?? "unresolved"}${c.as.length ? ` · as ${c.as.join(", ")}` : ""}`}>
+                        {c.table.split(".").slice(-1)[0]}.{c.column}{c.confidence !== "certain" ? ` · ${c.confidence}` : ""}
+                      </StatusChip>
+                    ))}
+                  </div>
+                  {rec.columns.tables_only.length > 0 && (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
+                      {rec.columns.tables_only.map(t => `${t.as.join(", ") || "an output"} is a row count over ${t.table}: no column`).join(" · ")}
+                    </div>
+                  )}
+                  {rec.columns.note && (
+                    <div className="aug-fs-xs" style={{ color: "var(--amb4)", marginTop: 4 }}>{rec.columns.note}</div>
+                  )}
+                </Section>
+              )}
+              {rec.columns && rec.columns.level === "table" && (
+                <Section title="Columns read">
+                  <div className="aug-fs-xs" style={{ color: "var(--amb4)" }} data-testid="receipt-columns-untraced">
+                    Not traced to columns — {rec.columns.note ?? "the statement could not be qualified"}. The tables above are what is known.
+                  </div>
+                </Section>
+              )}
+
               {(rec.confidence.level || rec.confidence.capped_by) && (
                 <Section title="Confidence">
                   <div className="aug-fs-xs" style={{ color: "var(--t2)" }}>

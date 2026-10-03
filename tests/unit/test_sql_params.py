@@ -52,15 +52,17 @@ def test_render_for_engine_pyformat_is_what_postgres_and_mysql_drivers_take():
 
 
 def test_the_map_is_keyed_on_the_DRIVER_style_not_the_sql_dialect():
-    """`ExasolConnection` declares `dialect = "postgres"` because Postgres is the closest
-    transpile target for Exasol's SQL — and pyexasol accepts no Postgres placeholder syntax
-    at all. Keyed on dialect, that connector would have been handed `%(name)s` silently."""
+    """`ExasolConnection` declared `dialect = "postgres"` — the closest transpile target, until
+    DE-3a let it declare `exasol` — and pyexasol accepts no Postgres placeholder syntax at all.
+    Keyed on dialect, that connector would have been handed `%(name)s` silently; keyed on the
+    driver's style, a dialect name — any dialect name — is a visible refusal."""
     from aughor.connectors.warehouse.exasol import ExasolConnection
 
-    assert ExasolConnection.dialect == "postgres"
+    assert ExasolConnection.dialect == "exasol"
     assert ExasolConnection.param_style is None
-    with pytest.raises(ParamRenderError):
-        render_for_engine("SELECT :a", ExasolConnection.dialect)
+    for dialect in ("postgres", ExasolConnection.dialect):
+        with pytest.raises(ParamRenderError):
+            render_for_engine("SELECT :a", dialect)
 
 
 def test_named_is_the_identity_rendering():

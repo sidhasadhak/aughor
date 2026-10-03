@@ -192,6 +192,40 @@ function periodTicks(gran: Gran, periods: number): Record<string, unknown> {
   return { tickCount: { interval: unit, step: (gran === "quarter" ? 3 : 1) * Math.max(1, Math.ceil(periods / 18)) } };
 }
 
+/** A date-grain axis keeps time in UTC. A day read from the warehouse ("2025-08-01") is UTC
+ *  midnight, which is 02:00 in Zurich: a local scale put its month tick at local midnight, before
+ *  the first point, and the series' first month went unlabelled (theLook Q3, 2026-10-03). A grain
+ *  with a time of day keeps the viewer's clock. */
+function utcScale(gran: Gran | null): Record<string, unknown> {
+  return gran && ["day", "week", "month", "quarter", "year"].includes(gran) ? { scale: { type: "utc" } } : {};
+}
+
+/** Month labels short enough that every one fits: the month alone, with its year beneath it on the
+ *  first month and on January ("Aug / 2025, Sep, …, Jan / 2026, …"). `%b %Y` on thirteen months ran
+ *  labels together and dropped three (theLook Q3, 2026-10-03); a year beside its month was still wide
+ *  enough for Vega to hide its neighbours. Six months or fewer keep `%b %Y`, and so does a series
+ *  ticked past one month a tick, where January may not be a tick at all. Read in UTC, as `utcScale`
+ *  keeps the axis. */
+function compactMonths(gran: Gran | null, values: unknown[]): Record<string, unknown> {
+  const months = [...new Set(values.map((v) => String(v ?? "").slice(0, 7)))]
+    .filter((m) => /^\d{4}-\d{2}$/.test(m)).sort();
+  if (gran !== "month" || months.length <= 6 || months.length > 18) return {};
+  const [y, m] = months[0].split("-").map(Number);
+  // Each label centred on its own month: flush at the ends, the first was pushed into the second and
+  // the last into the one before, and Vega hid both.
+  return { labelFlush: false,
+           labelExpr: `(utcmonth(datum.value) == 0 || (utcyear(datum.value) == ${y} && utcmonth(datum.value) == ${m - 1}))`
+                      + " ? [utcFormat(datum.value, '%b'), utcFormat(datum.value, '%Y')] : utcFormat(datum.value, '%b')" };
+}
+
+/** The same for a change chart's period bars, whose labels are already "Sep 2025" — each kept whole as
+ *  the bar's value, drawn as its month, with the year beneath on the first and on January. */
+function compactPeriodLabels(labels: string[]): Record<string, unknown> {
+  if (labels.length <= 6 || labels.length > 18) return {};
+  const first = labels[0].replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  return { labelExpr: `(datum.value == '${first}' || indexof(datum.value, 'Jan ') == 0) ? split(datum.value, ' ') : slice(datum.value, 0, 3)` };
+}
+
 /** The value-axis number format. `~s` (SI) is the default because warehouse measures are
  *  large and an unformatted axis reads as noise. A caller's format always wins. */
 function valueFormat(format?: string | null): string {
@@ -236,6 +270,10 @@ function valueAxis(title: string | null | undefined, format?: string | null, pre
     // Grid BEHIND the marks. Vega-Lite lifts a gridded axis above the marks by default,
     // which drew ruled lines straight through the bars.
     zindex: 0,
+    // A label near either end aligns to it rather than centring past it. Flush applies within 1px by
+    // default, and the headroom bar labels get left Q2's last tick ~14px short of the end: "250.0K",
+    // centred, ran past the chart's edge and was cut (2026-10-03). 24px is half the widest compact label.
+    labelFlush: 24,
   };
 }
 function bandAxis(title: string | null | undefined) {
@@ -527,6 +565,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
       x: {
         field: x,
         type: xIsDate ? "temporal" : "ordinal",
+        ...(xIsDate ? utcScale(detectGranularity(x, xValues)) : {}),
         // A month label without its year is ambiguous the moment a series crosses a year
         // boundary. Vega-Lite's temporal default drops the year; ECharts keeps it.
         /**
@@ -545,7 +584,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
         axis: {
           ...bandAxis(axisTitle(xTitle, x)),
           ...(xIsDate ? { format: chartDateFormat(detectGranularity(x, xValues), xMultiYear),
-                          ...periodTicks(detectGranularity(x, xValues), new Set(xValues.map(String)).size) } : {}),
+                          ...periodTicks(detectGranularity(x, xValues), new Set(xValues.map(String)).size),
+                          ...compactMonths(detectGranularity(x, xValues), xValues) } : {}),
         },
       },
       // A percentage reads as one on a trend too: this axis ignored the unit the bar path
@@ -589,6 +629,14 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const bandValues = rows.map((r) => r[columns.indexOf(band)]);
   const bandGran = dateCol && band === dateCol ? detectGranularity(band, bandValues) : null;
   const changeByPeriod = isChange && bandGran !== null;
+  // A change over time is one bar per period with a change, in time order, labelled as the table
+  // labels its period.
+  const periodRows = changeByPeriod
+    ? [...data.values]
+        .filter((d) => d[measure] !== null && d[measure] !== "" && Number.isFinite(Number(d[measure])))
+        .sort((a, b) => String(a[band]).localeCompare(String(b[band])))
+        .map((d) => ({ ...d, __period: fmtDate(String(d[band] ?? ""), bandGran ?? "month") }))
+    : null;
   // Titles bind to the CHANNEL, not the screen axis: the editor's "X axis" section IS
   // the dimension and its "Y axis" IS the measure, so each title must follow its field
   // through an orientation flip. This form was the one literal-axis outlier (delta-bar,
@@ -624,11 +672,14 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const bandEnc = {
     field: changeByPeriod ? "__period" : band,
     type: (changeByPeriod ? "ordinal" : dateCol === band ? "temporal" : "nominal") as string,
+    ...(bandGran && !changeByPeriod ? utcScale(bandGran) : {}),
     axis: {
       ...bandAxis(axisTitle(xTitle, band)),
       ...(bandGran && !changeByPeriod
         ? { format: chartDateFormat(bandGran, new Set(bandValues.map((v) => String(v ?? "").slice(0, 4))).size > 1),
-            ...periodTicks(bandGran, new Set(bandValues.map(String)).size) } : {}),
+            ...periodTicks(bandGran, new Set(bandValues.map(String)).size),
+            ...compactMonths(bandGran, bandValues) } : {}),
+      ...(periodRows && bandGran === "month" ? compactPeriodLabels(periodRows.map((d) => String(d.__period))) : {}),
     },
     // Lead with the largest — the ranking the question implies. Ties break stably.
     // Data order, always: see orderedValues above for why an encoding sort cannot be trusted.
@@ -757,13 +808,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
         ? [...ordered.filter((d) => !(Number(d[few.den]) < TOO_FEW_TO_COMPARE)),
            ...ordered.filter((d) => Number(d[few.den]) < TOO_FEW_TO_COMPARE)]
         : ordered;
-      const byPeriod = changeByPeriod
-        ? [...data.values]
-            .filter((d) => d[measure] !== null && d[measure] !== "" && Number.isFinite(Number(d[measure])))
-            .sort((a, b) => String(a[band]).localeCompare(String(b[band])))
-            .map((d) => ({ ...d, __period: fmtDate(String(d[band] ?? ""), bandGran ?? "month") }))
-        : null;
-      const sorted = byPeriod ? { data: { values: byPeriod } }
+      const sorted = periodRows ? { data: { values: periodRows } }
         : horizontal || fewTest ? { data: { values: fewLast } } : {};
       return all.length > 1
         ? { ...base, ...sorted, ...withTf, layer: all, encoding }

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -146,21 +146,77 @@ class _QueryRunRequest(BaseModel):
     params: Optional[dict] = None
 
 
-def _write_builder_receipt(conn_id: str, sql: str) -> Optional[str]:
+def _column_lineage(conn_id: str, sql: str, db=None) -> list:
+    """DE-4's lineage rows for one statement — the columns it read, qualified against the schema text
+    already cached for the connection when there is one, never rendered for this. Best-effort: [] when
+    the tracer cannot say, and the receipt keeps its tables."""
+    try:
+        from aughor.routers._shared import peek_schema_cached
+        from aughor.trust.lineage_edges import column_edges, dialect_for_connection
+        dialect = getattr(db, "dialect", None) or dialect_for_connection(conn_id)
+        return column_edges([sql], dialect=dialect, schema_text=peek_schema_cached(conn_id))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "column lineage is best-effort; the receipt keeps its tables",
+                 counter="query.builder_receipt_columns")
+        return []
+
+
+def _output_sources(rows) -> dict[str, dict]:
+    """DE-close — each output column's one source, from the lineage rows: ``alias → {table, column,
+    confidence}`` only where exactly one column row names the alias as its output. A computed column
+    (two sources), a star the tracer could not expand, or a column it traced to a table alone has none —
+    the grid then falls back to the one-table rule (`singleTable`) or offers nothing, never a guess."""
+    import json as _json
+    from aughor.trust.lineage_edges import RELATION
+    by_alias: dict[str, list[dict]] = {}
+    for rel, ref, detail in rows or []:
+        if rel != RELATION or not str(ref).startswith("column:"):
+            continue
+        try:
+            d = _json.loads(detail or "{}")
+        except (TypeError, ValueError) as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a lineage row whose detail does not parse names no output source",
+                     counter="query.output_sources.detail_unparsed")
+            continue
+        if "output" not in (d.get("roles") or []):
+            continue
+        table, _, column = str(ref)[len("column:"):].rpartition(".")
+        computed = set(d.get("computed") or [])
+        for alias in d.get("as") or []:
+            if alias in computed:
+                # an expression over the column (`total * 2`): its values are not the column's
+                by_alias.setdefault(str(alias), []).extend([{}, {}])
+                continue
+            by_alias.setdefault(str(alias), []).append(
+                {"table": table, "column": column, "confidence": d.get("confidence")})
+    return {alias: sources[0] for alias, sources in by_alias.items() if len(sources) == 1}
+
+
+def _write_builder_receipt(conn_id: str, sql: str, db=None, lineage_rows: list | None = None) -> Optional[str]:
     """WP-10: a signed provenance receipt for a Query Builder run — the exact SQL that ran +
     its input tables, resolvable via GET /receipt/{id} (so "Why this number" opens the same
     drawer as an answer). Best-effort. Keyed by the SQL hash, so re-running the same query
-    versions one receipt rather than spamming the ledger."""
+    versions one receipt rather than spamming the ledger.
+
+    DE-4: the columns the statement read ride beside the tables (`lineage_rows`, computed once by the
+    caller when it also wants them for the response, else here)."""
     try:
         import hashlib
         from aughor.kernel.ledger import Ledger
         from aughor.sql.tables import extract_tables
+        from aughor.trust.lineage_edges import payload_columns
         tables = sorted({t.table for t in extract_tables(sql) if t.table})
         key = f"builder:{conn_id}:{hashlib.sha1(sql.encode('utf-8')).hexdigest()[:12]}"
         lineage = [("source_sql", "sql", sql)] + [("input", f"table:{t}", None) for t in tables]
+        rows = _column_lineage(conn_id, sql, db) if lineage_rows is None else lineage_rows
+        lineage.extend(rows)
+        columns = payload_columns(rows)
         return Ledger.default().artifact_write(
             "builder", key,
-            {"question": "Query Builder run", "headline": "", "sql": sql, "tables": tables},
+            {"question": "Query Builder run", "headline": "", "sql": sql, "tables": tables,
+             **({"columns": columns} if columns else {})},
             conn_id=conn_id, lineage=lineage,
         )
     except Exception as exc:
@@ -174,7 +230,35 @@ def _json_cell(v):
     """A DB value as a JSON-native cell: real null, native numbers/strings/bools,
     ISO strings for temporal types, strings for everything JSON can't say
     (bytes, UUIDs, intervals). Decimal → float: this is a display path, and the
-    legacy string shape remains available where exactness matters."""
+    legacy string shape remains available where exactness matters.
+
+    DE-5e — a cell is a SCALAR, by the contract the grid reads (`TypedQueryResult.rows`): a STRUCT, MAP,
+    LIST or JSON value arrives as its JSON text, which the viewer parses back into a tree, and bytes
+    arrive as hex — the one text every engine's binary and WKB geometry reads the same in. Measured
+    before: a DuckDB STRUCT reached the grid as an object (rendered `[object Object]`), bytes as Python's
+    `b'…'` repr and a Postgres BYTEA as `<memory at 0x…>`."""
+    import datetime as _dt
+    import decimal as _dec
+    import json as _json
+    import math as _math
+    if v is None or isinstance(v, (bool, int, str)):
+        return v
+    if isinstance(v, float):
+        return v if _math.isfinite(v) else str(v)
+    if isinstance(v, _dec.Decimal):
+        return float(v)
+    if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
+        return v.isoformat()
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        return bytes(v).hex()
+    if isinstance(v, (list, tuple, dict)):
+        return _json.dumps(_json_value(v), ensure_ascii=False)
+    return str(v)
+
+
+def _json_value(v):
+    """A nested value as JSON-native Python, for `_json_cell` to serialise — the same conversions as a
+    cell, one level down, so a Decimal inside a STRUCT is a number and a date inside a LIST is ISO text."""
     import datetime as _dt
     import decimal as _dec
     import math as _math
@@ -186,10 +270,12 @@ def _json_cell(v):
         return float(v)
     if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
         return v.isoformat()
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        return bytes(v).hex()
     if isinstance(v, (list, tuple)):
-        return [_json_cell(x) for x in v]
+        return [_json_value(x) for x in v]
     if isinstance(v, dict):
-        return {str(k): _json_cell(x) for k, x in v.items()}
+        return {str(k): _json_value(x) for k, x in v.items()}
     return str(v)
 
 
@@ -224,8 +310,24 @@ def _infer_col_type(values) -> str:
     return "UNKNOWN"
 
 
+def _cut_by(result, truncated: bool, shown: int, limit: int) -> Optional[str]:
+    """DE-5d — WHAT cut a truncated result, said rather than implied by a row count that is not the
+    limit: ``limit`` (the person's own row limit — the n+1 probe arrived), ``budget`` (the connection's
+    row budget, `security/sandbox.py`, whose door word is on the trail), or ``cap`` (the connector's
+    per-call cap, below the limit asked for — a parameterised run, or a connector with no bounded read).
+    None when the result is whole."""
+    if not truncated:
+        return None
+    if any(str(d).startswith("row-budget:") for d in (getattr(result, "doors", None) or [])):
+        return "budget"
+    if limit > 0 and shown < limit:
+        return "cap"
+    return "limit"
+
+
 def _typed_response(result, payload: dict, limit: int, duration_ms: float,
-                    receipt_id, caveats: list[str], requested_sql: str = "") -> dict:
+                    receipt_id, caveats: list[str], requested_sql: str = "",
+                    sources: dict | None = None) -> dict:
     """Assemble the format:"typed" response from an execute_typed payload. Rows are
     sliced back to the requested limit (the n+1 probe row never leaves the server);
     the probe row arriving is what makes `truncated` honest."""
@@ -245,13 +347,18 @@ def _typed_response(result, payload: dict, limit: int, duration_ms: float,
             return _infer_col_type(r[idx] for r in rows)
         return norm_type(raw)
 
-    columns_typed = [{"name": c, "type": _one_type(i, raw_types[i])} for i, c in enumerate(cols)]
+    # DE-close: a column that DE-4's lineage traced to one table column carries it, so the grid can read
+    # that column's values live and open its related rows on a joined statement too.
+    columns_typed = [{"name": c, "type": _one_type(i, raw_types[i]),
+                      **({"source": sources[c]} if sources and c in sources else {})}
+                     for i, c in enumerate(cols)]
     return {
         "columns": cols,
         "columns_typed": columns_typed,
         "rows": [[_json_cell(v) for v in row] for row in rows],
         "row_count": len(rows),
         "truncated": truncated,
+        "cut_by": _cut_by(result, truncated, len(rows), limit),
         "duration_ms": round(duration_ms, 1),
         # `requested_sql` — what the USER wrote — and not `result.sql`, which is whatever
         # the executor made of it. Two things happen to a statement between here and the
@@ -367,6 +474,7 @@ async def _query_run(body: _QueryRunRequest, request: Request):
                     "rows": cached.rows,
                     "row_count": cached.row_count,
                     "truncated": bool(extras.get("truncated")),
+                    "cut_by": extras.get("cut_by"),
                     "duration_ms": 0.0,
                     # The cache stores the RESULT, whose `.sql` is the executor's form —
                     # so a cache hit used to hand back a different string than the live
@@ -428,12 +536,18 @@ async def _query_run(body: _QueryRunRequest, request: Request):
                     # every connector that has one — but the route picked
                     # `execute_with_params` OR `execute_typed`, so the rows went into a
                     # sink nobody had set and a parameterised query came back untyped.
+                    _want = _limit + 1 if (_limit > 0 and not _is_metadata) else None
                     result, typed_payload = db.execute_with_params_typed(
-                        _source, sql, _params)
+                        _source, sql, _params, max_rows=_want)
                 elif _params:
                     result = db.execute_with_params(_source, sql, _params)
                 elif _typed:
-                    result, typed_payload = db.execute_typed(_source, sql)
+                    # DE-5d: ask the connector for the rows the LIMIT asks for, not its per-call
+                    # cap — measured before the fix, limits of 1,000, 5,000 and 50,000 all came
+                    # back as 500 rows on DuckDB, `truncated`, and the Run menu's presets above
+                    # 500 were a promise the connector never kept. The row budget still caps it.
+                    _want = _limit + 1 if (_limit > 0 and not _is_metadata) else None
+                    result, typed_payload = db.execute_typed(_source, sql, max_rows=_want)
                 else:
                     result = db.execute(_source, sql)
         finally:
@@ -473,12 +587,14 @@ async def _query_run(body: _QueryRunRequest, request: Request):
 
     # WP-10: a successful run gets a signed receipt so the UI can open "Why this number".
     # Record the user's ORIGINAL SQL (not the internal LIMIT-wrapped form the executor ran).
-    receipt_id = _write_builder_receipt(body.conn_id, body.sql) if not result.error else None
+    lineage_rows = _column_lineage(body.conn_id, body.sql, db) if not result.error else []
+    receipt_id = _write_builder_receipt(body.conn_id, body.sql, db, lineage_rows=lineage_rows) if not result.error else None
     caveats = list(getattr(result, "caveats", []) or [])
 
     if _typed and typed_payload is not None:
         typed = _typed_response(result, typed_payload, _limit, duration_ms,
-                                receipt_id, caveats, requested_sql=body.sql)
+                                receipt_id, caveats, requested_sql=body.sql,
+                                sources=_output_sources(lineage_rows))
         if body.use_cache and not result.error:
             from aughor.db.matcache import put_cache
             # Cache what the RESPONSE says, not what the cursor returned: `_typed_response`
@@ -491,7 +607,8 @@ async def _query_run(body: _QueryRunRequest, request: Request):
                                           "row_count": typed["row_count"]}),
                 tenancy=tenancy, variant=_variant,
                 extra={"columns_typed": typed["columns_typed"],
-                       "truncated": typed["truncated"]},
+                       "truncated": typed["truncated"],
+                       "cut_by": typed["cut_by"]},
             )
         return typed
 
@@ -515,6 +632,345 @@ async def _query_run(body: _QueryRunRequest, request: Request):
         # it) — say so instead of serving strings under a "typed" label.
         legacy["format"] = "legacy"
     return legacy
+
+
+# ── DE-5d — what a cut result asks for next: how many rows in all, and the next page ───────────
+#
+# Both run the PERSON's statement again, wrapped (`aughor.sql.paging`), through the same door as the
+# run and under the run's label: the parse step, the safety check, the row policy, PII redaction, the
+# audit log and the metering apply to the count and to every page as they did to the first rows.
+# Neither reads the result cache — a count is asked for because the rows on screen are not the whole
+# answer, and a cached page would be an older table's. A refusal is a value with a `code`, never an
+# empty answer that reads as "no rows".
+
+class _QueryCountRequest(BaseModel):
+    conn_id: str
+    sql: str
+    #: The surface, as the run named it — the audit label and the safety gate's policy. The grid is
+    #: the workbench's, so that is the default; the allow-list is the run's.
+    source: Literal["query_builder", "query_workbench"] = "query_workbench"
+    #: The run's bound values, so the count and the page are of the SAME statement.
+    params: Optional[dict] = None
+
+
+class _QueryMoreRequest(_QueryCountRequest):
+    #: Rows already shown — the page starts after them.
+    offset: int = 0
+    #: Rows to add. The route asks the engine for one more: that row arriving is the proof there is more.
+    limit: int = 500
+
+
+#: The refusal codes, stable for the web and for tests. The engine's or the gate's own words ride beside them.
+CODE_BLOCKED = "BLOCKED"                    # the safety gate refused the statement
+CODE_NOT_WRAPPABLE = "NOT_WRAPPABLE"        # EXPLAIN / DESCRIBE / SHOW: nothing to count or page
+CODE_FAILED = "FAILED"                      # the engine did not answer, or answered without rows
+CODE_PAGE_BILLED = "PAGE_BILLED_AS_SCAN"    # the engine bills each statement as a scan: a page costs a re-run
+
+
+def _cut_prelude(body: _QueryCountRequest, request: Request):
+    """The checks the run made before its statement ran, in the run's order: the organisation, a statement
+    at all, the safety gate on the RAW text, wrappability, the connection. Returns ``(db, None)`` with the
+    connection open, or ``(None, refusal)`` where the refusal is the `error` and `code` the route answers."""
+    from aughor.db.connection import gate_user_sql, is_metadata_statement, open_connection_for
+    _check_conn_org(request, body.conn_id)
+    if not body.sql.strip():
+        raise HTTPException(status_code=400, detail="sql is required")
+    blocked = gate_user_sql(body.conn_id, body.source, body.sql)
+    if blocked is not None:
+        return None, {"error": blocked.error, "code": CODE_BLOCKED}
+    if is_metadata_statement(body.sql):
+        return None, {"error": "EXPLAIN, DESCRIBE and SHOW return their few rows whole — there is nothing "
+                               "to count or to page.", "code": CODE_NOT_WRAPPABLE}
+    try:
+        return open_connection_for(body.conn_id), None
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+
+async def _watched_as_the_run(db, work, body: _QueryCountRequest, request: Request):
+    """`_run_watched` with the run's deadline and the run's answers to a timeout (504) and a cancel (499)."""
+    from aughor.security.sandbox import get_budget
+    limit_ms = get_budget(body.conn_id).max_time_ms if body.source == "query_workbench" else 0.0
+    try:
+        return await _run_watched(db, work, request=request, limit_ms=limit_ms)
+    except QueryAborted as ab:
+        if ab.reason == "timeout":
+            raise HTTPException(
+                status_code=504,
+                detail=(f"Query exceeded this connection's {ab.limit_ms:.0f}ms time limit "
+                        f"and was stopped after {ab.elapsed_ms:.0f}ms."))
+        raise HTTPException(status_code=499, detail="Query cancelled.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _close_quietly(db) -> None:
+    try:
+        db.close()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "query: best-effort connection close", counter="query.close_failed")
+
+
+def _count_response(body: _QueryCountRequest, total: Optional[int], as_of: str, duration_ms: float,
+                    error: Optional[str] = None, code: Optional[str] = None) -> dict:
+    return {"total": total, "as_of": as_of, "duration_ms": round(duration_ms, 1), "sql": body.sql,
+            "error": error, "code": code}
+
+
+@router.post("/query/count")
+async def query_count(body: _QueryCountRequest, request: Request):
+    """DE-5d — how many rows the statement returns in all, for a result the row limit cut. ``COUNT(*)`` over
+    the person's statement, through the run's door under the run's label. ``as_of`` is when the engine
+    answered: the table may have changed by the time the number is read, so the number says when it was
+    true. A refusal carries a ``code`` (`BLOCKED`, `NOT_WRAPPABLE`, `FAILED`) and the gate's or the engine's
+    own words; ``total`` is then null, never 0."""
+    import time as _t
+    from aughor.sql.paging import count_sql
+    from aughor.util.time import now_iso
+
+    db, refusal = _cut_prelude(body, request)
+    if refusal:
+        return _count_response(body, None, now_iso(), 0.0, **refusal)
+    _sql, _params, _source = count_sql(body.sql), body.params or None, body.source
+
+    def _work():
+        t0 = _t.monotonic()
+        try:
+            if _params:
+                result = db.execute_with_params(_source, _sql, _params)
+            else:
+                result = db.execute(_source, _sql)
+        finally:
+            _close_quietly(db)
+        return result, now_iso(), (_t.monotonic() - t0) * 1000
+
+    result, as_of, duration_ms = await _watched_as_the_run(db, _work, body, request)
+    if result.error:
+        return _count_response(body, None, as_of, duration_ms, error=result.error, code=CODE_FAILED)
+    try:
+        total = int(str(result.rows[0][0]))
+    except Exception:
+        return _count_response(body, None, as_of, duration_ms,
+                               error="the engine answered the count with no number", code=CODE_FAILED)
+    return _count_response(body, total, as_of, duration_ms)
+
+
+def _page_refusal(body: _QueryMoreRequest, *, error: str, code: Optional[str], duration_ms: float = 0.0,
+                  caveats: Optional[list] = None) -> dict:
+    """The typed shape with no rows and the reason — so the grid's one reader handles a page and a
+    refusal alike, and the refusal is never mistaken for an empty page."""
+    return {"columns": [], "columns_typed": [], "rows": [], "row_count": 0, "truncated": False, "cut_by": None,
+            "duration_ms": round(duration_ms, 1), "sql": body.sql, "cached": False, "error": error, "code": code,
+            "receipt_id": None, "caveats": list(caveats or []), "format": "typed",
+            "offset": body.offset, "ordered": None}
+
+
+@router.post("/query/more")
+async def query_more(body: _QueryMoreRequest, request: Request):
+    """DE-5d — the next page of a cut result: rows ``offset`` onward of the person's statement, typed, through
+    the run's door under the run's label, with one extra row asked for as the proof there is more.
+
+    Refused with `PAGE_BILLED_AS_SCAN` on an engine whose declaration says a re-run is billed as a scan of
+    the statement's tables (`rerun_cost == "bytes_scanned"`: BigQuery, S3) — there each page costs what the
+    whole result cost and one re-run with a higher limit is cheaper, which is the study's falsifier for
+    this feature; the refusal says so and names the alternative. A page of a statement with no ORDER BY on
+    its outermost query says, in its caveats, that pages may repeat or skip rows."""
+    import time as _t
+    from aughor.connectors.declarations import declaration
+    from aughor.db.metadata import engine_type_of
+    from aughor.sql.paging import has_top_level_order, page_sql
+
+    db, refusal = _cut_prelude(body, request)
+    if refusal:
+        return _page_refusal(body, **refusal)
+    engine = engine_type_of(db)
+    decl = declaration(engine) if engine else None
+    if decl is not None and decl.rerun_cost == "bytes_scanned":
+        _close_quietly(db)
+        return _page_refusal(
+            body, code=CODE_PAGE_BILLED,
+            error=(f"On {decl.label} every statement is billed as a full scan of the tables it reads, so each "
+                   f"page would cost what the whole result cost. Re-run with a higher limit instead — that "
+                   f"is billed once."))
+    _limit = max(1, min(int(body.limit), 50_000))
+    _offset = max(0, int(body.offset))
+    _sql, _params, _source = page_sql(body.sql, _limit + 1, _offset), body.params or None, body.source
+    ordered = has_top_level_order(body.sql, getattr(db, "dialect", None))
+
+    def _work():
+        t0 = _t.monotonic()
+        try:
+            if _params:
+                result, payload = db.execute_with_params_typed(_source, _sql, _params, max_rows=_limit + 1)
+            else:
+                result, payload = db.execute_typed(_source, _sql, max_rows=_limit + 1)
+        finally:
+            _close_quietly(db)
+        return result, payload, (_t.monotonic() - t0) * 1000
+
+    result, payload, duration_ms = await _watched_as_the_run(db, _work, body, request)
+    caveats = list(getattr(result, "caveats", []) or [])
+    if ordered is False:
+        caveats.append("This statement has no ORDER BY on its outermost query, so the engine may hand back its "
+                       "rows in another order each time — a page can repeat or skip rows. Add an ORDER BY for "
+                       "pages that join up exactly.")
+    elif ordered is None:
+        caveats.append("Could not parse the statement to see whether it orders its rows; without an ORDER BY "
+                       "a page can repeat or skip rows.")
+    if result.error:
+        return _page_refusal(body, error=result.error, code=CODE_FAILED, duration_ms=duration_ms, caveats=caveats)
+    if payload is None:
+        return _page_refusal(body, error="this connector returns no typed rows, so the page cannot be joined to "
+                                         "the grid; re-run with a higher limit instead",
+                             code=CODE_FAILED, duration_ms=duration_ms, caveats=caveats)
+    typed = _typed_response(result, payload, _limit, duration_ms, None, caveats, requested_sql=body.sql)
+    typed.update({"offset": _offset, "ordered": ordered})
+    return typed
+
+
+# ── DE-5f — the rows related to a value, through the joins the data bears out ───────────────────
+#
+# Two doors (`aughor.sql.related`): the joins that touch one table column, each with its evidence — the
+# engine's declared key, the measured value overlap, the ontology's cardinality — and the rows on the other
+# side of one of them for one value. The rows are opened only through a join the data bears out (verified,
+# or declared and not disputed); a name match nobody probed, or a pair the values disprove, is listed with
+# its evidence and refused. The statement is composed here, identifiers quoted for the engine and the value
+# BOUND, and runs through the run's door under the run's label like every other statement in this file.
+
+CODE_JOIN_NOT_VERIFIED = "JOIN_NOT_VERIFIED"
+
+
+@router.get("/connections/{conn_id}/related-joins")
+async def related_joins_route(conn_id: str, table: str, column: str, schema: Optional[str] = None):
+    """DE-5f — every join that touches ``table.column``, in either direction, with its evidence in the
+    catalog's words: the ontology's relationships first (overlap and measured cardinality), then the verified
+    join map. `openable` says whether the rows may be opened through it. `ontology` says whether one is built."""
+    from aughor.db.connection import open_connection_for
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        try:
+            joins, notes = _related_joins_for(db, conn_id, table, column, schema)
+        finally:
+            _close_quietly(db)
+        return {"table": table, "column": column, "joins": [j.as_dict() for j in joins], **notes}
+
+    return await loop.run_in_executor(None, _work)
+
+
+def _related_joins_for(db, conn_id: str, table: str, column: str, schema: Optional[str]):
+    from aughor.ontology.store import load_latest_ontology
+    from aughor.routers._shared import get_schema_cached
+    from aughor.sql.related import related_joins
+    from aughor.tools.schema import join_map_for
+    schema_text = get_schema_cached(conn_id, db)
+    try:
+        ontology = load_latest_ontology(conn_id, schema or None)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the ontology is best-effort here; the join map stands", counter="query.related.ontology")
+        ontology = None
+    return related_joins(db, conn_id, table, column, schema_text=schema_text, join_map=join_map_for,
+                         ontology=ontology)
+
+
+class _RelatedRowsRequest(BaseModel):
+    conn_id: str
+    #: The column the value was read from, and the value.
+    table: str
+    column: str
+    value: Any
+    #: The other side of the join to open.
+    other_table: str
+    other_column: str
+    schema_name: Optional[str] = None
+    limit: int = 500
+    source: Literal["query_builder", "query_workbench"] = "query_workbench"
+
+
+@router.post("/query/related")
+async def query_related(body: _RelatedRowsRequest, request: Request):
+    """DE-5f — the rows of ``other_table`` whose ``other_column`` holds the value, typed, through the run's door
+    under the run's label with the value bound — only through a join the data bears out. A refusal is the typed
+    shape with no rows and a code: `JOIN_NOT_VERIFIED` (with the join's own evidence, when there is one),
+    `BLOCKED`, `FAILED`. The response carries the statement, its bound `params`, a `label` for the pager, and
+    the join's evidence as a caveat, so the rows say what relates them."""
+    import time as _t
+    from aughor.db.connection import gate_user_sql, open_connection_for
+    from aughor.sql.related import find_edge, related_label, related_sql
+
+    _check_conn_org(request, body.conn_id)
+    if body.value is None:
+        raise HTTPException(status_code=400, detail="a NULL has no related rows — there is no value to match")
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _refusal(error: str, code: Optional[str], join=None, caveats: Optional[list] = None) -> dict:
+        return {"columns": [], "columns_typed": [], "rows": [], "row_count": 0, "truncated": False, "cut_by": None,
+                "duration_ms": 0.0, "sql": "", "params": {"v": body.value}, "cached": False, "error": error,
+                "code": code, "receipt_id": None, "caveats": list(caveats or []), "format": "typed",
+                "label": related_label(body.other_table, body.table, body.column, body.value),
+                "join": join.as_dict() if join is not None else None}
+
+    loop = asyncio.get_running_loop()
+    try:
+        joins, _notes = await loop.run_in_executor(
+            None, lambda: _related_joins_for(db, body.conn_id, body.table, body.column, body.schema_name))
+    except Exception as exc:
+        _close_quietly(db)
+        return _refusal(f"the joins could not be read: {exc}", CODE_FAILED)
+    edge = find_edge(joins, body.other_table, body.other_column)
+    if edge is None:
+        _close_quietly(db)
+        return _refusal(f"no verified join from {body.table}.{body.column} to {body.other_table}."
+                        f"{body.other_column} — the rows are not opened on a guess", CODE_JOIN_NOT_VERIFIED)
+    if not edge.openable:
+        _close_quietly(db)
+        return _refusal(f"{body.table}.{body.column} = {edge.other_table}.{edge.other_column}: {edge.sentence}",
+                        CODE_JOIN_NOT_VERIFIED, join=edge)
+
+    _sql = related_sql(db, edge.other_table, edge.other_column, body.schema_name)
+    blocked = gate_user_sql(body.conn_id, body.source, _sql)
+    if blocked is not None:
+        _close_quietly(db)
+        return _refusal(blocked.error or "refused by the safety gate", CODE_BLOCKED, join=edge)
+    _limit = max(1, min(int(body.limit), 50_000))
+    _params = {"v": body.value}
+    _source = body.source
+    _wrapped = f"SELECT * FROM ({_sql}) __q LIMIT {_limit + 1}"
+    evidence = (f"Related through {body.table}.{body.column} = {edge.other_table}.{edge.other_column} — "
+                f"{edge.sentence}.")
+
+    def _work():
+        t0 = _t.monotonic()
+        try:
+            result, payload = db.execute_with_params_typed(_source, _wrapped, _params, max_rows=_limit + 1)
+        finally:
+            _close_quietly(db)
+        return result, payload, (_t.monotonic() - t0) * 1000
+
+    result, payload, duration_ms = await _watched_as_the_run(db, _work, body, request)
+    caveats = [evidence, *list(getattr(result, "caveats", []) or [])]
+    if result.error:
+        out = _refusal(result.error, CODE_FAILED, join=edge, caveats=caveats)
+        out.update({"sql": _sql, "duration_ms": round(duration_ms, 1)})
+        return out
+    if payload is None:
+        out = _refusal("this connector returns no typed rows, so the related rows cannot be shown in the grid",
+                       CODE_FAILED, join=edge, caveats=caveats)
+        out.update({"sql": _sql, "duration_ms": round(duration_ms, 1)})
+        return out
+    typed = _typed_response(result, payload, _limit, duration_ms, None, caveats, requested_sql=_sql)
+    typed.update({"params": _params, "label": related_label(edge.other_table, body.table, body.column, body.value),
+                  "join": edge.as_dict(), "code": None})
+    return typed
 
 
 # ── Semantic operators over SQL result text ────────────────────────────────────
@@ -1539,7 +1995,9 @@ def column_distinct(conn_id: str, table: str, column: str, schema: "str | None" 
         qt, qc = _quote_ident(table, schema, q), f"{q}{column}{q}"
         res = db.execute("__distinct__", f"SELECT DISTINCT {qc} AS v FROM {qt} WHERE {qc} IS NOT NULL ORDER BY 1 LIMIT {n}", internal=True)
         if getattr(res, "error", None):
-            return {"values": [], "truncated": False}
+            # DE-5d: a typed refusal, not an empty list — an empty list here taught the picker (and
+            # its reader) that the column had no values, when the table could not be read at all.
+            return {"values": [], "truncated": False, "error": str(res.error), "code": "DISTINCT_FAILED"}
         vals = [None if r[0] is None else str(r[0]) for r in (res.rows or [])]
         return {"values": vals, "truncated": len(vals) >= n}
     finally:

@@ -86,10 +86,19 @@ def _wire_l2(monkeypatch, level=2, run_signals=None):
         "report": {"sql": "SELECT marketing_channel, SUM(order_value) AS rev FROM missimi.orders GROUP BY marketing_channel"}})
 
 
-def test_auto_crystallize_saves_at_l2(_store, monkeypatch):
+def test_auto_crystallize_stages_to_the_inbox_at_l2_and_accept_saves(_store, monkeypatch):
+    """AO-7e (§6 item 38(g), 2026-10-03): a clean L2 run STAGES the skill for a person;
+    nothing a model shaped is saved without their accept. The accept is what saves."""
+    staged: list = []
+    monkeypatch.setattr("aughor.actions.inbox.stage_proposal", lambda p: staged.append(p) or p)
     _wire_l2(monkeypatch)
     S.auto_crystallize("inv-1", "c")
-    assert S.load_learned_actions("c", "missimi"), "a clean L2 run should auto-crystallize a skill"
+    assert S.load_learned_actions("c", "missimi") == {}, "an L2 run must not save by itself"
+    assert len(staged) == 1 and staged[0].kind == "skill_draft"
+    assert staged[0].params["inv_id"] == "inv-1" and staged[0].connection_id == "c"
+    saved, why = S.accept_skill_draft("inv-1", "c")
+    assert saved, why
+    assert S.load_learned_actions("c", "missimi"), "the person's accept is what crystallises"
 
 
 def test_auto_crystallize_noop_below_l2(_store, monkeypatch):

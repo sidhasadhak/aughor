@@ -61,3 +61,18 @@ def fence_untrusted(content: object, *, max_chars: int | None = None) -> str:
     """
     body = sanitize_db_text(content, max_chars=max_chars)
     return f"{DATA_OPEN}\n{body}\n{DATA_CLOSE}"
+
+
+def fence_inline(content: object, *, max_chars: int | None = None) -> str:
+    """The same fence on ONE line, for a value that lives inside a line of structured text — a schema line's
+    sample values, a column's value list (DE-1). The same delimiters and the same neutralising as
+    `fence_untrusted`; the whitespace is flattened as well, because every schema parser reads the text line by
+    line and a value carrying a newline would become a second line."""
+    body = " ".join(sanitize_db_text(content, max_chars=max_chars).split())
+    return f"{DATA_OPEN}{body}{DATA_CLOSE}"
+
+
+def unfence(text: object) -> str:
+    """The fence delimiters removed, for a parser that reads values back out of fenced text. What a value could
+    smuggle was neutralised to ``[data]`` when it was fenced, so only the real delimiters are removed here."""
+    return _FENCE_TOKEN_RE.sub("", "" if text is None else str(text))

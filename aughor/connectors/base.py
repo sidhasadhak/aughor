@@ -10,10 +10,12 @@ from __future__ import annotations
 from typing import Literal
 
 from aughor.db.connection import DatabaseConnection
+from aughor.db.doors import through_door
+from aughor.db.errors import classify_error
 from aughor.db.single_flight import single_flight_build
 
 
-ConnectorCategory = Literal["warehouse", "file", "api", "knowledge"]
+ConnectorCategory = Literal["warehouse", "file", "api", "knowledge", "federation"]
 
 _INTEGER_KINDS = frozenset({"INTEGER", "INT", "INT64", "BIGINT", "SMALLINT", "TINYINT", "LONG", "LONGLONG", "SHORT",
                             "TINY", "INT24", "YEAR"})
@@ -21,11 +23,29 @@ _FLOAT_KINDS = frozenset({"FLOAT", "FLOAT64", "DOUBLE", "REAL"})
 _DECIMAL_KINDS = frozenset({"NUMERIC", "BIGNUMERIC", "DECIMAL", "NEWDECIMAL", "FIXED", "NUMBER"})
 
 
+#: DE-5e — the kinds whose own name is kept: a document, a shape or bytes. The stage reads these as text (its
+#: `_empty_type` falls through to a string for any name it does not know), and the grid's type line and value
+#: viewer read them for what they are. Measured before: BigQuery's GEOGRAPHY and JSON, Snowflake's VARIANT,
+#: OBJECT and ARRAY, MySQL's JSON and GEOMETRY and every engine's bytes all reached the web as "VARCHAR".
+_KEPT_KINDS = frozenset({
+    "JSON", "JSONB", "VARIANT", "OBJECT", "ARRAY", "RECORD", "STRUCT", "LIST", "MAP", "ROW", "SUPER",
+    "GEOGRAPHY", "GEOMETRY", "GEOPOINT",
+    "BYTES", "BLOB", "BINARY", "VARBINARY", "BYTEA", "TINY_BLOB", "MEDIUM_BLOB", "LONG_BLOB",
+})
+
+
 def stage_type(kind: object, precision: object = None, scale: object = None) -> str:
     """A driver's column type in the names the cross-source stage reads — BIGINT, DOUBLE, DECIMAL(p,s), BOOLEAN, DATE,
     TIMESTAMP, VARCHAR. The stage types a column from its values, so this name decides only a column holding no value,
-    which would otherwise be staged as text."""
+    which would otherwise be staged as text.
+
+    DE-5e: a document, shape or bytes kind keeps its own name (`_KEPT_KINDS`, the bare word before any `(…)` or
+    `<…>`), because the name is a fact the person reads under the column and the viewer reads to open the value;
+    the stage still types such a column from its values, and an all-null one as text."""
     k = str(kind or "").strip().upper()
+    bare = k.split("(", 1)[0].split("<", 1)[0].strip()
+    if bare in _KEPT_KINDS:
+        return k
     if k in _INTEGER_KINDS:
         return "BIGINT"
     if k in _FLOAT_KINDS:
@@ -60,9 +80,10 @@ class Connector(DatabaseConnection):
     #: How this connector's DRIVER spells a bind placeholder — see `sql.params`. ``None``
     #: means it cannot bind, and `execute_with_params` keeps the base class's visible
     #: refusal rather than falling back to anything that builds the statement by
-    #: concatenation. Deliberately a DRIVER fact, not a dialect one: `ExasolConnection`
-    #: declares ``dialect = "postgres"`` for transpile and `pyexasol` accepts none of
-    #: Postgres's placeholder syntax.
+    #: concatenation. Deliberately a DRIVER fact, not a dialect one: a dialect says what
+    #: grammar the engine reads, and a driver's placeholders are its own (`ExasolConnection`
+    #: declared ``dialect = "postgres"`` until DE-3a, and `pyexasol` accepted none of
+    #: Postgres's placeholder syntax either).
     param_style: str | None = None
 
     #: Row cap for a bound run, matching what every connector's `execute` already applies.
@@ -105,7 +126,7 @@ class Connector(DatabaseConnection):
                 )
             except Exception as exc:  # noqa: BLE001 — an engine error is the result's error, never a raise
                 return QueryResult(hypothesis_id=hypothesis_id, sql=statement, columns=[], rows=[], row_count=0,
-                                   error=str(exc))
+                                   error=str(exc), error_kind=classify_error(exc))
 
         result = heal_duckdb_refusal(_attempt(sql), sql, _attempt)
         return security_post(self._connection_id, hypothesis_id, result.sql, result,
@@ -130,6 +151,19 @@ class Connector(DatabaseConnection):
             return base
         from aughor.kernel.registries.schema_annotators import run_annotators
         return run_annotators(self, base, phase="heavy")
+
+    @staticmethod
+    def _handle_answers(handle) -> bool:
+        """The one liveness probe every DuckDB-backed connector shares (DE-3d): the handle answers `SELECT 1`.
+        A connector that mirrors a source into an in-memory DuckDB is healthy when that DuckDB answers; the
+        source's own reachability is the next sync's affair, and `test()` reports it."""
+        try:
+            if handle is None:
+                return False
+            handle.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
 
     def _driver_handle(self):
         """`self._conn`, or `self._duckdb` for the connectors that keep it there.
@@ -158,8 +192,9 @@ class Connector(DatabaseConnection):
         """
         raise NotImplementedError
 
-    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict):
-        """Run `sql` with `:name` parameters as real bind values.
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict, *, max_rows: int | None = None):
+        """Run `sql` with `:name` parameters as real bind values. ``max_rows`` (DE-5d) is the rows the caller
+        asked for; None means this connector's per-call cap.
 
         Order matters and follows `DuckDBConnection._run`: the safety pre-check and the row
         policy see the ``:name`` form, which sqlglot parses as a Placeholder in every
@@ -167,13 +202,20 @@ class Connector(DatabaseConnection):
         will run. The rewrite to the driver's own spelling happens at the driver call and
         NOWHERE earlier; Postgres's ``%(name)s``, translated up here, fails sqlglot outright.
         """
+        if not self.param_style:
+            return super().execute_with_params(hypothesis_id, sql, params, max_rows=max_rows)
+        # Through the door like every other statement (DE-1): a bound statement is written for this engine and
+        # declares no dialect, and the door is where the parse step and the engine's posture are recorded now.
+        return through_door(self, sql, None,
+                            lambda statement: self._execute_bound(hypothesis_id, statement, params, max_rows=max_rows))
+
+    def _execute_bound(self, hypothesis_id: str, sql: str, params: dict, *, max_rows: int | None = None):
+        """The bound run behind `execute_with_params`'s door: the gates, the render to the driver's spelling, the
+        driver call and the post-pass."""
         import time
         from aughor.control_plane.contracts.execution import QueryResult
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
         from aughor.sql.params import ParamRenderError, expand_list_params, render_for_engine
-
-        if not self.param_style:
-            return super().execute_with_params(hypothesis_id, sql, params)
 
         sql = sql.strip().rstrip(";")
         if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
@@ -195,13 +237,14 @@ class Connector(DatabaseConnection):
         _t0 = time.monotonic()
         try:
             columns, rows_raw = self._bind_execute(rendered, bind_params)
+            cap = max(1, max_rows or self.max_rows)
             rows = [[str(v) if v is not None else "NULL" for v in row]
-                    for row in rows_raw[:self.max_rows]]
+                    for row in rows_raw[:cap]]
             result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=columns,
                                  rows=rows, row_count=len(rows_raw))
         except Exception as e:
             result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[],
-                                 row_count=0, error=str(e))
+                                 row_count=0, error=str(e), error_kind=classify_error(e))
         # `sql` and not `rendered`: every downstream reader of a receipt — the guards, the
         # editor header, the ledger — was written against the statement the USER wrote.
         elapsed_ms = (time.monotonic() - _t0) * 1000

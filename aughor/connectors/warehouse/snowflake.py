@@ -13,6 +13,7 @@ import time
 
 from aughor.connectors.base import Connector
 from aughor.db.doors import through_door
+from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -22,6 +23,9 @@ class SnowflakeConnection(Connector):
     connector_category = "warehouse"
     dialect = "snowflake"
     writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    # DE-1 — Snowflake has no session-level read-only; the door's checks are the read-only boundary, and every
+    # result's doors say so (`engine-read-write`). A read-only ROLE is the operator's grant, not this session's.
+    engine_read_only = False
 
     def __init__(
         self,
@@ -52,6 +56,13 @@ class SnowflakeConnection(Connector):
         )
 
     param_style = "pyformat"
+
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): the driver says whether its session is closed; no statement."""
+        try:
+            return self._conn is not None and not self._conn.is_closed()
+        except Exception:
+            return False
 
     def _bind_execute(self, sql: str, params: dict):
         cur = self._conn.cursor()
@@ -106,7 +117,7 @@ class SnowflakeConnection(Connector):
         except Exception as e:
             result = QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=str(e),
+                columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
             )
         elapsed_ms = (time.monotonic() - _t0) * 1000
         return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)

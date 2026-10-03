@@ -21,9 +21,13 @@ def _roster(monkeypatch, agents):
 
 
 def _answer_spy(calls, payload=None):
+    # The shape the REAL `answer_question` returns: `headline` is the prose, `outcome` a
+    # terminal-state code. There is no `answer` key on the real path — a stub that
+    # returned one let `_run_one` read a key production never carries (AO-1b).
     def _answer(conn, args, **kw):
         calls.append({"connection_id": conn, "question": args["question"]})
-        return payload or {"answer": "42", "usage": {"cost_usd": 0.01}}
+        return payload or {"headline": "42", "outcome": "answered",
+                           "usage": {"cost_usd": 0.01}}
     return _answer
 
 

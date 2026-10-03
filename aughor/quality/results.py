@@ -85,15 +85,22 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
               "ON quality_results (org_id, connection_id, table_name, checked_at)")
     c.execute("CREATE INDEX IF NOT EXISTS ix_quality_run "
               "ON quality_results (org_id, run_id)")
+    # DE-4: a verdict may be about one COLUMN of the table — the rules always were
+    # (`quality/rules.py` carries `column`) and the result dropped it — so an answer that never
+    # read the column is not told about it. Added in place: an older store gains it empty.
+    have = {r[1] for r in c.execute("PRAGMA table_info(quality_results)").fetchall()}
+    if "column_name" not in have:
+        c.execute("ALTER TABLE quality_results ADD COLUMN column_name TEXT NOT NULL DEFAULT ''")
     c.commit()
 
 
 @dataclass
 class Result:
-    """One verdict about one table."""
+    """One verdict about one table — or, when ``column_name`` is set, about one column of it."""
 
     connection_id: str
     table_name: str
+    column_name: str = ""
     producer: str = "check"
     rule_name: str = ""
     rule_fingerprint: str = ""
@@ -151,7 +158,8 @@ def _row_to_result(row: sqlite3.Row) -> Result:
                   ruleset_fingerprint=row["ruleset_fingerprint"], run_id=row["run_id"],
                   criticality=row["criticality"], passed=bool(row["passed"]),
                   violations=int(row["violations"] or 0), observed=row["observed"],
-                  detail=row["detail"], checked_at=row["checked_at"])
+                  detail=row["detail"], checked_at=row["checked_at"],
+                  column_name=(row["column_name"] or "") if "column_name" in row.keys() else "")
 
 
 def record(result: Result, *, org_id: Optional[str] = None) -> Result:
@@ -165,20 +173,22 @@ def record(result: Result, *, org_id: Optional[str] = None) -> Result:
         c.execute(
             "INSERT OR REPLACE INTO quality_results (id, org_id, connection_id, "
             "table_name, producer, rule_name, rule_fingerprint, ruleset_fingerprint, "
-            "run_id, criticality, passed, violations, observed, detail, checked_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "run_id, criticality, passed, violations, observed, detail, checked_at, column_name) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (result.id, org, result.connection_id, result.table_name.split(".")[-1].lower(),
              result.producer, result.rule_name, result.rule_fingerprint,
              result.ruleset_fingerprint, result.run_id, result.criticality,
              1 if result.passed else 0, int(result.violations), result.observed,
-             result.detail, result.checked_at))
+             result.detail, result.checked_at,
+             (result.column_name or "").split(".")[-1].lower()))
         c.commit()
     return result
 
 
 def record_monitor_alert(connection_id: str, table: str, *, monitor_name: str,
                          severity: str, message: str, value: Optional[float] = None,
-                         run_id: str = "", org_id: Optional[str] = None) -> Result:
+                         run_id: str = "", org_id: Optional[str] = None,
+                         column: Optional[str] = None) -> Result:
     """A monitor firing, written to the SAME store as a check result.
 
     This adapter is what makes J12 true rather than aspirational: without it, monitors
@@ -187,19 +197,31 @@ def record_monitor_alert(connection_id: str, table: str, *, monitor_name: str,
     a row came from to read it.
     """
     return record(Result(
-        connection_id=connection_id, table_name=table, producer="monitor",
+        connection_id=connection_id, table_name=table, column_name=column or "", producer="monitor",
         rule_name=monitor_name, run_id=run_id,
         criticality="error" if str(severity).lower() in ("critical", "error") else "warn",
         passed=False, violations=1, observed=value, detail=message), org_id=org_id)
 
 
+def _bare_column(key: str) -> str:
+    """``schema.table.column`` or ``table.column`` → ``table.column``, lower-cased — the form
+    the store keeps."""
+    parts = str(key).split(".")
+    return f"{parts[-2].lower()}.{parts[-1].lower()}"
+
+
 def latest_for_tables(connection_id: str, tables: list[str], *,
-                      org_id: Optional[str] = None) -> list[Result]:
-    """The most recent result per (table, rule) for the given tables.
+                      org_id: Optional[str] = None,
+                      columns: Optional[list[str]] = None) -> list[Result]:
+    """The most recent result per (table, column, rule) for the given tables.
 
     Latest-per-rule rather than latest-overall: a table with a passing freshness check and
     a failing not-null check has both facts, and collapsing to one row would hide whichever
     ran second.
+
+    DE-4: ``columns`` — ``table.column`` names the answer READ — narrows the column-level
+    results to those columns; a table-level result (no column) always applies. ``None`` means
+    the columns were not traced, and every result for the table applies, as before.
     """
     if not tables:
         return []
@@ -211,10 +233,14 @@ def latest_for_tables(connection_id: str, tables: list[str], *,
             f"SELECT * FROM quality_results WHERE org_id=? AND connection_id=? "
             f"AND table_name IN ({placeholders}) ORDER BY checked_at DESC",
             (org, connection_id, *bare)).fetchall()
+    read = None if columns is None else {_bare_column(k) for k in columns if "." in str(k)}
     seen: set[tuple] = set()
     out: list[Result] = []
     for row in rows:
-        key = (row["table_name"], row["rule_name"] or row["rule_fingerprint"])
+        col = (row["column_name"] or "") if "column_name" in row.keys() else ""
+        if col and read is not None and f"{row['table_name']}.{col}" not in read:
+            continue
+        key = (row["table_name"], col, row["rule_name"] or row["rule_fingerprint"])
         if key in seen:
             continue
         seen.add(key)

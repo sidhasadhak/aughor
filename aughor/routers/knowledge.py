@@ -6,7 +6,7 @@ import re
 from pathlib import Path as _Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 
 from aughor.semantic.glossary import load_glossary, update_column, update_table
@@ -809,3 +809,47 @@ async def create_knowledge_source(body: KnowledgeSourceIn):
                              dsn=dsn, meta=config)
     return {"id": conn_id, "message": f"{_KNOWLEDGE_SOURCE_LABELS[body.conn_type]} "
                                       f"source connected", "test_result": msg}
+
+
+# ── The knowledge tools over HTTP (DE-2c, ROADMAP §3.51) ──────────────────────
+#
+# The four bodies live in `aughor/mcp/knowledge_tools.py` and are called in-process by the
+# chat tools too ("one body, two callers"). Until DE-2c the MCP server called them in its own
+# process, where no principal is bound: every read was the default organisation's, the
+# clearance trim saw no caller, and the connection-owner check never ran. These doors run the
+# same bodies in the API process, under the request's organisation, user and RBAC — and this
+# router's `connection_owner_guard` — so the MCP client reads the same data with the same
+# clearances as a person at the web app.
+
+@router.get("/knowledge/{connection_id}/graph/search")
+def knowledge_search_graph(connection_id: str, q: str = Query(..., min_length=1),
+                           limit: int = Query(10, ge=1, le=50)):
+    """Search the connection's knowledge graph — tables, governed metrics, glossary terms and
+    past findings — with the measured join overlap between tables. `available=false` means no
+    graph has been built; a `notice` says results were withheld by data governance."""
+    from aughor.mcp.knowledge_tools import search_graph
+    return search_graph(connection_id, q, limit=limit)
+
+
+@router.get("/knowledge/{connection_id}/entity/{entity}")
+def knowledge_describe_entity(connection_id: str, entity: str):
+    """One business object type (or, where no ontology is built, the graph's table node), as
+    the ontology measured it."""
+    from aughor.mcp.knowledge_tools import describe_entity
+    return describe_entity(connection_id, entity)
+
+
+@router.get("/knowledge/{connection_id}/table-health")
+def knowledge_table_health(connection_id: str, table: str = Query(..., min_length=1)):
+    """Data-quality verdicts for a table: which checks passed or failed, how many violations,
+    how stale each verdict is. `checked=false` means no checks have run, which is not healthy."""
+    from aughor.mcp.knowledge_tools import get_table_health
+    from aughor.org.context import current_org_id
+    return get_table_health(connection_id, table, org_id=current_org_id())
+
+
+@router.get("/knowledge/{connection_id}/trusted-queries")
+def knowledge_trusted_queries(connection_id: str, limit: int = Query(25, ge=1, le=100)):
+    """The verified query patterns for a connection, each with the warrant it carries."""
+    from aughor.mcp.knowledge_tools import list_trusted_queries
+    return list_trusted_queries(connection_id, limit=limit)

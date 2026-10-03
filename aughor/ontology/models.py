@@ -492,7 +492,9 @@ class OntologyRelationship(BaseModel):
     from_col: str
     to_table: str
     to_col: str
-    join_confidence: Literal["exact", "inferred", "verified"] = "inferred"
+    # DE-3c: "declared" — the engine's own foreign key, read from its catalog; still checked
+    # against values, and kept with its measured overlap even when the values disagree.
+    join_confidence: Literal["exact", "inferred", "verified", "declared"] = "inferred"
     nullable: bool = False                     # FK col has null rows
     # Value-verification (joinable_with): the max containment fraction the two keys actually
     # SHARE, probed at build time. None = unprobed; ~1.0 = a real FK; a value-DISJOINT name

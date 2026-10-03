@@ -68,9 +68,17 @@ def _view(job: dict) -> dict:
 
 @router.get("/jobs")
 def list_jobs(state: Optional[str] = None, conn_id: Optional[str] = None,
-              kind: Optional[str] = None, limit: int = 100):
+              kind: Optional[str] = None, limit: int = 100,
+              range: str = "", since: str = "", until: str = ""):
     """The fleet: recent jobs (newest first), each tagged with its agent + the
-    compute it spent. ``state=active`` returns only in-flight jobs."""
+    compute it spent. ``state=active`` returns only in-flight jobs. ``range`` (a named
+    Agent Ops window) or ``since`` / ``until`` (ISO-8601 UTC, half-open) bound
+    ``created_at`` — AO-3: a page that captions a window can ask for exactly that window
+    instead of the newest N of any age. No window named means no bound, as before."""
+    if range or since or until:
+        from aughor.obs.timeseries import resolve_window
+        win = resolve_window(range, since=since, until=until)
+        since, until = win.since, win.until
     if state == "active":
         states: Optional[list[str]] = list(JobState.ACTIVE)
     elif state:
@@ -85,6 +93,7 @@ def list_jobs(state: Optional[str] = None, conn_id: Optional[str] = None,
     # count — which is how this was found.
     jobs = Ledger.default().jobs_where(states=states, conn_id=conn_id,
                                        kinds=[kind] if kind else None,
+                                       since=since or None, until=until or None,
                                        limit=min(int(limit), 500))
     return [_view(j) for j in jobs]
 

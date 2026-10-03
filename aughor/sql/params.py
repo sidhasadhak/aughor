@@ -116,12 +116,13 @@ def find_params(sql: str) -> list[str]:
 #: Bind STYLE → how a driver in that style spells a placeholder.
 #:
 #: Keyed on the driver's style and NOT on the SQL dialect, which was the original shape and
-#: is wrong by one concrete counter-example: ``ExasolConnection`` declares
-#: ``dialect = "postgres"`` because Postgres is the closest transpile target for Exasol's
-#: SQL — and `pyexasol` does not speak ``%(name)s`` at all. Dialect answers "what grammar do
-#: I write"; style answers "what does this driver accept as a placeholder". Two connections
-#: can agree on the first and disagree on the second, and a rewrite that conflates them
-#: produces a statement the engine rejects — or, worse, one it misreads.
+#: is wrong by one concrete counter-example: ``ExasolConnection`` declared
+#: ``dialect = "postgres"`` (the closest transpile target, until sqlglot shipped an Exasol
+#: dialect and DE-3a let it declare its own) — and `pyexasol` spoke no ``%(name)s`` at all.
+#: Dialect answers "what grammar do I write"; style answers "what does this driver accept
+#: as a placeholder". Two connections can agree on the first and disagree on the second,
+#: and a rewrite that conflates them produces a statement the engine rejects — or, worse,
+#: one it misreads.
 #:
 #: ``named`` is the identity rewrite: sqlite3's own named style IS ``:name``, so the
 #: editor's syntax already reaches that driver verbatim.

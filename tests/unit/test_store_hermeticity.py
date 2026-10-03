@@ -74,6 +74,13 @@ def test_memory_paths_are_isolated():
     assert "aughor-test-stores" in learned_actions_path()
 
 
+def test_org_settings_path_is_isolated():
+    """The suite read the live organisation settings, and a Briefing test failed on what this install's
+    organisation had declared (2026-10-03)."""
+    from aughor.orgsettings import store
+    assert "aughor-test-stores" in str(store._PATH)
+
+
 def test_actions_paths_are_isolated():
     from aughor.notifications import store as astore
     assert "aughor-test-stores" in str(astore._TRIGGERS_PATH)

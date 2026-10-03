@@ -194,7 +194,10 @@ class StagedProposal(BaseModel):
                   "agent_draft", "automation_draft", "agent_bundle",
                   "automation_state", "agent_grant",
                   "automation_edit", "monitor_bundle", "brief_draft",
-                  "outbound_send", "agent_limit", "cockpit_draft"] = "declared_action"
+                  "outbound_send", "agent_limit", "cockpit_draft",
+                  # AO-7e — a crystallised skill, staged by memory at L2+ autonomy; accept
+                  # saves it through the governed door, never before.
+                  "skill_draft"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -716,6 +719,8 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
         return _accept_agent_limit(p, actor=actor), ""
     if p.kind == "cockpit_draft":
         return _accept_cockpit_draft(p, actor=actor), ""
+    if p.kind == "skill_draft":
+        return _accept_skill_draft(p, actor=actor), ""
 
     action = _load_action(p.connection_id, p.schema_name, p.action_id)
     if action is None:
@@ -1218,6 +1223,32 @@ def _accept_agent_limit(p: StagedProposal, *, actor: str):
     return _Result("executed", True, p.action_id,
                    message=f"{charter.name}'s {knob_id} is now {out['value']:,}",
                    outcome=out, detail=out)
+
+
+def _accept_skill_draft(p: StagedProposal, *, actor: str):
+    """Save the skill memory staged at L2+ autonomy (AO-7e) — re-proposed from the run at
+    accept time and validated with the read-only dry-run, so what is saved is what the
+    run still yields, not what was true when it was staged."""
+    _Result = _executor_result()
+    from aughor.memory.skills import accept_skill_draft
+    params = dict(p.params or {})
+    inv_id = str(params.get("inv_id") or "")
+    if not inv_id:
+        _record_outcome(p.id, "failed", "no run named", {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message="skill draft names no run to crystallise from")
+    try:
+        saved, why = accept_skill_draft(inv_id, p.connection_id)
+    except Exception as exc:                            # noqa: BLE001 — said on the card
+        _record_outcome(p.id, "failed", str(exc), {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"skill could not be saved: {exc}")
+    out = {"inv_id": inv_id, "connection_id": p.connection_id, "saved": saved, "why": why}
+    if not saved:
+        _record_outcome(p.id, "failed", why, out)
+        return _Result("dispatch_error", False, p.action_id, message=why, outcome=out, detail=out)
+    _record_outcome(p.id, "executed", why, out)
+    return _Result("executed", True, p.action_id, message=why, outcome=out, detail=out)
 
 
 def _accept_agent_grant(p: StagedProposal, *, actor: str):

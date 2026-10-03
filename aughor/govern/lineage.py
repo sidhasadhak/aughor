@@ -71,15 +71,43 @@ class Dependent:
                 "site_kind": self.site_kind, "site_line": self.site_line}
 
 
+def _columns_read(node, target_tables: list, target_label: str) -> list[str]:
+    """DE-4 — the ``table.column`` names this node's receipt traced for the target table, when
+    the node carries them (``data.columns``, from the receipt's column lineage). Empty when the
+    node predates column lineage or reads the table through no traced column."""
+    data = (getattr(node, "data", None) or {})
+    cols = data.get("columns") or []
+    if not cols:
+        return []
+    wanted: set[str] = set()
+    for t in (target_tables or []):
+        bare = str(t).strip().strip('"').split(".")[-1].lower()
+        if bare:
+            wanted.add(bare)
+    if target_label:
+        wanted.add(str(target_label).split(".")[-1].strip().lower())
+    out: list[str] = []
+    for c in cols:
+        table, _, column = str(c).rpartition(".")
+        if table.split(".")[-1].lower() in wanted and column:
+            out.append(f"{table.split('.')[-1].lower()}.{column.lower()}")
+    return sorted(dict.fromkeys(out))
+
+
 def _site_of(node, target_label: str, target_tables: list) -> tuple[str, str, int]:
     """The expression inside ``node`` that references the target — ``(site, kind, line)``.
 
-    Deliberately literal: it reports the line of SQL that NAMES the table, found by
-    scanning the text this node already carries. No parsing, no inference — a wrong guess
-    about which expression breaks is worse than none, because a reviewer would check the
-    wrong line and conclude the dependency was fine.
+    DE-4 first: when the node's receipt traced its columns, the site is the columns it read
+    of the target table (kind ``column``), read from the receipt, not from text. Otherwise,
+    deliberately literal: it reports the line of SQL that NAMES the table, found by scanning
+    the text this node already carries. No parsing, no inference — a wrong guess about which
+    expression breaks is worse than none, because a reviewer would check the wrong line and
+    conclude the dependency was fine.
     """
     data = (getattr(node, "data", None) or {})
+    read = _columns_read(node, target_tables, target_label)
+    if read:
+        return "reads " + ", ".join(read), "column", 0
     # Both the QUALIFIED name and the bare one. Real SQL writes `FROM schema.table`, and
     # searching only the bare part while also refusing a preceding dot found nothing on
     # every schema-qualified warehouse — every site reported line 0, which the unit tests
@@ -156,12 +184,19 @@ class LineageReport:
                 "dependents": [d.to_dict() for d in self.dependents]}
 
 
-def dependents_of(graph, node_id: str, *, max_depth: int = MAX_DEPTH) -> LineageReport:
+def dependents_of(graph, node_id: str, *, max_depth: int = MAX_DEPTH,
+                  column: Optional[str] = None) -> LineageReport:
     """Everything downstream of ``node_id``, walking lineage edges in reverse.
+
+    DE-4: with ``column``, a dependent whose receipt traced its columns is kept only when it
+    read ``table.column``, and nothing downstream of a dropped one is walked. A dependent
+    whose columns were never traced is KEPT — it may read the column, and a preview that
+    hid it would under-report what a change would break — with its site saying so.
 
     Pure over an already-loaded graph, so the walk is testable without a store.
     """
     report = LineageReport(root=node_id)
+    col = str(column).split(".")[-1].strip().lower() if column else None
     if graph is None or not getattr(graph, "nodes", None):
         return report
 
@@ -192,7 +227,14 @@ def dependents_of(graph, node_id: str, *, max_depth: int = MAX_DEPTH) -> Lineage
                 node = nodes.get(source)
                 if node is None:
                     continue
+                if col is not None and depth == 1:
+                    read = _columns_read(node, t_tables, t_label)
+                    if read and not any(r.split(".")[-1] == col for r in read):
+                        continue          # traced, and this column is not among what it read
                 site, site_kind, site_line = _site_of(node, t_label, t_tables)
+                if col is not None and depth == 1 and site_kind != "column":
+                    site_kind = site_kind or "sql"
+                    site = (site + " — " if site else "") + "columns not traced; may read it"
                 report.dependents.append(Dependent(
                     node_id=source, kind=getattr(node, "kind", ""),
                     label=getattr(node, "label", "") or source, depth=depth, via=kind,
@@ -210,8 +252,10 @@ def dependents_of(graph, node_id: str, *, max_depth: int = MAX_DEPTH) -> Lineage
 
 def dependents_of_table(
     connection_id: str, table: str, *, org_id: str = "", schema_name: Optional[str] = None,
+    column: Optional[str] = None,
 ) -> LineageReport:
-    """Store-backed: what the committed graph says depends on one table.
+    """Store-backed: what the committed graph says depends on one table — or, with
+    ``column`` (DE-4), on one column of it.
 
     Degrades to an empty report rather than raising — a delete preview that fails because
     lineage was unavailable is worse than one that says it found nothing, provided it is
@@ -249,6 +293,6 @@ def dependents_of_table(
     if root_id is None:
         return LineageReport(root=table)
 
-    report = dependents_of(graph, root_id)
-    report.root = table
+    report = dependents_of(graph, root_id, column=column)
+    report.root = f"{table}.{column}" if column else table
     return report

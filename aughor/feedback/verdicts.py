@@ -27,8 +27,15 @@ def _add_closeloop_cols(c: "sqlite3.Connection") -> None:
     add_column_if_missing(c, "finding_verdicts", "corrected_sql", "TEXT NOT NULL DEFAULT ''")
 
 
+def _add_agent_col(c: "sqlite3.Connection") -> None:
+    # AO-7a — WHOSE answer was judged. The platform learned per connection; an agent
+    # learned nothing as itself, because no verdict knew which agent had answered.
+    add_column_if_missing(c, "finding_verdicts", "agent_id", "TEXT NOT NULL DEFAULT ''")
+
+
 # Schema evolution (DATA-05). The `finding_verdicts` base table is v1; changes are Migration(v>=2).
-_MIGRATIONS = [Migration(2, "close-the-loop columns (sql_source, corrected_sql)", _add_closeloop_cols)]
+_MIGRATIONS = [Migration(2, "close-the-loop columns (sql_source, corrected_sql)", _add_closeloop_cols),
+               Migration(3, "agent_id (the custom agent whose answer was judged)", _add_agent_col)]
 
 # accept = the finding is correct/useful · correct = right direction but a detail is wrong
 # · reject = wrong or misleading. These are the labels the trust economy calibrates against.
@@ -71,17 +78,29 @@ def record_verdict(
     headline: str = "",
     sql_source: str = "",
     corrected_sql: str = "",
+    agent_id: str = "",
 ) -> dict:
     """Persist a human verdict on a finding. Raises ValueError on an invalid verdict label
     (the only failure the caller must handle); everything else is a normal insert.
 
     ``sql_source`` is the SQL that produced the judged finding and ``corrected_sql`` an
     optional human fix — the structural payload the planner reads back (P1 close-the-loop).
-    Both are optional so every existing caller keeps working unchanged."""
+    Both are optional so every existing caller keeps working unchanged.
+
+    AO-7a/7b: what the caller did not say is read from the turn's own record — the agent
+    that answered, the connection, the headline and the SQL. A Slack ✅ arrives with an
+    investigation id and little else; before this it was stored as a verdict on nothing in
+    particular, and no agent could learn from it."""
     v = (verdict or "").strip().lower()
     if v not in VERDICTS:
         raise ValueError(f"verdict must be one of {VERDICTS}, got {verdict!r}")
     _OVERRULED.clear()          # the few-shot memory's tombstone reads the verdict store fresh from here on
+    turn = _turn_record(investigation_id) if investigation_id else {}
+    if turn:
+        agent_id = agent_id or str(turn.get("agent_id") or "")
+        connection_id = connection_id or str(turn.get("connection_id") or "")
+        headline = headline or str(turn.get("headline") or "")
+        sql_source = sql_source or str(turn.get("sql") or "")
     org = current_org_id()
     now = _now()
     c = _conn()
@@ -91,10 +110,10 @@ def record_verdict(
             c,
             "INSERT INTO finding_verdicts "
             "(org_id, connection_id, investigation_id, verdict, note, headline, "
-            "sql_source, corrected_sql, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "sql_source, corrected_sql, created_at, agent_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (org, connection_id or "", investigation_id or "", v, note or "", headline or "",
-             sql_source or "", corrected_sql or "", now),
+             sql_source or "", corrected_sql or "", now, agent_id or ""),
         )
         c.commit()
         # MI-2 — the verdict just made this run's evidence permanent. Best-effort and
@@ -122,10 +141,23 @@ def record_verdict(
             "investigation_id": investigation_id or "", "verdict": v,
             "note": note or "", "headline": headline or "",
             "sql_source": sql_source or "", "corrected_sql": corrected_sql or "",
-            "created_at": now,
+            "created_at": now, "agent_id": agent_id or "",
         }
     finally:
         c.close()
+    # AO-7c/7d — the agent's own loop, behind its flag: an accepted answer becomes an
+    # UNCERTIFIED golden candidate on the agent's Quality tab, and every Nth verdict on
+    # the agent re-runs its evaluation. Best-effort, after the commit.
+    if agent_id:
+        try:
+            from aughor.custom_agents.learning import on_verdict
+            on_verdict(agent_id, verdict=v, investigation_id=investigation_id or "",
+                       question=str(turn.get("question") or ""), sql=sql_source or "",
+                       headline=headline or "")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the agent's learning loop is best-effort; the verdict stands",
+                     counter="verdicts.agent_loop")
     # Verdict → Ambiguity Ledger bridge: a reviewer's reject/correct on a headlined finding
     # crystallizes as the HIGHEST-authority resolution (overrides any probe/user reading on that
     # question). Best-effort; never fails the verdict write.
@@ -336,27 +368,62 @@ def list_for_export(kinds: tuple[str, ...] = ("accept",), *, require_sql: bool =
         c.close()
 
 
-def list_corrections(connection_id: Optional[str] = None, limit: int = 20) -> list[dict]:
+def _turn_record(investigation_id: str) -> dict:
+    """What the history store knows about the judged turn — agent, connection, headline,
+    SQL, question. ``{}`` when it has nothing; never raises (a verdict must land even when
+    the turn is gone)."""
+    try:
+        from aughor.db.history import get_investigation
+        inv = get_investigation(investigation_id) or {}
+    except Exception:
+        return {}
+    if not inv:
+        return {}
+    report = inv.get("report") if isinstance(inv.get("report"), dict) else {}
+    return {
+        "agent_id": inv.get("agent_id") or "",
+        "connection_id": inv.get("connection_id") or "",
+        "headline": inv.get("headline") or (report or {}).get("headline") or "",
+        "sql": (report or {}).get("sql") or "",
+        "question": inv.get("question") or "",
+    }
+
+
+def list_corrections(connection_id: Optional[str] = None, limit: int = 20,
+                     agent_id: Optional[str] = None) -> list[dict]:
     """Recent verdicts that carry a *lesson* — ``reject`` (the finding was wrong) or
     ``correct`` (right direction, a detail was off). These are what the planner reads
     back as priors (P1 close-the-loop): an accepted finding teaches nothing new, but a
-    rejected/corrected one names a mistake not to repeat. Org-scoped, most-recent-first."""
+    rejected/corrected one names a mistake not to repeat. Org-scoped, most-recent-first.
+    ``agent_id`` (AO-7a) narrows to the lessons ONE agent earned."""
     org = current_org_id()
     limit = max(1, min(int(limit), 200))
+    where = ["org_id=?", "verdict IN ('reject','correct')"]
+    args: list = [org]
+    if connection_id:
+        where.append("connection_id=?")
+        args.append(connection_id)
+    if agent_id:
+        where.append("agent_id=?")
+        args.append(agent_id)
+    args.append(limit)
     c = _conn()
     try:
-        if connection_id:
-            rows = c.execute(
-                "SELECT * FROM finding_verdicts WHERE org_id=? AND connection_id=? "
-                "AND verdict IN ('reject','correct') ORDER BY id DESC LIMIT ?",
-                (org, connection_id, limit),
-            ).fetchall()
-        else:
-            rows = c.execute(
-                "SELECT * FROM finding_verdicts WHERE org_id=? "
-                "AND verdict IN ('reject','correct') ORDER BY id DESC LIMIT ?",
-                (org, limit),
-            ).fetchall()
+        rows = c.execute(
+            f"SELECT * FROM finding_verdicts WHERE {' AND '.join(where)} "
+            "ORDER BY id DESC LIMIT ?", args).fetchall()
     finally:
         c.close()
     return [dict(r) for r in rows]
+
+
+def count_verdicts_for_agent(agent_id: str) -> int:
+    """How many verdicts name this agent — the counter AO-7d re-evaluates on."""
+    org = current_org_id()
+    c = _conn()
+    try:
+        row = c.execute("SELECT COUNT(*) FROM finding_verdicts WHERE org_id=? AND agent_id=?",
+                        (org, agent_id)).fetchone()
+    finally:
+        c.close()
+    return int(row[0]) if row else 0

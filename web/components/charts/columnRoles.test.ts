@@ -287,3 +287,20 @@ describe("a time axis has one tick per period", () => {
                                                                          format: "%b %Y" });
   });
 });
+
+describe("a month is spelled as the chart axes spell it", () => {
+  // The viewer's locale wrote "Sept 2025" under a change chart beside a trend whose axis read "Sep 2025"
+  // (2026-10-03). Simulated here: a locale whose short September is "Sept".
+  it("whatever the viewer's locale", () => {
+    const real = Date.prototype.toLocaleString;
+    Date.prototype.toLocaleString = function (this: Date, ...args: Parameters<Date["toLocaleString"]>) {
+      return real.apply(this, args).replace(/\bSep\b/, "Sept");
+    };
+    try {
+      expect(fmtDate("2025-09-01", "month")).toBe("Sep 2025");
+      expect(fmtDate("2026-01-01", "month")).toBe("Jan 2026");
+    } finally {
+      Date.prototype.toLocaleString = real;
+    }
+  });
+});

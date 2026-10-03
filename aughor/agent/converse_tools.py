@@ -893,7 +893,7 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
 
     return run_tool_loop(
         provider or get_provider("coder"),
-        converse_system_prompt(connection_id, extra_context, question=question),
+        converse_system_prompt(connection_id, extra_context, question=question, agent=agent),
         question,
         converse_tools(connection_id, emit=tool_emit, session_id=session_id,
                        canvas_id=canvas_id, user_question=question, agent=agent),
@@ -914,12 +914,15 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
             "builder": "converse_system_prompt",
             "connection_id": connection_id or "",
             "extra": extra_context or "",
+            # AO-1a — the agent is a builder argument now: a replay without it rebuilds
+            # a prompt the turn never ran.
+            "agent_id": str(getattr(agent, "id", "") or ""),
         },
     )
 
 
 def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
-                           question: str = "") -> str:
+                           question: str = "", agent: Any = None) -> str:
     """State, not instructions (the plan's rule for this prompt).
 
     It says what is true — who the assistant is, what latitude it has, what the tools
@@ -1031,4 +1034,23 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
                      counter="converse.pack_disclosure")
     if extra:
         lines += ["", extra]
+    # AO-1a — the agent's brief LEADS the prompt, as it leads the quick body's SQL prompt
+    # (`routers/investigations.py`, "agent brief" prepend) and the deep report's synthesis.
+    # This body — the default since SP-14 — never read it: measured live 2026-10-03, The
+    # Look Analyst's captured converse prompt opened on the platform identity and carried
+    # none of its standing instructions, and the answer was a bare count where the
+    # instructions ask for revenue, count and a seven-day comparison. The record wins when
+    # the caller hands one (the route resolves it for the tool grants); the contextvar is
+    # the fallback for callers that activated the agent and passed nothing. Empty for no
+    # agent, so the default prompt is byte-identical.
+    try:
+        from aughor.custom_agents.context import agent_brief_block, agent_brief_for
+        brief = agent_brief_for(agent) if agent is not None else agent_brief_block()
+    except Exception as brief_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(brief_exc, "the agent brief is additive; the conversation stands without it",
+                 counter="converse.agent_brief")
+        brief = ""
+    if brief:
+        lines = [brief.rstrip("\n"), ""] + lines
     return "\n".join(lines)

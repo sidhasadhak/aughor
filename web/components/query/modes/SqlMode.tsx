@@ -45,7 +45,7 @@ import {
 import { OpenQueryDialog } from "@/components/query/OpenQueryDialog";
 import { resolveParamValue, type ParamDef, type ParamValue } from "@/lib/query/paramDefs";
 import {
-  runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult,
+  runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult, type TypedQueryPage,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ShortcutSheet } from "@/components/query/ShortcutSheet";
@@ -142,6 +142,30 @@ export function SqlMode({
   // in live. The panel shows `results[resultIdx]`.
   const [results, setResults] = useState<TypedQueryResult[]>([]);
   const [resultIdx, setResultIdx] = useState(0);
+  // DE-5d — the bound values the last run used, and a counter that changes per run: a count or a
+  // page from the results footer is of the statement that RAN, with the values it ran with.
+  const [ranParams, setRanParams] = useState<Record<string, unknown> | undefined>(undefined);
+  const [runKey, setRunKey] = useState(0);
+  // DE-5f — a result the panel opened from a cell (related rows) becomes the next page of the pager.
+  const resultsRef = useRef<TypedQueryResult[]>([]);
+  useEffect(() => { resultsRef.current = results; }, [results]);
+  const appendResult = useCallback((r: TypedQueryResult) => {
+    const next = [...resultsRef.current, r];
+    resultsRef.current = next;
+    setResults(next);
+    setResultIdx(next.length - 1);
+  }, []);
+  const appendRows = useCallback((idx: number, page: TypedQueryPage) => {
+    setResults(prev => prev.map((r, i) => i !== idx ? r : {
+      ...r,
+      rows: [...r.rows, ...page.rows],
+      row_count: r.row_count + page.row_count,
+      truncated: page.truncated,
+      cut_by: page.cut_by ?? null,
+      // The page's caveats join the run's, each once — the ORDER BY note is said once, not per page.
+      caveats: Array.from(new Set([...(r.caveats ?? []), ...(page.caveats ?? [])])),
+    }));
+  }, []);
   const [maximizeResults, setMaximizeResults] = useState(false);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
@@ -352,6 +376,8 @@ export function SqlMode({
       const res = await runWorkbenchQuery(connId, toRun, limit, boundParams, ac.signal);
       setResults([res]);
       setResultIdx(0);
+      setRanParams(boundParams);
+      setRunKey(k => k + 1);
       if (res.error) setFailedSql(toRun);
       // A query that RAN and reported an error is a value, not an exception — the
       // panel shows the engine's own message rather than a generic failure.
@@ -423,6 +449,8 @@ export function SqlMode({
     // SE-8B — the pager fills as statements land, so it starts empty.
     setResults([]);
     setResultIdx(0);
+    setRanParams(boundParams);
+    setRunKey(k => k + 1);
     const done: string[] = [];
     // Which statement is in flight — so a failure hands Quick Fix THAT statement rather
     // than the whole multi-statement document, which is a different query.
@@ -826,6 +854,11 @@ export function SqlMode({
               onShare={onShare}
               maximized={maximizeResults}
               onToggleMaximize={() => setMaximizeResults(v => !v)}
+              params={ranParams}
+              pageSize={limit}
+              runKey={runKey}
+              onAppendRows={appendRows}
+              onAppendResult={appendResult}
               failedSql={failedSql}
               onApplyFix={(fixed) => {
                 // Into the document, never into a run. Applying is the user accepting a

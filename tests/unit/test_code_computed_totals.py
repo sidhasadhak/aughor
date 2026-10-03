@@ -88,6 +88,14 @@ def test_a_figure_written_to_cents_matches_its_value():
     assert check_grounding("East made 406.10 in March.", "region | revenue\nEast | 406.1") == []
 
 
+def test_a_whole_figure_ending_in_zero_matches_its_value():
+    """Q3 (2026-10-03): "$60,410" was withheld as untraced — 60410.18 rounded to "6041" once its zeros were stripped
+    as if they followed a decimal point — and the answer's table lost its October row."""
+    assert check_grounding("October brought in $60,410.", "month | revenue\n2025-10-01 | 60410.18009161949") == []
+    assert check_grounding("East made $1,200.", "region | revenue\nEast | 1200.4") == []
+    assert check_grounding("East made $1,300.", "region | revenue\nEast | 1200.4")      # still a different figure
+
+
 def test_a_percent_derivation_licenses_only_a_percentage():
     """The evidence holds 100 (a LIMIT) and the total: a figure within 1% of the total is a
     "share of 100" only if it is written as a percentage."""

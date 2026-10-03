@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCount } from "@/lib/format";
+import { CONNECTORS } from "@/lib/connectors.gen";
 import {
   addConnection,
   getConnectorTypes,
@@ -42,24 +43,11 @@ const WORKSPACE_ID = "workspace";
 
 // ── Display metadata per connector ────────────────────────────────────────────
 
-const META: Record<string, { label: string; blurb: string; badge?: string }> = {
-  duckdb:       { label: "DuckDB",       blurb: "Local analytical database file" },
-  postgres:     { label: "PostgreSQL",   blurb: "Connect to a Postgres database" },
-  bigquery:     { label: "BigQuery",     blurb: "Google Cloud data warehouse" },
-  snowflake:    { label: "Snowflake",    blurb: "Cloud data warehouse" },
-  mysql:        { label: "MySQL",        blurb: "Connect to a MySQL database" },
-  motherduck:   { label: "MotherDuck",   blurb: "DuckDB in the cloud", badge: "New" },
-  exasol:       { label: "Exasol",       blurb: "In-memory analytics database", badge: "New" },
-  gsheets:      { label: "Google Sheets", blurb: "Read worksheets as tables", badge: "New" },
-  local_upload: { label: "Create or modify table", blurb: "Upload CSV, Parquet, Excel or JSON into your Workspace" },
-  s3:           { label: "Amazon S3",    blurb: "Object storage bucket" },
-  federated:    { label: "Federated",    blurb: "Combine existing connections" },
-  stripe:       { label: "Stripe",       blurb: "Payments & billing data", badge: "Preview" },
-  hubspot:      { label: "HubSpot",      blurb: "CRM & marketing data" },
-  salesforce:   { label: "Salesforce",   blurb: "CRM objects & pipelines" },
-  confluence:   { label: "Confluence",   blurb: "Team wiki & knowledge" },
-  notion:       { label: "Notion",       blurb: "Docs & databases" },
-};
+// DE-3b: generated from each engine's one declaration (`aughor/connectors/declarations.py`,
+// via `lib/connectors.gen.ts`), so a new engine is on this panel the day it is declared.
+const META: Record<string, { label: string; blurb: string; badge?: string }> = Object.fromEntries(
+  Object.values(CONNECTORS).map(c => [c.type, { label: c.label, blurb: c.blurb, badge: c.badge ?? undefined }]),
+);
 
 /** The categories this panel draws, in the order it draws them.
  *
@@ -377,7 +365,18 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                       confirmation this screen gives that a cast took. */}
                   <ColumnTypeIcon type={chosen[c.name] ?? detected} size={13} />
                   <span style={{ flex: "1 1 0", minWidth: 0, fontSize: 12, fontWeight: 500, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                  <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
+                  {/* DE-5's hygiene: the reader would have made this column a number and changed its
+                      values, so it is text — and the row SAYS so, rather than showing VARCHAR where
+                      a number was expected and leaving the reader to wonder. */}
+                  {c.kept_as_text && (
+                    <span className="aug-fs-xs" data-testid="kept-as-text"
+                      title={`A number would have changed these values (${c.kept_as_text}), so the column is read as text. Pick a type here to override.`}
+                      style={{ fontWeight: 600, padding: "1px 7px", borderRadius: "var(--r1)", whiteSpace: "nowrap", flexShrink: 0,
+                        background: "color-mix(in srgb, var(--amb4) 16%, transparent)", color: "var(--amb4)" }}>
+                      kept as text · {c.kept_as_text}
+                    </span>
+                  )}
                   <select value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
                     style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}

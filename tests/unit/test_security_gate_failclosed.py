@@ -11,7 +11,7 @@ from __future__ import annotations
 import duckdb
 
 
-def _boom(sql):  # matches SafetyChecker.check(sql) call shape
+def _boom(sql, dialect=None):  # matches SafetyChecker.check(sql, dialect=) call shape
     raise RuntimeError("safety checker exploded")
 
 

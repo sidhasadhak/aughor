@@ -49,6 +49,7 @@ from aughor.db.duckdb_ext import prepare_extensions
 from aughor.db.single_flight import single_flight_build
 from aughor.connectors.base import Connector
 from aughor.db.doors import through_door
+from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.control_plane.vending import STORAGE_ROOT, vend_storage
 # Numbers stored as text ('₹1,099', '64%', '24,269') are re-typed at ingest. The
@@ -352,6 +353,93 @@ def readable_source(con, path: Path) -> str:
             ) from transcode_error
     return src              # transcode unavailable — surface DuckDB's own message
 
+# ── Text that must stay text (DE-5's hygiene, ROADMAP §3.51; the dbx study's finding 10) ──
+#
+# Measured on DuckDB 1.5.2: the CSV sniffer types a column of integers too large for BIGINT
+# as DOUBLE, and a DOUBLE holds 15–17 significant digits — a 23-digit id arrives as
+# 1.2345678901234568e+22, two distinct ids become one value, and no cast after the read can
+# bring the digits back, because the text is gone at the reader. The sniffer also keeps
+# `02134` as text but reads `-00042` as the BIGINT -42. So a column is read as TEXT, by the
+# reader's own `types=` option, when its raw text says a number would mangle it: every value
+# an integer literal in a column the sniffer typed DOUBLE (overflow is the only reason it
+# did), or any value with a leading zero. The same option carries a column pinned or
+# overridden to VARCHAR, so "keep this as text" means the file's text, not the parsed value
+# cast back to a string. Parquet and JSON carry their own types and are left alone.
+_INT_LITERAL_RE = r"^[-+]?[0-9]+$"
+_LEADING_ZERO_RE = r"^[-+]?0[0-9]"
+_CSV_READER_RE = re.compile(r"^read_csv(_auto)?\(.*\)$", re.S)
+_FLOAT_TYPES = {"DOUBLE", "FLOAT", "REAL"}
+_INT_TYPES = {"BIGINT", "INTEGER", "SMALLINT", "TINYINT", "HUGEINT",
+              "UBIGINT", "UINTEGER", "USMALLINT", "UTINYINT"}
+
+
+def _is_csv_reader(src: str) -> bool:
+    return bool(_CSV_READER_RE.match(src.strip()))
+
+
+def _reader_with(src: str, option: str) -> str:
+    """A `read_csv(...)` expression with one more named option."""
+    return src.strip()[:-1] + f", {option})"
+
+
+def with_text_columns(src: str, columns) -> str:
+    """The CSV reader expression with these columns read as VARCHAR — the text in the file.
+    A non-CSV reader, or no columns, comes back unchanged."""
+    cols = sorted({str(c) for c in columns})
+    if not cols or not _is_csv_reader(src):
+        return src
+    spec = ", ".join(f"'{c.replace(chr(39), chr(39) * 2)}':'VARCHAR'" for c in cols)
+    return _reader_with(src, f"types={{{spec}}}")
+
+
+def text_only_columns(con, src: str) -> dict[str, str]:
+    """``{column: reason}`` for the numeric-sniffed columns of a CSV whose raw text a number
+    would mangle — ``"leading zeros"`` or ``"integers beyond BIGINT"``. Empty for a non-CSV
+    reader, and on any failure, when the sniffer's types stand as before."""
+    if not _is_csv_reader(src):
+        return {}
+    try:
+        desc = con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall()
+    except Exception:
+        return {}
+    numeric = [(str(r[0]), str(r[1]).upper().split("(")[0]) for r in desc
+               if str(r[1]).upper().split("(")[0] in _FLOAT_TYPES | _INT_TYPES]
+    if not numeric:
+        return {}
+    raw = _reader_with(src, "all_varchar=true")
+    probes = []
+    for i, (name, _t) in enumerate(numeric):
+        c = name.replace('"', '""')
+        probes.append(
+            f'count(*) FILTER (WHERE "{c}" IS NOT NULL AND trim("{c}") <> \'\') AS n{i}, '
+            f'count(*) FILTER (WHERE regexp_matches(trim("{c}"), \'{_INT_LITERAL_RE}\')) AS i{i}, '
+            f'count(*) FILTER (WHERE regexp_matches(trim("{c}"), \'{_LEADING_ZERO_RE}\')) AS z{i}'
+        )
+    try:
+        res = con.execute(f"SELECT {', '.join(probes)} FROM {raw}").fetchone()
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for i, (name, t) in enumerate(numeric):
+        nn, ints, zeros = (res[3 * i] or 0), (res[3 * i + 1] or 0), (res[3 * i + 2] or 0)
+        if not nn:
+            continue
+        if zeros:
+            out[name] = "leading zeros"
+        elif t in _FLOAT_TYPES and ints == nn:
+            out[name] = "integers beyond BIGINT"
+    return out
+
+
+def text_safe_source(con, path: Path, pinned_text=()) -> tuple[str, dict[str, str]]:
+    """`readable_source`, then every column that must stay text read as text. Returns the
+    reader expression and ``{column: reason}`` for the columns it protected on its own; the
+    pinned ones are the caller's decision and are not repeated."""
+    src = readable_source(con, path)
+    kept = text_only_columns(con, src)
+    return with_text_columns(src, set(kept) | set(pinned_text)), kept
+
+
 # Allow-list of cast targets we let the UI request (prevents SQL injection via
 # the column_types map — values are interpolated into CREATE TABLE ... AS).
 _ALLOWED_CAST_TYPES = {
@@ -541,6 +629,14 @@ def _seed_table_names(seed_path: str, removed_schemas: set, removed_tables: set)
 class LocalUploadConnection(Connector):
     connector_category = "file"
     dialect = "duckdb"
+    # DE-1 — the Workspace is an in-memory DuckDB this connector fills from the uploaded files, writable by
+    # construction; the door's checks are the read-only boundary for a person's or a model's statement, and every
+    # result's doors say so (`engine-read-write`).
+    engine_read_only = False
+
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): the Workspace's in-memory DuckDB answers."""
+        return self._handle_answers(getattr(self, "_duckdb", None))
 
     def __init__(
         self,
@@ -865,7 +961,7 @@ class LocalUploadConnection(Connector):
                 f"Unsupported file type: {ext}. Supported: {sorted(_SUPPORTED_EXTENSIONS)}"
             )
         con = duckdb.connect(":memory:")
-        src = readable_source(con, file_path)
+        src, kept = text_safe_source(con, file_path)
         try:
             desc = con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall()
             columns: list[dict] = []
@@ -885,6 +981,10 @@ class LocalUploadConnection(Connector):
                     "name": name,
                     "detected_type": dtype,
                     "suggested_type": suggested,
+                    # DE-5's hygiene: WHY a column the reader would have typed as a number is
+                    # text — "leading zeros" or "integers beyond BIGINT" — so the review row
+                    # says it rather than showing VARCHAR where a number was expected.
+                    "kept_as_text": kept.get(name),
                     # Surfaced so the import-review UI can say WHY a text column is about
                     # to become a number ("currency-formatted — e.g. ₹1,099").
                     "detected_format": (
@@ -932,7 +1032,12 @@ class LocalUploadConnection(Connector):
             # that suggestion silently moved every value to the nearest integer rather than
             # merely dropping a fraction. Count the fractional values so BIGINT is ruled out.
             f'count(*) FILTER (WHERE try_cast("{c}" AS DOUBLE) IS NOT NULL '
-            f'AND try_cast("{c}" AS DOUBLE) <> floor(try_cast("{c}" AS DOUBLE))) AS frac '
+            f'AND try_cast("{c}" AS DOUBLE) <> floor(try_cast("{c}" AS DOUBLE))) AS frac, '
+            # DE-5's hygiene (finding 10): a digit string with a leading zero is a code, not a
+            # count — TRY_CAST('02134' AS BIGINT) is 2134 — and integer literals BIGINT refused
+            # are beyond int64, which a DOUBLE would round. Neither is offered a numeric type.
+            f'count(*) FILTER (WHERE regexp_matches(trim(CAST("{c}" AS VARCHAR)), \'{_LEADING_ZERO_RE}\')) AS zeros, '
+            f'count(*) FILTER (WHERE regexp_matches(trim(CAST("{c}" AS VARCHAR)), \'{_INT_LITERAL_RE}\')) AS ints '
             f"FROM {src}"
         )
         try:
@@ -943,11 +1048,17 @@ class LocalUploadConnection(Connector):
         if nn == 0:
             return None
         fractional = res[len(_PROBE_TYPES) + 1] or 0
+        zeros = res[len(_PROBE_TYPES) + 2] or 0
+        ints = res[len(_PROBE_TYPES) + 3] or 0
         threshold = 0.95 * nn
         for i, t in enumerate(_PROBE_TYPES):
             if (res[i + 1] or 0) >= threshold:
                 if t == "BIGINT" and fractional:
                     continue          # would truncate — let DOUBLE win the probe order
+                if t in ("BIGINT", "DOUBLE") and zeros:
+                    continue          # a leading zero is data; a number would drop it
+                if t == "DOUBLE" and ints == nn:
+                    continue          # whole numbers BIGINT refused are beyond int64; a float would round them
                 return t
         return None
 
@@ -1051,7 +1162,7 @@ class LocalUploadConnection(Connector):
         found: dict = {}
         con = duckdb.connect(":memory:")
         try:
-            src = readable_source(con, path)
+            src, _kept = text_safe_source(con, path)
             for row in con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall():
                 name, dtype = row[0], str(row[1])
                 if name in skip or not dtype.upper().startswith("VARCHAR"):
@@ -1121,7 +1232,16 @@ class LocalUploadConnection(Connector):
         schema_contract: dict | None = None,
         column_transforms: dict | None = None,
     ) -> None:
-        src = readable_source(self._duckdb, path)
+        # DE-5's hygiene: a column pinned or overridden to VARCHAR is read as the file's text —
+        # a TRY_CAST to VARCHAR over the sniffed read would keep the parsed value's spelling,
+        # 1.2345678901234568e+22 for a 23-digit id — and a numeric-sniffed column a number
+        # would mangle is read as text on its own. Same regimes as `_build_select`.
+        pin = schema_contract if schema_contract else (column_types or {})
+        pinned_text = {c for c, t in pin.items() if str(t).upper().startswith("VARCHAR")}
+        src, kept = text_safe_source(self._duckdb, path, pinned_text)
+        if kept:
+            logger.info("%s: read as text — %s", path.name,
+                        ", ".join(f"{c} ({why})" for c, why in sorted(kept.items())))
         select_sql = self._build_select(src, column_types, schema_contract,
                                         column_transforms)
         fq = f'"{schema}"."{table_name}"'
@@ -1315,7 +1435,8 @@ class LocalUploadConnection(Connector):
 
     # ── DatabaseConnection ABC ─────────────────────────────────────────────────
 
-    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict, *,
+                            max_rows: int | None = None) -> QueryResult:
         """SE-4 H — bind values on the Workspace connection.
 
         This class is DuckDB-backed but is NOT a `DuckDBConnection`, so it inherits
@@ -1331,12 +1452,16 @@ class LocalUploadConnection(Connector):
         """
         from aughor.sql.params import expand_list_params
         sql, params = expand_list_params(sql, params or {})
-        return self.execute(hypothesis_id, sql, params=params)
+        return self.execute(hypothesis_id, sql, params=params, max_rows=max_rows)
 
     def execute(self, hypothesis_id: str, sql: str,
                 params: dict | None = None, *,
-                sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, params, MAX_ROWS), internal=internal)
+                sql_dialect: str | None = None, internal: bool = False,
+                max_rows: int | None = None) -> QueryResult:
+        # DE-5d (closing): `max_rows` is the rows the caller asked for; None means the per-call cap.
+        return through_door(self, sql, sql_dialect,
+                            lambda statement: self._execute(hypothesis_id, statement, params, max(1, max_rows or MAX_ROWS)),
+                            internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
                         sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
@@ -1382,7 +1507,7 @@ class LocalUploadConnection(Connector):
             except Exception as e:
                 return QueryResult(
                     hypothesis_id=hypothesis_id, sql=statement,
-                    columns=[], rows=[], row_count=0, error=str(e),
+                    columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
                 )
 
         # The refusal `DuckDBConnection` heals is healed here too: this class is DuckDB-backed but inherits

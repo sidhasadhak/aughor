@@ -188,6 +188,17 @@ def test_a_question_that_asks_for_a_comparison_keeps_it(run):
     assert any(r[0] == "Comparison" for r in rows)
 
 
+def test_the_incomplete_month_note_is_for_an_answer_read_period_by_period(run, monkeypatch):
+    """Q2 (2026-10-03) ranked ten categories over six months ending on 4 September by design, and its period
+    line said "September 2026 may be incomplete". A question that cuts by month, or compares periods, keeps it."""
+    monkeypatch.setattr(I, "_monthly_counts", lambda *a, **k: [("2026-07", 30), ("2026-08", 32), ("2026-09", 5)])
+    window = dict(metric_label="revenue", metric_sql="SUM(sale_price)", observation_start="2026-03-05",
+                  observation_end="2026-09-04", observation_label="Last 6 months")
+    assert "may be incomplete" not in run(Q2, **window)[0]["observation_label"]
+    for asked in ("What was monthly revenue over the last 6 months?", "How did revenue change over the last 6 months?"):
+        assert run(asked, **window)[0]["observation_label"].endswith("September 2026 may be incomplete"), asked
+
+
 def test_with_no_coverage_measured_the_invented_window_still_goes(run, monkeypatch):
     """The all-data window needs the data's span; without it the model's window must not
     survive in its place."""

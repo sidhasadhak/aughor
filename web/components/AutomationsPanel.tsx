@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AutomationGraph } from "@/components/AutomationGraph";
+import { ReadFailed } from "@/components/ui/states";
 import {
   Automation,
   AutomationRun,
@@ -63,9 +64,14 @@ function muteUntilISO(hours = 24): string {
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
-type Props = { connId?: string; workspaceId?: string };
+type Props = {
+  connId?: string; workspaceId?: string;
+  /** AO-4 — an automation to open on arrival (an "Open automation" that carries its id,
+   *  from an agent's Doors or Map, Attention, Departures or the Hub). */
+  focusId?: string | null;
+};
 
-export function AutomationsPanel({ connId }: Props) {
+export function AutomationsPanel({ connId, focusId }: Props) {
   const conn = connId || "";
   const [view, setView] = useState<View>("list");
   const [automations, setAutomations] = useState<Automation[]>([]);
@@ -138,12 +144,28 @@ export function AutomationsPanel({ connId }: Props) {
    *  every load, to answer a question nobody asked, is the wrong trade. */
   const [elsewhere, setElsewhere] = useState<{ count: number; where: string[] } | null>(null);
 
+  // AO-3 — a list whose read REJECTED is said with a Retry; it used to become `[]` and
+  // render "No automations yet" over automations that exist.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // AO-4 — arrive ON the automation that was clicked, not on the list it is somewhere in.
+  // Once per focus id: a later list reload must not yank the reader back onto it.
+  const openedFocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusId || openedFocus.current === focusId) return;
+    const hit = automations.find(a => a.id === focusId);
+    if (!hit) return;
+    openedFocus.current = focusId;
+    setCreating(null); setCanvasFor(hit); setView("canvas");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, automations]);
   const load = useCallback(async () => {
     setLoading(true);
     try {
       setAutomations(await getAutomations(conn || undefined));
-    } catch {
+      setLoadError(null);
+    } catch (e) {
       setAutomations([]);
+      setLoadError(String((e as Error)?.message || e));
     } finally {
       setLoading(false);
     }
@@ -433,7 +455,10 @@ export function AutomationsPanel({ connId }: Props) {
         )}
         {showSpinner && <div style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</div>}
 
-        {view === "list" && !showSpinner && (
+        {view === "list" && !showSpinner && loadError && (
+          <ReadFailed what="the automations" error={loadError} onRetry={() => { void load(); }} />
+        )}
+        {view === "list" && !showSpinner && !loadError && (
           automations.length === 0
             ? <EmptyState onAdd={() => { setCanvasFor(null); setCreateName("Untitled automation");
                                          setCreating({}); setView("canvas"); }}

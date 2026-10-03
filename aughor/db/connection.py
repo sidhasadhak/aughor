@@ -19,8 +19,9 @@ from typing import Optional
 import duckdb
 import sqlglot
 
-from aughor.db.dialects import sql_for_engine
-from aughor.db.doors import add as _add_doors, passed as _passed, statement_is_internal, through_door
+from aughor.db.dialects import known_dialect, sql_for_engine
+from aughor.db.doors import add as _add_doors, door_dialect, passed as _passed, statement_is_internal, through_door
+from aughor.db.errors import classify_error
 from aughor.db.single_flight import single_flight_build
 from aughor.control_plane.contracts.execution import QueryResult
 
@@ -36,7 +37,24 @@ from aughor.control_plane.contracts.execution import QueryResult
 
 
 def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResult | None:
-    """Run safety check. Returns a blocked QueryResult if the query is not allowed, else None."""
+    """Run safety check. Returns a blocked QueryResult if the query is not allowed, else None.
+
+    DE-1 (ROADMAP §3.51) — the parse step runs HERE, at the one step every connector's door calls, in the dialect of
+    the engine behind that door (`doors.door_dialect`). It ran in the built-in DuckDB and Postgres `_run` only, so
+    BigQuery, Snowflake, MySQL, Exasol and the file and API connectors handed the engine a statement the safety
+    checker alone had read: measured on `f02c8f22`, `/*!50000 DROP TABLE users */` was flagged SUSPICIOUS and run,
+    and `SELECT … INTO OUTFILE` rated SAFE. A connector cannot skip the step now, because it is not the connector's.
+    Outside a door — `gate_user_sql` at an endpoint, the cross-source gates — there is no engine yet, and the step
+    waits for the door the statement then goes through. It runs before the internal declaration is read, as the
+    built-in connections always ran it: a platform statement is parsed too, and the workbench's metadata rule
+    (`_METADATA_LABELS`) keeps its meaning."""
+    dialect = door_dialect()
+    if dialect is not None:
+        ok, reason = _validate(sql, dialect, allow_metadata=hypothesis_id in _METADATA_LABELS)
+        if not ok:
+            _passed("blocked:validation")
+            return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
+        _passed(f"validated:{dialect}")
     if statement_is_internal():
         _passed("internal")
         _count_internal(connection_id)
@@ -44,7 +62,8 @@ def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResu
     try:
         from aughor.security.safety import SafetyChecker, SafetyVerdict
         from aughor.security.audit  import AuditLogger
-        result = SafetyChecker.check(sql)
+        # The checker's syntax-tree checks parse in the engine's dialect too (DE-1); outside a door, in none.
+        result = SafetyChecker.check(sql, dialect=dialect)
         _passed("safety-checked")
         if result.verdict == SafetyVerdict.BLOCKED:
             _passed("blocked:safety")
@@ -123,7 +142,12 @@ def _typed_mirror_slice(max_rows: int) -> None:
     if sink is None or not sink.get("armed"):
         return
     try:
-        sink["rows"] = sink["rows"][:max_rows]
+        if len(sink["rows"]) > max_rows:
+            # DE-5d: the budget cut rows the connector had returned whole, so the connector's own
+            # `truncated` (its cap was not reached) is no longer the truth — the response would
+            # say "complete" over a result the budget shortened.
+            sink["rows"] = sink["rows"][:max_rows]
+            sink["truncated"] = True
     except Exception:
         sink["armed"] = False
 
@@ -647,18 +671,26 @@ _FORBIDDEN = re.compile(
     r"\b(DROP|DELETE|INSERT|UPDATE|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE|COPY|ATTACH|DETACH)\b",
     re.IGNORECASE,
 )
-# SQL single-quoted string literal (with '' escape). Blanked before the
-# forbidden-keyword pre-scan so a keyword that appears as DATA is not mistaken for
-# a statement (see _validate).
-_SQL_STRLIT = re.compile(r"'(?:[^']|'')*'")
+# A SQL string literal (with '' escape), a double-quoted identifier (or, on MySQL and BigQuery, a string) and a
+# backtick-quoted identifier. Blanked before the forbidden-keyword pre-scan so a keyword that appears as DATA or as a
+# NAME is not mistaken for a statement (see _validate): `… WHERE task = 'sql.execute'`, `SELECT "copy" FROM ads`,
+# `` SELECT `update` FROM `p.d.t` `` are reads. (DE-1 added the two quoted-identifier forms: the step now runs on the
+# backtick engines too, where a keyword-named column is quoted exactly this way.)
+_QUOTED = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|`[^`]*`")
 
 MAX_ROWS = 500
 
 
 #: SE-3 G — statements that answer questions ABOUT the query or the schema rather
 #: than returning data from it. They are reads, but they are not ``SELECT``s, so the
-#: root-type check below rejects them.
-_METADATA_HEAD = re.compile(r"^\s*(EXPLAIN|DESCRIBE|DESC|SHOW)\b", re.IGNORECASE)
+#: root-type check below rejects them. SUMMARIZE joined them with DE-1: the parse step
+#: now runs on the DuckDB-backed Workspace too, where the editor's SUMMARIZE had run
+#: unparsed, and a read the editor could run yesterday is not refused today.
+_METADATA_HEAD = re.compile(r"^\s*(EXPLAIN|DESCRIBE|DESC|SHOW|SUMMARIZE)\b", re.IGNORECASE)
+
+#: The roots a read-only statement may have: a SELECT, or a set operation over SELECTs. `exp.Union` alone refused
+#: `EXCEPT` and `INTERSECT` queries ("Only SELECT is allowed, got Except") — reads the same as a UNION.
+_READ_ROOTS = (sqlglot.exp.Select, getattr(sqlglot.exp, "SetOperation", sqlglot.exp.Union))
 
 #: Only this surface may run them. A capability the agent path never asked for is not
 #: widened for the agent path: `_run` passes the flag from its statement LABEL. (A capability, not an audit
@@ -681,18 +713,19 @@ def is_metadata_statement(sql: str) -> bool:
 def _validate(sql: str, dialect: str = "duckdb", *, allow_metadata: bool = False) -> tuple[bool, str]:
     sql = sql.strip().rstrip(";")
     # The forbidden-keyword pre-scan targets mutation STATEMENTS; a keyword inside a
-    # string literal ('sql.execute', 'please DELETE this') is data, not a statement,
-    # so blank literals out before scanning. The sqlglot AST type-check below stays
-    # the authority on statement kind, so this only removes false positives — a real
-    # DML keyword in statement position is outside any balanced string and still
-    # caught. (Without this, `… WHERE task = 'sql.execute'` — the natural aughor_ops
-    # self-investigation query — is wrongly rejected.)
-    if _FORBIDDEN.search(_SQL_STRLIT.sub("''", sql)):
+    # string literal ('sql.execute', 'please DELETE this') or a quoted identifier is
+    # data or a name, not a statement, so blank those out before scanning. The sqlglot
+    # AST type-check below stays the authority on statement kind, so this only removes
+    # false positives — a real DML keyword in statement position is outside any
+    # balanced quotes and still caught. (Without this, `… WHERE task = 'sql.execute'`
+    # — the natural aughor_ops self-investigation query — is wrongly rejected.)
+    if _FORBIDDEN.search(_QUOTED.sub("''", sql)):
         return False, "Only SELECT statements are permitted"
     try:
         # Parse in the connection's own dialect — a Postgres connection must not
-        # be validated as DuckDB, or valid Postgres-only syntax gets rejected.
-        parsed = sqlglot.parse_one(sql, read=dialect or "duckdb", error_level=sqlglot.ErrorLevel.RAISE)
+        # be validated as DuckDB, or valid Postgres-only syntax gets rejected. A
+        # dialect sqlglot does not know is parsed as standard SQL (`known_dialect`).
+        parsed = sqlglot.parse_one(sql, read=known_dialect(dialect or "duckdb"), error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as e:
         return False, f"SQL parse error: {e}"
     # A metadata read is allowed past the ROOT-TYPE check only — deliberately after
@@ -702,7 +735,7 @@ def _validate(sql: str, dialect: str = "duckdb", *, allow_metadata: bool = False
     # second one is being relaxed.
     if allow_metadata and is_metadata_statement(sql):
         return True, "ok"
-    if not isinstance(parsed, (sqlglot.exp.Select, sqlglot.exp.Union)):
+    if not isinstance(parsed, _READ_ROOTS):
         return False, f"Only SELECT is allowed, got {type(parsed).__name__}"
     return True, "ok"
 
@@ -754,22 +787,33 @@ class DatabaseConnection(ABC):
         has to know how this engine reads it."""
 
     def execute_typed(self, hypothesis_id: str, sql: str, *,
-                      sql_dialect: str | None = None) -> "tuple[QueryResult, dict | None]":
+                      sql_dialect: str | None = None,
+                      max_rows: int | None = None) -> "tuple[QueryResult, dict | None]":
         """SE-0: run ``execute()`` while capturing raw (pre-stringification) row values
         and cursor types as a side channel. Returns ``(result, payload)`` where the
         legacy ``result`` is byte-identical to a plain ``execute()`` and ``payload`` is
         ``{rows, types, truncated}`` — or ``None`` when this connector has no capture
         site, or the security post-pass disarmed the capture (fail closed, never a redaction
         bypass). It takes no `internal` declaration: a typed capture of a statement that skipped the
-        PII and audit post-pass would be an unredacted side channel (GM-5)."""
+        PII and audit post-pass would be an unredacted side channel (GM-5).
+
+        DE-5d: ``max_rows`` is the number of rows the caller asked for. Given, the statement runs through
+        :meth:`execute_bounded` — the same door, every check, and up to that many rows instead of the
+        connector's per-call cap (500 or 2,000), which until DE-5d silently cut every workbench run above
+        it whatever limit the person chose; the connection's row budget (`security/sandbox.py`) stays the
+        ceiling. A connector without its own ``execute_bounded`` reads its cap, as before."""
         statement = sql_for_engine(self, sql, sql_dialect)
-        result, payload = self._capture_typed(hypothesis_id, lambda: self.execute(hypothesis_id, statement))
+        if max_rows:
+            run = lambda: self.execute_bounded(hypothesis_id, statement, max_rows)  # noqa: E731
+        else:
+            run = lambda: self.execute(hypothesis_id, statement)  # noqa: E731
+        result, payload = self._capture_typed(hypothesis_id, run)
         if statement != sql:
             _add_doors(result, [f"translated:duckdb→{self.dialect}"], first=True)
         return result, payload
 
     def execute_with_params_typed(self, hypothesis_id: str, sql: str,
-                                  params: dict) -> "tuple[QueryResult, dict | None]":
+                                  params: dict, *, max_rows: int | None = None) -> "tuple[QueryResult, dict | None]":
         """`execute_with_params` under the same capture. The typed side channel and
         binding were built in separate waves and never introduced: `/query` chose
         `execute_with_params` OR `execute_typed`, so parameterising a query returned
@@ -780,8 +824,14 @@ class DatabaseConnection(ABC):
         `LocalUploadConnection._run` — so a bound query was already offering typed rows,
         into a sink nobody had set. A computed capture is not a delivered one.
         """
-        return self._capture_typed(
-            hypothesis_id, lambda: self.execute_with_params(hypothesis_id, sql, params))
+        # DE-5d (closing): the bound read, like the unbound one, returns up to the rows the caller asked for.
+        # The keyword travels only when a cap was asked for, so a connector written before it (a test's
+        # stub, an out-of-tree class) still answers an uncapped read.
+        if max_rows:
+            run = lambda: self.execute_with_params(hypothesis_id, sql, params, max_rows=max_rows)  # noqa: E731
+        else:
+            run = lambda: self.execute_with_params(hypothesis_id, sql, params)  # noqa: E731
+        return self._capture_typed(hypothesis_id, run)
 
     def _capture_typed(self, hypothesis_id: str, run) -> "tuple[QueryResult, dict | None]":
         """Run `run()` with a typed sink armed, and return (result, payload).
@@ -859,8 +909,9 @@ class DatabaseConnection(ABC):
             return False
 
     def execute_with_params(self, hypothesis_id: str, sql: str,
-                            params: dict) -> "QueryResult":
-        """Run ``sql`` with ``:name`` parameters supplied as real BIND VALUES.
+                            params: dict, *, max_rows: int | None = None) -> "QueryResult":
+        """Run ``sql`` with ``:name`` parameters supplied as real BIND VALUES. ``max_rows`` (DE-5d) is the
+        rows the caller asked for; None means the connector's per-call cap.
 
         Named ``execute_with_params`` and not ``execute_bound`` on purpose: this class
         already has ``execute_bounded``, which means a ROW cap and nothing to do with
@@ -882,6 +933,16 @@ class DatabaseConnection(ABC):
             error=(f"This connection ({getattr(self, 'dialect', 'unknown')}) cannot run "
                    "parameterised queries. Remove the parameters, or inline the values."),
         )
+
+    def is_healthy(self) -> bool:
+        """Whether the pool may hand this connection out again (DE-3d). The base answers through the connector's
+        own `test()`, so no connection is counted healthy for lack of an answer — the pool did exactly that, and
+        only Postgres and SQLite could say. A warehouse connector overrides this with its driver's cheaper
+        liveness check; `test()` may run a statement."""
+        try:
+            return bool(self.test()[0])
+        except Exception:  # noqa: BLE001 — a probe that raises is a connection that is not healthy
+            return False
 
     def get_ontology(self):
         """Return the OntologyGraph built during the last get_schema() call, or None."""
@@ -1214,7 +1275,8 @@ class DuckDBConnection(DatabaseConnection):
                             lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)),
                             internal=internal)
 
-    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict, *,
+                            max_rows: int | None = None) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
         # before the dialect translate: sqlglot re-spells `:c` as the engine's own
         # placeholder on the way through `_run`, and an expansion scanning for `:name`
@@ -1222,7 +1284,10 @@ class DuckDBConnection(DatabaseConnection):
         # params dict and the engine asked where its value went).
         from aughor.sql.params import expand_list_params
         sql, params = expand_list_params(sql, params or {})
-        return self._run(hypothesis_id, sql, MAX_ROWS, params=params)
+        # Through the door like every other statement (DE-1): a bound statement is written for this engine and
+        # declares no dialect, and the door is where the parse step and the engine's posture are recorded now.
+        return through_door(self, sql, None,
+                            lambda statement: self._run(hypothesis_id, statement, max(1, max_rows or MAX_ROWS), params=params))
 
     def _run(self, hypothesis_id: str, sql: str, max_rows: int,
              params: dict | None = None) -> QueryResult:
@@ -1233,14 +1298,11 @@ class DuckDBConnection(DatabaseConnection):
         # the guards see the SAME statement shape the engine will run. Translation to
         # the engine's own spelling happens at the driver call and nowhere earlier;
         # Postgres's `%(name)s`, translated up here, fails sqlglot outright.
-        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
-                               allow_metadata=hypothesis_id in _METADATA_LABELS)
-        if not ok:
-            _passed("blocked:validation")
-            return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
-        _passed(f"validated:{getattr(self, 'dialect', 'duckdb')}")
+        #
+        # The parse step (`_validate`) ran here until DE-1 moved it into `_security_pre`, the step every
+        # connector's door calls, so that the connectors which never had it cannot skip it (ROADMAP §3.51).
 
-        # Security pre-check
+        # Security pre-check — the parse step in this connection's dialect, then the safety checker
         conn_id = getattr(self, "_connection_id", "")
         if (blocked := _security_pre(conn_id, hypothesis_id, sql)):
             return blocked
@@ -1276,12 +1338,22 @@ class DuckDBConnection(DatabaseConnection):
                 )
             except Exception as e:
                 return QueryResult(hypothesis_id=hypothesis_id, sql=statement, columns=[], rows=[], row_count=0,
-                                   error=str(e))
+                                   error=str(e), error_kind=classify_error(e))
 
         # A refusal DuckDB names exactly is healed once, deterministically (`heal_duckdb_refusal`).
         result = heal_duckdb_refusal(_attempt(sql), sql, _attempt)
         elapsed_ms = (_time.monotonic() - _t0) * 1000
         return _security_post(conn_id, hypothesis_id, result.sql, result, elapsed_ms)
+
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): one `SELECT 1` on the handle, no file re-open."""
+        try:
+            if self._conn is None:
+                return False
+            self._conn.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
 
     def get_schema(self) -> str:
         """Fast schema introspection — returns immediately. Never blocks on profiles, ontology, or LLM calls.
@@ -1644,7 +1716,8 @@ class PostgresConnection(DatabaseConnection):
                             lambda statement: self._run(hypothesis_id, statement, max(1, max_rows)),
                             internal=internal)
 
-    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict, *,
+                            max_rows: int | None = None) -> QueryResult:
         # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
         # before the dialect translate: sqlglot re-spells `:c` as the engine's own
         # placeholder on the way through `_run`, and an expansion scanning for `:name`
@@ -1652,20 +1725,16 @@ class PostgresConnection(DatabaseConnection):
         # params dict and the engine asked where its value went).
         from aughor.sql.params import expand_list_params
         sql, params = expand_list_params(sql, params or {})
-        return self._run(hypothesis_id, sql, MAX_ROWS, params=params)
+        # Through the door like every other statement (DE-1) — see `DuckDBConnection.execute_with_params`.
+        return through_door(self, sql, None,
+                            lambda statement: self._run(hypothesis_id, statement, max(1, max_rows or MAX_ROWS), params=params))
 
     def _run(self, hypothesis_id: str, sql: str, max_rows: int,
              params: dict | None = None) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
-                               allow_metadata=hypothesis_id in _METADATA_LABELS)
-        if not ok:
-            _passed("blocked:validation")
-            return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
-        _passed(f"validated:{getattr(self, 'dialect', 'duckdb')}")
 
-        # Security pre-check
+        # Security pre-check — the parse step in this connection's dialect (moved there by DE-1), then the checker
         conn_id = getattr(self, "_connection_id", "")
         if (blocked := _security_pre(conn_id, hypothesis_id, sql)):
             return blocked
@@ -1713,7 +1782,8 @@ class PostgresConnection(DatabaseConnection):
                 self._connect()
             except Exception:
                 pass
-            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
+            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e),
+                                 error_kind=classify_error(e))
 
         elapsed_ms = (_time.monotonic() - _t0) * 1000
         return _security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)

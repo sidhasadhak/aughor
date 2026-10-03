@@ -28,15 +28,11 @@ from typing import Optional
 
 #: The engine's name as a person writing SQL for it would say it. An unlisted dialect is
 #: named as sqlglot names it — never left out.
-_ENGINE_NAMES = {
-    "bigquery": "BigQuery (GoogleSQL)",
-    "duckdb": "DuckDB",
-    "snowflake": "Snowflake",
-    "mysql": "MySQL",
-    "exasol": "Exasol",
-    "postgres": "PostgreSQL",
-    "postgresql": "PostgreSQL",
-}
+#: DE-3b: derived from each engine's declaration (`sql_name`, else its label), so the prompt
+#: names a new engine the day it is declared.
+from aughor.connectors.declarations import derive_engine_names  # noqa: E402
+
+_ENGINE_NAMES = derive_engine_names()
 
 
 def today_utc() -> str:

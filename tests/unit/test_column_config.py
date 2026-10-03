@@ -255,7 +255,7 @@ def test_inject_value_annotations_respects_sample_disabled():
     cp = {"sales.status": SimpleNamespace(
         top_values=["open", "closed"], is_low_cardinality=True,
         is_fk=False, semantic_type="dimension")}
-    assert "-- [open, closed]" in inject_value_annotations(schema, cp)
+    assert "-- [<data>open, closed</data>]" in inject_value_annotations(schema, cp)   # fenced as data (DE-1)
     out = inject_value_annotations(schema, cp, sample_disabled={"sales.status"})
     assert "-- [open, closed]" not in out
 

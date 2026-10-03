@@ -60,8 +60,12 @@ def test_a_native_engine_says_it_translated(monkeypatch):
     monkeypatch.setattr(conn, "_run_job", lambda hid, sql, max_rows=None: QueryResult(
         hypothesis_id=hid, sql=sql, columns=["n"], rows=[["3"]], row_count=1))
     r = conn.execute("answer", 'SELECT COUNT(*) AS "n" FROM "orders"', sql_dialect="duckdb")
-    assert r.doors == ["translated:duckdb→bigquery", "safety-checked", "pii-checked", "audited"]
-    assert conn.execute("answer", "SELECT 1 AS n").doors[0] == "safety-checked", "an undeclared statement was not translated"
+    # DE-1 added two words to a native engine's path: the engine has no session-level read-only, and the statement
+    # was parsed in its dialect at the door — a step that ran only in the built-in connections before.
+    assert r.doors == ["translated:duckdb→bigquery", "engine-read-write", "validated:bigquery", "safety-checked",
+                       "pii-checked", "audited"]
+    assert conn.execute("answer", "SELECT 1 AS n").doors[:2] == ["engine-read-write", "validated:bigquery"], \
+        "an undeclared statement was not translated"
 
 
 def test_a_step_outside_a_statement_is_credited_to_no_statement(shop):

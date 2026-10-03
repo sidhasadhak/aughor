@@ -16,9 +16,11 @@ the API process exactly as they do for the web app.
 """
 from __future__ import annotations
 
+import hmac
 from typing import Annotated, Any, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 
 from aughor.mcp.client import AughorClient
@@ -46,8 +48,90 @@ Every answer is auditable: `ask` and `deep_analysis` results carry a `receipt` w
 executed SQL, the input tables, and the trust guards that fired.
 """
 
-mcp = FastMCP("Aughor", instructions=_INSTRUCTIONS)
 _client = AughorClient()
+
+
+class PolicedFastMCP(FastMCP):
+    """DE-2b (ROADMAP §3.51) — the server lists and runs only what the organisation's agent
+    policy allows.
+
+    The policy is the API's (`GET /org-settings/agent-policy`, read with this server's
+    principal, cached thirty seconds); the API enforces it again on every call, so this is
+    the courtesy, not the lock: a disallowed tool is HIDDEN from `tools/list` rather than
+    offered and failed, and one called by name anyway is refused with the same stable code
+    the API would give. Every tool carries the protocol's hints — `readOnlyHint` for a read,
+    `destructiveHint` for an act — from the one level map (`mcp/policy.py`). When the API
+    cannot be asked, the install's default (`run`) is applied, which is what the API will
+    enforce anyway.
+    """
+
+    async def list_tools(self):
+        from aughor.mcp.policy import tool_annotations, tool_level
+        policy = await current_policy()
+        out = []
+        for t in await super().list_tools():
+            level = tool_level(t.name)
+            if not (policy.allows_tool(t.name) and policy.allows_level(level)):
+                continue
+            out.append(t.model_copy(update={"annotations": tool_annotations(level)}))
+        return out
+
+    async def call_tool(self, name: str, arguments: dict):
+        import json as _json
+
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        from aughor.mcp.client import CURRENT_TOOL
+        from aughor.mcp.policy import CODE_LEVEL, CODE_TOOL, refusal, tool_level
+        policy = await current_policy()
+        level = tool_level(name)
+        if name in getattr(self._tool_manager, "_tools", {}):
+            if not policy.allows_tool(name):
+                raise ToolError(_json.dumps(refusal(CODE_TOOL, tool=name, policy_level=policy.level)))
+            if not policy.allows_level(level):
+                raise ToolError(_json.dumps(refusal(CODE_LEVEL, tool=name, policy_level=policy.level, required=level)))
+        token = CURRENT_TOOL.set(name)
+        try:
+            return await super().call_tool(name, arguments)
+        finally:
+            CURRENT_TOOL.reset(token)
+
+
+_POLICY_TTL = 30.0
+_policy_cache: list = []   # [(fetched_at, AgentPolicy)]
+
+
+async def current_policy():
+    """The effective agent policy for this server's principal, from the API; the default when
+    the API cannot say (and that is logged once per fetch, not hidden)."""
+    import time as _time
+
+    from aughor.orgsettings.agent_policy import DEFAULT_POLICY, AgentPolicy
+    if _policy_cache and (_time.monotonic() - _policy_cache[0][0]) < _POLICY_TTL:
+        return _policy_cache[0][1]
+    policy = DEFAULT_POLICY
+    try:
+        answer = await _client.agent_policy()
+        eff = (answer or {}).get("effective") or {}
+        policy = AgentPolicy(
+            level=str(eff.get("level") or "run"),
+            connections=tuple(eff["connections"]) if eff.get("connections") is not None else None,
+            tools=tuple(eff["tools"]) if eff.get("tools") is not None else None,
+            set_by=str(eff.get("set_by") or ""), source=str(eff.get("source") or "saved"),
+        )
+    except Exception as exc:
+        _log.warning("could not read the agent policy from the API (%s); applying the default, `run`", exc)
+    _policy_cache[:] = [(_time.monotonic(), policy)]
+    return policy
+
+
+def forget_policy() -> None:
+    """Drop the cached policy, so the next list or call reads it again (tests, and a client
+    that was just granted more)."""
+    _policy_cache.clear()
+
+
+mcp = PolicedFastMCP("Aughor", instructions=_INSTRUCTIONS)
 
 
 @mcp.tool()
@@ -198,15 +282,13 @@ async def cancel_job(
 
 # ── Wave S6 — knowledge tools over the stores this program built ────────────────────
 #
-# In-process reads rather than REST round-trips, deliberately and against the module's
-# general rule: these four read committed artifacts and local stores, so a hop through the
-# API would add latency and a second failure mode to answer a question the process can
-# already answer. The governed path still runs in the API for everything that EXECUTES —
-# `ask`, `deep_analysis`, `explore` are unchanged.
-#
-# Every tool that returns table-derived data goes through G5's clearance trim. MCP is an
-# EXTERNAL agent surface: skipping the trim here would be a bigger hole than skipping it
-# internally, because the consumer is not a person who might notice.
+# Wave S6 read these four IN this process, "deliberately and against the module's general
+# rule", to save a hop. DE-2c (ROADMAP §3.51) reversed that: in this process no principal is
+# bound, so every read was the default organisation's, the clearance trim saw no caller and
+# the connection-owner check never ran — the hop it saved was the governance. The bodies
+# stay in `knowledge_tools.py` (the API's chat tools call them in-process too); these tools
+# now reach them through `GET /knowledge/{connection}/…`, under the request's organisation,
+# user and RBAC, like every other tool here.
 
 @mcp.tool()
 async def search_graph(
@@ -220,9 +302,7 @@ async def search_graph(
     before asking Aughor to re-derive anything. `available=false` means no graph has been
     built yet. A `notice` means some results were withheld by data governance — the data
     exists, your credentials do not reach it."""
-    from aughor.mcp.knowledge_tools import search_graph as _search
-
-    return _search(connection, query, limit=limit)
+    return await _client.search_graph(connection, query, limit=limit)
 
 
 @mcp.tool()
@@ -238,9 +318,7 @@ async def describe_entity(
     agent and a person asking what a Shipment is get one answer. `kind` says where it came from: the
     ontology (`object_type`), or — where none is built — the knowledge graph's table node (`table`).
     `available=false` with a `notice` means it exists but is withheld by data governance."""
-    from aughor.mcp.knowledge_tools import describe_entity as _describe
-
-    return _describe(connection, entity)
+    return await _client.describe_entity(connection, entity)
 
 
 @mcp.tool()
@@ -252,9 +330,7 @@ async def get_table_health(
     many violations, and how STALE each verdict is. Use it before trusting a number from a
     table: a verdict computed against yesterday's data is not authoritative today.
     `checked=false` means no checks have run — which is NOT the same as healthy."""
-    from aughor.mcp.knowledge_tools import get_table_health as _health
-
-    return _health(connection, table)
+    return await _client.get_table_health(connection, table)
 
 
 @mcp.tool()
@@ -266,9 +342,7 @@ async def list_trusted_queries(
     `human_pinned` (a person settled this question), `eval_promoted` (it passed every eval
     run), or `recorded`. Reuse the SQL structure of a trusted query rather than writing a
     new one — and prefer a human-pinned pattern over a promoted one when both exist."""
-    from aughor.mcp.knowledge_tools import list_trusted_queries as _trusted
-
-    return _trusted(connection, limit=limit)
+    return await _client.list_trusted_queries(connection, limit=limit)
 
 
 # ── traces (VA-5) ────────────────────────────────────────────────────────────────
@@ -396,8 +470,10 @@ async def register_automation_tools(client: "AughorClient | None" = None) -> lis
         if name in taken:
             _log.warning("automation tool %r collides with an existing tool — skipped", name)
             continue
+        from aughor.mcp.policy import tool_annotations
         mcp.add_tool(_automation_runner(api, automation_id), name=name,
-                     description=_automation_description(row))
+                     description=_automation_description(row),
+                     annotations=tool_annotations("act"))       # DE-2b: a run changes something
         taken.add(name)
         added.append(name)
     return added
@@ -429,11 +505,92 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
         if name in taken:
             _log.warning("Spotlight tool %r collides with an existing tool — skipped", name)
             continue
+        from aughor.mcp.policy import DYNAMIC_LEVELS, spotlight_tool_level, tool_annotations
         mcp.add_tool(_spotlight_runner(api, name), name=name,
-                     description=_spotlight_description(row))
+                     description=_spotlight_description(row),
+                     annotations=tool_annotations(spotlight_tool_level(name)))   # DE-2b
+        # The roster's split, said to the level map: by its name alone a roster read cannot be
+        # told from an automation, and was read as an act — hidden under the default policy.
+        DYNAMIC_LEVELS[name] = spotlight_tool_level(name)
         taken.add(name)
         added.append(name)
     return added
+
+
+async def register_agent_tools(client: "AughorClient | None" = None) -> list[str]:
+    """AO-5a — one tool per ENABLED custom agent: `ask_<slug>`, described by the agent's
+    purpose, answering through `/ask` AS that agent (its brief, documents, packs, grants)
+    with this process named as the principal. Same posture as the two registrars above:
+    never raises, returns what it added, skips a collision rather than shadowing — an
+    agent called "Ask" must not replace the governed `ask`.
+
+    The caller is a principal (DE-2a's half that this transport can do today): the ask
+    door attributes the turn to `mcp:<AUGHOR_MCP_PRINCIPAL or host>` when no session is in
+    scope, so the agent's verdicts and spend know an MCP client asked, and which.
+    """
+    api = client or _client
+    try:
+        agents = await api.list_user_agents()
+    except Exception as exc:                       # the API is down, or the route is old
+        _log.warning("could not read the custom agents: %s", exc)
+        return []
+
+    from aughor.custom_agents.reach import mcp_tool_name
+    taken = set(getattr(mcp._tool_manager, "_tools", {}) or {})
+    added: list[str] = []
+    for row in agents:
+        if not row.get("enabled", True) or not row.get("id"):
+            continue
+        name = mcp_tool_name(_Row(row))
+        if name in taken:
+            _log.warning("agent tool %r collides with an existing tool — skipped", name)
+            continue
+        from aughor.mcp.policy import DYNAMIC_LEVELS, tool_annotations
+        mcp.add_tool(_agent_runner(api, str(row["id"]), str(row.get("connection_id") or "")),
+                     name=name, description=_agent_description(row),
+                     annotations=tool_annotations("run"))       # DE-2b: an ask spends; it changes nothing
+        DYNAMIC_LEVELS[name] = "run"
+        taken.add(name)
+        added.append(name)
+    return added
+
+
+class _Row:
+    """A dict row with attribute access, for the one helper that reads `.name`/`.id`."""
+    def __init__(self, row: dict):
+        self.id = str(row.get("id") or "")
+        self.name = str(row.get("name") or "")
+
+
+def _agent_description(row: dict) -> str:
+    purpose = str(row.get("purpose") or "").strip()
+    scope = str(row.get("schema_scope") or "").strip()
+    conn = str(row.get("connection_id") or "").strip()
+    desc = f"Ask the custom agent '{row.get('name')}'"
+    desc += f" — {purpose}" if purpose else " (no purpose written; its instructions decide)"
+    desc += f". Answers on connection {conn}" if conn else ". Answers on the connection you name"
+    desc += f", schema {scope}" if scope else ""
+    desc += (". Returns the agent's own answer: headline, the SQL that ran, rows and a receipt; "
+             "the agent's grants only ever PROPOSE, never execute.")
+    return desc
+
+
+def _agent_runner(api: "AughorClient", agent_id: str, connection_id: str):
+    """A factory, not a loop lambda (the late-binding trap the other runners refuse)."""
+    import os
+    import socket
+
+    async def run(
+        question: Annotated[str, Field(description="The question for this agent, in plain words.")],
+        connection: Annotated[Optional[str], Field(
+            description="A connection id from list_connections; only needed when the agent is unbound.")] = None,
+        asker: Annotated[Optional[str], Field(
+            description="Who is asking, for attribution (an email or a service name).")] = None,
+    ) -> dict:
+        who = asker or os.environ.get("AUGHOR_MCP_PRINCIPAL") or socket.gethostname()
+        return await api.ask_as_agent(agent_id, question, connection or connection_id, asker=who)
+
+    return run
 
 
 def _spotlight_description(row: dict) -> str:
@@ -458,6 +615,89 @@ def _spotlight_runner(api: "AughorClient", name: str):
                                              args=dict(args or {}))
 
     return _run
+
+
+# ── DE-2a (ROADMAP §3.51): the HTTP transport has a door ─────────────────────────
+#
+# Measured on 2026-10-03 before this existed, `--http --host 0.0.0.0` on this machine: a
+# loopback client with no credential at all got a full session (the tools then call the
+# API with THIS process's key and principal), and a remote client got `421 Invalid Host
+# header` on every request — FastMCP fixes a loopback-only host allowlist when the
+# `FastMCP` object is built at import, before `--host` is read, so the flag served nobody
+# it was meant to serve. Two rules now: every HTTP request carries a bearer token the
+# operator set (`AUGHOR_MCP_TOKEN`), compared in constant time; and the transport security
+# is built for the host actually served, as FastMCP would have built it had it known.
+
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def transport_security_for(host: str) -> TransportSecuritySettings:
+    """FastMCP's own transport-security posture, for the host actually served.
+
+    Loopback keeps FastMCP's DNS-rebinding protection with its loopback allowlist. Any other host gets what
+    FastMCP gives a non-loopback host it is told about at construction — protection off, since the names a
+    remote client will put in `Host` cannot be enumerated here — and the bearer gate is the door instead."""
+    if host in _LOOPBACK_HOSTS:
+        return TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
+            allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
+        )
+    return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
+
+class BearerGate:
+    """Pure-ASGI: every HTTP request presents ``Authorization: Bearer <token>`` or is refused with a 401.
+
+    The comparison is constant-time (`hmac.compare_digest`), the refusal names what is missing and carries a
+    `WWW-Authenticate` challenge, and nothing else is read from the request — the MCP app behind the gate
+    decides everything else."""
+
+    def __init__(self, app: Any, token: str) -> None:
+        if not token:
+            raise ValueError("BearerGate needs a token")
+        self.app = app
+        self._token = token.encode("utf-8")
+
+    def _presented(self, scope: dict) -> bytes:
+        for name, value in scope.get("headers") or []:
+            if name == b"authorization":
+                scheme, _, credential = value.partition(b" ")
+                return credential.strip() if scheme.lower() == b"bearer" else b""
+        return b""
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        presented = self._presented(scope)
+        if presented and hmac.compare_digest(presented, self._token):
+            return await self.app(scope, receive, send)
+        body = (b'{"error":"unauthorized","detail":"this MCP server requires `Authorization: Bearer <token>`; '
+                b'the token is AUGHOR_MCP_TOKEN on the server"}')
+        await send({"type": "http.response.start", "status": 401, "headers": [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+            (b"www-authenticate", b'Bearer realm="aughor-mcp"'),
+        ]})
+        await send({"type": "http.response.body", "body": body})
+
+
+def http_app(token: str, host: str):
+    """The streamable-HTTP app behind the bearer gate, with its transport security built for ``host``.
+
+    Set BEFORE `streamable_http_app()`: FastMCP creates its session manager on the first call and bakes the
+    security settings into it, so this is called once, from the entry point, before anything is served."""
+    mcp.settings.host = host
+    mcp.settings.transport_security = transport_security_for(host)
+    return BearerGate(mcp.streamable_http_app(), token)
+
+
+def serve_http(host: str, port: int, token: str) -> None:
+    """Serve `http_app` with uvicorn — what `mcp.run(transport="streamable-http")` does, with the door in front."""
+    import uvicorn
+
+    mcp.settings.port = port
+    uvicorn.run(http_app(token, host), host=host, port=port, log_level=mcp.settings.log_level.lower())
 
 
 def _automation_description(row: dict) -> str:

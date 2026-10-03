@@ -118,7 +118,10 @@ def _health_caveats(conn_id, raw: dict) -> list:
         tables = tables or list(payload.get("tables") or [])
         if not tables:
             return []
-        return caveats_for_answer(str(conn_id), tables)
+        # DE-4: when the receipt traced its columns, a column-level caveat rides only the
+        # answers that read that column; an untraced receipt keeps the table scope.
+        from aughor.trust.lineage_edges import column_keys
+        return caveats_for_answer(str(conn_id), tables, columns=column_keys(lineage))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 

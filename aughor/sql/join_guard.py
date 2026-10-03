@@ -421,6 +421,12 @@ def _probe_overlap_derived(conn: "DatabaseConnection", tree, a: _Side, b: _Side,
 _HLL_MIN_ROWS = max(1, int(os.getenv("AUGHOR_JOIN_HLL_MIN_ROWS", "1000000")))
 
 
+def overlap_threshold() -> float:
+    """The value-overlap fraction below which a join is not borne out by its values. Public so
+    a caller that words a join's evidence (DE-5f's related rows) draws the same line the guard does."""
+    return _THRESHOLD
+
+
 def hll_min_rows() -> int:
     """The per-table row-count threshold above which join overlap is HLL-estimated rather
     than exactly probed (env ``AUGHOR_JOIN_HLL_MIN_ROWS``). Public so the explorer's phase-4
@@ -861,13 +867,22 @@ def render_verified_joins(verified: list, rejected: list) -> str:
     if verified:
         lines.append("FOREIGN KEY JOINS (value-verified — use these exact keys to join the tables above):")
         for v in verified:
-            warrant = f"{v.overlap:.0%} value overlap" if v.overlap >= 0 else "declared, not probed"
-            lines.append(f"  {'✓' if v.overlap >= 0 else '·'} {v.t1}.{v.c1} = {v.t2}.{v.c2}  ({warrant})")
+            warrant = f"{v.overlap:.0%} value overlap" if v.overlap >= 0 else "not probed"
+            # DE-3c: a key the engine itself declares says so beside its measurement.
+            declared = "; declared foreign key" if v.match == "declared" else ""
+            lines.append(f"  {'✓' if v.overlap >= 0 else '·'} {v.t1}.{v.c1} = {v.t2}.{v.c2}  ({warrant}{declared})")
     if rejected:
         lines.append("")
         lines.append("DO NOT JOIN (these column pairs share a name but hold DISJOINT values — "
                      "joining them fabricates rows):")
         for r in rejected:
+            if r.match == "declared":
+                # DE-3c: the schema declares the key and the data does not bear it out. Said as
+                # both — a reader who sees only "do not join" would never learn the declaration
+                # exists, and one who sees only the declaration would join into missing rows.
+                lines.append(f"  ⚠ {r.t1}.{r.c1} = {r.t2}.{r.c2}  (DECLARED foreign key, but only "
+                             f"{r.overlap:.0%} value overlap — the declaration and the data disagree)")
+                continue
             lines.append(f"  ✗ {r.t1}.{r.c1} ≠ {r.t2}.{r.c2}  ({r.overlap:.0%} value overlap)")
     return "\n".join(lines)
 

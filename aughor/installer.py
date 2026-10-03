@@ -1038,6 +1038,32 @@ def ensure_web_deps(root: Path, node: Node, steps: Steps) -> bool:
     return True
 
 
+def ensure_slack_supervisor_deps(root: Path, node: Node, steps: Steps) -> bool:
+    """AO-2b — when the API is to run the Slack supervisor itself (flag
+    `slack.managed_supervisor`, env `AUGHOR_SLACK_MANAGED_SUPERVISOR`), its packages are
+    installed the same way the web app's are. Off, nothing happens: the supervisor stays
+    a thing a person starts by hand, and its dependencies stay theirs to install."""
+    if (os.environ.get("AUGHOR_SLACK_MANAGED_SUPERVISOR") or "").strip().lower() in ("", "0", "false", "no"):
+        return False
+    bots = root / "bots" / "slack"
+    if not (bots / "package.json").is_file():
+        steps.up_to_date("No Slack supervisor in this checkout (bots/slack); nothing to install")
+        return False
+    stamp = bots / "node_modules" / ".aughor-install.json"
+    want = {"package_lock_sha256": _sha256_file(bots / "package-lock.json"), "platform": _platform_tag()}
+    if _read_json(stamp) == want:
+        steps.up_to_date("Slack supervisor dependencies up to date")
+        return False
+    fresh = not (bots / "node_modules").is_dir()
+    steps.run("Installing Slack supervisor dependencies" if fresh else "Updating Slack supervisor dependencies",
+              "Slack supervisor dependencies installed" if fresh else "Slack supervisor dependencies updated",
+              node.npm() + ["ci", "--no-audit", "--no-fund"], cwd=bots,
+              log=log_dir(root) / "slack-supervisor-dependencies.log",
+              env=node.env(_child_env(npm_config_update_notifier="false")), tool="npm")
+    _write_json(stamp, want)
+    return True
+
+
 #: Directories under web/ that hold installed packages or build output, never source.
 _NOT_SOURCE = {"node_modules", ".next", "out", "build", "coverage", ".git", ".turbo", ".vercel"}
 #: Build inputs that web/.gitignore ignores on purpose (`.env*`) but that `next build` inlines.
@@ -1133,6 +1159,7 @@ def prepare_web(root: Path, steps: Steps, *, api_port: int = DEFAULT_API_PORT,
         raise InstallError(f"There is no web app at {root / 'web'}. Is this an Aughor checkout?")
     node = ensure_node(root, steps)
     ensure_web_deps(root, node, steps)
+    ensure_slack_supervisor_deps(root, node, steps)
     env = web_env(api_port)
     if build:
         ensure_web_build(root, node, steps, env)

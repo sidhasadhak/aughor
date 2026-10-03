@@ -19,8 +19,11 @@ Design (correctness first — stale/cross-thread data is worse than slow):
   * **Idle TTL + cap.** Idle connections are reused within ``AUGHOR_POOL_TTL``
     seconds and capped at ``AUGHOR_POOL_MAX_IDLE`` per key; older/excess ones are
     really closed.
-  * **Health check.** Connectors may expose ``is_healthy()`` (Postgres does);
-    an unhealthy idle connection is discarded rather than handed out.
+  * **Health check.** Every connection answers ``is_healthy()`` (DE-3d: the base
+    class answers through ``test()``, each warehouse connector more cheaply); an
+    unhealthy idle connection is discarded rather than handed out, one that cannot
+    say is not handed out either, and a connection whose engine was lost mid-run
+    (``doors.mark_lost``) is closed on release instead of returned.
   * **Opt-out.** ``poolable = False`` on a connector class, or env
     ``AUGHOR_POOL_DISABLED=1`` globally, falls back to direct open/close.
 """
@@ -83,7 +86,9 @@ class ConnectionPool:
             return
         conn._pool_state = "idle"  # type: ignore[attr-defined]
         key = getattr(conn, "_pool_key", None)
-        if key is None or _DISABLED:
+        if key is None or _DISABLED or getattr(conn, "_engine_lost", False):
+            # DE-3d — a connection whose engine was lost mid-run is closed, never returned to the bucket: the
+            # connector may have re-opened it for its own retry, but the pool hands out only what it can vouch for.
             self._real_close(conn)
             return
         with self._lock:
@@ -116,9 +121,14 @@ class ConnectionPool:
             logger.debug("pool: error closing connection", exc_info=True)
 
     def _healthy(self, conn: "DatabaseConnection") -> bool:
+        # DE-3d — a connection with no health check was counted healthy, and only Postgres and SQLite had one. Every
+        # connection answers now (`DatabaseConnection.is_healthy`); one that still cannot say is not handed out.
+        if getattr(conn, "_engine_lost", False):
+            return False
         check = getattr(conn, "is_healthy", None)
         if check is None:
-            return True
+            logger.warning("pool: %s has no is_healthy(); not handing it out", type(conn).__name__)
+            return False
         try:
             return bool(check())
         except Exception:

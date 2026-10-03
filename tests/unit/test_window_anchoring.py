@@ -25,9 +25,10 @@ class TestReanchorsRelativeWindow:
         it = FakeIntake("2023-01-01", "2023-12-31", "2022-01-01", "2022-12-31")
         note = _clamp_intake_to_coverage(it, *TWO_YR, question="why did AOV change in the last 12 months?")
         assert it.observation_end == "2024-12-30"          # re-anchored to the data's latest point
-        assert it.observation_start.startswith("2024")     # observation is now the recent year
-        assert it.comparison_start.startswith("2023")      # prior-period comparison now lands in 2023
-        assert it.comparison_end.startswith("2023")
+        # the twelve months to it (twelve months to 30 December begin on 31 December), and the twelve
+        # before from the data's first day
+        assert it.observation_start == "2023-12-31"
+        assert (it.comparison_start, it.comparison_end) == ("2023-01-01", "2023-12-30")
         assert "re-anchored" in (note or "")
 
     def test_last_3_months_anchored_recently(self):
@@ -63,9 +64,10 @@ class TestLeavesSpecificPeriodsLiteral:
 
 class TestNoChangeWhenAlreadyCorrect:
     def test_window_already_ends_at_dmax(self):
-        it = FakeIntake("2024-01-01", "2024-12-30", "2023-01-01", "2023-12-30")
+        # twelve months to 30 December begin on 31 December
+        it = FakeIntake("2023-12-31", "2024-12-30", "2022-12-31", "2023-12-30")
         _clamp_intake_to_coverage(it, *TWO_YR, question="last 12 months trend")
-        assert it.observation_start == "2024-01-01"   # gap ~0 → untouched
+        assert it.observation_start == "2023-12-31"   # gap ~0 → untouched
         assert it.observation_end == "2024-12-30"
 
     def test_cross_sectional_is_anchored_like_any_other(self):

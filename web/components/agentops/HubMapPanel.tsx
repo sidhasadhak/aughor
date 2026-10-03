@@ -8,6 +8,7 @@ import {
   stateColor,
 } from "@/lib/hubMap";
 import { formatDateTime } from "@/lib/format";
+import { Term } from "@/components/agentops/Term";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/motion";
@@ -39,7 +40,12 @@ function Mono({ children, tint }: { children: React.ReactNode; tint?: string }) 
  * whole hub, from ONE read (`GET /hub/map`). Cost renders as what the server says it
  * is — a floor — and an unmeasured precision renders as "not measured", never 0%.
  */
-export function HubMapPanel({ connId }: { connId?: string }) {
+export function HubMapPanel({ connId, onOpenAgent, onOpenAutomation }: {
+  connId?: string;
+  /** AO-4 — every raw id on the map is a link when the shell can open it. */
+  onOpenAgent?: (agentId: string) => void;
+  onOpenAutomation?: (automationId: string) => void;
+}) {
   const [data, setData] = useState<HubMapResponse | null>(null);
   const [absent, setAbsent] = useState(false);
   const [error, setError] = useState("");
@@ -117,11 +123,13 @@ export function HubMapPanel({ connId }: { connId?: string }) {
                 <TableHead>Grant</TableHead>
                 <TableHead>Owner</TableHead>
                 <TableHead className="num">Cost</TableHead>
-                <TableHead>Probation</TableHead>
+                <TableHead><Term id="probation">Probation</Term></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(r => <MapRow key={r.id} row={r} />)}
+              {rows.map(r => (
+                <MapRow key={r.id} row={r} onOpenAgent={onOpenAgent} onOpenAutomation={onOpenAutomation} />
+              ))}
             </TableBody>
           </Table>
         </div>
@@ -130,7 +138,11 @@ export function HubMapPanel({ connId }: { connId?: string }) {
   );
 }
 
-function MapRow({ row }: { row: HubMapRow }) {
+function MapRow({ row, onOpenAgent, onOpenAutomation }: {
+  row: HubMapRow;
+  onOpenAgent?: (agentId: string) => void;
+  onOpenAutomation?: (automationId: string) => void;
+}) {
   const caveat = costCaveat(row.cost);
   const lastAt = formatDateTime(row.last_run.at);
   return (
@@ -138,10 +150,17 @@ function MapRow({ row }: { row: HubMapRow }) {
       <TableCell>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           <span title={row.state} className="aug-fs-xs" style={{ color: stateColor(row.state) }}>●</span>
-          <span className="aug-fs-sm" style={{ color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                title={row.description || row.name}>
-            {row.name}
-          </span>
+          {onOpenAutomation ? (
+            <Button variant="link" size="xs" onClick={() => onOpenAutomation(row.id)}
+              title={row.description || row.name} style={{ padding: 0, height: "auto" }}>
+              {row.name}
+            </Button>
+          ) : (
+            <span className="aug-fs-sm" style={{ color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  title={row.description || row.name}>
+              {row.name}
+            </span>
+          )}
         </div>
         <div className="aug-fs-xs" style={{ color: "var(--t3)", paddingLeft: 15 }}>{row.conn_id}{row.state !== "live" ? ` · ${row.state}` : ""}</div>
       </TableCell>
@@ -194,7 +213,15 @@ function MapRow({ row }: { row: HubMapRow }) {
           {ownerText(row.owner)}
         </Mono>
         {row.owner.agent_id && (
-          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>runs as {row.owner.agent_id}</div>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            runs as{" "}
+            {onOpenAgent ? (
+              <Button variant="link" size="xs" onClick={() => onOpenAgent(row.owner.agent_id)}
+                title="Open this agent" style={{ padding: 0, height: "auto" }}>
+                {row.owner.agent_id}
+              </Button>
+            ) : row.owner.agent_id}
+          </div>
         )}
       </TableCell>
       <TableCell className="num">

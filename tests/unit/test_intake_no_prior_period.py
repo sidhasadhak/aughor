@@ -40,7 +40,7 @@ def test_specimen_window_is_described_not_compared_against_itself():
     note = _clamp_intake_to_coverage(it, DMIN, DMAX, "Why is traffic in Direkteingabe going up?")
     assert (it.observation_start, it.observation_end) == (DMIN, DMAX)
     assert it.observation_label != "February 2025"
-    assert it.observation_label == "2026-06-01 → 2026-08-18"
+    assert it.observation_label == "1 June – 18 August 2026"   # code's window, in words
     # no equal-length window before the full span → typed verdict, comparison CLEARED
     assert it.no_prior_period is True
     assert (it.comparison_start, it.comparison_end) == ("", "")
@@ -86,7 +86,12 @@ def test_window_label_reads_as_a_human_period():
     assert _window_label("2026-07-01", "2026-07-31") == "July 2026"
     assert _window_label("2026-06-01", "2026-08-31") == "June–August 2026"
     assert _window_label("2025-11-01", "2026-01-31") == "November 2025–January 2026"
-    assert _window_label("2026-06-01", "2026-08-18") == "2026-06-01 → 2026-08-18"
+    # any other window reads in words too (2026-10-03: Q2's period line read "2026-03-04 → 2026-09-03")
+    assert _window_label("2026-06-01", "2026-08-18") == "1 June – 18 August 2026"
+    assert _window_label("2026-03-04", "2026-09-03") == "4 March – 3 September 2026"
+    assert _window_label("2026-07-04", "2026-07-20") == "4–20 July 2026"
+    assert _window_label("2025-12-15", "2026-01-14") == "15 December 2025 – 14 January 2026"
+    assert _window_label("2026-07-04", "2026-07-04") == "4 July 2026"
 
 
 def test_router_skips_period_over_period_phases_without_a_prior_period():

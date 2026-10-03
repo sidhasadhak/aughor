@@ -307,6 +307,27 @@ def _ontology_skip_note(last_build: Optional[dict]) -> str:
     )
 
 
+_LINEAGE_SCHEMA_TTL = 300.0
+_lineage_schema_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _lineage_schema_for(connection_id: str, conn) -> dict | None:
+    """DE-4 — the connection's schema as sqlglot's `qualify` takes it, rendered once per run
+    (and kept five minutes) so every finding's receipt binds its columns against it. None when
+    the schema cannot be rendered: the receipt then says its columns were attributed by name."""
+    import time as _t
+    hit = _lineage_schema_cache.get(connection_id)
+    if hit and (_t.monotonic() - hit[0]) < _LINEAGE_SCHEMA_TTL:
+        return hit[1] or None
+    try:
+        from aughor.db.schema_render import sqlglot_schema
+        mapping = sqlglot_schema(conn.get_schema())
+    except Exception:
+        mapping = {}
+    _lineage_schema_cache[connection_id] = (_t.monotonic(), mapping)
+    return mapping or None
+
+
 class SchemaExplorer:
     """
     Background schema exploration agent.
@@ -553,6 +574,17 @@ class SchemaExplorer:
             _lineage = [("source_sql", "sql", sql)]
             for _tbl in sorted(tables_in_sql(sql))[:8]:
                 _lineage.append(("input", f"table:{_tbl}", None))
+            # DE-4: the columns the finding's SQL read, beside its tables, with how each was
+            # resolved — qualified against this connection's schema, rendered once per run.
+            _columns: list[str] = []
+            try:
+                from aughor.trust.lineage_edges import column_edges, payload_columns
+                _col_rows = column_edges([sql], dialect=getattr(self._conn, "dialect", None),
+                                         schema_map=_lineage_schema_for(self.connection_id, self._conn))
+                _lineage.extend(_col_rows)
+                _columns = payload_columns(_col_rows)
+            except Exception:
+                logger.debug("column lineage skipped", exc_info=True)
             _lineage.append(("validated_by", "guard:numeric_grounding",
                              "all magnitudes matched result cells"))
             # The Finding Dossier rides INSIDE the finding artifact's payload (not
@@ -563,6 +595,8 @@ class SchemaExplorer:
             if dossier is not None:
                 _lineage.append(("derivation", "dossier", "captured at emit time"))
             _payload = insight if dossier is None else {**insight, "dossier": dossier}
+            if _columns:
+                _payload = {**_payload, "columns": _columns}
             Ledger.default().artifact_write(
                 "finding",
                 f"insight:{self.connection_id}:{insight_id}",
@@ -1303,8 +1337,9 @@ class SchemaExplorer:
                     lines.append(f"  {col_p.column}  {col_p.dtype}")
             schema_str = "\n".join(lines)
 
-            from aughor.tools.schema import parse_schema_tables, compute_join_map
-            jmap = compute_join_map(parse_schema_tables(schema_str))
+            from aughor.tools.schema import join_map_for, parse_schema_tables
+            # DE-3c: the engine's declared foreign keys lead the join map; the names fill the rest.
+            jmap = join_map_for(self._conn, parse_schema_tables(schema_str), cache_key=self.connection_id)
 
             return tp, cp, jmap
 

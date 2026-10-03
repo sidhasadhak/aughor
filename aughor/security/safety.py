@@ -88,8 +88,12 @@ class SafetyChecker:
     """Stateless SQL safety checker. All methods are class-level."""
 
     @classmethod
-    def check(cls, sql: str) -> SafetyResult:
-        """Return a SafetyResult for the given SQL string."""
+    def check(cls, sql: str, dialect: str | None = None) -> SafetyResult:
+        """Return a SafetyResult for the given SQL string.
+
+        ``dialect`` is the engine's (DE-1): the syntax-tree checks parse in it, so a statement written for BigQuery
+        or Snowflake is read as that engine reads it. None — outside a door — parses in sqlglot's generic dialect,
+        as every check did before."""
         clean = _strip_comments(sql).strip()
 
         # First token check — hard block on write/DDL
@@ -109,14 +113,23 @@ class SafetyChecker:
         # the regex scoring below stays the fallback) — this strictly ADDS coverage.
         # The verdict is decisive and must NOT be swallowed.
         try:
-            from aughor.sql.readonly import disallowed_functions, is_mutating
-            if is_mutating(sql):
+            from aughor.sql.readonly import disallowed_functions, hidden_statement, is_mutating
+            # DE-1 — the shapes below the tree: a MySQL executable comment, whose body `_strip_comments` just
+            # removed, so the first-token check above saw an empty statement; `INTO OUTFILE`, which never parses.
+            hidden = hidden_statement(sql)
+            if hidden:
+                return SafetyResult(
+                    verdict=SafetyVerdict.BLOCKED,
+                    reason=f"statement hidden from the parser ({hidden}; read-only mode)",
+                    score=1.0,
+                )
+            if is_mutating(sql, dialect):
                 return SafetyResult(
                     verdict=SafetyVerdict.BLOCKED,
                     reason="statement mutates data/state (AST-detected; read-only mode)",
                     score=1.0,
                 )
-            bad = disallowed_functions(sql)
+            bad = disallowed_functions(sql, dialect)
             if bad:
                 return SafetyResult(
                     verdict=SafetyVerdict.BLOCKED,
@@ -155,9 +168,9 @@ class SafetyChecker:
         return SafetyResult(verdict=SafetyVerdict.SAFE, reason="", score=0.0)
 
     @classmethod
-    def is_allowed(cls, sql: str) -> tuple[bool, str]:
+    def is_allowed(cls, sql: str, dialect: str | None = None) -> tuple[bool, str]:
         """Convenience wrapper — returns (True, '') or (False, reason)."""
-        result = cls.check(sql)
+        result = cls.check(sql, dialect)
         if result.verdict == SafetyVerdict.BLOCKED:
             return False, result.reason
         return True, result.reason  # reason may be non-empty for SUSPICIOUS

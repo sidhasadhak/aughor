@@ -58,7 +58,7 @@ def test_mcp_registration_diffs_empty_against_the_declaration():
         _tool_manager = type("TM", (), {"_tools": {}})()
 
         @staticmethod
-        def add_tool(fn, name="", description=""):
+        def add_tool(fn, name="", description="", **kwargs):   # DE-2b adds `annotations`
             registered[name] = description
 
     real_mcp = mcp_server.mcp
@@ -90,7 +90,7 @@ def test_mcp_registration_skips_a_collision_rather_than_shadowing():
         _tool_manager = type("TM", (), {"_tools": {"ask": object()}})()
 
         @staticmethod
-        def add_tool(fn, name="", description=""):
+        def add_tool(fn, name="", description="", **kwargs):   # DE-2b adds `annotations`
             pass
 
     real_mcp = mcp_server.mcp

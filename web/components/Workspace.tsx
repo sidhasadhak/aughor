@@ -33,6 +33,9 @@ type WorkspaceProps<L extends string> = {
    *  Attention layer's "needs a human" count). Zero/undefined renders nothing —
    *  a badge must mean something is actually waiting. */
   badges?: Partial<Record<L, number>>;
+  /** AO-4 — a "?" at the end of the tab row that explains the active layer; rendered only
+   *  when given, so a workspace without help text shows no control that does nothing. */
+  help?: (layer: L) => void;
   /** Drop the layer-tab row. For the ONE workspace whose layers each already have
    *  their own item in the left rail (Data: Catalog / SQL Editor / Semantic Layer), the
    *  tabs are a second copy of a control the rail already provides. The other
@@ -54,7 +57,7 @@ type WorkspaceProps<L extends string> = {
  */
 export function Workspace<L extends string>({
   layers, layer, onLayerChange, ariaLabel, headerControls, toolbar,
-  renderLayer, badges, hideTabs,
+  renderLayer, badges, hideTabs, help,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
   const [visited, setVisited] = useState<Set<L>>(() => new Set([layer]));
@@ -97,6 +100,13 @@ export function Workspace<L extends string>({
             </Button>
           );
         })}
+        {help && (
+          <Button variant="ghost" size="xs" aria-label="What is this layer?"
+            title={`What the ${layers.find(l => l.id === layer)?.label ?? "current"} layer is for, and what to do here`}
+            onClick={() => help(layer)} style={{ marginLeft: "auto" }}>
+            ?
+          </Button>
+        )}
       </div>
       )}
 

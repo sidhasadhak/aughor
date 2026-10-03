@@ -116,6 +116,15 @@ def tick_once() -> dict[str, int]:
     except Exception as exc:
         logger.warning("automation heartbeat could not re-check past answers: %s", exc)
         counts["rechecks"] = 0
+    # AO-6 — the agents' nightly evaluation, once a UTC day, behind `agents.testing_centre`:
+    # every enabled custom agent with certified goldens is re-measured on the production
+    # path and the diff against its last stamp is written onto the result.
+    try:
+        from aughor.custom_agents.learning import nightly as agents_nightly
+        counts["agent_evals"] = len((agents_nightly() or {}).get("ran") or [])
+    except Exception as exc:
+        logger.warning("automation heartbeat could not run the agents' nightly evals: %s", exc)
+        counts["agent_evals"] = 0
     # BR-6 — the same recall for BRIEFINGS, beside the answers one and behind the same switch.
     # A Briefing's figures are the ones likeliest to move: it is written about the most recent
     # complete period, which is exactly the period still filling. After the settling reading,

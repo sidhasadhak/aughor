@@ -227,14 +227,15 @@ def _warm_profiles(conn_id: str) -> dict:
     then build-or-hit the profile cache, which persists the R5 entity-value
     samples. Deterministic, no LLM."""
     from aughor.tools.profile_cache import get_or_build_profiles
-    from aughor.tools.schema import compute_join_map, parse_schema_tables
+    from aughor.tools.schema import parse_schema_tables
     from aughor.tools.table_names import bare
     db = open_connection_for(conn_id)
     try:
         base = db.get_schema()
         table_cols = parse_schema_tables(base)
         tables = [bare(t) for t in table_cols]
-        jmap = compute_join_map(table_cols)
+        from aughor.tools.schema import join_map_for
+        jmap = join_map_for(db, table_cols, cache_key=conn_id)   # DE-3c: declared keys lead
         fk_hints: dict[str, set] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
@@ -373,6 +374,32 @@ async def refresh_schema_cache(conn_id: str, timings: bool = False):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/connections/{conn_id}/metadata")
+async def connection_declared_metadata(conn_id: str):
+    """DE-3c — the engine's declared metadata, typed: for each of columns, primary keys, foreign
+    keys and comments, whether this engine's read is supported, unsupported or unknown (and
+    why), plus the keys and comments it declares. An empty list from an engine that supports
+    keys means the schema declares none; from one that does not, that there is nothing to read."""
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        from aughor.db.metadata import read_declared_metadata
+        try:
+            return read_declared_metadata(db, cache_key=conn_id).as_dict()
+        finally:
+            try:
+                db.close()
+            except Exception as close_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(close_exc, "connections/declared-metadata: best-effort connection close",
+                         counter="connections.declared_metadata.close_failed", conn_id=conn_id)
+    return await loop.run_in_executor(None, _work)
+
+
 @router.get("/connections/{conn_id}/schema/rich")
 async def connection_schema_rich(conn_id: str):
     loop = asyncio.get_running_loop()
@@ -385,8 +412,16 @@ async def connection_schema_rich(conn_id: str):
         from aughor.db.type_overrides import get_table_overrides
         def _work():
             s = _get_schema_cached(conn_id, db)
+            # DE-3c: the engine's declared foreign keys lead the rich schema's joins and FK marks.
+            declared = None
+            try:
+                from aughor.db.metadata import declared_join_candidates, read_declared_metadata
+                from aughor.tools.schema import parse_schema_tables
+                declared = declared_join_candidates(read_declared_metadata(db, cache_key=conn_id), parse_schema_tables(s))
+            except Exception:
+                declared = None
             db.close()
-            result = build_rich_schema(s)
+            result = build_rich_schema(s, declared=declared)
             # Apply user type overrides so the rich schema stays in sync
             for table in result.get("tables", []):
                 tname = table.get("name", "")
@@ -729,15 +764,24 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
                         pass
 
     def _work():
+        refused: str
         try:
             # DuckDB syntax (best-effort; many connectors don't support ALTER COLUMN TYPE)
             sql = f'ALTER TABLE {ref} ALTER COLUMN "{safe_col}" TYPE {safe_type}'
-            db.execute("alter_column", sql)
-            return {
-                "ok": True, "applied": True, "override_only": False, "sql": sql,
-                "message": f"Column {safe_col} changed to {safe_type}.",
-            }
+            result = db.execute("alter_column", sql)
+            if not result.error:
+                return {
+                    "ok": True, "applied": True, "override_only": False, "sql": sql,
+                    "message": f"Column {safe_col} changed to {safe_type}.",
+                }
+            # DE-1 (ROADMAP §3.51) — the door's answer is the answer. A refused statement comes back as a result
+            # with an error, not a raise, and this route read only the raise: every door refuses an ALTER (Aughor
+            # writes nothing to a warehouse), so it answered `applied: true` whatever the engine said — the
+            # gate-map census row for this site, §3.49's leftover. A refusal takes the path a driver error took.
+            refused = result.error
         except Exception as e:
+            refused = str(e)
+        try:
             # For local_upload, the sidecar column_types were updated above, so the
             # table is genuinely recreated with the new type on the next connection
             # open. Re-register the file in the current ephemeral DB so it takes
@@ -762,17 +806,18 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
                     }
                 except Exception:
                     logger.warning("local_upload type recreation failed for %s.%s", safe_table, safe_col, exc_info=True)
-            # Other connectors: ALTER is unsupported and we cannot rewrite the source.
-            # We saved a DISPLAY-ONLY override (catalog shows the new type) but the
+            # Other connectors: the door refused the ALTER, or the engine cannot run it, and we cannot
+            # rewrite the source. We saved a DISPLAY-ONLY override (catalog shows the new type) but the
             # underlying column type is unchanged and queries still use the real type.
             # Be honest about this — do NOT claim the column was changed.
             return {
                 "ok": True, "applied": False, "override_only": True, "sql": None,
-                "error": str(e),
+                "error": refused,
                 "message": (
                     f"Saved a display override: the catalog will show {safe_col} as {safe_type}, "
-                    f"but this connector does not support changing the column type, so the database "
-                    f"column is unchanged and queries still use its real type."
+                    f"but Aughor does not change a column's type in the database (the statement was "
+                    f"refused: {refused}), so the database column is unchanged and queries still use "
+                    f"its real type."
                 ),
             }
         finally:

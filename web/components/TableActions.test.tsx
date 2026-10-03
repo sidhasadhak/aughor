@@ -24,7 +24,8 @@ import { copyTable, tableHtml } from "@/components/TableActions";
 // Q3's answer table, as the model wrote it.
 const ANSWER = ["| Month | Monthly Revenue | Change |", "| :--- | :--- | :--- |",
                 "| 2025-09-01 | $50,543.93 | -$5,421.84 |", "| 2025-10-01 | $58,007.77 | +$7,463.84 |"].join("\n");
-const ANSWER_TSV = "Month\tMonthly Revenue\tChange\n2025-09-01\t$50,543.93\t-$5,421.84\n2025-10-01\t$58,007.77\t+$7,463.84";
+// Copied as shown: the month column reads as months (2026-10-03).
+const ANSWER_TSV = "Month\tMonthly Revenue\tChange\nSep 2025\t$50,543.93\t-$5,421.84\nOct 2025\t$58,007.77\t+$7,463.84";
 
 let written: Record<string, string>[] = [];
 
@@ -84,8 +85,8 @@ describe("an answer's table", () => {
     expect(downloadCsv).toHaveBeenCalledTimes(1);
     const [name, body] = vi.mocked(downloadCsv).mock.calls[0];
     expect(name).toMatch(/^table-\d{4}-\d{2}-\d{2}-\d{6}\.csv$/);
-    expect(body).toBe('Month,Monthly Revenue,Change\r\n2025-09-01,"$50,543.93","-$5,421.84"\r\n'
-                      + '2025-10-01,"$58,007.77","+$7,463.84"');
+    expect(body).toBe('Month,Monthly Revenue,Change\r\nSep 2025,"$50,543.93","-$5,421.84"\r\n'
+                      + 'Oct 2025,"$58,007.77","+$7,463.84"');
   });
 });
 

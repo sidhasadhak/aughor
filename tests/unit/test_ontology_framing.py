@@ -287,6 +287,25 @@ def test_a_driver_is_reachable_only_by_measured_to_one_links_within_the_hops(dec
     assert any("category is on Product, which OrderItem does not reach" in n for n in frame.notes)
 
 
+def test_a_question_that_asks_to_see_the_data_reads_no_driver_as_tested(declared, monkeypatch):
+    """Q3 (2026-10-03) asked for monthly revenue, and its frame line ended "Starting from Order (orders); testing
+    revenue, gender, status.": a describe answer tests no driver. An investigation still says what it will test."""
+    import aughor.agent.framing as F
+    monkeypatch.setattr(F, "served_graph", lambda *a, **k: declared)
+    monkeypatch.setattr(F, "person_synonyms", lambda *a, **k: [])
+    monkeypatch.setattr("aughor.ontology.framing_misses.record", lambda *a, **k: None)
+    see = F.resolve_frame("Which product categories are shipped late most often?", "c1", choose=False)
+    why = F.resolve_frame("What is causing orders to be shipped late?", "c1", choose=False)
+    assert see.start is not None and see.drivers and "Starting from" in see.reading
+    assert "; testing " not in see.reading and "; testing " in why.reading
+
+    class _Chooses:                                    # words that fit two definitions, read again once one is chosen
+        def complete(self, **kw):
+            return kw["response_model"](definition="delivery_breach_rate")
+    late = F.choose_definition(frame_question("What was late last month?", declared), declared, provider=_Chooses())
+    assert late.drivers and "Starting from" in late.reading and "; testing " not in late.reading
+
+
 # ── what the frame hands on ─────────────────────────────────────────────────────────────────
 
 

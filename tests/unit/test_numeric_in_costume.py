@@ -280,7 +280,7 @@ def test_a_quote_in_a_csv_header_cannot_inject_sql(tmp_path):
     # a payload naming a real sibling column, executes whatever follows the quote.
     assert parse_schema_tables(schema_text)["inj"] == declared
     # Each column is sampled from its OWN values — not from an injected expression.
-    assert f'{declared[0]}  VARCHAR  ~ e.g. \'keep\'' in schema_text
+    assert f'{declared[0]}  VARCHAR  ~ e.g. <data>\'keep\'</data>' in schema_text   # fenced as data (DE-1)
     assert "'42'" not in schema_text
 
 
@@ -379,9 +379,9 @@ def test_strip_value_samples_is_load_bearing():
 def test_format_value_samples_bounds_and_dedupes():
     assert format_value_samples([]) == ""
     assert format_value_samples([None, None]) == ""
-    assert format_value_samples(["a", "a", "b"]) == "  ~ e.g. 'a', 'b'"
+    assert format_value_samples(["a", "a", "b"]) == "  ~ e.g. <data>'a', 'b'</data>"   # fenced as data (DE-1)
     long = format_value_samples(["x" * 200])
-    assert len(long) < 60 and long.endswith("…'")
+    assert len(long) < 60 and long.endswith("…'</data>")
     assert "\n" not in format_value_samples(["a\nb"])
 
 

@@ -368,3 +368,38 @@ def test_the_runs_per_minute_figure_is_agents_not_a_heartbeat(client):
     tiles = client.get("/control-room/fleet?range=1h").json()["tiles"]
     assert tiles["runs_per_min"] < 0.5, (
         f"runs_per_min {tiles['runs_per_min']} is reading the automation heartbeat")
+
+
+def test_the_fleet_custom_rows_read_the_windowed_scan_not_the_all_time_report(client, monkeypatch):
+    """Arc AO-3 (2026-10-03): a custom agent's row said 76.7K tokens (this route, windowed
+    spark) beside an all-time call count from `usage_report`. Both halves of the row now come
+    from the ONE windowed scan, and the all-time report is never read here."""
+    from aughor.custom_agents import create_agent, delete_agent
+    from aughor.kernel.ledger import Ledger
+    import aughor.routers.control_room as cr
+
+    a = create_agent("Fleet", instructions="x")
+    try:
+        def _events(self, **kw):
+            if kw.get("kind") != "llm_call":
+                return []
+            return [{"kind": "llm_call", "agent_id": a.id, "at": kw["since"], "ok": True,
+                     "provider": "gemini", "model": "gemini-3.1-flash-lite",
+                     "prompt_tokens": 1000, "completion_tokens": 100, "total_tokens": 1100,
+                     "payload": {"role": "coder"}}]
+
+        monkeypatch.setattr(Ledger, "session_events", _events)
+        monkeypatch.setattr(Ledger, "jobs_where", lambda self, **kw: [])
+
+        def _no_usage_report(*args, **kwargs):
+            raise AssertionError("the fleet must not read the all-time usage report")
+
+        monkeypatch.setattr(cr, "usage_report", _no_usage_report, raising=False)
+        r = client.get("/control-room/fleet?range=24h")
+        assert r.status_code == 200, r.text
+        mine = [row for row in r.json()["rows"] if row.get("id") == a.id]
+        assert mine, "the custom agent must appear in the fleet"
+        assert mine[0]["spend"]["calls"] == 1
+        assert mine[0]["spend"]["total_tokens"] == 1100
+    finally:
+        delete_agent(a.id)

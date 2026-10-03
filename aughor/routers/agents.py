@@ -11,7 +11,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from aughor.kernel.agents import (
     charter_for_kind,
@@ -26,10 +26,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _spend_by_agent(limit: int = 500) -> dict[str, dict]:
-    """Aggregate recent metered runs per agent (by the charter owning each job kind)."""
+def _spend_by_agent(limit: int = 500, *, since: Optional[str] = None,
+                    until: Optional[str] = None) -> dict[str, dict]:
+    """Aggregate metered runs per built-in agent (by the charter owning each job kind),
+    inside ``[since, until)`` — AO-3: the roster's tiles read the window the page shows.
+    Before 2026-10-03 this read the newest 500 jobs of any age, so a built-in agent's
+    page said one number and its roster row (windowed, from the fleet fold) another."""
     out: dict[str, dict] = {}
-    for job in Ledger.default().jobs_where(limit=limit):
+    for job in Ledger.default().jobs_where(limit=limit, since=since, until=until):
         c = charter_for_kind(job.get("kind"))
         agg = out.setdefault(c.id, {"runs": 0, "total_tokens": 0, "query_count": 0})
         agg["runs"] += 1
@@ -52,22 +56,37 @@ def _active_backend_id() -> str:
         return ""
 
 
+def _window_dict(win) -> dict:
+    """The window a response's numbers were read over, on the response itself — so a tile
+    can caption what it counts instead of implying "all time" or "recent"."""
+    return {"range": win.range_key or "", "since": win.since, "until": win.until}
+
+
 @router.get("/agents")
-def list_agents(workspace_id: Optional[str] = None):
-    """The fleet roster: each agent's charter + effective governance + recent spend.
+def list_agents(workspace_id: Optional[str] = None, range: str = "",
+                since: str = "", until: str = ""):
+    """The fleet roster: each agent's charter + effective governance + spend in the window.
+
+    ``range`` / ``since`` / ``until`` are the shared Agent Ops window (``obs/timeseries``
+    names; the default is its default, 24h) — every number here is read over it, and the
+    window rides on each row as ``window`` so the page can say so.
 
     No ``recommended_model`` any more, and no ``POST /agents/apply-recommended-models``
     to apply one: both existed only to serve per-charter model ids this repo hardcoded,
     and those were removed 2026-08-15. An agent's model is whatever the operator pinned,
     or the role binding it inherits.
     """
-    spend = _spend_by_agent()
+    from aughor.obs.timeseries import resolve_window
+    win = resolve_window(range, since=since, until=until)
+    spend = _spend_by_agent(since=win.since, until=win.until)
     backend = _active_backend_id()
+    window = _window_dict(win)
     return [
         {
             **c.to_dict(),
             "governance": effective_governance(c.id, workspace_id).to_dict(),
             "spend": spend.get(c.id, {"runs": 0, "total_tokens": 0, "query_count": 0}),
+            "window": window,
             "backend": backend,
         }
         for c in list_charters()
@@ -185,9 +204,17 @@ def _validate_agent_grants(tool_grants: Optional[list], connection_id: str,
         raise HTTPException(status_code=422, detail=problems[0])
 
 
+#: AO-1d — `purpose` is the one-line "what this agent is for" the delegation roster reads
+#: (`delegate_tool.roster_block`, which deliberately never reads instructions). The store
+#: had the column since migration 5; no door let a person write it, so every roster line
+#: was the bounded fallback. Capped where the roster's own budget is measured.
+PURPOSE_MAX = 240
+
+
 class UserAgentCreate(BaseModel):
     name: str
     instructions: str = ""
+    purpose: str = Field("", max_length=PURPOSE_MAX)
     connection_id: str = ""
     schema_scope: str = ""
     doc_ids: list[str] = []
@@ -200,6 +227,7 @@ class UserAgentCreate(BaseModel):
 class UserAgentPatch(BaseModel):
     name: Optional[str] = None
     instructions: Optional[str] = None
+    purpose: Optional[str] = Field(None, max_length=PURPOSE_MAX)
     connection_id: Optional[str] = None
     schema_scope: Optional[str] = None
     doc_ids: Optional[list[str]] = None
@@ -209,10 +237,19 @@ class UserAgentPatch(BaseModel):
 
 
 class UserAgentFromTemplate(BaseModel):
+    """AO-1d — the pack path takes the scratch path's body. Before, four fields: the Create
+    flow let a person edit the prefilled instructions and tick documents, then sent only
+    `pack_id`, `name`, `connection_id`, `schema_scope`, and the agent was born with the
+    pack's text and no documents — silently."""
     pack_id: str
     name: str = ""
+    instructions: str = ""
+    purpose: str = Field("", max_length=PURPOSE_MAX)
     connection_id: str = ""
     schema_scope: str = ""
+    doc_ids: list[str] = []
+    pack_ids: list[str] = []
+    tool_grants: list[str] = []
 
 
 @router.get("/agents/custom")
@@ -246,18 +283,23 @@ def create_user_agent_from_template(body: UserAgentFromTemplate):
     while they still have the domain in mind — the agent is born with a stance, and earns
     its pass chip only once real ground truth exists.
     """
-    from aughor.custom_agents.store import schema_scope_problem
     from aughor.custom_agents.templates import create_from_template
-    # SP-7 — the schema rule every other door runs, before anything is created. Called
-    # directly rather than through `_validate_agent_fields`, so this route does not start
-    # refusing connections it never checked before.
-    if body.schema_scope:
-        problem = schema_scope_problem(body.schema_scope, body.connection_id or None)
-        if problem:
-            raise HTTPException(status_code=422, detail=problem)
+    from aughor.org.context import current_org_id
+    # AO-1d — the SAME validators the scratch path runs: the connection must exist, every
+    # document must exist, the schema must be on the connection, the packs and grants must
+    # be declared. Until 2026-10-03 this door checked only the schema, so a pack-path create could name
+    # a connection nobody had and the agent was created bound to it.
+    _validate_agent_fields(body.name or None, body.instructions, body.connection_id,
+                           body.doc_ids, body.schema_scope)
+    _validate_agent_packs(body.pack_ids)
+    _validate_agent_grants(body.tool_grants, body.connection_id, body.schema_scope)
     made = create_from_template(body.pack_id, name=body.name,
                                 connection_id=body.connection_id,
-                                schema_scope=body.schema_scope)
+                                schema_scope=body.schema_scope,
+                                instructions=body.instructions, purpose=body.purpose,
+                                doc_ids=body.doc_ids, pack_ids=body.pack_ids,
+                                tool_grants=body.tool_grants,
+                                owner=current_org_id() or "")
     if made is None:
         raise HTTPException(status_code=404, detail=f"no pack {body.pack_id!r}")
     return made
@@ -332,7 +374,7 @@ def create_user_agent(body: UserAgentCreate):
     _validate_agent_grants(body.tool_grants, body.connection_id, body.schema_scope)
     from aughor.org.context import current_org_id
     from aughor.custom_agents import create_agent
-    agent = create_agent(body.name, instructions=body.instructions,
+    agent = create_agent(body.name, instructions=body.instructions, purpose=body.purpose,
                          connection_id=body.connection_id, schema_scope=body.schema_scope,
                          doc_ids=body.doc_ids, pack_ids=body.pack_ids,
                          tool_grants=body.tool_grants,
@@ -373,6 +415,7 @@ def patch_user_agent(agent_id: str, body: UserAgentPatch):
         eff_schema = body.schema_scope if body.schema_scope is not None else stored.schema_scope
         _validate_agent_grants(body.tool_grants, eff_conn, eff_schema)
     agent = update_agent(agent_id, name=body.name, instructions=body.instructions,
+                         purpose=body.purpose,
                          connection_id=body.connection_id, schema_scope=body.schema_scope,
                          doc_ids=body.doc_ids, pack_ids=body.pack_ids,
                          tool_grants=body.tool_grants,
@@ -475,10 +518,18 @@ def set_user_agent_guardrails(agent_id: str, body: GuardrailBody):
 
 @router.delete("/agents/custom/{agent_id}")
 def delete_user_agent(agent_id: str):
-    from aughor.custom_agents import delete_agent
-    if not delete_agent(agent_id):
+    """Delete an agent and everything that would keep answering as it (AO-1e).
+
+    The receipt says what moved: which Slack bots were switched off (each now carries
+    `disabled_reason`), which automations were detached from it, and that its configuration
+    revisions are kept. Before 2026-10-03 the row and its goldens went and the bot's socket
+    stayed open, answering as an agent that no longer existed.
+    """
+    from aughor.custom_agents.retire import retire_agent
+    receipt = retire_agent(agent_id)
+    if receipt is None:
         raise HTTPException(status_code=404, detail="No such agent")
-    return {"deleted": agent_id}
+    return receipt
 
 
 # ── Golden questions + evaluation ("measured agents") ─────────────────────────
@@ -508,12 +559,17 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
         raise HTTPException(status_code=404, detail="No such agent")
     if not body.question.strip() or not body.reference_sql.strip():
         raise HTTPException(status_code=422, detail="question and reference_sql are required")
+    _check_reference_sql(body.reference_sql)
+    return add_golden(agent_id, body.question, body.reference_sql)
+
+
+def _check_reference_sql(sql: str) -> None:
     # WP-1c — fail CLOSED on unparseable SQL: `is_mutating` returns False on a parse
     # failure, so an unparseable statement previously slipped past the read-only check.
     # Goldens are user-authored ground truth; a parse failure is a user error to fix.
     import sqlglot
     try:
-        _parsed = sqlglot.parse_one(body.reference_sql)
+        _parsed = sqlglot.parse_one(sql)
     except Exception:
         _parsed = None
     if _parsed is None:
@@ -521,9 +577,8 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
             status_code=422,
             detail="reference_sql could not be parsed — provide valid, read-only SQL")
     from aughor.sql.readonly import is_mutating
-    if is_mutating(body.reference_sql):
+    if is_mutating(sql):
         raise HTTPException(status_code=422, detail="reference_sql must be read-only")
-    return add_golden(agent_id, body.question, body.reference_sql)
 
 
 @router.delete("/agents/custom/{agent_id}/goldens/{golden_id}")
@@ -536,8 +591,103 @@ def delete_agent_golden(agent_id: str, golden_id: str):
     return {"deleted": golden_id}
 
 
+class GoldenCertify(BaseModel):
+    reference_sql: str
+
+
+@router.post("/agents/custom/{agent_id}/goldens/{golden_id}/certify")
+def certify_agent_golden(agent_id: str, golden_id: str, body: GoldenCertify):
+    """A person turns a CANDIDATE (drafted from the catalogue, or an answer accepted in
+    use) into a golden the suite counts, with the SQL they say is right (AO-6, AO-7c).
+    The same read-only parse the hand-written path runs; a judge never certifies."""
+    from aughor.custom_agents.store import certify_golden
+    if not body.reference_sql.strip():
+        raise HTTPException(status_code=422, detail="reference_sql is required to certify")
+    _check_reference_sql(body.reference_sql)
+    row = certify_golden(golden_id, agent_id, body.reference_sql)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such golden")
+    return row
+
+
+@router.post("/agents/custom/{agent_id}/goldens/draft", status_code=201)
+def draft_agent_goldens(agent_id: str):
+    """AO-6 — draft golden QUESTIONS from the connection's metric catalogue and the agent's
+    purpose: one model call, up to six candidates, no SQL (the model may not certify).
+    Refused with the reason while the testing centre's flag is off."""
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.learning import draft_synthetic_goldens
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    try:
+        return {"drafted": draft_synthetic_goldens(agent)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/agents/custom/{agent_id}/doors")
+def agent_doors(agent_id: str):
+    """AO-5 — every door into this agent with its state: the MCP tool name, the HTTP door
+    and its key (issued when, never what), the embed page, the webhook, the A2A card, and
+    the Teams bots that front it."""
+    import os
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.reach import doors_for
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    doors = doors_for(agent, public_api=os.environ.get("AUGHOR_PUBLIC_API_URL", ""),
+                      public_web=os.environ.get("AUGHOR_WEB_URL", ""))
+    try:
+        from aughor.teamsbots.store import bots_for_agent
+        doors["teams"] = {"bots": [b.to_safe_dict() for b in bots_for_agent(agent_id)],
+                          "state": "open" if bots_for_agent(agent_id) else "no bot"}
+    except Exception as exc:                            # noqa: BLE001 — said, not hidden
+        doors["teams"] = {"bots": [], "state": f"could not read: {exc}"}
+    return doors
+
+
+@router.post("/agents/custom/{agent_id}/key")
+def issue_agent_key_route(agent_id: str):
+    """Mint the agent's HTTP-door key and return it ONCE. Issuing replaces (a rotation is
+    the same gesture); the status never discloses it."""
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.keys import agent_key_issued_at, issue_agent_key
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    raw = issue_agent_key(agent_id)
+    return {"key": raw, "issued_at": agent_key_issued_at(agent_id),
+            "header": f"Authorization: Bearer {raw}",
+            "curl": (f"curl -sS -X POST \"$AUGHOR_API/doors/agents/{agent_id}/ask\" "
+                     f"-H 'Authorization: Bearer {raw}' -H 'content-type: application/json' "
+                     "-d '{\"question\": \"How many orders yesterday?\", \"asker\": \"me@example.com\"}'")}
+
+
+@router.delete("/agents/custom/{agent_id}/key")
+def revoke_agent_key_route(agent_id: str):
+    from aughor.custom_agents.keys import revoke_agent_key
+    if not revoke_agent_key(agent_id):
+        raise HTTPException(status_code=404, detail="No key is issued for this agent")
+    return {"revoked": agent_id}
+
+
+@router.get("/agents/custom/{agent_id}/learning")
+def agent_learning(agent_id: str):
+    """AO-7d — the loop's receipt: verdicts and corrections this agent earned, candidates
+    waiting for a person's SQL, goldens certified from use, and the pass count before →
+    after the latest evaluation. The flags' states are on it, so an empty receipt says
+    whether the loop is off or merely unused."""
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.learning import learning_summary
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return learning_summary(agent_id)
+
+
 @router.get("/agents/custom/{agent_id}/observability")
-def user_agent_observability(agent_id: str):
+def user_agent_observability(agent_id: str, range: str = "", since: str = "",
+                             until: str = ""):
     """The Agent Workspace overview data for one agent: its run history (from the
     history store, stamped with agent_id) enriched with MLflow trace stats when
     MLflow tracing is configured. Degrades to history-only (`trace_stats: null`) when the
@@ -551,41 +701,60 @@ def user_agent_observability(agent_id: str):
     recorded to report, and ``spend`` says so with the flag to turn on rather than
     returning zeros: a confident 0 tokens and an unmeasured 0 tokens look identical
     on a tile, and only one of them is true.
+
+    AO-3 (2026-10-03): everything here is read over ONE window — the shared Agent Ops
+    range, 24h by default — and the window rides on the response. Measured before: the
+    roster row said 76.7K tokens (24h, from the fleet fold) and this page said 3.5M
+    (all time) for the same agent, and nothing on either screen said which was which.
     """
     from aughor.custom_agents import get_agent
     if get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
     from aughor import telemetry
     from aughor.db.history import list_investigations_for_agent
-    runs = list_investigations_for_agent(agent_id)
+    from aughor.obs.timeseries import resolve_window
+    win = resolve_window(range, since=since, until=until)
+    # The newest 200 of the agent's runs, kept to the window. A window holding more than
+    # 200 runs would be undercounted here, and `runs_scanned` lets a reader see that.
+    scanned = list_investigations_for_agent(agent_id, limit=200)
+    runs = [r for r in scanned
+            if win.since <= str(r.get("started_at") or "") < win.until]
     return {
         "agent_id": agent_id,
+        "window": _window_dict(win),
         "run_count": len(runs),
+        "runs_scanned": len(scanned),
         "runs": runs,
         "trace_stats": telemetry.agent_trace_stats(agent_id),
-        "spend": _agent_spend(agent_id),
+        "spend": _agent_spend(agent_id, win),
     }
 
 
-def _agent_spend(agent_id: str) -> dict:
-    """This agent's slice of the G3 usage rollup.
+def _agent_spend(agent_id: str, win) -> dict:
+    """This agent's slice of the G3 usage rollup, over ``win``.
 
-    Recording is permanent, so an empty slice means this agent spent nothing —
-    not that nothing was watching. ``cost_is_complete`` carries G3's own caveat
-    forward: a model with no declared price contributes nothing to the total
-    rather than counting as free.
+    Recording is permanent, so an empty slice means this agent spent nothing in the
+    window — not that nothing was watching. ``cost_is_complete`` carries G3's own caveat
+    forward, and ``unpriced_calls`` is the number behind it: a model with no declared
+    price contributes nothing to the total rather than counting as free, and a tile that
+    knows HOW MANY calls were unpriced can say "unpriced" instead of "$0.00".
     """
-    from aughor.obs.usage import usage_report
-    report = usage_report(axes=("agent_id",)).to_dict()
+    from aughor.obs.usage import rollup
+    rows = Ledger.default().session_events(kind="llm_call", agent_id=agent_id,
+                                           since=win.since, until=win.until, limit=5000)
+    report = rollup(rows, axes=("agent_id",)).to_dict()
     for row in report.get("rows") or []:
         if row.get("agent_id") == agent_id:
             return {"measured": True, "calls": row.get("calls", 0),
                     "total_tokens": row.get("total_tokens", 0),
                     "cost_usd": row.get("cost_usd"),
                     "cost_is_complete": row.get("cost_is_complete", False),
+                    "unpriced_calls": row.get("unpriced_calls", 0),
+                    "calls_without_usage": row.get("calls_without_usage", 0),
                     "failure_rate": row.get("failure_rate")}
     return {"measured": True, "calls": 0, "total_tokens": 0, "cost_usd": 0.0,
-            "cost_is_complete": True, "failure_rate": 0.0}
+            "cost_is_complete": True, "unpriced_calls": 0, "calls_without_usage": 0,
+            "failure_rate": 0.0}
 
 
 @router.post("/agents/custom/{agent_id}/evaluate")

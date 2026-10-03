@@ -51,9 +51,13 @@ def test_the_census_of_doors_found_them_all():
     """A walk that found nothing would pass every test below."""
     names = {c.__name__ for c in CLASSES}
     assert {"DuckDBConnection", "PostgresConnection", "LocalUploadConnection", "BigQueryConnection",
-            "SnowflakeConnection", "MySQLConnection", "ExasolConnection"} <= names
-    assert {c.__name__ for c in NATIVE} == {"BigQueryConnection", "SnowflakeConnection", "MySQLConnection",
-                                            "ExasolConnection"}
+            "SnowflakeConnection", "MySQLConnection", "ExasolConnection", "TrinoConnection"} <= names
+    # DE-3b: the native set is what the declarations say it is — a class that runs SQL as written
+    # without declaring so, or the reverse, fails here.
+    from aughor.connectors.declarations import ENGINES
+    declared_native = {e.connector.rsplit(":", 1)[1] for e in ENGINES if e.connector and e.native_sql}
+    assert {c.__name__ for c in NATIVE} == declared_native == {
+        "BigQueryConnection", "SnowflakeConnection", "MySQLConnection", "ExasolConnection", "TrinoConnection"}
 
 
 @pytest.mark.parametrize("cls", CLASSES, ids=lambda c: c.__name__)

@@ -82,6 +82,8 @@ def _isolate_stores() -> None:
     # IP-2 — the industries chosen at install: a live drive that changes the choice must not narrow the
     # running deployment's.
     os.environ.setdefault("AUGHOR_INDUSTRIES_FILE", os.path.join(tmp, "industries.json"))
+    # The organisation's settings, likewise: a drive that saves them must not change the deployment's.
+    os.environ.setdefault("AUGHOR_ORG_SETTINGS_FILE", os.path.join(tmp, "org_settings.json"))
     # The metrics catalog and glossary are TRACKED repo files (data/metrics.json,
     # data/glossary.yaml) — the one store family whose pollution lands in git status,
     # not just in a live database. Found the hard way TWICE: a live-drive scratch
@@ -117,6 +119,7 @@ def _isolate_stores() -> None:
     # is the union, which is what the merge of the two waves means.
     for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
                      "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR", "AUGHOR_INTEGRATIONS_DIR",
+                     "AUGHOR_AGENTS_DIR", "AUGHOR_TEAMSBOTS_DIR",   # AO-5: agent keys, Teams bots
                      "AUGHOR_AUTOMATIONS_DIR", "AUGHOR_MCPSERVERS_DIR",
                      # MI-3's snapshot bytes — the directory half of the same store.
                      "AUGHOR_DATASETS_DIR"):

@@ -49,6 +49,10 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("POST", "/access/grants"): P.ADMIN_MANAGE_ROLES,
     ("DELETE", "/access/grants"): P.ADMIN_MANAGE_ROLES,
     ("PUT", "/org-settings"): P.ADMIN_MANAGE_ORG,
+    # DE-2b — the organisation's agent policy is set by a person who manages the org, never by
+    # the agent it governs (the route refuses the agent mark on its own).
+    ("PUT", "/org-settings/agent-policy"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/org-settings/agent-policy"): P.ADMIN_MANAGE_ORG,
     ("PATCH", "/agents/{agent_id}"): P.ADMIN_MANAGE_ORG,
     ("PUT", "/system/flags/{name}"): P.ADMIN_MANAGE_ORG,
     ("POST", "/metastore/workspaces/{workspace_id}/grants"): P.ADMIN_MANAGE_ORG,
@@ -90,9 +94,42 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # gated like an admin write even though it is a GET. Reading it is equivalent to
     # holding every bot token in the org.
     ("GET", "/slack-bots/runtime"): P.ADMIN_MANAGE_ORG,
+    # AO-2a — the supervisor's heartbeat: the same caller as the runtime read (the
+    # route checks the same key), so the same entry.
+    ("POST", "/slack-bots/runtime/heartbeat"): P.ADMIN_MANAGE_ORG,
+    # AO-2e — minting the supervisor's key is minting the right to read every raw token
+    # above; it was unlisted, so it fell to the write floor (and its status GET was open).
+    # Measured 2026-10-03: on a default install anyone on the port could mint a key and
+    # then read the tokens.
+    ("POST", "/slack-bots/supervisor-key"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/slack-bots/supervisor-key"): P.ADMIN_MANAGE_ORG,
+    # AO-2b — the managed supervisor's status and restart: the same admin that may read
+    # the runtime route may see and bounce the process that reads it.
+    ("GET", "/slack-bots/supervisor"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/slack-bots/supervisor/restart"): P.ADMIN_MANAGE_ORG,
+    # AO-2d — creating the app in Slack and installing it are the acts that make a bot.
+    ("POST", "/slack-bots/apps"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/slack-bots/{bot_id}/install"): P.ADMIN_MANAGE_ORG,
+    # The OAuth callback is Slack's browser redirect: it carries an authenticated state
+    # (the bot id, sealed) and no session, so it is open here and exempt in `api.py`.
+    ("GET", "/slack-bots/oauth/callback"): None,
     ("POST", "/slack-bots"): P.ADMIN_MANAGE_ORG,
     ("PATCH", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
     ("DELETE", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
+
+    # ── Doors to a custom agent (AO-5) ──
+    # Minting or revoking an agent's key is minting a way in for a caller with no session;
+    # a Teams bot binds an Azure registration to an agent. Admin acts, like a Slack bot.
+    ("POST", "/agents/custom/{agent_id}/key"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/agents/custom/{agent_id}/key"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/teams-bots"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/teams-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
+    # The doors themselves carry their own credential (the agent's key as a bearer; the
+    # Bot Framework's signature) and are auth-exempt by prefix in `api.py` — open here.
+    ("POST", "/doors/agents/{agent_id}/ask"): None,
+    ("POST", "/doors/agents/{agent_id}/webhook"): None,
+    ("POST", "/doors/a2a/{agent_id}"): None,
+    ("POST", "/doors/teams/{bot_id}/messages"): None,
 
     # ── Connection lifecycle ──
     ("POST", "/connections"): P.CONNECTION_CREATE,
@@ -109,6 +146,11 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # as /ask (they execute; the pure helpers build-sql/decompile/postproc stay at
     # the write floor). Object-level org scoping is separate (query.py DATA-06).
     ("POST", "/query/run"): P.ANALYSIS_RUN,
+    # DE-5d — the count and the next page of a cut result run the person's statement again.
+    ("POST", "/query/count"): P.ANALYSIS_RUN,
+    ("POST", "/query/more"): P.ANALYSIS_RUN,
+    # DE-5f — the rows related to a value run a composed statement through the same door.
+    ("POST", "/query/related"): P.ANALYSIS_RUN,
     ("POST", "/query/semantic"): P.ANALYSIS_RUN,
     ("POST", "/query/semantic/text-columns"): P.ANALYSIS_RUN,
     ("POST", "/query/cross-source-join"): P.ANALYSIS_RUN,

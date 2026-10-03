@@ -153,21 +153,26 @@ def build_data_catalog(
             no_sample = [c for c in col_names if (bare, c.lower()) in withheld]
             sample_rows = _fetch_sample(conn, table, sample_cols) if sample_cols else []
             if sample_rows:
+                from aughor.util.prompt_safety import fence_untrusted, sanitize_db_text
                 lines.append("")
                 lines.append("Sample (5 rows):")
-                header = "| " + " | ".join(sample_cols) + " |"
-                lines.append(header)
-                lines.append("|" + "|".join("---" for _ in sample_cols) + "|")
+                table = ["| " + " | ".join(sample_cols) + " |",
+                         "|" + "|".join("---" for _ in sample_cols) + "|"]
                 for row in sample_rows:
                     cells = []
                     for v in row:
-                        s = str(v) if v is not None else "NULL"
+                        # DE-1 — a sample row is data read from the warehouse: control characters and fence tokens
+                        # neutralised per cell, and the table fenced as untrusted the way query rows are
+                        # (`tools/executor.format_result_for_llm`). The catalog replaces the schema text on the
+                        # quick and deep paths, so this is where most samples reach the model.
+                        s = sanitize_db_text(str(v) if v is not None else "NULL")
                         if len(s) > _MAX_CELL_CHARS:
                             s = s[:_MAX_CELL_CHARS] + "…[truncated]"
                         # Escape pipe characters in cell values
                         s = s.replace("|", "\\|")
                         cells.append(s)
-                    lines.append("| " + " | ".join(cells) + " |")
+                    table.append("| " + " | ".join(cells) + " |")
+                lines.append(fence_untrusted("\n".join(table)))
             if no_sample:
                 # Say it out loud: an omitted column is a withheld value, NOT an empty
                 # one, and a model told nothing would reasonably infer the latter.

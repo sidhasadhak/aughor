@@ -17,6 +17,7 @@ from contextlib import contextmanager
 
 from aughor.connectors.base import Connector
 from aughor.db.doors import passed, through_door
+from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -35,6 +36,20 @@ _BARE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 def _is_timestamp_date_clash(error: str) -> bool:
     return bool(_TS_DATE_CLASH.search(error or ""))
+
+
+def _say_what_it_cost(job) -> None:
+    """DE-5d — the job's own account of what it read and what was billed, as door words on the
+    statement's trail (`bytes-processed:N`, `bytes-billed:N`, `cache-hit`). BigQuery bills by bytes
+    scanned, not rows returned, so a page of a result costs what the whole statement costs; these
+    words are how that is measured on a live connection rather than asserted. Absent fields say
+    nothing — a fake job in a test, or a job the client did not finish describing."""
+    for word, attr in (("bytes-processed", "total_bytes_processed"), ("bytes-billed", "total_bytes_billed")):
+        n = getattr(job, attr, None)
+        if isinstance(n, int) and not isinstance(n, bool):
+            passed(f"{word}:{n}")
+    if getattr(job, "cache_hit", None) is True:
+        passed("cache-hit")
 
 
 def _retype_date_literals(sql: str) -> str:
@@ -101,6 +116,9 @@ class BigQueryConnection(Connector):
     connector_category = "warehouse"
     dialect = "bigquery"
     writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    # DE-1 — BigQuery has no session-level read-only (IAM is the operator's grant, not this session's); the door's
+    # checks are the read-only boundary, and every result's doors say so (`engine-read-write`).
+    engine_read_only = False
 
     def __init__(
         self,
@@ -211,6 +229,11 @@ class BigQueryConnection(Connector):
             rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
             return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
 
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): BigQuery is an HTTP API with no session to lose, so a connection is healthy while
+        its client exists. A failed job is that statement's error, typed by the connector, never a dead connection."""
+        return getattr(self, "_client", None) is not None
+
     def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS), internal=internal)
 
@@ -261,6 +284,7 @@ class BigQueryConnection(Connector):
                 rows_it = job.result(max_results=max_rows + 1)
                 schema = list(rows_it.schema)
                 raw = [list(row.values()) for row in rows_it]
+                _say_what_it_cost(job)
             offer_typed_rows(raw[:max_rows], truncated=len(raw) > max_rows,
                              types=[stage_type(getattr(field, "field_type", ""), getattr(field, "precision", None),
                                                getattr(field, "scale", None)) for field in schema])
@@ -274,7 +298,7 @@ class BigQueryConnection(Connector):
         except Exception as e:
             return QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=str(e),
+                columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
             )
 
     def _job_config(self, **overrides):

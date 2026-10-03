@@ -284,6 +284,9 @@ describe("createAskStream — the envelope (CP-4)", () => {
     const chunks = await drain(ask("q", { sessionId: "s", onTurn: (a) => seen.push(a) }));
     expect(chunks.join("")).toBe("East is flat.\n\nVolume held.");
     expect(seen).toHaveLength(1);
+    // AO-7b receipt 2026-10-03 — a quick answer's start frame carries no id; `done.inv_id`
+    // is the turn, and without it no ✅ on a quick answer ever found its turn.
+    expect((seen[0] as { investigationId: string }).investigationId).toBe("chat-1");
     expect((seen[0].envelope as { headline: string }).headline).toBe("East is flat.");
     expect((seen[0].envelope as { caveats: string[] }).caveats).toEqual(["one caveat"]);
   });

@@ -1369,6 +1369,12 @@ def _comparison_basis(intake_data: dict) -> str:
     """
     if intake_data.get("cross_sectional") or intake_data.get("descriptive_only"):
         return ""
+    # A comparison inside the window measured is no baseline: Q3's line read "September 2025–August
+    # 2026 vs Month-over-Month (MoM)" over August 2026, one of its own twelve months (2026-10-03).
+    cs, ce = (intake_data.get("comparison_start") or "")[:10], (intake_data.get("comparison_end") or "")[:10]
+    os_, oe = (intake_data.get("observation_start") or "")[:10], (intake_data.get("observation_end") or "")[:10]
+    if cs and ce and os_ and oe and os_ <= cs and ce <= oe:
+        return ""
     return intake_data.get("comparison_label", "")
 
 
@@ -4783,7 +4789,17 @@ def _window_label(start: str, end: str) -> str:
         if ds.year == de.year:
             return f"{ds.strftime('%B')}–{de.strftime('%B %Y')}"
         return f"{ds.strftime('%B %Y')}–{de.strftime('%B %Y')}"
-    return f"{s} → {e}"
+    # Any other window reads in words too: Q2's line under its answer read "2026-03-04 →
+    # 2026-09-03" while every title beside it was in words (2026-10-03).
+    def day(d) -> str:
+        return f"{d.day} {d.strftime('%B')}"
+    if ds == de:
+        return f"{day(ds)} {ds.year}"
+    if ds.year != de.year:
+        return f"{day(ds)} {ds.year} – {day(de)} {de.year}"
+    if ds.month == de.month:
+        return f"{ds.day}–{de.day} {de.strftime('%B %Y')}"
+    return f"{day(ds)} – {day(de)} {de.year}"
 
 
 def _preceding_window(obs_start: str, obs_end: str, dmin: str):
@@ -4820,6 +4836,38 @@ def _preceding_window(obs_start: str, obs_end: str, dmin: str):
     if prev_end < prev_start:
         return None
     return prev_start.isoformat(), prev_end.isoformat()
+
+
+_N_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+            "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+#: A trailing window the question gives a length: "last 6 months", "past twelve weeks", "trailing 30 days".
+_LAST_N_RE = re.compile(
+    r"\b(?:last|past|previous|trailing|rolling)\s+(\d+|" + "|".join(_N_WORDS) + r")\s+"
+    r"(days?|weeks?|months?|quarters?|years?)\b", re.I)
+
+
+def _last_n_start(question: str, end: str) -> str:
+    """The first day of the "last N <unit>" the question asks for, ending on ``end`` (inclusive):
+    N units before the day after it. "" when the question gives no length or ``end`` is no date.
+
+    The intake model did this sum, and on 2026-10-03 its "last 6 months" to the settled day
+    4 September began on 4 March — six months and a day (on 10-02 it was right). Counted from the
+    day after the end, whole months stay whole: 12 months to 31 August begin on 1 September."""
+    import calendar
+    from datetime import date, timedelta
+    m = _LAST_N_RE.search(question or "")
+    if not m:
+        return ""
+    try:
+        after = date.fromisoformat((end or "")[:10]) + timedelta(days=1)
+    except ValueError:
+        return ""
+    n = int(m.group(1)) if m.group(1).isdigit() else _N_WORDS[m.group(1).lower()]
+    unit = m.group(2).lower().rstrip("s")
+    if unit in ("day", "week"):
+        return (after - timedelta(days=n * (7 if unit == "week" else 1))).isoformat()
+    y, mo = divmod(after.year * 12 + after.month - 1 - n * {"month": 1, "quarter": 3, "year": 12}[unit], 12)
+    return date(y, mo + 1, min(after.day, calendar.monthrange(y, mo + 1)[1])).isoformat()
 
 
 def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str = "",
@@ -4989,6 +5037,27 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "re-anchor is best-effort on malformed dates; leave the window as the "
                  "clip step left it", counter="intake.reanchor_parse_failed")
+
+    # ── A window the question gives a length is that long, counted back from its end ──
+    # The end is settled above; the start was the model's sum. A comparison that ran up to
+    # the model's start runs up to the window's.
+    _os1, _oe1 = (intake.observation_start or "")[:10], (intake.observation_end or "")[:10]
+    _n_start = _last_n_start(question, _oe1) if _os1 else ""
+    _start = max(_n_start, dmin[:10]) if _n_start else ""
+    if _start and _start != _os1:
+        intake.observation_start = _start
+        intake.observation_label = _window_label(_start, _oe1)
+        notes.append(f"observation window set to the length the question gives, [{_start} → {_oe1}] "
+                     f"(the intake's began {_os1})")
+        _ce1 = (getattr(intake, "comparison_end", "") or "")[:10]
+        try:
+            _ran_up = bool(_ce1) and _ce1 == (datetime.fromisoformat(_os1) - timedelta(days=1)).date().isoformat()
+        except ValueError:
+            _ran_up = False
+        if _ran_up:
+            _ce_new = (datetime.fromisoformat(_start) - timedelta(days=1)).date().isoformat()
+            intake.comparison_start, intake.comparison_end = _last_n_start(question, _ce_new), _ce_new
+            intake.comparison_label = _window_label(intake.comparison_start, _ce_new)
 
     # A cross-sectional answer ranks across a dimension and has no comparison window, so the
     # comparison verdicts below do not apply to it — they judged whatever placeholder the model
@@ -5176,6 +5245,15 @@ def _flag_sparse_comparison(intake, conn_id: str, table: str, date_col: str,
     return _sparse_comparison_decision(intake, span_months, populated)
 
 
+def _month_words(month: str) -> str:
+    """"2026-09" as "September 2026"; anything else as written."""
+    from datetime import date
+    try:
+        return date.fromisoformat(f"{str(month)[:7]}-01").strftime("%B %Y")
+    except ValueError:
+        return str(month)
+
+
 def _trailing_partial_decision(intake, monthly_counts) -> "str | None":
     """Pure decision half of the trailing-partial guard: when the LAST month of the observation
     window carries far fewer rows than the window's typical (median) month, it is likely an
@@ -5194,7 +5272,7 @@ def _trailing_partial_decision(intake, monthly_counts) -> "str | None":
     if mid > 0 and last_n < _TRAILING_PARTIAL_RATIO * mid:
         intake.observation_label = (
             (getattr(intake, "observation_label", "") or "").rstrip()
-            + f" — final period {last_m} may be incomplete"
+            + f" — {_month_words(last_m)} may be incomplete"
         ).strip()
         return (
             f"the final observation period {last_m} has {last_n} rows vs a typical ~{mid:.0f}/month — it "
@@ -5204,12 +5282,24 @@ def _trailing_partial_decision(intake, monthly_counts) -> "str | None":
     return None
 
 
-def _flag_trailing_partial(intake, conn_id: str, table: str, date_col: str) -> "str | None":
+#: A question that reads its data period by period — "monthly", "by month", "each week", "over time".
+_BY_PERIOD_RE = re.compile(
+    r"\b(?:monthly|weekly|daily|quarterly|yearly|over\s+time|month\s+by\s+month"
+    r"|(?:by|each|per|every)\s+(?:month|week|day|quarter|year))\b", re.I)
+
+
+def _flag_trailing_partial(intake, conn_id: str, table: str, date_col: str,
+                           question: str = "") -> "str | None":
     """Trailing-partial guard — the profiler computes `trailing_partial` for the whole table, but
     the intake window selection never consumed it, so an incomplete final month reads as a sharp
     drop. Probe the observation window's monthly volumes and flag a likely-incomplete final period.
-    Skipped for a cross-sectional intake or a window with no dates."""
+    Skipped for a cross-sectional intake, a window with no dates, and an answer that reads no period
+    by period: Q2 ranked ten categories over six months ending on the settled day 4 September by
+    design, and its period line said "September 2026 may be incomplete" (2026-10-03). A question that
+    compares periods or cuts by one keeps the guard."""
     if getattr(intake, "cross_sectional", False):
+        return None
+    if not getattr(intake, "comparison_asked", True) and not _BY_PERIOD_RE.search(question or ""):
         return None
     os_ = (getattr(intake, "observation_start", "") or "")[:10]
     oe_ = (getattr(intake, "observation_end", "") or "")[:10]
@@ -6629,6 +6719,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # Trailing-partial guard: an incomplete final observation month reads as a false drop.
         _tp_note = _flag_trailing_partial(
             intake, state.get("connection_id") or "", intake.metric_table or "", intake.date_column or "",
+            question=state.get("question", ""),
         )
         _notes = " ".join(n for n in (_cov_note, _dens_note, _tp_note) if n)
         if _notes:
@@ -10278,12 +10369,25 @@ def _states_a_figure(sentence: str, question: str = "") -> bool:
     return any(n.strip(".,") not in asked for n in re.findall(r"\d[\d,.]*", _PROSE_DATE_RE.sub(" ", sentence)))
 
 
-def _lead_sentence(text: str, question: str = "") -> tuple[str, str]:
+def _names_a_value(sentence: str, values: Iterable = (), question: str = "") -> bool:
+    """Does the sentence name a value read from the result rows — a category, a centre — that the
+    question did not? "…was Outerwear & Coats, while Intimates generated the least…" answered Q2
+    with no figure (2026-10-03), and a lead that names what came back is an answer."""
+    low, asked = sentence.lower(), (question or "").lower()
+    for v in values or ():
+        t = str(v).strip().lower()
+        if len(t) >= 3 and t not in asked and re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", low):
+            return True
+    return False
+
+
+def _lead_sentence(text: str, question: str = "", values: Iterable = ()) -> tuple[str, str]:
     """``(headline, rest)``: the conclusion's opening sentence as its headline, else no headline
     and the whole text.
 
     No headline when the answer opens with a table or a list, or with a sentence that states no
-    figure of its own — that announces the answer rather than giving it. A sentence too long to
+    figure of its own and names no value its rows hold (``values``) — that announces the answer
+    rather than giving it. A sentence too long to
     head the page heads it by its first clause that carries a figure, the rest of the sentence
     opening the body; failing that, cut at a word. A long opener used to leave the answer with no
     headline at all, and its receipt then filed the question as the headline."""
@@ -10294,17 +10398,85 @@ def _lead_sentence(text: str, question: str = "") -> tuple[str, str]:
     para = first_para.strip()
     end = _SENTENCE_END_RE.search(para)
     lead = para[:end.end()] if end else para
-    if not _states_a_figure(lead, question):
+    def answers(sentence: str) -> bool:
+        return _states_a_figure(sentence, question) or _names_a_value(sentence, values, question)
+
+    # An opener that ends in a colon introduces what follows: Q2's "…are led by Outerwear & Coats and Jeans, with
+    # the following breakdown of total revenue and average order value (AOV):" headed its table (2026-10-03).
+    if lead.rstrip().endswith(":") or not answers(lead):
         return "", t
     rest = t[len(lead):].strip()
     if len(lead) <= 240:
         return lead.rstrip(".").strip(), rest
     for cut in reversed([m for m in re.finditer(r";\s+|\s+—\s+|:\s+", lead) if m.start() <= 240]):
         head, tail = lead[:cut.start()].strip(), lead[cut.end():].strip()
-        if _states_a_figure(head, question) and tail:
+        if answers(head) and tail:
             sep = "\n\n" if lead == para else " "
             return head, (tail[:1].upper() + tail[1:] + (sep + rest if rest else "")).strip()
     return lead[:240].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…", t
+
+
+#: A cell that names a period — "2026-07-01", "July 2026", "Q3 2026" — not a value a lead answers with.
+_PERIOD_VALUE_RE = re.compile(
+    r"\d{4}(?:-\d{2}(?:-\d{2})?)?(?:[ T].*)?"
+    r"|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4}"
+    r"|q[1-4]\s*\d{4}|\d{4}\s*-?\s*q[1-4]", re.I)
+
+
+def _result_values(state) -> list[str]:
+    """The text values the answer's results hold — the categories, centres and names a lead can
+    name — once each. Numbers are figures, periods are periods and an empty cell is nothing."""
+    out: dict[str, None] = {}
+    for phase in (state or {}).get("investigation_phases") or []:
+        for f in (phase or {}).get("findings") or []:
+            for row in (f or {}).get("rows") or []:
+                for v in row if isinstance(row, (list, tuple)) else ():
+                    t = str(v if v is not None else "").strip()
+                    if (t and t.lower() not in ("null", "none", "nan") and _as_float(t) is None
+                            and not _PERIOD_VALUE_RE.fullmatch(t) and not _PROSE_DATE_RE.fullmatch(t)):
+                        out.setdefault(t, None)
+    return list(out)
+
+
+def _ranked_headline(state, conclusion: str = "") -> str:
+    """A headline from the answer's ranked rows — its first and its last, by the measure they are
+    ordered on — for an answer whose opener does not answer. Q2 came back with none in three runs
+    (2026-10-02/03), twice under "The following table lists…", over rows that held the answer.
+
+    The last result that is a ranking: a column of names, and a measure its rows are ordered on,
+    over three rows or more. A figure takes the currency sign the answer writes it with. "" when
+    no result is a ranking."""
+    def number(v) -> Optional[float]:
+        return _as_float(v) if str("" if v is None else v).strip() else None
+
+    def fig(v: float) -> str:
+        text = f"{v:,.0f}" if float(v).is_integer() else f"{v:,.2f}"
+        sign = re.search(r"([$€£¥])\s?" + re.escape(text) + r"(?![\d,])", conclusion or "")
+        return (sign.group(1) if sign else "") + text
+
+    for phase in reversed((state or {}).get("investigation_phases") or []):
+        for f in reversed((phase or {}).get("findings") or []):
+            cols = [str(c) for c in (f or {}).get("columns") or []]
+            rows = [list(r) for r in (f or {}).get("rows") or [] if isinstance(r, (list, tuple)) and len(r) == len(cols)]
+            if len(rows) < 3 or f.get("error"):
+                continue
+            names = next((i for i in range(len(cols)) if all(
+                number(r[i]) is None and str(r[i] or "").strip()
+                and not _PERIOD_VALUE_RE.fullmatch(str(r[i]).strip()) for r in rows)), None)
+            if names is None:
+                continue
+            for m, col in enumerate(cols):
+                vals = [number(r[m]) for r in rows]
+                if (m == names or col.lower() == "id" or col.lower().endswith(_ID_COLUMN_SUFFIXES)
+                        or None in vals or vals[0] == vals[-1]):
+                    continue
+                if all(a >= b for a, b in zip(vals, vals[1:])) or all(a <= b for a, b in zip(vals, vals[1:])):
+                    first, last = ("highest", "lowest") if vals[0] > vals[-1] else ("lowest", "highest")
+                    measure = _humanise_column(col)
+                    return (f"{str(rows[0][names]).strip()} has the {first} {measure[:1].lower() + measure[1:]}, "
+                            f"{fig(vals[0])}, and {str(rows[-1][names]).strip()} the {last} of the {len(rows)}, "
+                            f"{fig(vals[-1])}")
+    return ""
 
 
 def _conclusion_as_answer(state, intake_data: dict, question: str):
@@ -10324,9 +10496,12 @@ def _conclusion_as_answer(state, intake_data: dict, question: str):
     if shape != "describe" or not conclusion:
         return None
     from aughor.agent.prompts_investigate import ADASynthesisModel
-    headline, body = _lead_sentence(conclusion, question)
+    # The body is what the headline left — nothing when the headline is the whole answer. Q1's
+    # one sentence (2026-10-03) was both, and the page printed it twice.
+    headline, body = _lead_sentence(conclusion, question, _result_values(state))
+    headline = headline or _ranked_headline(state, conclusion)
     return ADASynthesisModel(
-        headline=headline, executive_summary=body or conclusion, closing_summary="",
+        headline=headline, executive_summary=body, closing_summary="",
         total_change_label="", attribution_waterfall=[], confidence="HIGH",
         confidence_justification=("Stated from the rows this turn's queries returned; each "
                                   "figure was checked against them."),

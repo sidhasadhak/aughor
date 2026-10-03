@@ -1,5 +1,5 @@
 "use client";
-import { ErrorState } from "@/components/ui/states";
+import { ErrorState, ReadFailed } from "@/components/ui/states";
 
 /**
  * Agentic Ops · Agents — ONE kind-labelled roster over both agent kinds. Since 2026-09-25
@@ -28,25 +28,29 @@ import { useCallback, useEffect, useState } from "react";
 import { CreateAgentFlow } from "@/components/agentops/CreateAgentFlow";
 import { AgentMap } from "@/components/agentops/AgentMap";
 import { RunTimeline, type TimelineRun } from "@/components/agentops/RunTimeline";
-import { rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
+import { rangeLabel, rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
+import { AgentAlertRulesPanel } from "@/components/agentops/AgentAlertRulesPanel";
+import { AgentDoors } from "@/components/agentops/AgentDoors";
+import { Term } from "@/components/agentops/Term";
 import { Button } from "@/components/ui/button";
 import { askSpotlight } from "@/lib/commandRegistry";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
-  createAgentGolden, createUserAgent,
-  createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent,
-  evaluateUserAgent, getAgentGuardrails, getAgentObservability, getAgents,
+  certifyAgentGolden, createAgentGolden, createUserAgent,
+  createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent, describeAgentDeleteReceipt,
+  draftAgentGoldens, evaluateUserAgent, getAgentGuardrails, getAgentLearning, getAgentObservability, getAgents,
   getConnections, getJobs,
   getActionRoster,
-  getLlmConfig, getPacks, listAgentGoldens, listAgentRevisions,
+  getLlmConfig, getPacks, listAgentAlertRules, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
   restoreAgentRevision, setAgentGuardrails,
-  type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentKnob, type AgentObservability,
+  type AgentAlertRule, type AgentDeleteReceipt,
+  type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentKnob, type AgentLearning, type AgentObservability,
   type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
   type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
 } from "@/lib/api";
 import { evalChip } from "@/lib/agentEval";
-import { compactNumber, countNoun, formatCount, formatDateTime, formatTimestamp, pct } from "@/lib/format";
+import { compactNumber, countNoun, formatCost, formatCount, formatDateTime, formatTimestamp, pct } from "@/lib/format";
 import { fmtMs } from "@/lib/cost";
 import { getFleetOverview } from "@/lib/api";
 import {
@@ -95,16 +99,26 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
   const [personas, setPersonas] = useState<UserAgent[]>([]);
   const [selected, setSelected] = useState<Selection>(null);
   const [error, setError] = useState<string | null>(null);
+  // AO-1e — what a delete moved besides the row. Shown once, where the agent used to be,
+  // because the detail that would have shown it has just closed.
+  const [notice, setNotice] = useState<string | null>(null);
 
   // True once both lists have answered (either way), so a focused agent that has not
   // arrived yet reads as loading rather than as the index for a moment.
   const [loaded, setLoaded] = useState(false);
+  // AO-3 — a roster read that REJECTS is said, with a Retry; it used to become `[]`, and
+  // an empty list reads as "there are no agents".
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const rosterRangeKey = range ? `${range.key}|${range.since ?? ""}|${range.until ?? ""}` : "";
   const reload = useCallback(() => {
+    setRosterError(null);
+    const said = (e: unknown) => setRosterError(String((e as Error)?.message || e));
     Promise.allSettled([
-      getAgents(workspaceId).then(setCharters).catch(() => setCharters([])),
-      listUserAgents().then(setPersonas).catch(() => setPersonas([])),
+      getAgents(workspaceId, range ? rangeParams(range) : undefined).then(setCharters).catch(said),
+      listUserAgents().then(setPersonas).catch(said),
     ]).then(() => setLoaded(true));
-  }, [workspaceId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, rosterRangeKey]);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
@@ -125,6 +139,18 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
       {error && (
         <ErrorState kind="Agent action failed" what={error} style={{ margin: "12px 20px 0" }} />
       )}
+      {notice && (
+        <div className="aug-fs-sm" role="status" style={{ margin: "12px 20px 0", padding: "8px 10px",
+          border: "1px solid var(--b1)", borderRadius: "var(--r2)", color: "var(--t2)",
+          display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ flex: 1 }}>{notice}</span>
+          <Button variant="ghost" size="xs" onClick={() => setNotice(null)}>Dismiss</Button>
+        </div>
+      )}
+      {rosterError && (
+        <ReadFailed what="the agent roster" error={rosterError} onRetry={reload}
+          style={{ margin: "12px 20px 0" }} />
+      )}
       {selected == null ? (
         <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded} range={range}
           onOpen={setSelected} onCreate={() => setSelected({ kind: "hire" })} />
@@ -138,8 +164,8 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
           </div>
         </div>
       ) : persona ? (
-        <AgentDetail key={persona.id} agent={persona} onBack={back} onChanged={reload}
-          onDeleted={() => { setSelected(null); reload(); }}
+        <AgentDetail key={persona.id} agent={persona} onBack={back} onChanged={reload} range={range}
+          onDeleted={r => { setSelected(null); setNotice(describeAgentDeleteReceipt(r)); reload(); }}
           onError={setError} onOpenTrace={onOpenTrace}
           onOpenConnection={onOpenConnection}
           onOpenAutomations={onOpenAutomations}
@@ -177,21 +203,29 @@ function AgentIndex({ personas, charters, workspaceName, loaded, range, onOpen, 
   // over the same range. Null until it answers, so a row shows "…" and never a 0 it has not
   // measured; {} after a failure, so every figure reads "—".
   const [fold, setFold] = useState<Record<string, Figures> | null>(null);
+  // AO-3 — a fold that could not be read is said above the table, with a Retry; every
+  // cell still reads "—", which alone taught the reader the figures were zero-ish.
+  const [foldError, setFoldError] = useState<string | null>(null);
+  const [foldTick, setFoldTick] = useState(0);
   const rangeKey = range ? `${range.key}|${range.since ?? ""}|${range.until ?? ""}` : "24h||";
   useEffect(() => {
     let alive = true;
-    setFold(null);
+    setFold(null); setFoldError(null);
     getFleetOverview(range ? rangeParams(range) : { range: "24h" })
       .then(d => { if (alive) setFold(Object.fromEntries(d.rows.map(r => [r.id, r]))); })
-      .catch(() => { if (alive) setFold({}); });
+      .catch(e => { if (alive) { setFold({}); setFoldError(String((e as Error)?.message || e)); } });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeKey]);
+  }, [rangeKey, foldTick]);
   const figuresFor = (id: string) => (fold === null ? undefined : (fold[id] ?? null));
   // ONE table for both sections, so the columns sit on the same lines down the page and
   // size to their content; each section is a group row inside it.
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px 16px" }}>
+      {foldError && (
+        <ReadFailed what="the roster's run figures" error={foldError}
+          onRetry={() => setFoldTick(t => t + 1)} style={{ marginBottom: 8 }} />
+      )}
       <Table className="aug-dt" style={{ maxWidth: 1280 }}>
         <TableHeader>
           <TableRow>
@@ -233,8 +267,8 @@ function AgentIndex({ personas, charters, workspaceName, loaded, range, onOpen, 
               figures={figuresFor(p.id)}
               onClick={() => onOpen({ kind: "persona", id: p.id })} />
           ))}
-          <GroupRow label={`Charters ${workspaceName ? `· ${workspaceName}` : "· Org"}`} />
-          {!loaded && charters.length === 0 && <NoteRow>Loading charters…</NoteRow>}
+          <GroupRow label={`Built-in agents ${workspaceName ? `· ${workspaceName}` : "· Org"}`} />
+          {!loaded && charters.length === 0 && <NoteRow>Loading built-in agents…</NoteRow>}
           {charters.map(c => (
             <RosterRow key={c.id} name={c.name} kind="charter"
               enabled={c.governance.enabled} role={c.role} reserved={c.reserved}
@@ -334,7 +368,8 @@ function RosterRow({ name, kind, enabled, role, sub, reserved, figures, onClick 
       <TableCell>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">
-            {kind === "persona" ? "custom" : kind}
+            {/* "built-in" on screen: `charter` is the wire's name for the kind, not the reader's. */}
+            {kind === "persona" ? "custom" : <Term id="built-in">built-in</Term>}
           </StatusChip>
           {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
         </span>
@@ -369,9 +404,12 @@ function RosterRow({ name, kind, enabled, role, sub, reserved, figures, onClick 
 // ── custom-agent detail ───────────────────────────────────────────────────────────────
 
 function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace,
-  onOpenConnection, onOpenAutomations, onOpenIntegrations, onChatWithAgent }: {
-  agent: UserAgent; onBack: () => void; onChanged: () => void; onDeleted: () => void;
+  onOpenConnection, onOpenAutomations, onOpenIntegrations, onChatWithAgent, range }: {
+  agent: UserAgent; onBack: () => void; onChanged: () => void;
+  onDeleted: (receipt: AgentDeleteReceipt) => void;
   onError: (e: string | null) => void;
+  /** AO-3 — the surface's shared window; the Overview and Runs tabs read it and say so. */
+  range?: TimeRange;
   onOpenTrace?: (investigationId: string) => void;
   /** DS-5 — where the map's nodes lead. Optional: a destination this shell does not
    *  offer simply renders no Open control, rather than a button that goes nowhere. */
@@ -380,7 +418,9 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
   onOpenIntegrations?: () => void;
   onChatWithAgent?: (agentId: string) => void;
 }) {
-  type Tab = "overview" | "runs" | "map" | "quality" | "setup";
+  // AO-4 — Doors, Alerts and Spend join the page: the whole agent on its own page, not
+  // three other layers to visit for it. Map stays (DS-5, user-approved); Doors is its list.
+  type Tab = "overview" | "runs" | "doors" | "map" | "alerts" | "quality" | "spend" | "setup";
   const [tab, setTab] = useState<Tab>("overview");
   const [busy, setBusy] = useState(false);
   // PX-5 — grounding is NAMED, in the reader's words: the connection's NAME (an id like
@@ -415,8 +455,9 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
   // the agent against its own reference SQL (never a judge); "Setup", because that tab is
   // where a person sets what the agent is. Both names are the mockup's (boards 6–11).
   const TABS: { id: Tab; label: string }[] = [
-    { id: "overview", label: "Overview" }, { id: "runs", label: "Runs" }, { id: "map", label: "Map" },
-    { id: "quality", label: "Quality" }, { id: "setup", label: "Setup" },
+    { id: "overview", label: "Overview" }, { id: "runs", label: "Runs" },
+    { id: "doors", label: "Doors" }, { id: "map", label: "Map" }, { id: "alerts", label: "Alerts" },
+    { id: "quality", label: "Quality" }, { id: "spend", label: "Spend" }, { id: "setup", label: "Setup" },
   ];
 
   return (
@@ -454,9 +495,16 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
         <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 20 }}>
           {tab === "overview" ? (
-            <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
+            <CustomAgentOverview agent={agent} onOpenTrace={onOpenTrace} range={range} />
           ) : tab === "runs" ? (
-            <AgentRuns agent={agent} onOpenTrace={onOpenTrace} />
+            <AgentRuns agent={agent} onOpenTrace={onOpenTrace} range={range} />
+          ) : tab === "doors" ? (
+            <AgentDoors agent={agent} onChat={onChatWithAgent}
+              onOpenAutomation={onOpenAutomations} onOpenIntegrations={onOpenIntegrations} />
+          ) : tab === "alerts" ? (
+            <AgentAlertRulesPanel agentId={agent.id} agentName={agent.name} />
+          ) : tab === "spend" ? (
+            <AgentSpend agent={agent} range={range} />
           ) : tab === "quality" ? (
             <AgentBenchmark agent={agent} onChanged={onChanged} onError={onError} />
           ) : tab === "map" ? (
@@ -545,23 +593,44 @@ function AgentRail({ agent, grounding, connName, onSetup }: {
 
 /** The Runs tab — every run this agent made, as a ledger. Each question is a door to
  *  its trace; nothing opens inside the ledger. */
-function AgentRuns({ agent, onOpenTrace }: {
-  agent: UserAgent; onOpenTrace?: (invId: string) => void;
-}) {
+/** The window the agent page's figures are read over, named for a caption (AO-3). */
+function windowLabel(range?: TimeRange): string {
+  return range ? rangeLabel(range) : "the last 24 hours";
+}
+
+/** The agent's observability read: ONE window, a failure said rather than emptied (AO-3). */
+function useAgentObservability(agentId: string, range?: TimeRange) {
   const [obs, setObs] = useState<AgentObservability | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const rangeKey = range ? `${range.key}|${range.since ?? ""}|${range.until ?? ""}` : "";
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    getAgentObservability(agent.id)
+    setLoading(true); setError(null);
+    getAgentObservability(agentId, range ? rangeParams(range) : undefined)
       .then(o => { if (alive) setObs(o); })
+      .catch(e => { if (alive) { setObs(null); setError(String((e as Error)?.message || e)); } })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [agent.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, rangeKey, tick]);
+  return { obs, loading, error, retry: () => setTick(t => t + 1) };
+}
+
+export function AgentRuns({ agent, onOpenTrace, range }: {
+  agent: UserAgent; onOpenTrace?: (invId: string) => void; range?: TimeRange;
+}) {
+  const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
   if (loading) return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</div>;
+  if (error) return <ReadFailed what="this agent's runs" error={error} onRetry={retry} />;
   const runs = obs?.runs ?? [];
   if (runs.length === 0) {
-    return <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No runs yet for this agent.</div>;
+    return (
+      <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+        No runs in {windowLabel(range)}.
+      </div>
+    );
   }
   return (
     <table className="aug-dt" style={{ width: "100%" }}>
@@ -594,40 +663,132 @@ function AgentRuns({ agent, onOpenTrace }: {
 
 /** H3's honest run view, unchanged in spirit: everything the agent did, spend
  *  or the flag that would measure it — never a confident zero. */
-function PersonaOverview({ agent, onOpenTrace }: {
-  agent: UserAgent; onOpenTrace?: (invId: string) => void;
-}) {
-  const [obs, setObs] = useState<AgentObservability | null>(null);
-  const [loading, setLoading] = useState(true);
-
+/** AO-4 — a built-in agent's Map: one block, three rows — where it answers, what it runs,
+ *  who watches it. Reads the alert rules once; a failed read is said, never "no alerts". */
+function BuiltInMap({ charter }: { charter: AgentRosterEntry }) {
+  const [rules, setRules] = useState<AgentAlertRule[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    getAgentObservability(agent.id)
-      .then(o => { if (alive) setObs(o); })
-      .finally(() => { if (alive) setLoading(false); });
+    setError(null);
+    listAgentAlertRules()
+      .then(all => { if (alive) setRules(all.filter(r => r.charter_id === charter.id)); })
+      .catch(e => { if (alive) setError(String((e as Error)?.message || e)); });
     return () => { alive = false; };
-  }, [agent.id]);
+  }, [charter.id, tick]);
+  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", width: 72, flexShrink: 0,
+        textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+      <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>{children}</span>
+    </div>
+  );
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Map</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 12px",
+        border: "1px solid var(--b1)", borderRadius: "var(--r2)", background: "var(--bg-1)" }}>
+        <Row label="door">
+          {charter.lane === "interactive"
+            ? "answers inline, inside the conversation that asks — no socket, no schedule"
+            : "runs on the platform's schedule; nobody talks to it directly"}
+        </Row>
+        <Row label="runs">
+          {charter.job_kinds.length
+            ? `job kinds ${charter.job_kinds.join(", ")}`
+            : "no job kind of its own"}
+          {charter.tools.length ? ` · tools ${charter.tools.join(", ")}` : ""}
+        </Row>
+        <Row label="watched by">
+          {error ? (
+            <ReadFailed what="the alert rules" error={error} onRetry={() => setTick(t => t + 1)} />
+          ) : rules === null ? "…"
+            : rules.length === 0
+              ? "no alert rule names this agent — Attention → Alert rules adds one"
+              : rules.map(r => `${r.name} (${r.enabled ? "on" : "off"})`).join(" · ")}
+        </Row>
+      </div>
+    </div>
+  );
+}
+
+/** AO-4 — the agent's Spend tab: what it cost over the shared window, every figure captioned,
+ *  and the two counts that make a cost a floor rather than a total. */
+export function AgentSpend({ agent, range }: { agent: UserAgent; range?: TimeRange }) {
+  const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
+  if (loading) return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</div>;
+  if (error || !obs) return <ReadFailed what="this agent's spend" error={error} onRetry={retry} />;
+  const s = obs.spend;
+  const inWindow = `in ${windowLabel(range)}`;
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+        <Tile label="Model calls" value={compactNumber(s.calls)} sub={inWindow} />
+        <Tile label="Tokens" value={compactNumber(s.total_tokens)} sub={inWindow} />
+        <Tile label="Cost" value={formatCost(s.cost_usd, s.calls, s.unpriced_calls)}
+          sub={s.calls > 0 && s.unpriced_calls >= s.calls
+            ? "no price is declared for the model it ran on"
+            : s.unpriced_calls > 0 ? "a floor — some calls unpriced" : inWindow} />
+        <Tile label="Unpriced calls" value={formatCount(s.unpriced_calls)}
+          sub="each contributes nothing to the cost" />
+        <Tile label="Calls without usage" value={formatCount(s.calls_without_usage)}
+          sub="the backend reported no token count" />
+        <Tile label="Failure rate" value={s.failure_rate == null ? "—" : pct(s.failure_rate)}
+          sub={inWindow} />
+        <Tile label="Runs" value={String(obs.run_count)} sub={inWindow} />
+      </div>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+        Priced from each provider&apos;s published catalogue, or a rate the operator declared
+        (<code>AUGHOR_MODEL_PRICES</code>). A model nothing prices counts as unpriced, never as
+        free. Spend by call site and role, across every agent, is Activity → Usage.
+      </div>
+    </div>
+  );
+}
+
+/** The wall-clock length of a run the history store recorded both ends of; null otherwise. */
+function runDurationMs(startedAt: string, completedAt: string | null): number | null {
+  if (!completedAt) return null;
+  const ms = Date.parse(completedAt) - Date.parse(startedAt);
+  return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
+export function CustomAgentOverview({ agent, onOpenTrace, range }: {
+  agent: UserAgent; onOpenTrace?: (invId: string) => void; range?: TimeRange;
+}) {
+  const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
 
   if (loading) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
-  if (!obs) return <div style={{ fontSize: 12, color: "var(--t3)" }}>No observability data.</div>;
+  if (error || !obs) {
+    return <ReadFailed what="this agent's figures" error={error} onRetry={retry} />;
+  }
 
   const spend = obs.spend;
   const runs = obs.runs || [];
   const deep = runs.filter(r => r.kind !== "chat").length;
   const quick = runs.length - deep;
+  // AO-3 — every tile names the window it counts; the same agent read 76.7K tokens on the
+  // roster row and 3.5M here, one windowed and one all-time, and neither screen said which.
+  const inWindow = `in ${windowLabel(range)}`;
+  const costSub = !spend?.measured ? undefined
+    : spend.calls > 0 && spend.unpriced_calls >= spend.calls
+      ? "no price is declared for the model it ran on"
+      : spend.unpriced_calls > 0
+        ? `${formatCount(spend.unpriced_calls)} calls unpriced — a floor, not a total`
+        : inWindow;
 
   return (
     <>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
         <Tile label="Runs" value={String(obs.run_count)}
-          sub={runs.length ? `${deep} deep · ${quick} quick` : "none yet"} />
+          sub={runs.length ? `${deep} deep · ${quick} quick · ${inWindow}` : `none ${inWindow}`} />
         {spend?.measured ? (
           <>
-            <Tile label="Model calls" value={compactNumber(spend.calls)} />
-            <Tile label="Tokens" value={compactNumber(spend.total_tokens)} />
-            <Tile label="Cost" value={spend.cost_usd != null ? `$${spend.cost_usd.toFixed(2)}` : "—"}
-              sub={spend.cost_is_complete ? undefined : "some models unpriced"} />
+            <Tile label="Model calls" value={compactNumber(spend.calls)} sub={inWindow} />
+            <Tile label="Tokens" value={compactNumber(spend.total_tokens)} sub={inWindow} />
+            <Tile label="Cost" value={formatCost(spend.cost_usd, spend.calls, spend.unpriced_calls)}
+              sub={costSub} />
           </>
         ) : null}
         {obs.trace_stats?.latency_p90_ms != null && (
@@ -636,16 +797,17 @@ function PersonaOverview({ agent, onOpenTrace }: {
       </div>
       <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Run history</div>
       <div style={{ marginBottom: 16 }}>
-        <RunTimeline emptyNote="No runs yet for this agent."
+        <RunTimeline emptyNote={`No runs ${inWindow}.`}
           onOpen={onOpenTrace}
           runs={runs.slice(0, 20).map(r => ({
-            id: r.id, state: r.status, at: r.started_at, durationMs: null,
+            id: r.id, state: r.status, at: r.started_at,
+            durationMs: runDurationMs(r.started_at, r.completed_at),
             label: r.headline || r.question,
           }))} />
       </div>
       <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Recent runs</div>
       {runs.length === 0 ? (
-        <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No runs yet for this agent.</div>
+        <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No runs {inWindow}.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {runs.map(r => (
@@ -690,34 +852,129 @@ function PersonaOverview({ agent, onOpenTrace }: {
 function AgentBenchmark({ agent, onChanged, onError }: {
   agent: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
 }) {
-  const [goldens, setGoldens] = useState<AgentGolden[]>([]);
+  const [all, setAll] = useState<AgentGolden[]>([]);
   const [goldenDraft, setGoldenDraft] = useState({ question: "", reference_sql: "" });
   const [evaluating, setEvaluating] = useState(false);
   const [evalResult, setEvalResult] = useState<AgentEvalResult | null>(null);
+  // AO-6/AO-7 — candidates wait above the suite for a person's SQL; the learning receipt
+  // says what the loop did; "Draft questions" is refused with its reason while off.
+  const [certifying, setCertifying] = useState<{ id: string; sql: string } | null>(null);
+  const [drafting, setDrafting] = useState(false);
+  const [learning, setLearning] = useState<AgentLearning | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    listAgentGoldens(agent.id).then(setGoldens).catch(() => {});
-  }, [agent.id]);
+    listAgentGoldens(agent.id).then(setAll).catch(() => {});
+    getAgentLearning(agent.id).then(setLearning).catch(() => setLearning(null));
+  }, [agent.id, tick]);
+  // Every golden written before AO-6 is certified: the field is absent on an older API.
+  const goldens = all.filter(g => (g.status ?? "certified") === "certified");
+  const candidates = all.filter(g => g.status === "candidate");
 
   const addGolden = async () => {
     if (!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()) return;
     try {
       const g = await createAgentGolden(agent.id, goldenDraft);
-      setGoldens(gs => [...gs, g]);
+      setAll(gs => [...gs, g]);
       setGoldenDraft({ question: "", reference_sql: "" });
     } catch (e) { onError(e instanceof Error ? e.message : "Add golden failed."); }
+  };
+
+  const certify = async () => {
+    if (!certifying || !certifying.sql.trim()) return;
+    try {
+      await certifyAgentGolden(agent.id, certifying.id, certifying.sql);
+      setCertifying(null);
+      setTick(t => t + 1);
+    } catch (e) { onError(e instanceof Error ? e.message : "Certify failed."); }
+  };
+
+  const draft = async () => {
+    setDrafting(true);
+    onError(null);
+    try { await draftAgentGoldens(agent.id); setTick(t => t + 1); }
+    catch (e) { onError(e instanceof Error ? e.message : "Draft failed."); }
+    finally { setDrafting(false); }
   };
 
   const runEvaluation = async () => {
     setEvaluating(true);
     onError(null);
-    try { setEvalResult(await evaluateUserAgent(agent.id)); onChanged(); }
+    try { setEvalResult(await evaluateUserAgent(agent.id)); onChanged(); setTick(t => t + 1); }
     catch (e) { onError(e instanceof Error ? e.message : "Evaluation failed."); }
     finally { setEvaluating(false); }
   };
 
+  const questionOf = (id: string) => all.find(g => g.id === id)?.question ?? id;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {learning && (
+        <div className="aug-fs-sm" style={{ color: "var(--t2)", padding: "8px 11px",
+          background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+          {learning.loop_on ? (
+            <>
+              Learned <strong>{formatCount(learning.corrections)}</strong> correction{learning.corrections === 1 ? "" : "s"}
+              {" · "}<strong>{formatCount(learning.certified_from_use)}</strong> golden{learning.certified_from_use === 1 ? "" : "s"} certified from use
+              {learning.before && learning.after ? (
+                <>{" · "}pass {learning.before.passed}/{learning.before.total} → <strong>{learning.after.passed}/{learning.after.total}</strong></>
+              ) : learning.after ? (
+                <>{" · "}pass <strong>{learning.after.passed}/{learning.after.total}</strong> (no earlier stamp)</>
+              ) : " · not yet evaluated"}
+            </>
+          ) : (
+            <>The learning loop is off (flag <code>agents.learning_loop</code>): verdicts on this
+            agent&apos;s answers are recorded but teach it nothing as itself — {formatCount(learning.verdicts)} so far.</>
+          )}
+        </div>
+      )}
+
+      {candidates.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",
+          border: "1px dashed var(--b1)", borderRadius: "var(--r2)" }}>
+          <span className="aug-label">Candidates — waiting for a person&apos;s SQL</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            A candidate counts for nothing until you certify it with the SQL you say is right.
+            An answer you accepted in use brings the SQL that answered as a starting point; a
+            drafted question brings none.
+          </span>
+          {candidates.map(c => (
+            <div key={c.id} className="aug-fs-sm" style={{ display: "flex", flexDirection: "column", gap: 4,
+              color: "var(--t2)", paddingTop: 6, borderTop: "1px solid var(--b1)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <StatusChip hue={c.source === "use" ? "accent" : "muted"} strength="soft">
+                  {c.source === "use" ? "from use" : "drafted"}
+                </StatusChip>
+                <span style={{ flex: 1 }}>{c.question}</span>
+                <Button variant="secondary" size="xs"
+                  onClick={() => setCertifying({ id: c.id, sql: c.reference_sql || "" })}>Certify</Button>
+                <Button variant="ghost" size="xs" onClick={async () => {
+                  await deleteAgentGolden(agent.id, c.id);
+                  setAll(gs => gs.filter(x => x.id !== c.id));
+                }}>Dismiss</Button>
+              </div>
+              {c.headline && (
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                  {c.source === "use" ? `the answer said: ${c.headline}` : c.headline}
+                </span>
+              )}
+              {certifying?.id === c.id && (
+                <>
+                  <textarea className="aug-input" rows={3} value={certifying.sql}
+                    placeholder="The reference SQL you certify (read-only)"
+                    onChange={e => setCertifying({ id: c.id, sql: e.target.value })} />
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <Button size="xs" variant="default" onClick={certify}
+                      disabled={!certifying.sql.trim()}>Certify with this SQL</Button>
+                    <Button size="xs" variant="ghost" onClick={() => setCertifying(null)}>Cancel</Button>
+                  </span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {goldens.length === 0 && (
         <p className="aug-fs-sm" style={{
           color: "var(--t2)", margin: 0, padding: "8px 11px", background: "var(--bg-1)",
@@ -731,11 +988,17 @@ function AgentBenchmark({ agent, onChanged, onError }: {
       <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",
         border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="aug-label">Golden questions</span>
+          <span className="aug-label"><Term id="goldens">Golden questions</Term></span>
           <span style={{ fontSize: 11, color: "var(--t3)" }}>
             re-run after editing instructions or documents
           </span>
-          <span style={{ marginLeft: "auto" }}>
+          <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }}>
+            <Button size="xs" variant="ghost" onClick={draft} disabled={drafting}
+              title={learning && !learning.centre_on
+                ? "Refused while the testing centre is off (flag agents.testing_centre) — the server says so"
+                : "One model call: up to six questions from the governed metrics and this agent's purpose, as candidates"}>
+              {drafting ? "Drafting…" : "Draft questions"}
+            </Button>
             <Button size="xs" variant="outline" onClick={runEvaluation}
               disabled={evaluating || goldens.length === 0}>
               {evaluating ? "Evaluating…" : "Run evaluation"}
@@ -746,11 +1009,37 @@ function AgentBenchmark({ agent, onChanged, onError }: {
           <div style={{ fontSize: 12, color: evalResult.passed === evalResult.total
             ? "var(--grn5)" : "var(--amb5)" }}>
             {evalResult.passed}/{evalResult.total} passing
+            {evalResult.diff?.before && (
+              <span style={{ color: "var(--t3)" }}>
+                {" "}(was {evalResult.diff.before.passed}/{evalResult.diff.before.total})
+              </span>
+            )}
             {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
-              <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 12 }}>
+              <div key={p.golden_id} className="aug-fs-sm" style={{ color: "var(--t3)" }}>
                 ✗ {p.question} — {p.error}
+                {/* Receipt 2026-10-03: a mismatch with no SQL sent the reader to guess; the
+                    statement the path framed, and both row sets, ride the result. */}
+                {p.generated_sql && (
+                  <div className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)",
+                    whiteSpace: "pre-wrap", marginTop: 2 }}>
+                    {p.generated_sql}
+                    {p.reference_rows && p.generated_rows && (
+                      <div>expected {JSON.stringify(p.reference_rows)} · got {JSON.stringify(p.generated_rows)}</div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
+            {(evalResult.diff?.newly_failing?.length ?? 0) > 0 && (
+              <div className="aug-fs-sm" style={{ color: "var(--red4)" }}>
+                newly failing: {evalResult.diff!.newly_failing.map(questionOf).join(" · ")}
+              </div>
+            )}
+            {(evalResult.diff?.newly_passing?.length ?? 0) > 0 && (
+              <div className="aug-fs-sm" style={{ color: "var(--grn5)" }}>
+                newly passing: {evalResult.diff!.newly_passing.map(questionOf).join(" · ")}
+              </div>
+            )}
           </div>
         )}
         {goldens.map(g => (
@@ -758,9 +1047,12 @@ function AgentBenchmark({ agent, onChanged, onError }: {
             fontSize: 12, color: "var(--t2)" }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
               whiteSpace: "nowrap" }} title={g.reference_sql}>{g.question}</span>
+            {g.source && g.source !== "person" && (
+              <StatusChip hue="muted" strength="soft">{g.source === "use" ? "from use" : "drafted"}</StatusChip>
+            )}
             <Button variant="ghost" size="xs" onClick={async () => {
               await deleteAgentGolden(agent.id, g.id);
-              setGoldens(gs => gs.filter(x => x.id !== g.id));
+              setAll(gs => gs.filter(x => x.id !== g.id));
             }}>Remove</Button>
           </div>
         ))}
@@ -783,11 +1075,12 @@ function AgentBenchmark({ agent, onChanged, onError }: {
 }
 
 function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
-  agent: UserAgent; onChanged: () => void; onDeleted: () => void;
+  agent: UserAgent; onChanged: () => void;
+  onDeleted: (receipt: AgentDeleteReceipt) => void;
   onError: (e: string | null) => void;
 }) {
   const [form, setForm] = useState({
-    name: agent.name, instructions: agent.instructions,
+    name: agent.name, instructions: agent.instructions, purpose: agent.purpose ?? "",
     connection_id: agent.connection_id, schema_scope: agent.schema_scope,
     doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
     tool_grants: agent.tool_grants,
@@ -821,7 +1114,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
   // config_rev, so typing is never interrupted: it only fires when what is stored changed.
   useEffect(() => {
     setForm({
-      name: agent.name, instructions: agent.instructions,
+      name: agent.name, instructions: agent.instructions, purpose: agent.purpose ?? "",
       connection_id: agent.connection_id, schema_scope: agent.schema_scope,
       doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
       tool_grants: agent.tool_grants,
@@ -839,9 +1132,12 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
   };
 
   const remove = async () => {
-    if (!window.confirm(`Delete agent “${agent.name}”? Its instructions and bindings are removed; documents stay.`)) return;
-    await deleteUserAgent(agent.id);
-    onDeleted();
+    if (!window.confirm(`Delete agent “${agent.name}”? Its Slack bots are switched off, its `
+      + "automations keep running as nobody, its configuration history is kept; documents stay.")) return;
+    // AO-1e — the receipt is read, not discarded: a delete that did not happen used to
+    // close the page exactly like one that did.
+    try { onDeleted(await deleteUserAgent(agent.id)); }
+    catch (e) { onError(e instanceof Error ? e.message : "Delete failed."); }
   };
 
   const toggleIn = (key: "doc_ids" | "pack_ids" | "tool_grants", id: string) =>
@@ -854,6 +1150,12 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
         <span className="aug-label">Name</span>
         <input className="aug-input" value={form.name} maxLength={120}
           onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+      </label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">What it is for</span>
+        <input className="aug-input" value={form.purpose} maxLength={240}
+          placeholder="One line other agents read when deciding whether to hand this agent a question — never the instructions."
+          onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} />
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Instructions</span>
@@ -922,7 +1224,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
           propose-never-execute in place, because the difference is the entire approvals
           plane and a checkbox is exactly where someone decides without reading a spec. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <span className="aug-label">Actions this agent may propose</span>
+        <span className="aug-label">Actions this agent may propose (each a <Term id="grant" />)</span>
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           A grant lets the agent PROPOSE the action — every proposal still waits in the
           inbox for a human to accept. Nothing here lets it execute.
@@ -1270,7 +1572,9 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
   useEffect(() => {
     let alive = true;
     if (charter.job_kinds.length === 0) { setCharterRuns([]); return; }
-    Promise.all(charter.job_kinds.map(k => getJobs({ kind: k, limit: 20 }).catch(() => [])))
+    // AO-3 — the jobs of the window this page captions, not the newest 20 of any age.
+    const window = range ? rangeParams(range) : { range: "24h" };
+    Promise.all(charter.job_kinds.map(k => getJobs({ kind: k, limit: 20, ...window }).catch(() => [])))
       .then(lists => {
         if (!alive) return;
         const rows = lists.flat()
@@ -1297,7 +1601,7 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <PageHeader onBack={onBack} title={charter.name}
         chips={<>
-          <StatusChip hue="info" strength="soft">charter</StatusChip>
+          <StatusChip hue="info" strength="soft">built-in</StatusChip>
           {charter.reserved ? (
             <StatusChip hue="muted" strength="soft">reserved — wiring soon</StatusChip>
           ) : charter.lane === "background" ? (
@@ -1325,9 +1629,11 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
-        <Tile label="Runs (recent)" value={String(charter.spend.runs)} />
-        <Tile label="Tokens" value={compactNumber(charter.spend.total_tokens)} />
-        <Tile label="Queries" value={String(charter.spend.query_count)} />
+        {/* AO-3 — "Runs (recent)" was the newest 500 jobs of any age; the roster row beside
+            it was windowed. Both now read the shared window, and the tiles say which. */}
+        <Tile label="Runs" value={String(charter.spend.runs)} sub={`in ${windowLabel(range)}`} />
+        <Tile label="Tokens" value={compactNumber(charter.spend.total_tokens)} sub={`in ${windowLabel(range)}`} />
+        <Tile label="Queries" value={String(charter.spend.query_count)} sub={`in ${windowLabel(range)}`} />
         <Tile label="Token budget / run" value={fmtBudget(gov.token_budget)}
           sub="enforced live — an over-budget run is cancelled" />
       </div>
@@ -1337,9 +1643,14 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
       <div style={{ marginBottom: 18 }}>
         <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Run history</div>
         <RunTimeline runs={charterRuns} emptyNote={charter.job_kinds.length === 0
-          ? "This charter owns no job kind, so it can never show runs here — its work is answered inline, not submitted as a run."
-          : "No runs in this window."} />
+          ? "This built-in agent owns no job kind, so it can never show runs here — its work is answered inline, not submitted as a run."
+          : `No runs in ${windowLabel(range)}.`} />
       </div>
+
+      {/* AO-4 — the Map a built-in agent never had: where it answers, what it runs, and
+          which alert rules watch it. The custom agent's Map draws doors and automations;
+          a built-in has no doors of its own — its work is the platform's jobs. */}
+      <BuiltInMap charter={charter} />
 
       {!charter.reserved && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px",

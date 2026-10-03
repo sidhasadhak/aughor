@@ -12,7 +12,8 @@ Aughor has TWO execution modes (this was inconsistent + under-documented before)
   * native — the connection executes the LLM's SQL verbatim (no transpile).
     BigQuery / Snowflake / MySQL / Exasol take this path. Here the LLM MUST
     write correct *native* SQL, and previously got only "Target dialect: X." with
-    no guidance — the gap this module fills.
+    no guidance — the gap this module fills. (Exasol declared `postgres` until
+    DE-3a and was handed Postgres's rules; it has its own block now.)
 
 `writer_rules(db)` picks the right block from the connection's `dialect` +
 `writes_native_sql` flag. Rules cross-checked against Apache Superset's
@@ -44,48 +45,13 @@ _TRANSPILE_NOTE = (
 # Native-execution dialects: the LLM's SQL runs verbatim, so it must be correct
 # in THIS dialect. Concise, high-yield rules (bucketing / diff / safe-divide /
 # casting / string-agg) — the operations LLMs most often get wrong cross-dialect.
-_DIALECT_RULES: dict[str, str] = {
-    "bigquery": """
-BIGQUERY (GoogleSQL) DIALECT RULES (violations cause query errors):
-- Date bucketing: DATE_TRUNC(date_col, MONTH) or TIMESTAMP_TRUNC(ts, MONTH) / DATETIME_TRUNC(dt, MONTH). The grain (DAY/WEEK/MONTH/QUARTER/YEAR) is an UNQUOTED keyword, and the column is the FIRST arg — NOT date_trunc('month', col).
-- Date differences: DATE_DIFF(d1, d2, DAY) / TIMESTAMP_DIFF(a, b, SECOND) (unit is an unquoted keyword, last arg).
-- TIMESTAMP vs DATE: BigQuery does NOT coerce between them in comparisons. This is the single most common error in generated SQL here, and it has TWO forms — a bare '2026-08-01' literal IS a DATE, and an explicit DATE '2026-08-01' is one too. So BOTH `ts_col >= '2026-08-01'` and `ts_col >= DATE '2026-08-01'` are type errors against a TIMESTAMP column. Write `ts_col >= TIMESTAMP '2026-08-01'`, or `DATE(ts_col) >= '2026-08-01'` when day precision is meant. Writing DATE in front of the literal does NOT make it match a TIMESTAMP column — it is what makes it a DATE.
-- Division: use SAFE_DIVIDE(a, b) to avoid divide-by-zero errors (returns NULL).
-- Type casting: CAST(x AS INT64 | FLOAT64 | NUMERIC | STRING | DATE | TIMESTAMP). Use INT64/FLOAT64/STRING — NOT INTEGER/VARCHAR. SAFE_CAST(...) returns NULL on failure.
-- String aggregation: STRING_AGG(col, ',').
-- Identifiers: backtick-quote `project.dataset.table`. Reference SELECT aliases in GROUP BY/ORDER BY by position or alias (allowed), but NOT in WHERE/HAVING.
-""".strip(),
-    "snowflake": """
-SNOWFLAKE DIALECT RULES (violations cause query errors):
-- Date bucketing: DATE_TRUNC('MONTH', ts) (grain quoted, column second). Supports MINUTE/HOUR/DAY/WEEK/MONTH/QUARTER/YEAR.
-- Date differences: DATEDIFF('day', d1, d2) / DATEDIFF('second', a, b) (unit quoted, FIRST arg). TIMESTAMPDIFF(unit, a, b) is also valid — do not "fix" it away.
-- Division: use DIV0(a, b) (returns 0 on zero denominator) or IFF(b = 0, NULL, a / b).
-- Type casting: x::NUMBER / x::VARCHAR / CAST(x AS NUMBER). TRY_CAST(...) returns NULL on failure.
-- String aggregation: LISTAGG(col, ',') WITHIN GROUP (ORDER BY col); to build an array use ARRAY_AGG(col).
-- Filter by a window function: use QUALIFY (e.g. QUALIFY ROW_NUMBER() OVER (PARTITION BY x ORDER BY y) = 1) — you CANNOT put a window function in WHERE.
-- Semi-structured (VARIANT/OBJECT/ARRAY): navigate with colon/bracket paths — col:field, col:a.b, col['k']; cast the leaf with ::STRING/::NUMBER. Expand an array into rows with LATERAL FLATTEN(input => col) f, then read f.value.
-- Case-insensitive match: ILIKE '%text%' (not LOWER(col) LIKE).
-- Identifiers fold to UPPERCASE unless double-quoted. You CANNOT reference SELECT aliases in WHERE/HAVING.
-""".strip(),
-    "mysql": """
-MYSQL DIALECT RULES (violations cause query errors):
-- Date bucketing: MySQL has NO date_trunc. Month → DATE_FORMAT(ts, '%Y-%m-01'); day → DATE(ts); year → DATE_FORMAT(ts, '%Y-01-01'); week (Mon start) → DATE_SUB(DATE(ts), INTERVAL WEEKDAY(ts) DAY). NEVER call date_trunc().
-- Date differences: DATEDIFF(d1, d2) for whole days; TIMESTAMPDIFF(SECOND, a, b) for seconds (note: DATEDIFF takes exactly 2 args, no unit).
-- Division: guard zero denominators with NULLIF — a / NULLIF(b, 0).
-- Type casting: CAST(x AS SIGNED | DECIMAL(38,6) | CHAR | DATE | DATETIME). MySQL has no ::TYPE syntax and no CAST AS INT/VARCHAR (use SIGNED/CHAR).
-- String aggregation: GROUP_CONCAT(col SEPARATOR ',').
-- Identifiers: backtick-quote. You CAN reference SELECT aliases in GROUP BY/HAVING (MySQL extension).
-""".strip(),
-    "postgres": """
-POSTGRESQL DIALECT RULES (violations cause query errors):
-- Date bucketing: DATE_TRUNC('month'|'week'|'day'|'quarter'|'year', ts).
-- Date differences: (d1 - d2) yields an INTEGER day count for dates; EXTRACT(EPOCH FROM (a - b)) for seconds between timestamps.
-- Division: integer/integer truncates — cast one side (a::numeric / b) and guard zero with NULLIF(b, 0).
-- Type casting: x::numeric / x::text / CAST(x AS date).
-- String aggregation: STRING_AGG(col, ',').
-- You CANNOT reference SELECT aliases in WHERE/HAVING/GROUP BY.
-""".strip(),
-}
+#
+# DE-3b: the blocks live on each engine's declaration (`connectors/declarations.py`,
+# `writer_rules`) and are DERIVED here, one per dialect — stated once, referenced here.
+from aughor.connectors.declarations import derive_writer_rules  # noqa: E402
+
+_DIALECT_RULES: dict[str, str] = derive_writer_rules()
+
 
 
 def rules_for_dialect(dialect: str) -> str:
@@ -129,6 +95,22 @@ def native_sql(db: object, sql: str) -> str:
         return sqlglot.transpile(sql, read="duckdb", write=dialect)[0]
     except Exception:  # noqa: BLE001 — the engine's refusal names what it could not run
         return sql
+
+
+def known_dialect(dialect: str | None) -> str | None:
+    """``dialect`` when sqlglot has a dialect of that name, else None — sqlglot's generic parser (DE-1).
+
+    The parse step reads a statement in the dialect of the engine behind the door. An engine sqlglot has no dialect
+    for is parsed as standard SQL rather than refused outright: a refusal of every statement would say nothing about
+    the statement, and the token-level checks carry the rest. Every connector shipped here declares a dialect
+    sqlglot knows; this is the floor for one that does not."""
+    if not dialect:
+        return None
+    try:
+        from sqlglot.dialects.dialect import Dialect
+        return dialect if Dialect.get(dialect) is not None else None
+    except Exception:  # noqa: BLE001 — a parser that cannot say is the generic parser
+        return None
 
 
 #: GM-1 — the one dialect a statement may declare it was written in. Platform code writes DuckDB's: a probe, a

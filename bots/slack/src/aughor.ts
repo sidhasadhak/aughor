@@ -194,6 +194,15 @@ export function createAskStream(
               artifacts.investigationId = asText(frame.investigation_id);
               break;
 
+            case "done":
+              // A QUICK answer mints its turn id late and names it here as `inv_id`; its
+              // start frame carries none. Without this a ✅ on every quick answer found no
+              // turn and recorded nothing (receipt 2026-10-03, through the agent door).
+              if (!artifacts.investigationId) {
+                artifacts.investigationId = asText(frame.inv_id ?? frame.investigation_id);
+              }
+              break;
+
             // The grid and its chart, kept for the artifacts post. Last-wins: a
             // conversational turn may run several queries, and the one the
             // closing prose is about is the one it finished on.
@@ -348,7 +357,11 @@ export function createVerdictPoster(
         method: "POST",
         headers: { "content-type": "application/json", ...authHeaders },
         body: JSON.stringify({
-          connection_id: env.AUGHOR_CONNECTION_ID ?? "",
+          // AO-7b — the same fallback the ask stream uses (it said "workspace", this said
+          // ""), and the rest is left EMPTY on purpose: the verdict door reads the agent,
+          // the headline and the SQL from the turn's own record, which is truer than
+          // anything this process remembers.
+          connection_id: env.AUGHOR_CONNECTION_ID ?? "workspace",
           investigation_id: body.investigationId,
           verdict: body.verdict,
           note: body.note ?? "",

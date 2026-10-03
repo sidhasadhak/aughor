@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from aughor.licensing import Capability, gate
@@ -175,3 +175,67 @@ def delete_org_llm():
     from aughor.org.context import current_org_id
     clear_org_config(current_org_id())
     return describe_org_config(current_org_id())
+
+
+# ── DE-2b — the organisation's agent policy ──────────────────────────────────────────────
+
+class _AgentPolicyBody(BaseModel):
+    level: str                                   # read | run | act
+    connections: Optional[list[str]] = None      # None = every connection
+    tools: Optional[list[str]] = None            # None = every tool the level allows
+
+
+def _agent_policy_view() -> dict:
+    from aughor.org.context import current_org_id
+    from aughor.orgsettings.agent_policy import (
+        LEVELS, effective_agent_policy, environment_narrowing, load_agent_policy,
+    )
+    org = current_org_id()
+    saved = load_agent_policy(org)
+    env = environment_narrowing()
+    return {
+        "effective": effective_agent_policy(org).as_dict(),
+        "saved": saved.as_dict() if saved.source == "saved" else None,
+        "environment": {k: (list(v) if isinstance(v, tuple) else v) for k, v in env.items()},
+        "levels": list(LEVELS),
+    }
+
+
+def _refuse_an_agent(request: Request) -> None:
+    """`act` is given only by a person: an agent that reaches this route is refused by name."""
+    from aughor.mcp.policy import CODE_SELF_SET, TOOL_HEADER, refusal
+    from aughor.rbac.agent_gate import is_agent_request
+    if is_agent_request(request):
+        raise HTTPException(status_code=403, detail=refusal(
+            CODE_SELF_SET, tool=request.headers.get(TOOL_HEADER), policy_level="(unchanged)"))
+
+
+@router.get("/org-settings/agent-policy")
+def get_agent_policy():
+    """What an outside agent may do for this organisation: the saved policy (or the default,
+    `run`), the environment's narrowing, and the EFFECTIVE result of the two."""
+    return _agent_policy_view()
+
+
+@router.put("/org-settings/agent-policy")
+def put_agent_policy(body: _AgentPolicyBody, request: Request):
+    """Set the organisation's agent policy. A person with ADMIN_MANAGE_ORG; never the agent."""
+    _refuse_an_agent(request)
+    from aughor.org.context import current_org_id, current_user_id
+    from aughor.orgsettings.agent_policy import save_agent_policy
+    try:
+        save_agent_policy(current_org_id(), level=body.level, connections=body.connections, tools=body.tools,
+                          set_by=current_user_id() or "api-key")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _agent_policy_view()
+
+
+@router.delete("/org-settings/agent-policy")
+def delete_agent_policy(request: Request):
+    """Drop the saved policy — the organisation falls back to the default, `run`."""
+    _refuse_an_agent(request)
+    from aughor.org.context import current_org_id
+    from aughor.orgsettings.agent_policy import clear_agent_policy
+    clear_agent_policy(current_org_id())
+    return _agent_policy_view()

@@ -71,6 +71,13 @@ def test_a_descriptive_report_carries_no_comparison_basis():
     assert _comparison_basis({"comparison_label": "October 2024 (MoM)"}) == "October 2024 (MoM)"
     # The cross-sectional case it shares the rule with is unchanged.
     assert _comparison_basis({"cross_sectional": True, "comparison_label": "x"}) == ""
+    # A comparison inside the window measured is no baseline: Q3's line read "… vs Month-over-Month (MoM)"
+    # over August 2026, one of its own twelve months (2026-10-03).
+    inside = {"comparison_label": "Month-over-Month (MoM)", "observation_start": "2025-09-01",
+              "observation_end": "2026-08-31", "comparison_start": "2026-08-01", "comparison_end": "2026-08-31"}
+    assert _comparison_basis(inside) == ""
+    assert _comparison_basis({**inside, "comparison_label": "Prior 12 months", "comparison_start": "2024-09-01",
+                              "comparison_end": "2025-08-31"}) == "Prior 12 months"
 
 
 # ── how the run is framed to the narrator ────────────────────────────────────

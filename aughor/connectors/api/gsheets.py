@@ -87,6 +87,13 @@ def _safe_table_name(sheet: str) -> str:
 class GoogleSheetsConnector(Connector):
     connector_category = "api"
     dialect = "duckdb"
+    # DE-1 — an in-memory DuckDB this connector fills itself is writable by construction; the door's checks are the
+    # read-only boundary, said on every result's doors.
+    engine_read_only = False
+
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): the in-memory DuckDB answers."""
+        return self._handle_answers(getattr(self, "_duckdb", None))
 
     def __init__(
         self,

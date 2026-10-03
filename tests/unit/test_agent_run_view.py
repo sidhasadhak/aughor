@@ -107,25 +107,47 @@ def test_runs_are_newest_first(persona):
 
 # ── spend: unmeasured is not zero ───────────────────────────────────────────────────
 
-def test_spend_reads_the_agent_axis(monkeypatch):
-    import aughor.obs.usage as usage
-    monkeypatch.setattr(usage, "usage_report", lambda **kw: _FakeReport())
+def _llm_call(agent_id: str, at: str, *, model: str = "openrouter-model:free",
+              prompt: int = 200, completion: int = 25, ok: bool = True) -> dict:
+    return {"kind": "llm_call", "agent_id": agent_id, "at": at, "ok": ok,
+            "provider": "openrouter", "model": model, "prompt_tokens": prompt,
+            "completion_tokens": completion, "total_tokens": prompt + completion,
+            "payload": {"role": "coder"}}
+
+
+def test_spend_reads_the_agent_axis_over_the_window(monkeypatch):
+    """AO-3: the slice is read over ONE window (the one the page shows), keyed to the
+    agent, and the row says how many calls had no price."""
+    from aughor.kernel.ledger import Ledger
+    from aughor.obs.timeseries import resolve_window
     from aughor.routers.agents import _agent_spend
 
-    spend = _agent_spend("ua_h3")
-    assert spend == {"measured": True, "calls": 4, "total_tokens": 900, "cost_usd": 0.02,
-                     "cost_is_complete": True, "failure_rate": 0.0}
+    win = resolve_window("24h")
+    seen: dict = {}
+
+    def _events(self, **kw):
+        seen.update(kw)
+        return [_llm_call("ua_h3", win.since) for _ in range(4)]
+
+    monkeypatch.setattr(Ledger, "session_events", _events)
+    spend = _agent_spend("ua_h3", win)
+    assert seen["agent_id"] == "ua_h3" and seen["since"] == win.since and seen["until"] == win.until
+    assert spend["measured"] is True and spend["calls"] == 4 and spend["total_tokens"] == 900
+    assert spend["cost_usd"] == 0.0 and spend["cost_is_complete"] is True  # ':free' is priced $0
+    assert spend["unpriced_calls"] == 0 and spend["failure_rate"] == 0.0
 
 
 def test_an_agent_with_no_recorded_calls_is_zero_not_missing(monkeypatch):
     """Recording is permanent, so an empty slice is a confident zero — not an
     unmeasured one. That distinction used to need a flag; now it is structural."""
-    import aughor.obs.usage as usage
-    monkeypatch.setattr(usage, "usage_report", lambda **kw: _FakeReport())
+    from aughor.kernel.ledger import Ledger
+    from aughor.obs.timeseries import resolve_window
     from aughor.routers.agents import _agent_spend
 
-    spend = _agent_spend("ua_never_ran")
+    monkeypatch.setattr(Ledger, "session_events", lambda self, **kw: [])
+    spend = _agent_spend("ua_never_ran", resolve_window("24h"))
     assert spend["measured"] is True and spend["calls"] == 0
+    assert spend["unpriced_calls"] == 0
 
 
 class _FakeReport:

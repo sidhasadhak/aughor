@@ -19,6 +19,8 @@ import os
 import threading
 from typing import Optional
 
+from aughor.trust.lineage_edges import columns_from_lineage as _columns_from_lineage
+
 #: Bumped to 2 in Wave S2: additive only (`resolved_readings`, `learning`, `activations`).
 #: The projection is rebuilt and re-signed on every read, so existing artifacts gain the new
 #: fields rather than failing verification — but a consumer that pinned v1 should know the
@@ -229,6 +231,10 @@ def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
         "connection": connection or {"id": art.get("conn_id"), "name": None, "dialect": None},
         "executed_sql": executed_sql,
         "input_tables": input_tables,
+        # DE-4: the columns the statement read, each with how it was resolved (certain, likely,
+        # possible) and its roles; `level` says whether columns were traced at all, so a
+        # receipt written before DE-4 reads as "not traced", never as "read none".
+        "columns": _columns_from_lineage(lineage),
         "guards": guards,
         "caveats": caveats,
         "metrics": _metrics_from_lineage(lineage),

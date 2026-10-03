@@ -90,6 +90,14 @@ class OrgSettings(BaseModel):
         default_factory=list,
         description="What the organisation is trying to do this quarter — written by people, never inferred.",
     )
+    @field_validator("priorities")
+    @classmethod
+    def _written(cls, v: list[Priority]) -> list[Priority]:
+        """A row nobody wrote in is no priority. Saving the currency on 2026-10-02 stored the Settings
+        page's empty row, and the Briefing's narrator was handed an empty "DECLARED PRIORITIES" block.
+        Dropped wherever settings are read, so a stored one goes too."""
+        return [p for p in v or [] if any(str(x).strip() for x in p.model_dump().values())]
+
     @field_validator("currency_code")
     @classmethod
     def _norm_currency(cls, v: str) -> str:

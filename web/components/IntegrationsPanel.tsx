@@ -25,15 +25,19 @@ import {
   type IntegrationProvider,
   deleteSlackBot,
   getConnections,
+  getManagedSupervisor,
   getSlackBots,
   getSupervisorKeyStatus,
   issueSupervisorKey,
   listUserAgents,
+  restartManagedSupervisor,
   updateSlackBot,
   type Connection,
+  type ManagedSupervisorStatus,
   type SlackBotSummary,
   type UserAgent,
 } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 import { bindingProblem, patchBodyFor, type SlackBotChanges } from "@/lib/slackBots";
 
 import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
@@ -69,7 +73,8 @@ export function IntegrationsPanel() {
   const [connections, setConnections] = useState<Connection[]>([]);
   /** The record whose edit form is open, and the form's draft. One at a time. */
   const [editBot, setEditBot] = useState<string | null>(null);
-  const [botDraft, setBotDraft] = useState({ name: "", agent_id: "", connection_id: "" });
+  const [botDraft, setBotDraft] = useState({ name: "", agent_id: "", connection_id: "", channel_id: "",
+    rehearse: false });
   /** The connection a NEW app asks on. Defaults to the chosen agent's own binding, which
    *  is the pairing the ask door insists on; a bot created with none used to fall back to
    *  the supervisor's default and be refused on every @mention. */
@@ -81,6 +86,10 @@ export function IntegrationsPanel() {
    *  on screen. It is returned once — the panel holds it only until the card closes. */
   const [keyIssued, setKeyIssued] = useState(false);
   const [freshKey, setFreshKey] = useState("");
+  // AO-2e — until when the key a Regenerate replaced still opens the door.
+  const [graceUntil, setGraceUntil] = useState("");
+  // AO-2b — the managed supervisor's state, read beside the bots.
+  const [supervisor, setSupervisor] = useState<ManagedSupervisorStatus | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +108,9 @@ export function IntegrationsPanel() {
         setBots(b);
         setAgents(a);
         setConnections(c);
+        // AO-2b — read apart from the three above: an older API without the route must
+        // not blank the bots, and the block simply does not render without an answer.
+        getManagedSupervisor().then(setSupervisor).catch(() => setSupervisor(null));
         setKeyIssued((await getSupervisorKeyStatus().catch(() => null))?.issued ?? false);
       }
     } catch (e) {
@@ -342,14 +354,37 @@ export function IntegrationsPanel() {
                               <strong>{b.name}</strong>
                               {!b.enabled && (
                                 <span className="aug-fs-xs" style={{ color: "var(--t3)",
-                                  marginLeft: 6 }}>paused</span>
+                                  marginLeft: 6 }}
+                                  title={b.disabled_reason || undefined}>
+                                  {b.disabled_reason
+                                    ? `off — ${b.disabled_reason}`
+                                    : "paused"}
+                                </span>
+                              )}
+                              {/* AO-2a — "enabled" is the record; LISTENING is the socket.
+                                  The card said the first and implied the second on a
+                                  machine where no supervisor ran. */}
+                              {b.enabled && (
+                                b.listening ? (
+                                  <span className="aug-fs-xs" style={{ color: "var(--grn4)",
+                                    marginLeft: 6 }}
+                                    title={`supervisor ${b.listening.supervisor_id} · last heard ${b.listening.last_seen_at}`}>
+                                    listening since {formatDateTime(b.listening.since)}
+                                  </span>
+                                ) : (
+                                  <span className="aug-fs-xs" style={{ color: "var(--amb4)",
+                                    marginLeft: 6 }} title={b.liveness_hint}>
+                                    {b.liveness_hint || "not listening — start the supervisor"}
+                                  </span>
+                                )
                               )}
                             </span>
                             <Button variant="ghost" size="xs" disabled={busy === b.id}
                               onClick={() => {
                                 setEditBot(editing ? null : b.id);
                                 setBotDraft({ name: b.name, agent_id: b.agent_id,
-                                  connection_id: b.connection_id });
+                                  connection_id: b.connection_id, channel_id: b.channel_id ?? "",
+                                  rehearse: b.rehearse ?? false });
                               }}>
                               {editing ? "Cancel" : "Edit"}
                             </Button>
@@ -412,6 +447,22 @@ export function IntegrationsPanel() {
                                   <option key={c.id} value={c.id}>{c.name}</option>
                                 ))}
                               </select>
+                              {/* AO-2f — an optional home channel on the record. */}
+                              <input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
+                                aria-label="Home channel" placeholder="Home channel — #name or C… (optional)"
+                                onChange={e => setBotDraft(d => ({ ...d, channel_id: e.target.value }))} />
+                              {/* AO-6 — rehearse: a post from an automation AS this bot waits in
+                                  Attention for a person's click before it reaches the channel, and a
+                                  channel mention is answered in the asker's DM first — their ✅ there
+                                  posts it in the thread. The bot reads the same row; a flip reconciles it. */}
+                              <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center",
+                                gap: 6, color: "var(--t2)", cursor: "pointer" }}>
+                                <input type="checkbox" checked={botDraft.rehearse}
+                                  onChange={e => setBotDraft(d => ({ ...d, rehearse: e.target.checked }))} />
+                                Rehearse — a mention is answered in the asker&apos;s DM first (their ✅ posts it in
+                                the thread), and every automation post as this bot waits for a person&apos;s click
+                                (&quot;always allow&quot; on the held post lifts it per channel)
+                              </label>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <Button variant="default" size="xs" disabled={busy === b.id}
                                   onClick={() => saveBot(b, botDraft)}>
@@ -435,6 +486,42 @@ export function IntegrationsPanel() {
                     supervise is a control asking to be ignored. It exists so the fix
                     for "the API refused to serve bot credentials" is a button here
                     rather than a shell export and a restart. */}
+                {/* AO-2b — the supervisor the API runs itself, when the flag is on: its
+                    state in a sentence, and the one control. Off, one line says how it
+                    is started by hand. */}
+                {/* Shown with NO bots too when the API manages it: on a fresh install the
+                    supervisor runs before the first bot exists, and a row that waits for a
+                    bot card reads as "nothing is running" (receipt, 2026-10-03). */}
+                {p.alt_door === "slack_app" && supervisor && (bots.length > 0 || supervisor.managed) && (
+                  <div className="aug-fs-xs" style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
+                    paddingTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ color: supervisor.state === "running" ? "var(--grn4)"
+                      : supervisor.state === "off" ? "var(--t3)" : "var(--amb4)", flex: 1 }}
+                      title={supervisor.log_path ? `the supervisor's own log: ${supervisor.log_path}` : undefined}>
+                      {supervisor.state === "off"
+                        ? "Supervisor: started by hand — cd bots/slack && npm run dev (turn on "
+                          + "slack.managed_supervisor to let the API run it)"
+                        : supervisor.state === "running"
+                          ? `Supervisor: run by the API · pid ${supervisor.pid} · since ${formatDateTime(supervisor.started_at)}`
+                            + (supervisor.restarts ? ` · restarted ${supervisor.restarts}×` : "")
+                            + (supervisor.heartbeat
+                                ? (supervisor.heartbeat.fresh
+                                    ? ` · listening — heartbeat ${formatDateTime(supervisor.heartbeat.last_seen_at)}, ${supervisor.heartbeat.running} bot(s) open`
+                                    : ` · NOT listening — last heartbeat ${formatDateTime(supervisor.heartbeat.last_seen_at)}`)
+                                : " · no heartbeat yet")
+                          : `Supervisor: ${supervisor.state} — ${supervisor.last_error || "no reason recorded"}`}
+                    </span>
+                    {supervisor.managed && (
+                      <Button variant="ghost" size="xs" disabled={busy === "supervisor"}
+                        onClick={async () => {
+                          setBusy("supervisor"); setError("");
+                          try { setSupervisor(await restartManagedSupervisor()); }
+                          catch (e) { setError((e as Error).message); }
+                          finally { setBusy(""); }
+                        }}>Restart</Button>
+                    )}
+                  </div>
+                )}
                 {p.alt_door === "slack_app" && bots.length > 0 && (
                   <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
                     paddingTop: 10 }}>
@@ -450,6 +537,7 @@ export function IntegrationsPanel() {
                           try {
                             const k = await issueSupervisorKey();
                             setFreshKey(k.env_line);
+                            setGraceUntil(k.previous_valid_until || "");
                             setKeyIssued(true);
                           } catch (e) { setError((e as Error).message); }
                           finally { setBusy(""); }
@@ -471,7 +559,10 @@ export function IntegrationsPanel() {
                           lineHeight: 1.5 }}>
                           Copy this now — it is shown once. Paste it into the bot
                           supervisor&apos;s <code>.env.local</code>, then restart that
-                          process. Regenerating replaces it and the old one stops working.
+                          process.{" "}
+                          {graceUntil
+                            ? `The key it replaces keeps working until ${formatDateTime(graceUntil)}, so the running supervisor stays up until you restart it.`
+                            : "Regenerating later replaces it; the replaced key keeps working for a few minutes so the running supervisor can be restarted."}
                         </div>
                       </div>
                     )}

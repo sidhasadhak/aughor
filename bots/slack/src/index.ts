@@ -23,7 +23,9 @@ import { createMemoryState } from "@chat-adapter/state-memory";
 import { createArrivalPoster, createAskStream, createFactChecker, createVerdictPoster } from "./aughor.js";
 import { buildBot } from "./bot.js";
 import { createChartRenderer } from "./chart.js";
-import { createRegistry, type BotRecord } from "./registry.js";
+import { hostname } from "node:os";
+
+import { createHeartbeat, createRegistry, type BotRecord } from "./registry.js";
 import { createSupervisor } from "./supervisor.js";
 
 /** How often to ask Aughor what should be running. */
@@ -65,6 +67,13 @@ async function makeBot(record: BotRecord) {
       AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
       AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
     }),
+    // AO-7b — the message→turn map outlives a restart, so a ✅ tomorrow still lands.
+    // One file per bot, beside .env.local; "" would keep it in memory.
+    turnMapFile: process.env.AUGHOR_TURN_MAP_FILE
+      ?? `.aughor-turns.${record.id || "env"}.json`,
+    // AO-6 — rehearse comes from the RECORD, the same row the card's checkbox writes:
+    // a mention is answered in the asker's DM first and reaches the channel on their ✅.
+    rehearse: record.rehearse ?? false,
     adapters: {
       slack: createSlackAdapter({
         mode: "socket",
@@ -97,8 +106,9 @@ function envBot(): BotRecord[] {
     connection_id: process.env.AUGHOR_CONNECTION_ID ?? "",
     bot_token, app_token,
     signing_secret: process.env.SLACK_SIGNING_SECRET ?? "",
-    // The env path keeps its own switch: there is no record to read it from.
+    // The env path keeps its own switches: there is no record to read them from.
     agent_view: process.env.SLACK_AGENT_VIEW === "1",
+    rehearse: process.env.SLACK_REHEARSE === "1",
   }];
 }
 
@@ -120,11 +130,42 @@ const supervisor = createSupervisor({
   },
 });
 
+// AO-2a — after every reconcile, tell Aughor what is listening. The id names THIS
+// process; the API keeps the last beat and the bot card reads liveness from it.
+const postHeartbeat = createHeartbeat();
+const supervisorId = `${hostname()}:${process.pid}:${new Date().toISOString()}`;
+let heartbeatLanded: boolean | null = null;
+async function beat(failed: { id: string; error: string }[]): Promise<void> {
+  const ok = await postHeartbeat({
+    supervisor_id: supervisorId, running: supervisor.runningIds(), failed,
+    reconcile_ms: RECONCILE_MS,
+  });
+  // Say it on a CHANGE of state only — a heartbeat that fails every 30 s would otherwise
+  // bury the bot's own log, and the API's card already says "not listening".
+  if (ok !== heartbeatLanded) {
+    console[ok ? "log" : "warn"](ok
+      ? "heartbeat: Aughor knows this supervisor is listening"
+      : "heartbeat: Aughor could not be told this supervisor is listening (the bot card "
+        + "will read 'not listening' until it can) — check AUGHOR_API_URL / AUGHOR_RUNTIME_KEY");
+    heartbeatLanded = ok;
+  }
+}
+
+// AO-2b — under the API's host this process must outlive an empty registry: the sockets
+// are what keep a standalone run alive, and on a FRESH install there are none yet, so an
+// unref'd timer let the child exit 0 after its first heartbeat and the host restarted it
+// every five seconds until its hourly cap (measured 2026-10-03 on a scratch API: seven
+// restarts in a minute). Managed, the reconcile timer holds the process open and the first
+// bot a person creates is picked up on the next tick.
+const managedByApi = process.env.AUGHOR_MANAGED_BY_API === "1";
+
 const first = await supervisor.reconcile();
 if (first.running === 0) {
-  console.error(
-    "No bots to run. Create one in Aughor (Slack bots → New), or fill in " +
-    ".env.local with SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET.",
+  console.error(managedByApi
+    ? "No bots to run yet — waiting; the first bot created in Aughor (Integrations → Slack) " +
+      `is picked up within ${Math.round(RECONCILE_MS / 1000)}s.`
+    : "No bots to run. Create one in Aughor (Slack bots → New), or fill in " +
+      ".env.local with SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET.",
   );
 } else {
   console.log(
@@ -132,17 +173,21 @@ if (first.running === 0) {
   );
 }
 for (const f of first.failed) console.error(`  bot ${f.id} did not start: ${f.error}`);
+await beat(first.failed);
 
 const timer = setInterval(() => {
-  void supervisor.reconcile().then((r) => {
+  void supervisor.reconcile().then(async (r) => {
     if (r.started.length || r.stopped.length || r.restarted.length) {
       console.log(`reconciled: +${r.started.length} -${r.stopped.length} ` +
                   `~${r.restarted.length} (${r.running} running)`);
     }
+    await beat(r.failed);
   });
 }, RECONCILE_MS);
-// Reconciling must never be the reason the process stays alive; the sockets are.
-timer.unref?.();
+// Standalone, reconciling must never be the reason the process stays alive; the sockets
+// are, and a person watching the terminal sees "No bots to run" and an exit. Managed, the
+// API's host IS the watcher, and an exit here is a restart loop (see above).
+if (!managedByApi) timer.unref?.();
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {

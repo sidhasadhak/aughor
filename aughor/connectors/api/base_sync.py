@@ -44,6 +44,13 @@ class RestApiSync(Connector):
     """Base for REST API connectors. Subclasses add _objects() + _fetch_page()."""
 
     connector_category = "api"
+    # DE-1 — the mirror is a DuckDB file this connector writes on every sync; the door's checks are the read-only
+    # boundary for a person's or a model's statement, said on every result's doors.
+    engine_read_only = False
+
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): the mirror's DuckDB answers; the API behind it is the next sync's affair."""
+        return self._handle_answers(getattr(self, "_duckdb", None))
     dialect            = "duckdb"
 
     def __init__(

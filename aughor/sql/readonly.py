@@ -26,8 +26,20 @@ existing regex first-token gate stays the fallback. This strictly ADDS coverage
 and never newly blocks the many legitimate SELECTs sqlglot can't parse across
 Aughor's dialects. The mutation verdict, when found, is decisive — callers must
 not swallow it via a tolerate()/except-pass.
+
+DE-1 (ROADMAP §3.51, `docs/DBX_STUDY_2026-10-01.md` §3.1) taught it the reads that
+can write, measured on `f02c8f22` as passing every check: a locking clause
+(`FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE` — sqlglot's `locks`), the
+side-effect functions (advisory locks, `GET_LOCK`, a `set_config` that turns the
+Postgres read-only backstop off), a DML command inside a `BEGIN … END` block, and —
+below the tree, where a parser drops them — a MySQL executable comment
+(`/*!50000 DROP TABLE users */` is a comment to sqlglot and a statement to MySQL)
+and `SELECT … INTO OUTFILE`, which does not parse at all. Those two are read from
+the text, the one exception to the rule above, because the tree cannot carry them.
 """
 from __future__ import annotations
+
+import re
 
 import sqlglot
 from sqlglot import exp
@@ -49,13 +61,37 @@ _MUTATING_NODES = _nodes(
 )
 _DESTRUCTIVE_NODES = _nodes("Drop", "TruncateTable", "Alter")
 
+# The reads that can write (DE-1): a SELECT of one of these changes the session, the server or what other sessions
+# may do. `set_config('default_transaction_read_only', 'off', false)` was rated SAFE and turned the pooled Postgres
+# session's read-only backstop off (the study's finding 2); an advisory lock or `GET_LOCK` holds a lock for as long
+# as the pooled connection lives; `BENCHMARK` burns the server's CPU on request.
+_SIDE_EFFECT_FUNCTION_NAMES: frozenset[str] = frozenset({
+    "SET_CONFIG", "PG_RELOAD_CONF", "PG_ROTATE_LOGFILE", "PG_SWITCH_WAL", "PG_CREATE_RESTORE_POINT", "PG_NOTIFY",
+    "PG_ADVISORY_LOCK", "PG_ADVISORY_LOCK_SHARED", "PG_ADVISORY_XACT_LOCK", "PG_ADVISORY_XACT_LOCK_SHARED",
+    "PG_TRY_ADVISORY_LOCK", "PG_TRY_ADVISORY_LOCK_SHARED", "PG_TRY_ADVISORY_XACT_LOCK",
+    "PG_TRY_ADVISORY_XACT_LOCK_SHARED", "PG_ADVISORY_UNLOCK", "PG_ADVISORY_UNLOCK_SHARED", "PG_ADVISORY_UNLOCK_ALL",
+    "GET_LOCK", "RELEASE_LOCK", "RELEASE_ALL_LOCKS", "BENCHMARK",
+})
+
 # Postgres large-object writers + sequence mutators — parse as exp.Anonymous
 # function calls inside an otherwise read-looking SELECT. (`currval` only reads
 # the session's last value, so it is intentionally absent.)
 _MUTATING_FUNCTION_NAMES: frozenset[str] = frozenset({
     "LO_FROM_BYTEA", "LO_EXPORT", "LO_IMPORT", "LO_PUT", "LO_CREATE",
     "LOWRITE", "LO_UNLINK", "SETVAL", "NEXTVAL",
-})
+}) | _SIDE_EFFECT_FUNCTION_NAMES
+
+# Below the tree (DE-1). MySQL executes the body of `/*!NNNNN … */`, and MariaDB of `/*M! … */`; to every parser
+# it is a comment, so `SELECT 1 /*!50000 UNION SELECT user FROM mysql.user */` parsed as `SELECT 1`. `INTO OUTFILE`
+# / `INTO DUMPFILE` write a file on the server and do not parse at all, so the tree could never see them either.
+# Strings and ordinary comments are blanked before the file-write scan, so a value that merely says "into outfile"
+# is data; an executable comment is matched on the raw text, because it IS a comment.
+_EXECUTABLE_COMMENT = re.compile(r"/\*M?!")
+_INTO_FILE = re.compile(r"\bINTO\s+(?:OUTFILE|DUMPFILE)\b", re.IGNORECASE)
+_STRING_OR_PLAIN_COMMENT = re.compile(r"'(?:[^']|'')*'|--[^\n]*|/\*(?!M?!).*?\*/", re.DOTALL)
+#: A command head whose body is itself a statement: sqlglot hands back `BEGIN DELETE FROM t; END` as a Block holding
+#: an opaque Command named BEGIN, with the DELETE in the command's text.
+_BODY_COMMAND_NAMES: frozenset[str] = frozenset({"BEGIN", "DO"})
 
 # Head keywords sqlglot falls back to an opaque exp.Command for, each of which
 # mutates state or wraps a DML body. Case-insensitive lookup.
@@ -119,21 +155,40 @@ _SessionParameter = getattr(exp, "SessionParameter", None)
 
 
 def _parse(sql: str, dialect: str | None) -> exp.Expression | None:
+    from aughor.db.dialects import known_dialect
     try:
-        return sqlglot.parse_one(sql, dialect=dialect, error_level=sqlglot.ErrorLevel.RAISE)
+        return sqlglot.parse_one(sql, dialect=known_dialect(dialect), error_level=sqlglot.ErrorLevel.RAISE)
     except Exception:
         return None
 
 
-def _expr_is_mutating(parsed: exp.Expression, dialect: str | None) -> bool:
+def hidden_statement(sql: str) -> str | None:
+    """What the text carries that no syntax tree can show (DE-1): the name of the shape, or None.
+
+    An executable comment is a statement to MySQL and a comment to every parser; `INTO OUTFILE` writes a server
+    file and never parses. Both are read from the text — the one place they exist."""
+    text = sql or ""
+    if _EXECUTABLE_COMMENT.search(text):
+        return "executable comment"
+    if _INTO_FILE.search(_STRING_OR_PLAIN_COMMENT.sub(" ", text)):
+        return "INTO OUTFILE/DUMPFILE"
+    return None
+
+
+def _expr_is_mutating(parsed: exp.Expression, dialect: str | None, depth: int = 0) -> bool:
     if _MUTATING_NODES and parsed.find(*_MUTATING_NODES):
         return True
 
-    # `SELECT ... INTO target` — CTAS (Postgres/Redshift/TSQL) or MySQL
-    # `INTO OUTFILE` (a write). Rare-but-legit `SELECT ... INTO @var` reads are
-    # vanishingly uncommon in generated analytics SQL, so we block decisively.
-    if isinstance(parsed, exp.Select) and parsed.args.get("into"):
-        return True
+    for select in parsed.find_all(exp.Select):
+        # `SELECT ... INTO target` — CTAS (Postgres/Redshift/TSQL) or MySQL
+        # `INTO OUTFILE` (a write). Rare-but-legit `SELECT ... INTO @var` reads are
+        # vanishingly uncommon in generated analytics SQL, so we block decisively.
+        if select.args.get("into"):
+            return True
+        # A locking clause (DE-1): `FOR UPDATE`, `FOR SHARE`, `FOR NO KEY UPDATE`, `FOR KEY SHARE`, MySQL's
+        # `LOCK IN SHARE MODE`. A read that holds row locks for as long as the pooled connection lives.
+        if select.args.get("locks"):
+            return True
 
     # Mutating function calls — restricted to exp.Anonymous so a built-in like
     # `upper('lo_export')` (whose .name is the first arg) isn't misclassified.
@@ -141,26 +196,39 @@ def _expr_is_mutating(parsed: exp.Expression, dialect: str | None) -> bool:
         if (fn.name or "").upper() in _MUTATING_FUNCTION_NAMES:
             return True
 
-    if isinstance(parsed, exp.Command):
-        head = (parsed.name or "").upper()
+    # A command anywhere in the tree, not only at the root (DE-1): a `BEGIN … END` block parses as a Block holding
+    # one opaque Command, and `SELECT 1; DELETE FROM t` as a Block of two statements.
+    for command in parsed.find_all(exp.Command):
+        head = (command.name or "").upper()
         if head in _MUTATING_COMMAND_NAMES:
             return True
+        body = (command.expression.name or "") if command.expression is not None else ""
         # EXPLAIN ANALYZE <dml> — Postgres actually runs the DML.
-        if head == "EXPLAIN" and parsed.expression is not None:
-            body = (parsed.expression.name or "")
-            if body.upper().startswith("ANALYZE "):
-                return is_mutating(body[len("ANALYZE "):], dialect)
+        if head == "EXPLAIN" and body.upper().startswith("ANALYZE ") and depth < 3:
+            if _text_is_mutating(body[len("ANALYZE "):], dialect, depth + 1):
+                return True
+        # BEGIN <statement> — the block's body is the statement that runs.
+        if head in _BODY_COMMAND_NAMES and body and depth < 3:
+            if _text_is_mutating(body, dialect, depth + 1):
+                return True
 
     return False
 
 
-def is_mutating(sql: str, dialect: str | None = None) -> bool:
-    """True iff the AST confirms the statement mutates data/schema/state.
-
-    Returns False on a parse failure (the caller's regex gate is the fallback).
-    """
+def _text_is_mutating(sql: str, dialect: str | None, depth: int) -> bool:
+    if hidden_statement(sql):
+        return True
     parsed = _parse(sql, dialect)
-    return False if parsed is None else _expr_is_mutating(parsed, dialect)
+    return False if parsed is None else _expr_is_mutating(parsed, dialect, depth)
+
+
+def is_mutating(sql: str, dialect: str | None = None) -> bool:
+    """True iff the AST confirms the statement mutates data/schema/state — or the text carries a statement the tree
+    cannot show (`hidden_statement`).
+
+    Returns False on a parse failure otherwise (the caller's regex gate is the fallback).
+    """
+    return _text_is_mutating(sql, dialect, 0)
 
 
 def is_destructive(sql: str, dialect: str | None = None) -> bool:

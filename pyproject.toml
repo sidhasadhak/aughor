@@ -139,6 +139,7 @@ warehouse = [
     "snowflake-connector-python>=3.0.0",
     "PyMySQL>=1.0.0",
     "pyexasol>=0.25.0",
+    "trino>=0.330.0",
 ]
 # The three REST connectors (`connectors/api/`) speak HTTP through `requests`, imported at
 # MODULE level in all three. This extra used to declare `stripe`, `hubspot-api-client` and

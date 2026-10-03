@@ -10182,6 +10182,742 @@ library is the wrong tool — the tab (CT-4) and the versions (CT-3) stand, over
 is wrong, and the closed vocabulary is not closing; (3) if an approved cockpit is not reopened within a week,
 the board was not wanted — counted from the session log the way AV-M counts uptake, which read 3 of 42.
 
+### 3.51 · Arc DE — the database edge: what dbx teaches (DRAFTED 2026-10-02 at the user's *"lets write a proper dbx roadmap first"* · ✅ ADOPTED the same day, §6 item 37, every clause as recommended · DE-6 removed before adoption · **DE-1 through DE-5f BUILT 2026-10-03** on `claude/focused-hamilton-8w0q1f`, not merged — the live receipts owed from the machine that holds the connections are listed in each wave's status paragraph)
+
+> **Origin.** The user, on `t8y2/dbx` — an open-source database manager claiming "100+ databases" — *"I think there
+> is a lot we can learn from it. Let's scan it, Deep, and check what's there for us?"*, then, on a screenshot of its
+> data grid, *"Do we have a better SQL editor? Especially the result table part or DBX does?"*. The study is
+> `docs/DBX_STUDY_2026-10-01.md`: dbx read at `e56754f`, Aughor on `main` at `f02c8f22`, four areas compared by
+> four readers plus a comparison of the two result grids, and every claim about Aughor that a wave rests on
+> re-checked by hand (its §7 says which were and which were not).
+
+> **What the survey found.** dbx's "100+" is 108 product names over 85 declared connection types: 33 native drivers
+> and 47 behind one sidecar protocol. It is a tool for administering databases, and most of its bulk is the write
+> side, which Aughor refuses. What it does better on the read side: one classifier that knows the reads that can
+> write; a central policy for outside agents; an engine declared once, with its dialect bound separately; metadata
+> that says what it knows; typed connection errors; and a result grid with types in the header, row numbers,
+> right-click filters, distinct-value lists, and paging through the whole result.
+> **What the comparison showed about Aughor.** (1) Native engines' doors skip the parse step, and the safety checker
+> alone lets write-capable statements through: run in-process, `/*!50000 DROP TABLE users */` is rated SUSPICIOUS,
+> which is logged and allowed, and MySQL executes an executable comment on a session that is not read-only;
+> `INTO OUTFILE` and `LOCK IN SHARE MODE` are rated SAFE. The gate-map study named the skipped step on 2026-09-26
+> (its finding 5) and no GM wave took it. (2) On Postgres, `SELECT set_config('default_transaction_read_only','off',false)`
+> is rated SAFE and turns the pooled session's read-only backstop off. (3) The MCP client sends no principal, so
+> identity mode refuses every MCP call; the key is compared with `!=`; four MCP tools read the stores in their own
+> process instead of through the API. (4) No engine reads declared keys; the pool counts a connection with no
+> health check as healthy (all but Postgres and SQLite). (5) CSV export lets formulas through; upload suggestions
+> turn `02134` into 2134. Exasol declared as `postgres` and ALTER COLUMN answering `applied: true` were already
+> §3.49's "left, named, not fixed"; DE-3a and DE-1 take them.
+> **Where Aughor stays ahead:** schema context for the model, join inference (dbx's ER match and field lineage
+> produced measured false positives), audit and PII, provenance, value search, and the results pane beyond the
+> grid (multi-statement results, chart tabs, pin, schedule, share, a signed record per run, NULL distinct from
+> empty). The editors are level.
+
+> **Status 2026-10-02 — ADOPTED** (§6 item 37; the user: *"adopt all as recommended and commit locally"*). DE-1 ships without a flag; the
+> agent policy lives with the organisation's settings and defaults to `run`, with `act` given only by a person;
+> Trino proves DE-3b, its container's download asked when the wave starts; column lineage rides the receipt; four
+> refusals are recorded as §4.7; dbx's code is not copied. Nothing is built. Next: DE-1's pre-check.
+
+> **Status 2026-10-03 — DE-1 BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first:* the golden
+> set's 53 statements parsed in all five dialects, 0 refused (`scripts/de1_parse_step_precheck.py --golden`);
+> theLook's audit was not reachable from the build machine, and the same script counts it where it lives
+> (`--connection 8233e4fd --limit 2000`) — that count is owed before merge, and the falsifier reads it. *Built:* the
+> parse step runs in `_security_pre`, the one step every connector's door calls, in the dialect `through_door` records
+> for the engine behind it — so BigQuery, Snowflake, MySQL, Exasol, SQLite, MotherDuck and every file and API connector
+> validate where only the built-in two did, and `execute_with_params` goes through the door too (it had no trail at
+> all); `SafetyChecker.check(sql, dialect)`; `sql/readonly.py` refuses a lock clause (sqlglot's `locks`), the
+> side-effect functions (`set_config`, the advisory locks, `GET_LOCK`, `RELEASE_LOCK`, `BENCHMARK`, `pg_notify`…), a
+> command inside a `BEGIN … END` block and, below the tree, an executable comment and `INTO OUTFILE`/`DUMPFILE`;
+> MySQL connects with `init_command="SET SESSION TRANSACTION READ ONLY"`, which its reconnect re-runs; BigQuery,
+> Snowflake, Exasol, MotherDuck and the in-memory DuckDB connectors declare `engine_read_only = False`, and every
+> result's doors say `engine-read-write` (a connector that declares nothing says `engine-undeclared`); `_validate`
+> blanks quoted identifiers before its keyword pre-scan (`SELECT "copy" FROM ads` is a read) and admits `EXCEPT` and
+> `INTERSECT` roots; SUMMARIZE joins the editor's metadata reads, since the Workspace is parsed now; the ALTER COLUMN
+> route reads the door's refusal (`applied: false, override_only: true`); schema samples and value lists reach the
+> model capped per value, cleaned and fenced inline as data, the Data Catalog's sample rows likewise, and the value
+> readers take the fence off (and read a fenced list to its closing tag — a `</data>` neutralised to `[data]` inside
+> a value ended the old bracket match early; found by DuckDB's tie order moving that value to the front of a list).
+> *Receipt:* `tests/unit/test_de1_read_only_at_every_door.py` runs the study's nine
+> statements and five siblings through every connection class's `execute` and `execute_bounded` against a driver
+> that fails on contact — 14 classes, every statement refused before the driver, and a plain read parsed in each
+> class's own dialect (Snowflake's `col:field` passes its door and fails BigQuery's); a value worded as an
+> instruction reaches the rendered schema inside the fence, a `</data>` inside a value is neutralised, a control
+> character does not reach the prompt; GM-3's receipt test now reads a BigQuery path as
+> `translated → engine-read-write → validated:bigquery → safety-checked → …`; 12 mutations, each disabling one new
+> check, every one killed by the test file (a 13th, a per-value cleaning pass beside the fence's own, survived
+> because the fence already cleans — the redundant pass was removed). *Not done here:* the live MySQL refusal (no
+> MySQL on the build machine).
+> *Left, named:* an unquoted keyword-named column (`SELECT copy FROM ads`) is still refused by the pre-scan, on every
+> engine now as on DuckDB before; `gate_user_sql` and the cross-source gates run outside a door and parse nothing — the
+> statement is parsed at the door it then goes through, except Postgres's ConnectorX bulk read, which never reaches a
+> door (pre-existing); no text fallback for a lock clause when the statement does not parse (`PIVOT … FOR share IN
+> (…)` would match), since an unparseable statement is refused at the door anyway. Next: DE-2a.
+
+> **Status 2026-10-03 — DE-2a BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first,* run live
+> on the build machine before the change: `--http --host 0.0.0.0` answered a remote client (`Host: 203.0.113.5`)
+> `421 Invalid Host header` on every request, and a loopback client with no credential at all got a full session —
+> whose tools call the API with the server's own key and principal. *Built:* `AughorClient` presents the principal
+> it is given — `AUGHOR_MCP_BEARER` as `Authorization: Bearer …`, `AUGHOR_MCP_ORG` and `AUGHOR_MCP_USER` (default
+> `mcp`) as the `X-Aughor-*` seam — and nothing when given none, so identity-off installs are byte-identical; the
+> API compares its key with `hmac.compare_digest`; `--http` refuses to start without `AUGHOR_MCP_TOKEN`, every HTTP
+> request presents it as a bearer (constant-time; otherwise a 401 with a `WWW-Authenticate` challenge that names
+> the variable), and the transport security is built for the host actually served — FastMCP's loopback allowlist on
+> loopback, its own non-loopback posture elsewhere — before FastMCP bakes it into its session manager. *Receipt:*
+> `tests/unit/test_de2a_mcp_principal.py`: through the real app with identity required, the client's call is
+> refused 401 without a principal and served with one; the key comparison is seen going through `compare_digest`;
+> a live `--http --host 0.0.0.0` subprocess refuses a remote client and a loopback client without the token (401,
+> not 421) and serves the remote client that presents it; 332 tests across the MCP, auth and identity suites pass.
+> `docs/MCP_SERVER.md` carries the four variables. *Left, named:* the server still acts as ONE principal for every
+> HTTP client it serves — the per-caller policy is DE-2b; stdio needs no token, since the launcher's own process is
+> the credential. Next: DE-3a and DE-3d.
+
+> **Status 2026-10-03 — DE-3a and DE-3d BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:*
+> sqlglot 30.8 has `exasol` and transpiles the platform's DuckDB into it (`LISTAGG`, `DOUBLE`, `DATE_TRUNC`);
+> under the borrowed `postgres` name an Exasol connection was handed the POSTGRESQL writer rules plus "AVOID …
+> QUALIFY", which Exasol supports; the pool handed out any connection with no `is_healthy` as healthy, and only
+> Postgres and SQLite had one. *DE-3a:* `ExasolConnection.dialect = "exasol"`; an EXASOL block in the writer rules
+> (`DATE_TRUNC`/`TRUNC`, `DAYS_BETWEEN`/`SECONDS_BETWEEN`, `LISTAGG`, sized `VARCHAR`, QUALIFY supported, uppercase
+> folding) and an Exasol row in the capability contract (`SAFE_DIVIDE`, `IFF`, `DATEDIFF` refused; QUALIFY not), so
+> the parse step, the writer, the capability check and `native_sql` all read Exasol as Exasol; the two comments
+> and the test that held the old declaration up as the param-style counter-example say what it was. *DE-3d:*
+> `aughor/db/errors.py` types a driver's exception by its class name and message — `connection`, `timeout`,
+> `cancelled`, `sql` — without importing any driver (pymysql's `OperationalError` is decided by errno: 1792 is a
+> SQL refusal, 2006 a lost server); every connector's error result carries `error_kind`, and the door says
+> `failed:<kind>`; a connection error marks the connection lost, which the pool then closes on release and never
+> hands out, and `through_door` runs the statement once more only when its caller declared it the platform's own
+> (`retried:connection` on the path; a nested door sees the inner retry and does not run a third time) — a
+> person's or a model's statement comes back typed, for the caller to decide; every connection class answers
+> `is_healthy` (the base through `test()`, so nothing is counted healthy for lack of an answer; MySQL by a ping
+> that does not reconnect, Snowflake and Exasol by the driver's closed flag, BigQuery by its client's existence,
+> the DuckDB-backed ones by `SELECT 1`), and the pool refuses to hand out one that cannot say. *Receipt:*
+> `tests/unit/test_de3_engine_declares_and_errors_are_typed.py` — the Exasol declaration read by the rules, the
+> contract, the parse step and the transpile; 19 driver exceptions typed; a platform probe run once more on a lost
+> connection and a person's not, the pool closing the lost connection and discarding an unhealthy or silent one;
+> `is_healthy` on all 14 classes, the nine engines with their own; a real DuckDB SQL error typed at the door; 805
+> tests across the pool, dialect, door and connector suites, with the BigQuery, MySQL and Snowflake driver tests
+> green once their drivers are installed. *Left, named:* the connectors' own reconnect-on-any-error (Postgres
+> `_connect()`, MySQL `ping(reconnect=True)`) is unchanged — the pool's eviction makes it harmless; `timeout` and
+> `cancelled` are recorded and said, and nothing acts on them yet; `error_kind` rides the result, not yet the
+> answer envelope; the Exasol rules come from Exasol's documentation, not a live Exasol, which DE-3b's Trino
+> container is the planned stand-in for. Next: DE-5a to DE-5c with DE-5's hygiene.
+
+> **Status 2026-10-03 — DE-5a, DE-5b and DE-5c BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured
+> first:* the grid already had the typed result (`columns_typed`, `truncated`) and used it only to right-align
+> numbers; the "value index" the plan named for DE-5c is `sql/value_index.py`, a trigram matcher built per call over a
+> sampled list for the resolver and the join guard, not a store of a column's values — the one source of a column's
+> values is a live `SELECT DISTINCT` through the door, which `GET /connections/{id}/distinct` already runs
+> (`internal=True`, `IS NOT NULL`, capped at 1,000, an empty list on error) for the query builder's pickers; and the
+> filter grammar's `in` stripped the quotes off a quoted LIST as a pair (`"a", "b"` → `a", "b`), so a quoted list
+> matched nothing, silently. *DE-5a:* the declared type under each column name, in the engine's own words, and a `#`
+> column numbering the rows in the order on screen — the number the value viewer and go-to-row already used; neither
+> is a cell, so neither is selected, copied or filtered. *DE-5b:* a right-click menu on a cell — filter to this value,
+> exclude it, only null, only non-null, pick values in the column, copy the value / as a SQL literal / as JSON, open
+> the value — and on a header, pick values. Every filter entry writes a phrase in the filter grammar and hands it to
+> the chip bar's own constructor (`makeFilter`), so a filter made by a click is the same chip as one typed: visible,
+> removable, chained with the rest, round-tripped by the same parser; the value is quoted so a comma, a quote or the
+> word `or` stays one value; a NULL cell's "filter to this" is the null test. The menu offers no filter on a
+> transposed grid (its columns are not the result's) or where no chip bar exists to feed. *DE-5c:* a pick list of
+> distinct values on each column (the filter glyph in the header, or the menu), and it says where they come from:
+> `From the N rows shown`, with a count per value, when the result was not cut; when it was cut and the statement
+> reads exactly one table (`singleTable`: no join, union, CTE or subquery), the table itself, read live through the
+> door — `From the table schema.t, read live — NULL not listed`, `the first N` when the live read was cut too — with
+> no counts, since the live read has none; when it was cut and no table can be named, or the read failed, the rows'
+> values with `the result was cut, so more values may exist`. A pick of several values is an `in` list, a picked NULL
+> rides as `or … is null`, and a value `in` would split (a comma) or drop (an empty string) is said as its own `=`
+> clause. The grammar's `in` bug is fixed at the cause — the list keeps its text whole and each entry is unquoted on
+> its own. *Receipt:* `web/lib/query/cellMenu.test.ts` round-trips every phrase the menu and the picker write through
+> `parseFilter` + `applyFilters` and asserts the row SET (18 cases, among them `now or never`, `x, y` and `say "hi"`);
+> `web/components/query/ResultsGrid.test.tsx` renders the grid with the virtualizer stubbed and asserts the type
+> line, the row numbers, each menu entry's phrase, the viewer, Escape and all four source lines of the picker (15
+> cases); `resultFilter.test.ts` holds the `in` receipt; 1,490 web tests and all seven gates green (`tsc`, vars,
+> tokens, format, elements at 55, icons, palette). *Left, named:* the live read leaves NULL out by the route's `IS NOT
+> NULL`, and the picker says so; the route answers an empty list on an error, which the picker reads as "could not
+> read" and falls back to the rows — a typed refusal on that route belongs with DE-5d's door work; a live value list
+> has no counts; the picker is not offered on a transposed grid. Next: DE-5's hygiene (CSV formulas, upload types),
+> then DE-4.
+
+> **Status 2026-10-03 — DE-5's hygiene BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first, and
+> finding 10 moved:* on DuckDB 1.5.2 the CSV sniffer types a column of integers too large for BIGINT as DOUBLE
+> before `_suggest_type` ever sees it — two distinct 23-digit ids both arrive as 1.2345678901234568e+22, and no
+> cast after the read can bring the digits back, so the loss is at the reader, not in the suggestion the study
+> blamed; the sniffer keeps `02134` as text but reads `-00042` as the BIGINT -42; and the suggester did offer BIGINT
+> for the text zip column, which accepting turns into 2134. The web's five CSV producers all import one `toCsv`, so
+> finding 9 has one door; the Python `rows_to_csv` is the closed-loop grader's output contract, byte-for-byte
+> pandas, not an export a person opens, and is untouched. *Finding 9:* `toCsv` writes a string cell that opens with
+> `=`, `@`, a tab or a carriage return — or with `+`/`-` followed by anything but a number as people write one (a
+> currency mark, digit groups, a decimal, an exponent, a percent) — with a leading `'`, the mark every spreadsheet
+> reads as "text" and shows, so the reader sees the cell was a formula and can take the one character off; a
+> number cell and a signed amount (`-$5,421.84`, `+12%`) are never touched; a column name is a cell too; the TSV
+> clipboard copy is left as the cell's own text, since a copied value is pasted into editors and chats, not only
+> sheets; `formulaCellCount` is exported for a surface to say how many cells it prefixed, and none does yet.
+> *Finding 10, at the reader:* for a CSV or TSV, a numeric-sniffed column whose raw text holds a value with a
+> leading zero, or holds integer literals only where the sniffer said DOUBLE (overflow is the only reason it
+> does), is read as VARCHAR by the reader's own `types=` option — the file's text, not the parsed value cast back;
+> a column pinned (reload) or overridden (ingest) to VARCHAR rides the same option, so a VARCHAR pin reproduces the
+> digits where a TRY_CAST over the sniffed read kept the DOUBLE's spelling; `analyze_file` says why on the column
+> (`kept_as_text`: "leading zeros" / "integers beyond BIGINT") and the import review shows it as a chip, so
+> VARCHAR where a number was expected is explained, not implied; a person's override to a number is still their
+> call. *Finding 10, at the suggester:* a leading-zero digit string is offered no numeric type, and integer
+> literals BIGINT refused are never offered as DOUBLE. Parquet and JSON carry their own types and are left alone.
+> *Receipt:* `tests/unit/test_de5_hygiene_upload_types.py` (10) — the premise re-measured on the engine the test
+> runs on, the reader option quoting names and leaving a non-CSV reader alone, the reasons named, a real DOUBLE
+> column with one oversized value left a DOUBLE, analyze saying why with the preview exact, the suggester still
+> tightening `12`/`4.5`/`true` while declining `02134` and the 23-digit id, ingest keeping every digit and pinning
+> VARCHAR, a fresh connector reproducing it from the pin, the override honoured, an ordinary file unchanged;
+> `web/lib/query/csv.test.ts` (13) — the byte string for each case, and TableActions' answer-table fixture
+> (`-$5,421.84`) exporting as before; 290 tests across the upload, costume, seed, intake, storage and connector
+> suites green (the BigQuery binding tests with their driver installed), 1,503 web tests and all seven gates green,
+> the token ratchet lowered to 890 as the gate asked. *Left, named:* no export surface yet says how many cells it
+> prefixed; a DOUBLE column holding both fractions and an oversized integer keeps the DOUBLE, and that value's
+> rounding, since the column is a number; the live receipt the study named — `02134` surviving an upload on the
+> user's machine — has the unit receipt here and the screenshot still owed. Next: DE-4.
+
+> **Status 2026-10-03 — DE-4 BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first:*
+> `scripts/de4_lineage_precheck.py` over the golden set's 66 statements (53 reference, 13 accepted alternates)
+> against the seeded ecommerce fixture: 122 of 136 output columns resolve to a table column (108 certain, 14
+> likely), no statement fails to qualify, about 10 ms a statement; the 14 that do not resolve are every `COUNT(*)`,
+> which rests on a table and no column — the study's 130 counted those as resolved to their table; here they are
+> said as such. theLook's audit is owed from the user's machine: `uv run python scripts/de4_lineage_precheck.py
+> --connection 8233e4fd --limit 2000` reads the audited statements and the connection's schema in its own dialect.
+> *Measured on the way:* no structured schema exists at execution time — `get_schema()` is text, held 300 s by the
+> router's cache — so a receipt qualifies against the text already in hand (`sqlglot_schema`: names only, all
+> `qualify` needs; sqlglot matches a statement's `schema.table` to a flat `table` and a bare `table` to a nested
+> one, measured); the quality store's rules carry a column and its results dropped it; `govern/lineage.py` found
+> its sites by a regex over SQL text. *Built:* `aughor/sql/lineage.py` — sqlglot's `qualify` and `lineage` over one
+> statement: output, filter, join and group columns, each edge *certain* (the parser bound it, with the schema or
+> an explicit alias), *likely* (bound through a CTE or a subquery) or *possible* (by name only: no schema, one
+> source); a row count rests on the tables its select reads, said so, never dropped; a `SELECT *` with no schema,
+> a statement sqlglot cannot parse, or one that is not a SELECT falls back to TABLE level with the reason; a
+> dialect the door records that sqlglot spells otherwise is mapped, an unknown one parses generically. *On the
+> receipt* (§6 item 37(f): the Ledger's lineage rows, no store of its own): the three producers —
+> `_write_answer_receipt` (chat, deep analysis, monitors), `_write_builder_receipt` (builder, workbench; the
+> connection's dialect, the schema from the cache when warm, never rendered for this) and the explorer's finding
+> (the schema rendered once per run) — write one `("column", "column:t.c", {roles, confidence, as})` row per
+> column read, a `("column", "table:t", …)` row for an output resting on a table, and one `("lineage",
+> "level:column|table", why)` row, so a reader tells "read no column" from "columns not traced", and a receipt
+> from before DE-4 reads as not traced; the payload carries `columns` for the context graph. *Readers:* the public
+> receipt gains `columns`, and the "Why this number" drawer shows *Columns read* with each column's resolution,
+> the row counts as such, and the fallback's reason; a quality result gains `column_name` (added to the store in
+> place; the rules always had it), a column-level caveat rides only the answers whose receipt read that column, an
+> untraced receipt keeps the table scope; `govern/lineage.py` reads a finding node's `columns` (from the receipt,
+> through the context graph) and reports *reads orders.status* as the site instead of a line of text, keeps the
+> text scan for a node from before, and `dependents_of(…, column=)` / `GET /graph/lineage?column=` narrow a walk to
+> one column — a dependent whose columns were never traced is kept and says so, since a preview that hid it would
+> under-report what a change breaks. *Receipt:* `tests/unit/test_de4_column_lineage.py` (20) — the schema map;
+> outputs, filters, joins and groups with their resolution on a CTE join; a row count on its tables; no-schema
+> binding by name and by alias; the `SELECT *` fallback with and without a schema; not-a-SELECT and not-parsed;
+> dialect names; BigQuery's three-part spelling; the receipt rows and what a reader gets back, an untraced receipt
+> reading as not traced, the strongest resolution winning across statements; a column caveat riding only the
+> answers that read the column (`orders.status` on the answers that read `orders.status`, and on no others); the
+> builder receipt carrying its columns through the Ledger into the public receipt; the dependency walk on a
+> column; the golden-set floor (≥ 122 of 136, every unresolved output a `COUNT(*)` on a table); 1,124 tests across
+> the receipt, lineage, quality, context-graph, explorer and trust suites green; the web gates green. *Left,
+> named:* theLook's number; types are not on the receipt's columns; a receipt from before DE-4 cannot be excluded
+> from a column walk; the live receipt the study named — a theLook answer whose receipt names its columns — waits
+> for the user's machine, the unit receipt stands in. Next: DE-3b.
+
+> **Status 2026-10-03 — DE-3b BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:* an engine
+> was spread over seventeen non-test files, not the fourteen the study counted (three more since: `db/connection.py`,
+> `db/errors.py`, `agent/sql_context.py`); the registry kept six parallel dicts; the web kept not three hand copies
+> but five, and two had drifted — the connection modal (`app/page.tsx`) and the catalog's tags knew nothing of
+> MotherDuck, Exasol, Google Sheets or SQLite, and the modal asked MySQL for a DSN where the server reads host, port,
+> user, password and database; a generator and a drift test already existed for `catalog.json` alone; and the
+> federated connector's class said `warehouse` while the picker filed it under `federation`. *Built:*
+> `aughor/connectors/declarations.py` — one `EngineDeclaration` per engine, eighteen in all: identity, label and
+> blurb, category and badge, DSN preview, form fields with secrets and optionals, drivers, the connector class, the
+> sqlglot dialect, native or transpiled, bind style, engine read-only, writer rules, refused constructs, support tier
+> (core / supported / preview), metadata strategy, environment variables, brand colour, the editor's grammar family,
+> the prompt's spelling, and the driver's exception names for a lost connection, a timeout and a cancel. Derived
+> from it, by pure functions a test can run on a mutated tuple: the registry's six tables and its registrations;
+> `db/dialects._DIALECT_RULES`; `db/capabilities._CAPS`; `agent/sql_context._ENGINE_NAMES`; `db/errors`' driver
+> names (only the standard library's and the HTTP stacks' are written there now); `connectors/catalog.json`
+> (version 2: dialect, native, bind style, tier, strategy, refusals) and `web/lib/connectors.gen.ts`, both written
+> by `scripts/gen_connector_catalog.py`; and the five web maps read the generated one — the picker's labels and
+> badges, the brand colours, the editor's dialect family, the connection modal's types and fields, the catalog's
+> tags — so the two drifted copies are whole. Each connector class keeps its own `dialect` / `writes_native_sql` /
+> `param_style` / category, and a test holds every class to its declaration (federated now says `federation`).
+> *Trino* (§6 item 37(d)): declared once and its connector written — `warehouse/trino.py`: the door, typed errors,
+> `is_healthy`, `EXPLAIN (TYPE VALIDATE)` as the dry run, `information_schema` metadata, no bind style since the
+> DBAPI binds positionally (a decision recorded in the capability test); `trino>=0.330.0` pinned in `[warehouse]`
+> and locked. It reaches the picker, the writer rules, the capability contract, the prompt, the error typing and
+> the catalog from the declaration alone. *Receipt:* `tests/unit/test_de3b_one_declaration.py` (21) — the
+> registry's tables equal the derivation; every registered class agrees with its declaration; the two built-ins
+> and `connection_traits`; rules, capabilities and names derived; the generated files current; a made-up engine
+> appended to the tuple reaching every derived surface with nothing else edited, its exception name typed; Trino's
+> facts everywhere and its connector run through the door on a fake driver (a result returned, a lost connection
+> typed `connection`); 120 tests across the connector catalog, categories, dependencies, capabilities, DE-3 and
+> lockfile suites; 1,503 web tests and the seven gates green. *Left, named:* the live Trino receipt waits for the
+> container on the user's machine; `PROVIDED_BY` (import module → distribution) stays a hand-kept map by design,
+> shared across engines; the brand drawings in `BrandLogos.tsx` are hand-made, not data; the two built-ins in
+> `db/connection.py` declare their dialect on the class and are held to the declaration by the test rather than
+> reading it. Next: DE-3c.
+
+> **Status 2026-10-03 — DE-3c BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:* no engine
+> read a declared key or a comment (finding 8 held); SQLite's `PRAGMA table_info` and DuckDB's `DESCRIBE` fetched
+> the key flag and dropped it in three places; `duckdb_constraints()`, `duckdb_columns().comment` and
+> `duckdb_tables().comment` answer directly on DuckDB 1.5.2; the join inference was names only, and the first
+> edge to claim a table pair blocked every later one. *Built:* the coverage row lives on each engine's declaration
+> (`metadata_facts` — columns, primary keys, foreign keys, comments, each *supported*: the platform reads it,
+> *unsupported*: the engine has no such fact, or *unknown*: the engine may carry it and the platform does not read
+> it yet, with the reason) and rides the catalog and the web map. `aughor/db/metadata.py` reads what is supported
+> through the connection's door as the platform's own statement: DuckDB and the DuckDB-backed databases through
+> the catalog functions; SQLite through `pragma_table_info` / `pragma_foreign_key_list`; Postgres through
+> `information_schema`'s constraints and `pg_description`; MySQL through `KEY_COLUMN_USAGE` and the comment
+> columns. A file, a sheet, a synced API object and a federated view say *unsupported* with why; BigQuery,
+> Snowflake, Exasol and Trino's comments say *unknown — not read yet*; a read that fails turns its facts *unknown*
+> with the error, never an empty list; an unknown connection class is *unknown*, not guessed from its dialect.
+> `GET /connections/{id}/metadata` returns the typed read. *Declared keys lead the join inference:*
+> `compute_join_map(table_cols, declared=…)` seats a declared foreign key first with `match="declared"` and claims
+> its table pair before the name pass; `join_map_for(conn, …)` reads the engine (cached 300 s), and the heavy
+> schema build, the profile route, the explorer and the rich schema route use it; the ontology's
+> `join_confidence` gains `declared`, a declared edge the value check disputes is KEPT with its measured overlap
+> rather than dropped, the catalog block says *DECLARED foreign key, but only N% value overlap — the declaration
+> and the data disagree*, and a verified declared edge says *declared foreign key* beside its overlap. *Receipt:*
+> `tests/unit/test_de3c_typed_metadata.py` (28) — every engine states all four facts and why, and a declared
+> *supported* read has a recipe; the rows in the catalog and the web map; DuckDB reads its keys and comments live
+> through the door; `orders.buyer → customers.id`, a key no name would find, leads the join map while the name
+> pass still fills `events.customer_id`; a qualified schema text matches by bare name; a broken read leaves the
+> names; SQLite reads its keys live and says comments are not a thing; unsupported, unknown and a failed read are
+> told apart; the Postgres and MySQL recipes parse in their dialects; the ontology keeps a disputed declared edge
+> with its overlap and renders both claims; 53 tests across this, DE-3b's and the catalog's suites; 1,503 web tests
+> and the seven gates green. *Left, named:* the Postgres and MySQL reads are written from the catalogs'
+> documentation, parse, and wait for a live engine; BigQuery's unenforced keys and field descriptions, Snowflake's
+> keys and comments, Exasol's constraint views and Trino's comments are *unknown* until read; nine other
+> `compute_join_map` callers (the planner's nodes, the packs' gate, the context manifest, the schema linker, the
+> ambiguity check, the data catalog, and the module's own infer-joins, Mermaid and join-path renderers) still
+> infer from names alone — the function takes `declared` and they do not hand it; comments are read and returned,
+> not yet shown in the schema text or the UI. Next: DE-2b.
+
+> **Status 2026-10-03 — DE-2b and DE-2c BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:*
+> `orgsettings/` is one JSON file for the install plus workspace overrides, not keyed by organisation — the one
+> per-org setting is the LLM binding, in its own SQLite table; the audit log is shaped around SQL, has no principal
+> column, and no MCP call was audited; the four knowledge tools ran in the MCP process with no principal bound, so
+> every read was the default organisation's, the clearance trim saw no caller and the connection-owner check
+> never ran; the server's eighteen tools carried no `readOnlyHint` or `destructiveHint`; and the RBAC table cannot
+> tell `read` from `run` from `act` for an agent — `/exploration/{c}/start` and every Spotlight call fall to
+> `resource.write`. *DE-2b:* `orgsettings/agent_policy.py` keeps one policy per organisation in the LLM binding's
+> store (§6 item 37(c): no new store) — `level` read / run / act, `connections` and `tools` allowlists, who set it
+> and when; the default is `run` with nobody named, `act` is saved only with a person's name, the environment
+> (`AUGHOR_AGENT_POLICY_LEVEL` / `_CONNECTIONS` / `_TOOLS`) can only narrow it and the effective policy says when
+> it did; it is read on every call. `mcp/policy.py` is the one level map — the eighteen tools, the routes a method
+> alone cannot classify, Spotlight's act limb (held to the roster by a test) — with four stable codes. The MCP
+> client marks every call its own (`X-Aughor-Agent: mcp`, `X-Aughor-Tool`); `rbac/agent_gate.py`, an app-wide
+> dependency after identity and RBAC, is inert for every unmarked request and, for a marked one, checks the tool
+> allowlist, the level the route needs and the connection the request names in its path, query or JSON body,
+> refuses with a 403 carrying the code, and writes every call — allowed or refused — to the Ledger as
+> `mcp.tool_call` with the principal, the tool, the route, the verdict and bounded arguments; the governance feed
+> lists it under data access with a one-line summary. `GET` / `PUT` / `DELETE /org-settings/agent-policy` (PUT and
+> DELETE need `ADMIN_MANAGE_ORG`, and refuse the agent mark with `AGENT_POLICY_NOT_SELF_SET` before anything else)
+> show the saved, the environment's and the effective policy. The MCP server (`PolicedFastMCP`) reads the
+> effective policy from the API with its own principal, hides a disallowed tool from `tools/list`, refuses one
+> called by name with the same code, applies the default `run` when the API cannot be asked, and stamps every
+> tool with its hints — a read `readOnlyHint`, an act `destructiveHint`, a run neither. Under the default,
+> `cancel_job`, the automation tools and Spotlight's acts are hidden until a person grants `act`: today's exposure
+> made explicit, as decided. *DE-2c:* `GET /knowledge/{connection}/graph/search`, `/entity/{entity}`,
+> `/table-health` and `/trusted-queries` run the four bodies in the API process under the request's organisation,
+> user, RBAC and connection-owner check; the MCP tools reach them through the client; the bodies stay where the
+> chat tools call them in-process. *Receipt:* `tests/unit/test_de2b_agent_policy.py` (18) — the default and its
+> reasons; a saved policy read on the next call, `act` by nobody refused; the environment narrowing and never
+> widening, an unreadable cap the tightest; every registered tool with a level, the routes classified, the act
+> names the roster's own; an unmarked request untouched under a `read` policy; the default refusing `cancel_job`
+> by name with its code and serving a read; a `read` policy refusing `/chat` with `required_level: run` and a
+> person's `act` opening the cancel; tool and connection allowlists refusing by name, the connection in the body
+> included; two agent calls audited with their principal and on the governance feed, the summaries saying allowed
+> and refused; the policy route set by a person and refusing the agent; the server hiding `explore` under `read`
+> and refusing it by name, listing `cancel_job` with its destructive hint under `act`, a tool allowlist, the
+> default when the API is down; the knowledge tools calling the API with the mark and the tool name, the routes
+> answering in the API process, a `read` policy still reading them; 381 tests across the 25 MCP, principal,
+> knowledge, roster, trace, registry and platform-tool suites green, and the 693-test RBAC / audit / governance /
+> MCP sweep. (The four doors joined the existing knowledge router — a first draft wrote them as a new module of the
+> same name and took the documents, glossary and knowledge-source doors with it; the knowledge-sources suite caught
+> it before the commit.) *Left, named:* the connection check reads the
+> path, the query and a JSON body — a connection named any other way is not checked; the web shows no policy page
+> yet (the routes carry it); with identity off every agent is the default organisation's, as before; the live
+> receipt — an MCP client refused under identity before and served after — is DE-2a's test, and the audit page is
+> the governance feed's data-access view. Next: DE-5d.
+
+> **Status 2026-10-03 — DE-5d BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:* the row
+> limit the Run menu sends was not the cut — `execute_typed` ran every statement under the connector's per-call
+> cap (500 on DuckDB, Postgres and SQLite; 2,000 elsewhere), so limits of 1,000, 5,000 and 50,000 all came back
+> as 500 rows, `truncated`, and the presets above 500 were a promise the connector never kept; the budget slice
+> (`row-budget:10000`) did not mark the typed sink truncated, so a budget-cut result would have read as whole once
+> the cap was lifted; `COUNT(*)` over a person's statement under the person's label passes `validated`,
+> `safety-checked`, `pii-checked` and `audited` — the run's door; nothing counted a statement's rows and nothing
+> paged them; on a 3M-row DuckDB table an OFFSET page costs what a re-run to the same depth costs (13.6 ms
+> against 11.6 ms at 500; 68.7 against 72.8 at 50,000) and `COUNT(*)` 35 ms, so paging is not the dearer path
+> there — where BigQuery bills every statement as a scan of its tables, each page would cost what the whole
+> result cost, which is the study's falsifier. *Built:* `execute_typed(max_rows=)` runs the typed read through
+> `execute_bounded`, so the limit is honoured up to the connection's row budget, and the typed response says
+> what cut it — `cut_by` is `limit`, `budget` or `cap` (a parameterised run, which has no bounded read, still
+> stops at the cap and says so); `POST /query/count` wraps the statement in `COUNT(*)` (`sql/paging.py`) and
+> runs it through the run's door under the run's label with the run's bound values, answering the total with
+> its `as_of` or a typed refusal (`BLOCKED`, `NOT_WRAPPABLE`, `FAILED`) whose total is null, never 0;
+> `POST /query/more` runs the next page the same way (`LIMIT n+1 OFFSET shown`), typed, with `offset`,
+> `ordered` and a caveat when the statement's outermost query has no ORDER BY, so a page can repeat or skip
+> rows; each declaration now says what a re-run costs (`rerun_cost`: local, compute, bytes_scanned, unknown)
+> and on a `bytes_scanned` engine (BigQuery, S3) the page is refused with `PAGE_BILLED_AS_SCAN`, naming the
+> higher-limit re-run as the way that is billed once; the BigQuery connector writes `bytes-processed`,
+> `bytes-billed` and `cache-hit` on the trail from the job's own statistics, so the owed theLook measurement
+> reads from the doors; the `/distinct` route answers a table it could not read with `DISTINCT_FAILED` and the
+> engine's words, and the picker says them. The results footer names the cut, offers "Count all rows" (the
+> total and its as-of, or the refusal) and "Load N more" (appended to the grid, the caveats joined once); both
+> reset on a new run. *Receipt:* `tests/unit/test_de5d_count_and_more.py` (24) — the limit honoured at 1,000
+> and 5,000, the budget at 50,000 said as `budget`, a bound run's `cap`; the count's total and aware `as_of`,
+> one audit row per count under the run's label and the door words on the same statement; the typed refusals;
+> the page's cells in order with the probe, the unordered caveat, the refusal on a bytes-scanned engine with
+> the count still answered; every engine's `rerun_cost`, the ORDER BY reader on nine shapes, the BigQuery cost
+> words, the RBAC rows; the door census holds the six new call sites (and one DE-3c site it had missed); 115
+> tests across the query, census, SE-0, cache, GM-3, declaration and cut-read suites green; web:
+> `ResultsPanel.test.tsx` (9) and the picker's refusal line, 1,513 web tests and all seven gates green, the
+> typed client regenerated. *Left, named:* the live BigQuery bytes receipt is owed from the machine that holds
+> theLook; paging a BigQuery result for free from the job's own result table is the better path there and is
+> not built; the bound path stays at the connector's cap; "Load more" is a window over a re-run, so a table
+> that changed between pages shows it at the seam, and only an ORDER BY makes the seam exact. Next: DE-5e.
+
+> **Status 2026-10-03 — DE-5e BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first, and the
+> premise was wrong in the useful direction:* no engine hands the web a geometry it can recognise by type.
+> DuckDB's spatial extension is never installed (and could not be downloaded from the build machine, HTTP 403);
+> every warehouse connector's `stage_type` named a GEOGRAPHY, GEOMETRY, JSON, VARIANT, OBJECT, ARRAY, STRUCT or
+> BYTES column "VARCHAR" — a test pinned it — and Postgres names a PostGIS column `TYPE(<oid>)`; the value shapes
+> differ by engine (BigQuery WKT text, Snowflake GeoJSON text, PostGIS hex EWKB, MySQL bytes with a 4-byte SRID
+> before the WKB); and on the value path a DuckDB STRUCT reached the grid as an object (`[object Object]`), bytes
+> as Python's `b'…'` repr and a BYTEA as `<memory at 0x…>`. *Built, at the causes first:* a cell is a scalar by
+> the grid's own contract — a STRUCT, MAP, LIST or JSON value arrives as its JSON text and bytes as hex, the one
+> text every engine's binary and WKB reads the same in (`routers/query.py _json_cell`); a document, shape or
+> bytes kind keeps its own type name through `stage_type` (the stage's `_empty_type` already reads any name it
+> does not know as text), so the type line under the column says GEOGRAPHY where it said VARCHAR. *Then the
+> viewers:* `web/lib/query/cellKind.ts` reads what a value IS from the value first and the declared type second
+> — WKT (all seven types, Z/M, EMPTY, an `SRID=n;` prefix), GeoJSON (a geometry or a Feature), WKB as hex (plain,
+> PostGIS EWKB with its flags and SRID, ISO type codes, MySQL's SRID prefix), an image URL or inline image, a
+> whole JSON document — strictly: a WKB must consume every byte and a WKT parse to its end, so a hex id is never
+> a shape; `ValueViewer.tsx` replaces the grid's one text pane with a JSON tree (collapsible, nulls as `∅`), an
+> image that is not loaded until asked — the note says loading it tells that host you looked — and a geometry
+> drawn to its own bounds (`GeometryOutline.tsx`: dots, polylines, closed paths; no base map, and the caption
+> says so, with the type, the positions, the bounds, whether they fit longitude and latitude, and the SRID); the
+> header says how the value was read ("geometry · WKT, read from the text, declared VARCHAR"), and a Text toggle
+> shows the raw value under any viewer. *Receipt:* `web/lib/query/cellKind.test.ts` (11) — the three encodings,
+> the refusals (an md5, a byte too many, a sha256-length string that starts like a point, an unknown type code),
+> bounds, the one-line description, images, documents, the kind and how it is said; `ResultsGrid.test.tsx` opens
+> a JSON cell as a tree and collapses a node, a WKT cell as an outline with its caption, an image URL that is not
+> loaded until the click; `tests/unit/test_de5e_cell_values.py` (24) — scalars from a DuckDB STRUCT, LIST, MAP,
+> JSON and BLOB through `/query/run` with their own type names, the hex and JSON-text cells, sixteen kind names
+> kept and five stage names unchanged, the stage's all-null fallback; tsc and the seven gates green. *Left,
+> named:* no live geometry was read from any engine on the build machine (no spatial extension, no warehouse
+> driver) — the parsers are held to the encodings' definitions and to hand-built bytes, and the first live
+> GEOGRAPHY from theLook is the owed receipt; PostGIS still shows `TYPE(<oid>)` as its name, the value is read
+> all the same; no map, by decision — the outline is the shape at its own scale; a binary that is not WKB shows
+> as hex text, there is no hex-dump pane. Next: DE-5f.
+
+> **Status 2026-10-03 — DE-5f BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:* the
+> ontology's relationships carry the measured value overlap and cardinality, but only between tables that
+> resolve to object types, and one edge per type pair; the join map (`tools/schema.py`) carries declared keys
+> and name matches with no overlap until the join guard probes them (`sql/join_guard.py verified_join_edges`,
+> cached per connection); the one door that opened "linked rows" (`/objects/{type}/{pk}/links/{link}`) needs
+> object types and a measured cardinality and refuses N:N; and the typed `/query/run` response says nothing
+> about which table an output column came from, so the cell menu knows a table only when the statement reads
+> exactly one (`singleTable`, DE-5c's rule). *Built:* `sql/related.py` gathers every join touching one table
+> column in either direction — the ontology's edges first, with their overlap and the cardinality read from
+> this column's side, then the verified join map for the pairs the ontology does not hold — and gives each a
+> verdict and a sentence in the catalog's own words: `verified` ("100% value overlap; declared foreign key"),
+> `declared` ("declared foreign key — not probed"), `disputed` ("DECLARED foreign key, but only 12% value
+> overlap — the declaration and the data disagree"), `rejected` ("0% value overlap — the columns share a name
+> and not their values"), `unprobed` ("name match — not probed, so not opened on the name alone"); only the
+> first two open rows. `GET /connections/{id}/related-joins?table&column` lists them and says whether an
+> ontology is built; `POST /query/related` composes the one statement — `SELECT * FROM "customers" WHERE "id"
+> = :v`, identifiers quoted for the engine, the value BOUND and never in the text — looks the join up again
+> and refuses with `JOIN_NOT_VERIFIED` and the join's own evidence when it is not one the data bears out, then
+> runs it through the run's door under the run's label (`gate_user_sql`, the parse step, the safety check, the
+> row policy, redaction, audit, metering), answering the typed shape with the statement, its `params`, a
+> `label` and the evidence as the first caveat ("Related through orders.buyer = customers.id — 100% value
+> overlap; declared foreign key."). The cell menu offers "Related rows…" when the statement reads one table and
+> the cell is not NULL; the picker lists each join with its sentence and its source (the ontology, the
+> schema), offers the openable ones, shows the others disabled with their evidence, and says when no verified
+> join touches the column and whether an ontology is built; an opened result becomes the next page of the
+> pager, named by its label, and its count and pages run with its own bound value. *Receipt:*
+> `tests/unit/test_de5f_related_rows.py` (17) on a DuckDB with a declared key, a name match the values bear
+> out and one they disprove, probed for real — the declared key at 100% overlap, both sides of the key column,
+> the disproved pair listed and not openable, an empty list for a column no join touches; the rows opened
+> through the declared key with a quoted key bound (`c'1`), one audit row under the run's label, the statement
+> and label and caveat as written; the other way round and through the verified name match; the three
+> refusals (a disproved pair, a pair no join connects, a NULL) and the 404; a saved ontology edge leading
+> with 97% overlap and `N:1`, read as `1:N` from the other side, deduplicating the map's copy, and riding the
+> opened rows' caveat; the six verdicts and their sentences; the statement's quoting for two engines; the
+> RBAC row; the door census holds the new site; 131 tests across the related, census, RBAC, DE-5d, DE-5e,
+> join and metadata suites green. Web: four `ResultsGrid` cases (not offered without a table or on a NULL,
+> the list with its evidence and the disabled rejected join, the empty note) and one `ResultsPanel` case
+> (the labelled page whose count runs with its own value); tsc and the seven gates green; the typed client
+> regenerated. The broad sweep's other failures are the build machine's (no `google`, `pyarrow`, `pymysql` or
+> `opentelemetry`, no vector store) and three not traced to this wave before the commit — two BigQuery
+> binding cases, a pptx caption test and the lowercase-`information_schema` ratchet, whose only hit among
+> this arc's files is DE-3b's `metadata_strategy` literal. *Left, named:* the related rows are offered only
+> when the statement reads one table — a join's
+> result column has no one table to ask until the typed response carries the lineage DE-4 already writes on
+> the receipt; a join the guard could not probe opens only when the engine declares it; the picker reads the
+> joins on each open, the probes being cached per connection; the live ontology receipt is owed where one is
+> built (theLook). Next: Arc DE is built through DE-5f — the owed live receipts (theLook's parse-step audit,
+> lineage count and GEOGRAPHY, the Trino container, Postgres and MySQL metadata reads, BigQuery bytes) wait
+> for the machine that holds the connections.
+
+> **Status 2026-10-03 — Arc DE CLOSED from the build machine** on `claude/focused-hamilton-8w0q1f`, not merged.
+> What the waves left named and buildable here is built. *(a)* The typed response carries each output column's
+> SOURCE table column from DE-4's lineage (`columns_typed[i].source`), only where the lineage names one column
+> as the alias's output and the output IS that column (`c.name`, `name AS who`) — an expression over it
+> (`total * 2`) carries none, said by a `computed` key on the receipt's own lineage row — so the grid reads a
+> column of a JOINED statement live (DE-5c) and opens its related rows (DE-5f) through that column's own table
+> and schema, where before both knew a table only when the statement read exactly one. *(b)* The bound path
+> honours the limit: `execute_with_params(max_rows=)` on the base, DuckDB, Postgres, the Workspace and the
+> out-of-module connectors, so a parameterised run of 1,000 returns 1,000, and `cap` is said only by a connector
+> with no bounded read. *(c)* Settings ▸ Organization gains the agent-policy section DE-2b's routes lacked: the
+> policy in force in one sentence (set by whom and when, or the default set by nobody, and what the environment
+> narrowed), the three levels with their meanings, the two allowlists, Save and Return to the default, disabled
+> without `admin.manage_org` and saying so, a refusal in the server's words. *(d)* `scripts/de_live_receipts.py`
+> runs every owed live receipt in one command on the machine that holds the connections and writes
+> `docs/DE_LIVE_RECEIPT_<date>.md` — DE-1's parse-step audit and a MySQL refusal beside the session's read-only
+> flag, DE-3b's Trino statement through the door, DE-3c's metadata rows on each engine, DE-4's lineage count,
+> DE-5d's bytes per page against a re-run (the cost words on the trail), DE-5e's first geometry and the encoding
+> it arrives in — each step failing on its own; dry-run end to end here against a scratch DuckDB connection
+> (exit 0, five sections, the metadata read finding the declared key). *Receipt:* `tests/unit/test_de_close.py`
+> (14) — a joined statement's columns each carry their own table column and the computed one carries none, the
+> shape unchanged otherwise, `_output_sources` on the receipt's own rows, ten output expressions told bare from
+> computed, related rows opened from a joined statement's column through its source; the bound run at 1,000 and
+> `cap` still said where it applies (`test_de5d_count_and_more.py`); web `AgentPolicySection.test.tsx` (6) and
+> one case each in `ResultsGrid` and `ResultsPanel` for a joined statement; tsc, the seven gates, ruff and the
+> vocabulary ratchet green. *Owed, now one command:* `uv run python scripts/de_live_receipts.py --connection
+> 8233e4fd --mysql <id> --postgres <id> --trino <id>` on the machine that holds theLook; its output file is the
+> arc's live receipt. *Left, by decision:* paging a BigQuery result from the job's own result table; a PostGIS
+> column still named by its OID on the typed response; no map under a geometry; DE-7's JDBC bridge, recorded,
+> not scheduled.
+
+**The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
+
+- **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each
+  connection's own dialect, so the next connector cannot skip it; `SafetyChecker`'s syntax-tree checks take the
+  dialect; `sql/readonly.py` learns executable comments, locking clauses and the side-effect functions (advisory
+  locks, `GET_LOCK`, a `set_config` of a read-only setting); MySQL opens its session read-only, Postgres refuses the
+  statement that would turn its backstop off, and an engine with no session-level read-only says so in the doors on
+  the result; the door census asserts that every connector validates; the ALTER COLUMN endpoint reads the door's
+  answer instead of reporting `applied: true`; schema samples and value lists reach the model fenced as untrusted
+  data with a cap per value, as query rows already are (moved from DE-6 at the user's word, 2026-10-02).
+  **Pre-check:** the parse step over theLook's
+  newest 2,000 audited statements and the golden set, counting valid SQL it would refuse. **Receipt:** the study's
+  nine statements before and after through the real doors, one live MySQL refusal, the pre-check's count, a sample
+  value worded as an instruction reaching the prompt inside the fence; mutation-tested. Small; no flag (§6 item 37(b)).
+- **DE-2 · An outside agent is a principal with a policy.** DE-2a (small): the MCP client presents a principal; the
+  key is compared in constant time; `--http` requires a bearer token and sets its host allowlist after the host.
+  DE-2b (medium): one policy per organisation — `read`, `run` (explorations and analyses, which spend model calls),
+  `act` — with connection and tool allowlists, kept with the organisation's settings, enforced in the API, disallowed
+  tools hidden and refused by name with stable codes, the environment only able to narrow it, every call audited
+  with its principal; Aughor's tools carry `readOnlyHint` / `destructiveHint`. DE-2c (small): the knowledge tools go
+  through the API. VA-10 (§3.5) keeps identity; DE-2 adds the outside agent as a kind of principal.
+- **DE-3 · An engine is one declaration.** DE-3a (small): Exasol declares `exasol`. DE-3b (medium): each engine
+  declared once — identity, secret fields, install extra, sqlglot dialect, native or transpiled, parameter style,
+  writer rules, refused constructs, support tier, metadata strategy — with the registry, `catalog.json` and the three
+  web maps generated from it and a drift test (Exasol touches 14 non-test files today). DE-3c (medium): typed
+  metadata — columns, primary and foreign keys, comments, each *supported*, *unsupported* or *unknown* — with a
+  coverage table held by a test; declared foreign keys join the join inference as its strongest signal, still
+  checked against values. DE-3d (small): typed connection errors; a connection error evicts the pooled connection;
+  only `internal=True` statements are retried; every warehouse connector answers `is_healthy`.
+- **DE-4 · Column lineage over the statements we run.** sqlglot's `qualify` and `lineage` over every executed
+  statement: output, filter, join and group columns, each edge marked certain, likely or possible. The edges ride
+  the receipt that already records tables (§6 item 37(f)). Caveats become per column, receipts name columns, and a
+  column change shows what reads it. **Pre-check:** a reader resolved 130 of 136 output columns on the golden set at
+  ~4.7 ms a query; re-measure there and on theLook's BigQuery statements.
+- **DE-5 · The result grid reads like a database tool** (continues SE-8). DE-5a (hours): the type under each column
+  name, a row-number column. DE-5b (small): a right-click cell menu feeding the existing filter chips. DE-5c (small):
+  distinct-value lists in the column filter, from the rows or from the value index, saying which. DE-5d (medium):
+  "count all rows" and "load more" for a cut result, through the door. DE-5e (medium): JSON-tree, image and geometry
+  viewers. DE-5f (medium): open a value's related rows through the ontology's verified joins. Hygiene, small: CSV
+  export neutralises formulas; uploads keep leading zeros and oversized integers as text.
+- ~~**DE-6 · The agent loop and the hand-off.**~~ *Removed by the user 2026-10-02 ("Remove: DE-6. Move DE-6.1 into
+  DE-1").* Its first part, schema samples fenced as data, moved into DE-1; the rest — the tool-result rule (today's
+  stands), a skill installer, `--json` on the CLI, a slim MCP package — leaves the plan. The numbers were kept.
+- **DE-7 · Recorded, not scheduled:** a JDBC bridge for self-hosted installs, behind the door, waiting for someone to
+  ask for an engine with no Python driver.
+
+**Order:** DE-1 → DE-2a → DE-3a, DE-3d → DE-5a–c with DE-5's hygiene → DE-4 → DE-3b → DE-3c → DE-2b → DE-2c →
+DE-5d–f.
+
+**Not this** (§6 item 37(g) records the first four in §4): the write side — editing, DDL generation, schema-diff
+deploy, transfer, clean-up rules that null out values; raw-SQL MCP tools and a read/write default; a tokenless
+localhost bridge; importing other tools' saved passwords with their vendors' keys; hand-written dialect files
+(sqlglot is the dialect layer); dbx's lineage and ER-match code; its in-memory data compare; a canvas renderer
+before a measurement asks for one. Code built from this arc names each feature for what it does, never for dbx;
+and while dbx's licence reads Apache-2.0 at the root and AGPL-3.0 in `agents/`, the arc takes ideas, not code.
+
+**Falsifiers:** DE-1's parse step is the wrong tool for a dialect where the pre-check finds it refusing more than a
+handful of real statements — there the door states the limit and the token-level checks carry it; DE-4 is not
+worth building if resolution on theLook's BigQuery statements falls well below the golden set's; DE-5d is wrong if
+loading more costs the warehouse more than re-running with a higher limit (bytes billed, measured on theLook).
+
+
+### 3.52 · Arc AO — the agent estate as a product: one sitting to Slack, one truth per number, one closed loop (DRAFTED 2026-10-03 at the user's *"brutally test our Agent workflow… I want it to be a gold standard"* · ✅ ADOPTED the same day, §6 item 38, every clause as recommended · nothing built)
+
+> **Origin.** The user: *"I want you to brutally test our Agent workflow.. everything that we have in the Agent Ops
+> tab.. Right from the way Agent is built internal and external ones.. how easy and difficult it is to create Slack
+> bots… how effective is and where are the apps?.. check the UI layout? The overall experience… is it at the Global
+> standards or not? What can we do to ensure that Agent ops are improved? 10X… Easy to Setup., quick and efficient
+> on delivery with self recursive learning."* The study is `docs/AGENT_OPS_STUDY_2026-10-03.md`: every layer, every
+> tab of a custom agent, the Create flow and the Slack door driven live on the main checkout at `b2b7e2c5` (its
+> Agent Ops files byte-identical to this branch), a throwaway agent created and deleted through the API, no model
+> call spent, no Slack app made; four readers over the agent model, the Slack mechanism, every panel and the learning
+> loops, every claim a wave rests on re-read at the cited lines (its §8 says which were only read, never run).
+
+> **What the test found.** (1) A custom agent's instructions never reach the default chat body: `agent_brief_block()`
+> is read by the inner SQL prompt, the deep report and the eval, never by `converse_system_prompt`
+> (`agent/converse_tools.py:849-1003`), the default since SP-14; the one agent with a Slack door, asked its own
+> question, answered *"I ran out of steps (8 tool calls)"*. Delegation never activates the delegate; the "goldens
+> 5/5" chip certifies the SQL prompt, not the agent; creating from a pack drops the edited instructions and documents.
+> (2) Slack takes twenty manual steps across four surfaces and five hand-copied secrets; the Node supervisor is started
+> by nobody, is not running on the user's machine, and has no heartbeat — the bot card reads enabled while nothing
+> listens; the UI never sends `agent_view`, and Slack closed the legacy view to new apps on 2026-08-20; regenerating
+> the supervisor key takes every bot dark within 30 s; `POST /slack-bots/supervisor-key` is not in the RBAC policy,
+> so on a default install anyone on the port mints a key and reads raw tokens; deleting an agent leaves its socket
+> open. (3) One agent, two truths: 76.7K tokens on the Roster row for 24 h, 3.5M on its Overview (all-time; the
+> observability route ignores `range`); `$0.00` on every tile because the model in use is unpriced; five surfaces
+> render "nothing here" on a failed fetch; the range applies to three of seven layers; "charter" is on screen.
+> (4) No learning store carries `agent_id` — the platform learns per connection, an agent learns nothing as itself;
+> the autonomy ladder reads keys nothing writes; six verdicts in two months; the few-shot memory is the one autonomous
+> closed loop. (5) No external-agent identity, no MCP door to a named agent, no Teams, no email, no embed.
+> **Where Aughor stays ahead:** goldens with reference SQL rather than a judge, departures and probation, provenance
+> on every tile, configuration revisions, grants that only propose, the Map, spend by call site and role.
+
+> **Status 2026-10-03 — ADOPTED** (§6 item 38; the user: *"adopt all as recommended and commit locally"*). AO-1, AO-3 and
+> AO-2a,e ship without a flag; AO-2b, AO-6 and AO-7 behind flags, off by default; AO-0.1 spends one model call when
+> the pre-check starts; the API owns the Slack process after a one-day spike; one configuration token replaces three
+> pasted secrets; agent mode by default for new Slack apps; per-agent lessons live in the verdict store; the dead
+> autonomy ladder is fixed and its skills staged to the inbox; five refusals are recorded as §4.8.
+>
+> **Build log (2026-10-03, the user: *"finish it back to back"*).** AO-0 ✅ — the one model call confirmed C1 (the
+> captured chat prompt carried none of the agent's instructions; the answer was a bare count), the production build
+> put every layer's code on screen within 330 ms with the panel filled by 1.8 s after 26–29 API calls, and `$0.00`
+> was a missing price. AO-1 ✅ a–e — the brief leads the chat body and the analyst loop, a delegate runs as itself
+> and relays its headline, the evaluation frames each golden on the quick path stopped before the execute,
+> `purpose` is writable at every door and the pack path keeps the creator's edits, a delete returns a receipt and
+> switches its bots off with the reason on the card. AO-3 ✅ — the roster, the observability route, the jobs route
+> and the fleet rows read one shared window and say it; the live model has a dated declared price and an unpriced
+> tile says **unpriced**; five surfaces say *could not read — retry* on a failed fetch (a component test per site);
+> finished runs of a custom agent draw green with their duration; "built-in" replaces "charter" on screen and the
+> ratchet's comment is true. (The model-id ratchet refused a shipped price row, rightly: the rate is the operator's
+> declaration, `AUGHOR_MODEL_PRICES`.) AO-2a ✅ — the supervisor heartbeats after every reconcile and the bot card
+> and the Map say *listening since …* or *not listening* with the one command. AO-2e ✅ — the key routes and the
+> heartbeat are admin acts in POLICY, and a rotation keeps the replaced key for ten minutes, said on the screen.
+> AO-4 ✅ — the agent's page is the whole agent: Doors, Alerts and Spend tabs beside Overview, Runs, Map, Quality
+> and Setup; a connection picker in the context bar; every "Open automation" carries its id and lands on it; Hub
+> rows are links; `?tab=integrations` resolves; a "?" per layer opens the arc's help; the six words are explained
+> once where they appear; the built-in agent's page has its Map block. AO-2b ✅ (flag `slack.managed_supervisor`,
+> off) — the API spawns, watches and restarts the supervisor with its own key; the spike is decided by reading:
+> the bot is TypeScript end to end, so spawn-and-watch keeps one implementation. AO-2c ✅ — agent mode by
+> default with its events, one-way, the README rewritten. AO-2d ✅ — one configuration token creates the app
+> from the rendered manifest; an Install button on HTTPS; the app-level token stays one paste (Slack has no API
+> for it — the falsifier met and said). AO-2f ✅ — a home channel on the record. The AO-2 measure is still owed:
+> no Slack workspace was touched. AO-6 ✅ (flag `agents.testing_centre`, off) — questions drafted from the
+> catalogue as candidates a person certifies with SQL, the suite counts certified goldens only and records its
+> diff, a nightly run from the heartbeat, and rehearse on the bot record through the approval door already built;
+> and (later the same day) a mention answered in a private thread first — the asker's DM, with the channel on
+> their ✅. AO-7 ✅ a–e (flag `agents.learning_loop`, off) — verdicts
+> carry the agent and are backfilled from the turn, the agent's own corrections lead its brief and its priors,
+> an accepted answer becomes an uncertified candidate, a change or five verdicts re-evaluates and the page says
+> the delta, run evidence comes from the manifest or the reward label, and a crystallised skill is staged to the
+> inbox. AO-5 ✅ — each custom agent an MCP tool with its caller a principal; a per-agent key, an HTTP door and
+> an embed page; a Teams bot (Bot Framework, signature verified, reply through the Connector); a webhook that is a
+> conversation turn; an A2A card and endpoint. Every door carries its own credential and opens nothing else.
+> **The arc is built.** AO-6's private-thread clause was built later the same day (above); its live receipt waits
+> on a Slack workspace.
+> **Receipts 2026-10-03 (later), on a scratch API from this branch (:8010, every store isolated, a fresh install,
+> `gemini-3.1-flash-lite`, 19 model calls in all — PENDING item 50 holds the detail):** `slack.managed_supervisor` —
+> the child spawned, heartbeated, and exited 0 after its first heartbeat because a fresh install has no socket to
+> hold it; the host restarted it every 5 s and would have hit its hourly cap before the first bot existed; its output
+> went to /dev/null while the cap message said "check the supervisor's own log"; and the card hid the row until a bot
+> existed. All three fixed; then zero restarts in 70 s, a `kill -9` recovered in 15 s with the exit named, Restart
+> gave a new pid, every start in the log, the freshest heartbeat on the status. `agents.testing_centre` — one call
+> drafted six questions with a reason each and no SQL; a write was refused at certify; the suite ran the production
+> path and FAILED both certified goldens for real reasons it could not yet say — an abstain with no sentence, a
+> mismatch with no SQL — now said on the result and the tab; the defects themselves: "October" taken for an entity
+> name and probed (named, in `answer_resolution.py`), and `in 2023` dropped from a ranking. `agents.learning_loop` —
+> a `correct` verdict backfilled the agent, headline and SQL from the turn; the same question then framed the
+> corrected half-open range and said its period; an accepted new answer became a candidate from use; a configuration
+> change re-ran the suite in the background within 10 s: before 0/2, after 2/3, the month golden newly passing.
+> **Fallout fixed at the cause:** the Workspace now reads the `samples`-scoped metrics whose tables it folds in (a
+> fresh install had governed metrics on NO listed connection); the door fold, the MCP agent fold and the Slack bot
+> all read the quick path's `inv_id` (a ✅ on a quick Slack answer found no turn before); the folded grid is
+> last-wins. **The AO-2 measure, taken by the user the same afternoon on that fresh install:** agent created → first
+> Slack answer in 10 min 37 s, about 7 min 40 s net of Slack refusing the manifest (`assistant_view` beside
+> `agent_view` — new apps take `agent_view` alone, with its description; fixed, the retry returned 200); three pastes,
+> no Install button without an HTTPS origin; the managed supervisor picked the bot up on its next reconcile and the
+> mention was answered as the agent. The five-minute target was not met; the ten-minute falsifier fired gross by 37 s
+> on that defect and held net. `users:read` was missing from the manifest (the transport's `users.info`); added.
+> The month-name abstain was fixed the same evening: calendar names are the resolver's weaker class — bound offline
+> when the data holds the string, otherwise dropped, never an abstention (`answer_resolution._calendar_candidates`).
+> **Still owed:** the Install-button path over HTTPS, Rehearse against a live workspace, the nightly run live, and
+> the every-fifth-verdict trigger live.
+
+**The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
+
+- **AO-0 · Pre-checks.** (1) One quick question to The Look Analyst with `obs.prompt_capture` on: if the captured
+  converse prompt carries the instructions, finding (1) is wrong and AO-1a is cancelled — one model call, authorised by
+  §6 item 38(c). (2) `next build` once and first paint per layer timed — decides whether the 2–5 s blank panels are a
+  dev artefact. (3) The usage store read for the live model's price row — decides whether `$0.00` is a missing price
+  or a missing join.
+- **AO-1 · The stance reaches every body** (quality; no flag). AO-1a: `converse_system_prompt` and the analyst loop
+  prepend `agent_brief_block()` when an agent is active — receipt: the same question before and after, diffed.
+  AO-1b: `_run_one` activates the delegate, reads `headline`, and the test stub returns what the real path returns.
+  AO-1c: the eval runs the production path — documents, packs, schema scope, grants — so the chip certifies the agent.
+  AO-1d: `purpose` writable; the pack path accepts the scratch path's body and validates the connection. AO-1e: agent
+  delete cascades with a receipt — bots disabled and said so, automations' `agent_id` cleared and said so, revisions
+  kept.
+- **AO-2 · Slack in one sitting** (setup). AO-2a (small, no flag): the supervisor posts a heartbeat on every
+  reconcile; the bot card and the agent's Map say *listening since …* or *not listening — start the supervisor* with
+  the one command. AO-2b (medium, flag `slack.managed_supervisor`): the API spawns, watches and restarts the Slack
+  process, or runs Socket Mode in-process — a one-day spike decides (§6 item 38(d)); the installer provisions it.
+  AO-2c (small): agent mode by default for new apps, the manifest's events reconciled with the README, a one-way
+  toggle for existing bots, the README rewritten for RC-5. AO-2d (medium): a Slack configuration token lets Aughor
+  call `apps.manifest.create` and `update` itself — one token pasted, then Install; on HTTPS deployments the OAuth
+  card can do the install. AO-2e (small, no flag): key regeneration with a grace window; `POST
+  /slack-bots/supervisor-key` enters `POLICY` as `ADMIN_MANAGE_ORG`; a test asserts who may mint. AO-2f (small):
+  an optional channel binding on the record. **Measure:** Create agent → a Slack answer on a fresh install, one
+  person, no terminal — under five minutes and one hand-off; today twenty steps and four surfaces.
+- **AO-3 · One truth per number** (trust; no flag). Every tile reads the shared range or says "all time" on its
+  face; the observability route takes `range`; the charter page reads the window it captions. A failed fetch renders
+  *could not read — retry*, never an empty state (the five sites named in the study). An unpriced model renders
+  **unpriced**, not `$0.00`, and the price table gains the model in use. Run-timeline bars carry duration; `complete`
+  has a colour. "charter" → "built-in" on screen, the ratchet's comment made true and its baseline lowered. A test
+  per rule: a fetch that rejects must not produce the empty-state string.
+- **AO-4 · The agent's own page is the whole agent** (layout). Tabs: Overview · Runs · **Doors** (chat, Slack with
+  liveness, automations that run as it, HTTP, MCP — each with its state and a button) · **Alerts** (rules scoped to
+  this agent; the form gains `agent_id`) · Quality · Spend · Setup. A connection picker inside Agent Ops; every "Open
+  automation" carries its id; Hub rows and every raw id are links; `?tab=integrations` and every layer and tab
+  addressable; a "?" per layer that opens Spotlight on the arc's help topic; the six words explained once on screen.
+- **AO-5 · Doors ×10** (reach), in order of evidence that someone asked: MCP — each custom agent exposed as a tool
+  and its caller a principal (with DE-2) · HTTP — a per-agent key and an embeddable chat widget · Teams — the
+  Microsoft grant exists; a Bot Framework channel is the first non-Slack conversational door · an inbound webhook as a
+  conversation · A2A last. Email stays refused (§3.18's "no email in either direction") unless the user reopens it.
+- **AO-6 · A testing centre** (prove; flag). Synthetic questions drafted from the catalogue and the agent's purpose
+  (one model call per batch), certified by a person with SQL before they count; a nightly eval per agent with a diff
+  against the last stamp, re-run on any configuration change; "rehearse" — a bot answers in a private thread first,
+  promotion to a channel is a click.
+- **AO-7 · One closed learning loop per agent** (self-recursive, inside the invariants; flag). No new store: the
+  verdict store is the lesson store. AO-7a: verdicts carry `agent_id`, stamped from the turn's record; the
+  corrections section reads (connection, agent) first; the brief gains a bounded "corrected before" block. AO-7b:
+  Slack verdicts are whole — `record_verdict` backfills connection, headline and `sql_source` from the turn's record,
+  the bot's fallbacks agree, the message→turn map is persisted. AO-7c: an accepted answer becomes an *uncertified*
+  golden candidate on the agent's Quality tab; a person certifies it with SQL. AO-7d: a configuration change or N new
+  verdicts re-runs the production-path eval; the page shows *learned 3 corrections · 2 goldens certified from use ·
+  pass 7/8 → 8/8* — that delta is the receipt. AO-7e: `record_run` derives `grounded` and `confidence` from what runs
+  carry (the verification manifest for explore, `learning/reward.run_label` for deep) and a crystallised skill is
+  staged to the inbox, never auto-saved (§6 item 38(g)).
+
+**Order:** AO-0 → AO-1 → AO-3 → AO-2a, AO-2e → AO-4 → AO-2b, AO-2c, AO-2d → AO-6 → AO-7 → AO-5.
+
+**Not this** (§6 item 38(j) records the five in §4.8): a visual agent builder as the primary authoring surface; an
+LLM judge as the certification of a golden; executing grants; a Slack Marketplace listing before AO-2d is proven on
+two workspaces; email as a door. Not this arc: a redesign of the seven layers (the layout is sound; the defects are
+in the numbers and the doors); online learning, weights, or any `llm_inferred` fact (§8); a ninth store.
+
+**Falsifiers:** AO-0.1's captured prompt carries the instructions → AO-1a cancelled. AO-2's measure not under ten
+minutes on a fresh clone with the managed supervisor → the in-process Socket Mode spike is wrong and AO-2b reverts
+to spawn-and-watch. AO-2d still needs the app-level token made by hand → the win is three → two and the wave says
+so. AO-7 must move a held-out golden set's pass rate per agent; two weeks of real use without movement → the
+"corrected before" block is removed, not kept.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -10305,6 +11041,38 @@ own agents is the moat, and an export hands it to another vendor's. An RDF/OWL e
 the same answer. Re-propose only with new facts: a customer on Fabric asking, and Fabric's published
 item-definition format verified against Microsoft's documentation (the playground's `fabric.ts` is a community
 implementation, not a contract).
+
+### 4.7 · What dbx does that Aughor will not — REFUSED (2026-10-02)
+
+The dbx study (`docs/DBX_STUDY_2026-10-01.md`, §5) compared a tool for administering databases with a platform that
+answers from them, and Arc DE (§3.51) took what serves the read side. Four of dbx's features contradict an
+invariant here; §6 item 37(g) records them as refused, at the user's *"adopt all as recommended and commit locally"*:
+- **Its write side** — inline row editing, DDL generated across engines, schema-diff deploy, data transfer, and
+  clean-up rules that set overflowing values to NULL. Aughor writes nothing to a customer's warehouse.
+- **MCP tools that take raw SQL, and a read/write default** when no policy is saved. Aughor's MCP tools ask
+  questions; an outside agent's reach is a policy a person sets (DE-2), and its default is `run`, never `act`.
+- **A localhost bridge with no token** for opening a table in the app, guarded only by a content type and a
+  loopback Host header. A link does the same job without a listening port.
+- **Importing another tool's saved passwords** by decrypting them with that vendor's fixed key (DBeaver, Navicat).
+  A credential is a governed object here (§3.4); an import, if ever wanted, takes host, port and database, and
+  the person enters the secret.
+
+### 4.8 · What Agent Ops will not become — REFUSED (2026-10-03)
+
+The Agent Ops study (`docs/AGENT_OPS_STUDY_2026-10-03.md`, §7) measured the surface against what the field ships, and
+Arc AO (§3.52) took what closes the gap. Five things the field does, or that a reader might reach for, contradict a
+rule here; §6 item 38(j) records them as refused, at the user's *"adopt all as recommended and commit locally"*:
+- **A visual agent builder as the primary authoring surface.** §4.1 refused a canvas for agent creation; the field
+  has since confirmed it — OpenAI retires its Agent Builder and Evals on 2026-11-30 and keeps the embeddable chat.
+  An agent here is a scope and a stance in words, drafted and certified, not a diagram.
+- **An LLM judge as the certification of a golden.** A golden is a question with reference SQL a person trusts; the
+  suite compares result sets. A model may *draft* questions (AO-6); it never grades its own answer into a pass.
+- **Executing grants.** An agent proposes; a person acts (VA-9c, Arc HB's law). No wave gives an agent a door to
+  execute, however many doors it gains to be reached through.
+- **A Slack Marketplace listing** before the one-token install (AO-2d) is proven on two workspaces. A listed app is
+  a one-way door into Slack's review process; the install must work unlisted first.
+- **Email as a door.** Arc HB decided "no email in either direction" (§3.18); AO-5 does not reopen it. Only the user
+  can.
 
 ## 5 · Sequencing
 
@@ -11155,6 +11923,15 @@ the browser** · **measure the premise before building.**
 > library for CT-1, and (f) the model calls of CT-5's receipt.
 > **Amended 2026-09-28, later still:** (d) decided at the user's *"Yes, install it and start CT-1 and CT-2"*; both
 > waves built the same day, and the library KEPT on CT-1's numbers at the user's word. Open under item 36: (f).
+> **Amended 2026-10-02:** item 37 (Arc DE, the database edge, §3.51) arrived at the user's *"lets write a proper dbx
+> roadmap first"* and is **OPEN** — eight clauses, each with a recommendation; nothing in the arc is built.
+> **Amended 2026-10-02, later:** the user removed DE-6 and moved its first part (schema samples fenced as data) into
+> DE-1; item 37(e) is withdrawn with it. Open: item 37's other seven clauses.
+> **Amended 2026-10-02, later still:** item 37 DECIDED — *"adopt all as recommended and commit locally"*; the seven open clauses
+> were taken as recommended and the four refusals recorded as §4.7. Nothing from Arc DE is open.
+> **Amended 2026-10-03:** item 38 (Arc AO, the agent estate as a product, §3.52) arrived at the user's *"brutally test
+> our Agent workflow"* and was DECIDED the same day — *"adopt all as recommended and commit locally"*; all ten clauses
+> as recommended, five refusals recorded as §4.8. The register stays at zero open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -11887,6 +12664,80 @@ the browser** · **measure the premise before building.**
     by anyone; a person's cockpits are Ledger artifacts keyed by connection, person and cockpit; and "adjust before
     keeping" is kept as two versions in one act — the model's draft, then the person's changes — so the history
     says which was whose. Waves CT-7 to CT-10, §3.50.
+37. ✅ **DECIDED 2026-10-02 — Arc DE, the database edge, adopted with every clause as recommended** (the user:
+    *"adopt all as recommended and commit locally"*; the arc arrived the same day at their *"lets write a proper dbx roadmap first"*, after the
+    survey of `t8y2/dbx` and the comparison of the two result grids; the study is `docs/DBX_STUDY_2026-10-01.md`,
+    the arc §3.51). Eight clauses, each with a recommendation; (e) was withdrawn with DE-6 the same day, so seven were
+    open; all seven were decided together. Adopting the plan is not a yes to a download, a paid
+    model run or a push.
+    **(a) ✅ DECIDED as recommended — adopt Arc DE as drafted** — five waves and DE-7 recorded, in §3.51's order, with its refusals and its three
+    falsifiers (DE-6 was removed by the user before adoption).
+    *Recommended: yes.* DE-1 closes a hole the gate-map study named and no wave took; the rest is measured.
+    **(b) ✅ DECIDED as recommended — DE-1 ships without a flag.** The invariant puts features behind flags that are off by default; a read-only
+    promise that can be switched off is not one, and a flag left off would keep the hole. *Recommended: no flag,*
+    with the pre-check's count of valid statements the parse step would refuse on the table before it merges.
+    **(c) ✅ DECIDED as recommended — where the agent policy lives, and its default.** *Recommended:* with the organisation's settings
+    (`orgsettings/`), not a new store; and an install with no saved policy runs at `run` — today's exposure, made
+    explicit — with `act` given only by a person. The alternative is `read`, the safest default, which takes
+    `explore` and `deep_analysis` away from every existing MCP set-up until someone opens them.
+    **(d) ✅ DECIDED as recommended — the engine that proves DE-3b.** *Recommended: Trino*, because sqlglot speaks it, it has a Python driver, and
+    a local container gives a live receipt without a cloud account — the container's download is asked for when the
+    wave starts. Alternatives: Redshift (the Postgres wire protocol, but a receipt needs an AWS account), SQL Server,
+    ClickHouse.
+    **(e) ⤳ WITHDRAWN 2026-10-02 with DE-6** (the user: *"Remove: DE-6"*). It asked whether the agent loop should
+    cap a tool's result as dbx does (12,000 characters, head and tail, the cut said) or keep today's rule —
+    every result whole, the budget warning only (`llm/context_budget.py:42`). Today's rule stands; re-ask only with
+    a measured turn lost to a context-length error.
+    **(f) ✅ DECIDED as recommended — where column lineage lives.** *Recommended: on the receipt*, beside the tables it already records, with
+    `govern/lineage.py` reading it instead of scanning text. A lineage store of its own only if the receipt cannot
+    hold the edges — one store per concept.
+    **(g) ✅ DECIDED as recommended, recorded as §4.7 — record four refusals in §4**: dbx's write side; raw-SQL MCP tools and a read/write default; a tokenless
+    localhost bridge; importing other tools' saved passwords with their vendors' keys. *Recommended: yes* — each
+    contradicts an invariant (read-only, governed, credentials as governed objects). The rest of §3.51's "Not this"
+    stays in the arc as "not now".
+    **(h) ✅ DECIDED as recommended — ideas, not code.** dbx's root `LICENSE` is Apache-2.0 and `agents/README.md` says AGPL-3.0. *Recommended:*
+    no dbx code is copied into Aughor until that is resolved; the arc's waves re-implement from the idea.
+38. ✅ **DECIDED 2026-10-03 — Arc AO, the agent estate as a product, adopted with every clause as recommended** (the
+    user: *"adopt all as recommended and commit locally"*; the arc arrived the same day at their *"brutally test our
+    Agent workflow… I want it to be a gold standard… Easy to Setup., quick and efficient on delivery with self
+    recursive learning"*, after the live test of every layer and the four readings; the study is
+    `docs/AGENT_OPS_STUDY_2026-10-03.md`, the arc §3.52). Ten clauses, each with a recommendation; all ten decided
+    together. Adopting the plan is not a yes to a push, to a paid model run beyond the one in (c), or to a new
+    process started on the user's machine.
+    **(a) ✅ DECIDED as recommended — adopt Arc AO as drafted** — AO-0 and seven waves, in §3.52's order, with its
+    refusals and its four falsifiers. *Recommended: yes.* The first three waves repair what the product already says
+    it does; the rest is measured against the field.
+    **(b) ✅ DECIDED as recommended — which waves ship without a flag.** *Recommended:* AO-1, AO-3, AO-2a and AO-2e
+    without one — an instruction the model never sees, a tile that disagrees with its neighbour, a dead bot that reads
+    live and an ungated key are defects against stated behaviour, and a flag left off would keep them; AO-2b (a
+    process the API owns), AO-6 (model calls per batch) and AO-7 (a block in the brief) behind flags, off by default
+    and byte-identical when off.
+    **(c) ✅ DECIDED as recommended — AO-0.1 spends one model call.** *Recommended: yes* — one quick question through
+    The Look Analyst with the prompt captured, run when AO-0 starts, to prove the headline finding live before a day
+    is spent on it. A second call is asked for, not assumed.
+    **(d) ✅ DECIDED as recommended — how the API owns the Slack process (AO-2b).** *Recommended:* a one-day spike
+    compares in-process Socket Mode (`slack_bolt`'s async client inside the API) with spawn-and-watch of `bots/slack`;
+    spawn-and-watch is the default if the spike does not reach a Slack answer under ten minutes on a fresh clone.
+    The alternative — leave the process to the operator and only show liveness — keeps step 18 of 20.
+    **(e) ✅ DECIDED as recommended — one token, not three (AO-2d).** *Recommended: yes* — a Slack configuration token
+    and `apps.manifest.create`/`update`, with the falsifier recorded: if the app-level token must still be generated by
+    hand, the win is three → two and the wave says so rather than claiming one.
+    **(f) ✅ DECIDED as recommended — agent mode by default for new Slack apps (AO-2c).** *Recommended: yes* — Slack
+    closed the legacy view to new apps on 2026-08-20 and retires it in February 2027; the move is one-way, so existing
+    bots keep their mode until a person flips the toggle, which warns.
+    **(g) ✅ DECIDED as recommended — the dead autonomy ladder (AO-7e).** *Recommended: fix and stage* — `record_run`
+    derives `grounded` and `confidence` from what runs carry, and a crystallised skill is staged to the one inbox,
+    never saved silently (HB: an agent proposes). The alternative, deleting the reader side and making the docstring
+    true, is the fallback if the derived signal cannot take both values on real traffic.
+    **(h) ✅ DECIDED as recommended — where per-agent lessons live (AO-7a).** *Recommended:* in the verdict store,
+    which gains `agent_id` — no new store (one store per concept); the corrections section reads (connection, agent)
+    first, then connection, so an agent's lesson never leaks to another asker's prompt.
+    **(i) ✅ DECIDED as recommended — the order of doors (AO-5).** *Recommended:* MCP → HTTP and an embeddable widget →
+    Teams → an inbound webhook as a conversation → A2A, each on evidence that someone asked; email stays refused
+    under Arc HB's decision.
+    **(j) ✅ DECIDED as recommended, recorded as §4.8 — record five refusals in §4**: a visual builder as the primary
+    authoring surface; an LLM judge certifying a golden; executing grants; a Marketplace listing before AO-2d is
+    proven; email as a door. *Recommended: yes* — each contradicts a rule already paid for.
 
 ---
 

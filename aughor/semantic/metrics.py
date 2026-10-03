@@ -456,6 +456,41 @@ def _conn_of(raw: dict) -> str:
     return str(raw.get("connection") or GLOBAL_CONNECTION)
 
 
+def _folded_scopes(connection_id: str) -> list[str]:
+    """Connection ids whose scoped metrics ``connection_id`` also reads, in order.
+
+    One case today: the Workspace folds the samples warehouse's tables in read-only
+    (`registry.get_meta(WORKSPACE_ID)["seed_duckdb"]`), and the metrics the repo ships are
+    scoped to ``samples`` — an id the registry never lists. Measured 2026-10-03 on a fresh
+    install: `revenue` and `aov` applied to NO listed connection, so the agent drafter had
+    no governed metric to draw from. The tables and their metrics travel together.
+    """
+    try:
+        from aughor.db.registry import SAMPLES_ID, WORKSPACE_ID, get_meta
+        if connection_id != WORKSPACE_ID:
+            return []
+        return [SAMPLES_ID] if get_meta(WORKSPACE_ID).get("seed_duckdb") else []
+    except Exception as exc:                            # noqa: BLE001 — scoping still answers
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the registry could not say what the Workspace folds in; no folded metrics",
+                 counter="metrics.folded_scopes")
+        return []
+
+
+def _scoped_rows(rows: list[dict], connection_id: str) -> list[dict]:
+    """The connection's own entries, then the folded scopes' entries it does not shadow,
+    then the global entries no scoped name shadows — override-wins at every step."""
+    out = [m for m in rows if _conn_of(m) == connection_id]
+    names = {m.get("name") for m in out}
+    for scope in _folded_scopes(connection_id):
+        for m in rows:
+            if _conn_of(m) == scope and m.get("name") not in names:
+                out.append(m)
+                names.add(m.get("name"))
+    out += [m for m in rows if _conn_of(m) == GLOBAL_CONNECTION and m.get("name") not in names]
+    return out
+
+
 def list_metrics(path: Path | None = None,
                  connection_id: str | None = None) -> list[MetricDefinition]:
     """Every metric, or the ones that apply to ``connection_id`` with scoped shadowing.
@@ -473,25 +508,21 @@ def list_metrics(path: Path | None = None,
     rows = _load_raw(path)
     if connection_id is None:
         return [MetricDefinition(**m) for m in rows]
-
-    scoped_names = {m.get("name") for m in rows if _conn_of(m) == connection_id}
-    out = [m for m in rows if _conn_of(m) == connection_id]
-    out += [m for m in rows
-            if _conn_of(m) == GLOBAL_CONNECTION and m.get("name") not in scoped_names]
-    return [MetricDefinition(**m) for m in out]
+    return [MetricDefinition(**m) for m in _scoped_rows(rows, connection_id)]
 
 
 def get_metric(name: str, path: Path | None = None,
                connection_id: str | None = None) -> MetricDefinition | None:
     rows = _load_raw(path)
     if connection_id is not None:
-        for m in rows:                       # scoped first — it shadows
-            if m.get("name") == name and _conn_of(m) == connection_id:
+        # Own, folded, then global — the same order list_metrics resolves, so the one
+        # metric a caller asks for by name is the one the list would have shown.
+        for m in _scoped_rows(rows, connection_id):
+            if m.get("name") == name:
                 return MetricDefinition(**m)
+        return None
     for m in rows:
-        if m.get("name") != name:
-            continue
-        if connection_id is None or _conn_of(m) == GLOBAL_CONNECTION:
+        if m.get("name") == name:
             return MetricDefinition(**m)
     return None
 

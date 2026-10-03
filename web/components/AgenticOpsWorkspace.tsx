@@ -8,7 +8,8 @@ import { RangePicker } from "@/components/agentops/RangePicker";
 import { Button } from "@/components/ui/button";
 import { useTimeRange } from "@/components/agentops/useTimeRange";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
-import { getDepartureSummary, getNeedsHuman } from "@/lib/api";
+import { getConnections, getDepartureSummary, getNeedsHuman, type Connection } from "@/lib/api";
+import { askSpotlight } from "@/lib/commandRegistry";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Lazy panels — load on first open, then keep mounted (Workspace keep-alive),
@@ -87,6 +88,9 @@ type Props = {
   layer: AgenticOpsLayer;
   /** The connection the Automations layer scopes to — that panel filters by it. */
   connId?: string;
+  /** AO-4 — lets the workspace change that connection itself (a picker in its context
+   *  bar) instead of sending the reader to the rail. Optional: without it, no picker. */
+  onSelectConnection?: (connectionId: string) => void;
   onLayerChange: (l: AgenticOpsLayer) => void;
   workspaceId?: string;
   workspaceName?: string;
@@ -107,13 +111,34 @@ type Props = {
  */
 export function AgenticOpsWorkspace({
   layer, onLayerChange, workspaceId, workspaceName,
-  connId, onOpenInvestigation, onOpenAutomations,
+  connId, onSelectConnection, onOpenInvestigation, onOpenAutomations,
   onOpenIntegrations, onOpenConnection, onChatWithAgent,
 }: Props) {
   // Cross-layer focus: a trace opened from Fleet/Agents/Attention lands in the
   // Activity layer's runs mode; an agent opened from Fleet lands in Agents.
   const [traceFocus, setTraceFocus] = useState<{ traceId?: string; investigationId?: string } | null>(null);
   const [agentFocus, setAgentFocus] = useState<{ id: string; kind: "charter" | "persona" } | null>(null);
+  // AO-4 — "Open automation" carries its id from every layer; the Automations layer
+  // opens that one on arrival rather than the list it is somewhere in.
+  const [automationFocus, setAutomationFocus] = useState<string | null>(null);
+  const openAutomation = useCallback((automationId?: string) => {
+    setAutomationFocus(automationId ?? null);
+    onLayerChange("automations");
+    onOpenAutomations?.();
+  }, [onLayerChange, onOpenAutomations]);
+  const openAgent = useCallback((id: string, kind: NonNullable<typeof agentFocus>["kind"] = "persona") => {
+    setAgentFocus({ id, kind });
+    onLayerChange("agents");
+  }, [onLayerChange]);
+  // The connection picker's options — read once; a failure leaves the picker absent
+  // rather than empty, and the rail still works.
+  const [connections, setConnections] = useState<Connection[] | null>(null);
+  useEffect(() => {
+    if (!onSelectConnection) return;
+    let alive = true;
+    getConnections().then(c => { if (alive) setConnections(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, [onSelectConnection]);
   const [attention, setAttention] = useState(0);
   const [departuresOwed, setDeparturesOwed] = useState(0);
   // Creating an agent is reachable from EVERY layer, not just the one whose sidebar happens
@@ -164,6 +189,22 @@ export function AgenticOpsWorkspace({
       onLayerChange={onLayerChange}
       ariaLabel="Agent Ops views"
       badges={{ attention, departures: departuresOwed }}
+      // AO-4 — the "?" opens Spotlight on the arc's own help topic: what the layers are,
+      // what each number means, what to do here. Deterministic platform help, not a model call.
+      help={() => askSpotlight("help ao")}
+      headerControls={onSelectConnection && connections && connections.length > 0 ? (
+        <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 6,
+          color: "var(--t2)" }}>
+          Connection
+          <select className="aug-input" value={connId ?? ""} aria-label="Connection"
+            onChange={e => onSelectConnection(e.target.value)}
+            style={{ height: 24, padding: "0 6px" }}>
+            {!connId && <option value="">choose…</option>}
+            {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <span style={{ color: "var(--t3)" }}>scopes Automations; the Hub and Departures stay hub-wide</span>
+        </label>
+      ) : undefined}
       toolbar={<>
         <RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />
         {/* The one action, at the right end of the filter row. `default`, not a hand-rolled
@@ -186,7 +227,7 @@ export function AgenticOpsWorkspace({
             // DS-5 — a node on an agent's Map opens the surface that owns it. The chains
             // live one layer over, so that one is a layer switch; the rest belong to the
             // app and are only offered when the shell passes them down.
-            onOpenAutomations={() => onLayerChange("automations")}
+            onOpenAutomations={openAutomation}
             onOpenIntegrations={onOpenIntegrations}
             onOpenConnection={onOpenConnection}
             onChatWithAgent={onChatWithAgent} />
@@ -194,9 +235,8 @@ export function AgenticOpsWorkspace({
         if (id === "attention") return (
           <NeedsHumanPanel onOpenInvestigation={onOpenInvestigation}
             // Automations live HERE now, so "Open automation" switches a layer rather
-            // than navigating out to Operations. The prop stays optional for any caller
-            // that still wants to hand its own handler in.
-            onOpenAutomations={onOpenAutomations ?? (() => onLayerChange("automations"))} />
+            // than navigating out to Operations — and lands on the one that was clicked.
+            onOpenAutomations={openAutomation} />
         );
         if (id === "activity") return (
           <AgenticActivityPanel
@@ -204,11 +244,11 @@ export function AgenticOpsWorkspace({
             focusTraceId={traceFocus?.traceId} range={range} />
         );
         if (id === "automations") return (
-          <AutomationsPanel connId={connId} workspaceId={workspaceId} />
+          <AutomationsPanel connId={connId} workspaceId={workspaceId} focusId={automationFocus} />
         );
         if (id === "departures") return (
           // Hub-wide, like the map: every departure the platform recorded, any connection.
-          <DeparturesPanel onOpenAutomation={() => onLayerChange("automations")}
+          <DeparturesPanel onOpenAutomation={openAutomation}
             onOpenTrace={openAnalysisTrace} />
         );
         if (id === "hub") return (
@@ -216,17 +256,14 @@ export function AgenticOpsWorkspace({
           // on one screen"). Scoping it to the page's selected connection would rebuild
           // the per-connection Automations layer one tab over. The door still takes
           // ?conn_id for callers that want the narrow read.
-          <HubMapPanel />
+          <HubMapPanel onOpenAgent={id => openAgent(id)} onOpenAutomation={openAutomation} />
         );
         return (
           <FleetOverviewPanel
             range={range} onBrush={setBrush} onClearBrush={clearBrush}
             onOpenAttention={() => onLayerChange("attention")}
             onOpenInvestigation={onOpenInvestigation}
-            onOpenAgent={(id, kind) => {
-              setAgentFocus({ id, kind });
-              onLayerChange("agents");
-            }} /> // "fleet"
+            onOpenAgent={(id, kind) => openAgent(id, kind)} /> // "fleet"
         );
       }}
     />

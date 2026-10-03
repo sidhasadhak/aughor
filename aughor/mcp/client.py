@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from contextvars import ContextVar
 from typing import Any, AsyncIterator, Optional
 
 import httpx
@@ -29,6 +30,22 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 # (up to 10k-row) result set; we return a sample + the true row_count.
 _ROW_SAMPLE = 50
 _FINDING_CAP = 25
+
+# DE-2a (ROADMAP §3.51) — the principal this client acts as. The API's identity mode
+# (`AUGHOR_REQUIRE_IDENTITY=1`) resolves a caller from an OIDC bearer, or — while no issuer
+# is configured — from the `X-Aughor-Org` / `X-Aughor-User` seam (`security/authz`). This
+# client sent neither, so every MCP call was refused with a 401 the moment identity was
+# required (the dbx study's finding 3). The header names are spelled here rather than
+# imported: this module stays httpx-only by design, and a test holds the two spellings equal.
+IDENTITY_ORG_HEADER = "X-Aughor-Org"
+IDENTITY_USER_HEADER = "X-Aughor-User"
+#: DE-2b — the mark that makes a request an agent's own, and the tool it serves. Spelled here
+#: so this module stays httpx-only; `aughor.mcp.policy` imports them from here.
+AGENT_HEADER = "X-Aughor-Agent"
+TOOL_HEADER = "X-Aughor-Tool"
+AGENT_MARK = "mcp"
+#: The MCP tool a request serves, set by the server around each call (`PolicedFastMCP`).
+CURRENT_TOOL: ContextVar[str] = ContextVar("aughor_mcp_current_tool", default="")
 
 
 class AughorError(RuntimeError):
@@ -46,6 +63,12 @@ class AughorClient:
     calls, default 60s), ``AUGHOR_MCP_DEEP_TIMEOUT`` (the streaming ask/deep tools,
     default 300s). Tests inject ``transport=httpx.ASGITransport(app=…)`` to drive the
     real app in-process.
+
+    The principal (DE-2a), when the API requires identity: ``AUGHOR_MCP_BEARER`` is sent as
+    ``Authorization: Bearer …`` (an OIDC token, for an API with an issuer configured);
+    ``AUGHOR_MCP_ORG`` and ``AUGHOR_MCP_USER`` (default ``mcp``) are sent as the
+    ``X-Aughor-Org`` / ``X-Aughor-User`` seam a self-hosted API resolves while no issuer is
+    configured. Unset, nothing is sent and identity-off installs are byte-identical.
     """
 
     def __init__(
@@ -56,6 +79,9 @@ class AughorClient:
         timeout: Optional[float] = None,
         deep_timeout: Optional[float] = None,
         transport: Optional[httpx.BaseTransport] = None,
+        org: Optional[str] = None,
+        user: Optional[str] = None,
+        bearer: Optional[str] = None,
     ) -> None:
         self.base_url = (base_url or os.environ.get("AUGHOR_API_URL") or DEFAULT_BASE_URL).rstrip("/")
         self.api_key = api_key if api_key is not None else os.environ.get("AUGHOR_API_KEY", "")
@@ -64,12 +90,29 @@ class AughorClient:
             deep_timeout if deep_timeout is not None else os.environ.get("AUGHOR_MCP_DEEP_TIMEOUT", "300")
         )
         self._transport = transport
+        self.org = (org if org is not None else os.environ.get("AUGHOR_MCP_ORG", "")).strip()
+        self.user = (user if user is not None else os.environ.get("AUGHOR_MCP_USER", "")).strip()
+        self.bearer = (bearer if bearer is not None else os.environ.get("AUGHOR_MCP_BEARER", "")).strip()
 
     # ── plumbing ────────────────────────────────────────────────────────────────
     def _headers(self) -> dict[str, str]:
         h = {"accept": "application/json"}
         if self.api_key:
             h["X-Api-Key"] = self.api_key
+        # DE-2a — the principal this client acts as, so an API that requires identity can
+        # resolve one: a verified bearer where an issuer is configured, the header seam where
+        # not. The user defaults to `mcp` once an org is named, so the audit row says who.
+        if self.bearer:
+            h["Authorization"] = f"Bearer {self.bearer}"
+        if self.org:
+            h[IDENTITY_ORG_HEADER] = self.org
+            h[IDENTITY_USER_HEADER] = self.user or "mcp"
+        # DE-2b — every call this client makes is an agent's own, and says which tool it serves,
+        # so the API applies the organisation's agent policy to it and audits it with its principal.
+        h[AGENT_HEADER] = AGENT_MARK
+        tool = CURRENT_TOOL.get()
+        if tool:
+            h[TOOL_HEADER] = tool
         return h
 
     def _mk_client(self, timeout: Optional[float] = None) -> httpx.AsyncClient:
@@ -189,6 +232,64 @@ class AughorClient:
         not.
         """
         return await self._post(f"/automations/{automation_id}/run")
+
+    # ── AO-5a: custom agents as tools ───────────────────────────────────────────
+    async def list_user_agents(self) -> list[dict]:
+        """The deployment's custom agents (the roster the registrar reads at start)."""
+        payload = await self._get("/agents/custom")
+        return list(payload or []) if isinstance(payload, list) else []
+
+    async def ask_as_agent(self, agent_id: str, question: str, connection: str = "", *,
+                           asker: str = "") -> dict:
+        """One question through `/ask` AS a custom agent, folded to one answer — the same
+        fold the HTTP door makes server-side (`custom_agents/reach.fold_ask`): headline,
+        the SQL that ran, rows (capped), receipt and investigation id. This process is the
+        principal (`api:mcp:<asker>`), attributed by the ask door when no session is in scope."""
+        body = {
+            "question": question, "connection_id": connection or "workspace",
+            "agent_id": agent_id, "depth": "quick", "allow_clarify": False,
+            "principal_ref": f"api:mcp:{(asker or 'anonymous')[:64]}", "history": [],
+            "session_id": "",
+        }
+        acc: dict[str, Any] = {"agent_id": agent_id, "question": question, "headline": "",
+                               "sql": "", "columns": [], "rows": [], "row_count": None,
+                               "receipt_id": "", "investigation_id": "", "error": "",
+                               "truncated": False}
+        deltas: list[str] = []
+        async for ev in self._stream_sse("POST", "/ask", body, timeout=self.deep_timeout):
+            t = ev.get("type")
+            if t == "headline":
+                acc["headline"] = str(ev.get("headline") or "")
+            elif t == "headline_delta":
+                deltas.append(str(ev.get("headline") or ev.get("delta") or ""))
+            elif t == "sql":
+                acc["sql"] = str(ev.get("sql") or "")
+            elif t == "columns" and not acc["columns"]:
+                acc["columns"] = list(ev.get("columns") or [])
+            elif t == "rows":
+                rows = list(ev.get("rows") or [])
+                room = 200 - len(acc["rows"])
+                if room > 0:
+                    acc["rows"].extend(rows[:room])
+                if len(rows) > room:
+                    acc["truncated"] = True
+                if ev.get("row_count") is not None:
+                    acc["row_count"] = ev.get("row_count")
+            elif t == "receipt_id":
+                acc["receipt_id"] = str(ev.get("receipt_id") or ev.get("id") or "")
+            elif t == "error":
+                acc["error"] = str(ev.get("message") or ev.get("error") or "error")
+            if ev.get("investigation_id") and not acc["investigation_id"]:
+                acc["investigation_id"] = str(ev["investigation_id"])
+            # The quick path names its turn `inv_id` on the done frame (as `ask` below
+            # already reads); the agent fold read one spelling and lost the turn (2026-10-03).
+            if ev.get("type") == "done" and ev.get("inv_id") and not acc["investigation_id"]:
+                acc["investigation_id"] = str(ev["inv_id"])
+        if not acc["headline"] and deltas:
+            acc["headline"] = max(deltas, key=len)
+        if acc["row_count"] is None and acc["rows"]:
+            acc["row_count"] = len(acc["rows"])
+        return acc
 
     async def ask(
         self,
@@ -406,6 +507,23 @@ class AughorClient:
 
     async def run_span(self, trace_id: str, span_id: str) -> Any:
         return await self._get(f"/traces/{trace_id}/spans/{span_id}")
+
+    # ── DE-2b: the organisation's agent policy, as the API answers it ─────────────
+    async def agent_policy(self) -> dict:
+        return await self._get("/org-settings/agent-policy")
+
+    # ── DE-2c: the knowledge tools, through the API like everything else ───────────
+    async def search_graph(self, connection: str, query: str, *, limit: int = 10) -> dict:
+        return await self._get(f"/knowledge/{connection}/graph/search", params={"q": query, "limit": limit})
+
+    async def describe_entity(self, connection: str, entity: str) -> dict:
+        return await self._get(f"/knowledge/{connection}/entity/{entity}")
+
+    async def get_table_health(self, connection: str, table: str) -> dict:
+        return await self._get(f"/knowledge/{connection}/table-health", params={"table": table})
+
+    async def list_trusted_queries(self, connection: str, *, limit: int = 25) -> dict:
+        return await self._get(f"/knowledge/{connection}/trusted-queries", params={"limit": limit})
 
 
 def _clean(params: Optional[dict]) -> Optional[dict]:

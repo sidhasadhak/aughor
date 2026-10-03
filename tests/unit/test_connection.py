@@ -129,13 +129,18 @@ def test_a_label_exempts_nothing() -> None:
 
 
 def test_security_pre_skips_a_statement_declared_internal() -> None:
-    """The exemption is the caller's declaration, in force for its one statement: a DROP under it is not even
-    scored (the census holds who may declare it — the platform's own statements)."""
+    """The exemption is the caller's declaration, in force for its one statement: a read the checker would block is
+    not even scored under it (the census holds who may declare it — the platform's own statements). The parse step
+    is not the checker's and is not skipped (DE-1): a DROP is refused by it under any declaration, as the built-in
+    connections always refused it before the checker was reached."""
     from aughor.db.connection import security_pre
     from aughor.db.doors import through_door
-    out = through_door(object(), "DROP TABLE x", None, lambda s: security_pre("c1", "any label", s), internal=True)
+    denied = "SELECT pg_read_file('/etc/passwd')"
+    out = through_door(object(), denied, None, lambda s: security_pre("c1", "any label", s), internal=True)
     assert out is None
-    assert security_pre("c1", "any label", "DROP TABLE x") is not None, "the declaration outlived its statement"
+    assert security_pre("c1", "any label", denied) is not None, "the declaration outlived its statement"
+    drop = through_door(object(), "DROP TABLE x", None, lambda s: security_pre("c1", "any label", s), internal=True)
+    assert drop is not None and "blocked:validation" in drop.doors
 
 
 def test_fleet_agent_data_queries_are_audited() -> None:

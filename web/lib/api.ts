@@ -652,6 +652,10 @@ export interface ColumnAnalysis {
    *  Carries WHY the text column is about to become a number, so the review row can say
    *  it rather than showing an unexplained type change. */
   detected_format: { kind: string; unit: string; example: string | null } | null;
+  /** DE-5's hygiene — set when the reader would have typed this column as a number and
+   *  changed its values (leading zeros dropped, integers beyond BIGINT rounded), so it was
+   *  read as text instead. Says why, so the review row can. */
+  kept_as_text?: string | null;
 }
 
 export interface FileAnalysis {
@@ -3637,7 +3641,9 @@ export async function getMeasureGrains(connId: string): Promise<MeasureGrains> {
 /** Distinct non-null values for a column — powers the filter-value picker. */
 export async function getColumnDistinct(
   connId: string, table: string, column: string, schema?: string, limit = 200,
-): Promise<{ values: (string | null)[]; truncated: boolean }> {
+  /** DE-5d: a table the route could not read answers a typed refusal — `error` in the engine's words
+   *  and `code: "DISTINCT_FAILED"` — never a bare empty list that reads as "the column has no values". */
+): Promise<{ values: (string | null)[]; truncated: boolean; error?: string; code?: string }> {
   const qs = new URLSearchParams({ table, column, limit: String(limit) });
   if (schema) qs.set("schema", schema);
   const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/distinct?${qs.toString()}`);
@@ -3841,6 +3847,10 @@ export interface TypedColumn {
   name: string;
   /** Normalised type name from the backend (`norm_type`) — drives alignment. */
   type: string;
+  /** DE-close — the one table column this output column reads, from DE-4's lineage; absent for a
+   *  computed column, a star the tracer could not expand, or a result from an older server. With it, a
+   *  column of a joined statement can be read live and its related rows opened. */
+  source?: { table: string; column: string; confidence?: string | null };
 }
 
 export interface TypedQueryResult {
@@ -3851,6 +3861,9 @@ export interface TypedQueryResult {
   row_count: number;
   /** True when the server's n+1 probe row proved there is more beyond the limit. */
   truncated: boolean;
+  /** DE-5d — WHAT cut the result, when it was cut: the person's own `limit`, the connection's row
+   *  `budget`, or the connector's per-call `cap` (below the limit asked for). null when whole. */
+  cut_by?: "limit" | "budget" | "cap" | null;
   duration_ms: number;
   sql: string;
   cached: boolean;
@@ -3858,6 +3871,183 @@ export interface TypedQueryResult {
   receipt_id?: string | null;
   caveats?: string[];
   format: "typed";
+  /** DE-5f — a result the panel opened from a cell carries the bound values its statement ran with, and a
+   *  label for the pager. A run's result has neither. */
+  params?: Record<string, unknown>;
+  label?: string;
+}
+
+// ── DE-2b — the organisation's agent policy: what an outside agent (MCP) may do ──────────────────
+
+export interface AgentPolicy {
+  level: "read" | "run" | "act";
+  /** Connection ids the agent may touch; null means all. */
+  connections: string[] | null;
+  /** Tool names the agent may call; null means all. */
+  tools: string[] | null;
+  set_by: string;
+  updated_at: string;
+  /** `default` (nobody set one), `saved` (a person did), `narrowed` (the environment narrowed the saved one). */
+  source: "default" | "saved" | "narrowed";
+  narrowed_by: string[];
+}
+
+export interface AgentPolicyView {
+  effective: AgentPolicy;
+  saved: AgentPolicy | null;
+  environment: { level: string | null; connections: string[] | null; tools: string[] | null };
+  levels: string[];
+}
+
+export async function getAgentPolicy(): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Could not read the agent policy");
+  }
+  return res.json();
+}
+
+export async function updateAgentPolicy(body: { level: "read" | "run" | "act"; connections?: string[] | null; tools?: string[] | null }): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not save the agent policy");
+  }
+  return res.json();
+}
+
+export async function clearAgentPolicy(): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not clear the agent policy");
+  }
+  return res.json();
+}
+
+/** DE-5f — one join touching a column, with its evidence in the catalog's words. */
+export interface RelatedJoin {
+  table: string;
+  column: string;
+  other_table: string;
+  other_column: string;
+  match: "declared" | "exact" | "inferred";
+  overlap: number | null;
+  verdict: "verified" | "declared" | "disputed" | "rejected" | "unprobed";
+  cardinality: string | null;
+  source: "ontology" | "join_map";
+  /** Whether rows may be opened through it: verified, or declared and not disputed. */
+  openable: boolean;
+  sentence: string;
+}
+
+export interface RelatedJoinsAnswer {
+  table: string;
+  column: string;
+  joins: RelatedJoin[];
+  ontology: "built" | "not built";
+  /** Why the join map could not be read, when it could not. */
+  join_map?: string;
+}
+
+/** DE-5f — `GET /connections/{id}/related-joins`: the joins the data bears out that touch one column. */
+export async function getRelatedJoins(connId: string, table: string, column: string, schema?: string): Promise<RelatedJoinsAnswer> {
+  const qs = new URLSearchParams({ table, column });
+  if (schema) qs.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/related-joins?${qs.toString()}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Could not read the joins");
+  }
+  return res.json();
+}
+
+/** DE-5f — the rows on the other side of one verified join, for one value. The typed shape, plus the
+ *  statement that ran, its bound `params`, a `label`, the `join` and its evidence as a caveat; a refusal has
+ *  no rows and a `code` (`JOIN_NOT_VERIFIED`, `BLOCKED`, `FAILED`). */
+export interface RelatedRowsResult extends TypedQueryResult {
+  code?: string | null;
+  join?: RelatedJoin | null;
+}
+
+export async function openRelatedRows(
+  connId: string,
+  args: { table: string; column: string; value: unknown; otherTable: string; otherColumn: string; schema?: string },
+  limit = 500, signal?: AbortSignal,
+): Promise<RelatedRowsResult> {
+  return postCutRequest<RelatedRowsResult>("/query/related", {
+    conn_id: connId, table: args.table, column: args.column, value: args.value,
+    other_table: args.otherTable, other_column: args.otherColumn, limit, source: "query_workbench",
+    ...(args.schema ? { schema_name: args.schema } : {}),
+  }, signal);
+}
+
+/** DE-5d — `POST /query/count`: how many rows the statement returns in all. `total` is null on a
+ *  refusal, whose `code` is `BLOCKED`, `NOT_WRAPPABLE` or `FAILED` and whose `error` is the gate's or the
+ *  engine's own words. `as_of` is when the engine answered — the number says when it was true. */
+export interface QueryCount {
+  total: number | null;
+  as_of: string;
+  duration_ms: number;
+  sql: string;
+  error: string | null;
+  code: string | null;
+}
+
+/** DE-5d — `POST /query/more`: one page of a cut result, in the typed shape, plus where it starts and
+ *  whether the statement orders its rows (null: could not tell). A refusal is the same shape with no
+ *  rows and a `code` — `PAGE_BILLED_AS_SCAN` on an engine that bills each statement as a full scan. */
+export interface TypedQueryPage extends TypedQueryResult {
+  offset: number;
+  ordered: boolean | null;
+  code?: string | null;
+}
+
+async function postCutRequest<T>(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) throw new QueryCancelled();
+    throw e;
+  }
+  if (!res.ok) {
+    if (res.status === 499) throw new QueryCancelled();
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Query failed");
+  }
+  return res.json();
+}
+
+/** DE-5d — count every row the statement returns, through the run's door with the run's bound values. */
+export async function countQueryRows(
+  connId: string, sql: string, params?: Record<string, unknown>, signal?: AbortSignal,
+): Promise<QueryCount> {
+  return postCutRequest<QueryCount>("/query/count", {
+    conn_id: connId, sql, source: "query_workbench",
+    ...(params && Object.keys(params).length ? { params } : {}),
+  }, signal);
+}
+
+/** DE-5d — the next `limit` rows of the statement after the `offset` already shown. */
+export async function loadMoreRows(
+  connId: string, sql: string, offset: number, limit: number,
+  params?: Record<string, unknown>, signal?: AbortSignal,
+): Promise<TypedQueryPage> {
+  return postCutRequest<TypedQueryPage>("/query/more", {
+    conn_id: connId, sql, offset, limit, source: "query_workbench",
+    ...(params && Object.keys(params).length ? { params } : {}),
+  }, signal);
 }
 
 /** Thrown when the user cancelled the run — distinct from a query that failed, because
@@ -4335,6 +4525,21 @@ export interface SlackBotSummary {
   id: string;
   name: string;
   enabled: boolean;
+  /** AO-1e — why the PLATFORM switched this bot off ("its agent 'X' was deleted"); ""
+   *  when a person paused it or it is on. Cleared by the server on resume. */
+  disabled_reason: string;
+  /** AO-2a — the supervisor heartbeat that has this bot's socket open, or null when
+   *  nothing is listening (the record being "enabled" says nothing about that). */
+  listening: { supervisor_id: string; since: string; last_seen_at: string } | null;
+  /** Why nothing is listening, with the command to start it; "" while listening. */
+  liveness_hint: string;
+  /** AO-2d — set when Aughor created the app itself: the OAuth client that installs it. */
+  client_id?: string;
+  slack_app_id?: string;
+  /** AO-2f — optional home channel (`C…` or `#name`); "" means none. */
+  channel_id?: string;
+  /** AO-6 — posts from automations as this bot are held for a person's click first. */
+  rehearse?: boolean;
   team_id: string;
   bot_user_id: string;
   /** DS-5 — the agent this bot is a door ONTO. On the wire since RC-5 (`to_safe_dict`
@@ -4356,6 +4561,14 @@ export interface SlackBotPatch {
   agent_id: string;
   connection_id: string;
   agent_view: boolean;
+  /** AO-2d — a token pasted to finish an app Aughor created; absent means "keep stored". */
+  bot_token?: string;
+  app_token?: string;
+  signing_secret?: string;
+  /** AO-2f — the home channel; carried by `patchBodyFor` like the rest. */
+  channel_id?: string;
+  /** AO-6 — rehearse; carried by `patchBodyFor` like the rest. */
+  rehearse?: boolean;
 }
 
 /** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
@@ -4860,6 +5073,9 @@ export async function createSlackBot(body: {
  *  status, never a disclosure — a lost key is re-issued, not recovered. */
 export async function issueSupervisorKey(): Promise<{
   key: string; env_line: string; issued_at: string;
+  /** AO-2e — the key this one replaced keeps opening the door until then ("" on a first
+   *  issue), so the running supervisor is not dark between Regenerate and the restart. */
+  previous_valid_until: string; previous_valid_for_s: number;
 }> {
   const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`, { method: "POST" });
   if (!res.ok) throw new Error(`Could not issue a supervisor key (${res.status})`);
@@ -4867,10 +5083,10 @@ export async function issueSupervisorKey(): Promise<{
 }
 
 export async function getSupervisorKeyStatus(): Promise<{
-  issued: boolean; issued_at: string;
+  issued: boolean; issued_at: string; previous_valid_until: string; grace_s: number;
 }> {
   const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`);
-  if (!res.ok) return { issued: false, issued_at: "" };
+  if (!res.ok) return { issued: false, issued_at: "", previous_valid_until: "", grace_s: 0 };
   return res.json();
 }
 
@@ -4900,6 +5116,142 @@ export async function updateSlackBot(id: string, body: SlackBotPatch): Promise<S
 /** Delete a record. Its tokens go with it and the supervisor closes the socket on its
  *  next reconcile; automations that post as it report "unknown Slack bot" until they
  *  are re-pointed — the caller says so before asking. */
+/** AO-2d — Aughor creates the Slack app itself from ONE configuration token (used once,
+ *  never stored). The response says what is still by hand (`needs`), the install URL when
+ *  the deployment has a public HTTPS origin, and the steps in a person's words. */
+export interface SlackAppCreated {
+  bot: SlackBotSummary;
+  app_id: string;
+  /** API-relative: `/slack-bots/{id}/install`, or "" when no public HTTPS origin is set. */
+  install_url: string;
+  manage_url: string;
+  needs: string[];
+  oauth_available: boolean;
+  steps: string[];
+}
+
+export async function createSlackApp(body: {
+  config_token: string; name: string; description?: string;
+  agent_id?: string; connection_id?: string; agent_view?: boolean;
+}): Promise<SlackAppCreated> {
+  const res = await fetch(`${getApiBase()}/slack-bots/apps`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Slack app (${res.status})`);
+  }
+  return res.json();
+}
+
+/** AO-2b — what the API knows about the supervisor it runs (flag `slack.managed_supervisor`). */
+export interface ManagedSupervisorStatus {
+  flag: boolean; managed: boolean;
+  state: "off" | "starting" | "running" | "restarting" | "stopped" | "failed";
+  pid: number | null; started_at: string; restarts: number;
+  last_exit_code: number | null; last_error: string;
+  command: string[]; cwd: string; preconditions: string[];
+  /** AO-2b receipt — where the child's own output lands, and the freshest heartbeat any
+   *  supervisor sent (a running pid that never beat is not listening). */
+  log_path: string;
+  heartbeat: { supervisor_id: string; since: string; last_seen_at: string;
+               running: number; failed: number; fresh: boolean } | null;
+}
+
+export async function getManagedSupervisor(): Promise<ManagedSupervisorStatus> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor`);
+  if (!res.ok) throw new Error(`Could not read the supervisor's state (${res.status})`);
+  return res.json();
+}
+
+export async function restartManagedSupervisor(): Promise<ManagedSupervisorStatus> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor/restart`, { method: "POST" });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not restart the supervisor (${res.status})`);
+  }
+  return res.json();
+}
+
+/** AO-5 — every door into a custom agent, with its state (the Doors tab's data). */
+export interface AgentDoorsInfo {
+  mcp: { state: string; tool: string; how: string };
+  http: { state: string; key_issued_at: string; url: string; hint: string };
+  embed: { state: string; url: string };
+  webhook: { state: string; url: string };
+  a2a: { state: string; card: string; url: string };
+  teams: { state: string; bots: TeamsBotSummary[] };
+}
+
+export interface TeamsBotSummary {
+  id: string; name: string; enabled: boolean; agent_id: string; connection_id: string;
+  app_id: string; app_password: string; tenant_id: string; created_at: string; updated_at: string;
+}
+
+export async function getAgentDoors(agentId: string): Promise<AgentDoorsInfo> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/doors`);
+  if (!res.ok) throw new Error((await res.text()) || `doors read failed (${res.status})`);
+  return res.json();
+}
+
+/** Mint the agent's HTTP-door key — returned ONCE, with the header and a curl to copy. */
+export async function issueAgentKey(agentId: string): Promise<{
+  key: string; issued_at: string; header: string; curl: string;
+}> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/key`, { method: "POST" });
+  if (!res.ok) throw new Error((await res.text()) || `key issue failed (${res.status})`);
+  return res.json();
+}
+
+export async function revokeAgentKey(agentId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/key`, { method: "DELETE" });
+  if (!res.ok) throw new Error((await res.text()) || `key revoke failed (${res.status})`);
+}
+
+export async function createTeamsBot(body: {
+  name: string; agent_id: string; connection_id?: string; app_id: string; app_password: string; tenant_id?: string;
+}): Promise<{ bot: TeamsBotSummary; messaging_endpoint: string; needs: string[] }> {
+  const res = await fetch(`${getApiBase()}/teams-bots`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Teams bot (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deleteTeamsBot(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/teams-bots/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Could not delete the Teams bot (${res.status})`);
+}
+
+/** AO-5b — the folded answer a headless door returns (also what the embed page renders). */
+export interface DoorAnswer {
+  agent_id: string; question: string; headline: string; sql: string;
+  columns: string[]; rows: unknown[][]; row_count: number | null;
+  receipt_id: string; investigation_id: string; error: string; truncated: boolean;
+}
+
+export async function askThroughDoor(agentId: string, key: string, body: {
+  question: string; asker?: string;
+}): Promise<DoorAnswer> {
+  const res = await fetch(`${getApiBase()}/doors/agents/${encodeURIComponent(agentId)}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `the door said ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function deleteSlackBot(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/slack-bots/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) {
@@ -6716,12 +7068,20 @@ export interface FleetJob {
   duration_ms: number | null;
 }
 
-export async function getJobs(params?: { state?: string; conn_id?: string; kind?: string; limit?: number }): Promise<FleetJob[]> {
+export async function getJobs(params?: {
+  state?: string; conn_id?: string; kind?: string; limit?: number;
+  /** AO-3 — the shared window (`rangeParams`): a named range, or ISO-8601 UTC bounds on
+   *  `created_at`, half-open. Omit all three for no bound. */
+  range?: string; since?: string; until?: string;
+}): Promise<FleetJob[]> {
   const q = new URLSearchParams();
   if (params?.state) q.set("state", params.state);
   if (params?.conn_id) q.set("conn_id", params.conn_id);
   if (params?.kind) q.set("kind", params.kind);
   if (params?.limit) q.set("limit", String(params.limit));
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
   const res = await fetch(`${getApiBase()}/jobs${q.toString() ? `?${q}` : ""}`);
   if (!res.ok) return [];
   return res.json();
@@ -6757,13 +7117,23 @@ export interface AgentRosterEntry {
   knobs?: AgentKnob[];
   governance: AgentGovernance;
   spend: AgentSpend;
+  /** AO-3 — the window `spend` was read over; the built-in agent's page captions it. */
+  window?: ReadWindow;
   backend?: string;
 }
 
-export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[]> {
-  const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
-  const res = await fetch(`${getApiBase()}/agents${q}`);
-  if (!res.ok) return [];
+/** AO-3 — throws on a failed read (it returned `[]`, which the roster rendered as "no
+ *  built-in agents"); takes the shared window, which rides back on every row. */
+export async function getAgents(
+  workspaceId?: string, params?: { range?: string; since?: string; until?: string },
+): Promise<AgentRosterEntry[]> {
+  const q = new URLSearchParams();
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
+  const res = await fetch(`${getApiBase()}/agents${q.toString() ? `?${q}` : ""}`);
+  if (!res.ok) throw new Error((await res.text()) || `agents read failed (${res.status})`);
   return res.json();
 }
 
@@ -6880,6 +7250,15 @@ export interface PublicReceipt {
   connection: { id: string | null; name: string | null; dialect: string | null };
   executed_sql: PublicReceiptSql[];
   input_tables: string[];
+  /** DE-4 — the columns the statement read, each with how it was resolved. `level` is
+   *  "column" (traced), "table" (fell back to tables, `note` says why) or null for a receipt
+   *  written before columns were traced — which is not the same as reading none. */
+  columns: {
+    level: "column" | "table" | null;
+    note: string | null;
+    columns: { table: string; column: string; roles: string[]; confidence: "certain" | "likely" | "possible" | null; as: string[] }[];
+    tables_only: { table: string; roles: string[]; as: string[]; note: string | null }[];
+  };
   guards: PublicReceiptGuard[];          // each names a guard that FIRED, with its action
   caveats: string[];
   metrics: {
@@ -7574,8 +7953,8 @@ export async function getActionRoster(
 }
 
 export async function createUserAgent(body: {
-  name: string; instructions?: string; connection_id?: string; schema_scope?: string;
-  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
+  name: string; instructions?: string; purpose?: string; connection_id?: string;
+  schema_scope?: string; doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
 }): Promise<UserAgent> {
   const res = await fetch(`${getApiBase()}/agents/custom`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -7672,8 +8051,13 @@ export async function proposeUserAgent(body: {
   return res.json();
 }
 
+/** AO-1d — the pack path takes the scratch path's body: the creator's edited instructions,
+ *  purpose, documents and extra packs ride along (the template's pack is always bound by
+ *  the server). Before, only the first four fields were sent and the edits were dropped. */
 export async function createUserAgentFromTemplate(body: {
-  pack_id: string; name?: string; connection_id?: string; schema_scope?: string;
+  pack_id: string; name?: string; instructions?: string; purpose?: string;
+  connection_id?: string; schema_scope?: string;
+  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
 }): Promise<{ agent: UserAgent; suggested_goldens: { question: string; needs: string }[] }> {
   const res = await fetch(`${getApiBase()}/agents/custom/from-template`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -7684,8 +8068,9 @@ export async function createUserAgentFromTemplate(body: {
 }
 
 export async function patchUserAgent(agentId: string, body: {
-  name?: string; instructions?: string; connection_id?: string; schema_scope?: string;
-  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[]; enabled?: boolean;
+  name?: string; instructions?: string; purpose?: string; connection_id?: string;
+  schema_scope?: string; doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
+  enabled?: boolean;
 }): Promise<UserAgent> {
   const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -7695,11 +8080,49 @@ export async function patchUserAgent(agentId: string, body: {
   return res.json();
 }
 
-export async function deleteUserAgent(agentId: string): Promise<boolean> {
+/** AO-1e — what a delete MOVED besides the row: the server switches off the Slack bots that
+ *  fronted the agent (each now says why on its card), detaches the automations that ran as it
+ *  (they stay, bound to nobody), and keeps its configuration revisions. A step that could not
+ *  run is said in `*_error`, never folded into an empty list. */
+export interface AgentDeleteReceipt {
+  deleted: string;
+  name: string;
+  bots_disabled: { id: string; name: string }[];
+  automations_detached: { id: string; name: string }[];
+  revisions_kept: number;
+  bots_disabled_error?: string;
+  automations_detached_error?: string;
+  revisions_kept_error?: string;
+}
+
+export async function deleteUserAgent(agentId: string): Promise<AgentDeleteReceipt> {
   const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
     method: "DELETE",
   });
-  return res.ok;
+  if (!res.ok) throw new Error((await res.text()) || `delete agent failed (${res.status})`);
+  return res.json();
+}
+
+/** One sentence for the receipt, for the roster to show once the agent is gone. */
+export function describeAgentDeleteReceipt(r: AgentDeleteReceipt): string {
+  const parts: string[] = [`Deleted “${r.name}”.`];
+  if (r.bots_disabled.length) {
+    parts.push(`${r.bots_disabled.length} Slack bot${r.bots_disabled.length === 1 ? "" : "s"} `
+      + `switched off (${r.bots_disabled.map(b => b.name).join(", ")}).`);
+  } else if (r.bots_disabled_error) {
+    parts.push(`Its Slack bots could not be switched off: ${r.bots_disabled_error}`);
+  }
+  if (r.automations_detached.length) {
+    parts.push(`${r.automations_detached.length} automation`
+      + `${r.automations_detached.length === 1 ? "" : "s"} now run as nobody `
+      + `(${r.automations_detached.map(a => a.name).join(", ")}).`);
+  } else if (r.automations_detached_error) {
+    parts.push(`Its automations could not be detached: ${r.automations_detached_error}`);
+  }
+  parts.push(r.revisions_kept_error
+    ? "Its configuration history could not be counted."
+    : `${r.revisions_kept} configuration revision${r.revisions_kept === 1 ? "" : "s"} kept.`);
+  return parts.join(" ");
 }
 
 // ── Measured agents: golden questions + evaluation ────────────────────────────
@@ -7710,6 +8133,14 @@ export interface AgentGolden {
   question: string;
   reference_sql: string;
   created_at: string;
+  /** AO-6/AO-7 — `certified` (a person's SQL; the suite counts it) or `candidate`
+   *  (drafted from the catalogue, or an answer accepted in use; waiting for a person). */
+  status?: "certified" | "candidate";
+  source?: "person" | "use" | "synthetic";
+  from_investigation?: string;
+  /** For a candidate from use, what the answer said; for a drafted one, why it was drafted. */
+  headline?: string;
+  certified_at?: string;
 }
 
 export interface AgentEvalResult {
@@ -7717,7 +8148,62 @@ export interface AgentEvalResult {
   total: number;
   at: string;
   duration_ms?: number;
-  per_question: { golden_id: string; question: string; passed: boolean; error: string }[];
+  per_question: { golden_id: string; question: string; passed: boolean; error: string;
+                  /** The statement the production path framed, and on a mismatch the first rows
+                   *  of both sides — so a failure is readable where it is shown (2026-10-03). */
+                  generated_sql?: string; reference_rows?: string[][]; generated_rows?: string[][] }[];
+  /** AO-6/AO-7d — what changed since the previous stamp. */
+  diff?: {
+    before: { passed: number; total: number; at: string } | null;
+    newly_failing: string[];
+    newly_passing: string[];
+  };
+}
+
+/** AO-7d — the loop's receipt for one agent. */
+export interface AgentLearning {
+  agent_id: string;
+  loop_on: boolean;
+  centre_on: boolean;
+  verdicts: number;
+  corrections: number;
+  candidates_from_use: number;
+  candidates_synthetic: number;
+  certified_from_use: number;
+  certified_synthetic: number;
+  certified: number;
+  before: { passed: number; total: number; at: string } | null;
+  after: { passed: number; total: number; at: string } | null;
+}
+
+export async function getAgentLearning(agentId: string): Promise<AgentLearning> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/learning`);
+  if (!res.ok) throw new Error((await res.text()) || `learning read failed (${res.status})`);
+  return res.json();
+}
+
+/** AO-6/AO-7c — a person certifies a candidate with the SQL they say is right. */
+export async function certifyAgentGolden(agentId: string, goldenId: string, referenceSql: string): Promise<AgentGolden> {
+  const res = await fetch(
+    `${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens/${encodeURIComponent(goldenId)}/certify`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reference_sql: referenceSql }) });
+  if (!res.ok) throw new Error((await res.text()) || `certify failed (${res.status})`);
+  return res.json();
+}
+
+/** AO-6 — draft golden QUESTIONS from the catalogue and the purpose (one model call). The
+ *  server refuses with 409 while the testing centre's flag is off; the reason is the message. */
+export async function draftAgentGoldens(agentId: string): Promise<{ drafted: AgentGolden[] }> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens/draft`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `draft failed (${res.status})`);
+  }
+  return res.json();
 }
 
 export async function listAgentGoldens(agentId: string): Promise<AgentGolden[]> {
@@ -7779,7 +8265,13 @@ export interface AgentRunSummary {
 export type UserAgentSpend = {
   measured: true; calls: number; total_tokens: number;
   cost_usd: number | null; cost_is_complete: boolean; failure_rate: number | null;
+  /** AO-3 — the counts behind `cost_is_complete`, so a tile can say "unpriced" rather
+   *  than `$0.00` when every call lacked a price. */
+  unpriced_calls: number; calls_without_usage: number;
 };
+
+/** The window a response's numbers were read over (AO-3): every tile captions it. */
+export interface ReadWindow { range: string; since: string; until: string }
 
 export interface AgentTraceStats {
   trace_count: number;
@@ -7792,15 +8284,28 @@ export interface AgentTraceStats {
 
 export interface AgentObservability {
   agent_id: string;
+  window: ReadWindow;
   run_count: number;
+  /** How many of the agent's newest runs were scanned for the window; equal to a cap
+   *  (200) means a busier window than this page can count. */
+  runs_scanned: number;
   runs: AgentRunSummary[];
   trace_stats: AgentTraceStats | null;
   spend: UserAgentSpend;
 }
 
-export async function getAgentObservability(agentId: string): Promise<AgentObservability | null> {
-  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/observability`);
-  if (!res.ok) return null;
+/** AO-3 — throws on a failed read (it returned `null`, and every caller rendered the
+ *  empty state for it). Takes the shared window; the server defaults to 24h. */
+export async function getAgentObservability(
+  agentId: string, params?: { range?: string; since?: string; until?: string },
+): Promise<AgentObservability> {
+  const q = new URLSearchParams();
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/observability`
+    + (q.toString() ? `?${q}` : ""));
+  if (!res.ok) throw new Error((await res.text()) || `observability read failed (${res.status})`);
   return res.json();
 }
 

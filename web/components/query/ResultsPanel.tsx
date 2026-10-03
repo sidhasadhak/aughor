@@ -26,12 +26,13 @@
  * re-draws them over that set, and an incompatible pick degrades rather than throws
  * (the card's own rule).
  */
-import { useDeferredValue, useMemo, useState } from "react";
-import { formatCount } from "@/lib/format";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { formatCount, formatTimestamp } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type VizConfig } from "@/components/charts/vizConfig";
-import { ResultFilterBar, type ActiveFilter } from "@/components/query/ResultFilterBar";
+import { ResultFilterBar, makeFilter, type ActiveFilter } from "@/components/query/ResultFilterBar";
+import { singleTable } from "@/lib/query/cellMenu";
 import { QuickFixPanel } from "@/components/query/QuickFixPanel";
 import { SchedulePopover } from "@/components/query/SchedulePopover";
 import { Button } from "@/components/ui/button";
@@ -39,9 +40,32 @@ import { Icon } from "@/components/ui/icon";
 import { csvFilename, downloadText } from "@/lib/query/csv";
 import { EXTRACTORS, extractorById, guessTableName } from "@/lib/query/extractors";
 import { applyFilters } from "@/lib/query/resultFilter";
-import type { TypedQueryResult } from "@/lib/api";
+import type { RelatedJoin, TypedQueryPage, TypedQueryResult } from "@/lib/api";
+import type { Cell } from "@/lib/query/resultFilter";
 
 const noteStyle: React.CSSProperties = { fontSize: 13, color: "var(--t3)" };
+
+/** DE-5d — what cut the result, in the footer's words. The server says WHICH of the three cuts it
+ *  was (`cut_by`); a result from an older server that only says `truncated` keeps the old line. */
+export function cutNote(result: Pick<TypedQueryResult, "row_count" | "cut_by">): string {
+  const n = formatCount(result.row_count);
+  switch (result.cut_by) {
+    case "limit": return `cut at ${n} rows — more exist beyond this limit`;
+    case "budget": return `cut at ${n} rows by this connection's row budget — more exist`;
+    case "cap": return `cut at ${n} rows — this connector returns at most that many a call, whatever the limit`;
+    default: return "truncated — more rows exist beyond this limit";
+  }
+}
+
+/** The outcome of "Count all rows": idle, running, a total with its as-of, or the refusal's words. */
+type CountState =
+  | { status: "idle" }
+  | { status: "busy" }
+  | { status: "done"; total: number; asOf: string }
+  | { status: "failed"; message: string };
+
+/** The most rows one "Load more" asks for — the row budget's own ceiling. */
+const MAX_PAGE = 10_000;
 
 // Module-level constants, not inline `[]`: a fresh array each render would be a new
 // dependency for the filter memo, so it would recompute on every parent render.
@@ -76,6 +100,11 @@ export function ResultsPanel({
   onApplyFix,
   maximized,
   onToggleMaximize,
+  params,
+  pageSize,
+  runKey,
+  onAppendRows,
+  onAppendResult,
 }: {
   /** SE-8B — every statement's result, in run order. One entry for a single run. */
   results: TypedQueryResult[];
@@ -96,6 +125,17 @@ export function ResultsPanel({
   /** SE-8B — the ⤢ button: the editor collapses and the results take the column. */
   maximized?: boolean;
   onToggleMaximize?: () => void;
+  /** DE-5d — the bound values the run used, so a count or a page is of the SAME statement. */
+  params?: Record<string, unknown>;
+  /** DE-5d — the run's row limit: how many rows one "Load more" asks for. */
+  pageSize?: number;
+  /** DE-5d — changes on every new run, so a count from the last run is not shown over this one. */
+  runKey?: number;
+  /** DE-5d — append a page the server returned to `results[idx]`. Without it, no "Load more". */
+  onAppendRows?: (idx: number, page: TypedQueryPage) => void;
+  /** DE-5f — add a result the panel opened from a cell (related rows) as a new page of the pager. Without
+   *  it, the cell menu offers no related rows. */
+  onAppendResult?: (result: TypedQueryResult) => void;
 }) {
   // "" | "ok" | "fail" — a click must always produce a visible outcome.
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
@@ -110,9 +150,57 @@ export function ResultsPanel({
   const [renaming, setRenaming] = useState("");      // viz id being renamed
   const [renameDraft, setRenameDraft] = useState("");
 
+  // DE-5d — "Count all rows" and "Load more" for a cut result. Both go to the server, which runs the
+  // statement again through the run's door; the panel only shows what came back, and says a refusal
+  // in the server's words. Reset when a new run lands or the pager moves: a total belongs to one
+  // run of one statement, and its as-of says when it was true.
+  const [count, setCount] = useState<CountState>({ status: "idle" });
+  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreError, setMoreError] = useState("");
+  useEffect(() => {
+    setCount({ status: "idle" });
+    setMoreBusy(false);
+    setMoreError("");
+  }, [runKey, resultIdx]);
+
   const result = results[resultIdx] ?? null;
   const columns = result?.columns ?? EMPTY_COLS;
   const rawRows = result?.rows ?? EMPTY_ROWS;
+  const nextPage = Math.min(Math.max(1, pageSize ?? 500), MAX_PAGE);
+  // DE-5f — a result opened from a cell ran with its own bound value; the run's values are the fallback.
+  const effectiveParams = result?.params ?? params;
+  const [relatedError, setRelatedError] = useState("");
+  useEffect(() => { setRelatedError(""); }, [runKey, resultIdx]);
+
+  const countAll = async () => {
+    if (!connId || !result) return;
+    setCount({ status: "busy" });
+    try {
+      const { countQueryRows } = await import("@/lib/api");
+      const r = await countQueryRows(connId, result.sql, effectiveParams);
+      if (r.total === null) setCount({ status: "failed", message: r.error ?? r.code ?? "no answer" });
+      else setCount({ status: "done", total: r.total, asOf: r.as_of });
+    } catch (e) {
+      setCount({ status: "failed", message: e instanceof Error ? e.message : "no answer" });
+    }
+  };
+
+  const loadMore = async () => {
+    if (!connId || !result || !onAppendRows) return;
+    setMoreBusy(true);
+    setMoreError("");
+    try {
+      const { loadMoreRows } = await import("@/lib/api");
+      // The offset is every row shown so far, filtered or not: the page continues the RESULT.
+      const page = await loadMoreRows(connId, result.sql, rawRows.length, nextPage, effectiveParams);
+      if (page.error) setMoreError(page.error);
+      else onAppendRows(resultIdx, page);
+    } catch (e) {
+      setMoreError(e instanceof Error ? e.message : "could not load more rows");
+    } finally {
+      setMoreBusy(false);
+    }
+  };
   // Filtering runs over every returned row on each keystroke. Deferred so typing stays
   // responsive on a full-limit result — the grid catching up a frame late is a far
   // better trade than the input stuttering.
@@ -125,6 +213,90 @@ export function ResultsPanel({
       deferredFilters.map((f) => f.rank).filter((r): r is NonNullable<typeof r> => !!r),
     );
   }, [rawRows, deferredFilters]);
+
+  // DE-5c — a live read of a column's values, offered only when the statement reads exactly ONE
+  // table: then a result column is that table's column by name. A join, a CTE or a computed column
+  // has no one table to ask, and the picker says the rows on screen are a sample instead.
+  const sourceTable = useMemo(() => (result?.sql ? singleTable(result.sql) : null), [result?.sql]);
+  // DE-close — the table column a result column reads: DE-4's lineage on the typed response first (so a
+  // joined statement's columns are each their own table's), else the one-table rule. Null for a column no
+  // table owns (a computed column, a star the tracer could not expand): nothing is read live or opened for it.
+  const typedSources = useMemo(() => {
+    const out = new Map<string, { table: string; schema?: string; column: string }>();
+    for (const c of result?.columns_typed ?? []) {
+      if (!c.source) continue;
+      const parts = c.source.table.split(".").filter(Boolean);
+      out.set(c.name, { table: parts[parts.length - 1] ?? c.source.table,
+        schema: parts.length > 1 ? parts[parts.length - 2] : undefined, column: c.source.column });
+    }
+    return out;
+  }, [result?.columns_typed]);
+  const columnSource = useMemo(() => {
+    if (!connId || (!sourceTable && typedSources.size === 0)) return undefined;
+    return (column: string): { table: string; schema?: string; column: string } | null => {
+      const typed = typedSources.get(column);
+      if (typed) return typed;
+      if (sourceTable) return { table: sourceTable.table, schema: sourceTable.schema, column };
+      return null;
+    };
+  }, [connId, sourceTable, typedSources]);
+
+  const fetchDistinct = useMemo(() => {
+    if (!connId || !columnSource) return undefined;
+    return async (column: string) => {
+      const src = columnSource(column);
+      if (!src) return null;
+      const { getColumnDistinct } = await import("@/lib/api");
+      const r = await getColumnDistinct(connId, src.table, src.column, src.schema);
+      const table = src.schema ? `${src.schema}.${src.table}` : src.table;
+      const source = src.column === column ? table : `${table} (${src.column})`;
+      // DE-5d: a table the route could not read is a typed refusal, and the picker says it in the
+      // engine's words. An empty list with no error is an empty column, and the rows then speak.
+      if (r.error) return { values: [], truncated: false, source, error: r.error };
+      return r.values.length ? { values: r.values, truncated: r.truncated, source } : null;
+    };
+  }, [connId, columnSource]);
+
+  // DE-5f — the rows related to a value, through the joins the data bears out. Offered for a column whose
+  // table column is known (above), on a joined statement too.
+  const fetchRelated = useMemo(() => {
+    if (!connId || !columnSource) return undefined;
+    return async (column: string) => {
+      const src = columnSource(column);
+      if (!src) return { table: "", column, joins: [], ontology: "not built" as const };
+      const { getRelatedJoins } = await import("@/lib/api");
+      return getRelatedJoins(connId, src.table, src.column, src.schema);
+    };
+  }, [connId, columnSource]);
+  const onOpenRelated = useMemo(() => {
+    if (!connId || !columnSource || !onAppendResult) return undefined;
+    return async (join: RelatedJoin, column: string, value: Cell) => {
+      setRelatedError("");
+      const src = columnSource(column);
+      if (!src) { setRelatedError(`no table owns ${column}, so its related rows cannot be opened`); return; }
+      try {
+        const { openRelatedRows } = await import("@/lib/api");
+        const r = await openRelatedRows(connId, {
+          table: src.table, column: src.column, value, otherTable: join.other_table, otherColumn: join.other_column,
+          schema: src.schema,
+        }, nextPage);
+        // A refusal is said where the person is looking, not opened as an empty page.
+        if (r.error && r.code) setRelatedError(r.error);
+        else onAppendResult(r);
+      } catch (e) {
+        setRelatedError(e instanceof Error ? e.message : "the related rows could not be opened");
+      }
+    };
+  }, [connId, columnSource, onAppendResult, nextPage]);
+
+  // DE-5b — a chip from a click on the grid: the same object a typed phrase makes, and the bar
+  // opens with it, so the chip is seen the moment it narrows the rows.
+  const addFilterPhrase = (phrase: string) => {
+    const made = makeFilter(phrase, columns);
+    if (!made) return;
+    setFilters(prev => [...prev, made]);
+    setShowFilters(true);
+  };
 
   if (running && !result) {
     return <div style={{ ...noteStyle, padding: "12px 14px" }}>Running…</div>;
@@ -252,8 +424,8 @@ export function ResultsPanel({
               disabled={resultIdx === 0} onClick={() => onResultIdx(resultIdx - 1)}>
               <Icon name="chevl" size={13} />
             </Button>
-            <span className="aug-fs-ui" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
-              Results {resultIdx + 1} of {results.length}
+            <span className="aug-fs-ui" data-testid="results-pager" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
+              Results {resultIdx + 1} of {results.length}{result?.label ? ` · ${result.label}` : ""}
             </span>
             <Button variant="ghost" size="xs" title="Next statement's result"
               disabled={resultIdx >= results.length - 1} onClick={() => onResultIdx(resultIdx + 1)}>
@@ -406,6 +578,12 @@ export function ResultsPanel({
                 columns={columns}
                 columnsTyped={result.columns_typed}
                 rows={rows}
+                onAddFilter={addFilterPhrase}
+                truncated={!!result.truncated}
+                fetchDistinct={fetchDistinct}
+                columnSource={columnSource}
+                fetchRelated={fetchRelated}
+                onOpenRelated={onOpenRelated}
               />
             </div>
             {/* Every viz stays MOUNTED — the card seeds its controls once, so an
@@ -463,9 +641,59 @@ export function ResultsPanel({
         {result.truncated && (
           <>
             <span>·</span>
-            <span style={{ color: "var(--amb4)" }}>
-              truncated — more rows exist beyond this limit
+            <span data-testid="cut-note" style={{ color: "var(--amb4)" }}>
+              {cutNote(result)}
             </span>
+            {/* DE-5d — the two things a cut result can ask for next, each a statement the server runs
+                through the same door as the query. The count's as-of rides with the number. */}
+            {connId && (
+              <Button
+                variant="ghost" size="xs" className="aug-fs-ui" data-testid="count-all"
+                disabled={count.status === "busy"}
+                title="Count every row this statement returns — run through the same door as the query"
+                onClick={countAll}
+              >
+                {count.status === "busy" ? "Counting…" : "Count all rows"}
+              </Button>
+            )}
+            {connId && onAppendRows && (
+              <Button
+                variant="ghost" size="xs" className="aug-fs-ui" data-testid="load-more"
+                disabled={moreBusy}
+                title={`Fetch the next ${formatCount(nextPage)} rows through the same door, after the ${formatCount(rawRows.length)} shown`}
+                onClick={loadMore}
+              >
+                {moreBusy ? "Loading…" : `Load ${formatCount(nextPage)} more`}
+              </Button>
+            )}
+          </>
+        )}
+        {count.status === "done" && (
+          <>
+            <span>·</span>
+            <span data-testid="count-result">
+              {formatCount(count.total)} {count.total === 1 ? "row" : "rows"} in all · as of {formatTimestamp(count.asOf, "short")}
+            </span>
+          </>
+        )}
+        {count.status === "failed" && (
+          <>
+            <span>·</span>
+            <span data-testid="count-result" style={{ color: "var(--red4)" }}>
+              Could not count — {count.message}
+            </span>
+          </>
+        )}
+        {moreError && (
+          <>
+            <span>·</span>
+            <span data-testid="more-result" style={{ color: "var(--red4)" }}>{moreError}</span>
+          </>
+        )}
+        {relatedError && (
+          <>
+            <span>·</span>
+            <span data-testid="related-result" style={{ color: "var(--red4)" }}>{relatedError}</span>
           </>
         )}
         {result.cached && (<><span>·</span><span>cached</span></>)}

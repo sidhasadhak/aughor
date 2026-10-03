@@ -17,9 +17,14 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from aughor.db.sqlite_util import resolve_db_path
 from aughor.orgsettings.models import OrgSettings
 
-_PATH = Path(__file__).parent.parent.parent / "data" / "org_settings.json"
+#: ``AUGHOR_ORG_SETTINGS_FILE`` overrides it, and the test conftest points it at a throwaway file:
+#: without one the suite read the live settings, and a Briefing test failed on what this install's
+#: organisation had declared (2026-10-03).
+_PATH = resolve_db_path("AUGHOR_ORG_SETTINGS_FILE",
+                        Path(__file__).parent.parent.parent / "data" / "org_settings.json")
 
 
 def load_org_settings() -> OrgSettings:
