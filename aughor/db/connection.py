@@ -21,6 +21,7 @@ import sqlglot
 
 from aughor.db.dialects import known_dialect, sql_for_engine
 from aughor.db.doors import add as _add_doors, door_dialect, passed as _passed, statement_is_internal, through_door
+from aughor.db.errors import classify_error
 from aughor.db.single_flight import single_flight_build
 from aughor.control_plane.contracts.execution import QueryResult
 
@@ -910,6 +911,16 @@ class DatabaseConnection(ABC):
                    "parameterised queries. Remove the parameters, or inline the values."),
         )
 
+    def is_healthy(self) -> bool:
+        """Whether the pool may hand this connection out again (DE-3d). The base answers through the connector's
+        own `test()`, so no connection is counted healthy for lack of an answer — the pool did exactly that, and
+        only Postgres and SQLite could say. A warehouse connector overrides this with its driver's cheaper
+        liveness check; `test()` may run a statement."""
+        try:
+            return bool(self.test()[0])
+        except Exception:  # noqa: BLE001 — a probe that raises is a connection that is not healthy
+            return False
+
     def get_ontology(self):
         """Return the OntologyGraph built during the last get_schema() call, or None."""
         return self._ontology
@@ -1302,12 +1313,22 @@ class DuckDBConnection(DatabaseConnection):
                 )
             except Exception as e:
                 return QueryResult(hypothesis_id=hypothesis_id, sql=statement, columns=[], rows=[], row_count=0,
-                                   error=str(e))
+                                   error=str(e), error_kind=classify_error(e))
 
         # A refusal DuckDB names exactly is healed once, deterministically (`heal_duckdb_refusal`).
         result = heal_duckdb_refusal(_attempt(sql), sql, _attempt)
         elapsed_ms = (_time.monotonic() - _t0) * 1000
         return _security_post(conn_id, hypothesis_id, result.sql, result, elapsed_ms)
+
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): one `SELECT 1` on the handle, no file re-open."""
+        try:
+            if self._conn is None:
+                return False
+            self._conn.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
 
     def get_schema(self) -> str:
         """Fast schema introspection — returns immediately. Never blocks on profiles, ontology, or LLM calls.
@@ -1734,7 +1755,8 @@ class PostgresConnection(DatabaseConnection):
                 self._connect()
             except Exception:
                 pass
-            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
+            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e),
+                                 error_kind=classify_error(e))
 
         elapsed_ms = (_time.monotonic() - _t0) * 1000
         return _security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)

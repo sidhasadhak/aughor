@@ -55,6 +55,10 @@ class MotherDuckConnection(Connector):
 
     param_style = "duckdb"
 
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): the MotherDuck handle answers `SELECT 1`."""
+        return self._handle_answers(self._conn)
+
     def _bind_execute(self, sql: str, params: dict):
         self._conn.execute(sql, params)
         cols = [d[0] for d in self._conn.description] if self._conn.description else []

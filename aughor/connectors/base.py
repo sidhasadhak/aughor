@@ -11,6 +11,7 @@ from typing import Literal
 
 from aughor.db.connection import DatabaseConnection
 from aughor.db.doors import through_door
+from aughor.db.errors import classify_error
 from aughor.db.single_flight import single_flight_build
 
 
@@ -61,9 +62,10 @@ class Connector(DatabaseConnection):
     #: How this connector's DRIVER spells a bind placeholder — see `sql.params`. ``None``
     #: means it cannot bind, and `execute_with_params` keeps the base class's visible
     #: refusal rather than falling back to anything that builds the statement by
-    #: concatenation. Deliberately a DRIVER fact, not a dialect one: `ExasolConnection`
-    #: declares ``dialect = "postgres"`` for transpile and `pyexasol` accepts none of
-    #: Postgres's placeholder syntax.
+    #: concatenation. Deliberately a DRIVER fact, not a dialect one: a dialect says what
+    #: grammar the engine reads, and a driver's placeholders are its own (`ExasolConnection`
+    #: declared ``dialect = "postgres"`` until DE-3a, and `pyexasol` accepted none of
+    #: Postgres's placeholder syntax either).
     param_style: str | None = None
 
     #: Row cap for a bound run, matching what every connector's `execute` already applies.
@@ -106,7 +108,7 @@ class Connector(DatabaseConnection):
                 )
             except Exception as exc:  # noqa: BLE001 — an engine error is the result's error, never a raise
                 return QueryResult(hypothesis_id=hypothesis_id, sql=statement, columns=[], rows=[], row_count=0,
-                                   error=str(exc))
+                                   error=str(exc), error_kind=classify_error(exc))
 
         result = heal_duckdb_refusal(_attempt(sql), sql, _attempt)
         return security_post(self._connection_id, hypothesis_id, result.sql, result,
@@ -131,6 +133,19 @@ class Connector(DatabaseConnection):
             return base
         from aughor.kernel.registries.schema_annotators import run_annotators
         return run_annotators(self, base, phase="heavy")
+
+    @staticmethod
+    def _handle_answers(handle) -> bool:
+        """The one liveness probe every DuckDB-backed connector shares (DE-3d): the handle answers `SELECT 1`.
+        A connector that mirrors a source into an in-memory DuckDB is healthy when that DuckDB answers; the
+        source's own reachability is the next sync's affair, and `test()` reports it."""
+        try:
+            if handle is None:
+                return False
+            handle.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
 
     def _driver_handle(self):
         """`self._conn`, or `self._duckdb` for the connectors that keep it there.
@@ -208,7 +223,7 @@ class Connector(DatabaseConnection):
                                  rows=rows, row_count=len(rows_raw))
         except Exception as e:
             result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[],
-                                 row_count=0, error=str(e))
+                                 row_count=0, error=str(e), error_kind=classify_error(e))
         # `sql` and not `rendered`: every downstream reader of a receipt — the guards, the
         # editor header, the ledger — was written against the statement the USER wrote.
         elapsed_ms = (time.monotonic() - _t0) * 1000

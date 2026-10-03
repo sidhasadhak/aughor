@@ -12,6 +12,7 @@ import time
 
 from aughor.connectors.base import Connector
 from aughor.db.doors import through_door
+from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -19,7 +20,10 @@ MAX_ROWS = 2000
 
 class ExasolConnection(Connector):
     connector_category = "warehouse"
-    dialect = "postgres"  # Exasol speaks standard SQL; postgres transpile is the closest fit
+    # DE-3a (ROADMAP §3.51) — Exasol declares itself. It declared `postgres` ("the closest transpile fit") since
+    # sqlglot had no Exasol dialect; sqlglot 30 ships one, and under the borrowed name the writer rules told the model
+    # Postgres's syntax and to AVOID QUALIFY, which Exasol supports, while the parse step read Exasol SQL as Postgres.
+    dialect = "exasol"
     writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
     # DE-1 — Exasol has no session-level read-only; the door's checks are the read-only boundary, said on the doors.
     engine_read_only = False
@@ -54,9 +58,17 @@ class ExasolConnection(Connector):
     #: them as bind values, which is the one thing this feature must never do — and the
     #: package is not installed anywhere here, so the claim cannot be checked against the
     #: driver either. Refusing visibly beats a rendering nobody has run. Note that keying
-    #: the placeholder map on DIALECT would have bound it silently and wrongly: Exasol
-    #: declares `dialect = "postgres"` for transpile, and pyexasol speaks no Postgres
-    #: placeholder syntax at all. That counter-example is why `param_style` exists.
+    #: the placeholder map on DIALECT would bind silently and wrongly: a dialect says what
+    #: grammar the engine reads, and pyexasol's placeholders are the driver's own affair (it
+    #: declared `postgres` until DE-3a, and spoke no Postgres placeholder syntax either).
+    #: That counter-example is why `param_style` exists.
+
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): pyexasol keeps `is_closed` on the connection; no statement."""
+        try:
+            return self._conn is not None and not bool(getattr(self._conn, "is_closed", False))
+        except Exception:
+            return False
 
     @staticmethod
     def _stage_type(column: object) -> str:
@@ -101,7 +113,7 @@ class ExasolConnection(Connector):
         except Exception as e:
             result = QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=str(e),
+                columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
             )
         elapsed_ms = (time.monotonic() - _t0) * 1000
         return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)

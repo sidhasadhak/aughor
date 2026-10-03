@@ -56,9 +56,15 @@ _CAPS: dict[str, DialectCapabilities] = {
         unsupported_functions=frozenset({"SAFE_DIVIDE", "DIV0", "IFF"}),
         unsupported_features=frozenset({FEATURE_QUALIFY}),
     ),
+    # DE-3a — Exasol's own row, now that it declares `exasol`: QUALIFY is SUPPORTED (under the borrowed `postgres`
+    # name the writer was told to avoid it); its date arithmetic is DAYS_BETWEEN / SECONDS_BETWEEN, not DATEDIFF.
+    "exasol": DialectCapabilities(
+        "exasol",
+        unsupported_functions=frozenset({"SAFE_DIVIDE", "IFF", "DATEDIFF"}),
+    ),
 }
 
-_PERMISSIVE = DialectCapabilities("")   # duckdb / sqlite / motherduck / exasol / unknown → no diagnostics
+_PERMISSIVE = DialectCapabilities("")   # duckdb / sqlite / motherduck / unknown → no diagnostics
 
 
 def for_dialect(dialect: str) -> DialectCapabilities:

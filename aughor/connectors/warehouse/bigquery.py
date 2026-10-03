@@ -17,6 +17,7 @@ from contextlib import contextmanager
 
 from aughor.connectors.base import Connector
 from aughor.db.doors import passed, through_door
+from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
@@ -214,6 +215,11 @@ class BigQueryConnection(Connector):
             rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
             return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
 
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): BigQuery is an HTTP API with no session to lose, so a connection is healthy while
+        its client exists. A failed job is that statement's error, typed by the connector, never a dead connection."""
+        return getattr(self, "_client", None) is not None
+
     def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS), internal=internal)
 
@@ -277,7 +283,7 @@ class BigQueryConnection(Connector):
         except Exception as e:
             return QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=str(e),
+                columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
             )
 
     def _job_config(self, **overrides):

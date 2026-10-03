@@ -45,6 +45,10 @@ class QueryResult(BaseModel):
     rows: list[list]
     row_count: int
     error: Optional[str] = None
+    # DE-3d: what kind of error the engine gave — `connection`, `timeout`, `cancelled` or `sql`
+    # (`aughor.db.errors`). None when there was no error, or when the connector did not say. A
+    # connection error evicts the pooled connection, and only a platform statement is retried on it.
+    error_kind: Optional[str] = None
     stats: list[StatResult] = Field(default_factory=list)
     # Predictions set at plan time; carried through for comparison at score time
     expected_if_true: Optional[str] = None

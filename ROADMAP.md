@@ -10271,6 +10271,36 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > HTTP client it serves — the per-caller policy is DE-2b; stdio needs no token, since the launcher's own process is
 > the credential. Next: DE-3a and DE-3d.
 
+> **Status 2026-10-03 — DE-3a and DE-3d BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:*
+> sqlglot 30.8 has `exasol` and transpiles the platform's DuckDB into it (`LISTAGG`, `DOUBLE`, `DATE_TRUNC`);
+> under the borrowed `postgres` name an Exasol connection was handed the POSTGRESQL writer rules plus "AVOID …
+> QUALIFY", which Exasol supports; the pool handed out any connection with no `is_healthy` as healthy, and only
+> Postgres and SQLite had one. *DE-3a:* `ExasolConnection.dialect = "exasol"`; an EXASOL block in the writer rules
+> (`DATE_TRUNC`/`TRUNC`, `DAYS_BETWEEN`/`SECONDS_BETWEEN`, `LISTAGG`, sized `VARCHAR`, QUALIFY supported, uppercase
+> folding) and an Exasol row in the capability contract (`SAFE_DIVIDE`, `IFF`, `DATEDIFF` refused; QUALIFY not), so
+> the parse step, the writer, the capability check and `native_sql` all read Exasol as Exasol; the two comments
+> and the test that held the old declaration up as the param-style counter-example say what it was. *DE-3d:*
+> `aughor/db/errors.py` types a driver's exception by its class name and message — `connection`, `timeout`,
+> `cancelled`, `sql` — without importing any driver (pymysql's `OperationalError` is decided by errno: 1792 is a
+> SQL refusal, 2006 a lost server); every connector's error result carries `error_kind`, and the door says
+> `failed:<kind>`; a connection error marks the connection lost, which the pool then closes on release and never
+> hands out, and `through_door` runs the statement once more only when its caller declared it the platform's own
+> (`retried:connection` on the path; a nested door sees the inner retry and does not run a third time) — a
+> person's or a model's statement comes back typed, for the caller to decide; every connection class answers
+> `is_healthy` (the base through `test()`, so nothing is counted healthy for lack of an answer; MySQL by a ping
+> that does not reconnect, Snowflake and Exasol by the driver's closed flag, BigQuery by its client's existence,
+> the DuckDB-backed ones by `SELECT 1`), and the pool refuses to hand out one that cannot say. *Receipt:*
+> `tests/unit/test_de3_engine_declares_and_errors_are_typed.py` — the Exasol declaration read by the rules, the
+> contract, the parse step and the transpile; 19 driver exceptions typed; a platform probe run once more on a lost
+> connection and a person's not, the pool closing the lost connection and discarding an unhealthy or silent one;
+> `is_healthy` on all 14 classes, the nine engines with their own; a real DuckDB SQL error typed at the door; 805
+> tests across the pool, dialect, door and connector suites, with the BigQuery, MySQL and Snowflake driver tests
+> green once their drivers are installed. *Left, named:* the connectors' own reconnect-on-any-error (Postgres
+> `_connect()`, MySQL `ping(reconnect=True)`) is unchanged — the pool's eviction makes it harmless; `timeout` and
+> `cancelled` are recorded and said, and nothing acts on them yet; `error_kind` rides the result, not yet the
+> answer envelope; the Exasol rules come from Exasol's documentation, not a live Exasol, which DE-3b's Trino
+> container is the planned stand-in for. Next: DE-5a to DE-5c with DE-5's hygiene.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

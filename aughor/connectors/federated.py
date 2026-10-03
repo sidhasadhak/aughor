@@ -44,6 +44,10 @@ class FederatedConnection(Connector):
     # DE-1 — an in-memory DuckDB this connector attaches sources into is writable by construction; the door's
     # checks are the read-only boundary, said on every result's doors.
     engine_read_only = False
+
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): the in-memory DuckDB answers."""
+        return self._handle_answers(getattr(self, "_duckdb", None))
     dialect            = "duckdb"
 
     def __init__(

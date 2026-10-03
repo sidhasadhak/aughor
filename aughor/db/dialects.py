@@ -12,7 +12,8 @@ Aughor has TWO execution modes (this was inconsistent + under-documented before)
   * native — the connection executes the LLM's SQL verbatim (no transpile).
     BigQuery / Snowflake / MySQL / Exasol take this path. Here the LLM MUST
     write correct *native* SQL, and previously got only "Target dialect: X." with
-    no guidance — the gap this module fills.
+    no guidance — the gap this module fills. (Exasol declared `postgres` until
+    DE-3a and was handed Postgres's rules; it has its own block now.)
 
 `writer_rules(db)` picks the right block from the connection's `dialect` +
 `writes_native_sql` flag. Rules cross-checked against Apache Superset's
@@ -75,6 +76,17 @@ MYSQL DIALECT RULES (violations cause query errors):
 - Type casting: CAST(x AS SIGNED | DECIMAL(38,6) | CHAR | DATE | DATETIME). MySQL has no ::TYPE syntax and no CAST AS INT/VARCHAR (use SIGNED/CHAR).
 - String aggregation: GROUP_CONCAT(col SEPARATOR ',').
 - Identifiers: backtick-quote. You CAN reference SELECT aliases in GROUP BY/HAVING (MySQL extension).
+""".strip(),
+    "exasol": """
+EXASOL DIALECT RULES (violations cause query errors):
+- Date bucketing: DATE_TRUNC('MONTH', ts) (grain quoted, column second) or TRUNC(d, 'MM'); grains DAY/WEEK/MONTH/QUARTER/YEAR.
+- Date differences: DAYS_BETWEEN(d1, d2) for days, SECONDS_BETWEEN(a, b) for seconds, MONTHS_BETWEEN(a, b) for months. There is NO DATEDIFF.
+- Division: guard zero denominators with NULLIF — a / NULLIF(b, 0).
+- Type casting: CAST(x AS DECIMAL(36,6)) / CAST(x AS VARCHAR(2000)) / CAST(x AS DATE) / CAST(x AS TIMESTAMP). A VARCHAR needs a length; there is no ::TYPE syntax.
+- String aggregation: LISTAGG(col, ',') WITHIN GROUP (ORDER BY col), or GROUP_CONCAT(col SEPARATOR ',').
+- Filter by a window function: QUALIFY is supported (QUALIFY ROW_NUMBER() OVER (PARTITION BY x ORDER BY y) = 1).
+- Identifiers fold to UPPERCASE unless double-quoted. You CANNOT reference SELECT aliases in WHERE/HAVING.
+- Row limit: LIMIT n [OFFSET m].
 """.strip(),
     "postgres": """
 POSTGRESQL DIALECT RULES (violations cause query errors):

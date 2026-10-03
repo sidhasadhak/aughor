@@ -55,6 +55,10 @@ class S3Connection(Connector):
     # read-only boundary, said on every result's doors.
     engine_read_only = False
 
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): the in-memory DuckDB answers."""
+        return self._handle_answers(getattr(self, "_duckdb", None))
+
     def __init__(
         self,
         dsn: str,

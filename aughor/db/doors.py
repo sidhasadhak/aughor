@@ -47,6 +47,9 @@ WORDS: dict[str, str] = {
     "row-budget": "cut to the row budget of {d}",
     "audited": "written to the audit log",
     "repaired": "repaired ({d})",
+    "failed": "the engine did not answer it: a {d} error",
+    "retried": "run once more after a {d} error, being a platform statement (a person's or a model's is never "
+               "retried)",
     "guarded": "checked by the {d} guard",
     "unchecked": "NOT checked by the {d} guard: it could not run on this statement",
 }
@@ -99,6 +102,19 @@ def door_dialect() -> Optional[str]:
     return _DIALECT.get()
 
 
+def mark_lost(conn: Any) -> None:
+    """Record that ``conn``'s engine connection was lost (DE-3d). The pool closes a marked connection instead of
+    returning it to its idle bucket, and never hands one out."""
+    try:
+        conn._engine_lost = True
+    except Exception:  # noqa: BLE001 — a connection object that cannot carry the mark is not pooled either
+        pass
+
+
+def connection_lost(conn: Any) -> bool:
+    return bool(getattr(conn, "_engine_lost", False))
+
+
 def engine_posture(conn: Any) -> Optional[str]:
     """The door word for the engine's own read-only posture (DE-1), or None when the engine's session refuses writes
     itself (`engine_read_only` True). An engine with no session-level read-only — BigQuery, Snowflake, an in-memory
@@ -134,6 +150,20 @@ def through_door(conn: Any, sql: str, sql_dialect: Optional[str], run: Callable[
         if posture:
             passed(posture)
         result = run(statement)
+        kind = getattr(result, "error_kind", None) if getattr(result, "error", None) else None
+        if kind:
+            passed(f"failed:{kind}")
+        if kind == "connection":
+            # DE-3d — the connection is lost: the pool must not hand it out again (`db.pool` reads the mark), and
+            # only a statement the platform declared its own is run once more, on the connection the connector
+            # re-opened for itself. A person's or a model's statement comes back with the typed error: a retry the
+            # caller did not ask for is a run they cannot see, and the caller decides.
+            mark_lost(conn)
+            if internal and "retried:connection" not in (getattr(result, "doors", None) or []):
+                # Once: a door nested in another (the base `execute_bounded` runs `execute`) sees the inner retry
+                # on the result's path and does not run a third time.
+                passed("retried:connection")
+                result = run(statement)
         if result is not None and hasattr(result, "doors"):
             add(result, _TRAIL.get() or [], first=True)
         return result

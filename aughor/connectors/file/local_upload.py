@@ -49,6 +49,7 @@ from aughor.db.duckdb_ext import prepare_extensions
 from aughor.db.single_flight import single_flight_build
 from aughor.connectors.base import Connector
 from aughor.db.doors import through_door
+from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.control_plane.vending import STORAGE_ROOT, vend_storage
 # Numbers stored as text ('₹1,099', '64%', '24,269') are re-typed at ingest. The
@@ -545,6 +546,10 @@ class LocalUploadConnection(Connector):
     # construction; the door's checks are the read-only boundary for a person's or a model's statement, and every
     # result's doors say so (`engine-read-write`).
     engine_read_only = False
+
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): the Workspace's in-memory DuckDB answers."""
+        return self._handle_answers(getattr(self, "_duckdb", None))
 
     def __init__(
         self,
@@ -1386,7 +1391,7 @@ class LocalUploadConnection(Connector):
             except Exception as e:
                 return QueryResult(
                     hypothesis_id=hypothesis_id, sql=statement,
-                    columns=[], rows=[], row_count=0, error=str(e),
+                    columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
                 )
 
         # The refusal `DuckDBConnection` heals is healed here too: this class is DuckDB-backed but inherits

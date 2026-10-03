@@ -25,6 +25,7 @@ from pathlib import Path
 from aughor.db.single_flight import single_flight_build
 from aughor.connectors.base import Connector
 from aughor.db.doors import through_door
+from aughor.db.errors import classify_error
 from aughor.db.connection import MAX_ROWS, QueryResult
 from aughor.kernel.errors import tolerate
 
@@ -179,7 +180,8 @@ class SQLiteConnection(Connector):
                 row_count=len(fetched),
             )
         except Exception as e:
-            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
+            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e),
+                                 error_kind=classify_error(e))
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         return security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)
