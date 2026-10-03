@@ -324,6 +324,18 @@ def doctree_connection(doc_id: str) -> Optional[str]:
     return doc_id[len(DOCTREE_PREFIX):].rsplit("::", 1)[0]
 
 
+def purge_connection_doctrees(connection_id: str) -> int:
+    """Delete every generated schema document of one connection — registry row AND vectors.
+    A deleted connection's `Schema documentation — <id>/<schema>` stayed registered and
+    searchable (measured 2026-10-04: both connections deleted in September). Returns count."""
+    gone = 0
+    for entry in list_documents():
+        doc_id = str(entry.get("doc_id") or "")
+        if doctree_connection(doc_id) == connection_id:
+            gone += 1 if delete_document(doc_id) else 0
+    return gone
+
+
 def is_generated(doc_id: str) -> bool:
     """Was this document COMPILED by the platform rather than uploaded by a person?
 

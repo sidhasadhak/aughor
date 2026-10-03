@@ -162,6 +162,10 @@ def _register_purge_hooks() -> None:
     ph.register_purge_hook("kinetic_inbox", _kinetic_inbox_conn)
     ph.register_purge_hook("kinetic_grants", _kinetic_grants_conn)
     ph.register_purge_hook("qdrant", _qdrant_conn)
+    # Idea 1 (2026-10-04) — three stores a deleted connection outlived, measured on the live
+    # install: its column-config and doc trees, its indexed schema documents, its watermarks.
+    ph.register_purge_hook("ontology_files", _ontology_files_conn)
+    ph.register_purge_hook("explore_watermark", _watermark_conn)
 
     # schema-keyed
     ph.register_schema_purge_hook("explorer_files", _exploration_schema)
@@ -197,6 +201,24 @@ def _ontology_conn(conn_id, org_id):
     from aughor.ontology import store as ontology_store
     ontology_store.invalidate(conn_id)
     return {"ontology": 1}
+
+
+def _ontology_files_conn(conn_id, org_id):
+    """The column-config tree, the compiled doc tree, and the doc tree's INDEXED copy (the
+    `doctree::<id>::<schema>` documents, registry row and vectors) — a deleted connection's
+    schema documentation stayed searchable before this."""
+    from aughor.knowledge import indexer
+    from aughor.ontology import column_config, doctree
+    return {"column_config": column_config.purge_connection(conn_id),
+            "doc_tree": doctree.purge_connection(conn_id),
+            "schema_documents": indexer.purge_connection_doctrees(conn_id)}
+
+
+def _watermark_conn(conn_id, org_id):
+    from aughor.explorer import watermark
+    had = watermark.has_connection(conn_id)
+    watermark.clear_watermark(conn_id)
+    return {"explore_watermark": 1 if had else 0}
 
 
 def _profile_conn(conn_id, org_id):

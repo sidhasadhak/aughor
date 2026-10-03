@@ -306,6 +306,11 @@ def _delete_canvas_artifacts(canvas_id: str) -> None:
     c.commit()
 
 
+def delete_canvas_artifacts(canvas_id: str) -> None:
+    """A canvas's saved artifacts — the public half, for the canvas purge (`db.purge`)."""
+    _delete_canvas_artifacts(canvas_id)
+
+
 def purge_connection(connection_id: str) -> int:
     """Delete every canvas scoped to a connection (+ its saved artifacts). Used by
     the catalog-delete cascade. Returns the number of canvases removed."""

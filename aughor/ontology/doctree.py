@@ -586,6 +586,18 @@ def _safe(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.=-]", "_", s or "default")
 
 
+def purge_connection(conn: str) -> int:
+    """Delete a connection's whole doc tree (every schema). Returns 1 when one existed —
+    the compiled documentation of a deleted connection is its schema, kept (idea 1). The
+    tree's INDEXED copy (the `doctree::` documents) is the knowledge store's to delete."""
+    import shutil
+    base = _root() / _safe(conn)
+    if not base.is_dir():
+        return 0
+    shutil.rmtree(base, ignore_errors=True)
+    return 1
+
+
 def _base(conn: str, schema: str) -> Path:
     return _root() / _safe(conn) / _safe(schema or "default")
 

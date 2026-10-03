@@ -281,6 +281,18 @@ def list_cards(
     return [_row_to_card(r) for r in rows]
 
 
+def purge_scope(scope: str, scope_ref: str) -> int:
+    """Delete every card in one scope, and the chart configs saved against it — what a
+    deleted canvas leaves here (`scope='canvas'`, `scope_ref=<id>`). Returns rows removed."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    n = c.execute("DELETE FROM dashboard_cards WHERE scope = ? AND scope_ref = ?",
+                  (scope, scope_ref)).rowcount
+    n += c.execute("DELETE FROM viz_configs WHERE scope_key = ?", (f"{scope}:{scope_ref}",)).rowcount
+    c.commit()
+    return max(n, 0)
+
+
 def delete_card(card_id: str) -> bool:
     c = _conn()
     ensure_once(c, _ensure_schema)
