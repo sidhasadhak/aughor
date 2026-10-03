@@ -10331,7 +10331,10 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > declaration, `AUGHOR_MODEL_PRICES`.) AO-2a ✅ — the supervisor heartbeats after every reconcile and the bot card
 > and the Map say *listening since …* or *not listening* with the one command. AO-2e ✅ — the key routes and the
 > heartbeat are admin acts in POLICY, and a rotation keeps the replaced key for ten minutes, said on the screen.
-> Next: AO-4.
+> AO-4 ✅ — the agent's page is the whole agent: Doors, Alerts and Spend tabs beside Overview, Runs, Map, Quality
+> and Setup; a connection picker in the context bar; every "Open automation" carries its id and lands on it; Hub
+> rows are links; `?tab=integrations` resolves; a "?" per layer opens the arc's help; the six words are explained
+> once where they appear; the built-in agent's page has its Map block. Next: AO-2b, AO-2c, AO-2d.
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

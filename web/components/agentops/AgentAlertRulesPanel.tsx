@@ -22,8 +22,8 @@ import { useCallback, useEffect, useState } from "react";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import {
-  deleteAgentAlertRule, getAgentAlertVocabulary, listAgentAlertRules, testAgentAlertRule,
-  upsertAgentAlertRule, type AgentAlertRule,
+  deleteAgentAlertRule, getAgentAlertVocabulary, listAgentAlertRules, listUserAgents,
+  testAgentAlertRule, upsertAgentAlertRule, type AgentAlertRule, type UserAgent,
 } from "@/lib/api";
 
 const COMPARATOR_LABEL: Record<string, string> = {
@@ -44,6 +44,9 @@ const BLANK = {
   name: "", metric: "error_rate", comparator: "gt" as Comparator, threshold: 0.25,
   window_minutes: 15, debounce_minutes: 30, check_cron: "*/5 * * * *",
   severity: "warning" as const, channel: "", enabled: true,
+  // AO-4 — the scope the engine always honoured and the form never offered: "" is the
+  // whole fleet, an id narrows the rule to one custom agent.
+  agent_id: "",
 };
 
 function Field({ label, children, width }: {
@@ -58,19 +61,30 @@ function Field({ label, children, width }: {
   );
 }
 
-export function AgentAlertRulesPanel() {
+export function AgentAlertRulesPanel({ agentId = "", agentName = "" }: {
+  /** AO-4 — scoped to ONE custom agent (its Alerts tab): the list shows its rules and a
+   *  new rule is born bound to it. Unscoped (Attention), the form offers the scope. */
+  agentId?: string;
+  agentName?: string;
+} = {}) {
   const [rules, setRules] = useState<AgentAlertRule[]>([]);
   const [metrics, setMetrics] = useState<string[]>([]);
   const [comparators, setComparators] = useState<string[]>([]);
-  const [draft, setDraft] = useState({ ...BLANK });
+  const [agents, setAgents] = useState<UserAgent[]>([]);
+  const [draft, setDraft] = useState({ ...BLANK, agent_id: agentId });
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [verdicts, setVerdicts] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
-    listAgentAlertRules().then(setRules).catch(e => setError(String(e?.message || e)));
-  }, []);
+    listAgentAlertRules()
+      .then(all => setRules(agentId ? all.filter(r => r.agent_id === agentId) : all))
+      .catch(e => setError(String(e?.message || e)));
+    if (!agentId) listUserAgents().then(setAgents).catch(() => setAgents([]));
+  }, [agentId]);
+  const agentLabel = (id: string) =>
+    id === agentId && agentName ? agentName : (agents.find(a => a.id === id)?.name ?? id);
 
   useEffect(() => {
     load();
@@ -83,7 +97,7 @@ export function AgentAlertRulesPanel() {
     setBusy("save");
     try {
       await upsertAgentAlertRule(draft);
-      setDraft({ ...BLANK });
+      setDraft({ ...BLANK, agent_id: agentId });
       setOpen(false);
       setError(null);
       load();
@@ -135,10 +149,11 @@ export function AgentAlertRulesPanel() {
       borderRadius: "var(--r3)", padding: "12px 14px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div className="aug-fs-ui" style={{ flex: 1, color: "var(--t1)" }}>
-          Alert rules
+          Alert rules{agentId ? ` for ${agentName || agentId}` : ""}
           <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>
             {rules.length === 0
-              ? "none yet — nothing about the agents is being watched"
+              ? (agentId ? "none yet — nothing about this agent is being watched"
+                         : "none yet — nothing about the agents is being watched")
               : `${rules.filter(r => r.enabled).length} of ${rules.length} enabled`}
           </span>
         </div>
@@ -198,6 +213,20 @@ export function AgentAlertRulesPanel() {
             <input className="aug-input" value={draft.channel} placeholder="in-app only"
               onChange={e => setDraft(d => ({ ...d, channel: e.target.value }))} />
           </Field>
+          <Field label="Scope" width={200}>
+            {agentId ? (
+              <span className="aug-fs-sm" style={{ color: "var(--t2)", lineHeight: "28px" }}
+                title={`This rule watches only ${agentName || agentId}`}>
+                {agentName || agentId}
+              </span>
+            ) : (
+              <select className="aug-input" value={draft.agent_id}
+                onChange={e => setDraft(d => ({ ...d, agent_id: e.target.value }))}>
+                <option value="">the whole fleet</option>
+                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            )}
+          </Field>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <Button variant="default" size="xs" disabled={!draft.name || busy === "save"}
               onClick={save}>Save rule</Button>
@@ -223,6 +252,8 @@ export function AgentAlertRulesPanel() {
                   {" · "}checked {rule.check_cron}
                   {" · "}quiet {rule.debounce_minutes}m
                   {rule.channel ? ` · via ${rule.channel}` : " · in-app"}
+                  {rule.agent_id ? ` · only ${agentLabel(rule.agent_id)}`
+                    : rule.charter_id ? ` · only ${rule.charter_id}` : " · whole fleet"}
                 </div>
                 {verdicts[rule.id] && (
                   <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 2 }}>

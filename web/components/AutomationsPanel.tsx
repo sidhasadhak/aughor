@@ -64,9 +64,14 @@ function muteUntilISO(hours = 24): string {
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
-type Props = { connId?: string; workspaceId?: string };
+type Props = {
+  connId?: string; workspaceId?: string;
+  /** AO-4 — an automation to open on arrival (an "Open automation" that carries its id,
+   *  from an agent's Doors or Map, Attention, Departures or the Hub). */
+  focusId?: string | null;
+};
 
-export function AutomationsPanel({ connId }: Props) {
+export function AutomationsPanel({ connId, focusId }: Props) {
   const conn = connId || "";
   const [view, setView] = useState<View>("list");
   const [automations, setAutomations] = useState<Automation[]>([]);
@@ -142,6 +147,17 @@ export function AutomationsPanel({ connId }: Props) {
   // AO-3 — a list whose read REJECTED is said with a Retry; it used to become `[]` and
   // render "No automations yet" over automations that exist.
   const [loadError, setLoadError] = useState<string | null>(null);
+  // AO-4 — arrive ON the automation that was clicked, not on the list it is somewhere in.
+  // Once per focus id: a later list reload must not yank the reader back onto it.
+  const openedFocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusId || openedFocus.current === focusId) return;
+    const hit = automations.find(a => a.id === focusId);
+    if (!hit) return;
+    openedFocus.current = focusId;
+    setCreating(null); setCanvasFor(hit); setView("canvas");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, automations]);
   const load = useCallback(async () => {
     setLoading(true);
     try {

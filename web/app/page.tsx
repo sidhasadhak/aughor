@@ -1303,7 +1303,9 @@ const VALID_TABS = new Set<NavTab>([
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
   "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
   "health", "playbook", "documents", "catalog", "builder", "query", "connections", "metrics",
-  "monitors", "actions", "activity", "security", "semantic", "settings",
+  // AO-4 — `integrations` is an Operations layer alias like `monitors`; it was missing
+  // here, so `?tab=integrations` (the link every Slack door hands out) opened Home.
+  "monitors", "actions", "integrations", "activity", "security", "semantic", "settings",
 ]);
 
 /** The Data rail ids that are really LAYERS of the Data workspace.
@@ -2386,6 +2388,9 @@ export default function Home() {
               <ErrorBoundary label="The Agents workspace hit an error.">
                 <AgenticOpsWorkspace
                   connId={selectedConn ?? undefined}
+                  // AO-4 — a connection picker INSIDE Agent Ops: the layers that scope
+                  // by connection (Automations) no longer need a trip to the rail.
+                  onSelectConnection={id => setSelectedConn(id)}
                   layer={agentsLayer}
                   onLayerChange={setAgentsLayer}
                   workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}

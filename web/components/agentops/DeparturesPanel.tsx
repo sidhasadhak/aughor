@@ -38,7 +38,8 @@ const FILTERS: { id: DepartureFilter; label: string }[] = [
  */
 /** The screens a remedy can open — handed down by the workspace, which owns the layers. */
 interface Doors {
-  onOpenAutomation?: () => void;
+  /** AO-4 — carries the departure's automation id, so the reader lands ON it. */
+  onOpenAutomation?: (automationId?: string) => void;
   onOpenTrace?: (analysisId: string) => void;
 }
 
@@ -245,8 +246,9 @@ function DepartureDetail({ departure: d, onChanged, doors }: {
   const door = (kind: RemedyDoor, guardLabel: string, summary: string) => {
     if (kind === "automation") {
       if (!doors.onOpenAutomation || !d.automation_id) return null;
-      return <Button key={kind} variant="outline" size="xs" onClick={doors.onOpenAutomation}
-        title={d.automation_name ? `Automations · ${d.automation_name}` : undefined}>Open Automations</Button>;
+      return <Button key={kind} variant="outline" size="xs"
+        onClick={() => doors.onOpenAutomation?.(d.automation_id ?? undefined)}
+        title={d.automation_name ? `Automations · ${d.automation_name}` : undefined}>Open automation</Button>;
     }
     if (kind === "analysis") {
       if (!doors.onOpenTrace || !analysisId) return null;

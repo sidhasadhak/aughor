@@ -49,6 +49,7 @@ import { fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
 import { compactNumber, formatCost, formatCount, pct, relTime } from "@/lib/format";
 import { ReadFailed } from "@/components/ui/states";
+import { Term } from "@/components/agentops/Term";
 
 type Density = "calm" | "noc";
 type JobFilter = "active" | "all" | "succeeded" | "failed";
@@ -470,7 +471,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                             marginLeft: "auto", color: "var(--t2)", fontSize: 12, cursor: "pointer" }}>
               <input type="checkbox" checked={showRunners}
                 onChange={e => setShowRunners(e.target.checked)} />
-              include background runners
+              include background <Term id="runner">runners</Term>
             </label>
       </div>
           {chart ? (

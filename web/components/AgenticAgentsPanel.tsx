@@ -29,6 +29,9 @@ import { CreateAgentFlow } from "@/components/agentops/CreateAgentFlow";
 import { AgentMap } from "@/components/agentops/AgentMap";
 import { RunTimeline, type TimelineRun } from "@/components/agentops/RunTimeline";
 import { rangeLabel, rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
+import { AgentAlertRulesPanel } from "@/components/agentops/AgentAlertRulesPanel";
+import { AgentDoors } from "@/components/agentops/AgentDoors";
+import { Term } from "@/components/agentops/Term";
 import { Button } from "@/components/ui/button";
 import { askSpotlight } from "@/lib/commandRegistry";
 import { StatusChip } from "@/components/brief/StatusChip";
@@ -38,10 +41,10 @@ import {
   evaluateUserAgent, getAgentGuardrails, getAgentObservability, getAgents,
   getConnections, getJobs,
   getActionRoster,
-  getLlmConfig, getPacks, listAgentGoldens, listAgentRevisions,
+  getLlmConfig, getPacks, listAgentAlertRules, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
   restoreAgentRevision, setAgentGuardrails,
-  type AgentDeleteReceipt,
+  type AgentAlertRule, type AgentDeleteReceipt,
   type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentKnob, type AgentObservability,
   type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
   type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
@@ -366,7 +369,7 @@ function RosterRow({ name, kind, enabled, role, sub, reserved, figures, onClick 
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">
             {/* "built-in" on screen: `charter` is the wire's name for the kind, not the reader's. */}
-            {kind === "persona" ? "custom" : "built-in"}
+            {kind === "persona" ? "custom" : <Term id="built-in">built-in</Term>}
           </StatusChip>
           {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
         </span>
@@ -415,7 +418,9 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
   onOpenIntegrations?: () => void;
   onChatWithAgent?: (agentId: string) => void;
 }) {
-  type Tab = "overview" | "runs" | "map" | "quality" | "setup";
+  // AO-4 — Doors, Alerts and Spend join the page: the whole agent on its own page, not
+  // three other layers to visit for it. Map stays (DS-5, user-approved); Doors is its list.
+  type Tab = "overview" | "runs" | "doors" | "map" | "alerts" | "quality" | "spend" | "setup";
   const [tab, setTab] = useState<Tab>("overview");
   const [busy, setBusy] = useState(false);
   // PX-5 — grounding is NAMED, in the reader's words: the connection's NAME (an id like
@@ -450,8 +455,9 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
   // the agent against its own reference SQL (never a judge); "Setup", because that tab is
   // where a person sets what the agent is. Both names are the mockup's (boards 6–11).
   const TABS: { id: Tab; label: string }[] = [
-    { id: "overview", label: "Overview" }, { id: "runs", label: "Runs" }, { id: "map", label: "Map" },
-    { id: "quality", label: "Quality" }, { id: "setup", label: "Setup" },
+    { id: "overview", label: "Overview" }, { id: "runs", label: "Runs" },
+    { id: "doors", label: "Doors" }, { id: "map", label: "Map" }, { id: "alerts", label: "Alerts" },
+    { id: "quality", label: "Quality" }, { id: "spend", label: "Spend" }, { id: "setup", label: "Setup" },
   ];
 
   return (
@@ -492,6 +498,13 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
             <CustomAgentOverview agent={agent} onOpenTrace={onOpenTrace} range={range} />
           ) : tab === "runs" ? (
             <AgentRuns agent={agent} onOpenTrace={onOpenTrace} range={range} />
+          ) : tab === "doors" ? (
+            <AgentDoors agent={agent} onChat={onChatWithAgent}
+              onOpenAutomation={onOpenAutomations} onOpenIntegrations={onOpenIntegrations} />
+          ) : tab === "alerts" ? (
+            <AgentAlertRulesPanel agentId={agent.id} agentName={agent.name} />
+          ) : tab === "spend" ? (
+            <AgentSpend agent={agent} range={range} />
           ) : tab === "quality" ? (
             <AgentBenchmark agent={agent} onChanged={onChanged} onError={onError} />
           ) : tab === "map" ? (
@@ -650,6 +663,90 @@ export function AgentRuns({ agent, onOpenTrace, range }: {
 
 /** H3's honest run view, unchanged in spirit: everything the agent did, spend
  *  or the flag that would measure it — never a confident zero. */
+/** AO-4 — a built-in agent's Map: one block, three rows — where it answers, what it runs,
+ *  who watches it. Reads the alert rules once; a failed read is said, never "no alerts". */
+function BuiltInMap({ charter }: { charter: AgentRosterEntry }) {
+  const [rules, setRules] = useState<AgentAlertRule[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setError(null);
+    listAgentAlertRules()
+      .then(all => { if (alive) setRules(all.filter(r => r.charter_id === charter.id)); })
+      .catch(e => { if (alive) setError(String((e as Error)?.message || e)); });
+    return () => { alive = false; };
+  }, [charter.id, tick]);
+  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", width: 72, flexShrink: 0,
+        textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+      <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>{children}</span>
+    </div>
+  );
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Map</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 12px",
+        border: "1px solid var(--b1)", borderRadius: "var(--r2)", background: "var(--bg-1)" }}>
+        <Row label="door">
+          {charter.lane === "interactive"
+            ? "answers inline, inside the conversation that asks — no socket, no schedule"
+            : "runs on the platform's schedule; nobody talks to it directly"}
+        </Row>
+        <Row label="runs">
+          {charter.job_kinds.length
+            ? `job kinds ${charter.job_kinds.join(", ")}`
+            : "no job kind of its own"}
+          {charter.tools.length ? ` · tools ${charter.tools.join(", ")}` : ""}
+        </Row>
+        <Row label="watched by">
+          {error ? (
+            <ReadFailed what="the alert rules" error={error} onRetry={() => setTick(t => t + 1)} />
+          ) : rules === null ? "…"
+            : rules.length === 0
+              ? "no alert rule names this agent — Attention → Alert rules adds one"
+              : rules.map(r => `${r.name} (${r.enabled ? "on" : "off"})`).join(" · ")}
+        </Row>
+      </div>
+    </div>
+  );
+}
+
+/** AO-4 — the agent's Spend tab: what it cost over the shared window, every figure captioned,
+ *  and the two counts that make a cost a floor rather than a total. */
+export function AgentSpend({ agent, range }: { agent: UserAgent; range?: TimeRange }) {
+  const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
+  if (loading) return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</div>;
+  if (error || !obs) return <ReadFailed what="this agent's spend" error={error} onRetry={retry} />;
+  const s = obs.spend;
+  const inWindow = `in ${windowLabel(range)}`;
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+        <Tile label="Model calls" value={compactNumber(s.calls)} sub={inWindow} />
+        <Tile label="Tokens" value={compactNumber(s.total_tokens)} sub={inWindow} />
+        <Tile label="Cost" value={formatCost(s.cost_usd, s.calls, s.unpriced_calls)}
+          sub={s.calls > 0 && s.unpriced_calls >= s.calls
+            ? "no price is declared for the model it ran on"
+            : s.unpriced_calls > 0 ? "a floor — some calls unpriced" : inWindow} />
+        <Tile label="Unpriced calls" value={formatCount(s.unpriced_calls)}
+          sub="each contributes nothing to the cost" />
+        <Tile label="Calls without usage" value={formatCount(s.calls_without_usage)}
+          sub="the backend reported no token count" />
+        <Tile label="Failure rate" value={s.failure_rate == null ? "—" : pct(s.failure_rate)}
+          sub={inWindow} />
+        <Tile label="Runs" value={String(obs.run_count)} sub={inWindow} />
+      </div>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+        Priced from each provider&apos;s published catalogue, or a rate the operator declared
+        (<code>AUGHOR_MODEL_PRICES</code>). A model nothing prices counts as unpriced, never as
+        free. Spend by call site and role, across every agent, is Activity → Usage.
+      </div>
+    </div>
+  );
+}
+
 /** The wall-clock length of a run the history store recorded both ends of; null otherwise. */
 function runDurationMs(startedAt: string, completedAt: string | null): number | null {
   if (!completedAt) return null;
@@ -796,7 +893,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
       <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",
         border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="aug-label">Golden questions</span>
+          <span className="aug-label"><Term id="goldens">Golden questions</Term></span>
           <span style={{ fontSize: 11, color: "var(--t3)" }}>
             re-run after editing instructions or documents
           </span>
@@ -997,7 +1094,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
           propose-never-execute in place, because the difference is the entire approvals
           plane and a checkbox is exactly where someone decides without reading a spec. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <span className="aug-label">Actions this agent may propose</span>
+        <span className="aug-label">Actions this agent may propose (each a <Term id="grant" />)</span>
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           A grant lets the agent PROPOSE the action — every proposal still waits in the
           inbox for a human to accept. Nothing here lets it execute.
@@ -1419,6 +1516,11 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
           ? "This built-in agent owns no job kind, so it can never show runs here — its work is answered inline, not submitted as a run."
           : `No runs in ${windowLabel(range)}.`} />
       </div>
+
+      {/* AO-4 — the Map a built-in agent never had: where it answers, what it runs, and
+          which alert rules watch it. The custom agent's Map draws doors and automations;
+          a built-in has no doors of its own — its work is the platform's jobs. */}
+      <BuiltInMap charter={charter} />
 
       {!charter.reserved && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px",
