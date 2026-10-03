@@ -10221,7 +10221,11 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > **Status 2026-10-03 — DE-1 BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first:* the golden
 > set's 53 statements parsed in all five dialects, 0 refused (`scripts/de1_parse_step_precheck.py --golden`);
 > theLook's audit was not reachable from the build machine, and the same script counts it where it lives
-> (`--connection 8233e4fd --limit 2000`) — that count is owed before merge, and the falsifier reads it. *Built:* the
+> (`--connection 8233e4fd --limit 2000`) — that count is owed before merge, and the falsifier reads it. **Taken
+> 2026-10-04, after the merge (#564), not before it:** of the newest 2,000 audited statements 1,999 ran clean and
+> the parse step would refuse none; over the connection's whole audited history, 22,263 statements, it would
+> refuse 4, none of them valid — the falsifier does not fire (`docs/DE_LIVE_RECEIPT_2026-10-04.md`). The first
+> run counted 0 statements: the pre-check read a key no audit row carries, and said nothing. *Built:* the
 > parse step runs in `_security_pre`, the one step every connector's door calls, in the dialect `through_door` records
 > for the engine behind it — so BigQuery, Snowflake, MySQL, Exasol, SQLite, MotherDuck and every file and API connector
 > validate where only the built-in two did, and `execute_with_params` goes through the door too (it had no trail at
@@ -10684,7 +10688,10 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > one case each in `ResultsGrid` and `ResultsPanel` for a joined statement; tsc, the seven gates, ruff and the
 > vocabulary ratchet green. *Owed, now one command:* `uv run python scripts/de_live_receipts.py --connection
 > 8233e4fd --mysql <id> --postgres <id> --trino <id>` on the machine that holds theLook; its output file is the
-> arc's live receipt. *Left, by decision:* paging a BigQuery result from the job's own result table; a PostGIS
+> arc's live receipt. **theLook's sections taken 2026-10-04** (`docs/DE_LIVE_RECEIPT_2026-10-04.md`): the parse
+> step refuses no valid statement; 5,088 of 7,656 output columns resolve to a table column; on `events` a page
+> and the re-run each bill 384.8 MB; the first GEOGRAPHY is typed as one and arrives as WKT. Still owed: the
+> MySQL, Postgres and Trino sections. *Left, by decision:* paging a BigQuery result from the job's own result table; a PostGIS
 > column still named by its OID on the typed response; no map under a geometry; DE-7's JDBC bridge, recorded,
 > not scheduled.
 
