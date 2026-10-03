@@ -215,8 +215,13 @@ def question_measures(question: str) -> list:
 
 def entity_candidates(question: str) -> list:
     """Public: the filter-entity nouns a question names (``[]`` if none) — the
-    entity-presence signal reused by the overview router."""
-    return _entity_candidates(question)
+    entity-presence signal reused by the overview router.
+
+    A PRESENCE signal, so it keeps the calendar names the resolver itself no longer
+    treats as entities: the router asks "does anything narrow this ask?", and "tell me
+    about October" is narrowed by a month — it must not become an all-time overview."""
+    entities, calendar = _split_candidates(question)
+    return entities + calendar
 
 
 # A copula + lowercase participle is how a question names a STATUS: "orders were
@@ -353,11 +358,35 @@ _COMPUTE_WORDS = frozenset({
     "orders", "order", "rows", "records", "items", "results", "entries", "values",
 })
 
+#: Month and weekday names, with their usual abbreviations — a TIME reference first, and
+#: only sometimes a value. The capitalised-noun rule and the preposition rule both swept
+#: them up ("the month of October 2023", "in march", "on Monday"), the probe looked for a
+#: row holding the literal string, found none, and the answer was an abstention:
+#: `“October” is not present in this data.` on a table with a perfectly good order_date
+#: (measured 2026-10-03 — it failed a certified golden on a fresh install, and a mention
+#: in Slack would have met the same sentence).
+#:
+#: They are the same WEAKER class as a status word (see `_status_candidates`): grammar
+#: cannot tell the month from a value that happens to share its name — a `month_name`
+#: column, a customer called June — so a calendar name binds OFFLINE when the data really
+#: holds it and is otherwise dropped in silence. It never reaches `not_found`, and it
+#: costs no warehouse round trip. The SQL writer still reads the question and frames the
+#: period; this module only stops calling a date an absent filter.
+_CALENDAR_NAMES = frozenset({
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun",
+})
 
-def _entity_candidates(question: str) -> list[str]:
-    """Filter-entity nouns in the question — conservative. Tokens introduced by a
-    preposition (for/of/in/at/from) or capitalised proper nouns, minus time/measure/
-    glue words. Empty when the question names no obvious entity."""
+
+def _split_candidates(question: str) -> tuple[list[str], list[str]]:
+    """``(entity candidates, calendar names)`` from one pass over the question.
+
+    Entities: tokens introduced by a preposition (for/of/in/at/from) or capitalised proper
+    nouns, minus time/measure/glue words — conservative, and each may end as `not_found`.
+    Calendar names: the weaker class (see `_CALENDAR_NAMES`) — never an abstention."""
     q = question or ""
     cands: list[str] = []
     # after a preposition ("… for mytheresa", "of Nike")
@@ -383,6 +412,7 @@ def _entity_candidates(question: str) -> list[str]:
     # Lowercase STATUS words are NOT collected here — see `_status_candidates`. They cannot
     # join this list because everything in it may end as `not_found`, an abstention.
     out, seen = [], set()
+    calendar: list[str] = []
     for c in cands:
         raw_words = [w.lower().strip(".'&-") for w in c.split()]
         head = raw_words[0] if raw_words else ""
@@ -413,8 +443,28 @@ def _entity_candidates(question: str) -> list[str]:
             words.pop()
         c = " ".join(c.split()[:len(words)])
         seen.add(head)
+        # A calendar name — alone ("October"), or with nothing beside it but glue the
+        # capital swept in ("October Sales") — goes to the weaker class. A typed name that
+        # merely STARTS with one ("June Carter") is a name and stays an entity.
+        if (any(w in _CALENDAR_NAMES for w in words)
+                and all(w in _CALENDAR_NAMES or w in _STOP for w in words)):
+            calendar.extend(tok for tok, w in zip(c.split(), words) if w in _CALENDAR_NAMES)
+            continue
         out.append(c.strip())
-    return out
+    return out, list(dict.fromkeys(calendar))
+
+
+def _entity_candidates(question: str) -> list[str]:
+    """Filter-entity nouns in the question — conservative. Tokens introduced by a
+    preposition (for/of/in/at/from) or capitalised proper nouns, minus time/measure/
+    glue words and calendar names. Empty when the question names no obvious entity."""
+    return _split_candidates(question)[0]
+
+
+def _calendar_candidates(question: str) -> list[str]:
+    """Month and weekday names the question uses. Weaker than `_entity_candidates`: bind
+    offline or drop, never abstain (see `_CALENDAR_NAMES`)."""
+    return _split_candidates(question)[1]
 
 
 def _question_measures(question: str) -> list[str]:
@@ -804,8 +854,12 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
         # silence and never reaches `not_found`, because grammar cannot tell "delivered"
         # (a real status) from "placed" (true of every order) and an abstention on the
         # latter is the `'flights' is not present in this data` bug again.
+        # CALENDAR names ("the month of October", "on Monday") ride the same weaker path, for
+        # the same reason: a month is a time reference unless the data really holds that
+        # string, and `“October” is not present in this data` on a table with an order_date
+        # is the abstention this module exists to prevent.
         _bound = {b.noun.lower() for b in r.entity_bindings} | {t.lower() for t in r.not_found}
-        for token in _status_candidates(question):
+        for token in [*_status_candidates(question), *_calendar_candidates(question)]:
             if token.lower() in _bound or _norm_name(token) in schema_names:
                 continue
             matches = _annotation_matches(token, domains)

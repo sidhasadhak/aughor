@@ -123,7 +123,10 @@ def test_manifest_grants_what_the_transport_actually_calls():
     assert "app_mentions:read" in scopes, "the mention that starts a turn"
     assert "chat:write" in scopes, "posting the answer"
     assert "files:write" in scopes, "RC-2 uploads a chart PNG and a CSV"
-    assert set(scopes) == set(BOT_SCOPES)
+    # AO-2c: a new app is in agent mode, and that surface is the one extra scope.
+    assert set(scopes) == set(BOT_SCOPES) | {"assistant:write"}
+    legacy = render_manifest(name="salesbot", agent_view=False)["oauth_config"]["scopes"]["bot"]
+    assert set(legacy) == set(BOT_SCOPES)
 
 
 def test_manifest_is_socket_mode_with_no_public_url():
@@ -142,6 +145,9 @@ def test_agent_view_is_opt_in_and_brings_its_scope():
 
     on = render_manifest(name="b", agent_view=True)
     assert "agent_view" in on["features"]
+    # Slack refuses the pair on a new app, and refuses agent_view without its description.
+    assert "assistant_view" not in on["features"]
+    assert on["features"]["agent_view"]["agent_description"]
     assert "assistant:write" in on["oauth_config"]["scopes"]["bot"]
 
 
@@ -385,14 +391,27 @@ def test_a_supervisor_key_issued_from_the_app_opens_the_route(client, slack_ok):
     assert wrong.status_code == 503
 
 
-def test_issuing_again_rotates_and_retires_the_old_key(client, slack_ok):
+def test_issuing_again_rotates_and_retires_the_old_key_after_a_grace(client, slack_ok, monkeypatch):
+    """AO-2e (2026-10-03): the replaced key keeps opening the door for `KEY_GRACE_S`, so
+    the supervisor that holds it is not dark between "Regenerate" and its restart —
+    measured before: every bot off within one reconcile. After the window it is retired."""
+    from datetime import timedelta
+    from aughor.slackbots import store
     first = client.post("/slack-bots/supervisor-key").json()["key"]
-    second = client.post("/slack-bots/supervisor-key").json()["key"]
-    assert first != second
+    second = client.post("/slack-bots/supervisor-key").json()
+    assert first != second["key"]
+    assert second["previous_valid_until"] and second["previous_valid_for_s"] == store.KEY_GRACE_S
+    assert client.get("/slack-bots/runtime",
+                      headers={"X-Aughor-Runtime-Key": first}).status_code == 200
+    assert client.get("/slack-bots/runtime",
+                      headers={"X-Aughor-Runtime-Key": second["key"]}).status_code == 200
+    real_now = store._utcnow()
+    monkeypatch.setattr(store, "_utcnow",
+                        lambda: real_now + timedelta(seconds=store.KEY_GRACE_S + 1))
     assert client.get("/slack-bots/runtime",
                       headers={"X-Aughor-Runtime-Key": first}).status_code == 503
     assert client.get("/slack-bots/runtime",
-                      headers={"X-Aughor-Runtime-Key": second}).status_code == 200
+                      headers={"X-Aughor-Runtime-Key": second["key"]}).status_code == 200
 
 
 def test_the_runtime_route_serves_a_deployment_that_has_a_front_door(client, slack_ok,

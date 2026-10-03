@@ -93,11 +93,12 @@ UNGUARDED = {
         "`__fix_save__` executes a model-repaired query to validate it before persisting.",
     "routers/investigations.py":
         "`ambiguity_probe` executes model-generated candidate readings for ambiguity assessment.",
-    "custom_agents/quality.py":
-        "the agent-eval harness runs a model-generated query against a reference.",
+    # `custom_agents/quality.py` left this list 2026-10-03 (Arc AO-1c): the agent-eval harness
+    # no longer generates SQL of its own — it frames each golden on the quick path
+    # (`answer_core(frame_only=True)`, already counted above) and executes on the eval's door.
 }
 
-UNGUARDED_BASELINE = len(UNGUARDED)   # 3 (5 → 4 explorer/agent.py, 4 → 3 retry-query)
+UNGUARDED_BASELINE = len(UNGUARDED)   # 2 (5 → 4 explorer/agent.py, 4 → 3 retry-query, 3 → 2 AO-1c)
 #                                       lower this as each is wired, never raise it
 
 

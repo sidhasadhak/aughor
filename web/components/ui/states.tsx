@@ -48,6 +48,32 @@ function Head({ kind, meta }: { kind: string; meta?: React.ReactNode }) {
   );
 }
 
+/**
+ * A list or tile whose fetch REJECTED — the one state this file did not name, and the one
+ * that was being rendered as the empty state everywhere (Arc AO-3, measured 2026-10-03: five
+ * Agent Ops surfaces said "nothing here" on a failed fetch, teaching the reader the data did
+ * not exist). Small on purpose — it sits where a list would — and it always offers Retry,
+ * which here IS the resolving door: nothing else can be done about a read that failed.
+ */
+export function ReadFailed({ what, error, onRetry, className = "", style }: {
+  /** The thing that could not be read, as the screen names it: "the run chart". */
+  what: string;
+  /** The error's own words, when there are any. */
+  error?: string | null;
+  onRetry: () => void;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div className={`aug-fs-sm ${className}`.trim()} role="alert"
+      style={{ color: "var(--t2)", display: "flex", alignItems: "center", gap: 8,
+        flexWrap: "wrap", ...style }}>
+      <span>Could not read {what}{error ? ` — ${error}` : ""}.</span>
+      <Button variant="outline" size="xs" onClick={onRetry}>Retry</Button>
+    </div>
+  );
+}
+
 export function ErrorState({ kind = "Failed", meta, what, means, doors, runId, object, className = "", style }: {
   /** The short kind label — "Query failed", "Connection refused". Drawn in mono capitals. */
   kind?: string;

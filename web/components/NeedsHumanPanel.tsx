@@ -59,7 +59,9 @@ function chipFor(row: NeedsHumanRow): ChipSpec {
 
 export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   onOpenInvestigation?: (invId: string) => void;
-  onOpenAutomations?: () => void;
+  /** AO-4 — carries the row's automation id (`resolve.automation_id`, else the row id),
+   *  so the Automations layer opens that one rather than the list. */
+  onOpenAutomations?: (automationId?: string) => void;
 }) {
   // Connections by name for the row's scope line (lib/names.ts).
   const [conns, setConns] = useState<ConnectionForNames[]>([]);
@@ -173,7 +175,7 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                 )}
                 {row.source === "automation_approval" && onOpenAutomations && (
                   <Button variant="ghost" size="xs"
-                    onClick={onOpenAutomations}>Open automation</Button>
+                    onClick={() => onOpenAutomations(row.resolve?.automation_id || row.id)}>Open automation</Button>
                 )}
                 {row.source === "agent_alert" && (
                   <Button variant="secondary" size="xs" disabled={busy === row.id}
@@ -184,7 +186,7 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                     configuration changes, so the only honest action is to go and fix it. */}
                 {row.source === "automation_broken" && onOpenAutomations && (
                   <Button variant="secondary" size="xs"
-                    onClick={onOpenAutomations}>Fix automation</Button>
+                    onClick={() => onOpenAutomations(row.resolve?.automation_id || row.id)}>Fix automation</Button>
                 )}
               </div>
             );

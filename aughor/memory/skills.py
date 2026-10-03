@@ -358,30 +358,61 @@ def auto_crystallize(inv_id: str, connection_id: str) -> None:
         return None
     run = _run_signals(inv_id)
     if run and (not run.get("grounded") or not run.get("read_only", True)):
-        return None   # only auto-crystallize a clean run, even at L2+
+        return None   # only stage a clean run, even at L2+
+    # AO-7e (§6 item 38(g)) — STAGED to the inbox, never auto-saved. Before 2026-10-03 an
+    # L2+ connection would have written the skill straight into the governed overlay; the
+    # ladder never moved, so it never happened, and the rule is now where the ladder works:
+    # a crystallised skill is a proposal a person accepts (`_accept_skill_draft`), the same
+    # door every other model-shaped change goes through.
     try:
         candidate = propose_skill_from_investigation(inv_id)
         if candidate is None:
             return None
         schema = resolve_active_schema(connection_id)
-        from aughor.db.connection import open_connection_for
-        conn = open_connection_for(connection_id)
-
-        def _validator(sql: str) -> bool:
-            try:
-                return not conn.execute("auto_skill_dry_run", f"EXPLAIN {sql}").error
-            except Exception:
-                return False
-
-        try:
-            if save_skill(connection_id, schema, candidate, validator=_validator):
-                logger.info("[memory] auto-crystallized skill %s for %s (L2+ autonomy)",
-                            candidate.id, connection_id)
-        finally:
-            try:
-                conn.close()
-            except Exception as exc:
-                logger.debug("auto_crystallize conn close: %s", exc)
+        from aughor.actions.inbox import StagedProposal, stage_proposal
+        stage_proposal(StagedProposal(
+            kind="skill_draft", connection_id=connection_id, schema_name=schema or "",
+            action_id="memory:crystallize_skill",
+            params={"inv_id": inv_id, "candidate_id": getattr(candidate, "id", ""),
+                    "name": getattr(candidate, "name", "") or getattr(candidate, "id", "")},
+            detail={"summary": "Save the query this run earned as a learned skill",
+                    "candidate": getattr(candidate, "name", "") or getattr(candidate, "id", ""),
+                    "sql": (getattr(candidate, "sql", "") or "")[:2000]},
+            reasoning="A clean, grounded, read-only run on a connection that has earned L2 "
+                      "autonomy. Staged for a person: a skill is governed knowledge, and "
+                      "nothing a model shaped is saved without a person's accept.",
+            proposer="memory", source=f"investigation:{inv_id}",
+            run_id=inv_id, call_id="crystallize_skill",
+        ))
+        logger.info("[memory] skill candidate %s for %s staged to the inbox (L2+ autonomy)",
+                    getattr(candidate, "id", "?"), connection_id)
     except Exception as exc:
         logger.debug("auto_crystallize(%s) best-effort skip: %s", inv_id, exc)
     return None
+
+
+def accept_skill_draft(inv_id: str, connection_id: str) -> tuple[bool, str]:
+    """The inbox's accept: re-propose from the run and save through the governed door,
+    with the read-only EXPLAIN dry-run as the validator. ``(saved, why)``."""
+    candidate = propose_skill_from_investigation(inv_id)
+    if candidate is None:
+        return False, "the run no longer yields a skill candidate"
+    schema = resolve_active_schema(connection_id)
+    from aughor.db.connection import open_connection_for
+    conn = open_connection_for(connection_id)
+
+    def _validator(sql: str) -> bool:
+        try:
+            return not conn.execute("skill_accept_dry_run", f"EXPLAIN {sql}").error
+        except Exception:
+            return False
+
+    try:
+        if save_skill(connection_id, schema, candidate, validator=_validator):
+            return True, f"saved learned skill {getattr(candidate, 'id', '')}"
+        return False, "the candidate failed the read-only dry-run or was already saved"
+    finally:
+        try:
+            conn.close()
+        except Exception as exc:
+            logger.debug("accept_skill_draft conn close: %s", exc)

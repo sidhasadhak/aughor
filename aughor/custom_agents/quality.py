@@ -183,36 +183,45 @@ def results_match(ref_rows: list, gen_rows: list) -> bool:
     return True
 
 
-# ── Generation (the product chat prompt, minimal sections) ───────────────────
+# ── Generation (the PRODUCTION quick path, stopped before it executes) ───────
 
-def _generate_sql(question: str, schema: str) -> str:
-    """SQL for a golden question with the CURRENT coder model. The active agent's
-    brief leads the prompt exactly like the live quick path."""
-    from pydantic import BaseModel, Field
+def _frame_on_production_path(agent: UserAgent):
+    """A generator that frames each golden question the way a user's question is framed.
 
-    from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
-    from aughor.llm.provider import get_provider
-    from aughor.custom_agents.context import agent_brief_block
+    AO-1c. Until 2026-10-03 the suite ran its own prompt — `CHAT_PROMPT` with every
+    section empty but the schema, the legacy `CHAT_SQL_SYSTEM`, the brief prepended — so
+    the "goldens 5/5" chip certified a prompt no user drives: no documents, no packs, no
+    schema scope, no governed metrics, no corrections, none of the guards that rewrite a
+    statement before it runs. Now it is `answer_core` with ``frame_only``: the same
+    prelude, the same model call, the same lint, preflight and literal guards, stopped at
+    the statement. The schema argument is ignored on purpose — the production path reads
+    the connection itself, through the agent's scope.
+    """
+    from aughor.db.registry import BUILTIN_ID
 
-    class _Answer(BaseModel):
-        sql: str = ""
-        headline: str = ""
-        chart_type: str = "auto"
-        intent: str = ""
-        approach: list[str] = Field(default_factory=list)
+    def _gen(question: str, schema: str) -> str:   # noqa: ARG001 — the caller's contract
+        from aughor.routers.investigations import answer_core
+        result = answer_core(
+            question, agent.connection_id or BUILTIN_ID, [],
+            emit=lambda _name, _payload: None,
+            skip_clarify=True,                      # an evaluation cannot answer a question
+            purpose="agent_eval",
+            schema_scope=agent.schema_scope or None,
+            frame_only=True,
+        )
+        if result.outcome != "framed":
+            # The production path stopped before a statement existed — a refusal, a clarify
+            # it could not skip, a failure. Said as the golden's error, never as empty SQL —
+            # WITH the path's own words: an abstain carries its reason as the headline, a
+            # failure as the error (receipt 2026-10-03: "ended 'abstained'" alone sent a
+            # person to the logs for a sentence the result already held).
+            why = (result.error or "").strip() or " ".join(str(getattr(result, "headline", "") or "").split())
+            raise RuntimeError(
+                f"production path ended '{result.outcome}' before framing SQL"
+                + (f": {why[:300]}" if why else ""))
+        return (result.sql or "").strip()
 
-    prompt = CHAT_PROMPT.format(
-        schema=schema, history_section="", question=question, schema_qualifier="",
-        kb_patterns_section="", conn_kb_section="", sql_examples_section="",
-        metrics_section="", exploration_section="", causal_section="",
-        document_section="",
-    )
-    brief = agent_brief_block()
-    if brief:
-        prompt = brief + prompt
-    answer: _Answer = get_provider("coder").complete(
-        system=CHAT_SQL_SYSTEM, user=prompt, response_model=_Answer, temperature=0.0)
-    return (answer.sql or "").strip()
+    return _gen
 
 
 # ── The evaluation ────────────────────────────────────────────────────────────
@@ -223,7 +232,10 @@ def evaluate_agent(agent: UserAgent, db=None,
 
     ``db``/``generate`` are injectable for tests; by default the agent's bound
     connection (or the builtin) is opened and the coder model generates."""
-    goldens = list_goldens(agent.id)[:MAX_GOLDENS_PER_EVAL]
+    # AO-6: CERTIFIED goldens only — a candidate has no SQL a person vouched for, and a
+    # suite that counted one would be measuring the model against the model.
+    goldens = list_goldens(agent.id, status="certified")[:MAX_GOLDENS_PER_EVAL]
+    before = dict(agent.last_eval) if isinstance(agent.last_eval, dict) else None
     started = time.monotonic()
     result: dict = {"passed": 0, "total": len(goldens), "per_question": [],
                     "at": datetime.now(timezone.utc).isoformat()}
@@ -235,7 +247,7 @@ def evaluate_agent(agent: UserAgent, db=None,
         from aughor.db.connection import open_connection_for
         from aughor.db.registry import BUILTIN_ID
         db = open_connection_for(agent.connection_id or BUILTIN_ID)
-    gen = generate or _generate_sql
+    gen = generate or _frame_on_production_path(agent)
     schema = ""
     try:
         schema = db.get_schema()
@@ -274,6 +286,10 @@ def evaluate_agent(agent: UserAgent, db=None,
                     entry["error"] = "no SQL generated"
                     result["per_question"].append(entry)
                     continue
+                # The statement the path framed rides the entry: a failure a person cannot
+                # read the SQL of is not actionable (receipt 2026-10-03 — "result mismatch
+                # vs reference" with nothing else sent the reader to guess).
+                entry["generated_sql"] = sql
                 got = db.execute("__agent_eval_gen__", sql)
                 if got.error:
                     entry["error"] = f"generated SQL failed: {got.error}"
@@ -281,6 +297,8 @@ def evaluate_agent(agent: UserAgent, db=None,
                     entry["passed"] = results_match(ref.rows, got.rows)
                     if not entry["passed"]:
                         entry["error"] = "result mismatch vs reference"
+                        entry["reference_rows"] = [[str(v) for v in r][:8] for r in (ref.rows or [])[:3]]
+                        entry["generated_rows"] = [[str(v) for v in r][:8] for r in (got.rows or [])[:3]]
             except Exception as exc:  # one golden's failure never aborts the suite
                 entry["error"] = f"{type(exc).__name__}: {exc}"
             result["per_question"].append(entry)
@@ -290,6 +308,10 @@ def evaluate_agent(agent: UserAgent, db=None,
         release_agent(token)
 
     result["duration_ms"] = round((time.monotonic() - started) * 1000, 1)
+    # AO-6/AO-7d — what changed since the last stamp rides on the result: the goldens that
+    # newly fail or newly pass, and the pass count before. That delta is the receipt.
+    from aughor.custom_agents.learning import eval_diff
+    result["diff"] = eval_diff(before, result)
     record_eval(agent.id, result)
     # MLflow — the evaluation as a TOOL span when a trace is active (advisory).
     try:

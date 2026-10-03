@@ -33,7 +33,7 @@ import {
   type TimeSeriesResponse, type UsageSummary,
 } from "@/lib/api";
 import { fmtMs } from "@/lib/cost";
-import { compactNumber, formatCount, pct } from "@/lib/format";
+import { compactNumber, formatCost, formatCount, pct } from "@/lib/format";
 import { ErrorState } from "@/components/ui/states";
 import { SkeletonRows } from "@/components/ui/motion";
 
@@ -88,10 +88,13 @@ export function UsagePanel({ range, onBrush, onOpenEvents }: {
             : `${pct(data.usage_coverage)} of calls reported usage`}
           title="Tokens across every model" />
 
-        <StatTile label="Cost" value={`$${data.cost_usd.toFixed(2)}`} accent="var(--chart-2)"
-          caption={data.unpriced_calls > 0
-            ? `${formatCount(data.unpriced_calls)} calls unpriced — a floor, not a total`
-            : "every call priced from the provider's catalogue"}
+        <StatTile label="Cost" value={formatCost(data.cost_usd, data.calls, data.unpriced_calls)}
+          accent="var(--chart-2)"
+          caption={data.calls > 0 && data.unpriced_calls >= data.calls
+            ? "no price is declared for any model that ran"
+            : data.unpriced_calls > 0
+              ? `${formatCount(data.unpriced_calls)} calls unpriced — a floor, not a total`
+              : "every call priced from the provider's catalogue"}
           title="Priced from each provider's published rates" />
 
         <StatTile label="Fallback rate"

@@ -18,8 +18,10 @@ socket. Read paths that serve the API use `SlackBot.to_safe_dict`.
 from __future__ import annotations
 
 import hmac
+import os
 import secrets
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -49,31 +51,210 @@ def _new_id() -> str:
     return f"sb_{uuid.uuid4().hex[:12]}"
 
 
+#: AO-2e — how long the PREVIOUS key keeps opening the door after a rotation. Measured
+#: 2026-10-03: "Regenerate" replaced the key at once, so a running supervisor lost its
+#: registry read on its next reconcile — every bot dark within 30 s, before the operator
+#: had even pasted the new line. Ten minutes is a paste and a restart with room to spare;
+#: the status route says the deadline so nobody has to guess it.
+KEY_GRACE_S = int(os.environ.get("AUGHOR_SUPERVISOR_KEY_GRACE_S", "600"))
+
+
+def _utcnow() -> datetime:
+    """The clock, as a function so a test can move it."""
+    return datetime.now(timezone.utc)
+
+
+def _key_row() -> Optional[dict]:
+    return next((r for r in _KEYS.all() if r.get("id") == _KEY_ROW), None)
+
+
+def _previous_still_valid(row: dict) -> bool:
+    until = str(row.get("previous_valid_until") or "")
+    if not until or not row.get("previous_key"):
+        return False
+    try:
+        return _utcnow() < datetime.fromisoformat(until)
+    except ValueError:
+        return False
+
+
 def issue_supervisor_key() -> str:
     """Mint a supervisor key, store it encrypted, and return it ONCE.
 
     Issuing replaces: one deployment, one key, and a rotation is the same gesture as a
-    first issue. The plaintext is returned only here — every later read is a comparison,
-    never a disclosure, which is `credentials.py`'s rule for anything a reader could use.
+    first issue — except that the key being replaced stays valid for :data:`KEY_GRACE_S`
+    (AO-2e), so the supervisor that holds it keeps its sockets until the new line is in
+    place. The plaintext is returned only here — every later read is a comparison, never
+    a disclosure, which is `credentials.py`'s rule for anything a reader could use.
     """
     raw = secrets.token_urlsafe(32)
-    _KEYS.upsert({"id": _KEY_ROW, "key": encrypt_secret(raw), "created_at": now_iso_z()})
+    row = _key_row() or {}
+    carried: dict = {}
+    if row.get("key"):
+        carried = {
+            "previous_key": row["key"],
+            "previous_valid_until":
+                (_utcnow() + timedelta(seconds=KEY_GRACE_S)).isoformat(timespec="seconds"),
+        }
+    _KEYS.upsert({"id": _KEY_ROW, "key": encrypt_secret(raw), "created_at": now_iso_z(),
+                  **carried})
     return raw
 
 
 def supervisor_key_issued_at() -> str:
     """When the current key was minted, or "" when none exists. Never the key itself."""
-    row = next((r for r in _KEYS.all() if r.get("id") == _KEY_ROW), None)
+    row = _key_row()
     return str(row.get("created_at", "")) if row else ""
 
 
-def supervisor_key_matches(candidate: str) -> bool:
-    """Constant-time comparison against the stored key. False when none is issued."""
-    row = next((r for r in _KEYS.all() if r.get("id") == _KEY_ROW), None)
-    if not row or not candidate:
+def supervisor_key_status() -> dict:
+    """Whether a key exists, when it was minted, and until when the previous one still
+    opens the door ("" once the grace has passed or none was replaced). Never a key."""
+    row = _key_row() or {}
+    return {
+        "issued": bool(row.get("created_at")),
+        "issued_at": str(row.get("created_at", "")),
+        "previous_valid_until": (str(row.get("previous_valid_until", ""))
+                                 if _previous_still_valid(row) else ""),
+        "grace_s": KEY_GRACE_S,
+    }
+
+
+#: AO-2b — the key the API hands the supervisor it spawns itself. Its own row, so a
+#: person's "Regenerate" (the operator's key above) never darkens the managed child,
+#: and the managed child's key is never shown to anyone.
+_MANAGED_KEY_ROW = "supervisor-managed"
+
+
+def issue_managed_key() -> str:
+    raw = secrets.token_urlsafe(32)
+    _KEYS.upsert({"id": _MANAGED_KEY_ROW, "key": encrypt_secret(raw), "created_at": now_iso_z()})
+    return raw
+
+
+def _managed_key_matches(candidate: str) -> bool:
+    row = next((r for r in _KEYS.all() if r.get("id") == _MANAGED_KEY_ROW), None)
+    if not row:
         return False
     stored = decrypt_secret(str(row.get("key", "")) or "") or ""
     return bool(stored) and hmac.compare_digest(stored, candidate)
+
+
+def supervisor_key_matches(candidate: str) -> bool:
+    """Constant-time comparison against the stored key — or, inside the grace window,
+    against the one it replaced — or against the managed child's own key. False when
+    none is issued."""
+    if not candidate:
+        return False
+    row = _key_row()
+    if row:
+        stored = decrypt_secret(str(row.get("key", "")) or "") or ""
+        if stored and hmac.compare_digest(stored, candidate):
+            return True
+        if _previous_still_valid(row):
+            previous = decrypt_secret(str(row.get("previous_key", "")) or "") or ""
+            if previous and hmac.compare_digest(previous, candidate):
+                return True
+    return _managed_key_matches(candidate)
+
+
+# ── Liveness (AO-2a): what the supervisor said it has open, and when ──────────────
+#
+# A third store, not a field on the bot: a heartbeat every 30 s that re-saved every
+# encrypted bot row would churn the credential file to say "still here". One row per
+# supervisor process, so two supervisors on one API are told apart and neither erases
+# the other's bots.
+_RUNTIME = LedgerListStore(_DIR / "supervisor_runtime.json")
+
+#: A beat older than this many reconcile intervals means the process is gone, whatever
+#: its last beat said.
+HEARTBEAT_STALE_INTERVALS = 3
+
+#: The one command, said wherever "not listening" is said.
+SUPERVISOR_START_HINT = "start the supervisor: cd bots/slack && npm run dev"
+
+
+def record_heartbeat(supervisor_id: str, running: list[str], failed: list[dict],
+                     reconcile_ms: int) -> dict:
+    """Store what one supervisor has open right now. ``since`` survives across beats of
+    an unbroken run and restarts after a silence longer than the stale window."""
+    now = _utcnow()
+    now_iso = now.isoformat(timespec="seconds")
+    prev = next((r for r in _RUNTIME.all() if r.get("id") == supervisor_id), None)
+    since = now_iso
+    if prev and _fresh(prev, now):
+        since = str(prev.get("since") or now_iso)
+    row = {
+        "id": supervisor_id, "since": since, "last_seen_at": now_iso,
+        "running": [str(b) for b in running],
+        "failed": [{"id": str(f.get("id", "")), "error": str(f.get("error", ""))[:300]}
+                   for f in failed if isinstance(f, dict)],
+        "reconcile_ms": max(1000, int(reconcile_ms or 30000)),
+    }
+    _RUNTIME.upsert(row)
+    return row
+
+
+def _fresh(row: dict, now: Optional[datetime] = None) -> bool:
+    now = now or _utcnow()
+    try:
+        seen = datetime.fromisoformat(str(row.get("last_seen_at") or ""))
+    except ValueError:
+        return False
+    stale_after = timedelta(milliseconds=int(row.get("reconcile_ms") or 30000)
+                            * HEARTBEAT_STALE_INTERVALS)
+    return now - seen < stale_after
+
+
+def latest_heartbeat() -> Optional[dict]:
+    """The freshest beat any supervisor sent — who, when, how many bots it has open, and
+    whether the beat is still fresh. What the managed host's status shows beside the
+    process state: a running pid that never beat is not listening, and on a fresh install
+    with no bot yet there is no card to read liveness from (AO-2b receipt, 2026-10-03)."""
+    # Freshest first; two beats in the same second (seconds precision) are told apart by
+    # what they have open — the one listening for bots is the one a reader wants named.
+    rows = sorted(_RUNTIME.all(),
+                  key=lambda r: (str(r.get("last_seen_at") or ""), len(r.get("running") or [])),
+                  reverse=True)
+    if not rows:
+        return None
+    r = rows[0]
+    return {"supervisor_id": str(r.get("id") or ""), "since": str(r.get("since") or ""),
+            "last_seen_at": str(r.get("last_seen_at") or ""),
+            "running": len(r.get("running") or []), "failed": len(r.get("failed") or []),
+            "fresh": _fresh(r)}
+
+
+def store_dir() -> Path:
+    """Where this store's files live — the managed host writes the child's log beside them."""
+    return Path(_DIR)
+
+
+def liveness_fields(bot_id: str) -> dict:
+    """``listening`` (the fresh beat that has this bot open) and ``liveness_hint`` (why
+    not, with the command) — what the bot card and the agent's Map read."""
+    now = _utcnow()
+    rows = sorted(_RUNTIME.all(), key=lambda r: str(r.get("last_seen_at") or ""), reverse=True)
+    for r in rows:
+        if _fresh(r, now) and bot_id in (r.get("running") or []):
+            return {"listening": {"supervisor_id": r["id"], "since": r.get("since", ""),
+                                  "last_seen_at": r.get("last_seen_at", "")},
+                    "liveness_hint": ""}
+    for r in rows:
+        if not _fresh(r, now):
+            continue
+        hit = next((f for f in (r.get("failed") or []) if f.get("id") == bot_id), None)
+        if hit:
+            return {"listening": None,
+                    "liveness_hint": f"not listening — the supervisor could not start it: "
+                                     f"{hit.get('error') or 'unknown error'}"}
+    for r in rows:
+        if bot_id in (r.get("running") or []):
+            return {"listening": None,
+                    "liveness_hint": f"not listening — last heard "
+                                     f"{r.get('last_seen_at', '')}; {SUPERVISOR_START_HINT}"}
+    return {"listening": None,
+            "liveness_hint": f"not listening — no supervisor has reported; {SUPERVISOR_START_HINT}"}
 
 
 def list_bots(*, include_disabled: bool = True) -> list[SlackBot]:

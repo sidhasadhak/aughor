@@ -3,8 +3,9 @@ import type { SlackBotSummary, UserAgent } from "@/lib/api";
 import { bindingProblem, patchBodyFor, slackStepBotNote } from "./slackBots";
 
 const bot: SlackBotSummary = {
-  id: "sb_1", name: "Aughor", enabled: true, team_id: "T1", bot_user_id: "U1",
-  agent_id: "ua_1", connection_id: "", agent_view: false,
+  id: "sb_1", name: "Aughor", enabled: true, disabled_reason: "", listening: null,
+  liveness_hint: "", team_id: "T1", bot_user_id: "U1", agent_id: "ua_1", connection_id: "",
+  agent_view: false,
 };
 const agent = (over: Partial<UserAgent> = {}): UserAgent => ({
   id: "ua_1", name: "The Look Analyst", instructions: "", connection_id: "8233e4fd",
@@ -18,6 +19,8 @@ describe("patchBodyFor", () => {
     const body = patchBodyFor(bot, { connection_id: "8233e4fd" });
     expect(body).toEqual({
       name: "Aughor", enabled: true, agent_id: "ua_1", connection_id: "8233e4fd", agent_view: false,
+      channel_id: "",   // AO-2f — a plain field like the rest, carried even when unset
+      rehearse: false,  // AO-6 — likewise
     });
   });
   it("applies the change over the record", () => {

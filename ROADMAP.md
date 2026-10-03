@@ -10785,8 +10785,71 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > AO-2a,e ship without a flag; AO-2b, AO-6 and AO-7 behind flags, off by default; AO-0.1 spends one model call when
 > the pre-check starts; the API owns the Slack process after a one-day spike; one configuration token replaces three
 > pasted secrets; agent mode by default for new Slack apps; per-agent lessons live in the verdict store; the dead
-> autonomy ladder is fixed and its skills staged to the inbox; five refusals are recorded as §4.8. Nothing is built.
-> Next: AO-0.
+> autonomy ladder is fixed and its skills staged to the inbox; five refusals are recorded as §4.8.
+>
+> **Build log (2026-10-03, the user: *"finish it back to back"*).** AO-0 ✅ — the one model call confirmed C1 (the
+> captured chat prompt carried none of the agent's instructions; the answer was a bare count), the production build
+> put every layer's code on screen within 330 ms with the panel filled by 1.8 s after 26–29 API calls, and `$0.00`
+> was a missing price. AO-1 ✅ a–e — the brief leads the chat body and the analyst loop, a delegate runs as itself
+> and relays its headline, the evaluation frames each golden on the quick path stopped before the execute,
+> `purpose` is writable at every door and the pack path keeps the creator's edits, a delete returns a receipt and
+> switches its bots off with the reason on the card. AO-3 ✅ — the roster, the observability route, the jobs route
+> and the fleet rows read one shared window and say it; the live model has a dated declared price and an unpriced
+> tile says **unpriced**; five surfaces say *could not read — retry* on a failed fetch (a component test per site);
+> finished runs of a custom agent draw green with their duration; "built-in" replaces "charter" on screen and the
+> ratchet's comment is true. (The model-id ratchet refused a shipped price row, rightly: the rate is the operator's
+> declaration, `AUGHOR_MODEL_PRICES`.) AO-2a ✅ — the supervisor heartbeats after every reconcile and the bot card
+> and the Map say *listening since …* or *not listening* with the one command. AO-2e ✅ — the key routes and the
+> heartbeat are admin acts in POLICY, and a rotation keeps the replaced key for ten minutes, said on the screen.
+> AO-4 ✅ — the agent's page is the whole agent: Doors, Alerts and Spend tabs beside Overview, Runs, Map, Quality
+> and Setup; a connection picker in the context bar; every "Open automation" carries its id and lands on it; Hub
+> rows are links; `?tab=integrations` resolves; a "?" per layer opens the arc's help; the six words are explained
+> once where they appear; the built-in agent's page has its Map block. AO-2b ✅ (flag `slack.managed_supervisor`,
+> off) — the API spawns, watches and restarts the supervisor with its own key; the spike is decided by reading:
+> the bot is TypeScript end to end, so spawn-and-watch keeps one implementation. AO-2c ✅ — agent mode by
+> default with its events, one-way, the README rewritten. AO-2d ✅ — one configuration token creates the app
+> from the rendered manifest; an Install button on HTTPS; the app-level token stays one paste (Slack has no API
+> for it — the falsifier met and said). AO-2f ✅ — a home channel on the record. The AO-2 measure is still owed:
+> no Slack workspace was touched. AO-6 ✅ (flag `agents.testing_centre`, off) — questions drafted from the
+> catalogue as candidates a person certifies with SQL, the suite counts certified goldens only and records its
+> diff, a nightly run from the heartbeat, and rehearse on the bot record through the approval door already built;
+> and (later the same day) a mention answered in a private thread first — the asker's DM, with the channel on
+> their ✅. AO-7 ✅ a–e (flag `agents.learning_loop`, off) — verdicts
+> carry the agent and are backfilled from the turn, the agent's own corrections lead its brief and its priors,
+> an accepted answer becomes an uncertified candidate, a change or five verdicts re-evaluates and the page says
+> the delta, run evidence comes from the manifest or the reward label, and a crystallised skill is staged to the
+> inbox. AO-5 ✅ — each custom agent an MCP tool with its caller a principal; a per-agent key, an HTTP door and
+> an embed page; a Teams bot (Bot Framework, signature verified, reply through the Connector); a webhook that is a
+> conversation turn; an A2A card and endpoint. Every door carries its own credential and opens nothing else.
+> **The arc is built.** AO-6's private-thread clause was built later the same day (above); its live receipt waits
+> on a Slack workspace.
+> **Receipts 2026-10-03 (later), on a scratch API from this branch (:8010, every store isolated, a fresh install,
+> `gemini-3.1-flash-lite`, 19 model calls in all — PENDING item 50 holds the detail):** `slack.managed_supervisor` —
+> the child spawned, heartbeated, and exited 0 after its first heartbeat because a fresh install has no socket to
+> hold it; the host restarted it every 5 s and would have hit its hourly cap before the first bot existed; its output
+> went to /dev/null while the cap message said "check the supervisor's own log"; and the card hid the row until a bot
+> existed. All three fixed; then zero restarts in 70 s, a `kill -9` recovered in 15 s with the exit named, Restart
+> gave a new pid, every start in the log, the freshest heartbeat on the status. `agents.testing_centre` — one call
+> drafted six questions with a reason each and no SQL; a write was refused at certify; the suite ran the production
+> path and FAILED both certified goldens for real reasons it could not yet say — an abstain with no sentence, a
+> mismatch with no SQL — now said on the result and the tab; the defects themselves: "October" taken for an entity
+> name and probed (named, in `answer_resolution.py`), and `in 2023` dropped from a ranking. `agents.learning_loop` —
+> a `correct` verdict backfilled the agent, headline and SQL from the turn; the same question then framed the
+> corrected half-open range and said its period; an accepted new answer became a candidate from use; a configuration
+> change re-ran the suite in the background within 10 s: before 0/2, after 2/3, the month golden newly passing.
+> **Fallout fixed at the cause:** the Workspace now reads the `samples`-scoped metrics whose tables it folds in (a
+> fresh install had governed metrics on NO listed connection); the door fold, the MCP agent fold and the Slack bot
+> all read the quick path's `inv_id` (a ✅ on a quick Slack answer found no turn before); the folded grid is
+> last-wins. **The AO-2 measure, taken by the user the same afternoon on that fresh install:** agent created → first
+> Slack answer in 10 min 37 s, about 7 min 40 s net of Slack refusing the manifest (`assistant_view` beside
+> `agent_view` — new apps take `agent_view` alone, with its description; fixed, the retry returned 200); three pastes,
+> no Install button without an HTTPS origin; the managed supervisor picked the bot up on its next reconcile and the
+> mention was answered as the agent. The five-minute target was not met; the ten-minute falsifier fired gross by 37 s
+> on that defect and held net. `users:read` was missing from the manifest (the transport's `users.info`); added.
+> The month-name abstain was fixed the same evening: calendar names are the resolver's weaker class — bound offline
+> when the data holds the string, otherwise dropped, never an abstention (`answer_resolution._calendar_candidates`).
+> **Still owed:** the Install-button path over HTTPS, Rehearse against a live workspace, the nightly run live, and
+> the every-fifth-verdict trigger live.
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

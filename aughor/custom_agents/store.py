@@ -87,7 +87,31 @@ _MIGRATIONS = [
     Migration(7, "workspace_id (the sub-tenant that owns this agent)",
               lambda c: add_column_if_missing(c, "user_agents", "workspace_id",
                                               "TEXT NOT NULL DEFAULT ''")),
+    # Arc AO-6/AO-7 (2026-10-03). A golden now has a STATUS: `certified` (a person wrote
+    # or confirmed its SQL — the only kind the suite counts) or `candidate` (drafted from
+    # the catalogue, or an answer a person accepted in use — waiting for a person's SQL).
+    # `source` says where it came from; `from_investigation` ties a candidate from use to
+    # the turn it came from; `headline` is what that answer said. Every golden written
+    # before this is `certified`/`person`, which is what it was. `prev_eval` keeps the
+    # stamp before the latest one, so a page can say "pass 7/8 → 8/8". Numbered above the
+    # list's last; the live store was at 7.
+    Migration(8, "golden status + source + provenance; prev_eval",
+              lambda c: (add_column_if_missing(c, "user_agent_goldens", "status",
+                                               "TEXT NOT NULL DEFAULT 'certified'"),
+                         add_column_if_missing(c, "user_agent_goldens", "source",
+                                               "TEXT NOT NULL DEFAULT 'person'"),
+                         add_column_if_missing(c, "user_agent_goldens", "from_investigation",
+                                               "TEXT NOT NULL DEFAULT ''"),
+                         add_column_if_missing(c, "user_agent_goldens", "headline",
+                                               "TEXT NOT NULL DEFAULT ''"),
+                         add_column_if_missing(c, "user_agent_goldens", "certified_at",
+                                               "TEXT NOT NULL DEFAULT ''"),
+                         add_column_if_missing(c, "user_agents", "prev_eval",
+                                               "TEXT NOT NULL DEFAULT ''"))),
 ]
+
+GOLDEN_STATUSES = ("certified", "candidate")
+GOLDEN_SOURCES = ("person", "use", "synthetic")
 
 _legacy_checked = False
 
@@ -355,6 +379,16 @@ def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
     if agent is not None:
         from aughor.custom_agents.revisions import record_revision
         record_revision(agent)   # a no-op when only the name or the enabled switch moved
+        # AO-7d — a governing change re-measures the agent, behind the loop's flag, in the
+        # background: the chip then says what THIS configuration passes, not the last one.
+        if before is not None and before.config_rev != agent.config_rev:
+            try:
+                from aughor.custom_agents.learning import on_configuration_change
+                on_configuration_change(agent_id)
+            except Exception as exc:                    # noqa: BLE001 — the save stands
+                import logging
+                logging.getLogger(__name__).warning(
+                    "agent %s: re-evaluation after change not started: %s", agent_id, exc)
     return agent
 
 
@@ -367,26 +401,81 @@ def delete_agent(agent_id: str) -> bool:
 
 # ── Golden questions (the agent's own regression suite) ──────────────────────
 
-def add_golden(agent_id: str, question: str, reference_sql: str) -> dict:
+def add_golden(agent_id: str, question: str, reference_sql: str, *,
+               status: str = "certified", source: str = "person",
+               from_investigation: str = "", headline: str = "") -> dict:
+    """A golden. Certified by default — a person wrote the SQL — which is what every
+    caller before AO-6 meant. A `candidate` carries no SQL a suite may trust yet."""
+    if status not in GOLDEN_STATUSES or source not in GOLDEN_SOURCES:
+        raise ValueError(f"golden status/source must be one of {GOLDEN_STATUSES}/{GOLDEN_SOURCES}")
+    now = _now()
     row = {"id": f"ag_{uuid.uuid4().hex[:12]}", "agent_id": agent_id,
            "question": question.strip(), "reference_sql": reference_sql.strip(),
-           "created_at": _now()}
+           "created_at": now, "status": status, "source": source,
+           "from_investigation": from_investigation or "", "headline": (headline or "")[:300],
+           "certified_at": now if status == "certified" else ""}
     with _connect() as conn:
         conn.execute(
             "INSERT INTO user_agent_goldens (id, agent_id, question, reference_sql,"
-            " created_at) VALUES (?,?,?,?,?)",
+            " created_at, status, source, from_investigation, headline, certified_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
             (row["id"], row["agent_id"], row["question"], row["reference_sql"],
-             row["created_at"]),
+             row["created_at"], row["status"], row["source"], row["from_investigation"],
+             row["headline"], row["certified_at"]),
         )
     return row
 
 
-def list_goldens(agent_id: str) -> list[dict]:
+def add_candidate(agent_id: str, question: str, *, source: str, reference_sql: str = "",
+                  from_investigation: str = "", headline: str = "") -> Optional[dict]:
+    """A golden CANDIDATE — a question with no certified SQL yet (AO-6 synthetic, AO-7c
+    from use). Idempotent: the same turn, or the same question text for this agent,
+    makes no second row. Returns None when nothing was added."""
+    q = (question or "").strip()
+    if not q:
+        return None
     with _connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM user_agent_goldens WHERE agent_id = ? ORDER BY created_at",
-            (agent_id,)).fetchall()
+        dup = conn.execute(
+            "SELECT 1 FROM user_agent_goldens WHERE agent_id = ? AND "
+            "(lower(question) = lower(?) OR (from_investigation != '' AND from_investigation = ?))",
+            (agent_id, q, from_investigation or "")).fetchone()
+    if dup:
+        return None
+    return add_golden(agent_id, q, reference_sql, status="candidate", source=source,
+                      from_investigation=from_investigation, headline=headline)
+
+
+def list_goldens(agent_id: str, status: Optional[str] = None) -> list[dict]:
+    """The agent's goldens, oldest first. ``status`` narrows to certified or candidate —
+    the evaluation reads certified only; the Quality tab reads both."""
+    with _connect() as conn:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM user_agent_goldens WHERE agent_id = ? AND status = ? "
+                "ORDER BY created_at", (agent_id, status)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM user_agent_goldens WHERE agent_id = ? ORDER BY created_at",
+                (agent_id,)).fetchall()
     return [dict(r) for r in rows]
+
+
+def certify_golden(golden_id: str, agent_id: str, reference_sql: str) -> Optional[dict]:
+    """A person certifies a candidate with the SQL they say is right (AO-6/AO-7c). The
+    only way a candidate becomes something the suite counts; never a judge's doing."""
+    sql = (reference_sql or "").strip()
+    if not sql:
+        return None
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE user_agent_goldens SET status = 'certified', reference_sql = ?, "
+            "certified_at = ? WHERE id = ? AND agent_id = ?",
+            (sql, _now(), golden_id, agent_id))
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute("SELECT * FROM user_agent_goldens WHERE id = ?",
+                           (golden_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def delete_golden(golden_id: str, agent_id: Optional[str] = None) -> bool:
@@ -419,6 +508,24 @@ def record_eval(agent_id: str, result: dict) -> None:
     if agent is None:
         return
     stamped = {**result, "config_rev": agent.config_rev}
+    # AO-7d — the stamp before this one is kept, so the page can say
+    # "pass 7/8 → 8/8" and a nightly run can name what newly fails.
     with _connect() as conn:
-        conn.execute("UPDATE user_agents SET last_eval = ?, updated_at = ? WHERE id = ?",
-                     (json.dumps(stamped), _now(), agent_id))
+        prev = conn.execute("SELECT last_eval FROM user_agents WHERE id = ?",
+                            (agent_id,)).fetchone()
+        prev_json = (prev[0] if prev else "") or ""
+        conn.execute("UPDATE user_agents SET last_eval = ?, prev_eval = ?, updated_at = ? "
+                     "WHERE id = ?", (json.dumps(stamped), prev_json, _now(), agent_id))
+
+
+def previous_eval(agent_id: str) -> Optional[dict]:
+    """The stamp before the latest, or None."""
+    with _connect() as conn:
+        row = conn.execute("SELECT prev_eval FROM user_agents WHERE id = ?",
+                           (agent_id,)).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        return json.loads(row[0])
+    except (TypeError, ValueError):
+        return None

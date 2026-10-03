@@ -1378,6 +1378,22 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
     ]
     if extra:
         lines += ["", extra]
+    # AO-1a — the active agent's brief LEADS the analyst's prompt, as it leads the quick
+    # body's SQL prompt and (now) the conversation's. Measured 2026-10-03: a custom agent's
+    # standing instructions reached neither of the two bodies a user actually talks to.
+    # Read from the contextvar: the analyst runs inside the turn that activated the agent
+    # (the ask door's outermost wrapper), and the pool propagates contextvars. Empty on the
+    # default path, so a run with no agent builds the prompt byte for byte as before.
+    try:
+        from aughor.custom_agents.context import agent_brief_block
+        _brief = agent_brief_block()
+    except Exception as brief_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(brief_exc, "the agent brief is additive; the analyst stands without it",
+                 counter="analyst.agent_brief")
+        _brief = ""
+    if _brief:
+        lines = [_brief.rstrip("\n"), ""] + lines
     return "\n".join(lines)
 
 

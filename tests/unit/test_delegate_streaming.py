@@ -171,7 +171,7 @@ def test_the_hop_streams_under_the_delegate_s_identity_not_the_caller_s():
         handed["emit"] = emit
         emit("sql", {"sql": "SELECT 1"})       # the delegate does some work
         emit("narrative_delta", {"text": "…"})  # ... and some prose
-        return {"answer": "42", "usage": {}}
+        return {"headline": "42", "outcome": "answered", "usage": {}}   # the real shape
 
     row = _run_one({"id": "analyst", "name": "Analyst", "connection_id": "c1"},
                    "count things", DelegationContext(),
@@ -203,7 +203,7 @@ def _drive_one_hop(trace_id: str, ctx=None, target=None):
     from aughor import telemetry
 
     def _answer(conn, args, *, emit=None, session_id=""):
-        return {"answer": "42", "usage": {}}
+        return {"headline": "42", "outcome": "answered", "usage": {}}
 
     with telemetry.bind_trace(trace_id):
         return _run_one(target or {"id": "analyst", "name": "Analyst", "connection_id": "c1"},

@@ -16,33 +16,41 @@ progress, its chart and its table — back out.
 
 ## What it needs from your Slack app
 
-The bot answers mentions with the scopes from the Chat SDK's stock manifest.
-Three of the four RC-2 surfaces need more than that, and **they fail quietly
-without it** — Slack's structured streaming chunks are skipped with a
-debug-level log line, so a bot missing these scopes looks perfectly healthy
-while showing none of it.
+**Since RC-5 the app is made from the manifest Aughor renders** (`GET
+/slack-bots/manifest`, or the Slack door on an agent's Create flow / Integrations
+→ Slack), and since AO-2c that manifest is complete: agent mode (Slack's Agents &
+AI Apps — the legacy assistant view closed to new apps on 2026-08-20 and retires
+in February 2027), every scope below, Socket Mode, and the agent-mode events. An
+app made from it needs none of the hand steps that used to follow. With one
+configuration token (AO-2d) Aughor creates the app in Slack itself; what stays
+by hand is the install (a button on an HTTPS deployment) and the app-level
+token, which Slack offers no API for.
+
+The surfaces, and what each needs — all of it in the rendered manifest:
 
 | Surface | Needs | Without it |
 |---|---|---|
-| Streamed answer, threading, follow-ups | the stock manifest | works |
-| Progress cards during a deep run | Agents & AI Apps + `assistant:write` | silently absent; answer still arrives |
-| Native stop button → server-side cancel | Agents & AI Apps + `assistant:write` | no stop button exists |
+| Streamed answer, threading, follow-ups | the base scopes | works |
+| Progress cards during a deep run | agent mode + `assistant:write` | silently absent; answer still arrives |
+| Native stop button → server-side cancel | agent mode + `assistant:write` | no stop button exists |
 | Chart PNG and CSV attachments | `files:write` | the upload fails; the inline table still posts |
-| Inline table, deep link | the stock manifest | works |
+| Inline table, deep link | the base scopes | works |
+| The asker's name on a verdict or a note | `users:read` | the Slack user id stands in, and the log says "Could not fetch user info … missing_scope" per message (an app created before this scope was in the manifest: add it under OAuth & Permissions and reinstall) |
 
-To turn the rest on, at [api.slack.com/apps](https://api.slack.com/apps):
+**Only for an app created before 2026-10-03 from the old manifest**, at
+[api.slack.com/apps](https://api.slack.com/apps):
 
 1. **OAuth & Permissions → Bot Token Scopes** — add `assistant:write` and
    `files:write` to what is already there.
-2. **Agents & AI Apps** — enable it. (This is the `agent_view` experience;
-   Slack deprecated the older `assistant_view` and retires it in February 2027.)
+2. **Agents & AI Apps** — enable it. This is one-way: Aughor's record follows
+   (`agent_view`), and refuses to be switched back, because Slack will not.
 3. **Event Subscriptions → Subscribe to bot events** — add `app_home_opened`,
    `app_context_changed`, `agent_session_stopped`, `agent_session_title_changed`
    alongside the existing `app_mention` and `message.*` events.
 4. **Reinstall the app to the workspace.** Scope changes do not take effect
    until you do, and this is the step that is easy to skip.
-5. Set `SLACK_AGENT_VIEW=1` in `.env.local` — see below for why it is a flag
-   and not an assumption.
+5. Single-bot mode only (the three `SLACK_*` vars): set `SLACK_AGENT_VIEW=1` in
+   `.env.local`. A bot read from Aughor's registry carries the mode on its record.
 
 To check what the installed token actually has:
 
@@ -60,6 +68,8 @@ Copy `.env.local.example` to `.env.local` and fill it in.
 | `SLACK_APP_TOKEN` | `xapp-…` with `connections:write`, for Socket Mode |
 | `SLACK_SIGNING_SECRET` | from Basic Information |
 | `SLACK_AGENT_VIEW` | `1` once the app is in Agents & AI Apps mode. Left off, the adapter uses the legacy compatibility path. Turning it on against an app that is NOT in agent mode makes `stopStream` send a parameter that app cannot accept, which costs the final message of every answer — hence a flag, not a default. |
+| `AUGHOR_MANAGED_BY_API` | Set by the API's host (flag `slack.managed_supervisor`), never by hand. Managed, the process stays up with ZERO bots and picks the first one up on the next reconcile, and its output goes to `<AUGHOR_SLACKBOTS_DIR>/supervisor.log`; standalone, a run with no bots says so and exits. |
+| `SLACK_REHEARSE` | Single-bot mode only (registry bots read `rehearse` off their row). `1` answers a channel mention in the asker's DM first — the DM says where it was asked and what the reactions do; their ✅ there posts the answer in the channel thread (and records the accept), ❌ drops it, once. The channel gets an ephemeral note to the asker and nothing public. A mention already in a DM is answered in place. Rehearsals persist beside the turn maps (`.aughor-turns.<bot>.rehearsals.json`), so a ✅ after a restart still promotes. |
 | `AUGHOR_API_URL` | defaults to `http://127.0.0.1:8000` |
 | `AUGHOR_RUNTIME_KEY` | **required for the multi-bot supervisor.** `GET /slack-bots/runtime` is the one route that returns raw `xoxb-`/`xapp-` tokens, so it refuses an unauthenticated caller. Generate the key in the app — **Integrations → Slack → Supervisor key** — and paste the line it gives you here. Single-bot mode (the three `SLACK_*` vars above) does not read that route and needs no key. |
 | `AUGHOR_API_KEY` | when the API requires one org-wide. It also satisfies the runtime route, so a deployment that already sets it needs no separate runtime key. |
@@ -73,6 +83,14 @@ Copy `.env.local.example` to `.env.local` and fill it in.
 npm install
 npm run dev
 ```
+
+After every reconcile (30 s by default) the supervisor POSTs a heartbeat to
+`/slack-bots/runtime/heartbeat` — which bots it has open, which failed to start, and
+how often it reconciles — with the same key the registry read uses. That is what the
+bot card in **Integrations → Slack** and the agent's Map read: *listening since …*
+when a beat arrived within three reconcile intervals, otherwise *not listening* with
+the command above. A heartbeat that cannot be delivered never stops a socket; the
+process logs the change of state once and the card says so until it lands.
 
 Socket Mode connects **out** to Slack over a WebSocket, so there is no public
 URL, tunnel, or webhook endpoint to expose.

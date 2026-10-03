@@ -133,8 +133,13 @@ def trusted_templates(question: str, connection_id: str) -> str:
 
 def correction_priors(question: str, connection_id: str) -> str:
     from aughor.feedback.priors import build_corrections_section
-    return _safe(lambda: build_corrections_section(question, connection_id),
-                 "grounding: ambiguity-ledger corrections")
+    # AO-7a — an active agent's own corrections are read first (the contextvar the ask
+    # door activates); no agent, the connection's, exactly as before.
+    from aughor.custom_agents.context import current_agent
+    _agent = current_agent()
+    return _safe(lambda: build_corrections_section(
+        question, connection_id, agent_id=_agent.id if _agent is not None else ""),
+        "grounding: ambiguity-ledger corrections")
 
 
 def connection_glossary(question: str, connection_id: str) -> str:

@@ -19,16 +19,16 @@ def _connect_at(monkeypatch, path: Path) -> sqlite3.Connection:
     return store._connect()
 
 
-def test_fresh_db_migrates_to_v7_with_all_columns(tmp_path, monkeypatch):
+def test_fresh_db_migrates_to_v8_with_all_columns(tmp_path, monkeypatch):
     conn = _connect_at(monkeypatch, tmp_path / "fresh.db")
     try:
         ver = conn.execute("PRAGMA user_version").fetchone()[0]
         cols = {r[1] for r in conn.execute("PRAGMA table_info(user_agents)")}
     finally:
         conn.close()
-    assert ver == 7
+    assert ver == 8
     assert {"schema_scope", "pack_ids", "last_eval", "purpose", "tool_grants",
-            "workspace_id"} <= cols
+            "workspace_id", "prev_eval"} <= cols   # AO-6/7: migration 8
 
 
 def test_migration_is_idempotent_on_a_preexisting_columns_db(tmp_path, monkeypatch):
@@ -47,7 +47,7 @@ def test_migration_is_idempotent_on_a_preexisting_columns_db(tmp_path, monkeypat
     # add_column_if_missing must no-op (not raise "duplicate column").
     conn = _connect_at(monkeypatch, dbp)
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 8
     finally:
         conn.close()
 

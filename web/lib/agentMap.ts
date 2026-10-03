@@ -73,7 +73,14 @@ export interface AgentWorld {
   };
   /** The connection's human name, when the roster has been read. Falls back to the id. */
   connectionName?: string;
-  bots: { id: string; name: string; enabled?: boolean; agent_id?: string }[];
+  bots: {
+    id: string; name: string; enabled?: boolean; agent_id?: string;
+    /** AO-1e / AO-2a — why the platform switched it off; whether a supervisor is
+     *  listening for it (the last heartbeat), and the hint when none is. */
+    disabled_reason?: string;
+    listening?: { supervisor_id: string; since: string; last_seen_at: string } | null;
+    liveness_hint?: string;
+  }[];
   automations: {
     id: string; name: string; enabled: boolean; agent_id?: string;
     effects: { config?: Record<string, unknown> }[];
@@ -187,10 +194,17 @@ export function toMapFlow(world: AgentWorld, layout: MapLayout = {}): {
   });
 
   for (const bot of world.bots.filter(b => mine(b.agent_id))) {
+    // AO-2a — the node says whether anything is LISTENING, not only whether the record is
+    // switched on: the card read "enabled" on a machine where no supervisor ran.
+    const detail = bot.enabled === false
+      ? `Slack door · off${bot.disabled_reason ? ` — ${bot.disabled_reason}` : ""}`
+      : bot.listening
+        ? `Slack door · listening since ${bot.listening.since}`
+        : `Slack door · not listening — ${bot.liveness_hint || "start the supervisor"}`;
     reach.push({
       id: `bot:${bot.id}`, kind: "slack", title: bot.name,
-      detail: bot.enabled === false ? "Slack door · disabled" : "Slack door",
-      muted: bot.enabled === false,
+      detail,
+      muted: bot.enabled === false || !bot.listening,
       target: { to: "integrations" },
     });
   }

@@ -37,9 +37,10 @@ from aughor.util.time import now_iso_z
 
 NAME_MAX = 80
 
-#: The three Slack secrets. Named once so the encrypt / decrypt / mask paths cannot
-#: drift apart — a field added to one and missed by another is how a token leaks.
-SECRET_FIELDS = ("bot_token", "app_token", "signing_secret")
+#: The Slack secrets. Named once so the encrypt / decrypt / mask paths cannot drift
+#: apart — a field added to one and missed by another is how a token leaks.
+#: `client_secret` (AO-2d) joins the three when Aughor created the app itself.
+SECRET_FIELDS = ("bot_token", "app_token", "signing_secret", "client_secret")
 
 
 class SlackBot(BaseModel):
@@ -47,6 +48,10 @@ class SlackBot(BaseModel):
     id: str = ""
     name: str = ""
     enabled: bool = True
+    #: AO-1e — WHY a bot is off, when the platform switched it off rather than a person
+    #: ("its agent 'X' was deleted"). Shown on the card beside "paused"; cleared the
+    #: moment a person resumes the bot. "" for a bot a person paused, or one that is on.
+    disabled_reason: str = ""
 
     # ── the binding ──
     agent_id: str = ""          # the UserAgent whose instructions/docs/packs answer
@@ -73,8 +78,23 @@ class SlackBot(BaseModel):
     team_id: str = ""
     slack_app_id: str = ""
     bot_user_id: str = ""       # the bot's own Slack user id, from auth.test
-    #: Must match the app's manifest mode. See the module docstring.
+    #: Must match the app's manifest mode. See the module docstring. AO-2c: True for an
+    #: app Aughor renders now (Slack closed the legacy view to new apps on 2026-08-20),
+    #: and one-way — an app switched to agent mode cannot be switched back.
     agent_view: bool = False
+    #: AO-2d — set when Aughor created the app from a configuration token: the OAuth
+    #: client that installs it to a workspace. `client_secret` is encrypted like the rest.
+    client_id: str = ""
+    client_secret: str = ""
+    #: AO-2f — an optional home channel (`C…` id or `#name`): where an automation posting
+    #: AS this bot lands when it names no channel, and what the card shows as "posts to".
+    #: "" means no default; a bot answers mentions wherever it is invited regardless.
+    channel_id: str = ""
+    #: AO-6 — REHEARSE: a post from an automation AS this bot is held for a person first
+    #: (the departure gate's approval door) and reaches the channel on their click; the
+    #: held text is readable in Attention before anyone else sees it. A standing grant
+    #: ("always allow" on the card) lifts it per channel. False = posts as its effect says.
+    rehearse: bool = False
 
     created_at: str = Field(default_factory=now_iso_z)
     updated_at: str = Field(default_factory=now_iso_z)

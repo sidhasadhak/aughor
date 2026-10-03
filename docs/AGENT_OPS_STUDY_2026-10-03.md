@@ -213,6 +213,45 @@ provable live without the next, and so that the first three cost no model calls.
 3. Read the usage store for `gemini-3.1-flash-lite`'s price row — decides whether D2 is a
    missing price or a missing join.
 
+**Results (2026-10-03, run on the main checkout's live API, pid 98854, before any of this arc's
+code existed).**
+
+1. **C1 confirmed.** Capture window `arc-ao-0` (8 calls, 6 min); one question, *"How many
+   orders were placed yesterday?"*, `POST /ask` with `agent_id=ua_aaeb9e07870a`,
+   `connection_id=8233e4fd`, `depth=quick`; trace `99c4c32c`, 16.8 s, five model calls captured.
+   The three converse-body calls open *"You are Aughor's analyst — the conversation over the
+   whole platform…"*; the builder's recorded `extra` is history + prior answers + the origin
+   line; the string *"Report yesterday's sales"* appears in none of the five captured prompts
+   (the capture is capped at 2,000 characters, so the top of each prompt is what was read —
+   and "lead the prompt" is the claim under test). The answer: *"Order Count: 49"* after the
+   grounding guard rewrote the model's *"There were 108 orders placed yesterday"* — a bare
+   count, no revenue, no seven-day comparison, no largest contributor, the four things the
+   instructions ask for. `git status data/` on the live checkout unchanged by the run.
+   AO-1a stands.
+2. **E8 is a dev artefact; the real wait is the API wave.** `next build` in the worktree (hard-
+   linked `node_modules`), `next start -p 3210` (the port the API's CORS already reserves for
+   a prod preview), each layer opened by URL from a fresh origin:
+
+   | layer | JS chunks | last chunk | API calls | last API reply | LCP |
+   |---|---|---|---|---|---|
+   | fleet | 31 | 328 ms | 29 | 1,724 ms | 468 → 1,760 ms |
+   | agents | 32 | 176 ms | 28 | 1,640 ms | — |
+   | attention | 31 | 150 ms | 28 | 1,310 ms | — |
+   | activity | 32 | 141 ms | 27 | 1,240 ms | — |
+   | automations | 32 | 167 ms | 27 | 1,237 ms | — |
+   | hub | 31 | 146 ms | 26 | 1,389 ms | — |
+   | departures | 31 | 148 ms | 27 | 1,247 ms | — |
+
+   Every layer's code is on screen within a third of a second; the panel fills when the last
+   of 26–29 API calls answers, 1.2–1.8 s. The 2–5 s blanks the test saw were the dev server
+   compiling lazy chunks. What remains is a product fact: opening ANY layer fires the whole
+   workspace's fetch set. Recorded as a hygiene line (one fetch set per layer), not a wave.
+3. **D2 is a missing price.** `obs/usage.py` `PRICES` declares one row, `("openrouter",
+   ":free")`; `refresh_catalogue_prices` reads OpenRouter's catalogue only; the live backend
+   is `gemini` / `gemini-3.1-flash-lite`. `GET /obs/usage-summary?range=24h`: 150 calls, 150
+   unpriced, `cost_usd 0.0`. No join is wrong; nothing declares the rate. AO-3 declares it with
+   its date and source, and renders **unpriced** wherever a row lacks one.
+
 ### AO-1 · The stance reaches every body (quality)
 
 - a. `converse_system_prompt` prepends `agent_brief_block()` when an agent is active; the
@@ -313,6 +352,41 @@ No new store — the verdict store IS the lesson store (one store per concept).
   the docstring made true. The user chooses; the study recommends staging.
 - Falsifier: per agent, a held-out golden set's pass rate must move after corrections. Two
   weeks of real use without movement → the block is removed, not kept.
+
+### Receipts — 2026-10-03 (later), the three flags on a fresh install
+
+Taken on a scratch API started from this branch (:8010, every store isolated into a scratch directory, the live
+deployment untouched — `lsof` on its data files showed only its own pid), a fresh install with no connection beyond
+the builtins, the live model configuration copied (`gemini-3.1-flash-lite`), 19 model calls in all. The detail and
+every fix are in PENDING item 50; the short form:
+
+- **`slack.managed_supervisor` (GRADUATION_QUEUE).** The child spawned and heartbeated, then exited 0 after its
+  first heartbeat: with no bot there is no socket, and the reconcile timer was unref'd, so the host restarted it every
+  5 s — on a fresh install it would have hit its hourly cap before the first bot existed. Its output went to
+  /dev/null while the cap message said "check the supervisor's own log", and the card hid the supervisor row until a
+  bot existed. Fixed; then 0 restarts in 70 s, `kill -9` recovered in 15 s with the exit named, Restart gave a new
+  pid, every start in the log, the freshest heartbeat on the status. The live-workspace half is the AO-2 measure.
+- **`agents.testing_centre` (EXPERIMENT).** One call drafted six questions with a reason each and no SQL; a write
+  at certify was refused; two certified by hand; the suite ran the production path and failed both — for real
+  reasons it could not yet say. Now an abstain carries the path's own sentence and a mismatch the framed SQL and the
+  first rows of both sides. The defects: "October" taken for an entity name and probed in the data (in
+  `semantic/answer_resolution.py`; fixed the same evening — calendar names bind offline or are dropped, never an
+  abstention), and `in 2023` dropped from a ranking.
+- **`agents.learning_loop` (EXPERIMENT).** A `correct` verdict backfilled the agent, headline and SQL from the turn;
+  the same question then framed the corrected half-open range and said its period, and a new question carried the
+  lesson; an accepted new answer became a candidate from use (an accepted repeat of a golden's question did not — the
+  dedupe); a configuration change re-ran the suite in the background within 10 s: before 0/2, after 2/3, the month
+  golden newly passing. Not driven live: the nightly run and the every-fifth-verdict trigger.
+- **The AO-2 sitting (the user, 15:32–15:42 CEST, the same fresh install, no tunnel).** Agent created → first Slack
+  answer: 10 min 37 s; about 7 min 40 s net of Slack refusing the manifest (`assistant_view` beside `agent_view`;
+  new apps take `agent_view` alone with `agent_description` — fixed, the retry returned 200). Three pastes, one
+  surface left; the managed supervisor picked the bot up on its next reconcile; the mention was answered as the
+  agent. Under five was not met; the ten-minute falsifier fired gross by 37 s on that defect and held net.
+  `users:read` was missing (the transport's `users.info`); added. Unmeasured: the Install button over HTTPS.
+- **Fallout fixed at the cause:** on a fresh install the shipped `revenue`/`aov` applied to NO listed connection
+  (scoped to `samples`, which the registry never lists, while the Workspace folds the samples tables in) — the
+  Workspace now reads them; the door fold, the MCP agent fold and the Slack bot all read the quick path's `inv_id`
+  (a ✅ on a quick Slack answer found no turn before); the folded grid is last-wins.
 
 ### Order and cost
 

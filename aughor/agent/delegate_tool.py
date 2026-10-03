@@ -182,6 +182,27 @@ def _run_one(target: dict, task: str, ctx: DelegationContext, *,
     hop_attrs = {**child.span_attributes(),
                  "delegate_agent_id": agent_id, "delegate_agent_name": name}
 
+    # AO-1b — the hop runs AS the delegate. Until 2026-10-03 the target's record chose
+    # only the connection and the schema line; the answer pipeline then read the CALLER's
+    # contextvar, so a delegate answered with the caller's brief, documents and packs —
+    # delegation moved the question, never the stance. Activation is what the ask door
+    # does for its own agent (`_stream_as_agent`), nested here for the hop and released
+    # on every exit. An unreadable record is said (`activated: False`), never papered
+    # over with the caller's identity.
+    _token = None
+    _activated = False
+    try:
+        from aughor.custom_agents import get_agent as _get_agent
+        from aughor.custom_agents.context import activate_agent, release_agent
+        _record = _get_agent(agent_id)
+        if _record is not None:
+            _token = activate_agent(_record)
+            _activated = True
+    except Exception as act_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(act_exc, "activating the delegate is best-effort; the hop still runs, "
+                          "and the row says it ran unactivated",
+                 counter="delegate.activate")
     try:
         with mlflow_tool_span(f"delegate:{name}", {"question": framed},
                               span_kind="delegation", span_attrs=hop_attrs):
@@ -190,13 +211,19 @@ def _run_one(target: dict, task: str, ctx: DelegationContext, *,
     except Exception as exc:                      # a delegate failing is a RESULT
         logger.warning("delegate %s failed: %s", agent_id, exc, exc_info=True)
         return {"agent_name": name, "response": f"{name} could not answer: {exc}",
-                "usage": {}, "bailed": False, "refused": False, "error": True}
+                "usage": {}, "bailed": False, "refused": False, "error": True,
+                "activated": _activated}
+    finally:
+        if _token is not None:
+            from aughor.custom_agents.context import release_agent
+            release_agent(_token)
 
     # A delegate that errored inside the pipeline reports as an error, not as an answer —
     # a well-formed wrong answer is worse than a stated failure.
     if isinstance(result, dict) and result.get("error"):
         return {"agent_name": name, "response": str(result["error"]),
-                "usage": {}, "bailed": False, "refused": False, "error": True}
+                "usage": {}, "bailed": False, "refused": False, "error": True,
+                "activated": _activated}
 
     usage = (result or {}).get("usage") or {}
     ctx.spend(steps=1, usd=float(usage.get("cost_usd") or 0.0))
@@ -205,13 +232,19 @@ def _run_one(target: dict, task: str, ctx: DelegationContext, *,
     return {
         "agent_name": name,
         "agent_id": agent_id,
-        "response": (result or {}).get("answer") or (result or {}).get("outcome") or "",
+        # The real `answer_question` returns `headline` (its prose) and `outcome` (a
+        # terminal-state CODE such as "answered"); it has never returned `answer`. Reading
+        # `answer or outcome` meant every production hop relayed the code, and the tests
+        # passed because their spies returned the key the real path does not (AO-1b).
+        "response": ((result or {}).get("headline") or (result or {}).get("answer")
+                     or (result or {}).get("outcome") or ""),
         "sql": (result or {}).get("sql") or "",
         "usage": usage,
         "bailed": False,
         "refused": False,
         "depth": child.depth,
         "agent_path": "/".join(child.agent_path),
+        "activated": _activated,
     }
 
 

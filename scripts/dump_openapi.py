@@ -117,6 +117,7 @@ def _isolate_stores() -> None:
     # is the union, which is what the merge of the two waves means.
     for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
                      "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR", "AUGHOR_INTEGRATIONS_DIR",
+                     "AUGHOR_AGENTS_DIR", "AUGHOR_TEAMSBOTS_DIR",   # AO-5: agent keys, Teams bots
                      "AUGHOR_AUTOMATIONS_DIR", "AUGHOR_MCPSERVERS_DIR",
                      # MI-3's snapshot bytes — the directory half of the same store.
                      "AUGHOR_DATASETS_DIR"):
