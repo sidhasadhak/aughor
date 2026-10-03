@@ -86,12 +86,46 @@ def _schema(conn_id: str, db) -> str:
     return get_schema_cached(conn_id, db)
 
 
-def _first_table(schema_text: str) -> tuple[str, str] | None:
+_ROWS = re.compile(r"^TABLE:\s+([\w.]+)\s+\(([\d,]+) rows\)")
+
+
+def _first_table(schema_text: str, *, min_rows: int = 0) -> tuple[str, str] | None:
+    """The first table with a column — and, with ``min_rows``, the first whose stated row count exceeds it,
+    so a paging measurement has a second page to read (theLook's first table holds 10 rows). Falls back to
+    the first table when the schema text states no count that large."""
     from aughor.db.schema_render import parse_schema_tables
-    for table, cols in parse_schema_tables(schema_text or "").items():
-        if cols:
-            return table, cols[0]
-    return None
+    stated = {m.group(1): int(m.group(2).replace(",", ""))
+              for m in (_ROWS.match(line) for line in (schema_text or "").splitlines()) if m}
+    tables = [(t, cols[0]) for t, cols in parse_schema_tables(schema_text or "").items() if cols]
+    for table, column in tables:
+        if stated.get(table, 0) > min_rows:
+            return table, column
+    return tables[0] if tables else None
+
+
+def _typed_columns(schema_text: str) -> list[tuple[str, str, str]]:
+    """``(table, column, declared type)`` from the schema text's ``TABLE:`` blocks, both forms. `sqlglot_schema`
+    is not a type reader — it answers ``UNKNOWN`` for every column — so reading types from it found no geometry
+    on a connection whose schema text names two GEOGRAPHY columns (2026-10-03)."""
+    from aughor.db.schema_render import ends_column_block, parse_inline_columns
+    out: list[tuple[str, str, str]] = []
+    current: str | None = None
+    for line in (schema_text or "").splitlines():
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
+        if m:
+            current = m.group(1)
+            inline = parse_inline_columns(line)
+            if inline:
+                out.extend((current, name, typ) for name, typ in inline)
+                current = None
+            continue
+        if ends_column_block(line):
+            current = None
+        elif current:
+            col = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
+            if col and not line.strip().startswith("--"):
+                out.append((current, col.group(1), col.group(2)))
+    return out
 
 
 def _doors(result) -> str:
@@ -135,7 +169,7 @@ def de3c_metadata(conn_id: str) -> str:
 def de5d_bytes(conn_id: str) -> str:
     db = _open(conn_id)
     try:
-        picked = _first_table(_schema(conn_id, db))
+        picked = _first_table(_schema(conn_id, db), min_rows=1001)     # a table with a second page
         if not picked:
             return "no table with a column in the schema text — nothing to measure"
         table, column = picked
@@ -167,18 +201,8 @@ def de5e_geometry(conn_id: str) -> str:
     db = _open(conn_id)
     try:
         schema_text = _schema(conn_id, db)
-        from aughor.db.schema_render import sqlglot_schema
-        found: list[tuple[str, str, str]] = []
-        for table, cols in (sqlglot_schema(schema_text) or {}).items():
-            if not isinstance(cols, dict):
-                continue
-            for col, typ in cols.items():
-                if isinstance(typ, dict):      # schema-qualified: {schema: {table: {col: type}}}
-                    for c2, t2 in typ.items():
-                        if re.search(r"GEOGRAPHY|GEOMETRY", str(t2), re.I):
-                            found.append((f"{table}.{col}", c2, str(t2)))
-                elif re.search(r"GEOGRAPHY|GEOMETRY", str(typ), re.I):
-                    found.append((table, col, str(typ)))
+        found = [(table, col, typ) for table, col, typ in _typed_columns(schema_text)
+                 if re.search(r"GEOGRAPHY|GEOMETRY", typ, re.I)]
         if not found:
             return "no GEOGRAPHY or GEOMETRY column in the schema text — this connection holds no geometry to read"
         table, column, declared = found[0]

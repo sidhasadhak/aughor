@@ -111,8 +111,12 @@ def main() -> int:
         from aughor.db.schema_render import sqlglot_schema
         from aughor.security.audit import AuditLogger
         records = AuditLogger.recent(limit=args.limit, connection_id=args.connection)
-        statements = [(str(r.get("hypothesis_id") or f"q{i + 1}"), str(r["sql"]))
-                      for i, r in enumerate(records) if r.get("sql") and not r.get("error")]
+        # `sql_full` is the audit store's column; `sql` is carried by no row (see de1_parse_step_precheck.py).
+        statements = [(str(r.get("hypothesis_id") or f"q{i + 1}"), str(r["sql_full"]))
+                      for i, r in enumerate(records) if r.get("sql_full") and not r.get("error")]
+        if records and not statements:
+            sys.exit(f"{len(records)} audit rows read for {args.connection!r} and none carried a statement "
+                     "that ran — the reader is wrong, not the log; nothing was measured")
         db = open_connection_for(args.connection)
         try:
             schema = sqlglot_schema(db.get_schema())
@@ -120,7 +124,7 @@ def main() -> int:
         finally:
             db.close()
         print(f"connection {args.connection}: {len(statements)} audited statements that ran, dialect {dialect}, "
-              f"{sum(len(v) for v in schema.values())} tables in the schema")
+              f"{len(schema)} tables, {sum(len(v) for v in schema.values())} columns in the schema")
         t = measure(statements, schema or None, dialect)
         args.dialect = dialect
     elif args.sql_file:
