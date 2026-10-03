@@ -8404,6 +8404,21 @@ on the user's
 BigQuery connections the profile cache is empty (Arc CB's "unknown" share), so part 2 binds there only once it is
 filled; question-matched rows in place of the first five, and value embeddings (the review's level 2), are not built.
 
+**Rerun 2026-10-04 — no gain on the model the install now answers with, and not a clean run.**
+`evals/data_profiles_ab_2026-10-04.json`: gemini-3.1-flash-lite, the 53 golden and 12 ablation
+questions, three runs a question in each arm, the model pinned, every store in a scratch state.
+The provider's free tier allows 15 requests a minute for this model and two arms at once exceeded
+it: 39 of 195 runs were lost in the off arm and 59 in the on arm, every ablation question after
+the second among them, and a lost run scores 0 — so the headline fold (0.466 → 0.417, t −2.25)
+measures the limit, not the block. What the run can say: where both arms wrote a statement it was
+byte-identical in 107 of 117 runs, and of the ten that differed nine scored the same and one
+higher; with the lost runs set aside, 46 comparable questions read 0.608 → 0.596 (paired t −0.55,
+10 better · 9 worse · 27 unchanged). The 2026-09-24 run, on deepseek-v4.1-flash, read +0.038
+(t 1.49). Neither graduates the flag and this one is not clean enough to delete on; it stays off.
+The "empty profile cache on the BigQuery connections" above is no longer true of theLook: the
+running API serves 7 tables and 75 columns for it — the empty reading came from
+`data/schema_profiles.json`, a legacy file the ledger replaced.
+
 ### 3.39 · The business explorer cannot fuse two groups, and no proposal hides a type (PENDING.md item 20, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a guard on a default-on path)
 
 > **The fact it answers.** The explorer runs on every new connection since 2026-09-24 (`ontology.explore_on_connect`),

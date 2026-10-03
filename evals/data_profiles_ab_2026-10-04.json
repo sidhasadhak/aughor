@@ -1,0 +1,59 @@
+{
+ "what": "PENDING item 19 / ROADMAP 3.38 \u2014 the with-vs-without rerun for the DATA PROFILE block, on the model the install answers with",
+ "flag": "grounding.data_profiles",
+ "measured_on": "2026-10-04",
+ "connection": "samples (local DuckDB, 5 ecommerce tables), profiled in the run's own state: 5 tables, 35 columns",
+ "mode": "--full-pipeline",
+ "coder_model": "gemini-3.1-flash-lite",
+ "temperature": 0.0,
+ "runs_per_question": 3,
+ "fallback": "disabled",
+ "sets": {
+  "golden": 53,
+  "ablation_samples_ecommerce": 12
+ },
+ "runs": {
+  "off": {
+   "ok": 143,
+   "no_statement": 13,
+   "rate_limited": 39
+  },
+  "on": {
+   "ok": 126,
+   "no_statement": 10,
+   "rate_limited": 59
+  }
+ },
+ "rate_limit": "HTTP 429 from the provider: its free tier allows 15 requests a minute for this model, and two arms at once exceeded it. 39 of 195 runs were lost in the off arm and 59 in the on arm, among them every run of the ablation set after its first two questions. A lost run scores 0, so the headline fold below measures the limit, not the block.",
+ "as_run_including_lost_runs": {
+  "n": 65,
+  "mean_off": 0.4664,
+  "mean_on": 0.4165,
+  "delta": -0.0499,
+  "paired_t": -2.25,
+  "better": 9,
+  "worse": 17,
+  "unchanged": 39
+ },
+ "rate_limited_runs_set_aside": {
+  "n": 46,
+  "mean_off": 0.6083,
+  "mean_on": 0.596,
+  "delta": -0.0124,
+  "paired_t": -0.55,
+  "better": 10,
+  "worse": 9,
+  "unchanged": 27
+ },
+ "statements": {
+  "run_pairs_where_both_arms_wrote_one": 117,
+  "byte_identical": 107,
+  "different": 10,
+  "of_the_different": {
+   "scored_the_same": 9,
+   "scored_higher_with_the_block": 1,
+   "scored_lower_with_the_block": 0
+  }
+ },
+ "verdict": "NOT GRADUATED, and not a clean enough run to delete on. Where both arms wrote a statement the block changed it in 10 of 117 runs and the score in one; with the lost runs set aside the 46 comparable questions read 0.6083 -> 0.5960 (paired t -0.55). On this model the block shows no gain. The 2026-09-24 run on deepseek-v4.1-flash read +0.038 (t 1.49). The flag stays off. A clean rerun needs the two arms run one after the other under the provider's limit, or a key without it."
+}
