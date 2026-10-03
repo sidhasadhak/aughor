@@ -10301,6 +10301,41 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > answer envelope; the Exasol rules come from Exasol's documentation, not a live Exasol, which DE-3b's Trino
 > container is the planned stand-in for. Next: DE-5a to DE-5c with DE-5's hygiene.
 
+> **Status 2026-10-03 — DE-5a, DE-5b and DE-5c BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured
+> first:* the grid already had the typed result (`columns_typed`, `truncated`) and used it only to right-align
+> numbers; the "value index" the plan named for DE-5c is `sql/value_index.py`, a trigram matcher built per call over a
+> sampled list for the resolver and the join guard, not a store of a column's values — the one source of a column's
+> values is a live `SELECT DISTINCT` through the door, which `GET /connections/{id}/distinct` already runs
+> (`internal=True`, `IS NOT NULL`, capped at 1,000, an empty list on error) for the query builder's pickers; and the
+> filter grammar's `in` stripped the quotes off a quoted LIST as a pair (`"a", "b"` → `a", "b`), so a quoted list
+> matched nothing, silently. *DE-5a:* the declared type under each column name, in the engine's own words, and a `#`
+> column numbering the rows in the order on screen — the number the value viewer and go-to-row already used; neither
+> is a cell, so neither is selected, copied or filtered. *DE-5b:* a right-click menu on a cell — filter to this value,
+> exclude it, only null, only non-null, pick values in the column, copy the value / as a SQL literal / as JSON, open
+> the value — and on a header, pick values. Every filter entry writes a phrase in the filter grammar and hands it to
+> the chip bar's own constructor (`makeFilter`), so a filter made by a click is the same chip as one typed: visible,
+> removable, chained with the rest, round-tripped by the same parser; the value is quoted so a comma, a quote or the
+> word `or` stays one value; a NULL cell's "filter to this" is the null test. The menu offers no filter on a
+> transposed grid (its columns are not the result's) or where no chip bar exists to feed. *DE-5c:* a pick list of
+> distinct values on each column (the filter glyph in the header, or the menu), and it says where they come from:
+> `From the N rows shown`, with a count per value, when the result was not cut; when it was cut and the statement
+> reads exactly one table (`singleTable`: no join, union, CTE or subquery), the table itself, read live through the
+> door — `From the table schema.t, read live — NULL not listed`, `the first N` when the live read was cut too — with
+> no counts, since the live read has none; when it was cut and no table can be named, or the read failed, the rows'
+> values with `the result was cut, so more values may exist`. A pick of several values is an `in` list, a picked NULL
+> rides as `or … is null`, and a value `in` would split (a comma) or drop (an empty string) is said as its own `=`
+> clause. The grammar's `in` bug is fixed at the cause — the list keeps its text whole and each entry is unquoted on
+> its own. *Receipt:* `web/lib/query/cellMenu.test.ts` round-trips every phrase the menu and the picker write through
+> `parseFilter` + `applyFilters` and asserts the row SET (18 cases, among them `now or never`, `x, y` and `say "hi"`);
+> `web/components/query/ResultsGrid.test.tsx` renders the grid with the virtualizer stubbed and asserts the type
+> line, the row numbers, each menu entry's phrase, the viewer, Escape and all four source lines of the picker (15
+> cases); `resultFilter.test.ts` holds the `in` receipt; 1,490 web tests and all seven gates green (`tsc`, vars,
+> tokens, format, elements at 55, icons, palette). *Left, named:* the live read leaves NULL out by the route's `IS NOT
+> NULL`, and the picker says so; the route answers an empty list on an error, which the picker reads as "could not
+> read" and falls back to the rows — a typed refusal on that route belongs with DE-5d's door work; a live value list
+> has no counts; the picker is not offered on a transposed grid. Next: DE-5's hygiene (CSV formulas, upload types),
+> then DE-4.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

@@ -159,7 +159,7 @@ function buildPredicate(op: string, idx: number, raw: string): (row: Cell[]) => 
     case "isnull":  return (r) => r[idx] === null || r[idx] === "";
     case "notnull": return (r) => r[idx] !== null && r[idx] !== "";
     case "in": {
-      const set = value.split(/\s*,\s*/).map((v) => stripQuotes(v).toLowerCase()).filter(Boolean);
+      const set = raw.split(/\s*,\s*/).map((v) => stripQuotes(v).toLowerCase()).filter(Boolean);
       return (r) => set.includes(asText(r[idx]).toLowerCase());
     }
     default: return () => true;
@@ -238,7 +238,12 @@ export function parseFilter(phrase: string, columns: string[]): ParsedFilter {
       };
     }
 
-    const rawValue = op === "isnull" || op === "notnull" ? "" : stripQuotes(m[m.length - 1]);
+    // An `in` list keeps its text whole: stripping quotes off the LIST would take the opening
+    // quote of the first value and the closing quote of the last (`"a", "b"` → `a", "b`), and
+    // the list would then match nothing. Each entry is unquoted on its own in buildPredicate.
+    const rawValue = op === "isnull" || op === "notnull" ? ""
+      : op === "in" ? m[m.length - 1].trim()
+      : stripQuotes(m[m.length - 1]);
     return {
       clause: {
         text, column: columns[idx],

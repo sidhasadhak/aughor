@@ -31,7 +31,8 @@ import { formatCount } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type VizConfig } from "@/components/charts/vizConfig";
-import { ResultFilterBar, type ActiveFilter } from "@/components/query/ResultFilterBar";
+import { ResultFilterBar, makeFilter, type ActiveFilter } from "@/components/query/ResultFilterBar";
+import { singleTable } from "@/lib/query/cellMenu";
 import { QuickFixPanel } from "@/components/query/QuickFixPanel";
 import { SchedulePopover } from "@/components/query/SchedulePopover";
 import { Button } from "@/components/ui/button";
@@ -125,6 +126,31 @@ export function ResultsPanel({
       deferredFilters.map((f) => f.rank).filter((r): r is NonNullable<typeof r> => !!r),
     );
   }, [rawRows, deferredFilters]);
+
+  // DE-5c — a live read of a column's values, offered only when the statement reads exactly ONE
+  // table: then a result column is that table's column by name. A join, a CTE or a computed column
+  // has no one table to ask, and the picker says the rows on screen are a sample instead.
+  const sourceTable = useMemo(() => (result?.sql ? singleTable(result.sql) : null), [result?.sql]);
+  const fetchDistinct = useMemo(() => {
+    if (!connId || !sourceTable) return undefined;
+    const { table, schema } = sourceTable;
+    return async (column: string) => {
+      const { getColumnDistinct } = await import("@/lib/api");
+      const r = await getColumnDistinct(connId, table, column, schema);
+      // The route answers an empty list for a column it could not read (an alias, a refusal) as
+      // readily as for an empty column; the picker then shows the rows and says they are a sample.
+      return r.values.length ? { values: r.values, truncated: r.truncated, source: schema ? `${schema}.${table}` : table } : null;
+    };
+  }, [connId, sourceTable]);
+
+  // DE-5b — a chip from a click on the grid: the same object a typed phrase makes, and the bar
+  // opens with it, so the chip is seen the moment it narrows the rows.
+  const addFilterPhrase = (phrase: string) => {
+    const made = makeFilter(phrase, columns);
+    if (!made) return;
+    setFilters(prev => [...prev, made]);
+    setShowFilters(true);
+  };
 
   if (running && !result) {
     return <div style={{ ...noteStyle, padding: "12px 14px" }}>Running…</div>;
@@ -406,6 +432,9 @@ export function ResultsPanel({
                 columns={columns}
                 columnsTyped={result.columns_typed}
                 rows={rows}
+                onAddFilter={addFilterPhrase}
+                truncated={!!result.truncated}
+                fetchDistinct={fetchDistinct}
               />
             </div>
             {/* Every viz stays MOUNTED — the card seeds its controls once, so an

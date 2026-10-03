@@ -26,6 +26,17 @@ export interface ActiveFilter {
 
 let seq = 0;
 
+/** One chip from one phrase, or null when the phrase is empty or parses to nothing. The bar's own
+ *  input and the grid's right-click menu (DE-5b) make chips through this one door, so a filter made
+ *  by a click is the same object as one typed. */
+export function makeFilter(text: string, columns: string[]): ActiveFilter | null {
+  const phrase = text.trim();
+  if (!phrase) return null;
+  const { clause, rank } = parseFilter(phrase, columns);
+  if (!clause && !rank) return null;
+  return { id: `f${++seq}`, clause, rank, label: phrase };
+}
+
 export function ResultFilterBar({
   columns,
   filters,
@@ -42,11 +53,9 @@ export function ResultFilterBar({
   const [draft, setDraft] = useState("");
 
   function add() {
-    const text = draft.trim();
-    if (!text) return;
-    const { clause, rank } = parseFilter(text, columns);
-    if (!clause && !rank) return;
-    onChange([...filters, { id: `f${++seq}`, clause, rank, label: text }]);
+    const made = makeFilter(draft, columns);
+    if (!made) return;
+    onChange([...filters, made]);
     setDraft("");
   }
 

@@ -40,10 +40,14 @@ import { formatCount, isNumericType } from "@/lib/format";
 import { cellStats, selectionToTsv, statText, type Cell as StatCell } from "@/lib/query/cellStats";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { CellMenu, type CellMenuTarget } from "@/components/query/CellMenu";
+import { ColumnValuePicker, type LiveDistinct } from "@/components/query/ColumnValuePicker";
+import { NULL_GLYPH } from "@/lib/query/cellMenu";
 import type { TypedColumn } from "@/lib/api";
 
-/** The glyph for a real SQL NULL. Distinct from "" on purpose. */
-export const NULL_GLYPH = "∅";
+/** The glyph for a real SQL NULL. Distinct from "" on purpose — defined beside the cell helpers (DE-5b),
+ *  so the menu and the picker share it without importing the grid. */
+export { NULL_GLYPH };
 
 type Cell = string | number | boolean | null;
 type Row = Record<string, Cell>;
@@ -60,8 +64,14 @@ const features = tableFeatures({
 const helper = createColumnHelper<typeof features, Row>();
 
 const ROW_HEIGHT = 30;
-/** The sticky header's height — the scroll maths has to allow for it. */
+/** The sticky header's height — the scroll maths has to allow for it. Two lines when the declared
+ *  types are shown under the names (DE-5a). */
 const HEADER_H = 30;
+const HEADER_H_TYPED = 44;
+/** The row-number column (DE-5a): wide enough for the row count's digits, never narrower than a glyph. */
+const rowNumberWidth = (n: number) => Math.max(36, String(n).length * 8 + 20);
+/** The control bar's height, which the value picker sits under. */
+const CONTROL_BAR_H = 31;
 
 // ── The data editor's own state ──────────────────────────────────────────────
 
@@ -96,10 +106,21 @@ export function ResultsGrid({
   columnsTyped,
   rows,
   maxHeight,
+  onAddFilter,
+  truncated,
+  fetchDistinct,
 }: {
   columns: string[];
   columnsTyped?: TypedColumn[];
   rows: Cell[][];
+  /** DE-5b/c — a phrase for the filter chips (the grammar in `lib/query/resultFilter`). Absent, the
+   *  right-click menu offers only copy and open, and no column has a value picker. */
+  onAddFilter?: (phrase: string) => void;
+  /** DE-5c — the result was cut at its row limit, so the rows are a sample of each column. */
+  truncated?: boolean;
+  /** DE-5c — read a column's distinct values from the table itself; the panel provides it when the
+   *  statement reads exactly one table. Resolves null when the table could not be read. */
+  fetchDistinct?: (column: string) => Promise<LiveDistinct | null>;
   /** Omit to FILL the parent and scroll internally — which is what virtualization
    *  needs. The virtualizer measures the element it is told to scroll; if that
    *  element never scrolls (because an ancestor does, or because the height is
@@ -125,6 +146,10 @@ export function ResultsGrid({
   const [findIdx, setFindIdx] = useState(0);
   const [goto, setGoto] = useState<string | null>(null);
   const findRef = useRef<HTMLInputElement>(null);
+  // DE-5b/c — the right-click menu and the value picker. The picker is keyed by the VISIBLE column
+  // index, like the selection, so a hidden column cannot leave it pointing at the wrong one.
+  const [menu, setMenu] = useState<CellMenuTarget | null>(null);
+  const [picker, setPicker] = useState<number | null>(null);
 
   const numeric = useMemo(() => {
     const out = new Set<string>();
@@ -137,6 +162,7 @@ export function ResultsGrid({
   const shapeKey = `${columns.join("\u0000")}|${rows.length}`;
   useEffect(() => {
     setSel(null); setHidden(new Set()); setTransposed(false); setShowValue(false);
+    setMenu(null); setPicker(null);
   }, [shapeKey]);
 
   // ── Transpose ──────────────────────────────────────────────────────────────
@@ -157,6 +183,12 @@ export function ResultsGrid({
     () => view.columns.map((_, i) => i).filter(i => !hidden.has(String(i))),
     [view.columns, hidden],
   );
+
+  // DE-5a — the declared type under each name, from the typed payload. Nothing is shown for a
+  // legacy result (it declared none) or a transposed grid (its columns are not the result's).
+  const typedShown = !transposed && !!columnsTyped?.length;
+  const typeOf = (i: number): string => (typedShown ? (columnsTyped?.[i]?.type ?? "") : "");
+  const headerH = typedShown ? HEADER_H_TYPED : HEADER_H;
 
   // Rows arrive positionally; the table model is keyed. Index-based keys rather than
   // column names, because a result set may legally repeat a name (`SELECT a, a`) and
@@ -201,6 +233,9 @@ export function ResultsGrid({
   });
 
   const totalWidth = table.getTotalSize();
+  const rowW = rowNumberWidth(modelRows.length);
+  const headers0 = table.getHeaderGroups()[0]?.headers ?? [];
+  const pickerLeft = picker === null ? 0 : headers0.slice(0, picker).reduce((a, h) => a + h.getSize(), 0);
 
   // ── Selection ──────────────────────────────────────────────────────────────
   // Indices are into the RENDERED grid (`modelRows` order, `visibleIdx` order), so a
@@ -276,10 +311,10 @@ export function ResultsGrid({
     const top = sel.r1 * ROW_HEIGHT;
     const el = scrollRef.current;
     if (top < el.scrollTop) el.scrollTop = top;
-    else if (top + ROW_HEIGHT > el.scrollTop + el.clientHeight - HEADER_H) {
-      el.scrollTop = top + ROW_HEIGHT - el.clientHeight + HEADER_H;
+    else if (top + ROW_HEIGHT > el.scrollTop + el.clientHeight - headerH) {
+      el.scrollTop = top + ROW_HEIGHT - el.clientHeight + headerH;
     }
-  }, [sel]);
+  }, [sel, headerH]);
 
   // Every cell matching the find query, in reading order. Computed over the MODEL, not
   // the DOM: only ~30 rows are mounted at a time, so a DOM search would find matches
@@ -475,7 +510,7 @@ export function ResultsGrid({
       }}
       className="aug-fs-ui"
     >
-      <div style={{ width: totalWidth, minWidth: "100%" }}>
+      <div style={{ width: totalWidth + rowW, minWidth: "100%" }}>
         {/* Sticky header. `position: sticky` on the scroll container's own child keeps
             the column names visible through a 10k-row scroll — the thing that made the
             old grid unreadable past the first screen. */}
@@ -487,29 +522,62 @@ export function ResultsGrid({
               background: "var(--bg-1)", borderBottom: "1px solid var(--b1)",
             }}
           >
-            {group.headers.map(header => {
+            {/* DE-5a — the row-number column's head. */}
+            <div className="aug-fs-xs" data-testid="grid-rownum-header" aria-label="Row number"
+              style={{ ...cellBase, width: rowW, flexShrink: 0, borderBottom: "none", height: headerH,
+                lineHeight: `${headerH}px`, color: "var(--t3)", textAlign: "right", userSelect: "none" }}>
+              #
+            </div>
+            {group.headers.map((header, ci) => {
               const sorted = header.column.getIsSorted();
+              const name = String(header.column.columnDef.header);
+              const colIdx = Number(header.column.id);
+              const type = typeOf(colIdx);
               return (
                 <div
                   key={header.id}
                   style={{
                     ...cellBase, width: header.getSize(), flexShrink: 0,
-                    borderBottom: "none", position: "relative",
+                    borderBottom: "none", position: "relative", height: headerH, lineHeight: "18px",
                     display: "flex", alignItems: "center", gap: 4,
-                    justifyContent: view.numeric.has(String(header.column.columnDef.header))
-                      ? "flex-end" : "flex-start",
+                    justifyContent: view.numeric.has(name) ? "flex-end" : "flex-start",
                     color: "var(--t3)", fontWeight: 600, cursor: "pointer",
                     userSelect: "none",
                   }}
                   onClick={header.column.getToggleSortingHandler()}
-                  title={`${header.column.columnDef.header} — click to sort`}
+                  onContextMenu={e => {
+                    e.preventDefault();
+                    setMenu({ x: e.clientX, y: e.clientY, col: ci, column: name, value: null, header: true });
+                  }}
+                  title={`${name} — click to sort`}
                 >
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {header.isPlaceholder ? null : <table.FlexRender header={header} />}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", display: "flex",
+                    flexDirection: "column", minWidth: 0 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {header.isPlaceholder ? null : <table.FlexRender header={header} />}
+                    </span>
+                    {/* DE-5a — the declared type, under the name, in the type's own words. */}
+                    {typedShown && (
+                      <span className="aug-fs-xs" data-testid="grid-col-type"
+                        style={{ color: "var(--t3)", fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {type}
+                      </span>
+                    )}
                   </span>
                   {/* The arrow is drawn only when a sort is active: a permanent pair of
                       faded arrows on every column is noise on a wide result. */}
                   {sorted && <span style={{ color: "var(--t3)" }}>{sorted === "desc" ? "↓" : "↑"}</span>}
+                  {/* DE-5c — the column's values, to pick a filter from. Only where a chip bar exists
+                      to feed, and never on a transposed grid, whose columns are not the result's. */}
+                  {onAddFilter && !transposed && (
+                    <Button variant={picker === ci ? "secondary" : "ghost"} size="icon-xs"
+                      aria-label={`Pick values in ${name}`} title={`Pick values in ${name}`}
+                      data-testid="grid-col-pick"
+                      onClick={e => { e.stopPropagation(); setPicker(p => (p === ci ? null : ci)); }}
+                      style={{ marginRight: 4 }}>
+                      <Icon name="filter" size={11} />
+                    </Button>
+                  )}
                   <div
                     onMouseDown={header.getResizeHandler?.()}
                     onTouchStart={header.getResizeHandler?.()}
@@ -537,6 +605,13 @@ export function ResultsGrid({
                   width: "100%", transform: `translateY(${item.start}px)`,
                 }}
               >
+                {/* DE-5a — the row's number, in the order on screen: the same number the value viewer
+                    says and go-to-row takes. Not a cell: it is not selected, copied or filtered. */}
+                <div className="aug-fs-xs" data-testid="grid-rownum"
+                  style={{ ...cellBase, width: rowW, flexShrink: 0, color: "var(--t3)", textAlign: "right",
+                    fontVariantNumeric: "tabular-nums", background: "var(--bg-1)", userSelect: "none" }}>
+                  {item.index + 1}
+                </div>
                 {row.getAllCells().map((cell, ci) => {
                   const value = cell.getValue() as Cell;
                   const isNull = value === null;
@@ -564,6 +639,15 @@ export function ResultsGrid({
                         if (dragging.current) setSel(prev => prev ? { ...prev, r1: item.index, c1: ci } : prev);
                       }}
                       onDoubleClick={() => setShowValue(true)}
+                      // DE-5b — the right-click menu: the cell becomes the selection, so "open
+                      // value" and the viewer agree on which cell is meant.
+                      onContextMenu={e => {
+                        e.preventDefault();
+                        scrollRef.current?.focus();
+                        setShowColumnMenu(false);
+                        setSel({ r0: item.index, c0: ci, r1: item.index, c1: ci });
+                        setMenu({ x: e.clientX, y: e.clientY, col: ci, column: name, value });
+                      }}
                       style={{
                         ...cellBase, width: cell.column.getSize(), flexShrink: 0,
                         textAlign: view.numeric.has(name) ? "right" : "left",
@@ -590,9 +674,35 @@ export function ResultsGrid({
 
   return (
     <div style={maxHeight === undefined
-      ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }
-      : { display: "flex", flexDirection: "column" }}>
+      ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }
+      : { display: "flex", flexDirection: "column", position: "relative" }}>
       {controlBar}
+      {menu && (
+        <CellMenu
+          target={menu}
+          canFilter={!!onAddFilter && !transposed}
+          onFilter={phrase => onAddFilter?.(phrase)}
+          onPickValues={() => setPicker(menu.col)}
+          onOpenValue={() => setShowValue(true)}
+          onClose={() => setMenu(null)}
+        />
+      )}
+      {picker !== null && onAddFilter && !transposed && visibleIdx[picker] !== undefined && (
+        <ColumnValuePicker
+          key={`${shapeKey}|${picker}`}
+          column={view.columns[visibleIdx[picker]]}
+          rows={view.rows}
+          columnIndex={visibleIdx[picker]}
+          truncated={!!truncated}
+          fetchDistinct={fetchDistinct}
+          onApply={onAddFilter}
+          onClose={() => setPicker(null)}
+          style={{
+            top: CONTROL_BAR_H + headerH,
+            left: Math.max(0, Math.min(rowW + pickerLeft, (scrollRef.current?.clientWidth ?? Infinity) - 300)),
+          }}
+        />
+      )}
       {transposed && view.transposeCut > 0 && (
         <div className="aug-fs-xs" style={{ padding: "3px 10px", color: "var(--t3)",
           background: "var(--bg-1)", borderBottom: "1px solid var(--b0)" }}>

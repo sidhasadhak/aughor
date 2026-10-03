@@ -52,3 +52,23 @@ describe("parseFilter OR", () => {
     expect(clause?.describe).toContain("amount greater than 25");
   });
 });
+
+describe("parseFilter in — a quoted list (DE-5c's picker writes one)", () => {
+  it("matches each quoted entry; the list's own outer quotes are not stripped as a pair", () => {
+    // Before DE-5c, stripQuotes ran on the whole list and turned `"active", "pending"` into
+    // `active", "pending`, which matched nothing — silently, as an empty grid.
+    expect(filtered('status in "active", "pending"').map(r => r[0])).toEqual(["Portugal", "Spain"]);
+    expect(filtered("status in 'active', 'closed'").map(r => r[0])).toEqual(["Portugal", "France", "Portugal"]);
+  });
+
+  it("still takes a bare list, and a list of one", () => {
+    expect(filtered("status in active, pending").map(r => r[0])).toEqual(["Portugal", "Spain"]);
+    expect(filtered('status in "active"').map(r => r[0])).toEqual(["Portugal"]);
+    expect(filtered("status one of active").map(r => r[0])).toEqual(["Portugal"]);
+  });
+
+  it("names the list in the chip's description", () => {
+    const { clause } = parseFilter('status in "active", "pending"', columns);
+    expect(clause?.describe).toBe('status one of "active", "pending"');
+  });
+});
