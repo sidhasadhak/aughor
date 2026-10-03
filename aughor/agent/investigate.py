@@ -10313,6 +10313,46 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     return out
 
 
+# ── What became of the report's cause-and-effect claims (PENDING: Hub — "a deep report does not
+# record whether its cause-and-effect claims survived their own checks") ─────────────────────
+
+def _refutation_record(verdict) -> dict:
+    """The skeptic's outcome as a record: ``refuted`` or ``survived``, and its reason."""
+    if verdict is None:
+        return {"status": "not_run", "why": "the skeptic returned no verdict"}
+    return {"status": "refuted" if getattr(verdict, "refuted", False) else "survived",
+            "reason": (getattr(verdict, "reason", "") or "").strip(),
+            "alternative": (getattr(verdict, "alternative", None) or "").strip()}
+
+
+def _reader_text(report: dict) -> str:
+    """The prose a reader of the report reads: headline, summaries, recommendations."""
+    parts = [str(report.get(k) or "") for k in ("headline", "executive_summary", "closing_summary")]
+    for rec in report.get("recommendations") or []:
+        parts.extend(str(v) for v in (rec.values() if isinstance(rec, dict) else [rec]) if isinstance(v, str))
+    return " ".join(p.strip() for p in parts if p and p.strip())
+
+
+def _attach_causal_checks(report: dict, licence: str, refutation: dict) -> None:
+    """Record ``causal_checks`` on the report — the licence its design gave, every causal sentence
+    the reader will see, and what became of the one check that could refute a conclusion — and,
+    when the report names a cause nothing challenged, say so among its caveats.
+
+    Deterministic: no model call. The skeptic itself runs upstream (`_adversarial_should_run`);
+    this only stops "survived" and "never asked" from reading the same."""
+    from aughor.agent.claim_type import sentence_claims
+    causal = [{"sentence": s, "verb": v} for s, t, v in sentence_claims(_reader_text(report))
+              if t == "causal"]
+    report["causal_checks"] = {"licence": licence or "", "claims": causal, "refutation": dict(refutation)}
+    if causal and refutation.get("status") == "not_run":
+        note = ("Not independently challenged: this report names a cause, and no check tried to "
+                f"refute it — {refutation.get('why') or 'the check did not run'}.")
+        gaps = list(report.get("data_gaps") or [])
+        if note not in gaps:
+            gaps.append(note)
+        report["data_gaps"] = gaps
+
+
 # ── T4-3 / P5: tiered adversarial verification ─────────────────────────────────────────
 def _adversarial_should_run(synth) -> bool:
     """Whether the refuter should spend its ONE skeptic LLM call on this verdict. The
@@ -10973,20 +11013,31 @@ def ada_synthesize(state: AgentState) -> dict:
     # bites. That materiality test is the gate — a flag on top of it only ever answered a
     # question the trigger had already answered. (The always-challenge full tier was
     # deleted 2026-07-31 — flag strategy §4G.)
+    # What became of that check is RECORDED either way (`causal_checks` below): before, a
+    # verdict that survived the skeptic and one the skeptic never saw looked the same.
+    _refutation: dict = {"status": "not_run", "why": "no report was synthesized"}
     if synth:
         try:
             from aughor.agent.orchestrator import is_decision_changing_verdict
-            if is_decision_changing_verdict(synth.headline, synth.executive_summary) \
-                    and _adversarial_should_run(synth):
+            _decisive = is_decision_changing_verdict(synth.headline, synth.executive_summary)
+            if _decisive and _adversarial_should_run(synth):
                 from aughor.agent.explore import run_refutation
                 _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
                 _apply_adversarial_refutation(synth, _verdict)
+                _refutation = _refutation_record(_verdict)
                 from aughor.kernel import metering               # Activation Receipt (Wave 1·E3)
                 metering.record_activation("deep_analysis.adversarial_high_stakes")
+            else:
+                _refutation = {"status": "not_run", "why": (
+                    "the check runs only on a verdict that changes a decision, and this one does not"
+                    if not _decisive else
+                    f"the check runs only on a HIGH-confidence verdict, and this one is "
+                    f"{(synth.confidence or 'unstated').upper()}")}
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "adversarial verification is best-effort; report proceeds",
                      counter="deep_analysis.adversarial")
+            _refutation = {"status": "not_run", "why": "the check failed to run"}
 
     # F3/F2 — a CROSS-SECTIONAL scan ranks the metric ACROSS dimensions at a point in time; it
     # measures no temporal change, so:
@@ -11194,6 +11245,10 @@ def ada_synthesize(state: AgentState) -> dict:
     # already says a sentence was withheld, and this is what a person auditing the run reads to learn which.
     if _withheld:
         answer_report["withheld"] = _withheld
+
+    # Whether each cause-and-effect claim the reader will see was ever put to a check that could
+    # have refuted it — recorded as a FIELD the departure gate reads, and said where it was not.
+    _attach_causal_checks(answer_report, _recorded_claim_licence(intake_data, phases), _refutation)
 
     # Also produce a legacy AnalysisReport for backward compat (history, cache)
     from aughor.agent.state import AnalysisReport, Finding

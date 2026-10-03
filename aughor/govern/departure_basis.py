@@ -77,9 +77,22 @@ def analysis_claim_facts(investigation_id: str) -> tuple[str, bool]:
     if not report:
         return "", False
     m = _LICENCE_RE.search(json.dumps(report, default=str))
-    refuted = any("adversarial verification challenged" in str(g).lower()
-                  for g in (report.get("data_gaps") or []))
+    checks = report.get("causal_checks") if isinstance(report.get("causal_checks"), dict) else {}
+    if checks:                      # the typed record; the prose match below is for older reports
+        refuted = (checks.get("refutation") or {}).get("status") == "refuted"
+    else:
+        refuted = any("adversarial verification challenged" in str(g).lower()
+                      for g in (report.get("data_gaps") or []))
     return (m.group(1) if m else ""), refuted
+
+
+def analysis_refutation(investigation_id: str) -> dict:
+    """What became of the analysis's refutation check — ``{"status": "refuted" | "survived" |
+    "not_run", …}`` from the report's ``causal_checks`` — or ``{}`` for a report that recorded none."""
+    inv = _analysis_record(investigation_id)
+    report = inv.get("report") if inv and isinstance(inv.get("report"), dict) else {}
+    checks = report.get("causal_checks") if isinstance(report.get("causal_checks"), dict) else {}
+    return dict(checks.get("refutation") or {})
 
 
 def _analysis_record(investigation_id: str) -> dict:
