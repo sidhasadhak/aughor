@@ -2366,6 +2366,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/charts/png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Chart Png Route
+         * @description The chart as a PNG on white, by the one rasterizer (`export.echarts.svg_to_png`).
+         *     204 when there is no honest chart OR no raster — both mean "post the table instead".
+         */
+        post: operations["render_chart_png_route_charts_png_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/charts/svg": {
         parameters: {
             query?: never;
@@ -4655,6 +4676,29 @@ export interface paths {
         get: operations["stream_events_events_stream_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exhibits/table": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Exhibit Table
+         * @description The grid as a door will show it, by the one table builder (`answer.exhibit`).
+         *
+         *     `show` is false for a grid whose one number the sentence already said; `csv` carries
+         *     every row, values as stored, whenever the markdown does not.
+         */
+        post: operations["render_exhibit_table_exhibits_table_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13833,6 +13877,64 @@ export interface components {
             to_path: string;
         };
         /**
+         * ChartPngRequest
+         * @description `/charts/svg`'s request, plus the raster scale (2× is legible on a retina screen).
+         */
+        ChartPngRequest: {
+            /** Chart Config */
+            chart_config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Chart Type
+             * @default auto
+             */
+            chart_type: string;
+            /** Column Units */
+            column_units?: {
+                [key: string]: unknown;
+            } | null;
+            /** Columns */
+            columns?: string[];
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+            /**
+             * Labels
+             * @default true
+             */
+            labels: boolean;
+            /**
+             * Money Symbol
+             * @default
+             */
+            money_symbol: string;
+            /** Rows */
+            rows?: unknown[][];
+            /**
+             * Scale
+             * @default 2
+             */
+            scale: number;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Width
+             * @default 760
+             */
+            width: number;
+        };
+        /**
          * ChartSvgRequest
          * @description One chart request, in the vocabulary the `/ask` stream already speaks:
          *     `columns` + `rows` as the grid frames carry them, `chart_type` as the
@@ -14476,6 +14578,47 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * ExhibitTableRequest
+         * @description A grid and the door's encodings. `rest` is what the caption says about the rows a
+         *     preview leaves out — the door knows where they went ("attached as CSV").
+         */
+        ExhibitTableRequest: {
+            /** Columns */
+            columns?: string[];
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Max Cols
+             * @default 6
+             */
+            max_cols: number;
+            /**
+             * Max Rows
+             * @default 10
+             */
+            max_rows: number;
+            /**
+             * Money Symbol
+             * @default
+             */
+            money_symbol: string;
+            /**
+             * Preview Rows
+             * @default 5
+             */
+            preview_rows: number;
+            /**
+             * Rest
+             * @default the full result is attached as CSV
+             */
+            rest: string;
+            /** Rows */
+            rows?: unknown[][];
         };
         /** FactCheckRequest */
         FactCheckRequest: {
@@ -22337,6 +22480,39 @@ export interface operations {
             };
         };
     };
+    render_chart_png_route_charts_png_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChartPngRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     render_chart_svg_route_charts_svg_post: {
         parameters: {
             query?: never;
@@ -25956,6 +26132,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    render_exhibit_table_exhibits_table_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExhibitTableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

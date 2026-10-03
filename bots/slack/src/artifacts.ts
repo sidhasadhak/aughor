@@ -1,17 +1,19 @@
 /**
- * RC-2 — the visual half of an answer, shaped for Slack.
+ * CP-5 — the turn's table, as the platform formats it, shaped for Slack.
  *
- * Slack has no table widget. A GFM table renders (the SDK's streaming healer
- * even buffers one until its separator row lands), but only while it is narrow
- * enough not to wrap into mush — past roughly six columns a table stops being
- * readable in a thread and starts being a wall. So the rule here is a shape
- * rule, not a size rule: narrow-and-short renders inline, everything else rides
- * as a CSV the reader can open in the tool they were going to open it in
- * anyway, and a preview goes above it so the thread still shows the answer.
+ * This file used to BUILD the table (`gfmTable`, `renderGrid`, `toCsv`): one of the three
+ * unshared answers to "show a table" that Arc CP's census counted, and the one that posted
+ * `54496.64009666443` into a thread, because it formatted no cell. The table is now built
+ * once, in Python (`aughor/answer/exhibit.py`, by the web table's own rule), and this file
+ * asks for it through `POST /exhibits/table` with Slack's ENCODINGS — the only part of a
+ * table this door owns:
  *
- * Whatever is trimmed says so. A table captioned as if it were whole, when it
- * is the first five rows of nine hundred, is the failure this file exists to
- * avoid — the reader cannot see the difference, which is exactly why it matters.
+ * Slack has no table widget. A GFM table renders, but only while it is narrow enough not
+ * to wrap into mush — past roughly six columns a table stops being readable in a thread and
+ * starts being a wall. So narrow-and-short renders inline, everything else rides as a CSV
+ * the reader can open in the tool they were going to open it in anyway, with a preview above
+ * it so the thread still shows the answer. Whatever is trimmed says so: the caption comes
+ * back with the table.
  */
 
 /** Past this many columns a Slack table wraps into an unreadable block. */
@@ -26,90 +28,58 @@ export interface Grid {
   rows: unknown[][];
 }
 
-/** One cell, as text. `null` is empty — not the string "null", which reads as data. */
-export function cell(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
-
-/** A GFM table. Pipes are escaped, or one value silently becomes two columns. */
-export function gfmTable({ columns, rows }: Grid): string {
-  if (!columns.length) return "";
-  const esc = (s: string) => s.replace(/\|/g, "\\|").replace(/\n/g, " ");
-  const head = `| ${columns.map((c) => esc(cell(c))).join(" | ")} |`;
-  const rule = `| ${columns.map(() => "---").join(" | ")} |`;
-  const body = rows.map(
-    (r) => `| ${columns.map((_, i) => esc(cell(r[i]))).join(" | ")} |`,
-  );
-  return [head, rule, ...body].join("\n");
-}
-
-/** RFC 4180: quote anything containing a delimiter, a quote, or a newline. */
-export function toCsv({ columns, rows }: Grid): string {
-  const q = (v: unknown) => {
-    const s = cell(v);
-    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return [columns.map(q).join(","), ...rows.map((r) => columns.map((_, i) => q(r[i])).join(","))]
-    .join("\n");
-}
-
-/** Narrow AND short: the only grid a thread renders without becoming a wall. */
-export function fitsInline({ columns, rows }: Grid): boolean {
-  return columns.length > 0 && columns.length <= MAX_INLINE_COLS && rows.length <= MAX_INLINE_ROWS;
-}
-
-/**
- * Is this grid worth a second message at all?
- *
- * A quick answer's result is usually one number in one cell, and the prose
- * above it already said that number. Posting "| revenue |\n| €1.2M |" under a
- * sentence that reads "revenue was €1.2M" is pure noise, so a grid earns its
- * exhibit only by having a shape — more than one row, or enough columns to be
- * a breakdown rather than a restatement.
- */
-export function worthShowing({ columns, rows }: Grid): boolean {
-  if (!columns.length || !rows.length) return false;
-  return rows.length > 1 || columns.length > 2;
-}
-
-export interface GridRendering {
-  /** Markdown to post — the whole table, a preview of it, or nothing. */
+export interface TableRendering {
+  /** Markdown to post — the whole table, a captioned preview of it, or a caption alone. */
   markdown: string;
-  /** The full grid as CSV when the markdown does not carry every row. */
+  /** Every row as CSV when the markdown does not carry them all. */
   csv: string | null;
 }
 
-/**
- * The grid, rendered for a thread. Three outcomes, and the caption always names
- * which one happened:
- *
- * - narrow and short → the whole table, no attachment;
- * - narrow but long → the first rows, plus a CSV holding all of them;
- * - wide → no table at all (it would not read), just the CSV.
- */
-export function renderGrid(grid: Grid): GridRendering {
-  const { columns, rows } = grid;
-  if (!columns.length || !rows.length) return { markdown: "", csv: null };
+/** `null` when there is nothing worth a second message — a one-number result the prose
+ *  already said — or when the platform could not be asked; the answer is already posted. */
+export type TableRenderer = (grid: Grid) => Promise<TableRendering | null>;
 
-  if (fitsInline(grid)) return { markdown: gfmTable(grid), csv: null };
+interface Env {
+  AUGHOR_API_URL?: string;
+  AUGHOR_API_KEY?: string;
+  AUGHOR_CONNECTION_ID?: string;
+}
 
-  const csv = toCsv(grid);
-  if (columns.length > MAX_INLINE_COLS) {
-    // No preview: a wide table's first rows are as unreadable as all of them.
-    return {
-      markdown: `_${rows.length} row${rows.length === 1 ? "" : "s"} × ${columns.length} columns — attached as CSV._`,
-      csv,
-    };
-  }
-  const shown = Math.min(PREVIEW_ROWS, rows.length);
-  return {
-    markdown: [
-      gfmTable({ columns, rows: rows.slice(0, shown) }),
-      `_Showing ${shown} of ${rows.length} rows — the full result is attached as CSV._`,
-    ].join("\n\n"),
-    csv,
+export function createTableRenderer(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): TableRenderer {
+  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  // The connection names the org whose currency a money column reads in — never on the
+  // `/ask` wire, so it rides here the way it rides on the chart request.
+  const connection = env.AUGHOR_CONNECTION_ID ?? "workspace";
+
+  return async function renderTable({ columns, rows }) {
+    if (!columns.length || !rows.length) return null;
+    try {
+      const res = await fetchImpl(`${base}/exhibits/table`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {}),
+        },
+        body: JSON.stringify({
+          columns, rows,
+          max_cols: MAX_INLINE_COLS, max_rows: MAX_INLINE_ROWS, preview_rows: PREVIEW_ROWS,
+          rest: "the full result is attached as CSV",
+          connection_id: connection,
+        }),
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { show?: boolean; markdown?: unknown; csv?: unknown };
+      if (!body.show) return null;
+      return {
+        markdown: typeof body.markdown === "string" ? body.markdown : "",
+        csv: typeof body.csv === "string" ? body.csv : null,
+      };
+    } catch {
+      return null; // the API went away after answering; the answer itself already landed
+    }
   };
 }
 

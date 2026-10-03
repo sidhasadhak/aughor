@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from aughor.answer import AnswerEnvelope, Grid, lift_tables
 from aughor.answer.doors import (
-    gfm_table, render_grid_markdown, select_for_slack, slack_message,
+    render_grid_markdown, select_for_slack, slack_message,
 )
 from aughor.answer.envelope import first_line, fold_frames
 
@@ -178,14 +178,14 @@ def test_first_line_strips_heading_marks_and_emphasis():
 def test_the_old_shape_said_it_twice_and_the_envelope_cannot():
     grid = Grid(columns=COLUMNS, rows=ROWS)
     # The old path: the prose the model wrote, then the transport's grid under it.
-    old_message = PROSE + "\n\n" + gfm_table(grid)
+    old_message = PROSE + "\n\n" + render_grid_markdown(grid)
     # "Swim" appears only as a row — once in the model's table, once in the grid.
     assert old_message.count("Swim") == 2, "the defect did not reproduce"
 
     env = fold_frames(converse_frames())
     new_message = slack_message(env)
     assert new_message.count("Swim") == 1
-    assert "| Jeans | 30110.0 |" in new_message      # the grid, once, from the field
+    assert "| Jeans | 30,110.00 |" in new_message    # the grid, once, from the field (CP-5: formatted)
     assert "| 2 | Jeans |" not in new_message         # the prose copy is gone
 
 
@@ -206,12 +206,12 @@ def test_slack_selection_takes_headline_body_grid_once_and_two_caveats():
     env = env.model_copy(update={"caveats": ["one", "two", "three"]})
     sel = select_for_slack(env)
     assert sel.text.startswith("Outerwear & Coats led revenue")
-    assert sel.table.startswith("| product_category | revenue |")
+    assert sel.table.startswith("| Product Category | Revenue |")
     assert sel.caveats == ["one", "two"]
     assert sel.chart is not None and sel.chart.chart_type == "bar"
     msg = slack_message(env)
     assert "⚠️ one" in msg and "⚠️ two" in msg and "three" not in msg
-    assert "```\n| product_category" in msg
+    assert "```\n| Product Category" in msg
 
 
 def test_a_one_number_result_earns_no_table():
@@ -406,7 +406,7 @@ def test_the_export_takes_every_field_of_the_envelope(monkeypatch):
     assert headings == ["Summary", "Evidence", "Caveats", "Questions to ask next", "Query", "Checks"]
     assert doc.title == env["headline"] and doc.subtitle == "top categories"
     table = next(b for b in doc.blocks if b.kind == "table")
-    assert table.columns == COLUMNS and table.rows[0][0] == "Outerwear & Coats"
+    assert table.columns == ["Product Category", "Revenue"] and table.rows[0][0] == "Outerwear & Coats"
     checks = [b for b in doc.blocks if b.kind == "bullets"][-1]
     assert checks.items == ["numeric grounding — rewrote the answer — number(s) not present in the result: 99"]
     code = next(b for b in doc.blocks if b.kind == "code")

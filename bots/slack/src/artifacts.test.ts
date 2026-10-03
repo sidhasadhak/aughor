@@ -1,106 +1,65 @@
 /**
- * The exhibit rules. The one that matters most is the last group: whatever is
- * trimmed has to SAY it was trimmed, because a reader cannot tell the first
- * five rows of nine hundred from the whole result by looking.
+ * The table edge (CP-5). The bot formats nothing: it asks the platform's one table builder
+ * with Slack's encodings and posts what comes back. So these tests pin the REQUEST (the grid,
+ * the three numbers that are this door's, the connection whose currency a money column reads
+ * in) and that every way of not getting an answer degrades to "no table message", never to a
+ * table the bot drew itself. What the table LOOKS like is pinned in Python, beside the rule
+ * (`tests/unit/test_exhibit_formatter.py`).
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  cell, csvFilename, fitsInline, gfmTable, renderGrid, toCsv, worthShowing,
-} from "./artifacts.js";
+import { createTableRenderer, csvFilename, MAX_INLINE_COLS, MAX_INLINE_ROWS, PREVIEW_ROWS } from "./artifacts.js";
 
-describe("cell", () => {
-  it("renders null as empty, never as the word", () => {
-    // The connector already renders SQL NULL as the literal string "NULL" in one
-    // place; a second surface doing it would make an absent value read as data.
-    expect(cell(null)).toBe("");
-    expect(cell(undefined)).toBe("");
-    expect(cell(0)).toBe("0");
-    expect(cell(false)).toBe("false");
-    expect(cell({ a: 1 })).toBe('{"a":1}');
-  });
-});
+const GRID = { columns: ["region", "revenue"], rows: [["East", 54496.64009666443], ["West", 9]] as unknown[][] };
 
-describe("gfmTable", () => {
-  it("renders a header, a rule and one row per record", () => {
-    expect(gfmTable({ columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]] })).toBe(
-      ["| region | revenue |", "| --- | --- |", "| East | 12 |", "| West | 9 |"].join("\n"),
+describe("createTableRenderer", () => {
+  it("asks the platform with Slack's encodings, and posts what it formatted", async () => {
+    let seen: { url: string; body: Record<string, unknown> } | null = null;
+    const render = createTableRenderer(
+      { AUGHOR_API_URL: "http://api.test/", AUGHOR_API_KEY: "k", AUGHOR_CONNECTION_ID: "thelook" },
+      async (url, init) => {
+        seen = { url: String(url), body: JSON.parse(String(init?.body)) };
+        expect((init?.headers as Record<string, string>)["x-api-key"]).toBe("k");
+        return Response.json({ show: true, markdown: "| Region | Revenue |\n| --- | --- |\n| East | $54,496.64 |", csv: null });
+      },
     );
+    const table = await render(GRID);
+    expect(seen!.url).toBe("http://api.test/exhibits/table");
+    expect(seen!.body).toEqual({
+      ...GRID,
+      max_cols: MAX_INLINE_COLS, max_rows: MAX_INLINE_ROWS, preview_rows: PREVIEW_ROWS,
+      rest: "the full result is attached as CSV",
+      connection_id: "thelook",
+    });
+    expect(table).toEqual({ markdown: "| Region | Revenue |\n| --- | --- |\n| East | $54,496.64 |", csv: null });
   });
 
-  it("escapes pipes and newlines — one value must not become two columns", () => {
-    const md = gfmTable({ columns: ["note"], rows: [["a|b"], ["two\nlines"]] });
-    expect(md).toContain("| a\\|b |");
-    expect(md).toContain("| two lines |");
-    expect(md.split("\n")).toHaveLength(4);
-  });
-});
-
-describe("toCsv", () => {
-  it("quotes only what needs quoting, and doubles inner quotes (RFC 4180)", () => {
-    expect(toCsv({
-      columns: ["a", "b"],
-      rows: [["plain", 'has "quotes"'], ["has,comma", "has\nnewline"]],
-    })).toBe([
-      "a,b",
-      'plain,"has ""quotes"""',
-      '"has,comma","has\nnewline"',
-    ].join("\n"));
-  });
-});
-
-describe("worthShowing", () => {
-  it("a single cell is not an exhibit — the prose already said it", () => {
-    expect(worthShowing({ columns: ["revenue"], rows: [[1200000]] })).toBe(false);
-    expect(worthShowing({ columns: ["metric", "value"], rows: [["revenue", 1200000]] })).toBe(false);
+  it("carries the CSV when the platform says the markdown does not hold every row", async () => {
+    const render = createTableRenderer({}, async () =>
+      Response.json({ show: true, markdown: "_Showing 5 of 60 rows — the full result is attached as CSV._", csv: "a,b\n1,2" }));
+    expect(await render(GRID)).toEqual({
+      markdown: "_Showing 5 of 60 rows — the full result is attached as CSV._", csv: "a,b\n1,2" });
   });
 
-  it("a shape is: more than one row, or a breakdown's worth of columns", () => {
-    expect(worthShowing({ columns: ["region", "revenue"], rows: [["E", 1], ["W", 2]] })).toBe(true);
-    expect(worthShowing({ columns: ["a", "b", "c"], rows: [[1, 2, 3]] })).toBe(true);
-    expect(worthShowing({ columns: [], rows: [] })).toBe(false);
-  });
-});
+  it("a grid not worth showing, an empty grid, a failed or absent door — no table, never a homemade one", async () => {
+    const quiet = createTableRenderer({}, async () => Response.json({ show: false, markdown: "", csv: null }));
+    expect(await quiet(GRID)).toBeNull();
 
-describe("renderGrid", () => {
-  const cols = (n: number) => Array.from({ length: n }, (_, i) => `c${i}`);
-  const rows = (n: number, w: number) => Array.from({ length: n }, (_, r) => cols(w).map((_, c) => r * w + c));
+    let called = false;
+    const empty = createTableRenderer({}, async () => { called = true; return Response.json({ show: true }); });
+    expect(await empty({ columns: [], rows: [] })).toBeNull();
+    expect(called).toBe(false);
 
-  it("narrow and short renders whole, with nothing attached", () => {
-    const out = renderGrid({ columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]] });
-    expect(out.csv).toBeNull();
-    expect(out.markdown).toContain("| East | 12 |");
-  });
+    const failed = createTableRenderer({}, async () => new Response("boom", { status: 500 }));
+    expect(await failed(GRID)).toBeNull();
 
-  it("narrow but long previews, attaches the rest, and says how many it showed", () => {
-    const out = renderGrid({ columns: cols(3), rows: rows(40, 3) });
-    expect(out.markdown).toContain("Showing 5 of 40 rows");
-    expect(out.csv).not.toBeNull();
-    // The CSV carries every row plus its header — the preview is the only trim.
-    expect(out.csv!.split("\n")).toHaveLength(41);
-  });
-
-  it("wide grids get no table at all — a wide table's first rows are as unreadable as all of them", () => {
-    const out = renderGrid({ columns: cols(9), rows: rows(3, 9) });
-    expect(out.markdown).toBe("_3 rows × 9 columns — attached as CSV._");
-    expect(out.markdown).not.toContain("|");
-    expect(out.csv).not.toBeNull();
-  });
-
-  it("an empty grid renders nothing rather than an empty table", () => {
-    expect(renderGrid({ columns: ["a"], rows: [] })).toEqual({ markdown: "", csv: null });
-    expect(renderGrid({ columns: [], rows: [[1]] })).toEqual({ markdown: "", csv: null });
-  });
-
-  it("the inline boundary is exact", () => {
-    expect(fitsInline({ columns: cols(6), rows: rows(10, 6) })).toBe(true);
-    expect(fitsInline({ columns: cols(7), rows: rows(10, 7) })).toBe(false);
-    expect(fitsInline({ columns: cols(6), rows: rows(11, 6) })).toBe(false);
+    const down = createTableRenderer({}, async () => { throw new Error("ECONNREFUSED"); });
+    expect(await down(GRID)).toBeNull();
   });
 });
 
 describe("csvFilename", () => {
-  it("derives a readable, Slack-safe name from the question", () => {
+  it("is safe to upload and still says what it is", () => {
     expect(csvFilename("Why did revenue dip in Q3?")).toBe("why-did-revenue-dip-in-q3.csv");
     expect(csvFilename("???")).toBe("result.csv");
     expect(csvFilename("x".repeat(200)).length).toBeLessThanOrEqual(44);

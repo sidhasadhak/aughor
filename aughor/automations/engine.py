@@ -992,7 +992,11 @@ def _slack_message_text(effect: Effect, automation: Automation) -> str:
         try:
             from aughor.answer.doors import slack_message
             from aughor.answer.envelope import AnswerEnvelope
-            text = slack_message(AnswerEnvelope.model_validate(raw))
+            money = ""
+            if automation.conn_id:
+                from aughor.routers.investigations import resolve_currency_symbol
+                money = resolve_currency_symbol(automation.conn_id, None) or ""
+            text = slack_message(AnswerEnvelope.model_validate(raw), money_symbol=money)
             if text:
                 return text
         except Exception as exc:

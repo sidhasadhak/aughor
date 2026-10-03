@@ -46,6 +46,15 @@ def _agent_or_401(agent_id: str, request: Request):
     return agent
 
 
+def _money_symbol(connection_id: str) -> str:
+    """The connection's reporting currency, for a money column in a reply (CP-5) — never
+    on the ask wire, so a door that formats a table resolves it the way the chart door does."""
+    if not connection_id:
+        return ""
+    from aughor.routers.investigations import resolve_currency_symbol
+    return resolve_currency_symbol(connection_id, None) or ""
+
+
 def _public_api() -> str:
     return os.environ.get("AUGHOR_PUBLIC_API_URL", "").strip().rstrip("/")
 
@@ -247,7 +256,8 @@ async def teams_messages(bot_id: str, body: dict, request: Request):
     sent, payload = reply.send_reply(
         service_url=str(body.get("serviceUrl") or ""),
         conversation_id=str((body.get("conversation") or {}).get("id") or ""),
-        reply_to_id=str(body.get("id") or ""), text=reply.render_answer(answer),
+        reply_to_id=str(body.get("id") or ""),
+        text=reply.render_answer(answer, money_symbol=_money_symbol(bot.connection_id or (agent.connection_id if agent else ""))),
         token=token_or_why, recipient=body.get("from"), from_=body.get("recipient"))
     return {"answered": sent, "why": "" if sent else str(payload.get("error") or payload),
             "headline": answer.get("headline", ""), "investigation_id": answer.get("investigation_id", "")}

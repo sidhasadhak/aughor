@@ -17,7 +17,7 @@
  */
 import { Chat, StreamingPlan, type Adapter, type FileUpload, type Message, type SentMessage, type StateAdapter, type Thread } from "chat";
 
-import { csvFilename, renderGrid, worthShowing, type Grid } from "./artifacts.js";
+import { csvFilename, type Grid, type TableRenderer } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
 import type { ArrivalPoster, AskChunk, AskStream, FactChecker, TurnArtifacts, VerdictPoster } from "./aughor.js";
 import { createTurnMap } from "./turnmap.js";
@@ -63,6 +63,7 @@ export function stripMention(text: string, userName: string = BOT_USERNAME): str
 export function buildBot({
   ask,
   renderChart,
+  renderTable,
   adapters,
   state,
   postArrival,
@@ -74,6 +75,8 @@ export function buildBot({
   ask: AskStream;
   /** Absent in tests that only care about the text half. */
   renderChart?: ChartRenderer;
+  /** CP-5 — the table, formatted by the platform; absent in tests of the text half. */
+  renderTable?: TableRenderer;
   adapters: Record<string, Adapter>;
   state: StateAdapter;
   /** HB-5 — absent in tests that only exercise the ask half. */
@@ -156,7 +159,7 @@ export function buildBot({
     }
     const origin = bot.thread(rehearsal.originThreadId);
     await origin.post(rehearsal.text || rehearsal.turn?.envelope?.headline || "(the answer had no text)");
-    const exhibit = await postExhibits(origin, rehearsal.turn, renderChart);
+    const exhibit = await postExhibits(origin, rehearsal.turn, { renderChart, renderTable });
     // The promoted copy is an answer in its own right: a ✅ on it in the channel is a verdict.
     remember(origin.id, rehearsal.turn, exhibit?.id);
     const ref = parseSlackThreadRef(rehearsal.originThreadId);
@@ -202,7 +205,7 @@ export function buildBot({
     });
     const captured: string[] = [];
     await dm.post(new StreamingPlan(captureText(withoutTables(stream), captured), { groupTasks: "plan" }));
-    const exhibit = await postExhibits(dm, turn, renderChart);
+    const exhibit = await postExhibits(dm, turn, { renderChart, renderTable });
     remember(dm.id, turn, exhibit?.id, prelude?.id);
     const keys = [prelude?.id, exhibit?.id, dm.id].filter((k): k is string => Boolean(k));
     const held: Rehearsal = { originThreadId: thread.id, question, text: captured.join(""), turn, keys };
@@ -261,7 +264,7 @@ export function buildBot({
         question: env.question, sessionId: thread.id,
         columns: env.grid?.columns ?? [], rows: env.grid?.rows ?? [],
         chartType: "auto", chartConfig: {}, envelope: env,
-      });
+      }, { renderTable });
       return;
     }
 
@@ -309,7 +312,7 @@ export function buildBot({
 
     // The streamed answer's post hands back the plan, not a message id, so the exhibits'
     // message is the one remembered by id and the answer itself resolves by its thread.
-    const exhibit = await postExhibits(thread, turn, renderChart);
+    const exhibit = await postExhibits(thread, turn, { renderChart, renderTable });
     remember(thread.id, turn, exhibit?.id);
   });
 
@@ -432,7 +435,7 @@ const MAX_CAVEATS = 2;
 async function postExhibits(
   thread: Pick<Thread, "post">,
   turn: TurnArtifacts | null,
-  renderChart?: ChartRenderer,
+  { renderChart, renderTable }: { renderChart?: ChartRenderer; renderTable?: TableRenderer },
 ): Promise<SentMessage | null> {
   if (!turn) return null;
   const env = turn.envelope ?? null;
@@ -440,13 +443,13 @@ async function postExhibits(
   const chartType = env?.chart?.chart_type || turn.chartType || "auto";
   const chartConfig = env?.chart?.chart_config ?? turn.chartConfig;
   const caveats = (env?.caveats ?? []).slice(0, MAX_CAVEATS).map((c) => `⚠️ ${c}`);
-  const showGrid = worthShowing(grid);
 
-  const { markdown: table, csv } = showGrid ? renderGrid(grid) : { markdown: "", csv: null };
-  const markdown = [table, caveats.join("\n")].filter(Boolean).join("\n\n");
+  // CP-5 — the platform formats the table and says whether it is worth showing at all.
+  const table = renderTable ? await renderTable(grid) : null;
+  const markdown = [table?.markdown ?? "", caveats.join("\n")].filter(Boolean).join("\n\n");
   const files: FileUpload[] = [];
 
-  const png = showGrid && renderChart
+  const png = table && renderChart
     ? await renderChart({
         columns: grid.columns,
         rows: grid.rows,
@@ -456,9 +459,9 @@ async function postExhibits(
       })
     : null;
   if (png) files.push({ data: png, filename: "chart.png", mimeType: "image/png" });
-  if (csv) {
+  if (table?.csv) {
     files.push({
-      data: Buffer.from(csv, "utf8"),
+      data: Buffer.from(table.csv, "utf8"),
       filename: csvFilename(turn.question),
       mimeType: "text/csv",
     });

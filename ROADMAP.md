@@ -7658,6 +7658,32 @@ encodings (width, cap, inline-or-attach).
 at 1. **Falsifier:** the catalogue-timestamp law — if re-measuring shows a door has grown its
 own formatter back, the seam was in the wrong place.
 
+✅ **BUILT 2026-10-04** (branch `claude/second-top-five`, not merged). **The falsifier had already
+fired once:** the Teams door AO-5 merged the day before had grown a FOURTH table builder
+(`teamsbots/reply.py`), so the census re-measured 4, not 3. `aughor/answer/exhibit.py` is the
+one formatter: `format_cell` ports the web data table's rule field for field (`AugTable.tsx`
+`fmt`, `lib/format.ts`, `lib/orgSettings.ts` — share columns as `12.3%`, money to the cent with the
+column's own ISO suffix winning, ids and period keys left as stored, every other number grouped
+in full, a midnight timestamp as its date, null as `—`), and `reader_table` is the one builder —
+the door passes only its encodings (columns before a table stops reading, rows before a preview,
+the preview's length, and where the rest went), and gets whole · captioned preview · caption.
+Consumers: `answer/doors.py` (both Slack selections), `export/document.py` (every data table in a
+PDF or deck, headers as labels), `teamsbots/reply.py`, and the TypeScript mention bot through
+`POST /exhibits/table` — `artifacts.ts` builds no table and `chart.ts` rasterizes nothing: it
+fetches `POST /charts/png`, the one rasterizer (`export.echarts.svg_to_png`) with a URL, and
+`@resvg/resvg-js` left the bot's dependencies. The export's chat and envelope builders now get
+the connection's currency like the deep and explore builders, and the Teams door resolves it
+from its agent's connection. **Census, re-measured by the test that holds it**
+(`tests/unit/test_exhibit_formatter.py`, scanning `aughor/` and `bots/slack/src/`, not a file
+list): a table for a READER **1** (plus the catalog's prompt table, exempt by name — it formats
+for the model), SVG → PNG **1**; both checks fail on `origin/main` by assertion. **Live receipt,
+theLook turn `47a130145460`'s stored envelope:** the grid that read `54496.64009666443` reads
+`$54,496.64` in the scheduled Slack post, the bot's table door, the Teams reply and the PDF/PPTX
+evidence table alike; `/charts/png` returned a 47,990-byte PNG on white. ⏳ **Not here:** the web
+formats in the browser (excluded by declaration, held by the parity cases); the CSV keeps values
+as stored on purpose; "text into Slack" (3) and "attach the exhibits" (2) from CP-0's table are
+not this wave's rows.
+
 **What each wave must show before the next starts:** a live receipt, a mutation test on every
 new guard, and this section updated the same day — a prose claim in §3 rots silently (§7).
 

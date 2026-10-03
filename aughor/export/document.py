@@ -68,25 +68,13 @@ def _date(iso: Optional[str]) -> str:
         return str(iso)[:10]
 
 
-def _round_cell(v):
-    """Trim floating-point display noise in a table cell (39.97968526236183 -> 39.98) so the
-    printed table matches the clean numbers on the chart beside it. Handles float, Decimal, and
-    pure-numeric strings — DuckDB returns DECIMAL columns as Decimal/str, which a float-only check
-    misses (the '711231.2900000175' the dimensional tables still showed). Non-numeric passes through."""
-    import re as _re
-    from decimal import Decimal
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, Decimal):
-        v = float(v)
-    if isinstance(v, float) and v == v and v not in (float("inf"), float("-inf")):
-        r = round(v, 2) if abs(v) >= 1 else round(v, 6)
-        return int(r) if r == int(r) else r
-    if isinstance(v, str) and _re.fullmatch(r'-?\d+\.\d{4,}', v.strip()):
-        f = float(v.strip())
-        r = round(f, 2) if abs(f) >= 1 else round(f, 6)
-        return int(r) if r == int(r) else r
-    return v
+def _table_block(columns, rows, *, caption: str, money_symbol: str) -> Block:
+    """CP-5 — a data table for the page, cells by the one reader formatter (`answer.exhibit`):
+    `54,496.64`, `12.3%`, `$1,820,497.55`, a year left a year — the figures the web table
+    shows for the same grid. The row cap stays the caller's: it is this door's encoding."""
+    from aughor.answer.exhibit import clean_label, format_rows
+    return Block("table", columns=[clean_label(str(c)) for c in columns],
+                 rows=format_rows(columns, rows, money_symbol=money_symbol), caption=caption)
 
 
 def _exhibit_key(columns, rows) -> str:
@@ -136,8 +124,8 @@ def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None,
     if chart:
         out.append(chart)
     if columns and rows:
-        table_rows = [[_round_cell(v) for v in row] for row in rows[:25]]
-        out.append(Block("table", columns=columns, rows=table_rows, caption="" if chart else title))
+        out.append(_table_block(columns, rows[:25], caption="" if chart else title,
+                                money_symbol=money_symbol))
     return out
 
 
@@ -157,8 +145,7 @@ def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None
                              exhibit=exhibit, money_symbol=money_symbol, drawn_title=drawn_title)
         if chart:
             return [chart]
-    table_rows = [[_round_cell(v) for v in row] for row in rows[:8]]
-    return [Block("table", columns=columns, rows=table_rows, caption=title)]
+    return [_table_block(columns, rows[:8], caption=title, money_symbol=money_symbol)]
 
 
 _MD_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
@@ -244,7 +231,7 @@ def _same_words(text) -> str:
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
 
-def _build_chat(inv: dict) -> ExportDoc:
+def _build_chat(inv: dict, money_symbol: str = "") -> ExportDoc:
     """A single Q&A 'Insight' response → an executive one-pager."""
     rep = inv.get("report") or {}
     insight = rep.get("insight") or {}
@@ -267,7 +254,8 @@ def _build_chat(inv: dict) -> ExportDoc:
         blocks.append(_bul(list(rep["approach"])))
 
     blocks.append(_h("Evidence"))
-    blocks.extend(_chart_or_table(rep.get("columns"), rep.get("rows"), rep.get("chart_type"), headline))
+    blocks.extend(_chart_or_table(rep.get("columns"), rep.get("rows"), rep.get("chart_type"), headline,
+                                  money_symbol=money_symbol))
 
     if rep.get("sql"):
         blocks.append(_h("Query"))
@@ -284,7 +272,7 @@ def _receipt_line(receipt: dict) -> str:
     return ", ".join(f"{k}: {v}" for k, v in receipt.items() if k not in ("before", "after"))[:200]
 
 
-def _build_envelope(inv: dict) -> ExportDoc:
+def _build_envelope(inv: dict, money_symbol: str = "") -> ExportDoc:
     """CP-4 — an answer that carries its envelope: the document takes ALL of it.
 
     The Slack door takes the headline, the body, the grid once and two caveats; this door
@@ -311,7 +299,8 @@ def _build_envelope(inv: dict) -> ExportDoc:
     if grid.get("columns") and grid.get("rows"):
         blocks.append(_h("Evidence"))
         blocks.extend(_chart_or_table(grid["columns"], grid["rows"],
-                                      chart.get("chart_type") or "auto", headline))
+                                      chart.get("chart_type") or "auto", headline,
+                                      money_symbol=money_symbol))
     if env.get("caveats"):
         blocks.append(_h("Caveats"))
         blocks.append(_bul([str(c) for c in env["caveats"]]))
@@ -676,9 +665,10 @@ def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = ""
     else:
         builder = _build_chat
     # `money_symbol` (caller-resolved: the connection's effective currency, matching the
-    # web's fallback) reaches only the builders that render charts — the platform-side
+    # web's fallback) reaches every builder that renders a chart or a data table — the platform-side
     # export never resolves it itself (Platform must not import Agent; the caller injects).
-    doc = builder(inv, money_symbol) if builder in (_build_ada, _build_explore) else builder(inv)
+    doc = (builder(inv, money_symbol)
+           if builder in (_build_ada, _build_explore, _build_envelope, _build_chat) else builder(inv))
     if narrate:
         summary = _llm_executive_summary(inv, doc)
         if summary:

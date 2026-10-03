@@ -441,12 +441,6 @@ def impact_score(finding: str, novelty, confidence, tokensets: list[frozenset],
 
 # ── currency ─────────────────────────────────────────────────────────────────────
 
-_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CNY": "¥", "INR": "₹"}
-
-
-def currency_symbol(code: Optional[str]) -> str:
-    """Display symbol for an ISO currency code; falls back to the bare code so an
-    unmapped currency still reads as '<CODE> 1,234' rather than a wrong '$'."""
-    if not code:
-        return "$"
-    return _SYMBOLS.get(code.upper(), f"{code.upper()} ")
+# The ISO → symbol table moved to the platform (`orgsettings.store`) so the one exhibit
+# formatter (`answer.exhibit`, platform) can read it without importing the agent (CP-5).
+from aughor.orgsettings.store import currency_symbol  # noqa: E402,F401 — re-exported
