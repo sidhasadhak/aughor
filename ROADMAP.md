@@ -10182,7 +10182,7 @@ library is the wrong tool — the tab (CT-4) and the versions (CT-3) stand, over
 is wrong, and the closed vocabulary is not closing; (3) if an approved cockpit is not reopened within a week,
 the board was not wanted — counted from the session log the way AV-M counts uptake, which read 3 of 42.
 
-### 3.51 · Arc DE — the database edge: what dbx teaches (DRAFTED 2026-10-02 at the user's *"lets write a proper dbx roadmap first"* · ✅ ADOPTED the same day, §6 item 37, every clause as recommended · DE-6 removed before adoption · nothing built)
+### 3.51 · Arc DE — the database edge: what dbx teaches (DRAFTED 2026-10-02 at the user's *"lets write a proper dbx roadmap first"* · ✅ ADOPTED the same day, §6 item 37, every clause as recommended · DE-6 removed before adoption · **DE-1 through DE-5f BUILT 2026-10-03** on `claude/focused-hamilton-8w0q1f`, not merged — the live receipts owed from the machine that holds the connections are listed in each wave's status paragraph)
 
 > **Origin.** The user, on `t8y2/dbx` — an open-source database manager claiming "100+ databases" — *"I think there
 > is a lot we can learn from it. Let's scan it, Deep, and check what's there for us?"*, then, on a screenshot of its
