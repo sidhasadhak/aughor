@@ -10343,16 +10343,17 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > no Slack workspace was touched. AO-6 ✅ (flag `agents.testing_centre`, off) — questions drafted from the
 > catalogue as candidates a person certifies with SQL, the suite counts certified goldens only and records its
 > diff, a nightly run from the heartbeat, and rehearse on the bot record through the approval door already built;
-> left: a mention answered in a private thread first. AO-7 ✅ a–e (flag `agents.learning_loop`, off) — verdicts
+> and (later the same day) a mention answered in a private thread first — the asker's DM, with the channel on
+> their ✅. AO-7 ✅ a–e (flag `agents.learning_loop`, off) — verdicts
 > carry the agent and are backfilled from the turn, the agent's own corrections lead its brief and its priors,
 > an accepted answer becomes an uncertified candidate, a change or five verdicts re-evaluates and the page says
 > the delta, run evidence comes from the manifest or the reward label, and a crystallised skill is staged to the
 > inbox. AO-5 ✅ — each custom agent an MCP tool with its caller a principal; a per-agent key, an HTTP door and
 > an embed page; a Teams bot (Bot Framework, signature verified, reply through the Connector); a webhook that is a
 > conversation turn; an A2A card and endpoint. Every door carries its own credential and opens nothing else.
-> **The arc is built. Still owed:** the AO-2 measure on a fresh install (no Slack workspace was touched), the
-> three flags' receipts (`slack.managed_supervisor`, `agents.testing_centre`, `agents.learning_loop`), and a
-> mention answered in a private thread first (AO-6's one unbuilt clause).
+> **The arc is built. Still owed:** the AO-2 measure on a fresh install (no Slack workspace was touched) and the
+> three flags' receipts (`slack.managed_supervisor`, `agents.testing_centre`, `agents.learning_loop`). AO-6's
+> private-thread clause was built later the same day (above); its live receipt waits on the same workspace.
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

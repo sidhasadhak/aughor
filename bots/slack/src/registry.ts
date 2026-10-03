@@ -21,6 +21,9 @@ export interface BotRecord {
   app_token: string;
   signing_secret: string;
   agent_view: boolean;
+  /** AO-6 — rehearse: a mention is answered in the asker's DM first and reaches the
+   *  channel on their ✅. Absent on an older API's rows reads as off. */
+  rehearse?: boolean;
 }
 
 export type FetchBots = () => Promise<BotRecord[]>;
@@ -29,12 +32,12 @@ export type FetchBots = () => Promise<BotRecord[]>;
  * A fingerprint of everything that, if changed, means the running socket is wrong.
  *
  * Name is deliberately EXCLUDED: renaming a bot in Aughor should not drop a live
- * WebSocket and interrupt whoever is mid-thread. Credentials, bindings and agent_view
- * are all included — each one changes what the socket IS or how it answers.
+ * WebSocket and interrupt whoever is mid-thread. Credentials, bindings, agent_view and
+ * rehearse are all included — each one changes what the socket IS or how it answers.
  */
 export function fingerprint(b: BotRecord): string {
   return [b.bot_token, b.app_token, b.signing_secret,
-          b.agent_id, b.connection_id, String(b.agent_view)].join(" ");
+          b.agent_id, b.connection_id, String(b.agent_view), String(b.rehearse ?? false)].join(" ");
 }
 
 export function createRegistry(

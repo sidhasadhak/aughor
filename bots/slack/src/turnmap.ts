@@ -13,6 +13,8 @@ import { dirname } from "node:path";
 export interface PersistedTurnMap<T> {
   get(id: string): T | undefined;
   set(id: string, value: T): void;
+  /** AO-6 — a rehearsal is promoted or dropped ONCE; its keys leave the map together. */
+  delete(...ids: string[]): void;
   size(): number;
 }
 
@@ -61,6 +63,11 @@ export function createTurnMap<T>(opts: {
         m.delete(first);
       }
       flush();
+    },
+    delete: (...ids) => {
+      let changed = false;
+      for (const id of ids) changed = m.delete(id) || changed;
+      if (changed) flush();
     },
     size: () => m.size,
   };

@@ -452,12 +452,15 @@ export function IntegrationsPanel() {
                                 aria-label="Home channel" placeholder="Home channel — #name or C… (optional)"
                                 onChange={e => setBotDraft(d => ({ ...d, channel_id: e.target.value }))} />
                               {/* AO-6 — rehearse: a post from an automation AS this bot waits in
-                                  Attention for a person's click before it reaches the channel. */}
+                                  Attention for a person's click before it reaches the channel, and a
+                                  channel mention is answered in the asker's DM first — their ✅ there
+                                  posts it in the thread. The bot reads the same row; a flip reconciles it. */}
                               <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center",
                                 gap: 6, color: "var(--t2)", cursor: "pointer" }}>
                                 <input type="checkbox" checked={botDraft.rehearse}
                                   onChange={e => setBotDraft(d => ({ ...d, rehearse: e.target.checked }))} />
-                                Rehearse — hold every automation post as this bot for a person&apos;s click
+                                Rehearse — a mention is answered in the asker&apos;s DM first (their ✅ posts it in
+                                the thread), and every automation post as this bot waits for a person&apos;s click
                                 (&quot;always allow&quot; on the held post lifts it per channel)
                               </label>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

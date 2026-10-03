@@ -242,6 +242,107 @@ describe("parseSlackThreadRef", () => {
   });
 });
 
+// ── AO-6 · rehearse: a channel mention is answered in the asker's DM first ──────
+
+describe("AO-6 — rehearse: a mention is answered privately first, the channel on the asker's ✅", () => {
+  const DM = "slack:D77:";
+  /** The mock adapter, taught the two optional doors the Slack adapter has: a DM per user
+   *  and an ephemeral per thread. The DM detection mirrors Slack's (a `D…` channel). */
+  function rehearsingAdapter() {
+    const adapter = mockAughorAdapter();
+    const ephemerals: { threadId: string; userId: string }[] = [];
+    Object.assign(adapter, {
+      openDM: async (_userId: string) => DM,
+      isDM: (threadId: string) => threadId.startsWith("slack:D"),
+      postEphemeral: async (threadId: string, userId: string, _message: unknown) => {
+        ephemerals.push({ threadId, userId });
+        return { id: `eph-${ephemerals.length}`, threadId, userId };
+      },
+    });
+    return { adapter, ephemerals };
+  }
+  const postsTo = (adapter: Adapter, threadId: string) =>
+    (adapter.postMessage as unknown as Mock).mock.calls.filter((c) => c[0] === threadId);
+  const reaction = (adapter: Adapter, rawEmoji: string, messageId: string, threadId: string) => ({
+    adapter, added: true, emoji: rawEmoji as unknown as EmojiValue, messageId, raw: {}, rawEmoji, threadId,
+    user: { userId: "U123", userName: "testuser", fullName: "Test User", isBot: false } as unknown as Author,
+  });
+  async function settle() { await new Promise(r => setTimeout(r, 20)); }
+
+  it("the channel sees nothing public; the DM gets where it was asked, the rules, and the streamed answer", async () => {
+    const { adapter, ephemerals } = rehearsingAdapter();
+    const { ask, seen } = askYielding(["East is flat.", " South is down 4%."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why did revenue dip?"));
+
+    expect(postsTo(adapter, THREAD)).toHaveLength(0);
+    expect(adapter).toHavePosted(DM, /You asked in <#C1>: “why did revenue dip\?”/);
+    expect(adapter).toHavePosted(DM, /only you see this\. React ✅/);
+    // (The mock hands every post the id "msg-1"; the edit is the streamed answer's.)
+    expect(adapter).toHaveEdited(DM, "msg-1", /East is flat\. South is down 4%\./);
+    // The asker alone is told in the channel, where the transport can say it to one person.
+    expect(ephemerals).toEqual([{ threadId: THREAD, userId: "U123" }]);
+    // The CHANNEL thread stays the conversation: the promoted answer's follow-ups compose there.
+    expect(seen[0].sessionId).toBe(THREAD);
+    expect(seen[0].principalRef).toBe("slack:U123");
+  });
+
+  it("✅ in the DM posts the answer in the channel thread, records the accept, and promotes once", async () => {
+    const { adapter } = rehearsingAdapter();
+    const verdicts: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
+    const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true, postVerdict });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+    expect(postsTo(adapter, THREAD)).toHaveLength(0);
+
+    bot.processReaction(reaction(adapter, "white_check_mark", "msg-1", DM));   // msg-1 is the DM's prelude
+    await settle();
+    expect(adapter).toHavePosted(THREAD, /Nine orders\./);
+    expect(adapter).toHavePosted(DM, /Posted in <#C1>\./);
+    expect(verdicts.map(v => v.verdict)).toEqual(["accept"]);
+
+    bot.processReaction(reaction(adapter, "white_check_mark", "msg-1", DM));
+    await settle();
+    expect(postsTo(adapter, THREAD)).toHaveLength(1);
+  });
+
+  it("❌ in the DM drops it: the channel never sees the answer", async () => {
+    const { adapter } = rehearsingAdapter();
+    const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+
+    bot.processReaction(reaction(adapter, "x", "msg-1", DM));
+    await settle();
+    expect(postsTo(adapter, THREAD)).toHaveLength(0);
+    expect(adapter).toHavePosted(DM, /Dropped — nothing was posted in the channel\./);
+  });
+
+  it("a mention already in a DM has no channel to promote to and is answered in place", async () => {
+    const { adapter } = rehearsingAdapter();
+    const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
+    await bot.handleIncomingMessage(adapter, DM, createTestMessage("m1", "@aughor how many orders?"));
+
+    expect(adapter).toHaveEdited(DM, "msg-1", /Nine orders\./);
+    expect((adapter.postMessage as unknown as Mock).mock.calls.some(
+      (c) => JSON.stringify(c[1]).includes("Rehearsal"))).toBe(false);
+  });
+
+  it("off by default: without rehearse the channel is answered as before", async () => {
+    const { adapter, ephemerals } = rehearsingAdapter();
+    const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+
+    expect(adapter).toHaveEdited(THREAD, "msg-1", /Nine orders\./);
+    expect(postsTo(adapter, DM)).toHaveLength(0);
+    expect(ephemerals).toHaveLength(0);
+  });
+});
+
 describe("the note verb", () => {
   it("files the sentence through the arrivals door and never calls ask", async () => {
     const adapter = mockAughorAdapter();

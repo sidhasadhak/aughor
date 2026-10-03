@@ -71,6 +71,9 @@ async function makeBot(record: BotRecord) {
     // One file per bot, beside .env.local; "" would keep it in memory.
     turnMapFile: process.env.AUGHOR_TURN_MAP_FILE
       ?? `.aughor-turns.${record.id || "env"}.json`,
+    // AO-6 — rehearse comes from the RECORD, the same row the card's checkbox writes:
+    // a mention is answered in the asker's DM first and reaches the channel on their ✅.
+    rehearse: record.rehearse ?? false,
     adapters: {
       slack: createSlackAdapter({
         mode: "socket",
@@ -103,8 +106,9 @@ function envBot(): BotRecord[] {
     connection_id: process.env.AUGHOR_CONNECTION_ID ?? "",
     bot_token, app_token,
     signing_secret: process.env.SLACK_SIGNING_SECRET ?? "",
-    // The env path keeps its own switch: there is no record to read it from.
+    // The env path keeps its own switches: there is no record to read them from.
     agent_view: process.env.SLACK_AGENT_VIEW === "1",
+    rehearse: process.env.SLACK_REHEARSE === "1",
   }];
 }
 

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { createHeartbeat, createRegistry } from "./registry.js";
+import { createHeartbeat, createRegistry, fingerprint, type BotRecord } from "./registry.js";
 
 type Call = { url: string; init?: RequestInit };
 
@@ -36,6 +36,17 @@ describe("the registry read", () => {
     const { impl } = fakeFetch(503);
     await expect(createRegistry({ AUGHOR_API_URL: "http://api" }, impl)()).rejects.toThrow(
       /supervisor key/);
+  });
+});
+
+describe("the fingerprint", () => {
+  const rec: BotRecord = { id: "sb_1", name: "salesbot", enabled: true, agent_id: "ua_1", connection_id: "c1",
+    bot_token: "xoxb-1", app_token: "xapp-1", signing_secret: "s", agent_view: true };
+  it("AO-6 — flipping rehearse changes how the socket answers, so it reconciles; a rename does not", () => {
+    expect(fingerprint({ ...rec, rehearse: true })).not.toBe(fingerprint(rec));
+    expect(fingerprint({ ...rec, name: "renamed" })).toBe(fingerprint(rec));
+    // An older API's row carries no `rehearse`; it reads as off, the same as an explicit false.
+    expect(fingerprint({ ...rec, rehearse: false })).toBe(fingerprint(rec));
   });
 });
 
