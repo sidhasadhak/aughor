@@ -223,6 +223,11 @@ describe("a simple answer", () => {
     expect(screen.getByText("July 2026")).toBeInTheDocument();
   });
 
+  it("prints the sentence once when the summary is the headline with its full stop", () => {
+    const { container } = render(<ReportView report={q1(STATED, { executive_summary: `${STATED}.` })} onShowSource={vi.fn()} />);
+    expect(container.textContent?.split("7,027 units were sold")).toHaveLength(2);
+  });
+
   it("keeps the full layout when a result carries more than its figures", () => {
     const report = q1(STATED) as unknown as { phases: { findings: { interpretation: string }[] }[] };
     report.phases[1].findings[0].interpretation = "Units fell short of the plan.";

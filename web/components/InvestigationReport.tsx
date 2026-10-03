@@ -334,6 +334,10 @@ function EvidenceBlock({ finding, onShowSource, answer = "" }: { finding: Invest
 const _norm = (s: string) => s.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
 const restated = (summary: string, execSummary?: string) =>
   !!summary && !!execSummary && _norm(execSummary).includes(_norm(summary));
+/** The same sentence, whatever ends it: a headline drops its full stop, and a stored one-sentence answer
+ *  (Q1, 2026-10-03) was headline and summary both, a full stop apart — printed twice. */
+const sameSentence = (a?: string, b?: string) =>
+  !!a && !!b && _norm(a).replace(/[.!?]+$/, "") === _norm(b).replace(/[.!?]+$/, "");
 
 /** A finding the body draws at all. */
 const drawn = (f: { interpretation: string; columns: string[]; error?: string }) =>
@@ -541,7 +545,7 @@ export function InvestigationReportView({
           from the same sentence) — one text, rendered once. Rendered as markdown: a question
           that asks to see the data is answered in the analyst's own words (item 3), whose
           table and list must read as a table and a list, not as pipes and asterisks. */}
-      {report.executive_summary && report.executive_summary.trim() !== report.headline?.trim()
+      {report.executive_summary && !sameSentence(report.executive_summary, report.headline)
         && <AnswerProse text={report.executive_summary} />}
 
       <BriefMeta

@@ -82,6 +82,8 @@ def _isolate_stores() -> None:
     # IP-2 — the industries chosen at install: a live drive that changes the choice must not narrow the
     # running deployment's.
     os.environ.setdefault("AUGHOR_INDUSTRIES_FILE", os.path.join(tmp, "industries.json"))
+    # The organisation's settings, likewise: a drive that saves them must not change the deployment's.
+    os.environ.setdefault("AUGHOR_ORG_SETTINGS_FILE", os.path.join(tmp, "org_settings.json"))
     # The metrics catalog and glossary are TRACKED repo files (data/metrics.json,
     # data/glossary.yaml) — the one store family whose pollution lands in git status,
     # not just in a live database. Found the hard way TWICE: a live-drive scratch

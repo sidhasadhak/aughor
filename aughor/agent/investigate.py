@@ -4832,6 +4832,38 @@ def _preceding_window(obs_start: str, obs_end: str, dmin: str):
     return prev_start.isoformat(), prev_end.isoformat()
 
 
+_N_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+            "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+#: A trailing window the question gives a length: "last 6 months", "past twelve weeks", "trailing 30 days".
+_LAST_N_RE = re.compile(
+    r"\b(?:last|past|previous|trailing|rolling)\s+(\d+|" + "|".join(_N_WORDS) + r")\s+"
+    r"(days?|weeks?|months?|quarters?|years?)\b", re.I)
+
+
+def _last_n_start(question: str, end: str) -> str:
+    """The first day of the "last N <unit>" the question asks for, ending on ``end`` (inclusive):
+    N units before the day after it. "" when the question gives no length or ``end`` is no date.
+
+    The intake model did this sum, and on 2026-10-03 its "last 6 months" to the settled day
+    4 September began on 4 March — six months and a day (on 10-02 it was right). Counted from the
+    day after the end, whole months stay whole: 12 months to 31 August begin on 1 September."""
+    import calendar
+    from datetime import date, timedelta
+    m = _LAST_N_RE.search(question or "")
+    if not m:
+        return ""
+    try:
+        after = date.fromisoformat((end or "")[:10]) + timedelta(days=1)
+    except ValueError:
+        return ""
+    n = int(m.group(1)) if m.group(1).isdigit() else _N_WORDS[m.group(1).lower()]
+    unit = m.group(2).lower().rstrip("s")
+    if unit in ("day", "week"):
+        return (after - timedelta(days=n * (7 if unit == "week" else 1))).isoformat()
+    y, mo = divmod(after.year * 12 + after.month - 1 - n * {"month": 1, "quarter": 3, "year": 12}[unit], 12)
+    return date(y, mo + 1, min(after.day, calendar.monthrange(y, mo + 1)[1])).isoformat()
+
+
 def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str = "",
                               settle_days: int = 1):
     """Deterministically fit the intake's windows to the data that actually exists.
@@ -4999,6 +5031,27 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "re-anchor is best-effort on malformed dates; leave the window as the "
                  "clip step left it", counter="intake.reanchor_parse_failed")
+
+    # ── A window the question gives a length is that long, counted back from its end ──
+    # The end is settled above; the start was the model's sum. A comparison that ran up to
+    # the model's start runs up to the window's.
+    _os1, _oe1 = (intake.observation_start or "")[:10], (intake.observation_end or "")[:10]
+    _n_start = _last_n_start(question, _oe1) if _os1 else ""
+    _start = max(_n_start, dmin[:10]) if _n_start else ""
+    if _start and _start != _os1:
+        intake.observation_start = _start
+        intake.observation_label = _window_label(_start, _oe1)
+        notes.append(f"observation window set to the length the question gives, [{_start} → {_oe1}] "
+                     f"(the intake's began {_os1})")
+        _ce1 = (getattr(intake, "comparison_end", "") or "")[:10]
+        try:
+            _ran_up = bool(_ce1) and _ce1 == (datetime.fromisoformat(_os1) - timedelta(days=1)).date().isoformat()
+        except ValueError:
+            _ran_up = False
+        if _ran_up:
+            _ce_new = (datetime.fromisoformat(_start) - timedelta(days=1)).date().isoformat()
+            intake.comparison_start, intake.comparison_end = _last_n_start(question, _ce_new), _ce_new
+            intake.comparison_label = _window_label(intake.comparison_start, _ce_new)
 
     # A cross-sectional answer ranks across a dimension and has no comparison window, so the
     # comparison verdicts below do not apply to it — they judged whatever placeholder the model
@@ -10364,6 +10417,47 @@ def _result_values(state) -> list[str]:
     return list(out)
 
 
+def _ranked_headline(state, conclusion: str = "") -> str:
+    """A headline from the answer's ranked rows — its first and its last, by the measure they are
+    ordered on — for an answer whose opener does not answer. Q2 came back with none in three runs
+    (2026-10-02/03), twice under "The following table lists…", over rows that held the answer.
+
+    The last result that is a ranking: a column of names, and a measure its rows are ordered on,
+    over three rows or more. A figure takes the currency sign the answer writes it with. "" when
+    no result is a ranking."""
+    def number(v) -> Optional[float]:
+        return _as_float(v) if str("" if v is None else v).strip() else None
+
+    def fig(v: float) -> str:
+        text = f"{v:,.0f}" if float(v).is_integer() else f"{v:,.2f}"
+        sign = re.search(r"([$€£¥])\s?" + re.escape(text) + r"(?![\d,])", conclusion or "")
+        return (sign.group(1) if sign else "") + text
+
+    for phase in reversed((state or {}).get("investigation_phases") or []):
+        for f in reversed((phase or {}).get("findings") or []):
+            cols = [str(c) for c in (f or {}).get("columns") or []]
+            rows = [list(r) for r in (f or {}).get("rows") or [] if isinstance(r, (list, tuple)) and len(r) == len(cols)]
+            if len(rows) < 3 or f.get("error"):
+                continue
+            names = next((i for i in range(len(cols)) if all(
+                number(r[i]) is None and str(r[i] or "").strip()
+                and not _PERIOD_VALUE_RE.fullmatch(str(r[i]).strip()) for r in rows)), None)
+            if names is None:
+                continue
+            for m, col in enumerate(cols):
+                vals = [number(r[m]) for r in rows]
+                if (m == names or col.lower() == "id" or col.lower().endswith(_ID_COLUMN_SUFFIXES)
+                        or None in vals or vals[0] == vals[-1]):
+                    continue
+                if all(a >= b for a, b in zip(vals, vals[1:])) or all(a <= b for a, b in zip(vals, vals[1:])):
+                    first, last = ("highest", "lowest") if vals[0] > vals[-1] else ("lowest", "highest")
+                    measure = _humanise_column(col)
+                    return (f"{str(rows[0][names]).strip()} has the {first} {measure[:1].lower() + measure[1:]}, "
+                            f"{fig(vals[0])}, and {str(rows[-1][names]).strip()} the {last} of the {len(rows)}, "
+                            f"{fig(vals[-1])}")
+    return ""
+
+
 def _conclusion_as_answer(state, intake_data: dict, question: str):
     """Item 3 — a question that asks to SEE the data is answered in the analyst's own words.
 
@@ -10381,9 +10475,12 @@ def _conclusion_as_answer(state, intake_data: dict, question: str):
     if shape != "describe" or not conclusion:
         return None
     from aughor.agent.prompts_investigate import ADASynthesisModel
+    # The body is what the headline left — nothing when the headline is the whole answer. Q1's
+    # one sentence (2026-10-03) was both, and the page printed it twice.
     headline, body = _lead_sentence(conclusion, question, _result_values(state))
+    headline = headline or _ranked_headline(state, conclusion)
     return ADASynthesisModel(
-        headline=headline, executive_summary=body or conclusion, closing_summary="",
+        headline=headline, executive_summary=body, closing_summary="",
         total_change_label="", attribution_waterfall=[], confidence="HIGH",
         confidence_justification=("Stated from the rows this turn's queries returned; each "
                                   "figure was checked against them."),

@@ -21,6 +21,13 @@ class TestPeopleWriteThem:
         s = OrgSettings(priorities=[Priority(metric="return rate", target="< 8%", direction="down", by="Q4")])
         assert s.model_dump()["priorities"][0] == {"metric": "return rate", "target": "< 8%", "direction": "down", "by": "Q4", "note": ""}
 
+    def test_a_row_nobody_wrote_in_is_not_a_priority(self):
+        """Saving the currency on 2026-10-02 stored the page's empty row; the Briefing was told of a blank goal."""
+        blank = {"metric": " ", "target": "", "direction": "", "by": "", "note": ""}
+        assert OrgSettings(priorities=[blank]).priorities == []
+        kept = OrgSettings(priorities=[blank, {"metric": "", "target": "< 8%"}, PRIORITIES[0]]).priorities
+        assert [(p.metric, p.target) for p in kept] == [("", "< 8%"), ("return rate", "< 8%")]
+
     def test_a_workspace_with_no_priorities_inherits_the_organisations(self, monkeypatch):
         from aughor.orgsettings import store as S
         from types import SimpleNamespace

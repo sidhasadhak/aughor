@@ -144,12 +144,19 @@ def test_only_a_describe_question_with_a_conclusion_is_answered_in_the_analysts_
     assert got.headline == "Fulfilment takes about 3 days at every centre"
     assert "| NY/NJ | 3.12 |" in got.executive_summary
     assert got.recommendations == [] and got.data_gaps == [] and got.attribution_waterfall == []
+    # a one-sentence answer is its headline, and nothing again beneath it (Q1, 2026-10-03)
+    one = I._conclusion_as_answer({"_analyst_conclusion": "July 2026 brought in $359,224.30 from 7,027 units."},
+                                  {"question_shape": "describe"}, ASKED[0])
+    assert (one.headline, one.executive_summary) == ("July 2026 brought in $359,224.30 from 7,027 units", "")
     assert I._conclusion_as_answer({"_analyst_conclusion": CONCLUSION}, {"question_shape": "diagnose"}, q) is None
     assert I._conclusion_as_answer({}, {"question_shape": "describe"}, q) is None
 
 
 SQL = ("SELECT dc.name AS centre, SUM(oi.sale_price) AS revenue FROM order_items AS oi "
        "JOIN distribution_centers AS dc ON oi.dc_id = dc.id GROUP BY 1")
+
+
+_synthesize = I.ada_synthesize
 
 
 def _state(conclusion: str) -> dict:
@@ -175,7 +182,6 @@ def test_the_writer_is_never_called_for_a_describe_answer(monkeypatch):
         raise AssertionError("the writer was called for a describe answer")
     monkeypatch.setattr(I, "_provider", _no_model)
     monkeypatch.setattr(I, "_fast_synthesis_rescue", _no_model)
-    _synthesize = I.ada_synthesize
 
     out = _synthesize(_state("NY/NJ led with 1,200.50. Together the two made 2,000.75. "
                              "Savannah made 800.25."))["answer_report"]
@@ -188,6 +194,20 @@ def test_the_writer_is_never_called_for_a_describe_answer(monkeypatch):
     assert "2,111.00" not in out["executive_summary"]
     assert out["executive_summary"].endswith("so the sentence stating it was withheld.")
     assert calls == []
+
+
+def test_an_opener_that_does_not_answer_gives_way_to_the_ranked_rows(monkeypatch):
+    """Q2 had no headline in three runs (2026-10-02/03) — "The following table lists…" — over rows that held
+    the answer. Its first and last row head it, by the measure the rows are ordered on, and the figures trace."""
+    monkeypatch.setattr(I, "_provider", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no model")))
+    state = _state("The following table lists the centres by revenue.\n\n| Centre | Revenue |\n| --- | --- |\n"
+                   "| NY/NJ | $1,200.50 |\n| Savannah | $800.25 |\n| Houston | $310.00 |")
+    state["investigation_phases"][0]["findings"][0]["rows"].append(["Houston", "310"])
+    out = _synthesize(state)["answer_report"]
+    assert out["headline"] == "NY/NJ has the highest revenue, $1,200.50, and Houston the lowest of the 3, $310"
+    assert out["executive_summary"].startswith("The following table lists")
+    state["investigation_phases"][0]["findings"][0]["rows"][1][1] = "1500"          # not ordered: no ranking
+    assert I._ranked_headline(state, "") == ""
 
 
 # ── Totals the analyst can quote ─────────────────────────────────────────────────────
