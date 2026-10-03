@@ -145,7 +145,7 @@ def test_http_refuses_to_start_without_a_token(monkeypatch):
     import aughor.mcp.__main__ as entry
 
     monkeypatch.delenv("AUGHOR_MCP_TOKEN", raising=False)
-    monkeypatch.setattr(sys, "argv", ["aughor.mcp", "--http", "--no-automations", "--no-spotlight"])
+    monkeypatch.setattr(sys, "argv", ["aughor.mcp", "--http", "--no-automations", "--no-spotlight", "--no-agents"])
     with pytest.raises(SystemExit) as e:
         entry.main()
     assert "AUGHOR_MCP_TOKEN" in str(e.value.code)
@@ -175,7 +175,8 @@ def test_a_remote_client_is_served_with_the_token_and_refused_without(tmp_path: 
            "AUGHOR_SKIP_DOTENV": "1"}
     log = (tmp_path / "mcp.log").open("w")
     proc = subprocess.Popen([sys.executable, "-m", "aughor.mcp", "--http", "--host", "0.0.0.0", "--port", str(port),
-                             "--no-automations", "--no-spotlight"], env=env, stdout=log, stderr=subprocess.STDOUT)
+                             "--no-automations", "--no-spotlight", "--no-agents"], env=env, stdout=log,
+                            stderr=subprocess.STDOUT)
     try:
         deadline = time.time() + 40
         while True:

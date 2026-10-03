@@ -50,6 +50,7 @@ TOOL_LEVELS: dict[str, Level] = {
 #: are `read`; any other method is `act` — the conservative reading of an unmapped write.
 ROUTE_LEVELS: dict[tuple[str, str], Level] = {
     ("POST", "/chat"): "run",
+    ("POST", "/ask"): "run",        # the one conversational door — where a custom agent's tool lands (AO-5a)
     ("POST", "/investigate"): "run",
     ("POST", "/exploration/{conn_id}/start"): "run",
     ("POST", "/exploration/{conn_id}/briefing"): "run",
@@ -64,6 +65,12 @@ SPOTLIGHT_ACT_TOOLS: frozenset[str] = frozenset({
     "set_preference", "draft_agent", "draft_automation", "edit_automation", "draft_monitor",
     "draft_brief", "pause_or_resume_automation", "set_agent_limit", "propose_agent_grant",
 })
+
+
+#: What a tool added at start-up needs, declared by the registrar that added it and keyed by
+#: the name it actually registered — never by a prefix: an automation called "Ask …" slugs to
+#: `ask_…` as an agent's tool does, and a prefix would read its run as less than the act it is.
+DYNAMIC_LEVELS: dict[str, Level] = {}
 
 
 def spotlight_tool_level(name: str) -> Level:
@@ -88,11 +95,14 @@ def route_level(method: str, template: str, tool_name: Optional[str] = None) -> 
 
 def tool_level(name: str) -> Level:
     """What an MCP tool needs: a static tool by its row, a Spotlight tool by the roster's split,
+    a tool whose registrar declared a level (a custom agent's `ask_<slug>` is a run) by that,
     anything else (an automation) an act."""
     if name in TOOL_LEVELS:
         return TOOL_LEVELS[name]
     if name in SPOTLIGHT_ACT_TOOLS:
         return "act"
+    if name in DYNAMIC_LEVELS:
+        return DYNAMIC_LEVELS[name]
     return "act"
 
 

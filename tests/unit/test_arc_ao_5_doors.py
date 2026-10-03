@@ -296,14 +296,63 @@ def test_each_enabled_custom_agent_becomes_a_tool_that_asks_as_it(monkeypatch):
         assert asks[0]["agent_id"] == "ua_1" and asks[0]["connection_id"] == "c1"
         assert asks[0]["principal_ref"] == "api:mcp:claude"
     finally:
+        from aughor.mcp.policy import DYNAMIC_LEVELS
         for name in added:
             S.mcp._tool_manager.remove_tool(name)
+            DYNAMIC_LEVELS.pop(name, None)
 
 
 def test_an_unreachable_api_registers_nothing_and_raises_nothing():
     from aughor.mcp import server as S
     client = _mcp_client({})
     assert asyncio.run(S.register_agent_tools(client)) == []
+
+
+def test_an_agents_tool_is_a_run_under_the_organisations_agent_policy(client, monkeypatch):
+    """AO-5a held to DE-2b. An agent's tool is an ask AS that agent, so it needs what `ask`
+    needs: the install's default policy (`run`) lists it with a run's hints, a `read` policy
+    hides it, and the door it calls is a run at the API too. Measured 2026-10-03 with the
+    two arcs combined: the tool was registered, then hidden and refused as an unmapped act."""
+    from aughor.mcp import policy as P
+    from aughor.mcp import server as S
+    from aughor.mcp.client import AGENT_HEADER, AGENT_MARK, TOOL_HEADER
+    from aughor.orgsettings import agent_policy as AP
+
+    def _policy(level: str):
+        async def agent_policy():
+            return {"effective": {"level": level, "connections": None, "tools": None,
+                                  "set_by": "ana", "source": "saved"}}
+        return agent_policy
+
+    added = asyncio.run(S.register_agent_tools(_mcp_client({"/agents/custom": httpx.Response(200, json=[
+        {"id": "ua_1", "name": "The Look Analyst", "enabled": True, "connection_id": "c1"}])})))
+    try:
+        assert added == ["ask_the_look_analyst"] and P.tool_level(added[0]) == "run"
+        monkeypatch.setattr(S._client, "agent_policy", _policy("run"))
+        S.forget_policy()
+        listed = {t.name: t for t in asyncio.run(S.mcp.list_tools())}
+        hints = listed[added[0]].annotations
+        assert hints.readOnlyHint is False and hints.destructiveHint is False
+        monkeypatch.setattr(S._client, "agent_policy", _policy("read"))
+        S.forget_policy()
+        assert added[0] not in {t.name for t in asyncio.run(S.mcp.list_tools())}
+    finally:
+        for name in added:
+            S.mcp._tool_manager.remove_tool(name)
+            P.DYNAMIC_LEVELS.pop(name, None)
+        S.forget_policy()
+    assert P.tool_level("ask_the_look_analyst") == "act", "a level is the registrar's to declare, not the name's"
+
+    # The door the tool calls. Under a `read` policy the API refuses it as the run it is —
+    # before the fix it was refused as an act, and so refused under the default policy too.
+    AP.save_agent_policy("default", level="read", set_by="ana")
+    try:
+        refused = client.post("/ask", json={"question": "How many orders?", "connection_id": "c1"},
+                              headers={AGENT_HEADER: AGENT_MARK, TOOL_HEADER: "ask_the_look_analyst"})
+    finally:
+        AP.clear_agent_policy("default")
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["code"] == P.CODE_LEVEL and refused.json()["detail"]["required_level"] == "run"
 
 
 # ── the fold reads the quick path's own spelling of the turn ─────────────────────────

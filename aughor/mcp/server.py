@@ -542,8 +542,11 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
         if name in taken:
             _log.warning("agent tool %r collides with an existing tool — skipped", name)
             continue
+        from aughor.mcp.policy import DYNAMIC_LEVELS, tool_annotations
         mcp.add_tool(_agent_runner(api, str(row["id"]), str(row.get("connection_id") or "")),
-                     name=name, description=_agent_description(row))
+                     name=name, description=_agent_description(row),
+                     annotations=tool_annotations("run"))       # DE-2b: an ask spends; it changes nothing
+        DYNAMIC_LEVELS[name] = "run"
         taken.add(name)
         added.append(name)
     return added
