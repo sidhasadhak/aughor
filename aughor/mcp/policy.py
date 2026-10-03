@@ -94,9 +94,9 @@ def route_level(method: str, template: str, tool_name: Optional[str] = None) -> 
 
 
 def tool_level(name: str) -> Level:
-    """What an MCP tool needs: a static tool by its row, a Spotlight tool by the roster's split,
-    a tool whose registrar declared a level (a custom agent's `ask_<slug>` is a run) by that,
-    anything else (an automation) an act."""
+    """What an MCP tool needs: a static tool by its row, a Spotlight tool by the roster's split
+    (its registrar declares it, so a roster read is a read), a custom agent's `ask_<slug>` by
+    its registrar's word (a run), anything else (an automation) an act."""
     if name in TOOL_LEVELS:
         return TOOL_LEVELS[name]
     if name in SPOTLIGHT_ACT_TOOLS:

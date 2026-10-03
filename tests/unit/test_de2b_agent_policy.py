@@ -243,6 +243,30 @@ def test_an_act_policy_lists_the_act_tool_with_its_destructive_hint(monkeypatch)
     assert listed["ask"].annotations.readOnlyHint is False and listed["ask"].annotations.destructiveHint is False
 
 
+def test_spotlights_reads_are_reads_and_its_acts_are_acts_on_this_transport(monkeypatch):
+    """The roster's split decides a Spotlight tool's level here as it does at the API. Measured
+    2026-10-03: the level map read every roster tool as an act (a roster read cannot be told
+    from an automation by its name), so the default policy hid the whole roster from `tools/list`."""
+    class _Roster:
+        async def list_spotlight_tools(self):
+            return [{"name": "platform_usage", "description": "reads usage", "parameters": {}},
+                    {"name": "draft_automation", "description": "stages a draft", "parameters": {}}]
+
+    added = _run(S.register_spotlight_tools(_Roster()))
+    try:
+        assert added == ["platform_usage", "draft_automation"]
+        assert P.tool_level("platform_usage") == "read" and P.tool_level("draft_automation") == "act"
+        monkeypatch.setattr(S._client, "agent_policy", _policy_answer("run"))
+        S.forget_policy()
+        listed = {t.name: t for t in _run(S.mcp.list_tools())}
+        assert "draft_automation" not in listed, "an act stays hidden until a person grants act"
+        assert listed["platform_usage"].annotations.readOnlyHint is True
+    finally:
+        for name in added:
+            S.mcp._tool_manager.remove_tool(name)
+            P.DYNAMIC_LEVELS.pop(name, None)
+
+
 def test_a_tool_allowlist_hides_the_rest_and_refuses_them_by_name(monkeypatch):
     monkeypatch.setattr(S._client, "agent_policy", _policy_answer("run", tools=["list_connections"]))
     S.forget_policy()

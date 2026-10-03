@@ -505,10 +505,13 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
         if name in taken:
             _log.warning("Spotlight tool %r collides with an existing tool — skipped", name)
             continue
-        from aughor.mcp.policy import spotlight_tool_level, tool_annotations
+        from aughor.mcp.policy import DYNAMIC_LEVELS, spotlight_tool_level, tool_annotations
         mcp.add_tool(_spotlight_runner(api, name), name=name,
                      description=_spotlight_description(row),
                      annotations=tool_annotations(spotlight_tool_level(name)))   # DE-2b
+        # The roster's split, said to the level map: by its name alone a roster read cannot be
+        # told from an automation, and was read as an act — hidden under the default policy.
+        DYNAMIC_LEVELS[name] = spotlight_tool_level(name)
         taken.add(name)
         added.append(name)
     return added
