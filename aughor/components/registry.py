@@ -312,9 +312,12 @@ def _mcp_tool_components() -> list[Component]:
     # quietly shipping a roster with a family missing.
     out: list[Component] = []
     for n, tool in enumerate(mcp._tool_manager.list_tools()):
-        schema = {}
+        # The schema the server SERVES (`tools/list`'s inputSchema). A Spotlight tool's is the
+        # roster's declared JSON Schema and its argument model passes arguments through, so
+        # reading the model here would have drawn those tools with no ports at all.
+        schema = getattr(tool, "parameters", None) or {}
         meta = getattr(tool, "fn_metadata", None)
-        if meta is not None:
+        if not schema and meta is not None:
             schema = getattr(meta, "arg_model", None) and meta.arg_model.model_json_schema() or {}
         out.append(Component(
             id=f"mcp_tool:{tool.name}", family="mcp_tool", kind=tool.name,

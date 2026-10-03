@@ -20,8 +20,10 @@ import hmac
 from typing import Annotated, Any, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase
+from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.transport_security import TransportSecuritySettings
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from aughor.mcp.client import AughorClient
 
@@ -65,8 +67,21 @@ class PolicedFastMCP(FastMCP):
     enforce anyway.
     """
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # The tool list is LIVE (`refresh_live_tools`), so say so: `tools.listChanged`.
+        low = self._mcp_server
+        initial = low.create_initialization_options
+
+        def _options(notification_options=None, experimental_capabilities=None):
+            return initial(notification_options or NotificationOptions(tools_changed=True),
+                           experimental_capabilities)
+
+        low.create_initialization_options = _options
+
     async def list_tools(self):
         from aughor.mcp.policy import tool_annotations, tool_level
+        await refresh_live_tools()
         policy = await current_policy()
         out = []
         for t in await super().list_tools():
@@ -95,6 +110,16 @@ class PolicedFastMCP(FastMCP):
             return await super().call_tool(name, arguments)
         finally:
             CURRENT_TOOL.reset(token)
+            if await refresh_live_tools():
+                await self._say_the_list_changed()
+
+    async def _say_the_list_changed(self) -> None:
+        """`notifications/tools/list_changed` on the session this request came in on — a
+        client re-lists and sees the agent or automation that appeared, without reconnecting."""
+        try:
+            await self.get_context().session.send_tool_list_changed()
+        except Exception as exc:                  # no session (a direct call), or it closed
+            _log.debug("could not send tools/list_changed: %s", exc)
 
 
 _POLICY_TTL = 30.0
@@ -454,6 +479,7 @@ async def register_automation_tools(client: "AughorClient | None" = None) -> lis
     to look for.
     """
     api = client or _client
+    _LIVE_SOURCES.add("automations")
     try:
         exposed = await api.list_automation_tools()
     except Exception as exc:                       # the API is down, or the route is old
@@ -467,6 +493,8 @@ async def register_automation_tools(client: "AughorClient | None" = None) -> lis
         if not automation_id:
             continue
         name = str(row.get("tool_name") or "") or automation_tool_name(str(row.get("name") or ""))
+        if _DYNAMIC.get(name) == "automations" and name in taken:
+            continue                               # registered already (a live refresh)
         if name in taken:
             _log.warning("automation tool %r collides with an existing tool — skipped", name)
             continue
@@ -476,6 +504,7 @@ async def register_automation_tools(client: "AughorClient | None" = None) -> lis
                      annotations=tool_annotations("act"))       # DE-2b: a run changes something
         taken.add(name)
         added.append(name)
+        _DYNAMIC[name] = "automations"
     return added
 
 
@@ -490,6 +519,7 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
     inbox for a human, so nothing an MCP client invokes here executes anything.
     """
     api = client or _client
+    _LIVE_SOURCES.add("spotlight")
     try:
         declared = await api.list_spotlight_tools()
     except Exception as exc:                       # the API is down, or the route is old
@@ -500,7 +530,7 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
     added: list[str] = []
     for row in declared:
         name = str(row.get("name") or "")
-        if not name:
+        if not name or (_DYNAMIC.get(name) == "spotlight" and name in taken):
             continue
         if name in taken:
             _log.warning("Spotlight tool %r collides with an existing tool — skipped", name)
@@ -509,11 +539,13 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
         mcp.add_tool(_spotlight_runner(api, name), name=name,
                      description=_spotlight_description(row),
                      annotations=tool_annotations(spotlight_tool_level(name)))   # DE-2b
+        _declare_arguments(name, _spotlight_input_schema(row))
         # The roster's split, said to the level map: by its name alone a roster read cannot be
         # told from an automation, and was read as an act — hidden under the default policy.
         DYNAMIC_LEVELS[name] = spotlight_tool_level(name)
         taken.add(name)
         added.append(name)
+        _DYNAMIC[name] = "spotlight"
     return added
 
 
@@ -529,6 +561,7 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
     scope, so the agent's verdicts and spend know an MCP client asked, and which.
     """
     api = client or _client
+    _LIVE_SOURCES.add("agents")
     try:
         agents = await api.list_user_agents()
     except Exception as exc:                       # the API is down, or the route is old
@@ -542,6 +575,8 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
         if not row.get("enabled", True) or not row.get("id"):
             continue
         name = mcp_tool_name(_Row(row))
+        if _DYNAMIC.get(name) == "agents" and name in taken:
+            continue
         if name in taken:
             _log.warning("agent tool %r collides with an existing tool — skipped", name)
             continue
@@ -552,7 +587,78 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
         DYNAMIC_LEVELS[name] = "run"
         taken.add(name)
         added.append(name)
+        _DYNAMIC[name] = "agents"
     return added
+
+
+# ── The list is live: what appears and disappears at runtime does so for a connected client ──
+#
+# The three registrars above ran ONCE, at start, so an agent created, an automation exposed or
+# a roster entry added afterwards reached a client only when it reconnected — and a tool whose
+# agent was disabled or deleted stayed listed until a restart, failing when called. Now the
+# rosters are re-read (at most every `_LIVE_TTL` seconds) whenever a client lists or calls a
+# tool; what appeared is registered, what went is removed, and the server says so with
+# `notifications/tools/list_changed` (`PolicedFastMCP.call_tool`) — the capability it declares.
+
+#: name → the roster it came from ("automations" | "spotlight" | "agents").
+_DYNAMIC: dict[str, str] = {}
+#: The rosters this server serves — those its registrars were asked for (`--no-…` skips one).
+_LIVE_SOURCES: set[str] = set()
+_LIVE_TTL = 30.0
+_live_checked: list[float] = []
+
+
+def _roster_names(source: str, rows: list) -> set[str]:
+    """The tool names a roster's rows would register as — the registrars' own naming."""
+    if source == "automations":
+        return {str(r.get("tool_name") or "") or automation_tool_name(str(r.get("name") or ""))
+                for r in rows if str(r.get("id") or "")}
+    if source == "spotlight":
+        return {str(r.get("name")) for r in rows if r.get("name")}
+    from aughor.custom_agents.reach import mcp_tool_name
+    return {mcp_tool_name(_Row(r)) for r in rows if r.get("enabled", True) and r.get("id")}
+
+
+def _remove_tool(name: str) -> None:
+    from aughor.mcp.policy import DYNAMIC_LEVELS
+    getattr(mcp._tool_manager, "_tools", {}).pop(name, None)
+    DYNAMIC_LEVELS.pop(name, None)
+    _DYNAMIC.pop(name, None)
+
+
+async def refresh_live_tools(client: "AughorClient | None" = None, *, force: bool = False) -> bool:
+    """Re-read every live roster; register what appeared, remove what went. True when the
+    list changed. Throttled to once per `_LIVE_TTL` unless ``force``. Never raises: a roster
+    the API cannot serve right now is left exactly as it was, and that is logged."""
+    import time as _time
+
+    if not _LIVE_SOURCES:
+        return False
+    now = _time.monotonic()
+    if not force and _live_checked and now - _live_checked[0] < _LIVE_TTL:
+        return False
+    _live_checked[:] = [now]
+    api = client or _client
+    readers = {"automations": (api.list_automation_tools, register_automation_tools),
+               "spotlight": (api.list_spotlight_tools, register_spotlight_tools),
+               "agents": (api.list_user_agents, register_agent_tools)}
+    changed = False
+    for source in sorted(_LIVE_SOURCES):
+        read, register = readers[source]
+        try:
+            rows = list(await read() or [])
+        except Exception as exc:
+            _log.warning("live tools: could not re-read the %s roster (%s); left as it was", source, exc)
+            continue
+        ours = {n for n, src in _DYNAMIC.items() if src == source}
+        others = set(getattr(mcp._tool_manager, "_tools", {}) or {}) - ours
+        wanted = _roster_names(source, rows) - others
+        for name in sorted(ours - wanted):
+            _remove_tool(name)
+            changed = True
+        if wanted - ours:
+            changed = bool(await register(api)) or changed
+    return changed
 
 
 class _Row:
@@ -594,25 +700,58 @@ def _agent_runner(api: "AughorClient", agent_id: str, connection_id: str):
 
 
 def _spotlight_description(row: dict) -> str:
-    """The declared description IS the routing policy on this transport too — plus a
-    compact rendering of the declared arguments, because this transport's runner takes
-    them as one `args` object rather than a native schema."""
-    desc = str(row.get("description") or "").strip()
-    props = ((row.get("parameters") or {}).get("properties") or {})
-    if props:
-        params = "; ".join(f"{k}: {str(v.get('description') or v.get('type') or '')}"
-                           for k, v in props.items())
-        desc += f" Arguments (pass in `args`): {params}"
-    return desc
+    """The declared description IS the routing policy on this transport too. The arguments
+    are no longer rendered into it: each tool carries the roster's own JSON Schema."""
+    return str(row.get("description") or "").strip()
+
+
+def _spotlight_input_schema(row: dict) -> dict:
+    """The tool's input schema: the roster's declared parameters VERBATIM — types, enums,
+    `required`, descriptions — plus `connection`. Before this every Spotlight tool took one
+    opaque `args` object, and a client saw its arguments only as prose in the description."""
+    declared = dict(row.get("parameters") or {})
+    props = dict(declared.get("properties") or {})
+    props.setdefault("connection", {
+        "type": "string",
+        "description": "A connection id from list_connections — the connection-flavoured tools "
+                       "need it; organisation-level reads ignore it."})
+    schema = {**declared, "type": "object", "properties": props}
+    if declared.get("required"):
+        schema["required"] = [r for r in declared["required"] if r in props]
+    return schema
+
+
+class _DeclaredArguments(ArgModelBase):
+    """FastMCP builds a tool's argument model from the runner's signature. A roster tool's
+    arguments are declared as JSON Schema instead, so this model carries them through
+    untouched; the API validates them on the call, as it does for every transport."""
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    def model_dump_one_level(self) -> dict[str, Any]:
+        return dict(self.model_extra or {})
+
+
+def _declare_arguments(name: str, schema: dict) -> None:
+    """Give a registered tool its declared schema (what `tools/list` shows) and the
+    pass-through argument model. A stub tool manager (tests) holds no Tool — a no-op there."""
+    tools = getattr(mcp._tool_manager, "_tools", None)
+    tool = tools.get(name) if isinstance(tools, dict) else None
+    if tool is None or not hasattr(tool, "fn_metadata"):
+        return
+    tools[name] = tool.model_copy(update={
+        "parameters": schema,
+        "fn_metadata": tool.fn_metadata.model_copy(update={"arg_model": _DeclaredArguments})})
 
 
 def _spotlight_runner(api: "AughorClient", name: str):
     """A factory, not a loop lambda — the same late-binding trap the automation
     runner already refuses. `connection` binds the connection-flavoured tools;
     org-level reads ignore it."""
-    async def _run(connection: str = "", args: dict | None = None) -> Any:
-        return await api.call_spotlight_tool(name, connection=connection,
-                                             args=dict(args or {}))
+    async def _run(**arguments: Any) -> Any:
+        connection = str(arguments.pop("connection", "") or "")
+        return await api.call_spotlight_tool(
+            name, connection=connection,
+            args={k: v for k, v in arguments.items() if v is not None})
 
     return _run
 

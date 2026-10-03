@@ -21,10 +21,11 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import {
   AUTOMATION_REQUIRED_KEYS, getAutomationVocabulary, getIntegrationConnections,
-  getIntegrationOperations,
+  getIntegrationOperations, listMcpServers,
   type AutoCondition, type AutoEffect, type ConditionKind, type EffectKind,
   type AutomationVocabulary, type GuardClause, type IntegrationConnection,
-  type IntegrationOperation, type SlackBotSummary, type UserAgent,
+  type IntegrationOperation, type McpServerRow, type McpToolRow, type SlackBotSummary,
+  type UserAgent,
 } from "@/lib/api";
 import { CASTS, seedConfig, upstreamKeys } from "@/lib/automationFlow";
 import { slackStepBotNote } from "@/lib/slackBots";
@@ -735,6 +736,99 @@ export function IntegrationRows({ e, onChange }: {
   );
 }
 
+/** The allowlisted MCP servers, with the tool roster each one's last discovery stored. */
+export function useMcpServers(): McpServerRow[] {
+  const [servers, setServers] = React.useState<McpServerRow[]>([]);
+  React.useEffect(() => {
+    let live = true;
+    void listMcpServers().then(r => r.servers).catch(() => [] as McpServerRow[])
+      .then(rows => { if (live) setServers(rows); });
+    return () => { live = false; };
+  }, []);
+  return servers;
+}
+
+/** A tool a step may call: one the server declared read-only, or one a person granted. */
+export function mcpToolCallable(t: McpToolRow): boolean {
+  return t.disposition === "callable" || t.grant_state === "active";
+}
+
+/** One typed argument from the text in its field — by the tool's own declared type. */
+function mcpArgument(text: string, type: unknown): unknown {
+  if (type === "integer" || type === "number") {
+    const n = Number(text);
+    return text.trim() !== "" && Number.isFinite(n) ? n : text;
+  }
+  if (type === "boolean") return text === "true" ? true : text === "false" ? false : text;
+  return text;
+}
+
+/** "Call an MCP tool" — which allowlisted server, which tool, with what. Before this the step
+ *  could be placed on the canvas and configured nowhere: no form set its server or its tool,
+ *  so the one way to call a third party's tool from a chain was a step nobody could fill in. */
+export function McpCallRows({ e, onChange }: {
+  e: AutoEffect; onChange: (e: AutoEffect) => void;
+}) {
+  const servers = useMcpServers();
+  const serverId = String(e.config.server_id ?? "");
+  const toolName = String(e.config.tool ?? "");
+  const args = (e.config.arguments ?? {}) as Record<string, unknown>;
+  const server = servers.find(sv => sv.id === serverId);
+  const callable = (server?.tools ?? []).filter(mcpToolCallable);
+  const tool = callable.find(t => t.name === toolName);
+  const props = ((tool?.input_schema ?? {}) as { properties?: Record<string, { type?: unknown; description?: string }> })
+    .properties ?? {};
+  const required = new Set(((tool?.input_schema ?? {}) as { required?: string[] }).required ?? []);
+
+  const set = (patch: Record<string, unknown>) =>
+    onChange({ ...e, config: { ...e.config, ...patch } });
+  // Authored against a server or tool the pickers can no longer offer: kept and marked,
+  // never dropped — the same rule `IntegrationRows` keeps one form up.
+  const orphanServer = !!serverId && servers.length > 0 && !server;
+  const orphanTool = !!toolName && !!server && !tool;
+  const usable = servers.filter(sv => sv.enabled && sv.tools.some(mcpToolCallable));
+  if (usable.length === 0 && !serverId) {
+    return (
+      <div className="aug-fs-xs" style={{ color: "var(--amb4)", padding: "6px 0" }}>
+        No MCP server with a tool this step may call — allow one under MCP servers and
+        discover its tools, then pick it here.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <select style={inputStyle} value={serverId} aria-label="MCP server"
+        onChange={ev => set({ server_id: ev.target.value, tool: "", arguments: {} })}>
+        <option value="">Which server…</option>
+        {usable.map(sv => <option key={sv.id} value={sv.id}>{sv.name}</option>)}
+        {orphanServer && <option value={serverId}>{serverId} (missing)</option>}
+      </select>
+      {serverId && (
+        <select style={inputStyle} value={toolName} aria-label="MCP tool"
+          onChange={ev => set({ tool: ev.target.value, arguments: {} })}>
+          <option value="">Which tool…</option>
+          {callable.map(t => (
+            <option key={t.name} value={t.name}>
+              {t.title || t.name}{t.disposition === "callable" ? "" : " (granted)"}
+            </option>
+          ))}
+          {orphanTool && <option value={toolName}>{toolName} (not callable now)</option>}
+        </select>
+      )}
+      {tool?.description && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{tool.description}</div>
+      )}
+      {Object.entries(props).map(([name, spec]) => (
+        <input key={name} style={inputStyle} aria-label={name}
+          value={fieldText(args[name])}
+          onChange={ev => set({ arguments: { ...args, [name]: mcpArgument(ev.target.value, spec?.type) } })}
+          placeholder={`${name}${required.has(name) ? "" : " (optional)"}`
+            + (spec?.description ? ` — ${spec.description}` : "")} />
+      ))}
+    </div>
+  );
+}
+
 export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange, onRemove }: {
   e: AutoEffect; agents: UserAgent[];
   /** W1 — the step list this row belongs to, so its "Only if" picker can offer what the
@@ -833,6 +927,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
           </div>
         )}
         {e.kind === "integration_call" && <IntegrationRows e={e} onChange={onChange} />}
+        {e.kind === "mcp_call" && <McpCallRows e={e} onChange={onChange} />}
         {e.kind === "kinetic_action" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <input style={inputStyle} value={String(e.config.action_id ?? "")} onChange={ev => set({ action_id: ev.target.value })} placeholder="declared action id" />
