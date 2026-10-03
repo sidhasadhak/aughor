@@ -275,12 +275,12 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] The full live run of the promise-breach chain: Slack alert → Jira ticket → ticket closed → Briefing shows before and after.
 - [ ] Accepting a Slack send from the inbox does not file a thread the way automatic sends do.
 - [ ] The links and probation queues have no screen — API data only.
-- [ ] "That's wrong" said in a Slack thread does not come back as a correction.
+- [ ] "That's wrong" said in a Slack thread does not come back as a correction. *Built 2026-10-04 on `claude/de-live-receipts-thelook` (not merged): the bot follows a thread it has answered, and a reply that opens by saying the answer is wrong is recorded on that answer through the verdict door — `correct` when it says what is right, `reject` when it only says wrong; a mention in a followed thread is still answered, and anything else said there is left alone. `message.channels` is in the manifest. ⚑ Live only after the app is reinstalled with that event and the supervisor runs this code.*
 - [ ] A deep report does not record whether its cause-and-effect claims survived their own checks.
 - [ ] The ranker needs more note kinds, and should ask once when two equally trusted sources disagree.
 - [ ] ⚑ Email in and out (HB-5) — the one major destination that does not exist at all; waits on the user's Google OAuth client, and is cheapest now that the structured answer (top item 1) has merged. Was top item 10 until the user took it off the list on 2026-09-23.
 - [ ] Jira and Confluence through Atlassian's MCP server — built, never tried against a real Atlassian server.
-- [ ] Slack thread replies without an @mention are not picked up (needs `message.channels` + a reinstall).
+- [ ] Slack thread replies without an @mention are not picked up (needs `message.channels` + a reinstall). *2026-10-04, same branch: the event is in the manifest and a correction is picked up; a follow-up QUESTION that names no one is still not answered — by choice, the bot acts in a thread only on a mention or a correction.*
 
 ### Industry packages — Arc IP (§3.17)
 - [ ] ⚑ Banking is built but inactive (draft) until a person reviews and activates it in the UI; activation must also stop "Retail Banking" matching the retail package.

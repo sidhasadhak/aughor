@@ -15,7 +15,7 @@ import type { Adapter } from "chat";
 import type { Author, EmojiValue } from "chat";
 
 import type { AnswerEnvelope, AskOptions, TurnArtifacts, VerdictBody } from "./aughor.js";
-import { buildBot, stripMention, withoutTables } from "./bot.js";
+import { buildBot, CORRECTION, stripMention, withoutTables } from "./bot.js";
 
 const THREAD = "slack:C1:1712.001";
 
@@ -636,5 +636,82 @@ describe("TJ-4 — a reaction is a verdict", () => {
     bot.processReaction(reaction(adapter, "white_check_mark", true, "unknown"));
     await settle();
     expect(verdicts).toHaveLength(0);
+  });
+});
+
+// ── a reply that says the answer is wrong (2026-10-04) ───────────────────────────────────
+
+describe("buildBot — a correction said in the thread", () => {
+  function verdicts() {
+    const posted: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => {
+      posted.push(body);
+      return { ok: true, status: 200, detail: "recorded" };
+    };
+    return { posted, postVerdict };
+  }
+
+  async function answered(postVerdict?: (b: VerdictBody) => Promise<{ ok: boolean; status: number; detail: string }>) {
+    const adapter = mockAughorAdapter();
+    const { ask, seen } = askYielding(["Revenue was 365,320."], { investigationId: "inv-42", question: "revenue in 2023?" });
+    const bot = buildBot({ ask, postVerdict, adapters: { slack: adapter }, state: createMockState() });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor revenue in 2023?"));
+    return { adapter, bot, seen };
+  }
+
+  it("a reply that says what is right is recorded as a correction on the thread's answer", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot, seen } = await answered(postVerdict);
+
+    await bot.handleIncomingMessage(adapter, THREAD,
+      createTestMessage("m2", "That's wrong — 2023 means the calendar year, not the last twelve months."));
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0].investigationId).toBe("inv-42");
+    expect(posted[0].verdict).toBe("correct");
+    expect(posted[0].note).toContain("2023 means the calendar year");
+    expect(posted[0].note).toContain("revenue in 2023?");
+    expect(lastPost(adapter)).toBe("Recorded as a correction on this answer.");
+    expect(seen).toHaveLength(1);          // a correction is not a question: nothing is asked
+  });
+
+  it("a reply that only says wrong is a reject", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot } = await answered(postVerdict);
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "no, that is incorrect."));
+    expect(posted.map((v) => v.verdict)).toEqual(["reject"]);
+  });
+
+  it("the people's own conversation in the thread is left alone", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot, seen } = await answered(postVerdict);
+    const before = (adapter.postMessage as unknown as Mock).mock.calls.length;
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "is anything wrong with shipping this week?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m3", "thanks, sharing this with finance"));
+
+    expect(posted).toHaveLength(0);
+    expect(seen).toHaveLength(1);
+    expect((adapter.postMessage as unknown as Mock).mock.calls.length).toBe(before);
+  });
+
+  it("a mention in a thread the bot follows is still answered", async () => {
+    // Once a thread is followed the SDK stops calling the mention handler for it; every
+    // message, mentions included, goes to the followed-thread handler. Without the hand-over
+    // a follow-up question in the bot's own thread would be met with silence.
+    const { adapter, bot, seen } = await answered();
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor and for 2024?"));
+    expect(seen).toHaveLength(2);
+  });
+
+  it("opens with the verdict, or it is not one", () => {
+    for (const yes of ["that's wrong", "That’s wrong — use net revenue", "This is incorrect", "no, it is not right",
+                       "Wrong. The filter is missing", "correction: exclude cancelled lines", "not correct"]) {
+      expect(CORRECTION.test(yes), yes).toBe(true);
+    }
+    for (const no of ["is anything wrong with shipping?", "what went wrong in July?", "I was wrong about the date, ignore me",
+                      "thanks", "that's right", "correctional facilities by state"]) {
+      expect(CORRECTION.test(no), no).toBe(false);
+    }
   });
 });
