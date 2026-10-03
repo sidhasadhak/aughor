@@ -270,7 +270,9 @@ from aughor.util.prompt_safety import unfence
 
 # schema line: "  colname  TYPE" optionally "  -- [v1, v2, …]"
 _COL_LINE = re.compile(r"^\s{2}(\w+)\s+([A-Za-z][\w()]*)")
-_ANNOT = re.compile(r"--\s*\[([^\]]*)\]")
+# A value list is read to its closing bracket — or, when the renderer fenced it as data (DE-1), to the fence's
+# closing tag: a value that carried a `]`, or a `</data>` neutralised to `[data]`, would otherwise end the list early.
+_ANNOT = re.compile(r"--\s*\[(<data>.*?</data>|[^\]]*)\]")
 _TABLE_LINE = re.compile(r"^TABLE:\s+([\w.]+)")
 
 
@@ -281,7 +283,7 @@ _TABLE_LINE = re.compile(r"^TABLE:\s+([\w.]+)")
 #: mechanism this module exists for — was dead, and every entity fell through to the
 #: DB probe, whose "absent" then produced false abstains ("'First Class' is not present
 #: in this data" with the value sitting right there in the schema). Found 2026-08-15.
-_VALUES_LINE = re.compile(r"^\s{2}--\s+(\w+)\s+\[([^\]]*)\]")
+_VALUES_LINE = re.compile(r"^\s{2}--\s+(\w+)\s+\[(<data>.*?</data>|[^\]]*)\]")
 
 
 def _parse_schema(schema: str):

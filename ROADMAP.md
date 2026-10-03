@@ -10235,7 +10235,9 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > `INTERSECT` roots; SUMMARIZE joins the editor's metadata reads, since the Workspace is parsed now; the ALTER COLUMN
 > route reads the door's refusal (`applied: false, override_only: true`); schema samples and value lists reach the
 > model capped per value, cleaned and fenced inline as data, the Data Catalog's sample rows likewise, and the value
-> readers take the fence off. *Receipt:* `tests/unit/test_de1_read_only_at_every_door.py` runs the study's nine
+> readers take the fence off (and read a fenced list to its closing tag — a `</data>` neutralised to `[data]` inside
+> a value ended the old bracket match early; found by DuckDB's tie order moving that value to the front of a list).
+> *Receipt:* `tests/unit/test_de1_read_only_at_every_door.py` runs the study's nine
 > statements and five siblings through every connection class's `execute` and `execute_bounded` against a driver
 > that fails on contact — 14 classes, every statement refused before the driver, and a plain read parsed in each
 > class's own dialect (Snowflake's `col:field` passes its door and fails BigQuery's); a value worded as an
