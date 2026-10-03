@@ -8163,6 +8163,33 @@ recorded.
 only a person's synonym, or a model, reaches them.
 **Fixed after an independent review of the branch (2026-09-24):** a deep run frames its question twice (the door, then the graph's first node), so each miss was counted twice — the door now passes the run's id and a run is one miss.
 
+🔴 **MEASURED AGAIN 2026-10-04 (PENDING item 28) — near-matches are NOT wired, and now with a reason.**
+*On real traffic:* theLook has 45 recorded misses and none is a reworded business term — 13
+scheduled runs and two questions about revenue asked many times. The finder drew
+`completed_orders` from every scheduled run, at a score of 4.0: it read the code-written context
+in front of the ask ("the most recent complete day", the previous report's "order volume"), not
+the ask ("What changed in theLook in the last day?"). And the misses door showed no question at
+all: it read a run's newest twenty events and the question is on the first; all 45 runs held
+more than twenty, so each read "not kept" the day after it ran.
+*On a fresh held-out set* (`evals/framing_near_match_heldout.jsonl`, 25 reworded questions and 18
+controls over four connections' terms, committed before any run on it), under the rule the DEV
+split fitted (offer from a score of 1.0; frame without the chooser when the best leads by 1.0):
+of the 23 reworded questions the exact matcher missed, the finder would frame **6 right and 1
+wrong**, hand the chooser 2 with the meant term among them, and leave **14 missed**; of 16
+controls it would frame **1 wrong** ("Which brand has the highest average unit price?" as
+high-risk payments, on "highest") and hand the chooser 1
+(`evals/framing_near_match_heldout_results_2026-10-04.json`; `--heldout` reproduces it). Two of
+nine frames wrong, each one silently changing the population an answer is computed on, for a
+recall of about a third: the "by design" rule stands, and the earlier 1.5 threshold's "0 of 7
+controls" was the fit, not the finder.
+*What changed instead:* the frame — exact matcher included — is of the ASK
+(`automations.temporal.ask_of` undoes the scheduled grounding by the composer's own headers);
+`GET /framing/misses` reads the run's first event, shows a scheduled run's ask and says it was
+scheduled, and lists what each miss `might_mean` for a PERSON to turn into a synonym. On a copy
+of the live log: 25 of 25 shown misses carry their question, where none did. Still open: a
+screen over that door, and the chooser's behaviour on candidates (a paid run — not worth taking
+on these numbers).
+
 ### 3.33 · The chat's two main buttons can reach the conversation agent (PENDING.md item 15, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `chat.buttons_reach_agent`, **on by default since 2026-09-24**, the user's call over the ⚑)
 
 > **The fact it answers.** Measured: Quick posts `/chat` and the default Agent button posts the

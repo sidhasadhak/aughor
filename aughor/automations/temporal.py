@@ -44,6 +44,14 @@ MAX_LAG_DAYS = 30
 #: cap only guards against something pathological riding the prompt.
 _PREVIOUS_SUMMARY_CAP = 1200
 
+#: The first line of each code-written block a scheduled run's question is prefixed with, and
+#: the sentence the previous-report block ends on. Named once because `ask_of` undoes the
+#: composition by them: the previous report is quoted text and may hold blank lines, so that
+#: block is ended by its own last sentence, not by the first blank line after its header.
+OBSERVATION_HEADER = "[Scheduled-run context — written by code, not inferred]"
+PREVIOUS_REPORT_HEADER = "[Previous scheduled report — for consistency checking]"
+_PREVIOUS_REPORT_END = "narrating the difference as a business change."
+
 
 def cadence_of(cron: str) -> str:
     """``daily`` | ``weekly`` | ``monthly`` from a 5-field cron, best-effort.
@@ -166,7 +174,7 @@ def observation_note(now: datetime, cron: str, lag_days: int = DEFAULT_LAG_DAYS)
     anchor = today - timedelta(days=lag)
 
     lines = [
-        "[Scheduled-run context — written by code, not inferred]",
+        OBSERVATION_HEADER,
         f"This is a scheduled {cadence} run at {now.strftime('%Y-%m-%dT%H:%M')}Z.",
     ]
     if cadence == "weekly":
@@ -224,19 +232,47 @@ def previous_report_note(automation_id: str) -> str:
                 if kind == "investigate" and text:
                     started = str(getattr(run, "started_at", "") or "")[:16]
                     return (
-                        "[Previous scheduled report — for consistency checking]\n"
+                        f"{PREVIOUS_REPORT_HEADER}\n"
                         f"The previous run of this automation ({started}Z) reported:\n"
                         f"\"{text[:_PREVIOUS_SUMMARY_CAP]}\"\n"
                         "If your current measurements DISAGREE with numbers that report "
                         "states for the same periods, the SOURCE has restated its own "
                         "history — say that explicitly, with both values, instead of "
-                        "narrating the difference as a business change.")
+                        f"{_PREVIOUS_REPORT_END}")
         return ""
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "previous-report grounding is best-effort; the run proceeds "
                       "without it", counter="automations.previous_report_note")
         return ""
+
+
+def ask_of(question: str) -> str:
+    """What was ASKED, without the code-written blocks `scheduled_grounding` puts in front of it.
+
+    The grounding is context for the model that answers. It is not the question, and a reader
+    that matches words must not read it as one: measured on theLook 2026-10-04, the near-match
+    finder drew the declared term `completed_orders` from all twelve recorded scheduled runs,
+    whose ask was "What changed in theLook in the last day?" — the words came from "the most
+    recent complete day" and from the previous report's "order volume". A question that carries
+    no such block is returned as it is.
+    """
+    rest, stripped = question or "", False
+    while True:
+        head = rest.lstrip()
+        if head.startswith(PREVIOUS_REPORT_HEADER):
+            end = head.find(_PREVIOUS_REPORT_END)
+            if end < 0:
+                break
+            rest, stripped = head[end + len(_PREVIOUS_REPORT_END):], True
+        elif head.startswith(OBSERVATION_HEADER):
+            end = head.find("\n\n")
+            if end < 0:
+                break
+            rest, stripped = head[end:], True
+        else:
+            break
+    return rest.strip() if stripped else (question or "")
 
 
 def resolve_lag(effect_config: dict, learned_lag: Optional[int] = None) -> int:

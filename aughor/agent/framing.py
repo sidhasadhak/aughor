@@ -153,7 +153,11 @@ def resolve_frame(question: str, connection_id: str, schema_name: Optional[str] 
     if graph is None:
         return None
     synonyms = person_synonyms(connection_id)
-    frame = frame_question(question, graph, synonyms=synonyms, hops=hops, dialect=dialect)
+    # A scheduled run's question arrives with code-written context in front of it; the frame is
+    # of what was ASKED. The context names periods and quotes the last report, and its words are
+    # not the person's.
+    from aughor.automations.temporal import ask_of
+    frame = frame_question(ask_of(question), graph, synonyms=synonyms, hops=hops, dialect=dialect)
     if choose and frame.ambiguous:
         frame = choose_definition(frame, graph, provider=provider, synonyms=synonyms, dialect=dialect,
                                   conn_id=connection_id, trace_id=trace_id, inv_id=inv_id)

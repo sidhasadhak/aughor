@@ -3575,5 +3575,6 @@ def framing_misses(connection_id: str = BUILTIN_ID):
     """PENDING item 12 — the questions on this connection that reached none of its declared business
     terms: how many, when, and (while the session log keeps the run) what was asked. The record holds
     each run's trace id, never the question's text; a person turns a miss into a synonym."""
+    from aughor.agent.framing import served_graph
     from aughor.ontology.framing_misses import misses
-    return misses(connection_id)
+    return misses(connection_id, graph=served_graph(connection_id))
