@@ -406,6 +406,7 @@ class TestTrailingPartialGuard:
         assert note and "2025-06" in note
         assert "incomplete" in note.lower() or "partial" in note.lower()
         assert "may be incomplete" in it.observation_label   # honest relabel
+        assert it.observation_label.endswith("June 2025 may be incomplete"), "the month in words, not 2025-06"
 
     def test_full_final_month_not_flagged(self):
         it = _intake()

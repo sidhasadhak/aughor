@@ -5,7 +5,7 @@
  * counting marks is not painting, and "a fill that looks like a colour" is not a token.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as vl from "vega-lite";
 import { View, parse } from "vega";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
@@ -205,3 +205,53 @@ describe("a number under a thousand is rounded on the chart", () => {
     expect(texts.filter((t) => /\d\.\d{5,}/.test(t))).toEqual([]);      // no raw float anywhere on the chart
   });
 });
+
+/** The text a chart SHOWS: labels Vega hid for overlapping (opacity 0) are not read. */
+async function shownText(columns: string[], rows: unknown[][], width = 500): Promise<string[]> {
+  const out = resolveVegaSpec({ columns, rows, chartType: "auto", showLabels: true })!;
+  const compiled = vl.compile({ ...out.spec, width, height: out.defaultH } as Parameters<typeof vl.compile>[0],
+                              { config }).spec;
+  const view = new View(parse(compiled), { renderer: "none" });
+  await view.runAsync();
+  const texts: string[] = [];
+  const walk = (nodes: { items?: unknown[]; text?: unknown; opacity?: number }[] | undefined) => {
+    for (const n of nodes ?? []) {
+      // a label of two lines (a month over its year) is one label, read as one
+      if (n.opacity !== 0 && (typeof n.text === "string" || Array.isArray(n.text))) {
+        texts.push(Array.isArray(n.text) ? n.text.join(" ") : n.text);
+      }
+      walk(n.items as typeof nodes);
+    }
+  };
+  walk((view.scenegraph() as unknown as { root?: { items?: [] } }).root?.items);
+  return texts;
+}
+
+const MONTHS = ["2025-08-01", "2025-09-01", "2025-10-01", "2025-11-01", "2025-12-01", "2026-01-01", "2026-02-01",
+                "2026-03-01", "2026-04-01", "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01"];
+const REVENUE = [55965.77, 50543.93, 58007.77, 64251.7, 59989.8, 67298.94, 68648, 78272.25, 79059.67, 86425.5,
+                 92802.42, 109975.57, 117163.37];
+const SHORT = ["Aug 2025", "Sep", "Oct", "Nov", "Dec", "Jan 2026", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"];
+
+describe("a month axis labels every month", () => {
+  // theLook Q3 (2026-10-03): thirteen "%b %Y" labels ran together and three were dropped. The viewer
+  // was in Zurich, where a local axis put August's tick before August's first point — pinned here, so
+  // the test means the same on a runner that keeps UTC.
+  let tz: string | undefined;
+  beforeAll(() => { tz = process.env.TZ; process.env.TZ = "Europe/Zurich"; });
+  afterAll(() => { if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz; });
+
+  it("on a trend: the year on the first month and on January", async () => {
+    const texts = await shownText(["month", "monthly_revenue"], MONTHS.map((m, i) => [m, String(REVENUE[i])]));
+    expect(texts).toEqual(expect.arrayContaining(SHORT));
+  });
+
+  it("on a change chart too, spelled as the trend spells it", async () => {
+    const rows = MONTHS.map((m, i) => [m, String(REVENUE[i]), i ? String(REVENUE[i - 1]) : "NULL",
+                                       i ? String(REVENUE[i] - REVENUE[i - 1]) : "NULL"]);
+    const texts = await shownText(["month", "monthly_revenue", "prev_month_revenue", "revenue_change"], rows);
+    expect(texts).toEqual(expect.arrayContaining(["Sep 2025", ...SHORT.slice(2)]));
+    expect(texts.filter((t) => /Sept/.test(t))).toEqual([]);
+  });
+});
+

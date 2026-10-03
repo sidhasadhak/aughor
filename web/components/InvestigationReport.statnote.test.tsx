@@ -232,3 +232,22 @@ describe("a simple answer", () => {
     expect(screen.queryByText("7,027")).not.toBeInTheDocument();     // still not printed twice
   });
 });
+
+/** A chart is captioned by what it draws (2026-10-03): Q2's revenue bars sat under "Revenue and average order
+ *  value by category"; the source link keeps the result's own title. */
+describe("a chart's caption", () => {
+  it("names the measure drawn, not every measure the result holds", () => {
+    const title = "Revenue and average order value by category — 4 Mar – 3 Sep 2026";
+    const report = {
+      headline: "Outerwear & Coats led", executive_summary: "", confidence: "HIGH",
+      phases: [{ phase_id: "adhoc_2", phase_name: title, phase_icon: "", status: "complete", summary: "", caveats: [],
+        findings: [{ finding_id: "f1", title, claim: null, interpretation: "", sql: "SELECT 1",
+          columns: ["category", "revenue", "average_order_value"],
+          rows: [["Outerwear & Coats", "237836.63", "150.82"], ["Jeans", "214128.38", "102.26"], ["Intimates", "85036.08", "36.72"]],
+          row_count: 3, key_numbers: [], chart_type: "auto", stat_note: null, is_significant: false }] }],
+    } as never;
+    const { container } = render(<ReportView report={report} onShowSource={vi.fn()} />);
+    expect(container.querySelector("figcaption")?.textContent).toBe("Revenue by category — 4 Mar – 3 Sep 2026");
+    expect(screen.getByTitle(`Data + SQL behind “${title}”`)).toBeInTheDocument();
+  });
+});

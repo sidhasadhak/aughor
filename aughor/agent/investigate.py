@@ -4783,7 +4783,17 @@ def _window_label(start: str, end: str) -> str:
         if ds.year == de.year:
             return f"{ds.strftime('%B')}–{de.strftime('%B %Y')}"
         return f"{ds.strftime('%B %Y')}–{de.strftime('%B %Y')}"
-    return f"{s} → {e}"
+    # Any other window reads in words too: Q2's line under its answer read "2026-03-04 →
+    # 2026-09-03" while every title beside it was in words (2026-10-03).
+    def day(d) -> str:
+        return f"{d.day} {d.strftime('%B')}"
+    if ds == de:
+        return f"{day(ds)} {ds.year}"
+    if ds.year != de.year:
+        return f"{day(ds)} {ds.year} – {day(de)} {de.year}"
+    if ds.month == de.month:
+        return f"{ds.day}–{de.day} {de.strftime('%B %Y')}"
+    return f"{day(ds)} – {day(de)} {de.year}"
 
 
 def _preceding_window(obs_start: str, obs_end: str, dmin: str):
@@ -5176,6 +5186,15 @@ def _flag_sparse_comparison(intake, conn_id: str, table: str, date_col: str,
     return _sparse_comparison_decision(intake, span_months, populated)
 
 
+def _month_words(month: str) -> str:
+    """"2026-09" as "September 2026"; anything else as written."""
+    from datetime import date
+    try:
+        return date.fromisoformat(f"{str(month)[:7]}-01").strftime("%B %Y")
+    except ValueError:
+        return str(month)
+
+
 def _trailing_partial_decision(intake, monthly_counts) -> "str | None":
     """Pure decision half of the trailing-partial guard: when the LAST month of the observation
     window carries far fewer rows than the window's typical (median) month, it is likely an
@@ -5194,7 +5213,7 @@ def _trailing_partial_decision(intake, monthly_counts) -> "str | None":
     if mid > 0 and last_n < _TRAILING_PARTIAL_RATIO * mid:
         intake.observation_label = (
             (getattr(intake, "observation_label", "") or "").rstrip()
-            + f" — final period {last_m} may be incomplete"
+            + f" — {_month_words(last_m)} may be incomplete"
         ).strip()
         return (
             f"the final observation period {last_m} has {last_n} rows vs a typical ~{mid:.0f}/month — it "
@@ -10278,12 +10297,25 @@ def _states_a_figure(sentence: str, question: str = "") -> bool:
     return any(n.strip(".,") not in asked for n in re.findall(r"\d[\d,.]*", _PROSE_DATE_RE.sub(" ", sentence)))
 
 
-def _lead_sentence(text: str, question: str = "") -> tuple[str, str]:
+def _names_a_value(sentence: str, values: Iterable = (), question: str = "") -> bool:
+    """Does the sentence name a value read from the result rows — a category, a centre — that the
+    question did not? "…was Outerwear & Coats, while Intimates generated the least…" answered Q2
+    with no figure (2026-10-03), and a lead that names what came back is an answer."""
+    low, asked = sentence.lower(), (question or "").lower()
+    for v in values or ():
+        t = str(v).strip().lower()
+        if len(t) >= 3 and t not in asked and re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", low):
+            return True
+    return False
+
+
+def _lead_sentence(text: str, question: str = "", values: Iterable = ()) -> tuple[str, str]:
     """``(headline, rest)``: the conclusion's opening sentence as its headline, else no headline
     and the whole text.
 
     No headline when the answer opens with a table or a list, or with a sentence that states no
-    figure of its own — that announces the answer rather than giving it. A sentence too long to
+    figure of its own and names no value its rows hold (``values``) — that announces the answer
+    rather than giving it. A sentence too long to
     head the page heads it by its first clause that carries a figure, the rest of the sentence
     opening the body; failing that, cut at a word. A long opener used to leave the answer with no
     headline at all, and its receipt then filed the question as the headline."""
@@ -10294,17 +10326,42 @@ def _lead_sentence(text: str, question: str = "") -> tuple[str, str]:
     para = first_para.strip()
     end = _SENTENCE_END_RE.search(para)
     lead = para[:end.end()] if end else para
-    if not _states_a_figure(lead, question):
+    def answers(sentence: str) -> bool:
+        return _states_a_figure(sentence, question) or _names_a_value(sentence, values, question)
+
+    if not answers(lead):
         return "", t
     rest = t[len(lead):].strip()
     if len(lead) <= 240:
         return lead.rstrip(".").strip(), rest
     for cut in reversed([m for m in re.finditer(r";\s+|\s+—\s+|:\s+", lead) if m.start() <= 240]):
         head, tail = lead[:cut.start()].strip(), lead[cut.end():].strip()
-        if _states_a_figure(head, question) and tail:
+        if answers(head) and tail:
             sep = "\n\n" if lead == para else " "
             return head, (tail[:1].upper() + tail[1:] + (sep + rest if rest else "")).strip()
     return lead[:240].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…", t
+
+
+#: A cell that names a period — "2026-07-01", "July 2026", "Q3 2026" — not a value a lead answers with.
+_PERIOD_VALUE_RE = re.compile(
+    r"\d{4}(?:-\d{2}(?:-\d{2})?)?(?:[ T].*)?"
+    r"|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4}"
+    r"|q[1-4]\s*\d{4}|\d{4}\s*-?\s*q[1-4]", re.I)
+
+
+def _result_values(state) -> list[str]:
+    """The text values the answer's results hold — the categories, centres and names a lead can
+    name — once each. Numbers are figures, periods are periods and an empty cell is nothing."""
+    out: dict[str, None] = {}
+    for phase in (state or {}).get("investigation_phases") or []:
+        for f in (phase or {}).get("findings") or []:
+            for row in (f or {}).get("rows") or []:
+                for v in row if isinstance(row, (list, tuple)) else ():
+                    t = str(v if v is not None else "").strip()
+                    if (t and t.lower() not in ("null", "none", "nan") and _as_float(t) is None
+                            and not _PERIOD_VALUE_RE.fullmatch(t) and not _PROSE_DATE_RE.fullmatch(t)):
+                        out.setdefault(t, None)
+    return list(out)
 
 
 def _conclusion_as_answer(state, intake_data: dict, question: str):
@@ -10324,7 +10381,7 @@ def _conclusion_as_answer(state, intake_data: dict, question: str):
     if shape != "describe" or not conclusion:
         return None
     from aughor.agent.prompts_investigate import ADASynthesisModel
-    headline, body = _lead_sentence(conclusion, question)
+    headline, body = _lead_sentence(conclusion, question, _result_values(state))
     return ADASynthesisModel(
         headline=headline, executive_summary=body or conclusion, closing_summary="",
         total_change_label="", attribution_waterfall=[], confidence="HIGH",

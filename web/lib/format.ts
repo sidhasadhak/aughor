@@ -466,7 +466,9 @@ export function fmtDate(v: string, gran: Gran): string {
       return String(d.getUTCFullYear());
     case "month":
     default:
-      return d.toLocaleString("default", { month: "short", year: "numeric" });
+      // The chart axes' own month names (d3's `%b`): the viewer's locale wrote "Sept 2025" under a
+      // change chart beside a trend whose axis read "Sep 2025" (2026-10-03).
+      return `${_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
   }
 }
 

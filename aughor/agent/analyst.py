@@ -272,11 +272,14 @@ def _is_ratio_of(rows: list, r: int, a: int, b: int, scale: int) -> bool:
 
 def _numeric_columns(cols: list, rows: list) -> list[int]:
     """The columns that hold a measure: a number on every row that has a value, named neither
-    as a key nor as a time grain."""
+    as a key nor as a time grain. A cell written "NULL" has no value: Q3's change and prior-month
+    columns, "NULL" on their first row, were titled as what the result was cut by (2026-10-03) —
+    the chart, which reads "NULL" as empty, plotted them as measures."""
     return [i for i, c in enumerate(cols)
             if not _KEY_NAME_RE.search(c) and not _GRAIN_NAME_RE.search(c)
             and any(_as_number(r[i]) is not None for r in rows)
-            and all(_as_number(r[i]) is not None for r in rows if r[i] not in (None, ""))]
+            and all(_as_number(r[i]) is not None for r in rows
+                    if str("" if r[i] is None else r[i]).strip().lower() not in _EMPTY_CELLS)]
 
 
 def _rate_parts(cols: list, rows: list, numeric: list[int]) -> list[tuple[int, int, int]]:

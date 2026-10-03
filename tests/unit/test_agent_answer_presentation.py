@@ -288,3 +288,19 @@ def test_a_title_is_written_in_words_a_reader_reads():
                                        "2026-07-01", "not a window")] == [
         "Jul 2026", "Aug 2025 – Aug 2026", "2025", "4 Mar – 3 Sep 2026",
         "1–15 Jul 2026", "15 Dec 2025 – 14 Jan 2026", "1 Jul 2026", "not a window"]
+
+
+def test_a_cell_written_null_is_empty_not_a_cut():
+    """Q3's change result (2026-10-03) carried "NULL" on its first row; its two measures were titled as what
+    the result was cut by — "Monthly revenue by month, prev month revenue and revenue change"."""
+    cols = ["month", "monthly_revenue", "prev_month_revenue", "revenue_change"]
+    rows = [["2025-08-01", "55965.77", "NULL", "NULL"],
+            ["2025-09-01", "50543.93", "55965.77", "-5421.84"],
+            ["2025-10-01", "58007.77", "50543.93", "7463.84"]]
+    sql = ("WITH m AS (SELECT DATE_TRUNC(DATE(o.created_at), MONTH) AS month, SUM(oi.sale_price) AS monthly_revenue "
+           "FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id WHERE o.status = 'Complete' "
+           "AND o.created_at >= '2025-08-01' AND o.created_at < '2026-09-01' GROUP BY 1) "
+           "SELECT month, monthly_revenue, LAG(monthly_revenue) OVER (ORDER BY month) AS prev_month_revenue, "
+           "monthly_revenue - LAG(monthly_revenue) OVER (ORDER BY month) AS revenue_change FROM m ORDER BY month")
+    assert _adhoc_title(cols, "q", sql, rows, dialect="bigquery") == (
+        "Monthly revenue, prev month revenue and revenue change by month where status = Complete — Aug 2025 – Aug 2026")

@@ -17,6 +17,7 @@ import { Pending } from "@/components/ui/motion";
 import React, { useState } from "react";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { chartCaption } from "@/components/charts/caption";
 import { FigureSources, FindingFigures, isOneRecord } from "@/components/FindingFigures";
 import { SqlResultTable } from "@/components/AugTable";
 import { AnswerProse } from "@/components/chat/AnswerProse";
@@ -244,8 +245,10 @@ function EvidenceBlock({ finding, onShowSource, answer = "" }: { finding: Invest
   // not already state (`FindingFigures`).
   const oneRecord = hasData && !hasChart && isOneRecord(finding.columns, finding.rows as unknown[][]);
   // CA-4 "title = claim": the claim leads the figure; the query's descriptive
-  // name stays on the source-data affordance below.
-  const headline = finding.claim?.trim() || finding.title;
+  // name stays on the source-data affordance below. Without a claim the figure is
+  // captioned by what it draws, which can be fewer measures than the result holds.
+  const headline = finding.claim?.trim()
+    || chartCaption(finding.title, finding.columns, finding.rows as unknown[][], finding.chart_type);
 
   return (
     <div className="flex flex-col gap-2.5">

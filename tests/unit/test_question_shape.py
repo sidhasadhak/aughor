@@ -101,6 +101,31 @@ def test_a_lead_that_announces_the_answer_does_not_head_it():
     assert I._lead_sentence(answered, Q2) == ("Outerwear & Coats brought in the most, $237,836.63, of the 10", TABLE)
 
 
+CATEGORIES = ["Outerwear & Coats", "Jeans", "Sweaters", "Suits & Sport Coats", "Fashion Hoodies & Sweatshirts",
+              "Swim", "Sleep & Lounge", "Shorts", "Tops & Tees", "Intimates"]
+
+
+def test_a_lead_that_names_what_came_back_heads_the_answer():
+    """Q2's answer of 2026-10-03 opened with its leader and its last, and no figure: an answer all the same."""
+    lead = ("The product category with the highest revenue over the last six months (March 4, 2026, to "
+            "September 3, 2026) was Outerwear & Coats, while Intimates generated the least among the top 10 "
+            "categories.")
+    text = lead + "\n\n" + TABLE
+    assert I._lead_sentence(text, Q2, CATEGORIES) == (lead.rstrip("."), TABLE)
+    assert I._lead_sentence(text, Q2) == ("", text), "without the rows it names nothing it read"
+    announced = "The following table lists the 10 product categories by revenue.\n\n" + TABLE
+    assert I._lead_sentence(announced, Q2, CATEGORIES) == ("", announced)
+    # a value the question itself named is the question's, not the answer's
+    assert I._lead_sentence("Jeans is listed below.\n\n" + TABLE, "How did Jeans do?", ["Jeans"])[0] == ""
+
+
+def test_the_values_a_lead_can_name_are_the_text_its_rows_hold():
+    state = {"investigation_phases": [{"findings": [{"rows": [
+        ["Outerwear & Coats", "237836.63", "2026-07-01", "July 2026", "NULL", None, "Q3 2026"],
+        ["Jeans", "214128.38", "2026-08-01", "August 2026", "", "nan", "Outerwear & Coats"]]}]}]}
+    assert I._result_values(state) == ["Outerwear & Coats", "Jeans"]
+
+
 def test_a_long_lead_heads_the_answer_by_its_first_clause_and_a_sentence_runs_past_vs():
     clause = "Outerwear & Coats led with $237,836.63 at an AOV of $150.82"
     tail = "jeans followed with $214,128.38, " + ", ".join(f"category {i} with ${i},000" for i in range(12))
