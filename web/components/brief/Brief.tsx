@@ -17,7 +17,6 @@
 import React, { useState } from "react";
 import { renderEmphasis } from "@/components/brief/BriefProse";
 import { useReveal, safePartial } from "@/lib/useReveal";
-import { deltaFavorable } from "@/lib/favorability";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { formatCount } from "@/lib/format";
 
@@ -160,10 +159,8 @@ export function BriefMetrics({
   return (
     <div className={`flex flex-wrap gap-x-8 gap-y-3 ${className}`}>
       {metrics.map((m, i) => {
-        // Colour by FAVORABILITY, not sign: a rising CAC / falling margin is red, a rising
-        // repeat-rate is green (deltaFavorable judges good/bad from the metric label).
-        const fav = m.delta ? deltaFavorable(m.label, m.delta.trim().startsWith("-") ? -1 : 1) : null;
-        const deltaCls = fav === false ? "text-red-400" : fav === true ? "text-emerald-400" : "text-zinc-400";
+        // No colour on answer text (the user, 2026-09-30): the change reads in the neutral tone.
+        const deltaCls = "text-zinc-400";
         return (
           <div key={i} className="flex flex-col gap-0.5 min-w-0">
             {m.label && <span className="aug-text-xs text-zinc-500">{localizeCurrency(m.label).replace(/\*+/g, "")}</span>}

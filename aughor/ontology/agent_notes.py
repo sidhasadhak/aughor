@@ -16,6 +16,8 @@ artifact, not by how confident the model feels.
     returned-orders count wrong (800 vs 296). It is STAGED as an
     ``OntologyRecommendation(kind="table_note")`` and waits for accept().
   * Anything at med/low confidence is staged, never applied.
+  * A column note that names a GOVERNED METRIC is staged: how a metric is computed is the metric
+    catalogue's to say, and a note on one column rides into every prompt that reads it.
   * APPEND-ONLY: an existing HUMAN note is never overwritten by the agent — the
     proposal is staged with the conflict named, so the person decides.
 
@@ -26,6 +28,7 @@ session) so a reviewer sees WHY, not just WHAT.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -117,6 +120,34 @@ def propose_note(connection_id: str, schema: str, *, target: str, table: str,
         return NoteOutcome(False, "rejected", f"could not record the note: {type(exc).__name__}")
 
 
+def _governed_metric_named(conn: str, note: str) -> str:
+    """The governed metric a note names — by its name or its label, plurals included — or "".
+
+    "revenue and units_sold are calculated excluding 'Cancelled' orders" applied directly to
+    theLook's `order_items.status` (2026-10-02): high confidence, with evidence, and false for units
+    sold, which the catalogue declares on inventory items, cancelled lines included. It rode into
+    every later prompt that read the column. Matched as text, not whole words: "revenues" names
+    revenue, and a note held for a person by mistake costs a review where one applied by mistake cost
+    every later answer. A catalogue that cannot be read names nothing."""
+    def words(text: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+    said = words(note)
+    try:
+        from aughor.semantic.metrics import list_metrics
+        metrics = list_metrics(connection_id=conn) or []
+    except Exception as exc:  # noqa: BLE001 — a note is routed without the catalogue, as before
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the metric catalogue could not be read to route an agent note",
+                 counter="ontology.agent_notes.catalogue")
+        return ""
+    for m in metrics:
+        label = str(getattr(m, "label", "") or "")
+        for phrase in (getattr(m, "name", ""), label, re.sub(r"\(.*?\)", " ", label)):
+            if words(phrase) and words(phrase) in said:
+                return str(getattr(m, "name", "") or words(phrase))
+    return ""
+
+
 def _route_column(conn: str, schema: str, table: str, column: str, note: str,
                   evidence: str, confidence: str, session_id: str) -> NoteOutcome:
     from aughor.ontology.column_config import load_table_config, set_column_flags
@@ -127,9 +158,22 @@ def _route_column(conn: str, schema: str, table: str, column: str, note: str,
                       session_id,
                       why=f"the column already carries a HUMAN note ({existing.note[:80]!r}); "
                           "an agent never overwrites a person — staged for review instead")
+    cleared = next((h for h in reversed(existing.note_history if existing is not None else [])
+                    if h.get("superseded_by") == "human"), None)
+    if cleared and not (existing.note or "").strip():
+        # A person removed this column's note: their "not this" is durable, and an agent does
+        # not quietly write a note back over it.
+        return _stage(conn, schema, "column", table, column, note, evidence, confidence, session_id,
+                      why=f"a person cleared this column's note on {str(cleared.get('superseded_at'))[:10]}; "
+                          "an agent's note waits for their review")
     if ("column", confidence) not in DIRECT_APPLY:
         return _stage(conn, schema, "column", table, column, note, evidence, confidence,
                       session_id, why=f"confidence {confidence!r} is not high enough to apply directly")
+    metric = _governed_metric_named(conn, note)
+    if metric:
+        return _stage(conn, schema, "column", table, column, note, evidence, confidence, session_id,
+                      why=f"it names the governed metric {metric!r} — how a metric is computed is the "
+                          "metric catalogue's to say, so a person accepts it first")
     stamped = f"{note} (agent-observed: {evidence[:120]})"
     flags = set_column_flags(conn, schema, table, column, note=stamped, source="agent")
     return NoteOutcome(True, "applied",

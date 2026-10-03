@@ -186,3 +186,12 @@ def test_defan_dispatches_by_kind():
     assert defan(parent, detect_fanout(parent, TC)) is not None          # parent_fanout
     assert defan(_CHASM_SQL, detect_fanout(_CHASM_SQL, CHASM_TC)) is not None  # chasm
     assert defan("SELECT 1", None) is None
+
+
+def test_a_statement_with_a_cte_is_left_alone():
+    """sqlglot 30.x keeps a WITH under `with_`; the bail read `with` and never fired, so a CTE rode into the
+    de-fan subquery. Measured 2026-10-02 against the installed sqlglot."""
+    flat = "SELECT SUM(o.o_totalprice) FROM orders o JOIN lineitem l ON o.o_orderkey = l.l_orderkey"
+    ff = detect_fanout(flat, TC)
+    assert build_parent_fanout_rewrite(flat, ff) is not None
+    assert build_parent_fanout_rewrite("WITH k AS (SELECT 1 AS one) " + flat, ff) is None

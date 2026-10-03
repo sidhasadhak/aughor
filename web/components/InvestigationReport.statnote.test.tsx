@@ -133,3 +133,102 @@ describe("phases that share a kind all render", () => {
     expect(screen.getByText(/Decomposition by channel/)).toBeInTheDocument();
   });
 });
+
+describe("an answer in the analyst's own words", () => {
+  it("renders its table as a table and has no empty headline", () => {
+    // Item 3 (2026-09-30): a question that asks to see the data is answered by the
+    // analyst's conclusion, whose table must read as a table rather than as pipes.
+    const report = {
+      ...(reportWith("") as object), headline: "",
+      executive_summary: "Fulfilment takes about 3 days.\n\n| Centre | Days |\n| :--- | :--- |\n| NY/NJ | 3.12 |",
+    } as never;
+    const { container } = render(<ReportView report={report} />);
+    expect(container.querySelector("table")?.textContent).toContain("NY/NJ");
+    expect(container.textContent).not.toContain("| NY/NJ |");
+    expect(container.querySelector("h2")).toBeNull();
+  });
+});
+
+/** "If it's a single number being displayed, does one really need a table?" (2026-10-02): a finding of
+ *  one row reads as its figures; a finding of many rows with no chart keeps its table. */
+describe("a finding of one row reads as its figures", () => {
+  const withRows = (columns: string[], rows: (string | number | null)[][], chart_type = "auto") => ({
+    headline: "In July 2026, 7,027 units were sold", executive_summary: "", confidence: "HIGH",
+    phases: [{ phase_id: "adhoc_2", phase_name: "units_sold — 2026-07-01 → 2026-07-31", phase_icon: "",
+      status: "complete", summary: "", caveats: [],
+      findings: [{ finding_id: "f1", title: "units_sold — 2026-07-01 → 2026-07-31", claim: "", interpretation: "",
+        sql: "SELECT 1", columns, rows, row_count: rows.length, key_numbers: [], chart_type,
+        stat_note: null, is_significant: false }] }],
+  }) as never;
+
+  it("not as a one-row table under a disclosure", () => {
+    const report = { ...(withRows(["units_sold"], [["7027"]]) as object), headline: "Units were sold in July 2026" } as never;
+    render(<ReportView report={report} />);
+    expect(screen.getByText("7,027")).toBeInTheDocument();
+    expect(screen.queryByText(/Data · 1 rows/)).not.toBeInTheDocument();
+  });
+
+  it("many rows with no chart keep their table", () => {
+    render(<ReportView report={withRows(["name"], [["a"], ["b"]], "none")} />);
+    expect(screen.getByText(/Data · 2 rows/)).toBeInTheDocument();
+  });
+});
+
+/** "Such a simple question and it got answered — then why do we have two different figures shown as the
+ *  evidence below?" (2026-10-02). Q1's sentence stated both figures; the body printed both again, each
+ *  under its own raw title. A simple answer — every result one record — keeps its sentence and gains one
+ *  line of where each figure came from. */
+describe("a simple answer", () => {
+  const record = (id: string, column: string, value: string, sql: string) => ({
+    phase_id: id, phase_name: `${column} — 2026-07-01 → 2026-07-31`, phase_icon: "", status: "complete",
+    summary: "", caveats: [],
+    findings: [{ finding_id: `${id}_1`, title: `${column} — 2026-07-01 → 2026-07-31`, claim: null, interpretation: "",
+      sql, columns: [column], rows: [[value]], row_count: 1, key_numbers: [], chart_type: "auto",
+      stat_note: null, is_significant: false }],
+  });
+  const UNITS = "SELECT COUNT(id) AS units_sold FROM inventory_items WHERE sold_at IS NOT NULL";
+  const q1 = (headline: string, extra: object = {}) => ({
+    headline, executive_summary: "The revenue figure excludes cancelled orders.", confidence: "HIGH",
+    observation_period: "July 2026", comparison_basis: "",
+    phases: [
+      { phase_id: "intake", phase_name: "Question Intake", phase_icon: "", status: "complete", summary: "", findings: [] },
+      record("adhoc_2", "units_sold", "7027", UNITS),
+      record("adhoc_3", "total_revenue", "359224.30043935776", "SELECT SUM(sale_price) AS total_revenue FROM order_items"),
+    ],
+    ...extra,
+  }) as never;
+  const STATED = "In July 2026, the total revenue was $359,224.30 and 7,027 units were sold";
+
+  it("does not print a figure the sentence states, nor the period it names", () => {
+    render(<ReportView report={q1(STATED)} onShowSource={vi.fn()} />);
+    expect(screen.queryByText("7,027")).not.toBeInTheDocument();
+    expect(screen.queryByText("359,224.30")).not.toBeInTheDocument();
+    expect(screen.queryByText("July 2026")).not.toBeInTheDocument();
+    expect(screen.queryByText(/units_sold/)).not.toBeInTheDocument();
+  });
+
+  it("names each figure's source on one line, in the sentence's order, and opens its SQL", () => {
+    const show = vi.fn();
+    render(<ReportView report={q1(STATED)} onShowSource={show} />);
+    const sources = screen.getAllByRole("button", { name: /Table/ });
+    expect(sources.map((b) => b.textContent)).toEqual(["Total Revenue", "Units Sold"]);
+    sources[1].click();
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ sql: UNITS, columns: ["units_sold"] }));
+  });
+
+  it("prints a figure the sentence leaves out, and the period it does not name", () => {
+    render(<ReportView report={q1("Revenue was $359,224.30")} onShowSource={vi.fn()} />);
+    expect(screen.getByText("7,027")).toBeInTheDocument();
+    expect(screen.queryByText("359,224.30")).not.toBeInTheDocument();
+    expect(screen.getByText("July 2026")).toBeInTheDocument();
+  });
+
+  it("keeps the full layout when a result carries more than its figures", () => {
+    const report = q1(STATED) as unknown as { phases: { findings: { interpretation: string }[] }[] };
+    report.phases[1].findings[0].interpretation = "Units fell short of the plan.";
+    render(<ReportView report={report as never} onShowSource={vi.fn()} />);
+    expect(screen.getByText("Units fell short of the plan.")).toBeInTheDocument();
+    expect(screen.getByText(/units_sold — 2026-07-01/)).toBeInTheDocument();
+    expect(screen.queryByText("7,027")).not.toBeInTheDocument();     // still not printed twice
+  });
+});

@@ -1030,7 +1030,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   return (
     <div
       className="flex-1 flex flex-col min-w-0 overflow-hidden"
-      style={{ background: "var(--bg-1)", position: "relative" }}
+      /* The chat's ground is the composer's own dark blue (--bg-3) — the landing block
+         took it on 2026-09-28 and the conversation follows, at the user's word
+         (2026-09-29): one ground from the first question to the last answer. */
+      style={{ background: "var(--bg-3)", position: "relative" }}
       onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
       onDragLeave={(e) => {
         // Only the drag leaving the PANEL counts — crossing a child's edge fires
@@ -1115,8 +1118,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
            pane there is nowhere for it to go and the top becomes unreachable. The scroller
            owns the overflow and the child centres itself with `my-auto`, so a short screen
            still sits centred and a long one scrolls. */
-        /* Its ground is the composer's own (--bg-3), at the user's word, 2026-09-28. */
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-10" style={{ background: "var(--bg-3)" }}>
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-10">
           <div className="w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] my-auto flex flex-col gap-5">
 
             {capabilities}
@@ -1334,7 +1336,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
             <div style={{
               position: "absolute", bottom: 0, left: 0, right: 0,
               height: 200, pointerEvents: "none", zIndex: 1,
-              background: "linear-gradient(to bottom, transparent 0%, var(--bg-1) 68%)",
+              background: "linear-gradient(to bottom, transparent 0%, var(--bg-3) 68%)",
             }} />
 
             {/* ── Jump to latest — shown only when the user has scrolled up off

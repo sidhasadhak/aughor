@@ -32,6 +32,9 @@ class GuardRun:
     guard: str                                          # the guard's door name: "join-domain", "filter-domain", "grain"
     findings: list = field(default_factory=list)
     unchecked: list[str] = field(default_factory=list)  # one plain reason per part the guard could not check
+    #: What the guard measured that is not a finding but changes what may be said about the result —
+    #: a filter that left nothing out, so no answer claims it excluded rows. Carried as caveats.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def door(self) -> str:

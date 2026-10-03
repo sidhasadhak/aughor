@@ -16,6 +16,8 @@ canonical definitions the whole analysis must reuse.
 
 QUESTION: {question}
 
+{sql_context}
+
 SCHEMA (already annotated with any known column caveats):
 {schema}
 

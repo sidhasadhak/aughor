@@ -47,6 +47,7 @@ WORDS: dict[str, str] = {
 #: The guards a statement can be checked by, as a reader knows them.
 GUARDS: dict[str, str] = {
     "preflight": "pre-flight repair",
+    "declared-filter": "declared metric filter",
     "trust-gate": "read-only trust",
     "zero-row": "empty-result",
     "join-domain": "join value-domain",
@@ -60,6 +61,7 @@ GUARDS: dict[str, str] = {
     "ratio-of-sums": "ratio-of-sums",
     "chasm": "aggregate-over-chasm",
     "grain": "join-key grain",
+    "time-order": "time-order",
 }
 
 

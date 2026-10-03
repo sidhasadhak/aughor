@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -80,6 +81,9 @@ class AnalystTurn:
     #: an ad-hoc query left it looking at nothing and the run was declared a total
     #: failure over its own correct numbers. This is the evidence it could not see.
     evidence_rows: int = 0
+    #: What code measured before the first call (`_measure_declared`): ``(sql, result as the model
+    #: reads a tool result)`` — handed to the model as results, never as calls it made.
+    measured_by_code: list = field(default_factory=list)
 
     @property
     def intake(self) -> dict:
@@ -102,63 +106,381 @@ class AnalystTurn:
         return fresh
 
 
-#: Date bounds and simple equality filters in a WHERE clause — the two things that make one
-#: ad-hoc cut different from another of the same SHAPE. Bounded and anchored; never a parser.
-_ADHOC_DATE_RE = re.compile(r"""[><]=?\s*(?:TIMESTAMP\s*)?['"](\d{4}-\d{2}-\d{2})""", re.I)
-_ADHOC_EQ_RE = re.compile(r"""(?:\w+\.)?(\w+)\s*=\s*['"]([^'"]{1,40})['"]""")
+#: A date bound in a WHERE clause — its operator, the day, and whatever follows the day inside
+#: the quotes (a time, a zone). Bounded and anchored; never a parser.
+_ADHOC_BOUND_RE = re.compile(r"""([><]=?)\s*(?:TIMESTAMP\s*)?['"](\d{4}-\d{2}-\d{2})([^'"]{0,40})['"]""", re.I)
+#: What may follow the day in a bound that is the START of that day.
+_ADHOC_MIDNIGHT_RE = re.compile(r"(?:[ T]00:00(?::00(?:\.0+)?)?)?\s*(?:Z|UTC|[+-]00(?::?00)?)?", re.I)
 _ADHOC_DATEY = re.compile(r"(_at|date|day|month|year|period)$", re.I)
 
 
-def _adhoc_scope(sql: str) -> str:
-    """The date window and equality filters of an ad-hoc query, as a short qualifier.
+def _adhoc_window(text: str) -> str:
+    """The dates an ad-hoc query reads, ending on the LAST DAY IT INCLUDES.
 
     The title below is derived from the RESULT SHAPE, so two queries returning the same columns
     get the same name however differently they were scoped. That is harmless until the loop does
     what a good analyst does and runs one cut over two periods: the report then shows
     "returned_cost by product_brand" twice, with different numbers and nothing saying one is
-    February and the other January — an observation/comparison PAIR reads as a repeat. (It read
-    that way to me, and I called it redundant compute before reading the WHERE clauses.)
+    February and the other January — an observation/comparison PAIR reads as a repeat.
 
-    Best-effort by construction: an unparsed scope yields "" and the title is exactly what it
-    was before.
-    """
+    A query reads a period half-open — `created_at < '2026-08-01'` is July — and the title printed
+    that bound as the end: July was "2026-07-01 → 2026-08-01", and a chart titled "→ 2026-09-04" sat
+    under a label that said its period ended on 09-03 (theLook, 2026-10-02). A bound kept with `<`
+    at the start of a day ends the day before it. A query with no bound on one side keeps the dates
+    it names, first to last."""
+    bounds = _ADHOC_BOUND_RE.findall(text)
+    if not bounds:
+        return ""
+    lowers = [day for op, day, _ in bounds if op.startswith(">")]
+    uppers = [(date.fromisoformat(day) - timedelta(days=1)).isoformat()
+              if op == "<" and _ADHOC_MIDNIGHT_RE.fullmatch(rest) else day
+              for op, day, rest in bounds if op.startswith("<")]
+    if lowers and uppers:
+        start, end = min(lowers), max(uppers)
+        return start if end <= start else f"{start} → {end}"
+    days = list(dict.fromkeys(day for _, day, _ in bounds))
+    return days[0] if len(days) == 1 else f"{days[0]} → {days[-1]}"
+
+
+_MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+#: Initialisms a column name spells — the set web/lib/format.ts `ABBREVS` upper-cases in a label.
+_INITIALISMS = frozenset("usd id uk us eu vat sku url api crm gmv mrr arr ltv cac ctr aov roi pnl gp kpi "
+                         "cogs nps arpu cpa cpc cpm sla sql etl csv upc ean gtin ytd mtd qtd yoy".split())
+
+
+def _words(name: str) -> str:
+    """A column's name as words — ``units_sold`` → "units sold", ``aov`` → "AOV". Names are for SQL;
+    a title is read (2026-10-02: "units_sold — 2026-07-01 → 2026-07-31" over Q1's figure)."""
+    return " ".join(w.upper() if w.lower() in _INITIALISMS else w
+                    for w in re.split(r"[_\s]+", str(name or "").strip()) if w)
+
+
+def _window_words(window: str) -> str:
+    """``_adhoc_window``'s days as a reader says them: a whole month "Jul 2026", whole months
+    "Aug 2025 – Aug 2026", a whole year "2025", days "4 Mar – 3 Sep 2026" or "1–31 Jul 2026"
+    trimmed of what they share. Anything else is left as written."""
     try:
-        text = " ".join((sql or "").split())
-        if not text:
+        days = [date.fromisoformat(p.strip()) for p in window.split("→")]
+    except ValueError:
+        return window
+    m = lambda d: _MONTH_ABBR[d.month - 1]                       # noqa: E731
+    if len(days) == 1:
+        return f"{days[0].day} {m(days[0])} {days[0].year}"
+    a, b = days[0], days[-1]
+    if a.day == 1 and (b + timedelta(days=1)).day == 1:          # whole months
+        if a.year == b.year and a.month == 1 and b.month == 12:
+            return str(a.year)
+        if (a.year, a.month) == (b.year, b.month):
+            return f"{m(a)} {a.year}"
+        return f"{m(a)} – {m(b)} {a.year}" if a.year == b.year else f"{m(a)} {a.year} – {m(b)} {b.year}"
+    if a.year != b.year:
+        return f"{a.day} {m(a)} {a.year} – {b.day} {m(b)} {b.year}"
+    return f"{a.day}–{b.day} {m(a)} {a.year}" if a.month == b.month else f"{a.day} {m(a)} – {b.day} {m(b)} {a.year}"
+
+
+def _and_parts(node: Any) -> list:
+    from sqlglot import exp
+    while isinstance(node, exp.Paren):
+        node = node.this
+    return _and_parts(node.this) + _and_parts(node.expression) if isinstance(node, exp.And) else [node]
+
+
+def _value_filter(cond: Any) -> str:
+    """``status = Cancelled`` for a condition that keeps a column to values it names — ``=``,
+    ``<>``, ``IN``, each negated or not — or "" for any other condition. A date bound is the
+    window's to say."""
+    from sqlglot import exp
+    negated = isinstance(cond, exp.Not)
+    node = cond.this if negated else cond
+    while isinstance(node, exp.Paren):
+        node = node.this
+    if isinstance(node, (exp.EQ, exp.NEQ)):
+        col, lit = (node.this, node.expression) if isinstance(node.this, exp.Column) else (node.expression, node.this)
+        if not isinstance(col, exp.Column) or not isinstance(lit, exp.Literal) or _ADHOC_DATEY.search(col.name):
             return ""
-        dates = _ADHOC_DATE_RE.findall(text)
-        parts: list[str] = []
-        if dates:
-            uniq = list(dict.fromkeys(dates))
-            parts.append(uniq[0] if len(uniq) == 1 else f"{uniq[0]} → {uniq[-1]}")
-        for col, val in _ADHOC_EQ_RE.findall(text):
-            # A status/date equality is usually the METRIC's own definition (the CASE WHEN), not
-            # the cut's scope — naming it would title every phase with the same word.
-            if _ADHOC_DATEY.search(col) or col.lower() in ("status", "state"):
-                continue
-            piece = f"{col} = {val}"
-            if piece not in parts:
-                parts.append(piece)
-            if len(parts) >= 3:
-                break
-        return ", ".join(parts)[:60]
-    except Exception:
+        return f"{_words(col.name)} {'=' if isinstance(node, exp.EQ) != negated else '≠'} {lit.this}"
+    if (isinstance(node, exp.In) and isinstance(node.this, exp.Column) and node.expressions
+            and all(isinstance(e, exp.Literal) for e in node.expressions)
+            and not _ADHOC_DATEY.search(node.this.name)):
+        values = [str(e.this) for e in node.expressions]
+        listed = ", ".join(values[:3]) + (f" and {len(values) - 3} more" if len(values) > 3 else "")
+        return f"{_words(node.this.name)} {'not in' if negated else 'in'} {listed}"
+    return ""
+
+
+def _adhoc_filters(text: str, declared: Any = (), dialect: str = "") -> list[str]:
+    """The conditions of an ad-hoc query's WHERE clauses that keep a column to values it names.
+
+    Read from the WHERE alone: a `CASE WHEN status = 'Returned'` in the projection is the metric's
+    own definition, not the rows the query reads, and naming it would title every phase of the run
+    with the same words — which is why `status` was once never named at all. That left three of
+    July's results under ONE title — the cancelled lines, the rest, and every line — over figures
+    of 59,704.10, 359,224.30 and 418,928.40 (theLook, 2026-10-02). A filter a metric of the
+    question DECLARES is left out: it is part of that measure, and the receipt says it.
+
+    Best-effort by construction: an unparsed statement names no filter."""
+    from sqlglot import exp, parse_one
+    from aughor.sql.metric_filter_guard import same_condition
+    tree = parse_one(text, read=dialect or None)
+    out: list[str] = []
+    for where in tree.find_all(exp.Where):
+        for cond in _and_parts(where.this):
+            piece = _value_filter(cond)
+            if piece and not any(same_condition(cond.sql(dialect=dialect or None), str(d), dialect or "duckdb")
+                                 for d in declared or ()):
+                out.append(piece)
+    return list(dict.fromkeys(out))
+
+
+#: The column roles a result's title reads — the ones `plottedMeasures` in
+#: web/components/charts/columnRoles.ts reads, so a title names what its chart plots.
+_SHARE_NAME_RE = re.compile(r"(share|pct|percent|rate|ratio|proportion)", re.I)
+_AVERAGE_NAME_RE = re.compile(r"(^|_)(avg|average|mean)(_|$)", re.I)
+_COUNT_NAME_RE = re.compile(r"(^|_)(count|cnt|num|n)(_|$)", re.I)
+_SUPPORT_NAME_RE = re.compile(r"(^|_)(numerator|denominator)(_total)?$|^n$|^event_count$", re.I)
+_KEY_NAME_RE = re.compile(r"(_id|_key|_code|_pk|_uuid|_guid|_sk|_hash)$|^id$", re.I)
+_GRAIN_NAME_RE = re.compile(r"^(date|month|week|period|quarter|day|year)$"
+                            r"|^[a-z]+_(fy|year|quarter|qtr|month|week|half)$", re.I)
+_WRITTEN_DECIMALS_RE = re.compile(r"-?\d*\.(\d+)")
+
+
+def _as_number(value: Any) -> Optional[float]:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _is_ratio_of(rows: list, r: int, a: int, b: int, scale: int) -> bool:
+    """Column ``r`` equals ``scale`` × ``a`` ÷ ``b`` on every row holding all three, to the
+    precision ``r`` was written at ("6.9" is anything within 0.05) — and on two rows at least."""
+    checked = 0
+    for row in rows:
+        x, av, bv = _as_number(row[r]), _as_number(row[a]), _as_number(row[b])
+        if x is None or av is None or bv is None or bv == 0:
+            continue
+        want = scale * av / bv
+        written = _WRITTEN_DECIMALS_RE.fullmatch(str(row[r]).strip())
+        if abs(x - want) > max(0.5 * 10 ** -len(written.group(1)) if written else 0.0, abs(want) * 1e-9):
+            return False
+        checked += 1
+    return checked >= 2
+
+
+def _numeric_columns(cols: list, rows: list) -> list[int]:
+    """The columns that hold a measure: a number on every row that has a value, named neither
+    as a key nor as a time grain."""
+    return [i for i, c in enumerate(cols)
+            if not _KEY_NAME_RE.search(c) and not _GRAIN_NAME_RE.search(c)
+            and any(_as_number(r[i]) is not None for r in rows)
+            and all(_as_number(r[i]) is not None for r in rows if r[i] not in (None, ""))]
+
+
+def _rate_parts(cols: list, rows: list, numeric: list[int]) -> list[tuple[int, int, int]]:
+    """``(rate, numerator, denominator)`` for each rate-named column whose own parts are in the
+    result — checked on the values, as `rateParts` in columnRoles.ts checks them."""
+    out = []
+    for r in (i for i in numeric if _SHARE_NAME_RE.search(cols[i])):
+        parts = next(((a, b) for a in numeric for b in numeric if len({r, a, b}) == 3
+                      and (_is_ratio_of(rows, r, a, b, 1) or _is_ratio_of(rows, r, a, b, 100))), None)
+        if parts:
+            out.append((r, *parts))
+    return out
+
+
+#: A rate over fewer records than this is not compared with the others — the chart's rule
+#: (`TOO_FEW_TO_COMPARE` in web/components/charts/columnRoles.ts), handed to the analyst too.
+_TOO_FEW_TO_COMPARE = 30
+
+
+def _too_few_to_compare(cols: list, rows: Any) -> dict:
+    """``{group: records}`` for each row whose rate rests on fewer than 30 records — its own
+    denominator, beside it in the result. Empty when no rate's parts are in the result, when the
+    rows carry no label to name a group by, and when every row is that small (there is nothing
+    larger to compare them with).
+
+    The repeat-rate answer of 2026-10-01 said "many groups represent small sample sizes" where
+    one country of thirteen (Colombia, two first-time buyers) and no traffic source was: the
+    model was left to guess what the rows already said."""
+    cols = [str(c) for c in (cols or [])]
+    rows = [list(r) for r in (rows or []) if isinstance(r, (list, tuple)) and len(r) >= len(cols)]
+    numeric = _numeric_columns(cols, rows) if rows else []
+    labels = [i for i in range(len(cols)) if i not in numeric]
+    out: dict = {}
+    if not labels:
+        return out
+    for _rate, _num, den in _rate_parts(cols, rows, numeric):
+        small = {" · ".join(str(row[i]) for i in labels): int(n)
+                 for row in rows if (n := _as_number(row[den])) is not None and n < _TOO_FEW_TO_COMPARE}
+        if len(small) < len(rows):
+            out.update(small)
+    return out
+
+
+_PERIOD_VALUE_RE = re.compile(r"^\d{4}-\d{2}")
+_EMPTY_CELLS = frozenset({"", "null", "none", "nan"})
+
+
+def _first_change_missing(cols: list, rows: Any, observation_start: str) -> dict:
+    """``{"period", "columns"}`` when the FIRST period the question asks about has no value in a column every
+    later period has one in — a change against the period before, which the statement's own window left out
+    (the period before lies outside it). Empty when a period before the window was read too, and when the
+    question names no window.
+
+    The monthly-revenue answer of 2026-10-02 took each month's change inside the twelve months asked, so
+    September 2025's came back empty — and the answer called December "the only decline" when September
+    had fallen 9.7% against August."""
+    start = (observation_start or "")[:10]
+    cols = [str(c) for c in (cols or [])]
+    rows = [list(r) for r in (rows or []) if isinstance(r, (list, tuple)) and len(r) >= len(cols)]
+    if not start or len(rows) < 3:
+        return {}
+    period = next((i for i, c in enumerate(cols)
+                   if _GRAIN_NAME_RE.search(c) or all(_PERIOD_VALUE_RE.match(str(r[i])) for r in rows)), None)
+    if period is None:
+        return {}
+    first = min(rows, key=lambda r: str(r[period]))
+    p = str(first[period])[:10]
+    n = min(len(p), len(start))
+    if p[:n] < start[:n]:
+        return {}
+
+    def _empty(v: Any) -> bool:
+        return v is None or str(v).strip().lower() in _EMPTY_CELLS
+    columns = [cols[i] for i in range(len(cols))
+               if i != period and _empty(first[i])
+               and all(_as_number(r[i]) is not None for r in rows if r is not first)]
+    return {"period": p, "columns": columns} if columns else {}
+
+
+def _measured_cut(cols: list, rows: Any) -> str:
+    """'<what it measures> by <what it is cut by>' for a result of three or more columns,
+    read from its rows; "" when the rows do not say.
+
+    A rate stands for its own numerator and denominator when they are in the result (checked
+    on the values, as the chart checks them), and an average for the row count beside it: the
+    title names what the chart plots. The question, cut at 80 characters, titled each of the
+    2026-10-01 repeat-rate answer's three results — the same words over three different tables,
+    printed three times apiece in its PDF."""
+    width = len(cols)
+    rows = [list(r) for r in (rows or []) if isinstance(r, (list, tuple)) and len(r) >= width]
+    if not rows:
+        return ""
+    numeric = _numeric_columns(cols, rows)
+    support: set[int] = set()
+    for _rate, num, den in _rate_parts(cols, rows, numeric):
+        support.update((num, den))
+    if any(_AVERAGE_NAME_RE.search(cols[i]) for i in numeric):
+        support.update(i for i in numeric
+                       if _COUNT_NAME_RE.search(cols[i]) and not _AVERAGE_NAME_RE.search(cols[i]))
+    support.update(i for i in numeric if _SUPPORT_NAME_RE.search(cols[i]))
+    measures = [cols[i] for i in numeric if i not in support] or [cols[i] for i in numeric]
+    cuts = [c for i, c in enumerate(cols) if i not in numeric]
+    if not measures:
         return ""
 
+    def _listed(names: list) -> str:
+        names = [_words(n) for n in names[:3]] + ([f"{len(names) - 3} more"] if len(names) > 3 else [])
+        return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
-def _adhoc_title(columns: list, question: str, sql: str = "") -> str:
+    return f"{_listed(measures)} by {_listed(cuts)}" if cuts else _listed(measures)
+
+
+def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None, *,
+                 declared: Any = (), dialect: str = "") -> str:
     """A name for a query the model framed itself. It supplies no title — the phase
     tools get theirs from a plan — so it comes from the shape of what came back, plus the
-    SCOPE that distinguishes it from another cut of the same shape."""
+    SCOPE that distinguishes it from another cut of the same shape: the values its rows are
+    kept to, then its dates. ``declared`` are the filters the question's metrics declare
+    (`_adhoc_filters`); ``dialect`` is the engine the statement was written for."""
     cols = [str(c) for c in (columns or []) if str(c).strip()]
     if len(cols) == 2:
-        base = f"{cols[1]} by {cols[0]}"
+        # One row cuts nothing: two measures side by side are "a and b" — Q4's overall row
+        # (2026-10-01) was titled "overall_avg_shipped_… by overall_avg_placed_…".
+        one_row = isinstance(rows, (list, tuple)) and len(rows) == 1
+        base = (_measured_cut(cols, rows) if one_row else "") or f"{_words(cols[1])} by {_words(cols[0])}"
     elif len(cols) == 1:
-        base = str(cols[0])
+        base = _words(cols[0])
     else:
-        return (question or "Query result").strip()[:80]
-    scope = _adhoc_scope(sql)
-    return f"{base} — {scope}" if scope else base
+        base = _measured_cut(cols, rows)
+        if not base:
+            return (question or "Query result").strip()[:80]
+    text = " ".join((sql or "").split())
+    try:
+        kept = ", ".join(_adhoc_filters(text, declared, dialect)[:3]) if text else ""
+    except Exception:                     # noqa: BLE001 — a statement that does not parse names no filter
+        kept = ""
+    window = _window_words(_adhoc_window(text))
+    title = f"{base} where {kept if len(kept) <= 60 else kept[:59] + '…'}" if kept else base
+    title = f"{title} — {window}" if window else title
+    return title[:1].upper() + title[1:]
+
+
+def _declared_filters(turn: "AnalystTurn", dialect: str) -> list[str]:
+    """The filters the question's metrics declare — part of those measures, so no result's title
+    repeats them (`_adhoc_filters`)."""
+    from aughor.semantic.enforcement import rules_for_statement
+    rules = rules_for_statement(getattr(turn, "connection_id", ""), turn.state.get("question", ""),
+                                dialect=dialect or "duckdb") or []
+    return [str(f) for r in rules for f in (r.get("filters") or [])]
+
+
+def _same_rows(finding: dict, rows: list, row_count: Any) -> bool:
+    """Whether a recorded finding holds exactly these rows, in any order — the same result."""
+    def _key(rs: Any) -> list:
+        return sorted([str(v) for v in r] for r in list(rs or [])[:50])
+    return (bool(rows) and int(finding.get("row_count") or 0) == int(row_count or len(rows))
+            and _key(finding.get("rows")) == _key(rows))
+
+
+def _every_result_warned(turn: "AnalystTurn") -> Optional[str]:
+    """Why a stop is not an answer yet — every result the turn has shown carries a guard's
+    warning — or None. The loop hands it back once (`run_tool_loop`'s ``stop_check``).
+
+    The fulfilment question run of 2026-10-01, 22:37: three queries, each flagged (two on item
+    timestamps, one over-counting orders), and the analyst stopped with tool calls to spare and
+    answered from one of them — "Chicago and Memphis are the slowest to ship", which per order
+    no centre is. The second of six such runs; the rule in its prompt did not hold."""
+    findings = [f for p in turn.state.get("investigation_phases") or []
+                if p.get("phase_id") != "intake" and not p.get("_hidden")
+                for f in (p.get("findings") or []) if f.get("rows")]
+    warnings = list(dict.fromkeys((f.get("trust_caveat") or "").strip() for f in findings))
+    if not findings or "" in warnings:
+        return None
+    return ("Every result you have carries a guard's warning, so none of them is an answer yet:\n"
+            + "\n".join(f"- {w[:600]}" for w in warnings[:4])
+            + "\nRe-measure the way a warning says — the record to measure from, the rows it keeps — "
+              "and answer from that result. If the data cannot be measured that way, answer and say so.")
+
+
+def _not_the_declared(turn: "AnalystTurn", cols: list, sql: str) -> dict:
+    """``{column: why}`` for each column of the model's own statement named after a further measure
+    that code measured by its declared definition (`_measure_declared`) while the statement does not
+    read that definition's table — the analyst's `COUNT(id) AS units_sold` over order lines beside the
+    governed units sold, 6,012 against 7,027 (theLook, 2026-10-02). Read by the model with the rows."""
+    measured = [d for d in (turn.state.get("_ada_intake") or {}).get("measure_definitions") or []
+                if isinstance(d, dict) and d.get("measured") and d.get("table")]
+    if not measured or not sql:
+        return {}
+    read = {str(t).split(".")[-1].lower() for t in _tables_of(sql)}
+
+    def _words(text: Any) -> set:
+        return set(re.findall(r"[a-z0-9]+", str(text or "").lower()))
+    out: dict = {}
+    for d in measured:
+        table = str(d["table"]).split(".")[-1].lower()
+        if not read or table in read:
+            continue
+        names = [w for w in (_words(d.get("metric")), _words(d.get("label"))) if w]
+        for c in cols:
+            if any(n <= _words(c) for n in names):
+                out[str(c)] = (f"not the declared {d.get('label')}: code measured that by its definition on "
+                               f"{d['table']} as {(d.get('measured') or {}).get('value')} — this column counts rows of "
+                               f"{', '.join(sorted(read))}")
+    return out
 
 
 def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
@@ -182,10 +504,51 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
             turn.evidence_rows += len(rows)
             cols = result.get("columns") or []
             n = len(turn.phase_tools_run) + 1
+            # Which groups are too small to compare is counted here, from each rate's own
+            # denominator, and read by the model with the rows (`_too_few_to_compare`).
+            _small = _too_few_to_compare(cols, rows)
+            if _small:
+                result["too_few"] = _small
+            # And when the first period asked has no change against the one before it (`_first_change_missing`).
+            _first = _first_change_missing(cols, rows,
+                                           (turn.state.get("_ada_intake") or {}).get("observation_start", ""))
+            if _first:
+                result["first_change_missing"] = _first
+            # And a column named after a measure code measured by its definition, counted elsewhere.
+            _elsewhere = _not_the_declared(turn, cols, (args or {}).get("sql", ""))
+            if _elsewhere:
+                result["not_the_declared_measure"] = _elsewhere
+            # The statement that RAN, when a guard changed the one the model framed.
+            ran = result.get("sql") or (args or {}).get("sql", "")
+            # A query re-run to correct one a guard flagged REPLACES it on the page: the same
+            # columns, the earlier carried a warning and this one carries none. Kept in the run
+            # (hidden, with what replaced it) — the trace still shows the correction; the answer
+            # no longer shows the flawed table beside the right one (2026-10-01, fulfilment).
+            # A re-run that returns a flagged result's rows UNCHANGED corrected nothing, however it
+            # was written: it carries that warning, read by the model on this very result, and
+            # replaces only its own copies. The fulfilment answer's last query (2026-10-01, evening)
+            # re-wrote a join flagged as an over-count through two CTEs, came back with the flagged
+            # rows to the last digit, and replaced four warnings with a table that carried none.
+            if not [c for c in (result.get("caveats") or []) if c]:
+                def _first(_p: dict) -> dict:
+                    return (_p.get("findings") or [{}])[0]
+                earlier = [_p for _p in turn.state.get("investigation_phases") or []
+                           if str(_p.get("phase_id", "")).startswith("adhoc_") and not _p.get("_hidden")
+                           and list(_first(_p).get("columns") or []) == list(cols)]
+                same = [_p for _p in earlier if _same_rows(_first(_p), rows, result.get("row_count"))]
+                carried = list(dict.fromkeys(c for c in (_first(_p).get("trust_caveat") for _p in same) if c))
+                if carried:
+                    result["caveats"] = list(result.get("caveats") or []) + carried
+                for _p in earlier:
+                    if any(_p is _s for _s in same) or (not carried and _first(_p).get("trust_caveat")):
+                        _p["_hidden"] = True
+                        _p["superseded_by"] = f"adhoc_{n}"
+            _dialect = getattr(getattr(turn, "conn", None), "dialect", "") or ""
+            title = _adhoc_title(cols, turn.state.get("question", ""), (args or {}).get("sql", ""), rows,
+                                 declared=_declared_filters(turn, _dialect), dialect=_dialect)
             turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
                 "phase_id": f"adhoc_{n}",
-                "phase_name": _adhoc_title(cols, turn.state.get("question", ""),
-                                           (args or {}).get("sql", "")),
+                "phase_name": title,
                 "phase_icon": "🔎",
                 "status": "complete",
                 # Empty: the narrator writes the prose from the evidence log, and a
@@ -193,18 +556,23 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                 "summary": "",
                 "findings": [{
                     "finding_id": f"adhoc_{n}_1",
-                    "title": _adhoc_title(cols, turn.state.get("question", ""),
-                                          (args or {}).get("sql", "")),
-                    "sql": (args or {}).get("sql", ""),
+                    "title": title,
+                    "sql": ran,
                     "columns": cols,
                     "rows": rows[:50],
-                    "row_count": len(rows),
+                    # The RESULT's size, not the preview's: `run_sql` hands the model 20
+                    # rows, and recording 20 made a 700-row grid read as complete — and
+                    # let a total of the preview pass as the total of every row (item 6).
+                    "row_count": int(result.get("row_count") or len(rows)),
                     "error": None,
                     "interpretation": "",
                     "key_numbers": [],
                     "chart_type": "auto",
                     "stat_note": None,
                     "is_significant": False,
+                    # What the guards said about these rows reaches the page and the
+                    # writer, not only the model that ran the query.
+                    "trust_caveat": " ".join(str(c) for c in (result.get("caveats") or []) if c),
                 }],
                 "skipped_reason": None,
                 "caveats": [],
@@ -279,8 +647,12 @@ def _qtable(name: str) -> str:
 def _guarded(conn, sql: str, query_id: str):
     """Model-authored (or model-influenced) SQL goes through the guard battery — the
     Verifier chokepoint every other path uses."""
+    from aughor.semantic.enforcement import rules_for_statement
     from aughor.sql.executor import execute_guarded
-    return execute_guarded(conn, sql, query_id=query_id)
+    return execute_guarded(conn, sql, query_id=query_id,
+                           metric_rules=rules_for_statement(
+                               getattr(conn, "_connection_id", ""),
+                               dialect=getattr(conn, "dialect", "") or "duckdb"))
 
 
 def _probe(conn, sql: str, query_id: str):
@@ -633,10 +1005,16 @@ _WINDOW_PROPS = {
 #: the built roster and not merely that the dropped ones are absent.
 _ANALYST_PLATFORM_TOOLS = frozenset({"propose_context_note"})
 
+#: The tools that explain a movement or hunt a weakness. A question that asks to SEE the
+#: data (`investigate.question_shape` → "describe") is not offered them: each one frames its
+#: finding as a change or a shortfall, and a roster the model can see is a roster it spends
+#: turns on — Q5 (2026-09-29) was answered with an unasked year-over-year comparison.
+_INVESTIGATION_TOOLS = frozenset({"baseline", "decompose", "premise_check", "cross_section"})
+
 
 def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
                   session_id: str = "", canvas_id: Optional[str] = None,
-                  user_question: str = "") -> list[ToolSpec]:
+                  user_question: str = "", shape: str = "diagnose") -> list[ToolSpec]:
     """The analyst's roster: the phase library as tools, the deterministic probes, the
     warehouse primitives, and the ONE platform tool that is analysis business. Bound by
     closure like every converse tool — the model cannot name a connection, session or
@@ -650,7 +1028,7 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
     from aughor.agent.platform_tools import platform_tools
 
     cid = turn.connection_id
-    return [
+    roster = [
         ToolSpec(
             name="baseline",
             description=(
@@ -771,6 +1149,9 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
         ),
     ] + [t for t in platform_tools(cid, session_id=session_id)
          if t.name in _ANALYST_PLATFORM_TOOLS]
+    if shape == "describe":
+        roster = [t for t in roster if t.name not in _INVESTIGATION_TOOLS]
+    return roster
 
 
 # ── The prompt ────────────────────────────────────────────────────────────────
@@ -780,19 +1161,43 @@ def _spec_section(intake: dict) -> str:
     """The intake's verdicts as STATE the model reasons from — never re-derived per
     tool. This is what makes the spec carry: a follow-up's anchored metric, windows
     and verdicts are simply true at the start of the turn."""
+    from aughor.agent.sql_context import window_text
     if not intake:
         return "SPEC: intake produced no spec — inspect the schema before querying."
     lines = ["THE SPEC (resolved by intake; the phase tools default to it):"]
     lines.append(f"  metric: {intake.get('metric_label')} = {intake.get('metric_sql')}")
+    from aughor.agent.investigate import measure_definition_text
+    for _m in intake.get("other_measures") or []:
+        _label = (_m or {}).get("label")
+        _defined = measure_definition_text(intake.get("measure_definitions"), _label)
+        _measured = next((d.get("measured") for d in intake.get("measure_definitions") or []
+                          if isinstance(d, dict) and d.get("label") == _label and d.get("measured")), None)
+        lines.append(f"  also asked: {_label} = {(_m or {}).get('sql')}" + _defined + (
+            f"; measured that way over the observation by code: {_measured['value']} — state that "
+            "figure; do not measure it again" if _measured else
+            "; measure it on that table, by that date, in a query of its own" if _defined else ""))
+    if intake.get("metric_filters"):
+        lines.append("  metric filter (declared, part of the definition): "
+                     + "; ".join(str(f) for f in intake["metric_filters"]))
     lines.append(f"  table: {intake.get('metric_table')} · date column: {intake.get('date_column')}")
-    lines.append(f"  observation: {intake.get('observation_label')} "
-                 f"({intake.get('observation_start')} → {intake.get('observation_end')})")
-    if intake.get("no_prior_period"):
+    # Each window with its filter written out, half-open — the model wrote `<= '2026-07-31'`
+    # on a TIMESTAMP column from a bare "→ 2026-07-31" and dropped the day (2026-09-29).
+    _col = str(intake.get("date_column") or "")
+    if intake.get("observation_start") or intake.get("period_named", True):
+        lines.append("  observation: " + window_text(
+            str(intake.get("observation_label") or ""), intake.get("observation_start") or "",
+            intake.get("observation_end") or "", _col))
+    else:
+        lines.append("  observation: all the data — the question names no period.")
+    if intake.get("comparison_asked") is False:
+        lines.append("  comparison: none — the question asks to compare no periods; compare none.")
+    elif intake.get("no_prior_period"):
         lines.append("  comparison: NONE — no period before the observation window exists "
                      "in the data. Describe the window; never decompose it against itself.")
     else:
-        lines.append(f"  comparison: {intake.get('comparison_label')} "
-                     f"({intake.get('comparison_start')} → {intake.get('comparison_end')})")
+        lines.append("  comparison: " + window_text(
+            str(intake.get("comparison_label") or ""), intake.get("comparison_start") or "",
+            intake.get("comparison_end") or "", _col))
     dims = intake.get("dimensions") or []
     if dims:
         lines.append("  dimensions: " + ", ".join(str(d) for d in dims[:12]))
@@ -803,34 +1208,173 @@ def _spec_section(intake: dict) -> str:
     return "\n".join(lines)
 
 
+#: A question that asks for a figure PER period asks for a series, not one figure.
+_PER_PERIOD_RE = re.compile(r"\b(?:each|every|per|by)\s+(?:day|week|month|quarter|year)\b"
+                            r"|\b(?:daily|weekly|monthly|quarterly|yearly|annual(?:ly)?)\b", re.I)
+
+
+def _asks_one_figure(intake: dict, question: str, shape: str) -> bool:
+    """Whether the question asks each of its measures as ONE figure over its window: it asks to see
+    the data, names no cut, compares no periods and asks for no series."""
+    return (shape == "describe" and not intake.get("cross_sectional") and not intake.get("named_dimensions")
+            and intake.get("comparison_asked") is False and not _PER_PERIOD_RE.search(question or ""))
+
+
+def _declared_measure_sql(intake: dict, definition: dict, formula: str) -> str:
+    """The statement that measures one further measure by its declared definition: its formula on its
+    table, over its filters, with ITS OWN date in the observation (half-open) — or over all its rows
+    when the question names no period. "" when the period is asked and the measure has no date."""
+    table = str(definition.get("table") or "").strip()
+    if not table or not formula:
+        return ""
+    conds = [str(f).strip() for f in definition.get("filters") or [] if str(f).strip()]
+    if intake.get("period_named", True):
+        start, end = str(intake.get("observation_start") or "")[:10], str(intake.get("observation_end") or "")[:10]
+        day = str(definition.get("date_column") or "").strip()
+        if not (start and end and day):
+            return ""
+        after = (date.fromisoformat(end) + timedelta(days=1)).isoformat()
+        conds += [f"{day} >= '{start}'", f"{day} < '{after}'"]
+    alias = re.sub(r"[^a-z0-9]+", "_", str(definition.get("metric") or definition.get("label") or "")
+                   .lower()).strip("_") or "measure"
+    return f"SELECT {formula} AS {alias} FROM {table}" + (f" WHERE {' AND '.join(conds)}" if conds else "")
+
+
+def _measure_declared(turn: "AnalystTurn", run_sql_tool: Callable[[dict], Any], shape: str) -> None:
+    """Measure each further measure tied to a governed metric BY CODE, through the run_sql tool's own
+    body (guards, frames, evidence), and record the figure on its definition for the spec.
+
+    "What was total revenue and how many units were sold in July 2026?": the analyst was told units
+    sold is the governed units_sold — inventory items by the day they sold — and to measure it in a
+    query of its own. It counted order lines in revenue's statement instead, four times, the last
+    time with `status IS NOT NULL` so that revenue's declared filter would leave it alone, and
+    published revenue with every cancelled line in it (theLook, 2026-10-02). Only the figure over
+    the whole window is measured here, so only a question that asks for that figure is."""
+    intake = turn.intake
+    if not _asks_one_figure(intake, turn.state.get("question", ""), shape):
+        return
+    formulas = {m.get("label"): m.get("sql") for m in intake.get("other_measures") or [] if isinstance(m, dict)}
+    for definition in intake.get("measure_definitions") or []:
+        if not isinstance(definition, dict):
+            continue
+        sql = _declared_measure_sql(intake, definition, str(formulas.get(definition.get("label")) or ""))
+        if not sql:
+            continue
+        before = len(turn.state.get("investigation_phases") or [])
+        result = run_sql_tool({"sql": sql})
+        phases = turn.state.get("investigation_phases") or []
+        rows = result.get("rows") if isinstance(result, dict) else None
+        if rows and rows[0] and len(phases) > before:
+            definition["measured"] = {"result": phases[-1].get("phase_id"), "value": str(rows[0][0])}
+            turn.measured_by_code.append((sql, json.dumps(result, default=str)))
+
+
+def _measured_preface(turn: "AnalystTurn") -> str:
+    """What code measured before the first call, as results the model reads with the question.
+
+    Q1's units sold was measured by its declared definition (7,027) and named in the spec, and the
+    analyst counted order lines in revenue's statement and stated its own 6,012 (theLook, 2026-10-02):
+    a figure in its instructions was not a figure it had read from a result, and its rule is to state
+    only those. Handed over as results — never as a call the model did not make (`tool_loop._exchange`)."""
+    if not turn.measured_by_code:
+        return ""
+    return "\n".join(["Measured for you by code before your first call, through the same run_sql tool and "
+                      "guards — tool results, already among this turn's results:",
+                      *(f"run_sql: {sql}\n→ {payload}" for sql, payload in turn.measured_by_code)])
+
+
+def _describe_rules(budget: int) -> list[str]:
+    """The stopping rule for a question that asks to SEE the data (item 3). Its conclusion
+    is published as the answer (`investigate._conclusion_as_answer`), so it is written for
+    the reader, not for a writer to rework."""
+    return [
+        f"You have at most {budget} tool calls. This question asks to SEE the data, not why "
+        "it moved. STOPPING RULE: stop as soon as your results answer every part of it — "
+        "each figure it asks for, over the period and across the cuts it names. Do not look "
+        "for causes, drivers or anomalies it did not ask about, and compare periods only "
+        "where it asks.",
+        "",
+        "Each cut the question names ('by traffic source and country') is measured on its "
+        "own, pooled over everything else — one GROUP BY per cut, with the count behind "
+        "each rate. A finer grid (month × source × country) splits the rows into cells too "
+        "small to compare and does not answer it. Show every group of a cut, or say how "
+        "many you left out. Order a table by the measure, with each group a result lists "
+        "under `too_few` after the others and marked with its count — never at the top. "
+        "Those are the groups too small to compare: name them, and call no other group small. "
+        "A change against the period before is asked of every period the question covers, the "
+        "first included: its period before lies outside the window, so read one period earlier "
+        "(where the data holds it). A result that lists `first_change_missing` left that change "
+        "out — measure it before you answer.",
+        "",
+        "When you stop, write the answer the reader will read, in plain prose. Open with "
+        "the answer itself in one sentence, with its figures — what leads, what trails, by "
+        "how much — never a definition or a restatement of the question. That sentence is the "
+        "headline the reader sees first: it states a figure read from a row, and one that "
+        "announces what follows (\"The following table lists…\") answers nothing. Groups within a "
+        "few percent of each other are alike: say so with their range — the lowest and the "
+        "highest group's own value, each read from a row — and name no leader or laggard "
+        "the data does not separate. Then "
+        "the figures asked for, as a table when there are several rows, with the period and "
+        "the definition used; then anything the data could not answer. A total or share "
+        "across rows is quoted from the result's `totals`, never added up by hand, and a "
+        "column under `no_total` is never added up at all; an "
+        "overall average comes from a query that computes it without the GROUP BY — never "
+        "one group's value, never an average of the groups' averages. No recommendations, "
+        "no speculation about causes.",
+    ]
+
+
 def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
-                          extra: Optional[str] = None) -> str:
+                          extra: Optional[str] = None, sql_context: str = "",
+                          shape: str = "diagnose") -> str:
     """State, not instructions — the converse rule, extended with the analyst's
-    stopping rule. The tools carry the routing; this says what is true."""
+    stopping rule. The tools carry the routing; this says what is true.
+
+    ``sql_context`` is the engine and the clock (`agent/sql_context.py`): the intake's
+    block when it built one, else the caller's from the connection — so a turn whose
+    intake returned nothing still knows the engine and the date. Measured 2026-09-29: the
+    analyst was told neither, wrote `DATEADD` and `DATE_TRUNC('month', …)` for BigQuery,
+    and with no spec anchored on `CURRENT_DATE` into a month still filling."""
     lines = [
         f"You are Aughor's analyst, investigating one question against the connected "
         f"warehouse '{connection_id}'. You work the way a good analyst works: slice, "
         "LOOK at the result, and choose the next slice because of what you saw — "
         "change the dimension, the grain or the window whenever a result argues for it.",
         "",
+        (intake or {}).get("sql_context") or sql_context or "",
+        "",
         _spec_section(intake),
         "",
         "Every query — yours and the phase tools' — runs through the guard battery; "
         "receipts and caveats come back with the rows, and what a guard says outranks "
-        "what a number implies. A number you did not read from a tool result is a "
-        "number you do not state. Significance comes from the z_score tool or a "
+        "what a number implies. A number you did not read from a tool result — yours, or one "
+        "measured for you by code before your first call — is a number you do not state. "
+        "Significance comes from the z_score tool or a "
         "phase's own stats line, never from your own arithmetic.",
         "",
-        f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "
-        "stop the moment a cause is named WITH ITS SIZE (which segment, how much of "
-        "the change it carries) — or, if the data cannot answer, stop and say plainly "
-        "what it cannot tell and what to check next. Do not spend remaining budget "
-        "re-confirming what the evidence already shows.",
+        "A result shows you at most 20 rows. When it says `truncated`, the rows you see "
+        "are not the result: ask for what you need with GROUP BY, or ORDER BY … LIMIT — "
+        "never state a range, a spread or a pattern from the rows shown.",
         "",
-        "When you stop, write your conclusion as plain prose: the cause and its size, "
-        "the evidence that carries it, and what you could not test. The report is "
-        "assembled from the phases you ran plus this conclusion — a slice you never "
-        "ran is a claim you cannot make.",
+        "Each measure in THE SPEC is defined on its own table. To cut it by a column that "
+        "lives elsewhere, JOIN that table to the measure's — never re-measure it on the "
+        "other table's own columns of the same name. A result whose caveat says how to "
+        "measure instead (the record to measure from, the rows it left out) is not yet an "
+        "answer: re-measure the way it says, then answer from that result. Leaving out the "
+        "rows a guard flagged is not a re-measure.",
+        "",
+        *(_describe_rules(budget) if shape == "describe" else [
+            f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "
+            "stop the moment a cause is named WITH ITS SIZE (which segment, how much of "
+            "the change it carries) — or, if the data cannot answer, stop and say plainly "
+            "what it cannot tell and what to check next. Do not spend remaining budget "
+            "re-confirming what the evidence already shows.",
+            "",
+            "When you stop, write your conclusion as plain prose: the cause and its size, "
+            "the evidence that carries it, and what you could not test. The report is "
+            "assembled from the phases you ran plus this conclusion — a slice you never "
+            "ran is a claim you cannot make.",
+        ]),
     ]
     if extra:
         lines += ["", extra]
@@ -974,42 +1518,67 @@ def run_analyst(
                         origin_finding=origin_finding, **seed)
     turn = AnalystTurn(connection_id=eff_conn_id, conn=conn, state=state, emit=emit)
 
-    # Intake — once. The spec anchor: metric resolution, the coverage clamp, the
-    # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
-    # like any other so the user sees the spec land.
-    turn.merge(ada_intake(state, conn), tool="intake")
+    # Every statement this turn runs is in answer to ONE question, and the declared
+    # filters it must carry are that question's (`semantic.enforcement`). Bound for the
+    # intake and the loop — the two places a statement executes — and released after.
+    from aughor.semantic.enforcement import answering
+    with answering(question):
+        # Intake — once. The spec anchor: metric resolution, the coverage clamp, the
+        # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
+        # like any other so the user sees the spec land.
+        turn.merge(ada_intake(state, conn), tool="intake")
 
-    budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
-    tools = analyst_tools(turn, emit=emit, session_id=session_id,
-                          canvas_id=canvas_id, user_question=question)
-    result: LoopResult = run_tool_loop(
-        provider or get_provider("coder"),
-        analyst_system_prompt(eff_conn_id, turn.intake, budget, extra=extra_context),
-        question,
-        tools,
-        max_steps=budget,
-        on_step=on_step,
-        conn_id=eff_conn_id or "",
-        trace_id=state.get("trace_id", "") or "",
-        inv_id=state.get("investigation_id", "") or "",
-        # The analyst is its OWN decider: a different roster (11 tools vs converse's 38)
-        # and a system prompt carrying the resolved spec. Filing its picks under
-        # `converse.tool` made 79% of the live corpus unsegmentable by decider.
-        site="analyst.tool",
-        # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (the intake step's) and cannot be
-        # recomputed, and it is where the analyst's state lives — `_spec_section(intake)` sits
-        # mid-prompt — so it is the argument a shuffle actually swaps. Serialised to a string
-        # so that a capped copy is MARKED truncated rather than silently clipped: a truncated
-        # intake rebuilds a different prompt, and the replay must refuse it.
-        replay_args={
-            "builder": "analyst_system_prompt",
-            "connection_id": eff_conn_id or "",
-            "intake": json.dumps(turn.intake or {}, ensure_ascii=False, sort_keys=True,
-                                 default=str),
-            "budget": int(budget),
-            "extra": extra_context or "",
-        },
-    )
+        budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
+        # Item 3: measure-and-state or investigate, decided by code from the question.
+        from aughor.agent.investigate import question_shape
+        shape = (turn.intake or {}).get("question_shape") or question_shape(question)
+        tools = analyst_tools(turn, emit=emit, session_id=session_id,
+                              canvas_id=canvas_id, user_question=question, shape=shape)
+        # A further measure tied to a governed metric is measured by code before the analyst's
+        # first call, and the spec hands it the figure (`_measure_declared`).
+        try:
+            _measure_declared(turn, next(t.run for t in tools if t.name == "run_sql"), shape)
+        except Exception as exc:                  # noqa: BLE001 — the analyst then measures it itself
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a declared further measure is measured by code best-effort; the analyst "
+                          "measures it otherwise", counter="analyst.declared_measure")
+        from aughor.agent.sql_context import learned_settle_days, sql_context as _sql_context
+        result: LoopResult = run_tool_loop(
+            provider or get_provider("coder"),
+            analyst_system_prompt(
+                eff_conn_id, turn.intake, budget, extra=extra_context,
+                sql_context=_sql_context(
+                    conn, coverage_end=(turn.intake or {}).get("data_coverage_end") or "",
+                    settle_days=learned_settle_days(eff_conn_id)),
+                shape=shape),
+            question,
+            tools,
+            max_steps=budget,
+            on_step=on_step,
+            conn_id=eff_conn_id or "",
+            trace_id=state.get("trace_id", "") or "",
+            inv_id=state.get("investigation_id", "") or "",
+            # The analyst is its OWN decider: a different roster (11 tools vs converse's 38)
+            # and a system prompt carrying the resolved spec. Filing its picks under
+            # `converse.tool` made 79% of the live corpus unsegmentable by decider.
+            site="analyst.tool",
+            stop_check=lambda _answer: _every_result_warned(turn),
+            preface=_measured_preface(turn),
+            # JD-4: the builder's arguments. `intake` is MODEL OUTPUT (the intake step's) and cannot be
+            # recomputed, and it is where the analyst's state lives — `_spec_section(intake)` sits
+            # mid-prompt — so it is the argument a shuffle actually swaps. Serialised to a string
+            # so that a capped copy is MARKED truncated rather than silently clipped: a truncated
+            # intake rebuilds a different prompt, and the replay must refuse it.
+            replay_args={
+                "builder": "analyst_system_prompt",
+                "connection_id": eff_conn_id or "",
+                "intake": json.dumps(turn.intake or {}, ensure_ascii=False, sort_keys=True,
+                                     default=str),
+                "budget": int(budget),
+                "extra": extra_context or "",
+                "shape": shape,
+            },
+        )
 
     answer = (result.answer or "").strip()
     state["_analyst_conclusion"] = answer
@@ -1027,6 +1596,9 @@ def run_analyst(
             logger.warning("analyst: synthesis failed; the phases stand without a report",
                            exc_info=True)
     if report is not None:
+        # The question's shape rides the report — a describe answer measured what was asked and
+        # tested no hypotheses, and the trace said "Multi-hypothesis analysis" over every one.
+        report["question_shape"] = shape
         emit("tables_used", {"tables": sorted({
             str(t) for p in (state.get("investigation_phases") or [])
             for f in (p.get("findings") or [])

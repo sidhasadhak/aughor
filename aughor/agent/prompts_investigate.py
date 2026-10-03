@@ -1,5 +1,5 @@
 """
-ADA (Autonomous Intelligence Platform) phase prompts.
+Deep analysis phase prompts.
 
 Each phase asks the LLM to: (1) plan SQL, then (2) interpret results.
 All prompts are schema-adaptive — column names come from the actual schema,
@@ -19,13 +19,18 @@ SCHEMA:
 PROFILE CONTEXT (date ranges, row counts, key columns):
 {scan_context}
 
+{sql_context}
+
 {events_section}
 {origin_finding_section}
 TASK: Parse this question into a precise investigation specification.
 
-1. CORE METRIC — What single metric is the user asking about?
-   Infer it from the question and schema. Use the exact SQL expression (e.g. SUM(final_price_usd)).
-   Also name it (e.g. "net revenue", "order count", "average order value").
+1. MEASURES — What does the question ask to measure?
+   Infer each from the question and schema. Use the exact SQL expression (e.g. SUM(final_price_usd))
+   and name it (e.g. "net revenue", "order count", "average order value"). The FIRST measure goes in
+   metric_label / metric_sql; EVERY OTHER measure the question asks for goes in other_measures —
+   "from placed to shipped to delivered" asks two durations, "revenue and order count" two totals.
+   ONE aggregate expression per measure: never two expressions joined by a comma in one field.
    BINDING RULE (critical): if a CANONICAL METRICS section appears below and the question's
    metric matches one of those names, use ITS aggregate expression VERBATIM — do not re-derive
    it, do not add or drop columns (e.g. never multiply a margin formula by a `quantity` column
@@ -70,7 +75,10 @@ TASK: Parse this question into a precise investigation specification.
    Extract explicit dates or infer from question language ("February 2026" → 2026-02-01 to 2026-02-28).
    GRAIN: the PROFILE states the analytical grain and how much history exists (e.g. "53 weeks of
    history"). Use THAT grain for the observation and comparison periods — do NOT default to months.
-   If ambiguous, use the most recent COMPLETE period at that grain.
+   A question that names NO period and asks about no change ("how long does it take an order to
+   ship", "which centres are slowest") has none: leave observation_start, observation_end and
+   observation_label EMPTY — the answer covers all the data, and says so. A question about a change
+   that names no period ("why did revenue drop") takes the most recent COMPLETE period at that grain.
    CROSS-SECTIONAL: set cross_sectional=true when the question asks where/which/what is weakest /
    losing money / underperforming — it asks WHICH SEGMENT, so the answer is a comparison across
    DIMENSIONS (segments / regions / products) rather than across periods. Use the full data range
@@ -117,7 +125,12 @@ TASK: Parse this question into a precise investigation specification.
    a cause.
 
 3. COMPARISON BASIS — What is the baseline for comparison?
-   Default: both PoP (prior period of same length) AND YoY (same period prior year).
+   ONLY when the question asks to compare periods — a change, a drop or a rise, growth, "vs",
+   "compared to", MoM / YoY — or asks why something changed. Otherwise leave comparison_start,
+   comparison_end, comparison_label, yoy_start and yoy_end EMPTY: a comparison nobody asked for
+   becomes the answer to a question nobody asked (a 2025 cohort question was headlined as 2024 vs
+   2025). When the question does ask: both PoP (prior period of same length) AND YoY (same period
+   prior year).
    CRITICAL — every comparison window MUST contain data. Read the PROFILE CONTEXT date range
    (e.g. "2024-05-01 → 2024-05-31") and period count FIRST:
    - PoP guard: the prior period must fall INSIDE the data's date range. If the prior period is
@@ -260,8 +273,8 @@ BASELINE FINDING: {baseline_summary}
 
 INVESTIGATION SPEC:
   Metric:        {metric_label} → {metric_sql}
-  Observation:   {observation_period}  ({obs_start} to {obs_end})
-  Comparison:    {comp_start} to {comp_end}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
   Date column:   {date_column}
   Primary table: {metric_table}
 
@@ -324,8 +337,8 @@ DECOMPOSITION FINDING: {decomposition_summary}
 
 INVESTIGATION SPEC:
   Metric:        {metric_label} → {metric_sql}
-  Observation:   {observation_period}  ({obs_start} to {obs_end})
-  Comparison:    {comp_start} to {comp_end}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
   Date column:   {date_column}
   Primary table: {metric_table}
 
@@ -600,8 +613,8 @@ DOMINANT FINDING FROM DIMENSIONAL ANALYSIS (Tier-2 output — focus your Tier-3 
 
 INVESTIGATION SPEC:
   Metric:        {metric_label} → {metric_sql}
-  Observation:   {observation_period}  ({obs_start} to {obs_end})
-  Comparison:    {comp_start} to {comp_end}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
   Date column:   {date_column}
   Primary table: {metric_table}
 
@@ -674,6 +687,7 @@ phase_summary: "Behaviorally, [X]. Operationally, [Y]." — two-part finding, ea
 # writes — one named-violation retry beats prophylaxis on every call. The specimen this
 # dieted measured 45% static boilerplate against 22% evidence.
 ADA_SYNTHESIZE_PROMPT = """\
+{clock_section}
 ORIGINAL QUESTION: {question}
 
 INVESTIGATION FINDINGS BY PHASE:
@@ -704,7 +718,8 @@ SYNTHESIS_CORE_RULES = """REPORT RULES:
 dimensional answer even when the overall change is normal variance.
 - Every number is either quoted from FULL EVIDENCE or plain arithmetic over two evidence \
 values (a change, a share, a difference). Never estimate — a figure no query returned and no \
-arithmetic reaches is described qualitatively, never manufactured.
+arithmetic reaches is described qualitatively, never manufactured. A total of several rows is \
+quoted from its TOTAL line; a result with none gets no total.
 - If the evidence does not explain WHY, say "the data analysed does not reveal the \
 cause" and name what to check next. A negligible spread is negligible — say so; never \
 present a tiny sub-segment reversal as the driver.
@@ -758,18 +773,29 @@ from typing import Literal, Optional
 _CHART_VOCAB = chart_vocab_field_description()
 
 
+class IntakeMeasure(BaseModel):
+    """One more measure the question asks for, beside the intake's first."""
+    label: str = Field(description="Human-readable name, e.g. 'average days to deliver'")
+    sql: str = Field(description="ONE SQL aggregation expression, e.g. AVG(TIMESTAMP_DIFF(delivered_at, shipped_at, DAY))")
+
+
 class IntakeOutput(BaseModel):
-    metric_label: str = Field(description="Human-readable name, e.g. 'net revenue'")
-    metric_sql: str = Field(description="SQL aggregation expression, e.g. SUM(final_price_usd)")
-    observation_start: str = Field(description="ISO date YYYY-MM-DD")
-    observation_end: str = Field(description="ISO date YYYY-MM-DD")
-    observation_label: str = Field(description="Human label, e.g. 'February 2026'")
-    comparison_start: str = Field(description="ISO date of prior-period start")
-    comparison_end: str = Field(description="ISO date of prior-period end")
-    comparison_label: str = Field(description="e.g. 'January 2026 (MoM)'")
+    metric_label: str = Field(description="Human-readable name of the FIRST measure the question asks for, e.g. 'net revenue'")
+    metric_sql: str = Field(description="ONE SQL aggregation expression for it, e.g. SUM(final_price_usd)")
+    other_measures: list[IntakeMeasure] = Field(default_factory=list, description="Every OTHER measure the question asks for — 'from placed to shipped to delivered' is two durations. One aggregate expression each. Empty when it asks for one.")
+    observation_start: str = Field(default="", description="ISO date YYYY-MM-DD; empty when the question names no period")
+    observation_end: str = Field(default="", description="ISO date YYYY-MM-DD; empty when the question names no period")
+    observation_label: str = Field(default="", description="Human label, e.g. 'February 2026'; empty when the question names no period")
+    comparison_start: str = Field(default="", description="ISO date of prior-period start; empty unless the question asks to compare periods")
+    comparison_end: str = Field(default="", description="ISO date of prior-period end; empty unless the question asks to compare periods")
+    comparison_label: str = Field(default="", description="e.g. 'January 2026 (MoM)'; empty unless the question asks to compare periods")
+    period_named: bool = Field(default=True, description="False when a question that asks to SEE the data names no period, so its answer covers all of it (set by code from the question; leave True).")
+    comparison_asked: bool = Field(default=True, description="False when a question that asks to SEE the data asks to compare no periods (set by code from the question; leave True).")
     no_prior_period: bool = Field(default=False, description="True when the data holds NO period before the observation window to compare against (set by code from the real date coverage; leave False).")
     descriptive_only: bool = Field(default=False, description="True when the question asks for a breakdown or a count rather than a change or a cause (set by code from the question; leave False).")
     named_dimensions: list[str] = Field(default_factory=list, description="Dimensions the question named outright, matched to real columns (set by code from the question; leave empty).")
+    metric_filters: list[str] = Field(default_factory=list, description="The declared filters of the governed metric this question was matched to — the rows its formula is over (set by code from the metric catalogue; leave empty).")
+    measure_definitions: list[dict] = Field(default_factory=list, description="Each further measure matched to a governed metric: its table, the date that puts its rows in a range, and its filters (set by code from the metric catalogue; leave empty).")
     yoy_start: Optional[str] = Field(default=None, description="YoY comparison start, or null if data < 13 months")
     yoy_end: Optional[str] = Field(default=None)
     date_column: str = Field(description="Fully qualified: table.column")
@@ -792,13 +818,14 @@ class IntakeOutput(BaseModel):
 #: What the MODEL is actually asked for: `IntakeOutput` minus the fields code overwrites
 #: immediately afterwards.
 #:
-#: Three of the 28 fields carry "(set by code …)" in their own description — `descriptive_only`
+#: Four of the 29 fields carry "(set by code …)" in their own description — `descriptive_only`
 #: (overwritten unconditionally from the question), `no_prior_period` (decided by
-#: `_clamp_intake_to_coverage` from the real date coverage) and `named_dimensions` (resolved from
-#: the question against the schema). The model was being asked to reason about, and emit, values
+#: `_clamp_intake_to_coverage` from the real date coverage), `named_dimensions` (resolved from
+#: the question against the schema) and `metric_filters` (copied from the governed metric the
+#: question was matched to). The model was being asked to reason about, and emit, values
 #: that were thrown away on the next line. That costs its attention as well as the tokens.
 #:
-#: The subset is DERIVED from that marker, not listed beside it: add a fourth code-set field and
+#: The subset is DERIVED from that marker, not listed beside it: add another code-set field and
 #: it leaves the ask automatically, and nothing here has to be remembered. Every excluded field has
 #: a default, so widening back to `IntakeOutput` reproduces exactly the object the code then
 #: overwrites — this is a removal of wasted work, not a behaviour change, and

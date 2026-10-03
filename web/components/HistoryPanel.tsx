@@ -196,18 +196,6 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                     <>
                       <span>·</span>
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-red-500/20 bg-red-500/10 text-red-400 aug-fs-xs font-medium">✕ failed</span>
-                      {/* SP-2 — the in-context summon: the question is asked where
-                          it arises. Spotlight's trace tools hold the anatomy. */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          askSpotlight(`Why did the run "${inv.question}" (id ${inv.id}) fail?`);
-                        }}
-                        className="aug-fs-xs text-zinc-400 hover:text-zinc-200 underline decoration-dotted underline-offset-2"
-                        title="Ask Spotlight why this run failed"
-                      >
-                        ask why
-                      </button>
                     </>
                   )}
                   {inv.status === "running" && (
@@ -218,6 +206,19 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   )}
                 </div>
               </button>
+
+              {/* SP-2 — the in-context summon: the question is asked where it arises; Spotlight's trace
+                  tools hold the anatomy. Beside the row, not inside it: a button inside the row's button
+                  is invalid HTML, and React said so on every History load with a failed run. */}
+              {inv.status === "failed" && (
+                <button
+                  onClick={() => askSpotlight(`Why did the run "${inv.question}" (id ${inv.id}) fail?`)}
+                  className="block ml-4 -mt-2 mb-2.5 aug-fs-xs text-zinc-400 hover:text-zinc-200 underline decoration-dotted underline-offset-2"
+                  title="Ask Spotlight why this run failed"
+                >
+                  ask why
+                </button>
+              )}
 
               {/* Delete button — appears on row hover */}
               <button

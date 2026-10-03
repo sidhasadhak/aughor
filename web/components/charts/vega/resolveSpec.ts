@@ -14,9 +14,11 @@
  * which is precisely why a resolved chart cannot be persisted.
  */
 
-import { chartDateFormat, cleanLabel, detectGranularity } from "@/lib/format";
+import { chartDateFormat, cleanLabel, detectGranularity, fmtDate, type Gran } from "@/lib/format";
 import { currencySymbol, effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
-import { classifyColumns, isIdLike, isUngraphableGrid, HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
+import { classifyColumns, isIdLike, isPriorPeriodCol, isUngraphableGrid, percentRates, plottedMeasures,
+         tooFewToCompare, uniqueLabelBand, CHANGE_METRIC_COL, HORIZONTAL_MAX_CATS, PERCENT_CHANGE_COL,
+         TOO_FEW_TO_COMPARE } from "@/components/charts/columnRoles";
 import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
 import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
@@ -181,6 +183,15 @@ function toRecords(columns: string[], rows: unknown[][]): Record<string, unknown
   return rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])));
 }
 
+/** One tick per period of the series' grain — a stride of periods past eighteen. `%b %Y` labels on
+ *  the default ticks repeated a month ("Aug 2025 Aug 2025 Sep 2025 …") once a chart was wide enough
+ *  for two ticks a month (theLook Q3, 2026-10-02). A sub-day grain keeps the default ticks. */
+function periodTicks(gran: Gran, periods: number): Record<string, unknown> {
+  const unit = gran === "quarter" ? "month" : gran;
+  if (!["day", "week", "month", "year"].includes(unit)) return {};
+  return { tickCount: { interval: unit, step: (gran === "quarter" ? 3 : 1) * Math.max(1, Math.ceil(periods / 18)) } };
+}
+
 /** The value-axis number format. `~s` (SI) is the default because warehouse measures are
  *  large and an unformatted axis reads as noise. A caller's format always wins. */
 function valueFormat(format?: string | null): string {
@@ -194,13 +205,15 @@ function valueFormat(format?: string | null): string {
  * The app's own compact number, as a Vega expression: 6642 → "6.6K", 26766377 → "26.8M".
  * d3's `~s` renders "6.642k" and "26.766377M", which is neither what lib/format produces nor
  * what any other number on the page looks like — a print chart reading 6.642K beside a card
- * reading 6.6K is the kind of difference a reader notices and cannot explain.
+ * reading 6.6K is the kind of difference a reader notices and cannot explain. Under a thousand it
+ * keeps four significant digits — 787.4, as the app writes it; it printed the raw value, and a bar of
+ * Q3's monthly change read "€787.420043826" (2026-10-02) — and a small tick stays itself (0.002).
  */
 const COMPACT = (v: string) =>
   `(abs(${v}) >= 1e9 ? format(${v}/1e9,'.1f')+'B'` +
   ` : abs(${v}) >= 1e6 ? format(${v}/1e6,'.1f')+'M'` +
   ` : abs(${v}) >= 1e3 ? format(${v}/1e3,'.1f')+'K'` +
-  ` : format(${v},''))`;
+  ` : format(${v},'.4~r'))`;
 const SI = (inner: string) => `replace(replace(${inner}, 'k', 'K'), 'G', 'B')`;
 // A caller-supplied format wins; the default SI goes through the app's compact form.
 const SI_LABEL = (f: string, prefix: string) =>
@@ -271,6 +284,10 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const _allNum = numericIdxs.map((i) => columns[i]);
   const _realNum = _allNum.filter((c) => !isIdLike(c) && !/(^|_)(id)$/i.test(c));
   const numCols = _realNum.length ? _realNum : _allNum;
+  // The measure an explicit hint plots when nothing chose one: the first the chart would plot
+  // under `auto` too — never a rate's own numerator ahead of the rate.
+  const firstMeasure = plottedMeasures(columns, rows, numericIdxs)
+    .map((i) => columns[i]).find((c) => numCols.includes(c)) ?? numCols[0];
   /**
    * An identifier can be categorical too. `franchiseID` holds 1 and 2, which classifies as a
    * dimension, and taking the first one labelled the axis "1, 2" while `franchise_name` sat
@@ -301,7 +318,12 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // down, and category labels need the room), and vertically when x is time (a trend reads
   // across). Only `bar_vertical` forces the upright form. Encoding the same rule here is
   // what stops the Phase 2 diff from flagging every explicit `bar` as a regression.
-  const bandCol = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol);
+  // An explicit bar over a result whose first label repeats beside a label each row owns takes
+  // the owned label as its band and the repeating one as its colour — as `auto` does.
+  const ownBand = !inferred && /^bar/.test(hint)
+    ? uniqueLabelBand(columns, rows, catIdxs, plottedMeasures(columns, rows, numericIdxs)) : null;
+  const bandCol = inferred ? columns[inferred.xCol]
+    : ownBand ? columns[ownBand.band] : (catCols[0] ?? dateCol);
   const isTimeX = bandCol === dateCol;
   // Density decides too: past HORIZONTAL_MAX_CATS distinct categories a lying-down ranking
   // either shrinks below legibility or needs a scrollbar, so it stands up.
@@ -365,9 +387,19 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     return isMoneyColumn(col) ? effectiveCurrencySymbol() : "";
   };
 
-  const measureIsPercent = (col: string): boolean =>
-    String(columnUnits?.[col] ?? "").toLowerCase() === "percent";
+  /**
+   * A declared unit decides. With none declared, a rate whose numerator and denominator sit
+   * beside it in the result is a share of a whole, and reads as one: the Agent's own queries
+   * carry no units, and its repeat rate drew an axis of 0.07 … 0.12.
+   */
+  const ratePercent = percentRates(columns, rows, numericIdxs);
+  const measureIsPercent = (col: string): boolean => {
+    const unit = String(columnUnits?.[col] ?? "").toLowerCase();
+    return unit === "percent" || (!unit && (ratePercent.has(col)
+      || (CHANGE_METRIC_COL.test(col) && PERCENT_CHANGE_COL.test(col))));    // `pct_change`, `growth_rate`
+  };
   const percentAlreadyScaled = (col: string): boolean => {
+    if (!columnUnits?.[col] && ratePercent.has(col)) return ratePercent.get(col) === true;
     const i = columns.indexOf(col);
     if (i < 0) return false;
     const vals = rows.map((r) => Number(r[i])).filter((v) => Number.isFinite(v));
@@ -403,9 +435,11 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // the column it plots). Only with neither does inference pick the y.
   const userMeasure = chosenMeasure && columns.includes(chosenMeasure) ? chosenMeasure : null;
   const measure = tf ? tf.derived
-    : (userMeasure ?? (inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0]));
-  const band = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol ?? columns[0]);
-  const inferredSeries = inferred?.colorCol != null ? columns[inferred.colorCol] : undefined;
+    : (userMeasure ?? (inferred?.yCols?.length ? columns[inferred.yCols[0]] : firstMeasure));
+  const band = inferred ? columns[inferred.xCol]
+    : ownBand ? columns[ownBand.band] : (catCols[0] ?? dateCol ?? columns[0]);
+  const inferredSeries = inferred?.colorCol != null ? columns[inferred.colorCol]
+    : ownBand?.group !== undefined ? columns[ownBand.group] : undefined;
   const base: Record<string, unknown> = { $schema: "https://vega.github.io/schema/vega-lite/v6.json", data };
   if (tf) base.transform = tf.transform;
   if (title) base.title = title;
@@ -415,6 +449,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     const ext = resolveExtendedForm(type, {
       columns, rows, data, numCols, catCols, dateCol, measure, band,
       format, xTitle, yTitle, showLabels, base, exhibit,
+      plotted: (inferred?.yCols?.length ? inferred.yCols : plottedMeasures(columns, rows, numericIdxs))
+        .map((i) => columns[i]).filter((c) => numCols.includes(c)),
     });
     // A form that cannot be built from THIS data (a scatter with one measure, a point map
     // with no coordinates) refuses rather than approximating — the same contract as the
@@ -428,7 +464,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     // A counter reads ONE number straight off the row, so it uses the real column — the
     // derived name a transform introduces exists only inside the chart's dataflow, and
     // indexOf would return -1 and quietly render 0.
-    const rawMeasure = inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0];
+    const rawMeasure = inferred?.yCols?.length ? columns[inferred.yCols[0]] : firstMeasure;
     const v = Number(rows[0]?.[columns.indexOf(rawMeasure)] ?? 0);
     return {
       tier: 1, resolved: "counter", defaultH: 140, xCategories: 0,
@@ -484,6 +520,9 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     const xValues = rows.map((r) => r[columns.indexOf(x)]);
     // A series that crosses a year boundary keeps its year, whatever the grain.
     const xMultiYear = new Set(xValues.map((v) => String(v ?? "").slice(0, 4))).size > 1;
+    const linePct = measureIsPercent(measure);
+    const lineScaled = linePct && percentAlreadyScaled(measure);
+    const lineField = lineScaled ? `${measure}__frac` : measure;
     const enc: Record<string, unknown> = {
       x: {
         field: x,
@@ -505,10 +544,14 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
          */
         axis: {
           ...bandAxis(axisTitle(xTitle, x)),
-          ...(xIsDate ? { format: chartDateFormat(detectGranularity(x, xValues), xMultiYear) } : {}),
+          ...(xIsDate ? { format: chartDateFormat(detectGranularity(x, xValues), xMultiYear),
+                          ...periodTicks(detectGranularity(x, xValues), new Set(xValues.map(String)).size) } : {}),
         },
       },
-      y: { field: measure, type: "quantitative", axis: valueAxis(axisTitle(yTitle, measure), format) },
+      // A percentage reads as one on a trend too: this axis ignored the unit the bar path
+      // honours, so a rate's line read 0.07 … 0.12 beside a table saying 6.9% … 12.1%.
+      y: { field: lineField, type: "quantitative",
+           axis: valueAxis(axisTitle(yTitle, measure), linePct ? ".1%" : format) },
     };
     // `sort: null` keeps the series in DATA order. Vega-Lite sorts a nominal domain
     // alphabetically by default, which hands the same series a different hue than the
@@ -518,6 +561,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
       tier: 1, resolved: seriesCol ? "multi-line" : "line", defaultH: 300, xCategories: 0,
       spec: {
         ...base,
+        ...(lineScaled ? { transform: [...((base.transform as Record<string, unknown>[]) ?? []),
+                                       { calculate: `datum['${measure}'] / 100`, as: lineField }] } : {}),
 
         // A line plus its points: the point layer is the hover target and the ≥8px marker
         // the mark spec asks for, and it keeps a single-observation series visible. Only the
@@ -537,6 +582,13 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const pct = measureIsPercent(measure);
   const pctScaled = pct && percentAlreadyScaled(measure);
   const valueField = pctScaled ? `${measure}__frac` : measure;
+  // A change reads signed — rises and falls in the config's diverging pair. Over time it is one bar
+  // per period, in time order, labelled as the table labels the period; a period with no change (the
+  // month read only to give the next one its change) is no bar at all.
+  const isChange = CHANGE_METRIC_COL.test(measure) && !isPriorPeriodCol(measure);
+  const bandValues = rows.map((r) => r[columns.indexOf(band)]);
+  const bandGran = dateCol && band === dateCol ? detectGranularity(band, bandValues) : null;
+  const changeByPeriod = isChange && bandGran !== null;
   // Titles bind to the CHANNEL, not the screen axis: the editor's "X axis" section IS
   // the dimension and its "Y axis" IS the measure, so each title must follow its field
   // through an orientation flip. This form was the one literal-axis outlier (delta-bar,
@@ -546,20 +598,38 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // so the longest bar's label walked off the plot into the legend gutter. When labels
   // are on, the value scale gets headroom via Vega-Lite's own domainMax — the label
   // then lands inside the plot by construction, whatever the data.
+  /**
+   * A rate over a handful of records is drawn faded, after the others, and cannot set the scale:
+   * its bar stops at the edge the other rows set, labelled with its value and its count. On theLook's
+   * repeat-rate answer (2026-10-01) Colombia — 2 customers, 1 repeat, 50% — stretched the country
+   * chart to 50% and flattened every comparable country into the bottom fifth of it.
+   */
+  const few = tooFewToCompare(columns, rows, numericIdxs, measure);
   let labelHeadroom: { scale?: Record<string, unknown> } = {};
-  if (showLabels) {
+  let scaleMax = 0;
+  if (showLabels || few.rows.size) {
     const mi = columns.indexOf(measure);
-    const vals = rows.map((r) => Number(r[mi])).filter(Number.isFinite);
+    const vals = rows.filter((_, i) => !few.rows.has(i)).map((r) => Number(r[mi])).filter(Number.isFinite);
     const mx = vals.length ? Math.max(...vals) : 0;
-    if (mx > 0) labelHeadroom = { scale: { domainMax: (pctScaled ? mx / 100 : mx) * 1.12 } };
+    if (mx > 0) {
+      scaleMax = (pctScaled ? mx / 100 : mx) * 1.12;
+      labelHeadroom = { scale: { domainMax: scaleMax } };
+    }
   }
-  const valueEnc = { field: valueField, type: "quantitative", ...labelHeadroom,
+  const fewTest = few.rows.size && scaleMax > 0 ? `datum['${few.den}'] < ${TOO_FEW_TO_COMPARE}` : "";
+  const barField = fewTest ? "__shown" : valueField;
+  const valueEnc = { field: barField, type: "quantitative", ...labelHeadroom,
                      axis: valueAxis(axisTitle(yTitle, measure),
                                      pct ? ".1%" : format, pct ? "" : moneyPrefix(measure)) };
   const bandEnc = {
-    field: band,
-    type: (dateCol === band ? "temporal" : "nominal") as string,
-    axis: bandAxis(axisTitle(xTitle, band)),
+    field: changeByPeriod ? "__period" : band,
+    type: (changeByPeriod ? "ordinal" : dateCol === band ? "temporal" : "nominal") as string,
+    axis: {
+      ...bandAxis(axisTitle(xTitle, band)),
+      ...(bandGran && !changeByPeriod
+        ? { format: chartDateFormat(bandGran, new Set(bandValues.map((v) => String(v ?? "").slice(0, 4))).size > 1),
+            ...periodTicks(bandGran, new Set(bandValues.map(String)).size) } : {}),
+    },
     // Lead with the largest — the ranking the question implies. Ties break stably.
     // Data order, always: see orderedValues above for why an encoding sort cannot be trusted.
     sort: null,
@@ -569,10 +639,17 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // silently overwritten — the param compiled, the click registered, and nothing dimmed.
   const exColor = exhibitColor();
   const exOpacity = emphasisOpacity();
+  const fewOpacity = fewTest
+    ? { condition: [{ test: fewTest, value: 0.35 }, { param: "picked", value: 1 }], value: 0.28 }
+    : null;
   const encoding: Record<string, unknown> = horizontal
-    ? { x: valueEnc, y: bandEnc, opacity: exOpacity ?? SELECT_OPACITY }
-    : { x: bandEnc, y: valueEnc, opacity: exOpacity ?? SELECT_OPACITY };
+    ? { x: valueEnc, y: bandEnc, opacity: exOpacity ?? fewOpacity ?? SELECT_OPACITY }
+    : { x: bandEnc, y: valueEnc, opacity: exOpacity ?? fewOpacity ?? SELECT_OPACITY };
   if (exColor) encoding.color = exColor;
+  // One bar per row, coloured by the label its rows share (`uniqueLabelBand`).
+  else if (inferredSeries) encoding.color = { field: inferredSeries, type: "nominal", sort: null };
+  else if (isChange) encoding.color = { field: measure, type: "quantitative",
+                                        scale: { type: "threshold", domain: [0], range: "diverging" }, legend: null };
 
   /**
    * The exhibit grammar, as encodings. `severity` ramps the measure through the config's
@@ -639,16 +716,24 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const layers: Record<string, unknown>[] = [
     { mark: { type: "bar", tooltip: true }, params: [SELECT_PARAM(band)] },
   ];
-  const pctTransform = pctScaled
-    ? [{ calculate: `datum['${measure}'] / 100`, as: valueField }]
-    : [];
+  const pctTransform = [
+    ...(pctScaled ? [{ calculate: `datum['${measure}'] / 100`, as: valueField }] : []),
+    ...(fewTest ? [{ calculate: `${fewTest} ? min(datum['${valueField}'], ${scaleMax}) : datum['${valueField}']`,
+                     as: barField }] : []),
+  ];
+  /** A too-few row's label carries its count, so a faded bar still says why it is faded. */
+  function withFewCount(label: string): string {
+    return fewTest ? `(${label}) + (${fewTest} ? ' · n=' + datum['${few.den}'] : '')` : label;
+  }
   if (showLabels) {
     layers.push({
       mark: { type: "text", align: horizontal ? "left" : "center", baseline: "middle",
               dx: horizontal ? 5 : 0, dy: horizontal ? 0 : -8 },
       // A calculate rather than `format`, so the mark labels read in the same casing as the
       // axis beside them instead of 6.6k next to 6.6K.
-      transform: [{ calculate: SI_TEXT(valueField, valueFormat(format), moneyPrefix(measure)), as: "__valueLabel" }],
+      transform: [{ calculate: withFewCount(pct ? SI_TEXT(valueField, ".1%", "")
+                                                : SI_TEXT(valueField, valueFormat(format), moneyPrefix(measure))),
+                    as: "__valueLabel" }],
       encoding: { text: { field: "__valueLabel", type: "nominal" } },
     });
   }
@@ -666,9 +751,20 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
       const withTf = pctTransform.length ? { transform: pctTransform } : {};
       // `order: "asc"` means the query asked for the BOTTOM of the ranking, so lead with the
       // row it led with instead of burying it at the far end.
-      const sorted = horizontal
-        ? { data: { values: orderedValues(measure, exhibit?.order === "asc") } }
-        : {};
+      const ordered = horizontal ? orderedValues(measure, exhibit?.order === "asc") : data.values;
+      // Too-few rows go after the others, never first, in either orientation.
+      const fewLast = fewTest
+        ? [...ordered.filter((d) => !(Number(d[few.den]) < TOO_FEW_TO_COMPARE)),
+           ...ordered.filter((d) => Number(d[few.den]) < TOO_FEW_TO_COMPARE)]
+        : ordered;
+      const byPeriod = changeByPeriod
+        ? [...data.values]
+            .filter((d) => d[measure] !== null && d[measure] !== "" && Number.isFinite(Number(d[measure])))
+            .sort((a, b) => String(a[band]).localeCompare(String(b[band])))
+            .map((d) => ({ ...d, __period: fmtDate(String(d[band] ?? ""), bandGran ?? "month") }))
+        : null;
+      const sorted = byPeriod ? { data: { values: byPeriod } }
+        : horizontal || fewTest ? { data: { values: fewLast } } : {};
       return all.length > 1
         ? { ...base, ...sorted, ...withTf, layer: all, encoding }
         : { ...base, ...sorted, ...withTf, ...all[0], encoding };

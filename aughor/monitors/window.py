@@ -93,7 +93,7 @@ def reanchor_trailing_window(sql: str, db, dialect: str = "duckdb") -> str:
 
     # alias/name → fully-qualified table, excluding CTE names.
     cte_names = set()
-    with_node = tree.args.get("with")
+    with_node = tree.args.get("with_") or tree.args.get("with")   # "with_" in sqlglot 30.x
     if with_node:
         for cte in with_node.expressions:
             if cte.alias:

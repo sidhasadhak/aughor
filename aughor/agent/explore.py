@@ -127,10 +127,15 @@ class _LedgerOut(BaseModel):
     )
 
 
-def build_analysis_ledger(state: AgentState) -> str:
+def build_analysis_ledger(state: AgentState, sql_context: str = "") -> str:
     """Decide canonical entity/metric definitions ONCE so every downstream step
     uses the same identifiers and expressions (prevents figures drifting between
-    stages, e.g. customer_id vs customer_unique_id). Best-effort — never blocks."""
+    stages, e.g. customer_id vs customer_unique_id). Best-effort — never blocks.
+
+    ``sql_context`` names the engine (`agent/sql_context.py`). The ledger is BINDING for
+    every later query, and without it the ledger wrote ``DATE_TRUNC('month', x)`` and
+    ``+ INTERVAL '90 days'`` for BigQuery — five planned queries, five repairs
+    (2026-09-29)."""
     scan_context = state.get("scan_context") or ""
     scan_section = (
         f"DATA PORTRAIT (actual distributions):\n{scan_context}\n" if scan_context else ""
@@ -140,6 +145,7 @@ def build_analysis_ledger(state: AgentState) -> str:
             system="You define canonical metric/entity definitions for a data analysis.",
             user=BUILD_LEDGER_PROMPT.format(
                 question=state["question"],
+                sql_context=sql_context or "",
                 schema=state["schema_context"],
                 scan_section=scan_section,
             ),

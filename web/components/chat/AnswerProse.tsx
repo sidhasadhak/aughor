@@ -11,9 +11,8 @@
  *
  * This is the CHAT surface's renderer; the Briefing keeps `BriefProse`, whose
  * hand-rolled scope (paragraphs + tables) matches a surface the model does not
- * free-write into. Both share ONE inline-figure rule (`renderEmphasis`), so a
- * signed delta reads emerald/red identically everywhere and an id fragment never
- * does (its boundary fix lives there).
+ * free-write into. Both share ONE inline rule (`renderEmphasis`): bold or normal text,
+ * never a colour (the user, 2026-09-30).
  *
  * The surface is DESIGNED, not open: `skipHtml`, an element allowlist, and every
  * element mapped — headings render as bold paragraphs (a chat answer has no place
@@ -27,6 +26,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { renderEmphasis } from "@/components/brief/BriefProse";
+import { ProseTable } from "@/components/TableActions";
 
 /** A bare id in prose — a uuid, or the repo's own prefixed ids (`ua_…`, `sb_…`). */
 const ID_RE =
@@ -107,7 +107,8 @@ const COMPONENTS = {
   strong: ({ children }: ElProps) => (
     <strong className="font-semibold">{withInline(children)}</strong>
   ),
-  em: ({ children }: ElProps) => <em className="italic">{withInline(children)}</em>,
+  // Bold or normal text only (the user, 2026-09-30): an emphasis the model marks reads as normal.
+  em: ({ children }: ElProps) => <>{withInline(children)}</>,
   del: ({ children }: ElProps) => <del>{withInline(children)}</del>,
   blockquote: ({ children }: ElProps) => (
     <blockquote className="border-l-2 border-zinc-700 pl-3 my-1 text-zinc-400">
@@ -142,12 +143,8 @@ const COMPONENTS = {
       {children}
     </pre>
   ),
-  // The table treatment BriefProse established, kept identical here.
-  table: ({ children }: ElProps) => (
-    <div className="overflow-x-auto my-2">
-      <table className="aug-text-ui border-collapse">{children}</table>
-    </div>
-  ),
+  // The table treatment BriefProse established, kept identical here — with Copy and CSV.
+  table: ({ children }: ElProps) => <ProseTable>{children}</ProseTable>,
   th: ({ children }: ElProps) => (
     <th className="text-left font-medium text-zinc-400 px-2 py-1 border-b border-zinc-700">
       {withInline(children)}
