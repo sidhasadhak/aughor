@@ -1066,9 +1066,9 @@ def _said(texts: Iterable[str]) -> str:
     return " … ".join(dict.fromkeys(t for t in texts if t))
 
 
-def frame_reading(frame: Frame) -> str:
+def frame_reading(frame: Frame, tests: bool = True) -> str:
     """The frame in a few sentences, for the person who asked — what each word was read as, where the reading starts
-    and what it will test. "" when the frame defines nothing."""
+    and, when the run ``tests`` drivers, what it will test. "" when the frame defines nothing."""
     if not frame.defines:
         return ""
     parts: list[str] = []
@@ -1087,7 +1087,7 @@ def frame_reading(frame: Frame) -> str:
     for m in frame.moments:
         parts.append(f'"{m.text}" is stage {m.stage} of {m.process_label}: the moment {m.timestamp}.')
     if frame.start is not None and not frame.ambiguous:
-        tested = ", ".join(d.label for d in frame.drivers[:3])
+        tested = ", ".join(d.label for d in frame.drivers[:3]) if tests else ""
         parts.append(f"Starting from {frame.start['name']}"
                      + (f" ({frame.start['table']})" if frame.start.get("table") else "")
                      + (f"; testing {tested}." if tested else "."))

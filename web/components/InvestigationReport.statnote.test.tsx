@@ -228,6 +228,20 @@ describe("a simple answer", () => {
     expect(container.textContent?.split("7,027 units were sold")).toHaveLength(2);
   });
 
+  it("names no period the answer names in other words", () => {
+    // Q2 (2026-10-03): "between March 5, 2026, and September 4, 2026", then "5 March – 4 September 2026" beneath
+    const days = render(<ReportView report={q1("Revenue between March 5, 2026, and September 4, 2026 was $359,224.30 "
+      + "from 7,027 units", { observation_period: "5 March – 4 September 2026" })} onShowSource={vi.fn()} />);
+    expect(days.queryByText("5 March – 4 September 2026")).not.toBeInTheDocument();
+    days.unmount();
+    const months = render(<ReportView report={q1("Revenue grew from $359,224.30 in September 2025 to 7,027 units in "
+      + "August 2026", { observation_period: "September 2025–August 2026" })} onShowSource={vi.fn()} />);
+    expect(months.queryByText("September 2025–August 2026")).not.toBeInTheDocument();
+    months.unmount();
+    render(<ReportView report={q1(STATED, { observation_period: "5 March – 4 September 2026" })} onShowSource={vi.fn()} />);
+    expect(screen.getByText("5 March – 4 September 2026")).toBeInTheDocument();
+  });
+
   it("keeps the full layout when a result carries more than its figures", () => {
     const report = q1(STATED) as unknown as { phases: { findings: { interpretation: string }[] }[] };
     report.phases[1].findings[0].interpretation = "Units fell short of the plan.";

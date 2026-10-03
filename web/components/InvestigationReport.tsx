@@ -40,6 +40,7 @@ import { Icon } from "@/components/ui/icon";
 import { QuestionFrame } from "@/components/QuestionFrame";
 import type { OntologyFrame, RuleOuts } from "@/lib/types";
 import { withUniqueKeys } from "@/lib/listKeys";
+import { namesPeriod } from "@/lib/format";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -516,7 +517,8 @@ export function InvestigationReportView({
   const says = (s?: string) => !!s && answer.toLowerCase().includes(s.toLowerCase());
   const simple = simpleResults(analysisPhases, report.executive_summary);
 
-  const periodStr = says(report.observation_period) && (!report.comparison_basis || says(report.comparison_basis))
+  const periodStr = (says(report.observation_period) || namesPeriod(answer, report.observation_period ?? ""))
+    && (!report.comparison_basis || says(report.comparison_basis))
     ? ""
     : [
       report.observation_period,

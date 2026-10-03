@@ -448,6 +448,47 @@ export function monthsInTables(text: string): string {
   return lines.join("\n");
 }
 
+const MONTH_WORD = "(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?";
+const monthNo = (m: string) => ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+  .indexOf(m.slice(0, 3).toLowerCase()) + 1;
+const two = (n: number | string) => String(n).padStart(2, "0");
+
+/** The days and months a text names in full: "March 5, 2026", "5 March 2026" and "2026-03-05" as "2026-03-05";
+ *  "September 2025" as "2025-09". */
+function datesNamed(text: string): Set<string> {
+  const out = new Set<string>();
+  let rest = text;
+  const take = (re: RegExp, key: (g: string[]) => string) => {
+    rest = rest.replace(re, (_whole: string, ...g: string[]) => { out.add(key(g)); return " "; });
+  };
+  take(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (g) => `${g[0]}-${g[1]}-${g[2]}`);
+  take(new RegExp(`\\b${MONTH_WORD}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "gi"),
+       (g) => `${g[2]}-${two(monthNo(g[0]))}-${two(g[1])}`);
+  take(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_WORD},?\\s+(\\d{4})\\b`, "gi"),
+       (g) => `${g[2]}-${two(monthNo(g[1]))}-${two(g[0])}`);
+  take(new RegExp(`\\b${MONTH_WORD},?\\s+(\\d{4})\\b`, "gi"), (g) => `${g[1]}-${two(monthNo(g[0]))}`);
+  return out;
+}
+
+/** Does the answer name the period a label states, in any common form? Q2's headline said "between March 5, 2026,
+ *  and September 4, 2026", and the line beneath it said "5 March – 4 September 2026" again (2026-10-03). Read from
+ *  the label's two ends, as the windows are written ("5 March – 4 September 2026", "4–20 July 2026",
+ *  "September 2025–August 2026", "July 2026"); a note after " — " is not the period. */
+export function namesPeriod(text: string, label: string): boolean {
+  const ends = (label || "").split(" — ")[0].split(/\s*–\s*/);
+  if (!text || ends.length > 2) return false;
+  const part = (s: string) => {
+    const m = s.trim().match(new RegExp(`^(?:(\\d{1,2})\\s*)?(?:${MONTH_WORD})?\\s*(\\d{4})?$`, "i"));
+    return m && (m[1] || m[2] || m[3]) ? { d: m[1], m: m[2], y: m[3] } : null;
+  };
+  const last = part(ends[ends.length - 1]);
+  const first = ends.length === 2 ? part(ends[0]) : last;
+  if (!last?.m || !last.y || !first || !!first.d !== !!last.d) return false;
+  const key = (y: string, m: string, d?: string) => `${y}-${two(monthNo(m))}` + (d ? `-${two(d)}` : "");
+  const named = datesNamed(text);
+  return named.has(key(first.y ?? last.y, first.m ?? last.m, first.d)) && named.has(key(last.y, last.m, last.d));
+}
+
 /** Render a date per a user date_format token. Pulls Y-M-D straight from the string
  *  (no Date parse) so a "…T00:00:00" timestamp never drifts a day across the local
  *  timezone. Returns the input unchanged for an unknown token or a non-date. */
