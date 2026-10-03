@@ -10280,6 +10280,112 @@ worth building if resolution on theLook's BigQuery statements falls well below t
 loading more costs the warehouse more than re-running with a higher limit (bytes billed, measured on theLook).
 
 
+### 3.52 · Arc AO — the agent estate as a product: one sitting to Slack, one truth per number, one closed loop (DRAFTED 2026-10-03 at the user's *"brutally test our Agent workflow… I want it to be a gold standard"* · ✅ ADOPTED the same day, §6 item 38, every clause as recommended · nothing built)
+
+> **Origin.** The user: *"I want you to brutally test our Agent workflow.. everything that we have in the Agent Ops
+> tab.. Right from the way Agent is built internal and external ones.. how easy and difficult it is to create Slack
+> bots… how effective is and where are the apps?.. check the UI layout? The overall experience… is it at the Global
+> standards or not? What can we do to ensure that Agent ops are improved? 10X… Easy to Setup., quick and efficient
+> on delivery with self recursive learning."* The study is `docs/AGENT_OPS_STUDY_2026-10-03.md`: every layer, every
+> tab of a custom agent, the Create flow and the Slack door driven live on the main checkout at `b2b7e2c5` (its
+> Agent Ops files byte-identical to this branch), a throwaway agent created and deleted through the API, no model
+> call spent, no Slack app made; four readers over the agent model, the Slack mechanism, every panel and the learning
+> loops, every claim a wave rests on re-read at the cited lines (its §8 says which were only read, never run).
+
+> **What the test found.** (1) A custom agent's instructions never reach the default chat body: `agent_brief_block()`
+> is read by the inner SQL prompt, the deep report and the eval, never by `converse_system_prompt`
+> (`agent/converse_tools.py:849-1003`), the default since SP-14; the one agent with a Slack door, asked its own
+> question, answered *"I ran out of steps (8 tool calls)"*. Delegation never activates the delegate; the "goldens
+> 5/5" chip certifies the SQL prompt, not the agent; creating from a pack drops the edited instructions and documents.
+> (2) Slack takes twenty manual steps across four surfaces and five hand-copied secrets; the Node supervisor is started
+> by nobody, is not running on the user's machine, and has no heartbeat — the bot card reads enabled while nothing
+> listens; the UI never sends `agent_view`, and Slack closed the legacy view to new apps on 2026-08-20; regenerating
+> the supervisor key takes every bot dark within 30 s; `POST /slack-bots/supervisor-key` is not in the RBAC policy,
+> so on a default install anyone on the port mints a key and reads raw tokens; deleting an agent leaves its socket
+> open. (3) One agent, two truths: 76.7K tokens on the Roster row for 24 h, 3.5M on its Overview (all-time; the
+> observability route ignores `range`); `$0.00` on every tile because the model in use is unpriced; five surfaces
+> render "nothing here" on a failed fetch; the range applies to three of seven layers; "charter" is on screen.
+> (4) No learning store carries `agent_id` — the platform learns per connection, an agent learns nothing as itself;
+> the autonomy ladder reads keys nothing writes; six verdicts in two months; the few-shot memory is the one autonomous
+> closed loop. (5) No external-agent identity, no MCP door to a named agent, no Teams, no email, no embed.
+> **Where Aughor stays ahead:** goldens with reference SQL rather than a judge, departures and probation, provenance
+> on every tile, configuration revisions, grants that only propose, the Map, spend by call site and role.
+
+> **Status 2026-10-03 — ADOPTED** (§6 item 38; the user: *"adopt all as recommended and commit locally"*). AO-1, AO-3 and
+> AO-2a,e ship without a flag; AO-2b, AO-6 and AO-7 behind flags, off by default; AO-0.1 spends one model call when
+> the pre-check starts; the API owns the Slack process after a one-day spike; one configuration token replaces three
+> pasted secrets; agent mode by default for new Slack apps; per-agent lessons live in the verdict store; the dead
+> autonomy ladder is fixed and its skills staged to the inbox; five refusals are recorded as §4.8. Nothing is built.
+> Next: AO-0.
+
+**The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
+
+- **AO-0 · Pre-checks.** (1) One quick question to The Look Analyst with `obs.prompt_capture` on: if the captured
+  converse prompt carries the instructions, finding (1) is wrong and AO-1a is cancelled — one model call, authorised by
+  §6 item 38(c). (2) `next build` once and first paint per layer timed — decides whether the 2–5 s blank panels are a
+  dev artefact. (3) The usage store read for the live model's price row — decides whether `$0.00` is a missing price
+  or a missing join.
+- **AO-1 · The stance reaches every body** (quality; no flag). AO-1a: `converse_system_prompt` and the analyst loop
+  prepend `agent_brief_block()` when an agent is active — receipt: the same question before and after, diffed.
+  AO-1b: `_run_one` activates the delegate, reads `headline`, and the test stub returns what the real path returns.
+  AO-1c: the eval runs the production path — documents, packs, schema scope, grants — so the chip certifies the agent.
+  AO-1d: `purpose` writable; the pack path accepts the scratch path's body and validates the connection. AO-1e: agent
+  delete cascades with a receipt — bots disabled and said so, automations' `agent_id` cleared and said so, revisions
+  kept.
+- **AO-2 · Slack in one sitting** (setup). AO-2a (small, no flag): the supervisor posts a heartbeat on every
+  reconcile; the bot card and the agent's Map say *listening since …* or *not listening — start the supervisor* with
+  the one command. AO-2b (medium, flag `slack.managed_supervisor`): the API spawns, watches and restarts the Slack
+  process, or runs Socket Mode in-process — a one-day spike decides (§6 item 38(d)); the installer provisions it.
+  AO-2c (small): agent mode by default for new apps, the manifest's events reconciled with the README, a one-way
+  toggle for existing bots, the README rewritten for RC-5. AO-2d (medium): a Slack configuration token lets Aughor
+  call `apps.manifest.create` and `update` itself — one token pasted, then Install; on HTTPS deployments the OAuth
+  card can do the install. AO-2e (small, no flag): key regeneration with a grace window; `POST
+  /slack-bots/supervisor-key` enters `POLICY` as `ADMIN_MANAGE_ORG`; a test asserts who may mint. AO-2f (small):
+  an optional channel binding on the record. **Measure:** Create agent → a Slack answer on a fresh install, one
+  person, no terminal — under five minutes and one hand-off; today twenty steps and four surfaces.
+- **AO-3 · One truth per number** (trust; no flag). Every tile reads the shared range or says "all time" on its
+  face; the observability route takes `range`; the charter page reads the window it captions. A failed fetch renders
+  *could not read — retry*, never an empty state (the five sites named in the study). An unpriced model renders
+  **unpriced**, not `$0.00`, and the price table gains the model in use. Run-timeline bars carry duration; `complete`
+  has a colour. "charter" → "built-in" on screen, the ratchet's comment made true and its baseline lowered. A test
+  per rule: a fetch that rejects must not produce the empty-state string.
+- **AO-4 · The agent's own page is the whole agent** (layout). Tabs: Overview · Runs · **Doors** (chat, Slack with
+  liveness, automations that run as it, HTTP, MCP — each with its state and a button) · **Alerts** (rules scoped to
+  this agent; the form gains `agent_id`) · Quality · Spend · Setup. A connection picker inside Agent Ops; every "Open
+  automation" carries its id; Hub rows and every raw id are links; `?tab=integrations` and every layer and tab
+  addressable; a "?" per layer that opens Spotlight on the arc's help topic; the six words explained once on screen.
+- **AO-5 · Doors ×10** (reach), in order of evidence that someone asked: MCP — each custom agent exposed as a tool
+  and its caller a principal (with DE-2) · HTTP — a per-agent key and an embeddable chat widget · Teams — the
+  Microsoft grant exists; a Bot Framework channel is the first non-Slack conversational door · an inbound webhook as a
+  conversation · A2A last. Email stays refused (§3.18's "no email in either direction") unless the user reopens it.
+- **AO-6 · A testing centre** (prove; flag). Synthetic questions drafted from the catalogue and the agent's purpose
+  (one model call per batch), certified by a person with SQL before they count; a nightly eval per agent with a diff
+  against the last stamp, re-run on any configuration change; "rehearse" — a bot answers in a private thread first,
+  promotion to a channel is a click.
+- **AO-7 · One closed learning loop per agent** (self-recursive, inside the invariants; flag). No new store: the
+  verdict store is the lesson store. AO-7a: verdicts carry `agent_id`, stamped from the turn's record; the
+  corrections section reads (connection, agent) first; the brief gains a bounded "corrected before" block. AO-7b:
+  Slack verdicts are whole — `record_verdict` backfills connection, headline and `sql_source` from the turn's record,
+  the bot's fallbacks agree, the message→turn map is persisted. AO-7c: an accepted answer becomes an *uncertified*
+  golden candidate on the agent's Quality tab; a person certifies it with SQL. AO-7d: a configuration change or N new
+  verdicts re-runs the production-path eval; the page shows *learned 3 corrections · 2 goldens certified from use ·
+  pass 7/8 → 8/8* — that delta is the receipt. AO-7e: `record_run` derives `grounded` and `confidence` from what runs
+  carry (the verification manifest for explore, `learning/reward.run_label` for deep) and a crystallised skill is
+  staged to the inbox, never auto-saved (§6 item 38(g)).
+
+**Order:** AO-0 → AO-1 → AO-3 → AO-2a, AO-2e → AO-4 → AO-2b, AO-2c, AO-2d → AO-6 → AO-7 → AO-5.
+
+**Not this** (§6 item 38(j) records the five in §4.8): a visual agent builder as the primary authoring surface; an
+LLM judge as the certification of a golden; executing grants; a Slack Marketplace listing before AO-2d is proven on
+two workspaces; email as a door. Not this arc: a redesign of the seven layers (the layout is sound; the defects are
+in the numbers and the doors); online learning, weights, or any `llm_inferred` fact (§8); a ninth store.
+
+**Falsifiers:** AO-0.1's captured prompt carries the instructions → AO-1a cancelled. AO-2's measure not under ten
+minutes on a fresh clone with the managed supervisor → the in-process Socket Mode spike is wrong and AO-2b reverts
+to spawn-and-watch. AO-2d still needs the app-level token made by hand → the win is three → two and the wave says
+so. AO-7 must move a held-out golden set's pass rate per agent; two weeks of real use without movement → the
+"corrected before" block is removed, not kept.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -10417,6 +10523,23 @@ invariant here; §6 item 37(g) records them as refused, at the user's *"adopt al
 - **Importing another tool's saved passwords** by decrypting them with that vendor's fixed key (DBeaver, Navicat).
   A credential is a governed object here (§3.4); an import, if ever wanted, takes host, port and database, and
   the person enters the secret.
+
+### 4.8 · What Agent Ops will not become — REFUSED (2026-10-03)
+
+The Agent Ops study (`docs/AGENT_OPS_STUDY_2026-10-03.md`, §7) measured the surface against what the field ships, and
+Arc AO (§3.52) took what closes the gap. Five things the field does, or that a reader might reach for, contradict a
+rule here; §6 item 38(j) records them as refused, at the user's *"adopt all as recommended and commit locally"*:
+- **A visual agent builder as the primary authoring surface.** §4.1 refused a canvas for agent creation; the field
+  has since confirmed it — OpenAI retires its Agent Builder and Evals on 2026-11-30 and keeps the embeddable chat.
+  An agent here is a scope and a stance in words, drafted and certified, not a diagram.
+- **An LLM judge as the certification of a golden.** A golden is a question with reference SQL a person trusts; the
+  suite compares result sets. A model may *draft* questions (AO-6); it never grades its own answer into a pass.
+- **Executing grants.** An agent proposes; a person acts (VA-9c, Arc HB's law). No wave gives an agent a door to
+  execute, however many doors it gains to be reached through.
+- **A Slack Marketplace listing** before the one-token install (AO-2d) is proven on two workspaces. A listed app is
+  a one-way door into Slack's review process; the install must work unlisted first.
+- **Email as a door.** Arc HB decided "no email in either direction" (§3.18); AO-5 does not reopen it. Only the user
+  can.
 
 ## 5 · Sequencing
 
@@ -11273,6 +11396,9 @@ the browser** · **measure the premise before building.**
 > DE-1; item 37(e) is withdrawn with it. Open: item 37's other seven clauses.
 > **Amended 2026-10-02, later still:** item 37 DECIDED — *"adopt all as recommended and commit locally"*; the seven open clauses
 > were taken as recommended and the four refusals recorded as §4.7. Nothing from Arc DE is open.
+> **Amended 2026-10-03:** item 38 (Arc AO, the agent estate as a product, §3.52) arrived at the user's *"brutally test
+> our Agent workflow"* and was DECIDED the same day — *"adopt all as recommended and commit locally"*; all ten clauses
+> as recommended, five refusals recorded as §4.8. The register stays at zero open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -12038,6 +12164,47 @@ the browser** · **measure the premise before building.**
     stays in the arc as "not now".
     **(h) ✅ DECIDED as recommended — ideas, not code.** dbx's root `LICENSE` is Apache-2.0 and `agents/README.md` says AGPL-3.0. *Recommended:*
     no dbx code is copied into Aughor until that is resolved; the arc's waves re-implement from the idea.
+38. ✅ **DECIDED 2026-10-03 — Arc AO, the agent estate as a product, adopted with every clause as recommended** (the
+    user: *"adopt all as recommended and commit locally"*; the arc arrived the same day at their *"brutally test our
+    Agent workflow… I want it to be a gold standard… Easy to Setup., quick and efficient on delivery with self
+    recursive learning"*, after the live test of every layer and the four readings; the study is
+    `docs/AGENT_OPS_STUDY_2026-10-03.md`, the arc §3.52). Ten clauses, each with a recommendation; all ten decided
+    together. Adopting the plan is not a yes to a push, to a paid model run beyond the one in (c), or to a new
+    process started on the user's machine.
+    **(a) ✅ DECIDED as recommended — adopt Arc AO as drafted** — AO-0 and seven waves, in §3.52's order, with its
+    refusals and its four falsifiers. *Recommended: yes.* The first three waves repair what the product already says
+    it does; the rest is measured against the field.
+    **(b) ✅ DECIDED as recommended — which waves ship without a flag.** *Recommended:* AO-1, AO-3, AO-2a and AO-2e
+    without one — an instruction the model never sees, a tile that disagrees with its neighbour, a dead bot that reads
+    live and an ungated key are defects against stated behaviour, and a flag left off would keep them; AO-2b (a
+    process the API owns), AO-6 (model calls per batch) and AO-7 (a block in the brief) behind flags, off by default
+    and byte-identical when off.
+    **(c) ✅ DECIDED as recommended — AO-0.1 spends one model call.** *Recommended: yes* — one quick question through
+    The Look Analyst with the prompt captured, run when AO-0 starts, to prove the headline finding live before a day
+    is spent on it. A second call is asked for, not assumed.
+    **(d) ✅ DECIDED as recommended — how the API owns the Slack process (AO-2b).** *Recommended:* a one-day spike
+    compares in-process Socket Mode (`slack_bolt`'s async client inside the API) with spawn-and-watch of `bots/slack`;
+    spawn-and-watch is the default if the spike does not reach a Slack answer under ten minutes on a fresh clone.
+    The alternative — leave the process to the operator and only show liveness — keeps step 18 of 20.
+    **(e) ✅ DECIDED as recommended — one token, not three (AO-2d).** *Recommended: yes* — a Slack configuration token
+    and `apps.manifest.create`/`update`, with the falsifier recorded: if the app-level token must still be generated by
+    hand, the win is three → two and the wave says so rather than claiming one.
+    **(f) ✅ DECIDED as recommended — agent mode by default for new Slack apps (AO-2c).** *Recommended: yes* — Slack
+    closed the legacy view to new apps on 2026-08-20 and retires it in February 2027; the move is one-way, so existing
+    bots keep their mode until a person flips the toggle, which warns.
+    **(g) ✅ DECIDED as recommended — the dead autonomy ladder (AO-7e).** *Recommended: fix and stage* — `record_run`
+    derives `grounded` and `confidence` from what runs carry, and a crystallised skill is staged to the one inbox,
+    never saved silently (HB: an agent proposes). The alternative, deleting the reader side and making the docstring
+    true, is the fallback if the derived signal cannot take both values on real traffic.
+    **(h) ✅ DECIDED as recommended — where per-agent lessons live (AO-7a).** *Recommended:* in the verdict store,
+    which gains `agent_id` — no new store (one store per concept); the corrections section reads (connection, agent)
+    first, then connection, so an agent's lesson never leaks to another asker's prompt.
+    **(i) ✅ DECIDED as recommended — the order of doors (AO-5).** *Recommended:* MCP → HTTP and an embeddable widget →
+    Teams → an inbound webhook as a conversation → A2A, each on evidence that someone asked; email stays refused
+    under Arc HB's decision.
+    **(j) ✅ DECIDED as recommended, recorded as §4.8 — record five refusals in §4**: a visual builder as the primary
+    authoring surface; an LLM judge certifying a golden; executing grants; a Marketplace listing before AO-2d is
+    proven; email as a door. *Recommended: yes* — each contradicts a rule already paid for.
 
 ---
 
