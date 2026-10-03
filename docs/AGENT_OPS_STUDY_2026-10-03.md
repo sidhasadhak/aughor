@@ -376,6 +376,12 @@ every fix are in PENDING item 50; the short form:
   lesson; an accepted new answer became a candidate from use (an accepted repeat of a golden's question did not — the
   dedupe); a configuration change re-ran the suite in the background within 10 s: before 0/2, after 2/3, the month
   golden newly passing. Not driven live: the nightly run and the every-fifth-verdict trigger.
+- **The AO-2 sitting (the user, 15:32–15:42 CEST, the same fresh install, no tunnel).** Agent created → first Slack
+  answer: 10 min 37 s; about 7 min 40 s net of Slack refusing the manifest (`assistant_view` beside `agent_view`;
+  new apps take `agent_view` alone with `agent_description` — fixed, the retry returned 200). Three pastes, one
+  surface left; the managed supervisor picked the bot up on its next reconcile; the mention was answered as the
+  agent. Under five was not met; the ten-minute falsifier fired gross by 37 s on that defect and held net.
+  `users:read` was missing (the transport's `users.info`); added. Unmeasured: the Install button over HTTPS.
 - **Fallout fixed at the cause:** on a fresh install the shipped `revenue`/`aov` applied to NO listed connection
   (scoped to `samples`, which the registry never lists, while the Workspace folds the samples tables in) — the
   Workspace now reads them; the door fold, the MCP agent fold and the Slack bot all read the quick path's `inv_id`

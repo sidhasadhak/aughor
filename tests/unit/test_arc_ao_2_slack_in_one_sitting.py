@@ -180,6 +180,9 @@ def test_a_new_manifest_is_in_agent_mode_with_its_events():
     long = render_manifest(name="x", description="d" * 400)
     assert len(long["features"]["agent_view"]["agent_description"]) == 300
     assert "assistant:write" in m["oauth_config"]["scopes"]["bot"]
+    # The first live mention (2026-10-03): the transport's `users.info` for the asker's name
+    # was refused — "missing_scope, needed: users:read". The scopes are what the transport calls.
+    assert "users:read" in m["oauth_config"]["scopes"]["bot"]
     events = m["settings"]["event_subscriptions"]["bot_events"]
     assert events == list(BOT_EVENTS) + list(AGENT_EVENTS), \
         "the README told a person to add these by hand; the manifest must carry them"

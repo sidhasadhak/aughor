@@ -25,6 +25,12 @@ from __future__ import annotations
 #:   im:history/write  — the same conversation in a DM
 #:   files:write       — RC-2's chart PNG and CSV
 #:   reactions:read    — TJ-4: ✅ / ❌ on an answer is a verdict on its turn (2026-09-26)
+#:   users:read        — the transport resolves the asker's name with `users.info` on every
+#:                       message. Left out until the first live sitting (2026-10-03): the
+#:                       answer still arrived, but the supervisor logged "Could not fetch
+#:                       user info … missing_scope, needed: users:read" per message and a
+#:                       verdict's note named a user id. Granted at creation it costs
+#:                       nothing; added later it is a re-install.
 BOT_SCOPES = [
     "app_mentions:read",
     "chat:write",
@@ -34,6 +40,7 @@ BOT_SCOPES = [
     "im:write",
     "files:write",
     "reactions:read",
+    "users:read",
 ]
 
 #: The events the transport handles. Anything else Slack could send is noise the bot
