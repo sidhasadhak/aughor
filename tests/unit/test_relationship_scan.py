@@ -20,6 +20,16 @@ from aughor.agent.relationship import (bare_column, numeric_expression, plan_rel
                                        side_expression, sql_columns)
 from aughor.tools.stats import assess_correlation, assess_group_means
 
+
+
+def _evidence(phases) -> str:
+    """The evidence the writer is handed for these phases — what the report checks read. A
+    placeholder string stood here while #36 skipped every figure below 10; it now checks a
+    small figure written with decimals, so the fixture's own rows are its evidence."""
+    from aughor.agent import investigate
+    return investigate._phases_evidence(phases)
+
+
 METRIC = "AVG(Late_delivery_risk)"
 SEGMENT = "Late_delivery_risk = 1"
 DELAY = '"Days for shipping (real)" - "Days for shipment (scheduled)"'
@@ -588,7 +598,7 @@ def test_a_finding_with_a_real_verdict_never_gates_the_report():
     phases = _noise_phase()
     phases[0]["findings"][0]["stat_note"] = "one-way ANOVA F(3,900) = 44.1, p = 1e-26"
     synth = _Synth("Ilam is the slowest destination", "Ilam averages 3.2 days.")
-    assert run_report_checks(synth, "q", "evidence", phases) == []
+    assert run_report_checks(synth, "q", _evidence(phases), phases) == []
 
 
 # ── the verdict must also reach the FINDING narrator (run 4: `54df16fa`) ─────
@@ -667,7 +677,7 @@ def test_calling_an_overwhelmingly_significant_test_insignificant_is_a_violation
     from aughor.agent.report_checks import run_report_checks
     synth = _Synth("Shipping delay is uniform across all customer locations",
                    "Variations across cities, states and regions are not significant (p > 0.05).")
-    violations = run_report_checks(synth, "q", "evidence", _significant_phase())
+    violations = run_report_checks(synth, "q", _evidence(_significant_phase()), _significant_phase())
     assert any("p = 2.38e-155" in v and "immaterial" in v for v in violations)
 
 
@@ -676,7 +686,7 @@ def test_saying_significant_but_immaterial_is_clean():
     synth = _Synth("Location does not explain shipping delay",
                    "Customer city is statistically distinguishable but accounts for 1.1% of the "
                    "variation, too little to act on.")
-    assert run_report_checks(synth, "q", "evidence", _significant_phase()) == []
+    assert run_report_checks(synth, "q", _evidence(_significant_phase()), _significant_phase()) == []
 
 
 def test_a_genuinely_null_run_may_say_not_significant():
@@ -684,7 +694,7 @@ def test_a_genuinely_null_run_may_say_not_significant():
     phases = _significant_phase()
     phases[0]["findings"][0]["stat_note"] = "one-way ANOVA F(14,80) = 0.6357, p = 0.8274"
     synth = _Synth("No geographic effect", "The differences are not significant (p > 0.05).")
-    assert run_report_checks(synth, "q", "evidence", phases) == []
+    assert run_report_checks(synth, "q", _evidence(phases), phases) == []
 
 
 # ── a narrator that AGREES with the verdict is left alone (run 5: `c88a3baf`) ─
@@ -731,7 +741,7 @@ def _region_noise_phase():
     return [{"phase_name": "Cross-Sectional", "findings": [{
         "sql": "SELECT 1", "columns": ["Order Region", "metric_total", "sd", "n"],
         "rows": [["Central Asia", "0.65", "1.5", "553"], ["Central Africa", "0.64", "1.5", "1100"],
-                 ["South Asia", "0.60", "1.5", "9000"]],
+                 ["South Asia", "0.60", "1.5", "9000"], ["South America", "0.56", "1.5", "4000"]],
         "row_count": 15, "error": None, "interpretation": "…", "trust_caveat": None,
         "key_numbers": [], "chart_type": "bar_horizontal", "is_significant": False,
         "stat_note": ("This ordering is not evidence of a difference: the gaps between these "
@@ -746,14 +756,14 @@ def test_naming_a_label_in_a_stable_range_is_not_a_violation():
     synth = _Synth("Shipping delays are consistent across all customer locations",
                    "Average delays remain stable, ranging from 0.56 days in South America to "
                    "0.65 days in Central Asia.")
-    assert run_report_checks(synth, "q", "evidence", _region_noise_phase()) == []
+    assert run_report_checks(synth, "q", _evidence(_region_noise_phase()), _region_noise_phase()) == []
 
 
 def test_naming_the_same_label_as_a_bottleneck_still_is():
     from aughor.agent.report_checks import run_report_checks
     synth = _Synth("Central Asia is the regional bottleneck driving shipping delay",
                    "Central Asia is a clear outlier at 0.65 days.")
-    violations = run_report_checks(synth, "q", "evidence", _region_noise_phase())
+    violations = run_report_checks(synth, "q", _evidence(_region_noise_phase()), _region_noise_phase())
     assert any("Central Asia" in v for v in violations)
 
 
@@ -763,4 +773,4 @@ def test_the_claim_must_be_in_the_sentence_that_names_the_label():
     synth = _Synth("Delays are uniform by region",
                    "Delays range from 0.56 days in South America to 0.65 days in Central Asia. "
                    "Separately, Second Class shipping is the significant driver of lateness.")
-    assert run_report_checks(synth, "q", "evidence", _region_noise_phase()) == []
+    assert run_report_checks(synth, "q", _evidence(_region_noise_phase()), _region_noise_phase()) == []

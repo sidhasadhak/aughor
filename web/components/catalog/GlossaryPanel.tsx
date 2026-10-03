@@ -21,7 +21,7 @@
 import { useEffect, useState } from "react";
 import {
   getGlossary, lookupGlossaryTable, updateTableGlossary, updateColumnGlossary,
-  type GlossaryTable,
+  getColumnNotes, setColumnNote, type ColumnNoteEntry, type GlossaryTable,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -91,20 +91,25 @@ function SubField({ caption, value, placeholder, accent, onSave }: {
   );
 }
 
-export function GlossaryPanel({ table, columns, schema }: {
+export function GlossaryPanel({ table, columns, schema, connectionId }: {
   table: string;
   columns: string[];
+  /** The connection whose column notes this table's columns carry; without it none are shown. */
+  connectionId?: string;
   /** The table's schema — scopes both the lookup and the write. */
   schema?: string | null;
 }) {
   const [entry, setEntry] = useState<GlossaryTable>({});
+  const [notes, setNotes] = useState<Record<string, ColumnNoteEntry>>({});
   const [loading, setLoading] = useState(true);
 
   const load = () => {
     setLoading(true);
-    getGlossary()
-      .then(g => setEntry(lookupGlossaryTable(g, table, schema) ?? {}))
-      .catch(() => setEntry({}))
+    Promise.all([
+      getGlossary().then(g => lookupGlossaryTable(g, table, schema) ?? {}).catch(() => ({})),
+      connectionId ? getColumnNotes(connectionId, schema).then(t => t[table] ?? {}).catch(() => ({})) : Promise.resolve({}),
+    ])
+      .then(([g, n]) => { setEntry(g as GlossaryTable); setNotes(n as Record<string, ColumnNoteEntry>); })
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [table]);
@@ -177,6 +182,24 @@ export function GlossaryPanel({ table, columns, schema }: {
                 accent="var(--amb4)"
                 onSave={async v => { await updateColumnGlossary(table, c, { caveats: v }, schema); load(); }}
               />
+              {/* The note the agent reads with this column — written by a person or proposed by the
+                  agent. A wrong one could not be removed from the app (2026-10-02): Clear replaces it
+                  with nothing, the note is kept in the column's history, and an agent's next note here
+                  waits for review. */}
+              {connectionId && notes[c]?.note && (
+                <div style={{ marginTop: 6 }}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", fontWeight: 600, marginBottom: 1 }}>
+                    Note the agent reads · {notes[c].source === "agent" ? "written by the agent" : "written by a person"}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <p className="aug-fs-sm" style={{ flex: 1, margin: 0, color: "var(--t2)" }}>{notes[c].note}</p>
+                    <Button variant="ghost" size="xs" title="Clear this note — it is kept in the column's history"
+                      onClick={async () => { await setColumnNote(connectionId, schema, table, c, ""); load(); }}>
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );

@@ -34,7 +34,7 @@ def test_static_prompt_text_stays_dieted():
     guardrails. Both budgets are ratchets — lower them when you shrink further,
     never raise them without a measurement saying why."""
     skeleton = ADA_SYNTHESIZE_PROMPT.format(
-        question="", phases_summary="", evidence_log="", events_section="",
+        clock_section="", question="", phases_summary="", evidence_log="", events_section="",
         metric_targets_section="", playbook_section="", org_intelligence_section="",
         external_context_section="")
     capable_static = len(skeleton) + len(SYNTHESIS_CORE_RULES)

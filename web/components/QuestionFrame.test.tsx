@@ -65,8 +65,11 @@ describe("QuestionFrame", () => {
     render(<QuestionFrame frame={frame({ outcomes: [dispatch, delivery], chosen_by: "model" })} />);
     expect(screen.getByText("Read as")).toBeInTheDocument();
     expect(screen.getByText(/Read "dispatch" as the dispatch promise/)).toBeInTheDocument();
-    expect(screen.getByText(/fit 2 declared definitions \(dispatch_breach_rate, delivery_breach_rate\); a model/))
+    // the definition measured and the one not, by the names a reader knows (2026-10-02)
+    expect(screen.getByText("Measured as the dispatch promise of Order to delivery (stage dispatched); the words also "
+                            + "fit the delivery promise. A model chose which."))
       .toBeInTheDocument();
+    expect(screen.queryByText(/dispatch_breach_rate/)).not.toBeInTheDocument();
   });
 
   it("does not claim a model chose when the declared names settled it", () => {

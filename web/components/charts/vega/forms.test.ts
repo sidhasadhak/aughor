@@ -181,3 +181,27 @@ describe("the exhibit grammar reaches the Vega path", () => {
     expect(out, "a bad exhibit must cost its semantics, never the chart").not.toBeNull();
   });
 });
+
+describe("a number under a thousand is rounded on the chart", () => {
+  // Q3's monthly change, April 2026: +787.42 drew its bar labelled "€787.420043826" (theLook, 2026-10-02).
+  it("as the app writes it, labels and axis alike", async () => {
+    const columns = ["month", "monthly_revenue", "revenue_change"];
+    const rows = [["2026-03-01", "78272.25", "9624.249968409538"], ["2026-04-01", "79059.67", "787.4200438261032"],
+                  ["2026-05-01", "86425.50", "7365.830116987228"], ["2026-06-01", "92802.42", "0.0019"]];
+    const out = resolveVegaSpec({ columns, rows, chartType: "auto", showLabels: true })!;
+    const compiled = vl.compile({ ...out.spec, width: 500, height: out.defaultH } as Parameters<typeof vl.compile>[0],
+                                { config }).spec;
+    const view = new View(parse(compiled), { renderer: "none" });
+    await view.runAsync();
+    const texts: string[] = [];
+    const walk = (nodes: { marktype?: string; items?: unknown[]; text?: unknown }[] | undefined) => {
+      for (const n of nodes ?? []) {
+        if (typeof n.text === "string") texts.push(n.text);
+        walk(n.items as typeof nodes);
+      }
+    };
+    walk((view.scenegraph() as unknown as { root?: { items?: [] } }).root?.items);
+    expect(texts).toEqual(expect.arrayContaining(["787.4", "9.6K", "7.4K", "0.0019"]));
+    expect(texts.filter((t) => /\d\.\d{5,}/.test(t))).toEqual([]);      // no raw float anywhere on the chart
+  });
+});

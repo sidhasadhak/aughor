@@ -7107,6 +7107,35 @@ export async function updateColumnGlossary(
   if (!res.ok) throw new Error("Failed to save column comment");
 }
 
+// ── Column notes — the note the agent reads on a column (data/ontology_column_config) ──────────
+/** One column's config entry: its note, who wrote it, and the notes it replaced. */
+export interface ColumnNoteEntry {
+  note: string;
+  source: string;
+  edited_at: string;
+  note_history?: { note: string; source: string; written_at: string; superseded_at: string; superseded_by: string }[];
+}
+
+/** Each table's columns' config entries, for one connection and schema. */
+export async function getColumnNotes(connectionId: string, schema?: string | null): Promise<Record<string, Record<string, ColumnNoteEntry>>> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/column-config?${q}`);
+  if (!res.ok) throw new Error("Failed to load column notes");
+  return ((await res.json()).tables ?? {}) as Record<string, Record<string, ColumnNoteEntry>>;
+}
+
+/** Replace a column's note — "" clears it. The note it replaces is kept in the column's history. */
+export async function setColumnNote(connectionId: string, schema: string | null | undefined, table: string,
+                                    column: string, note: string): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/column-config?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ table, column, note }),
+  });
+  if (!res.ok) throw new Error("Failed to save the column note");
+}
+
 // ── Playbook (Governed Dives): version history ──────────────────────────────────
 
 export interface PlaybookVersion {

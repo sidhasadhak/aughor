@@ -10,7 +10,7 @@
  */
 
 import React, { useMemo } from "react";
-import { DATE_COL, DATE_VALUE_RE, isNumeric, firstNonNull } from "@/components/charts/columnRoles";
+import { DATE_COL, DATE_VALUE_RE, firstNonNull, classifyColumns, plottedMeasures } from "@/components/charts/columnRoles";
 import { detectGranularity, type Gran } from "@/lib/format";
 
 // ── Pure SVG sparkline ─────────────────────────────────────────────────────────
@@ -84,8 +84,12 @@ export function seriesTrend(columns: string[], rows: (string | number | null)[][
   const dateIdx = columns.findIndex((c, i) => DATE_COL.test(c) || looksLikeDate(i));
   if (dateIdx === -1) return null;
 
-  // First numeric column that isn't the date itself.
-  const numIdx = columns.findIndex((c, i) => i !== dateIdx && isNumeric(firstNonNull(rows as unknown[][], i)));
+  // The measure the chart beside it plots — the same pick, so the strip never trends a column
+  // the chart does not draw. It took the first numeric column, and the theLook repeat-rate
+  // answer showed "+10.4% MoM" under a chart of repeat customers: first-time customers,
+  // November to December, a third column that neither the chart nor the question was about.
+  const { numericIdxs } = classifyColumns(columns, rows as unknown[][]);
+  const numIdx = plottedMeasures(columns, rows as unknown[][], numericIdxs.filter((i) => i !== dateIdx))[0] ?? -1;
   if (numIdx === -1) return null;
 
   const sorted = [...rows]
@@ -129,7 +133,8 @@ export function TrendStrip({
       <Sparkline values={values} />
       {deltaTxt && (
         <span>
-          <span className={`font-mono ${up ? "text-emerald-400" : "text-red-400"}`}>{deltaTxt}</span>
+          {/* Uncoloured, like every figure in an answer: the sign says which way it moved. */}
+          <span className="font-mono text-zinc-300">{deltaTxt}</span>
           <span className="text-zinc-500"> {periodLabel}</span>
         </span>
       )}

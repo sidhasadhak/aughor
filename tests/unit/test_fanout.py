@@ -4,6 +4,8 @@ Locks the existing multi-satellite chasm-trap detection AND the new single paren
 fan-out case. High-precision contract: NEVER flag a correct query.
 See aughor/sql/fanout.py.
 """
+import pytest
+
 from aughor.sql.fanout import detect_fanout
 
 COLS = {
@@ -73,6 +75,53 @@ def test_unrelated_tables_not_flagged():
            "JOIN products p ON p.product_id = o.order_id")  # no shared root
     # orders↔products share no FK root → no fan-out claim
     assert detect_fanout(sql, COLS) is None
+
+
+# ── A CTE or subquery that keeps its table's rows is that table (2026-10-01) ──────────
+# The fulfilment answer averaged each order's lead time over a CTE of orders joined to a CTE
+# of order items — once per item — and passed clean, after the same join written over the
+# two tables had been flagged twice.
+
+_ITEMS = "SELECT oi.order_id, p.name AS centre FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id"
+
+
+def _through(items_cte: str) -> str:
+    return ("WITH order_metrics AS (SELECT order_id, order_total AS lead FROM orders WHERE status = 'done'), "
+            f"item_centre AS ({items_cte}) "
+            "SELECT ic.centre, AVG(om.lead) AS avg_lead FROM order_metrics AS om "
+            "JOIN item_centre AS ic ON om.order_id = ic.order_id GROUP BY 1")
+
+
+def test_an_average_over_ctes_that_keep_their_rows_is_flagged_and_never_rewritten():
+    from aughor.sql.fanout import defan
+    f = detect_fanout(_through(_ITEMS), COLS)
+    assert f is not None
+    assert (f.kind, f.satellites, f.children, f.through_cte) == ("parent_fanout", ["orders"], ["order_items"], True)
+    assert defan(_through(_ITEMS), f) is None              # said, not rewritten
+    flat = ("SELECT p.name, AVG(o.order_total) FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id "
+            "JOIN products AS p ON oi.product_id = p.product_id GROUP BY 1")
+    assert detect_fanout(flat, COLS).through_cte is False   # the same join over the tables, as before
+    plain = "SELECT SUM(o.order_total) FROM orders o JOIN order_items oi ON oi.order_id = o.order_id"
+    g = detect_fanout(plain, COLS)
+    assert defan(plain, g)                                  # a flat join is still rewritten …
+    g.through_cte = True
+    assert defan(plain, g) is None                          # … and a finding read through a CTE never is
+
+
+@pytest.mark.parametrize("items", [
+    _ITEMS.replace("SELECT", "SELECT DISTINCT", 1),        # one row per order and centre
+    _ITEMS + " GROUP BY 1, 2",
+    _ITEMS.replace(" FROM", ", ROW_NUMBER() OVER (PARTITION BY oi.order_id) AS rn FROM", 1),
+])
+def test_a_cte_that_de_duplicates_is_still_the_fix(items):
+    assert detect_fanout(_through(items), COLS) is None
+
+
+def test_a_subquery_that_keeps_its_rows_is_read_the_same_way():
+    sql = ("SELECT d.centre, AVG(o.order_total) FROM orders AS o "
+           f"JOIN ({_ITEMS}) AS d ON d.order_id = o.order_id GROUP BY 1")
+    f = detect_fanout(sql, COLS)
+    assert f is not None and f.through_cte is True
 
 
 # ── Measure × key arithmetic — measure multiplied by / aggregated over a nominal id ──

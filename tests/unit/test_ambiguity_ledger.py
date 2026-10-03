@@ -194,3 +194,24 @@ def test_compounding_loop_b1_settlement_then_read_back():
     assert "RESOLVED AMBIGUITIES" in block and "GROUP BY player" in block
     # and it did NOT leak to a different connection
     assert retrieve_resolutions("total runs scored by strikers", "OtherDB") == []
+
+
+def test_a_superseded_reading_is_kept_never_served_and_only_a_person_brings_it_back():
+    """theLook, 2026-10-02: two readings the intake had pinned itself defined total revenue and COGS as a count of
+    units, and were served as settled. Retired, each keeps what it said and why; the intake pinning the same formula
+    again does not bring it back — the mark, not the row's absence, is the authority."""
+    from aughor.semantic.ambiguity_ledger import supersede_resolution
+    cogs = dict(subject="definition of total cost of goods sold", reading="governed: units_sold")
+    saved = save_resolution(_res("t_supersede", org_id="o", resolved_sql="COUNT(id)", **cogs))
+    assert supersede_resolution(saved.id, "COGS is not a count of units", org_id="o")
+    assert list_resolutions("t_supersede", org_id="o") == []
+    assert retrieve_resolutions("total cost of goods sold", "t_supersede", org_id="o") == []
+    kept = list_resolutions("t_supersede", org_id="o", include_superseded=True)
+    assert [(k.resolved_sql, k.superseded_why, bool(k.superseded_at)) for k in kept] == [
+        ("COUNT(id)", "COGS is not a count of units", True)]
+    save_resolution(_res("t_supersede", org_id="o", resolved_sql="COUNT(id)", **cogs))      # pinned again
+    assert list_resolutions("t_supersede", org_id="o") == []
+    save_resolution(_res("t_supersede", org_id="o", source="user", resolved_sql="SUM(cost)",
+                         subject=cogs["subject"], reading="SUM(cost)"))
+    back = list_resolutions("t_supersede", org_id="o")
+    assert [(b.resolution_source, b.resolved_sql, b.superseded_at) for b in back] == [("user", "SUM(cost)", None)]

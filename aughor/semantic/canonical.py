@@ -163,6 +163,11 @@ def render_contracts_block(contracts, *, include_unverified: bool = False) -> st
         unit = f" [{c.unit}]" if c.unit else ""
         tag = "" if c.injectable else " (unverified — use only if no verified form exists)"
         lines.append(f"  - {c.key}{unit} = {c.sql}{tag}")
+        # The rows the formula is over are part of the definition. This block printed the
+        # formula alone while `build_metrics_block` printed "Always filter" — one metric,
+        # two definitions, depending on which block a prompt was handed.
+        if c.filters:
+            lines.append(f"      always filter: {'; '.join(c.filters)}")
         if c.caveats:
             lines.append(f"      caveat: {c.caveats}")
     return "\n".join(lines)
@@ -170,7 +175,7 @@ def render_contracts_block(contracts, *, include_unverified: bool = False) -> st
 
 class _ContractMetricView:
     """Adapts a ``SemanticContract`` to the exact attribute shape the semantic compiler reads
-    (``name``/``verified``/``sql``/``tables``/``label``/``unit``/``source``). ``verified`` maps to
+    (``name``/``verified``/``sql``/``tables``/``filters``/``label``/``unit``/``source``). ``verified`` maps to
     the contract's ``injectable`` property — which is DEFINED equal to the legacy
     ``CanonicalMetric.verified`` trust/render policy byte-for-byte (catalog + profile authoritative
     by provenance; ontology only once self-verified) — so repointing the compiler at the one
@@ -200,6 +205,10 @@ class _ContractMetricView:
     @property
     def tables(self) -> list:
         return self._c.tables
+
+    @property
+    def filters(self) -> list:
+        return list(self._c.filters or [])
 
     @property
     def source(self) -> str:

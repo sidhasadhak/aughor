@@ -31,7 +31,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.db.migrations import run_migrations
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
 from aughor.db.store_pool import ensure_once
@@ -47,8 +47,18 @@ _DB_PATH = resolve_db_path(
 # clarify, which beats an autonomous probe. A re-resolution only overwrites the reading when it
 # arrives with >= authority, so machinery can never clobber a human decision.
 _SOURCE_RANK = {"probe": 1, "user": 2, "verdict": 3}
+#: The sources that are a person's decision; only one of these revives a superseded resolution.
+_PEOPLE = frozenset({"user", "verdict"})
 
-_MIGRATIONS: list = []  # forward-only; append Migration(2, ...) when the schema evolves
+
+def _superseded_state(c: sqlite3.Connection) -> None:
+    add_column_if_missing(c, "ambiguity_resolutions", "superseded_at", "TEXT")
+    add_column_if_missing(c, "ambiguity_resolutions", "superseded_why", "TEXT NOT NULL DEFAULT ''")
+
+
+_MIGRATIONS: list = [  # forward-only
+    Migration(2, "a superseded resolution is kept, with why, and never served", _superseded_state),
+]
 
 
 class Reading(BaseModel):
@@ -75,6 +85,9 @@ class AmbiguityResolution(BaseModel):
     created_at: str = ""
     last_used_at: Optional[str] = None
     use_count: int = 0
+    #: When, and why, this reading was retired — kept as history, never served (`supersede_resolution`).
+    superseded_at: Optional[str] = None
+    superseded_why: str = ""
 
     def natural_key(self) -> str:
         """Same dimension on same connection ⇒ same row (idempotent burn-down)."""
@@ -145,12 +158,15 @@ def save_resolution(res: AmbiguityResolution) -> AmbiguityResolution:
         c = _conn()
         try:
             existing = c.execute(
-                "SELECT resolution_source, created_at, use_count FROM ambiguity_resolutions WHERE id=?",
-                (res.id,)).fetchone()
+                "SELECT resolution_source, created_at, use_count, superseded_at "
+                "FROM ambiguity_resolutions WHERE id=?", (res.id,)).fetchone()
             if existing is not None:
                 old_rank = _SOURCE_RANK.get(existing["resolution_source"], 0)
                 new_rank = _SOURCE_RANK.get(res.resolution_source, 0)
-                if new_rank < old_rank:
+                # A superseded reading stays retired until a PERSON resolves it again: the intake
+                # re-pinning the same formula must not bring back what was retired — the mark is
+                # the authority, not the row's absence (AGENTS.md, reversing durable intent).
+                if new_rank < old_rank or (existing["superseded_at"] and res.resolution_source not in _PEOPLE):
                     # lower-authority re-resolution: keep the record as-is (don't downgrade)
                     return _row_to_res(c.execute(
                         "SELECT * FROM ambiguity_resolutions WHERE id=?", (res.id,)).fetchone())
@@ -160,13 +176,14 @@ def save_resolution(res: AmbiguityResolution) -> AmbiguityResolution:
                 """INSERT OR REPLACE INTO ambiguity_resolutions
                    (id, org_id, connection_id, schema_scope, dim_kind, dim_facet, subject,
                     subject_fingerprint, readings, resolved_reading, resolved_sql,
-                    resolution_source, evidence, created_at, last_used_at, use_count)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    resolution_source, evidence, created_at, last_used_at, use_count,
+                    superseded_at, superseded_why)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (res.id, res.org_id, res.connection_id, res.schema_scope, res.dim_kind,
                  res.dim_facet, res.subject, res.subject_fingerprint,
                  json.dumps([r.model_dump() for r in res.readings]), res.resolved_reading,
                  res.resolved_sql, res.resolution_source, res.evidence, res.created_at,
-                 res.last_used_at, res.use_count),
+                 res.last_used_at, res.use_count, res.superseded_at, res.superseded_why),
             )
             c.commit()
         finally:
@@ -272,13 +289,15 @@ def record_hit(res_id: str) -> None:
 
 
 # ── introspection / lifecycle ─────────────────────────────────────────────────
-def list_resolutions(connection_id: str = "", org_id: str = "") -> list[AmbiguityResolution]:
+def list_resolutions(connection_id: str = "", org_id: str = "", *,
+                     include_superseded: bool = False) -> list[AmbiguityResolution]:
+    """The remembered readings; a superseded one only when ``include_superseded`` (its history)."""
     with _LOCK:
         c = _conn()
         try:
             q = "SELECT * FROM ambiguity_resolutions"
             args: tuple = ()
-            clauses = []
+            clauses = [] if include_superseded else ["superseded_at IS NULL"]
             if connection_id:
                 clauses.append("connection_id = ?"); args += (connection_id,)
             if org_id:
@@ -303,6 +322,28 @@ def ledger_stats(connection_id: str = "", org_id: str = "") -> dict:
         "by_source": by_source,
         "served_total": sum(r.use_count for r in rows),
     }
+
+
+def supersede_resolution(res_id: str, why: str, org_id: Optional[str] = None) -> bool:
+    """Retire one remembered reading and KEEP it: it is no longer served as a prior or bound to a
+    run, and its row keeps what it said, when it was retired and why. Unlike `revoke_resolution`,
+    which deletes, a later probe of the same dimension cannot bring it back — only a person's
+    resolution does (`save_resolution`). Org-scoped like revoke. Returns whether a row was retired."""
+    from aughor.org.context import current_org_id
+    org = org_id if org_id is not None else current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            cur = c.execute("UPDATE ambiguity_resolutions SET superseded_at = ?, superseded_why = ? "
+                            "WHERE id = ? AND org_id = ? AND superseded_at IS NULL",
+                            (_now(), why, res_id, org))
+            c.commit()
+            done = cur.rowcount > 0
+        finally:
+            c.close()
+    if done:
+        _bump("ledger.superseded")
+    return done
 
 
 def revoke_resolution(res_id: str, org_id: Optional[str] = None) -> bool:

@@ -25,10 +25,13 @@ export function QuestionFrame({ frame }: { frame?: OntologyFrame | null }) {
     <section className="flex flex-col gap-1.5" data-testid="question-frame">
       <div className="aug-label">Read as</div>
       <p className="aug-fs-sm text-zinc-300 leading-relaxed">{frame.reading}</p>
+      {/* A model's pick among definitions the words fit equally says both: the one measured and the
+          one not — by their names a reader knows, not the catalogue's (2026-10-02). */}
       {frame.chosen_by === "model" && candidates.length > 1 && (
         <p className="aug-fs-xs text-zinc-500">
-          The words fit {candidates.length} declared definitions ({candidates.map((c) => c.name).join(", ")}); a model
-          chose this one.
+          {chosen
+            ? <>Measured as {chosen.label}; the words also fit {candidates.filter((c) => c !== chosen).map((c) => c.label || c.name).join(" and ")}. A model chose which.</>
+            : <>The words fit {candidates.map((c) => c.label || c.name).join(" and ")}; a model chose among them.</>}
         </p>
       )}
       <BriefDetails summary="How the question was framed">

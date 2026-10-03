@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 _DEFAULT_ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_column_config"
 
@@ -98,6 +98,12 @@ class ColumnFlags(BaseModel):
     source: str = "default"          # "default" | "human"
     edited_at: str = ""
     note: str = ""
+    #: The notes this column carried before, oldest first: each with its source, when it was
+    #: written, and who replaced it when. A note is superseded, never deleted — clearing one writes
+    #: an empty note over it (2026-10-02: a false agent note on theLook's `order_items.status` could
+    #: be removed only by editing this file). A person's clearing is also durable intent: an agent's
+    #: next note for the column waits for review rather than quietly writing it back (agent_notes).
+    note_history: list[dict] = Field(default_factory=list)
 
     def policy(self) -> tuple[bool, bool, bool]:
         """The three decisions, for change detection during a defaults refresh.
@@ -188,6 +194,15 @@ def _path(conn: str, schema: str, table: str) -> Path:
     return _dir(conn, schema) / f"{_safe(table)}.yaml"
 
 
+def _entry(flags: ColumnFlags) -> dict:
+    """One column's YAML entry — every field, and a note history only once there is one, so a file
+    whose notes were never replaced reads as it always has."""
+    entry = flags.model_dump(exclude_defaults=False)
+    if not entry.get("note_history"):
+        entry.pop("note_history", None)
+    return entry
+
+
 def save_table_config(conn: str, schema: str, table: str, columns: dict[str, ColumnFlags]) -> None:
     """Write (replace) one table's config file. Best-effort — never raises."""
     try:
@@ -195,7 +210,7 @@ def save_table_config(conn: str, schema: str, table: str, columns: dict[str, Col
         p.parent.mkdir(parents=True, exist_ok=True)
         doc = {
             "table": table,
-            "columns": {c: columns[c].model_dump(exclude_defaults=False) for c in sorted(columns)},
+            "columns": {c: _entry(columns[c]) for c in sorted(columns)},
         }
         p.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True))
     except Exception as exc:
@@ -288,7 +303,7 @@ def set_column_flags(
     visible: Optional[bool] = None,
     sample: Optional[bool] = None,
     index: Optional[bool] = None,
-    note: str = "",
+    note: Optional[str] = None,
     source: str = "human",
 ) -> ColumnFlags:
     """Apply an authored edit to one column (only the passed flags change) and persist.
@@ -296,12 +311,16 @@ def set_column_flags(
     The entry becomes ``source: human`` (or ``"agent"`` for a note the conversation
     proposed with evidence — ontology/agent_notes.py); either way a defaults refresh
     will never touch it again. Unknown columns get a fresh entry (all-default flags
-    + the edit)."""
+    + the edit).
+
+    ``note=None`` leaves the note alone; any string replaces it — ``""`` clears it — and the
+    note it replaces goes to ``note_history``."""
     cols = load_table_config(conn, schema, table)
     cur = cols.get(column) or ColumnFlags()
+    now = datetime.now(timezone.utc).isoformat()
     updates: dict[str, Any] = {
         "source": source,
-        "edited_at": datetime.now(timezone.utc).isoformat(),
+        "edited_at": now,
     }
     if visible is not None:
         updates["visible"] = visible
@@ -309,8 +328,12 @@ def set_column_flags(
         updates["sample"] = sample
     if index is not None:
         updates["index"] = index
-    if note:
-        updates["note"] = note
+    if note is not None and note.strip() != (cur.note or "").strip():
+        if (cur.note or "").strip():
+            updates["note_history"] = list(cur.note_history) + [{
+                "note": cur.note, "source": cur.source, "written_at": cur.edited_at,
+                "superseded_at": now, "superseded_by": source}]
+        updates["note"] = note.strip()
     cols[column] = cur.model_copy(update=updates)
     save_table_config(conn, schema, table, cols)
     return cols[column]

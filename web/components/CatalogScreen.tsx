@@ -690,7 +690,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
             schema overwrote every other schema's. It was already in scope — sibling calls above
             pass it (alterColumn / getTableColumns) and the breadcrumb renders it. */}
       {tab === "comments" && (
-        <GlossaryPanel table={bare(sel.table.name)} columns={cols.map(c => c.name)} schema={sel.schemaName} />
+        <GlossaryPanel table={bare(sel.table.name)} columns={cols.map(c => c.name)} schema={sel.schemaName} connectionId={sel.connId} />
       )}
 
       {/* ── Distribution tab — per-column profile + shape, scoped to this table.

@@ -17,7 +17,9 @@ import { Pending } from "@/components/ui/motion";
 import React, { useState } from "react";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { FigureSources, FindingFigures, isOneRecord } from "@/components/FindingFigures";
 import { SqlResultTable } from "@/components/AugTable";
+import { AnswerProse } from "@/components/chat/AnswerProse";
 /** Open the right-side Source-data drawer (data + SQL + Query Builder) for a finding. Typed inline
  *  (structurally = ChatMessage's SourcePanelData) to avoid a circular import with ChatMessage. */
 type ShowSource = (data: { columns: string[]; rows: unknown[][]; sql: string | null; title: string }) => void;
@@ -234,10 +236,13 @@ function sourceLabel(title: string): string {
   return t.length > 46 ? t.slice(0, 46).trimEnd() + "…" : t;
 }
 
-function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFinding; onShowSource?: ShowSource }) {
+function EvidenceBlock({ finding, onShowSource, answer = "" }: { finding: InvestigationFinding; onShowSource?: ShowSource; answer?: string }) {
   const { verdict, warning } = splitStatNote(finding.stat_note);
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
+  // One record is its figures in a line, never a one-row table — and only those the answer does
+  // not already state (`FindingFigures`).
+  const oneRecord = hasData && !hasChart && isOneRecord(finding.columns, finding.rows as unknown[][]);
   // CA-4 "title = claim": the claim leads the figure; the query's descriptive
   // name stays on the source-data affordance below.
   const headline = finding.claim?.trim() || finding.title;
@@ -285,7 +290,7 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
       {/* A completeness warning is NOT machinery — it changes what the number means, so it
           sits with the number, styled like the trust advisory it resembles. */}
       {warning && (
-        <div className="aug-fs-xs text-amber-400/90 leading-relaxed">⚠ {warning}</div>
+        <div className="aug-fs-xs text-zinc-400 leading-relaxed">⚠ {warning}</div>
       )}
 
       {/* Interpretation narrative */}
@@ -307,8 +312,9 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
         <p className="aug-text-xs text-red-400 font-mono">{finding.error}</p>
       )}
 
-      {/* Data table (collapsed) — only when no chart */}
-      {hasData && !hasChart && (
+      {/* One record — its figures; otherwise the data table (collapsed) when there is no chart */}
+      {oneRecord && <FindingFigures columns={finding.columns} row={finding.rows[0] as unknown[]} answer={answer} />}
+      {hasData && !hasChart && !oneRecord && (
         <FindingTable columns={finding.columns} rows={finding.rows} label="Data" />
       )}
       {/* The per-finding SQL + "Open in Query Builder" used to live here; for a swifter
@@ -319,15 +325,22 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
 
 // ── Phase — a flat narrative section (no accordion, no chevron, no indent) ─────
 
-function PhaseSection({ phase, onShowSource, execSummary }: { phase: InvestigationPhase; onShowSource?: ShowSource; execSummary?: string }) {
+// The deterministic synthesis fallback STITCHES the phase summaries into the executive
+// summary — re-printing a phase's summary below it reads the same paragraph twice
+// (three times counting the headline). A summary the head already carries is skipped.
+const _norm = (s: string) => s.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
+const restated = (summary: string, execSummary?: string) =>
+  !!summary && !!execSummary && _norm(execSummary).includes(_norm(summary));
+
+/** A finding the body draws at all. */
+const drawn = (f: { interpretation: string; columns: string[]; error?: string }) =>
+  !!(f.interpretation || f.columns.length > 0 || f.error);
+
+function PhaseSection({ phase, onShowSource, execSummary, answer }: { phase: InvestigationPhase; onShowSource?: ShowSource; execSummary?: string; answer?: string }) {
   if (phase.status === "skipped") return null;
-  const findings = phase.findings.filter(f => f.interpretation || f.columns.length > 0 || f.error);
+  const findings = phase.findings.filter(drawn);
   if (!phase.summary && findings.length === 0) return null;
-  // The deterministic synthesis fallback STITCHES the phase summaries into the executive
-  // summary — re-printing this phase's summary below it reads the same paragraph twice
-  // (three times counting the headline). Skip a summary the head already carries.
-  const _norm = (s: string) => s.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
-  const summaryRedundant = !!phase.summary && !!execSummary && _norm(execSummary).includes(_norm(phase.summary));
+  const summaryRedundant = restated(phase.summary, execSummary);
 
   return (
     // Clean-output policy (Genie-style): no phase-machinery header ("CROSS-SECTIONAL
@@ -335,9 +348,29 @@ function PhaseSection({ phase, onShowSource, execSummary }: { phase: Investigati
     // narrative; which internal phase produced a finding is process, not insight.
     <BriefSection>
       {phase.summary && !summaryRedundant && <BriefProse text={phase.summary} />}
-      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} />)}
+      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} answer={answer} />)}
     </BriefSection>
   );
+}
+
+/** The results behind a simple answer, or null. Simple: every result the body would draw is one record —
+ *  no chart, no table — and nothing rides it but its figures (no reading, no warning, no verdict, no
+ *  error, no phase summary of its own). Q1 (2026-10-02): two figures, both in the sentence, then both
+ *  again as "evidence". Anything more keeps the full layout. */
+function simpleResults(phases: AnswerReport["phases"], execSummary?: string) {
+  const results = [];
+  for (const phase of phases) {
+    if (phase.summary?.trim() && !restated(phase.summary, execSummary)) return null;
+    for (const f of phase.findings.filter(drawn)) {
+      const { verdict, warning } = splitStatNote(f.stat_note);
+      const hasData = f.columns.length > 0 && f.rows.length > 0;
+      const hasChart = hasData && f.chart_type !== "none" && f.rows.length >= 2;
+      if (!hasData || hasChart || !isOneRecord(f.columns, f.rows as unknown[][])
+          || f.interpretation || f.error || f.key_numbers?.length || verdict || warning) return null;
+      results.push({ ...f, rows: f.rows as unknown[][] });
+    }
+  }
+  return results.length ? results : null;
 }
 
 // ── Recommended actions — numbered, bold-lead, muted trailing meta ─────────────
@@ -394,7 +427,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
           summary prose (and once promoted into a report headline). Rendered as an advisory,
           visually distinct from findings. */}
       {(phase.caveats ?? []).map((c, i) => (
-        <div key={`cav-${i}`} className="aug-fs-xs text-amber-400/90 leading-relaxed pl-2">⚠ {c}</div>
+        <div key={`cav-${i}`} className="aug-fs-xs text-zinc-400 leading-relaxed pl-2">⚠ {c}</div>
       ))}
       {/* A running phase with nothing rendered yet — name the wait so the gap reads as progress,
           not a frozen chart (the per-phase interpret is a slow LLM round-trip). */}
@@ -415,7 +448,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
                 shipped but rendered NOWHERE in web — only the CLI showed it. Both ends of
                 a feature existed while the feature did not. */}
             {f.trust_caveat && (
-              <div className="aug-fs-xs text-amber-400/90 leading-relaxed">⚠ {f.trust_caveat}</div>
+              <div className="aug-fs-xs text-zinc-400 leading-relaxed">⚠ {f.trust_caveat}</div>
             )}
             {f.interpretation && <BriefProse text={f.interpretation} muted />}
           </div>
@@ -471,17 +504,24 @@ export function InvestigationReportView({
   const executedQueries = report.phases.reduce(
     (n, p) => n + (p.findings ?? []).filter(f => (f.sql ?? "").trim() && !f.error).length, 0);
 
-  const periodStr = [
-    report.observation_period,
-    report.comparison_basis ? `vs ${report.comparison_basis}` : "",
-  ].filter(Boolean).join(" ");
+  // What the answer says in words — a figure or a period it states is not printed again below it.
+  const answer = [report.headline, report.executive_summary, report.closing_summary].filter(Boolean).join("\n");
+  const says = (s?: string) => !!s && answer.toLowerCase().includes(s.toLowerCase());
+  const simple = simpleResults(analysisPhases, report.executive_summary);
+
+  const periodStr = says(report.observation_period) && (!report.comparison_basis || says(report.comparison_basis))
+    ? ""
+    : [
+      report.observation_period,
+      report.comparison_basis ? `vs ${report.comparison_basis}` : "",
+    ].filter(Boolean).join(" ");
 
   return (
     <Brief>
       {/* Degraded-report banner FIRST: when synthesis failed, the reader learns it where
           they start reading — not from confidence_justification on the last page. */}
       {report.degraded && (
-        <div className="rounded-md border border-amber-700/30 px-3 py-2 aug-fs-xs text-amber-400/90"
+        <div className="rounded-md border border-amber-700/30 px-3 py-2 aug-fs-xs text-zinc-300"
              style={{ background: "color-mix(in srgb, var(--amb3) 5%, var(--bg-0))" }}>
           ⚠ Narrative synthesis was unavailable — this report is assembled directly from the
           phase findings below.{" "}
@@ -493,16 +533,18 @@ export function InvestigationReportView({
           )}
         </div>
       )}
-      <BriefHeadline>{report.headline}</BriefHeadline>
+      {report.headline?.trim() && <BriefHeadline>{report.headline}</BriefHeadline>}
       {/* Skip a summary that only restates the headline (the fallback path can emit both
-          from the same sentence) — one text, rendered once. */}
+          from the same sentence) — one text, rendered once. Rendered as markdown: a question
+          that asks to see the data is answered in the analyst's own words (item 3), whose
+          table and list must read as a table and a list, not as pipes and asterisks. */}
       {report.executive_summary && report.executive_summary.trim() !== report.headline?.trim()
-        && <BriefProse text={report.executive_summary} />}
+        && <AnswerProse text={report.executive_summary} />}
 
       <BriefMeta
         items={[
           report.total_change_label
-            ? <span key="tc" className={`tabular-nums font-medium ${!/\d/.test(report.total_change_label) ? "text-zinc-400" : report.total_change_label.trim().startsWith("-") ? "text-red-400" : "text-emerald-400"}`}>{report.total_change_label}</span>
+            ? <span key="tc" className="tabular-nums font-medium">{report.total_change_label}</span>
             : null,
           periodStr || null,
           // Clean-output policy: the confidence verdict + justification are gone from the
@@ -513,9 +555,15 @@ export function InvestigationReportView({
 
       <QuestionFrame frame={report.frame ?? frame} />
 
-      {/* `phase_id` names the phase's KIND — a report can hold two `decomposition` phases. */}
-      {withUniqueKeys(analysisPhases, p => p.phase_id).map(([key, phase]) => (
-        <PhaseSection key={key} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} />
+      {/* A simple answer's results are its figures, already in the sentence: one line of where
+          each came from. Otherwise each phase, its exhibits and their sources. `phase_id` names
+          the phase's KIND — a report can hold two `decomposition` phases. */}
+      {simple ? (
+        <BriefSection>
+          <FigureSources results={simple} answer={answer} onShowSource={onShowSource} />
+        </BriefSection>
+      ) : withUniqueKeys(analysisPhases, p => p.phase_id).map(([key, phase]) => (
+        <PhaseSection key={key} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} answer={answer} />
       ))}
 
       {/* Bottom line — a short closing summary that lands the answer at the END of the

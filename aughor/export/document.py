@@ -110,11 +110,16 @@ def _exhibit_key(columns, rows) -> str:
 
 
 def _chart_block(columns, rows, chart_type, title, *, units=None,
-                 exhibit=None, money_symbol: str = "") -> Optional[Block]:
+                 exhibit=None, money_symbol: str = "",
+                 drawn_title: Optional[str] = None) -> Optional[Block]:
     """CA-4 one-renderer: the chart comes from the web's own resolver (ECharts
     SSR → SVG). The PDF embeds the vector; the PNG rides along for PPTX when a
-    raster backend exists. None when no honest chart exists (→ table)."""
-    svg = render_chart_svg(columns or [], rows or [], chart_type or "auto", title,
+    raster backend exists. None when no honest chart exists (→ table).
+
+    ``drawn_title`` is the title drawn INSIDE the figure when it differs from the
+    block's caption — "" when the page already printed it above."""
+    svg = render_chart_svg(columns or [], rows or [], chart_type or "auto",
+                           title if drawn_title is None else drawn_title,
                            units=units, exhibit=exhibit, money_symbol=money_symbol)
     if not svg:
         return None
@@ -137,7 +142,7 @@ def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None,
 
 
 def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None,
-                      money_symbol: str = "") -> list[Block]:
+                      money_symbol: str = "", drawn_title: Optional[str] = None) -> list[Block]:
     """R16 P1 — ONE exhibit per claim, and only when it informs.
 
     A degenerate result (fewer than two rows: the 1-bar chart, the single-point
@@ -149,11 +154,92 @@ def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None
         return []
     if (chart_type or "auto") != "none":
         chart = _chart_block(columns, rows, chart_type, title, units=units,
-                             exhibit=exhibit, money_symbol=money_symbol)
+                             exhibit=exhibit, money_symbol=money_symbol, drawn_title=drawn_title)
         if chart:
             return [chart]
     table_rows = [[_round_cell(v) for v in row] for row in rows[:8]]
     return [Block("table", columns=columns, rows=table_rows, caption=title)]
+
+
+_MD_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
+_MD_BULLET_RE = re.compile(r"^\s*[-*+•]\s+(.*)$")
+_MD_NUMBERED_RE = re.compile(r"^\s*\d{1,2}[.)]\s+\S")
+_MD_ITALIC_RE = re.compile(r"(?<![*\w])\*(?!\*)([^*\n]+?)(?<!\*)\*(?![*\w])")
+
+
+def _plain(text: str) -> str:
+    """Single-asterisk emphasis as plain text: an answer is bold or normal, never italic —
+    the rule the app's prose follows."""
+    return _MD_ITALIC_RE.sub(r"\1", text)
+
+
+def _summary_blocks(text: str) -> list[Block]:
+    """An executive summary as the blocks it is written in.
+
+    The Agent's describe answers are written in markdown — a heading, a table, a bulleted
+    list — and the PDF printed them as one paragraph of raw markup: "### 90-Day Repeat Rate
+    by Cohort Month (2025) | Cohort Month | First-Time Customers | … | :--- |" (theLook,
+    2026-10-01), where the app renders the same text as a heading and a table. A heading is
+    a bold line under "Executive summary", a table a table, a list a list. A summary with
+    none of those is the one prose block it always was.
+    """
+    from aughor.answer.envelope import table_at
+    lines = (text or "").split("\n")
+    if not any(_MD_HEADING_RE.match(ln) or _MD_BULLET_RE.match(ln) or table_at(lines, i)
+               for i, ln in enumerate(lines)):
+        return [_p(text)]
+    blocks: list[Block] = []
+    para: list[str] = []
+    items: list[str] = []
+
+    def _end_para() -> None:
+        if para:
+            blocks.append(_p(_plain(" ".join(para))))
+            para.clear()
+
+    def _end_items() -> None:
+        if items:
+            blocks.append(_bul([_plain(it) for it in items]))
+            items.clear()
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        found = table_at(lines, i)
+        if found:
+            _end_para()
+            _end_items()
+            columns, rows, i = found
+            blocks.append(Block("table", columns=[_plain(c).replace("**", "") for c in columns],
+                                rows=[[_plain(str(v)).replace("**", "") for v in r] for r in rows]))
+            continue
+        heading, bullet = _MD_HEADING_RE.match(line), _MD_BULLET_RE.match(line)
+        if heading:
+            _end_para()
+            _end_items()
+            blocks.append(_p(f"**{heading.group(1).replace('**', '').strip()}**"))
+        elif bullet:
+            _end_para()
+            items.append(bullet.group(1).strip())
+        elif _MD_NUMBERED_RE.match(line):
+            # A numbered line keeps its number: the order is usually the ranking.
+            _end_para()
+            _end_items()
+            blocks.append(_p(_plain(line.strip())))
+        elif not line.strip():
+            _end_para()
+            _end_items()
+        else:
+            _end_items()
+            para.append(line.strip())
+        i += 1
+    _end_para()
+    _end_items()
+    return blocks
+
+
+def _same_words(text) -> str:
+    return " ".join(str(text or "").replace("*", "").split()).casefold()
 
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
@@ -354,7 +440,7 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
         ))
     if rep.get("executive_summary"):
         blocks.append(_h("Executive summary"))
-        blocks.append(_p(rep["executive_summary"]))
+        blocks.extend(_summary_blocks(rep["executive_summary"]))
 
     # The metric-at-a-glance line (what changed, over what period, by how much).
     glance = [x for x in (
@@ -377,7 +463,17 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
             continue
         if (ph.get("phase_id") or "") == "intake":
             continue
-        blocks.append(_h(str(ph.get("phase_name") or ph.get("phase_id") or "Phase").strip()))
+        # A result a corrected re-run replaced is kept in the run, not on the page: the app
+        # hides it, and the PDF printed it under the right one — the fulfilment answer's
+        # flagged first query, ship times pulled to ~12 hours, beside the 35 it was replaced by.
+        if ph.get("_hidden"):
+            continue
+        _heading = str(ph.get("phase_name") or ph.get("phase_id") or "Phase").strip()
+        blocks.append(_h(_heading))
+        # A title is printed ONCE. An Agent query's phase, finding and chart all carry the
+        # same name, and the PDF printed it three times over every chart — as the section
+        # heading, as the finding's caption and inside the figure (theLook, 2026-10-01).
+        _printed = {_same_words(_heading)}
         # The deterministic synthesis fallback STITCHES phase summaries into the executive
         # summary — re-printing one here reads the same paragraph twice. Skip what the head
         # already carries (whitespace/emphasis-insensitive containment).
@@ -389,11 +485,15 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
         for f in ph["findings"]:
             if f.get("error"):
                 continue
+            _caption = f.get("claim") or f.get("title") or ""
+            if _same_words(_caption) in _printed:
+                _caption = ""
+            _printed.add(_same_words(_caption))
             blocks.append(Block(
                 "finding",
                 # CA-4 title = claim: the finding leads with the claim it proves;
                 # the query's descriptive name stays as the chart caption below.
-                caption=f.get("claim") or f.get("title") or "",
+                caption=_caption,
                 text=f.get("interpretation") or "",
                 # Gated on the PRESENCE of a stat note, not on `is_significant` — the rule
                 # `web/components/brief/StatBadge.tsx` already states for the same field on
@@ -438,9 +538,11 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
             # prints "74.5%" in the PDF exactly as on screen, and the chart-grammar `exhibit`
             # (severity ramp · reference lines · point labels). Both absent → unchanged output.
             _u, _x = f.get("column_units"), f.get("exhibit")
+            _title = f.get("title") or ""
             blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"),
-                                            f.get("title") or "", units=_u, exhibit=_x,
-                                            money_symbol=_money_sym))
+                                            _title, units=_u, exhibit=_x,
+                                            money_symbol=_money_sym,
+                                            drawn_title="" if _same_words(_title) in _printed else None))
 
     # R16 P1 — the decision paragraph: gap-to-benchmark × volume, in prose,
     # right where a reader decides (before Recommendations).
@@ -586,8 +688,16 @@ def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = ""
             # version rather than inserting a duplicate heading + paragraph above it.
             if (len(doc.blocks) >= 2 and doc.blocks[0].kind == "heading"
                     and "executive summary" in (doc.blocks[0].text or "").lower()
-                    and doc.blocks[1].kind == "prose"):
-                doc.blocks[1] = ai_block
+                    and (doc.blocks[1].kind == "prose" or builder is _build_ada)):
+                # A deep report's summary written in markdown is several blocks
+                # (`_summary_blocks`); the AI summary replaces all of them, up to the section
+                # after it, or the reader gets it followed by the old table and lists.
+                end = 2
+                if builder is _build_ada:
+                    while (end < len(doc.blocks) and doc.blocks[end].kind != "heading"
+                           and doc.blocks[end].tag != "At a glance"):
+                        end += 1
+                doc.blocks[1:end] = [ai_block]
             else:
                 doc.blocks.insert(0, ai_block)
                 doc.blocks.insert(0, _h("Executive summary"))

@@ -56,6 +56,19 @@ def test_a_table_s_own_key_is_not_a_dimension():
         "how many flights are there", _AIRLINE, "main.flights") == []
 
 
+def test_the_measured_table_s_key_is_not_a_dimension_wherever_it_sits():
+    """theLook (2026-10-01): "how long does it take an order to ship" and "customers who placed their first
+    order" both named `order_items.order_id` for a measure on `orders` — one row per order, the question's
+    subject. Measured on the line items, the same key is a real cut ("items per order")."""
+    schema = ("TABLE: thelook.orders\n  order_id INTEGER\n  status STRING\n"
+              "TABLE: thelook.order_items\n  id INTEGER\n  order_id INTEGER\n  sale_price FLOAT\n"
+              "TABLE: thelook.users\n  id INTEGER\n  country STRING\n")
+    q = "How long does it take an order to ship, by country?"
+    assert _question_named_dimensions(q, schema, "thelook.orders") == ["thelook.users.country"]
+    assert _question_named_dimensions("items per order", schema, "thelook.order_items") == [
+        "thelook.order_items.order_id"]
+
+
 @pytest.mark.parametrize("q", [
     "give me the total revenue",          # names nothing in this schema
     "why did volume drop",                # a cause question names no cut
