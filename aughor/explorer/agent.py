@@ -1337,8 +1337,9 @@ class SchemaExplorer:
                     lines.append(f"  {col_p.column}  {col_p.dtype}")
             schema_str = "\n".join(lines)
 
-            from aughor.tools.schema import parse_schema_tables, compute_join_map
-            jmap = compute_join_map(parse_schema_tables(schema_str))
+            from aughor.tools.schema import join_map_for, parse_schema_tables
+            # DE-3c: the engine's declared foreign keys lead the join map; the names fill the rest.
+            jmap = join_map_for(self._conn, parse_schema_tables(schema_str), cache_key=self.connection_id)
 
             return tp, cp, jmap
 

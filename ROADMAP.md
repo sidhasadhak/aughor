@@ -10452,6 +10452,42 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > `db/connection.py` declare their dialect on the class and are held to the declaration by the test rather than
 > reading it. Next: DE-3c.
 
+> **Status 2026-10-03 — DE-3c BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:* no engine
+> read a declared key or a comment (finding 8 held); SQLite's `PRAGMA table_info` and DuckDB's `DESCRIBE` fetched
+> the key flag and dropped it in three places; `duckdb_constraints()`, `duckdb_columns().comment` and
+> `duckdb_tables().comment` answer directly on DuckDB 1.5.2; the join inference was names only, and the first
+> edge to claim a table pair blocked every later one. *Built:* the coverage row lives on each engine's declaration
+> (`metadata_facts` — columns, primary keys, foreign keys, comments, each *supported*: the platform reads it,
+> *unsupported*: the engine has no such fact, or *unknown*: the engine may carry it and the platform does not read
+> it yet, with the reason) and rides the catalog and the web map. `aughor/db/metadata.py` reads what is supported
+> through the connection's door as the platform's own statement: DuckDB and the DuckDB-backed databases through
+> the catalog functions; SQLite through `pragma_table_info` / `pragma_foreign_key_list`; Postgres through
+> `information_schema`'s constraints and `pg_description`; MySQL through `KEY_COLUMN_USAGE` and the comment
+> columns. A file, a sheet, a synced API object and a federated view say *unsupported* with why; BigQuery,
+> Snowflake, Exasol and Trino's comments say *unknown — not read yet*; a read that fails turns its facts *unknown*
+> with the error, never an empty list; an unknown connection class is *unknown*, not guessed from its dialect.
+> `GET /connections/{id}/metadata` returns the typed read. *Declared keys lead the join inference:*
+> `compute_join_map(table_cols, declared=…)` seats a declared foreign key first with `match="declared"` and claims
+> its table pair before the name pass; `join_map_for(conn, …)` reads the engine (cached 300 s), and the heavy
+> schema build, the profile route, the explorer and the rich schema route use it; the ontology's
+> `join_confidence` gains `declared`, a declared edge the value check disputes is KEPT with its measured overlap
+> rather than dropped, the catalog block says *DECLARED foreign key, but only N% value overlap — the declaration
+> and the data disagree*, and a verified declared edge says *declared foreign key* beside its overlap. *Receipt:*
+> `tests/unit/test_de3c_typed_metadata.py` (28) — every engine states all four facts and why, and a declared
+> *supported* read has a recipe; the rows in the catalog and the web map; DuckDB reads its keys and comments live
+> through the door; `orders.buyer → customers.id`, a key no name would find, leads the join map while the name
+> pass still fills `events.customer_id`; a qualified schema text matches by bare name; a broken read leaves the
+> names; SQLite reads its keys live and says comments are not a thing; unsupported, unknown and a failed read are
+> told apart; the Postgres and MySQL recipes parse in their dialects; the ontology keeps a disputed declared edge
+> with its overlap and renders both claims; 53 tests across this, DE-3b's and the catalog's suites; 1,503 web tests
+> and the seven gates green. *Left, named:* the Postgres and MySQL reads are written from the catalogs'
+> documentation, parse, and wait for a live engine; BigQuery's unenforced keys and field descriptions, Snowflake's
+> keys and comments, Exasol's constraint views and Trino's comments are *unknown* until read; nine other
+> `compute_join_map` callers (the planner's nodes, the packs' gate, the context manifest, the schema linker, the
+> ambiguity check, the data catalog, and the module's own infer-joins, Mermaid and join-path renderers) still
+> infer from names alone — the function takes `declared` and they do not hand it; comments are read and returned,
+> not yet shown in the schema text or the UI. Next: DE-2b.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

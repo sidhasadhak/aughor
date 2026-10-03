@@ -92,7 +92,7 @@ def _intelligence(conn, base: str) -> str:
     agnostic (tables parsed from the rendered schema; profiles via conn.execute)."""
     from aughor.tools.profile_cache import get_or_build_profiles
     from aughor.tools.profiler import render_profile_annotations
-    from aughor.tools.schema import compute_join_map, inject_value_annotations, parse_schema_tables
+    from aughor.tools.schema import inject_value_annotations, parse_schema_tables
 
     cid = _cid(conn)
     table_cols = parse_schema_tables(base)
@@ -115,7 +115,9 @@ def _intelligence(conn, base: str) -> str:
     # single-schema connection parses to bare names anyway, so its keys and fingerprint
     # are unchanged.
     tables = list(table_cols)
-    jmap = compute_join_map(table_cols)
+    # DE-3c: the engine's declared foreign keys lead; the name inference fills the rest.
+    from aughor.tools.schema import join_map_for
+    jmap = join_map_for(conn, table_cols, cache_key=_cid(conn))
     fk_hints: dict[str, set] = {t: set() for t in tables}
     for j in jmap.get("joins", []):
         fk_hints.setdefault(j["t1"], set()).add(j["c1"])

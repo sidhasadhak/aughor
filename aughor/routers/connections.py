@@ -227,14 +227,15 @@ def _warm_profiles(conn_id: str) -> dict:
     then build-or-hit the profile cache, which persists the R5 entity-value
     samples. Deterministic, no LLM."""
     from aughor.tools.profile_cache import get_or_build_profiles
-    from aughor.tools.schema import compute_join_map, parse_schema_tables
+    from aughor.tools.schema import parse_schema_tables
     from aughor.tools.table_names import bare
     db = open_connection_for(conn_id)
     try:
         base = db.get_schema()
         table_cols = parse_schema_tables(base)
         tables = [bare(t) for t in table_cols]
-        jmap = compute_join_map(table_cols)
+        from aughor.tools.schema import join_map_for
+        jmap = join_map_for(db, table_cols, cache_key=conn_id)   # DE-3c: declared keys lead
         fk_hints: dict[str, set] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
@@ -373,6 +374,30 @@ async def refresh_schema_cache(conn_id: str, timings: bool = False):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/connections/{conn_id}/metadata")
+async def connection_declared_metadata(conn_id: str):
+    """DE-3c — the engine's declared metadata, typed: for each of columns, primary keys, foreign
+    keys and comments, whether this engine's read is supported, unsupported or unknown (and
+    why), plus the keys and comments it declares. An empty list from an engine that supports
+    keys means the schema declares none; from one that does not, that there is nothing to read."""
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        from aughor.db.metadata import read_declared_metadata
+        try:
+            return read_declared_metadata(db, cache_key=conn_id).as_dict()
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+    return await loop.run_in_executor(None, _work)
+
+
 @router.get("/connections/{conn_id}/schema/rich")
 async def connection_schema_rich(conn_id: str):
     loop = asyncio.get_running_loop()
@@ -385,8 +410,16 @@ async def connection_schema_rich(conn_id: str):
         from aughor.db.type_overrides import get_table_overrides
         def _work():
             s = _get_schema_cached(conn_id, db)
+            # DE-3c: the engine's declared foreign keys lead the rich schema's joins and FK marks.
+            declared = None
+            try:
+                from aughor.db.metadata import declared_join_candidates, read_declared_metadata
+                from aughor.tools.schema import parse_schema_tables
+                declared = declared_join_candidates(read_declared_metadata(db, cache_key=conn_id), parse_schema_tables(s))
+            except Exception:
+                declared = None
             db.close()
-            result = build_rich_schema(s)
+            result = build_rich_schema(s, declared=declared)
             # Apply user type overrides so the rich schema stays in sync
             for table in result.get("tables", []):
                 tname = table.get("name", "")

@@ -21,7 +21,7 @@ This module imports nothing from the rest of the package, so anything may import
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Optional
 
 Category = Literal["built-in", "file", "warehouse", "api", "federation", "knowledge"]
@@ -35,6 +35,25 @@ MetadataStrategy = Literal[
     "none",                 # not a SQL connector
 ]
 EngineFamily = Literal["postgres", "mysql", "sqlite", "bigquery", "snowflake", "standard"]
+
+#: DE-3c — what a metadata read of this engine answers for each fact. ``supported``: the
+#: platform reads it (`db/metadata.py` has the recipe); ``unsupported``: the engine has no such
+#: fact to read; ``unknown``: the engine may carry it and the platform does not read it yet. The
+#: four facts are `columns`, `primary_keys`, `foreign_keys`, `comments`; every engine states all
+#: four, and a test holds every engine to its row.
+MetadataStatus = Literal["supported", "unsupported", "unknown"]
+METADATA_FACTS = ("columns", "primary_keys", "foreign_keys", "comments")
+
+
+def _facts(columns: MetadataStatus = "supported", primary_keys: MetadataStatus = "unknown",
+           foreign_keys: MetadataStatus = "unknown", comments: MetadataStatus = "unknown") -> dict[str, MetadataStatus]:
+    return {"columns": columns, "primary_keys": primary_keys, "foreign_keys": foreign_keys, "comments": comments}
+
+
+_META_ALL = _facts("supported", "supported", "supported", "supported")
+_META_NO_KEYS = _facts("supported", "unsupported", "unsupported", "unsupported")
+_META_NOT_READ_YET = _facts("supported", "unknown", "unknown", "unknown")
+_META_NONE = _facts("unsupported", "unsupported", "unsupported", "unsupported")
 
 
 @dataclass(frozen=True)
@@ -100,6 +119,10 @@ class EngineDeclaration:
     connection_errors: tuple[str, ...] = ()
     timeout_errors: tuple[str, ...] = ()
     cancelled_errors: tuple[str, ...] = ()
+    #: DE-3c — the coverage row: what a metadata read answers for columns, primary keys,
+    #: foreign keys and comments, and why where it is not `supported`.
+    metadata_facts: dict[str, MetadataStatus] = field(default_factory=lambda: dict(_META_NOT_READ_YET))
+    metadata_detail: str = ""
 
     @property
     def secret_fields(self) -> list[str]:
@@ -199,6 +222,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         support_tier="core", metadata_strategy="information_schema",
         brand_color="#FBBF24", engine_family="postgres",
         connection_errors=("ConnectionException",), cancelled_errors=("InterruptException",),
+        metadata_facts=_META_ALL, metadata_detail="duckdb_constraints(), duckdb_columns() and duckdb_tables()",
     ),
     EngineDeclaration(
         type="postgres", label="PostgreSQL", category="built-in", blurb="Connect to a Postgres database",
@@ -211,6 +235,8 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         support_tier="core", metadata_strategy="information_schema",
         brand_color="#6f9bcc", engine_family="postgres",
         connection_errors=("InterfaceError",), cancelled_errors=("QueryCanceledError", "QueryCanceled"),
+        metadata_facts=_META_ALL,
+        metadata_detail="information_schema.table_constraints / key_column_usage; pg_description for comments",
     ),
     EngineDeclaration(
         type="bigquery", label="BigQuery", category="warehouse", blurb="Google Cloud data warehouse",
@@ -231,6 +257,9 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         brand_color="#4285F4", engine_family="bigquery", sql_name="BigQuery (GoogleSQL)",
         connection_errors=("ServiceUnavailable", "InternalServerError", "RetryError"),
         timeout_errors=("DeadlineExceeded",),
+        metadata_facts=_META_NOT_READ_YET,
+        metadata_detail="INFORMATION_SCHEMA.TABLE_CONSTRAINTS carries unenforced keys and the schema API carries "
+                        "field descriptions; neither is read yet",
     ),
     EngineDeclaration(
         type="snowflake", label="Snowflake", category="warehouse", blurb="Cloud data warehouse",
@@ -247,6 +276,8 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         writer_rules=_SNOWFLAKE_RULES, refuses_functions=frozenset({"SAFE_DIVIDE"}),
         brand_color="#29B5E8", engine_family="snowflake",
         connection_errors=("InterfaceError",),
+        metadata_facts=_META_NOT_READ_YET,
+        metadata_detail="SHOW PRIMARY KEYS / SHOW IMPORTED KEYS and INFORMATION_SCHEMA.COLUMNS.COMMENT; not read yet",
     ),
     EngineDeclaration(
         type="mysql", label="MySQL", category="warehouse", blurb="Connect to a MySQL database",
@@ -261,6 +292,8 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         brand_color="#00A3C7", engine_family="mysql",
         # pymysql's OperationalError is decided by errno in db/errors.py; InterfaceError is a closed connection.
         connection_errors=("InterfaceError",),
+        metadata_facts=_META_ALL,
+        metadata_detail="information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT",
     ),
     EngineDeclaration(
         type="motherduck", label="MotherDuck", category="warehouse", blurb="DuckDB in the cloud", badge="New",
@@ -271,6 +304,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         dialect="duckdb", native_sql=False, param_style="duckdb", engine_read_only=False,
         env_vars=({"name": "MOTHERDUCK_TOKEN", "secret": True, "fallback_for": "token"},),
         brand_color="#FFD000", engine_family="postgres",
+        metadata_facts=_META_ALL, metadata_detail="a DuckDB database: duckdb_constraints() and the comment columns",
     ),
     EngineDeclaration(
         type="exasol", label="Exasol", category="warehouse", blurb="In-memory analytics database", badge="New",
@@ -285,6 +319,8 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         connection_errors=("ExaCommunicationError", "ExaConnectionError", "ExaConnectionDsnError",
                            "ExaConnectionFailedError"),
         timeout_errors=("ExaQueryTimeoutError",), cancelled_errors=("ExaQueryAbortError",),
+        metadata_facts=_META_NOT_READ_YET,
+        metadata_detail="EXA_ALL_CONSTRAINTS / EXA_ALL_CONSTRAINT_COLUMNS and EXA_ALL_COLUMNS.COLUMN_COMMENT; not read yet",
     ),
     EngineDeclaration(
         type="trino", label="Trino", category="warehouse", blurb="Distributed SQL over many sources",
@@ -300,6 +336,8 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         support_tier="preview", metadata_strategy="information_schema",
         brand_color="#DD00A1", engine_family="standard",
         connection_errors=("TrinoConnectionError",),
+        metadata_facts=_facts("supported", "unsupported", "unsupported", "unknown"),
+        metadata_detail="Trino declares no primary or foreign keys; information_schema.columns.comment is not read yet",
     ),
     EngineDeclaration(
         type="gsheets", label="Google Sheets", category="api", blurb="Read worksheets as tables", badge="New",
@@ -312,6 +350,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         drivers=("duckdb",), connector="aughor.connectors.api.gsheets:GoogleSheetsConnector",
         dialect="duckdb", native_sql=False, param_style="duckdb", engine_read_only=False,
         brand_color="#0F9D58", engine_family="postgres",
+        metadata_facts=_META_NO_KEYS, metadata_detail="a worksheet declares no keys and carries no comments",
     ),
     EngineDeclaration(
         type="local_upload", label="Create or modify table", category="file",
@@ -321,6 +360,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         dialect="duckdb", native_sql=False, param_style=None, engine_read_only=False,
         support_tier="core", metadata_strategy="information_schema",
         brand_color="#3B82F6", engine_family="postgres",
+        metadata_facts=_META_NO_KEYS, metadata_detail="an uploaded file declares no keys and carries no comments",
     ),
     EngineDeclaration(
         type="s3", label="Amazon S3", category="file", blurb="Object storage bucket",
@@ -331,6 +371,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         drivers=("duckdb",), connector="aughor.connectors.file.s3:S3Connection",
         dialect="duckdb", native_sql=False, param_style="duckdb", engine_read_only=False,
         brand_color="#569A31", engine_family="postgres",
+        metadata_facts=_META_NO_KEYS, metadata_detail="files in a bucket declare no keys and carry no comments",
     ),
     EngineDeclaration(
         type="sqlite", label="SQLite", category="file", blurb="A SQLite database file",
@@ -339,6 +380,8 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         drivers=("ibis",), connector="aughor.connectors.file.sqlite:SQLiteConnection",
         dialect="sqlite", native_sql=False, param_style="named", engine_read_only=None,
         metadata_strategy="pragma", brand_color="#0F80CC", engine_family="sqlite",
+        metadata_facts=_facts("supported", "supported", "supported", "unsupported"),
+        metadata_detail="pragma_table_info and pragma_foreign_key_list; SQLite has no comments",
     ),
     EngineDeclaration(
         type="federated", label="Federated", category="federation", blurb="Combine existing connections",
@@ -347,6 +390,8 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         drivers=("duckdb",), connector="aughor.connectors.federated:FederatedConnection",
         dialect="duckdb", native_sql=False, param_style="duckdb", engine_read_only=False,
         metadata_strategy="cursor_description", brand_color="#34d399", engine_family="postgres",
+        metadata_facts=_META_NO_KEYS,
+        metadata_detail="members are attached as views; a member's declared keys and comments do not survive the attach",
     ),
     EngineDeclaration(
         type="stripe", label="Stripe", category="api", blurb="Payments & billing data", badge="Preview",
@@ -356,6 +401,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         drivers=("requests",), connector="aughor.connectors.api.stripe:StripeConnector",
         dialect="duckdb", native_sql=False, param_style="duckdb", engine_read_only=False,
         support_tier="preview", brand_color="#7a73ff", engine_family="postgres",
+        metadata_facts=_META_NO_KEYS, metadata_detail="synced objects land as tables with no declared keys or comments",
     ),
     EngineDeclaration(
         type="hubspot", label="HubSpot", category="api", blurb="CRM & marketing data", dsn_preview="hubspot://",
@@ -364,6 +410,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         drivers=("requests",), connector="aughor.connectors.api.hubspot:HubSpotConnector",
         dialect="duckdb", native_sql=False, param_style="duckdb", engine_read_only=False,
         brand_color="#FF7A59", engine_family="postgres",
+        metadata_facts=_META_NO_KEYS, metadata_detail="synced objects land as tables with no declared keys or comments",
     ),
     EngineDeclaration(
         type="salesforce", label="Salesforce", category="api", blurb="CRM objects & pipelines",
@@ -375,6 +422,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         drivers=("requests",), connector="aughor.connectors.api.salesforce:SalesforceConnector",
         dialect="duckdb", native_sql=False, param_style="duckdb", engine_read_only=False,
         brand_color="#00A1E0", engine_family="postgres",
+        metadata_facts=_META_NO_KEYS, metadata_detail="synced objects land as tables with no declared keys or comments",
     ),
     # Knowledge connectors index documents for synthesis context; they are not SQL connectors,
     # take no queries, and are categorised but not registered (`open_connection` never sees them).
@@ -386,14 +434,14 @@ ENGINES: tuple[EngineDeclaration, ...] = (
                 _f("api_token", "API token", "ATATT3…", secret=True),
                 _f("space_keys", "Space keys", "ENG,PROD (empty = all)", optional=True)),
         drivers=("requests",), connector=None, dialect=None, metadata_strategy="none",
-        brand_color="#2684FF",
+        brand_color="#2684FF", metadata_facts=_META_NONE, metadata_detail="not a SQL connector",
     ),
     EngineDeclaration(
         type="notion", label="Notion", category="knowledge", blurb="Docs & databases", dsn_preview="notion://",
         fields=(_f("integration_token", "Integration token", "secret_…", secret=True),
                 _f("database_ids", "Database IDs", "id1,id2 (optional)", optional=True)),
         drivers=("requests",), connector=None, dialect=None, metadata_strategy="none",
-        brand_color="#c4c4cc",
+        brand_color="#c4c4cc", metadata_facts=_META_NONE, metadata_detail="not a SQL connector",
     ),
 )
 

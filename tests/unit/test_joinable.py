@@ -124,7 +124,9 @@ def test_a_verified_edge_without_counts_keeps_its_verification_but_reports_no_nu
 
         # The prompt says so in words rather than borrowing another edge's confidence.
         text = jg.render_verified_joins(verified, rejected)
-        assert "declared, not probed" in text
+        # DE-3c: "declared" now means the engine's own foreign key; an edge nobody probed says
+        # only that it was not probed.
+        assert "not probed" in text and "declared" not in text
         assert "100%" not in text
 
         # And the ontology still stamps the edge verified, with no fabricated overlap.

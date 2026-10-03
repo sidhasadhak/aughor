@@ -65,6 +65,13 @@
       },
       "brand_color": "#4285F4",
       "engine_family": "bigquery",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unknown",
+        "foreign_keys": "unknown",
+        "comments": "unknown"
+      },
+      "metadata_detail": "INFORMATION_SCHEMA.TABLE_CONSTRAINTS carries unenforced keys and the schema API carries field descriptions; neither is read yet",
       "env": [
         {
           "name": "GOOGLE_APPLICATION_CREDENTIALS",
@@ -127,7 +134,14 @@
         "features": []
       },
       "brand_color": "#2684FF",
-      "engine_family": "standard"
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "unsupported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "not a SQL connector"
     },
     {
       "type": "duckdb",
@@ -168,7 +182,14 @@
         "features": []
       },
       "brand_color": "#FBBF24",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "duckdb_constraints(), duckdb_columns() and duckdb_tables()"
     },
     {
       "type": "exasol",
@@ -226,7 +247,14 @@
         "features": []
       },
       "brand_color": "#1B68DF",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unknown",
+        "foreign_keys": "unknown",
+        "comments": "unknown"
+      },
+      "metadata_detail": "EXA_ALL_CONSTRAINTS / EXA_ALL_CONSTRAINT_COLUMNS and EXA_ALL_COLUMNS.COLUMN_COMMENT; not read yet"
     },
     {
       "type": "federated",
@@ -253,7 +281,14 @@
         "features": []
       },
       "brand_color": "#34d399",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "members are attached as views; a member's declared keys and comments do not survive the attach"
     },
     {
       "type": "gsheets",
@@ -294,7 +329,14 @@
         "features": []
       },
       "brand_color": "#0F9D58",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "a worksheet declares no keys and carries no comments"
     },
     {
       "type": "hubspot",
@@ -337,7 +379,14 @@
         "features": []
       },
       "brand_color": "#FF7A59",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "synced objects land as tables with no declared keys or comments"
     },
     {
       "type": "local_upload",
@@ -364,7 +413,14 @@
         "features": []
       },
       "brand_color": "#3B82F6",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "an uploaded file declares no keys and carries no comments"
     },
     {
       "type": "motherduck",
@@ -413,6 +469,13 @@
       },
       "brand_color": "#FFD000",
       "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "a DuckDB database: duckdb_constraints() and the comment columns",
       "env": [
         {
           "name": "MOTHERDUCK_TOKEN",
@@ -488,7 +551,14 @@
         ]
       },
       "brand_color": "#00A3C7",
-      "engine_family": "mysql"
+      "engine_family": "mysql",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT"
     },
     {
       "type": "notion",
@@ -531,7 +601,14 @@
         "features": []
       },
       "brand_color": "#c4c4cc",
-      "engine_family": "standard"
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "unsupported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "not a SQL connector"
     },
     {
       "type": "postgres",
@@ -579,7 +656,14 @@
         ]
       },
       "brand_color": "#6f9bcc",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
     },
     {
       "type": "s3",
@@ -640,7 +724,14 @@
         "features": []
       },
       "brand_color": "#569A31",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "files in a bucket declare no keys and carry no comments"
     },
     {
       "type": "salesforce",
@@ -702,7 +793,14 @@
         "features": []
       },
       "brand_color": "#00A1E0",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "synced objects land as tables with no declared keys or comments"
     },
     {
       "type": "snowflake",
@@ -770,7 +868,14 @@
         "features": []
       },
       "brand_color": "#29B5E8",
-      "engine_family": "snowflake"
+      "engine_family": "snowflake",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unknown",
+        "foreign_keys": "unknown",
+        "comments": "unknown"
+      },
+      "metadata_detail": "SHOW PRIMARY KEYS / SHOW IMPORTED KEYS and INFORMATION_SCHEMA.COLUMNS.COMMENT; not read yet"
     },
     {
       "type": "sqlite",
@@ -804,7 +909,14 @@
         "features": []
       },
       "brand_color": "#0F80CC",
-      "engine_family": "sqlite"
+      "engine_family": "sqlite",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "pragma_table_info and pragma_foreign_key_list; SQLite has no comments"
     },
     {
       "type": "stripe",
@@ -847,7 +959,14 @@
         "features": []
       },
       "brand_color": "#7a73ff",
-      "engine_family": "postgres"
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unsupported"
+      },
+      "metadata_detail": "synced objects land as tables with no declared keys or comments"
     },
     {
       "type": "trino",
@@ -917,7 +1036,14 @@
         ]
       },
       "brand_color": "#DD00A1",
-      "engine_family": "standard"
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unknown"
+      },
+      "metadata_detail": "Trino declares no primary or foreign keys; information_schema.columns.comment is not read yet"
     }
   ]
 }

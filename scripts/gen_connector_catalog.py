@@ -96,6 +96,9 @@ def build(engines: tuple[EngineDeclaration, ...] = ENGINES) -> dict:
             "refuses": {"functions": sorted(e.refuses_functions), "features": sorted(e.refuses_features)},
             "brand_color": e.brand_color,
             "engine_family": e.engine_family,
+            # DE-3c: the coverage row — what a metadata read answers for each fact, and why.
+            "metadata": dict(e.metadata_facts),
+            "metadata_detail": e.metadata_detail,
         }
         if e.env_vars:
             entry["env"] = [dict(v) for v in e.env_vars]
@@ -150,6 +153,7 @@ def render_web(engines: tuple[EngineDeclaration, ...] = ENGINES) -> str:
                         "optional": f.optional} for f in e.fields],
             "secretFields": e.secret_fields, "brandColor": e.brand_color, "engineFamily": e.engine_family,
             "dialect": e.dialect, "nativeSql": e.native_sql, "metadataStrategy": e.metadata_strategy,
+            "metadata": dict(e.metadata_facts),
         }
         rows.append(f"  {json.dumps(e.type)}: {json.dumps(obj, ensure_ascii=False)},")
     body = "\n".join(rows)
@@ -180,6 +184,8 @@ export interface ConnectorDeclaration {{
   dialect: string | null;
   nativeSql: boolean;
   metadataStrategy: string;
+  /** DE-3c: for columns, primary_keys, foreign_keys and comments — supported, unsupported or unknown. */
+  metadata: Record<"columns" | "primary_keys" | "foreign_keys" | "comments", "supported" | "unsupported" | "unknown">;
 }}
 
 export const CONNECTORS: Record<string, ConnectorDeclaration> = {{

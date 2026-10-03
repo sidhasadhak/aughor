@@ -929,7 +929,8 @@ def extract_structural_ontology(
     for join in join_map.get("joins", []):
         t1, c1 = join["t1"], join["c1"]
         t2, c2 = join["t2"], join["c2"]
-        confidence = "exact" if join.get("match") == "exact" else "inferred"
+        match = join.get("match")
+        confidence = "declared" if match == "declared" else "exact" if match == "exact" else "inferred"
 
         # Resolve to an entity tolerant of qualified-vs-bare table names (the join
         # map can carry schema-qualified names while table_to_entity is keyed by
@@ -1018,19 +1019,27 @@ def apply_join_verifications(graph: "OntologyGraph", verified: list, rejected: l
         ov_by_edge[k] = vj.overlap
         if getattr(vj, "verified_upstream", False):
             verified_edges.add(k)
-    rejected_edges = {_edge_key(vj.t1, vj.c1, vj.t2, vj.c2) for vj in (rejected or [])}
+    rejected_edges = {_edge_key(vj.t1, vj.c1, vj.t2, vj.c2): vj.overlap for vj in (rejected or [])}
 
     survivors: dict = {}
     dropped = 0
     for rid, rel in graph.relationships.items():
         k = _edge_key(rel.from_table, rel.from_col, rel.to_table, rel.to_col)
         if k in rejected_edges:
+            if rel.join_confidence == "declared":
+                # DE-3c: the schema's author declared this key and the data disagrees. Neither
+                # is dropped in favour of the other: the edge stays declared and carries the
+                # measured overlap, so a reader sees both claims rather than one of them.
+                rel.value_overlap = rejected_edges[k]
+                survivors[rid] = rel
+                continue
             dropped += 1
             continue                              # value-disjoint coincidence → not a real edge
         ov = ov_by_edge.get(k)
         if ov is not None and ov >= 0:
             rel.value_overlap = ov
-            rel.join_confidence = "verified"
+            if rel.join_confidence != "declared":
+                rel.join_confidence = "verified"
         elif k in verified_edges:
             # Checked upstream, but the record carried no containment counts. The edge is
             # verified — `value_overlap` stays None, so nothing downstream reports a

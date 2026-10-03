@@ -78,10 +78,28 @@ def _col_root(col: str) -> str:
     return col
 
 
-def compute_join_map(table_cols: dict[str, list[str]]) -> dict:
+def compute_join_map(table_cols: dict[str, list[str]], declared: list[dict] | None = None) -> dict:
     """Public alias for the join-map inferrer (companion to parse_schema_tables);
-    lets out-of-module callers build a join map without importing internals."""
-    return _compute_join_map(table_cols)
+    lets out-of-module callers build a join map without importing internals.
+
+    DE-3c: ``declared`` — the engine's declared foreign keys as edges (`db/metadata.
+    declared_join_candidates`) — is seeded FIRST and claims its table pairs before the
+    name pass runs, so a declared key is never out-voted by a name coincidence."""
+    return _compute_join_map(table_cols, declared=declared)
+
+
+def join_map_for(conn, table_cols: dict[str, list[str]], *, cache_key: str | None = None) -> dict:
+    """The join map for a connection: declared foreign keys first, then the name inference.
+    Best-effort on the read — a metadata read that fails leaves the name inference as it was."""
+    declared: list[dict] | None = None
+    try:
+        from aughor.db.metadata import declared_join_candidates, read_declared_metadata
+        read = read_declared_metadata(conn, cache_key=cache_key or getattr(conn, "_connection_id", None) or None)
+        declared = declared_join_candidates(read, table_cols)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "declared keys are best-effort; the name inference stands", counter="schema.declared_keys")
+    return _compute_join_map(table_cols, declared=declared)
 
 
 def norm_type(t: str) -> str:
@@ -171,12 +189,30 @@ def _entity_roots(table_cols: dict[str, list[str]]) -> set[str]:
     return roots
 
 
-def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
+def _compute_join_map(table_cols: dict[str, list[str]], declared: list[dict] | None = None) -> dict:
     """
     Compute join candidates across tables using root-normalised column names.
     Returns {"joins": [...], "no_join": [...]} — same shape as talonsight's get_join_map.
+
+    DE-3c: a DECLARED foreign key (``declared``, from the engine's own catalog) is the strongest
+    signal there is — the schema's author said these two columns join — so it is seated first,
+    with ``match="declared"``, and its table pair is claimed before any name match can take it.
+    It is still checked against values downstream, like every edge.
     """
     entity_roots = _entity_roots(table_cols)
+    joined_pairs: set[frozenset[str]] = set()
+    joins: list[dict] = []
+    for d in declared or []:
+        t1, c1, t2, c2 = d.get("t1"), d.get("c1"), d.get("t2"), d.get("c2")
+        if not all((t1, c1, t2, c2)) or t1 == t2 or t1 not in table_cols or t2 not in table_cols:
+            continue
+        if c1 not in table_cols[t1] or c2 not in table_cols[t2]:
+            continue
+        pair = frozenset([t1, t2])
+        if pair in joined_pairs:
+            continue
+        joins.append({"t1": t1, "c1": c1, "t2": t2, "c2": c2, "match": "declared"})
+        joined_pairs.add(pair)
     # Two rooting passes, merged. A column is treated as a join key if EITHER:
     #   • key-aware: it ends in a key/id suffix (incl. fused/prefixed forms like
     #     c_custkey) → high-confidence FK, never blocklisted; or
@@ -207,9 +243,6 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
         owner = _dimension_pk(root, table_cols)
         if owner and owner[0] not in {t for t, _ in entries}:
             entries.append(owner)
-
-    joined_pairs: set[frozenset[str]] = set()
-    joins: list[dict] = []
 
     for root, entries in root_map.items():
         if len(entries) < 2:
@@ -445,7 +478,7 @@ def build_mermaid_er(schema_str: str) -> str:
     return "\n".join(lines)
 
 
-def build_rich_schema(schema_str: str) -> dict:
+def build_rich_schema(schema_str: str, declared: list[dict] | None = None) -> dict:
     """Return structured schema data for the rich UI card view."""
     table_col_types: dict[str, list[tuple[str, str, str]]] = {}
     table_row_counts: dict[str, str] = {}
@@ -479,7 +512,7 @@ def build_rich_schema(schema_str: str) -> dict:
                 table_col_types[current].append((col_m.group(1), col_m.group(2), desc))
 
     table_cols = {t: [c for c, _, _ in cols] for t, cols in table_col_types.items()}
-    jmap = _compute_join_map(table_cols)
+    jmap = _compute_join_map(table_cols, declared=declared)   # DE-3c: declared keys lead
 
     # Only the FK side (t1.c1) gets is_fk=True.
     # The PK target side (t2.c2) is a primary/unique key — marking it as FK would be wrong.
