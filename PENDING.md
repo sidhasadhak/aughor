@@ -164,8 +164,8 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] DE-5d "count all rows" and "load more" for a cut result, through the door.
 - [ ] DE-5e JSON-tree, image and geometry cell viewers.
 - [ ] DE-5f open a value's related rows through the ontology's verified joins.
-- [ ] CSV export neutralises formulas (`web/lib/query/csv.ts`).
-- [ ] Upload type suggestions keep leading zeros and oversized integers as text (`connectors/file/local_upload.py`).
+- [x] CSV export neutralises formulas (`web/lib/query/csv.ts`). **BUILT 2026-10-03** — the DE-5 hygiene line above.
+- [x] Upload type suggestions keep leading zeros and oversized integers as text (`connectors/file/local_upload.py`). **BUILT 2026-10-03** — at the reader as well as the suggester; the DE-5 hygiene line above.
 - ~~[ ] DE-6 schema samples fenced as data; `aughor agent setup | status`; `--json` on the CLI; a slim MCP package.~~ *Removed by the user 2026-10-02; its first part moved into DE-1, the rest is not planned.*
 - [ ] DE-7 a JDBC bridge for self-hosted installs — recorded, not scheduled.
 
