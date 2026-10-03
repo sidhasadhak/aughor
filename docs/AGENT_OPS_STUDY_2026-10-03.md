@@ -369,8 +369,9 @@ every fix are in PENDING item 50; the short form:
 - **`agents.testing_centre` (EXPERIMENT).** One call drafted six questions with a reason each and no SQL; a write
   at certify was refused; two certified by hand; the suite ran the production path and failed both — for real
   reasons it could not yet say. Now an abstain carries the path's own sentence and a mismatch the framed SQL and the
-  first rows of both sides. The defects: "October" taken for an entity name and probed in the data (named, in
-  `semantic/answer_resolution.py`), and `in 2023` dropped from a ranking.
+  first rows of both sides. The defects: "October" taken for an entity name and probed in the data (in
+  `semantic/answer_resolution.py`; fixed the same evening — calendar names bind offline or are dropped, never an
+  abstention), and `in 2023` dropped from a ranking.
 - **`agents.learning_loop` (EXPERIMENT).** A `correct` verdict backfilled the agent, headline and SQL from the turn;
   the same question then framed the corrected half-open range and said its period, and a new question carried the
   lesson; an accepted new answer became a candidate from use (an accepted repeat of a golden's question did not — the

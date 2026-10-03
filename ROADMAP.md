@@ -10376,8 +10376,10 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > no Install button without an HTTPS origin; the managed supervisor picked the bot up on its next reconcile and the
 > mention was answered as the agent. The five-minute target was not met; the ten-minute falsifier fired gross by 37 s
 > on that defect and held net. `users:read` was missing from the manifest (the transport's `users.info`); added.
-> **Still owed:** the Install-button path over HTTPS, Rehearse against a live workspace, the nightly run live, the
-> every-fifth-verdict trigger live, and the month-name abstain.
+> The month-name abstain was fixed the same evening: calendar names are the resolver's weaker class — bound offline
+> when the data holds the string, otherwise dropped, never an abstention (`answer_resolution._calendar_candidates`).
+> **Still owed:** the Install-button path over HTTPS, Rehearse against a live workspace, the nightly run live, and
+> the every-fifth-verdict trigger live.
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

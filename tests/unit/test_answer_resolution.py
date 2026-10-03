@@ -526,3 +526,57 @@ def test_a_status_word_costs_no_warehouse_round_trip():
     r = R.resolve("How many orders were placed in the last 30 days?", schema=_STATUS, db=db)
     assert r.not_found == []
     assert db.seen == [], f"status word issued a live probe: {db.seen}"
+
+
+# ── calendar names are time, not absent filters (2026-10-03) ──────────────────
+# "What was the total Revenue for the month of October 2023?" abstained with
+# `“October” is not present in this data.` on a table with an order_date: the capitalised
+# month was an entity candidate, the probe found no row holding the string, and the miss
+# was terminal. It failed a certified golden on a fresh install.
+
+def test_month_and_weekday_names_are_not_entity_candidates():
+    assert R._entity_candidates("What was the total Revenue for the month of October 2023?") == []
+    assert R._entity_candidates("orders placed on Monday") == []
+    assert R._entity_candidates("sales in march") == []                 # lowercase, after a preposition
+    assert R._entity_candidates("orders from Jan to Mar") == []         # abbreviations
+    assert R._entity_candidates("What were October Sales?") == []       # glue the capital swept in
+    assert R._calendar_candidates(
+        "How did the total Revenue compare between January 2023 and February 2023?") == ["January", "February"]
+
+
+def test_real_entities_beside_a_month_keep_their_place():
+    assert R._entity_candidates("revenue for Nike in October") == ["Nike"]
+    assert R._entity_candidates("sales for First Class in December") == ["First Class"]
+    # A typed name that merely STARTS with a month is a name.
+    assert R._entity_candidates("orders for June Carter") == ["June Carter"]
+    assert R._calendar_candidates("orders for June Carter") == []
+
+
+def test_a_month_name_never_abstains_and_costs_no_round_trip():
+    db = _FakeDB(hits={})          # the warehouse would say "absent" to anything it was asked
+    r = R.resolve("What was the total Revenue for the month of October 2023?", schema=_STATUS, db=db)
+    assert r.not_found == []
+    assert r.feasibility != "not_answerable"
+    assert db.seen == [], f"a month name issued a live probe: {db.seen}"
+
+
+def test_a_month_name_the_data_really_holds_still_binds():
+    schema = _STATUS + "  month_name  VARCHAR  -- [September, October, November]\n"
+    r = R.resolve("revenue in October", schema=schema)
+    assert [(b.column, b.value) for b in r.entity_bindings] == [("month_name", "October")]
+
+
+def test_an_absent_entity_beside_a_month_still_abstains():
+    db = _FakeDB(hits={})
+    r = R.resolve("revenue for Mytheresa in October", schema=_FRANCHISE, db=db)
+    assert r.not_found == ["Mytheresa"]
+
+
+def test_the_presence_signal_still_counts_a_month():
+    # The overview router asks "does anything narrow this ask?" — a month does, so
+    # "tell me about October" must not become an all-time overview of the dataset.
+    assert R.entity_candidates("tell me about October") == ["October"]
+    assert R._entity_candidates("tell me about October") == []          # the resolver's own view
+    from aughor.routers.investigations import _is_overview_question
+    assert _is_overview_question("tell me about October") is False
+    assert _is_overview_question("what's notable in this dataset") is True
