@@ -9547,6 +9547,19 @@ cohort equals hand SQL. Mutation test: overwrite instead of supersede and the hi
 **Receipt (⚑ an exploration run on theLook):** the share of that run's findings carrying a cell and a metric;
 *"Suits have the highest return rate"* re-evaluated for 17–26 August by compilation equals hand SQL.
 
+**Measured and narrowed 2026-10-04.** Of theLook's 18 stored findings, two name a quantity an
+approved metric defines (both the return rate) and the declared-filter check that guards chat
+answers flags none of the 18 — and it could not have guarded them: every other path that runs
+model-written SQL hands the executor the declared-filter rules of the question it answers
+(`rules_for_statement`), and the explorer handed it none, so "revenue by category" would run
+over cancelled lines here while the same question in chat did not. **Built:** the explorer's
+statement carries the rules of its own question (`explorer/agent._run`), so the statement that
+ran — the one the finding cites — is over the metric's rows. Two tests, one through the real
+executor; removing the hand-over fails both. **Not built:** a finding recording its cell, its
+metric's name or the days its data covered, and re-evaluation by BR-2's compiler in place of
+the finding's own SQL. ⚑ The exploration run that would show a guarded finding live is approved
+and not yet taken: it needs this branch's code in the running API.
+
 #### BR-8 · The daily ledger — when speed or history demands it (about two weeks, free but for storage)
 
 > **Premise.** BR-2 to BR-7 calculate a range when asked: about one query per table (five on theLook), a few drill

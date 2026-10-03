@@ -69,6 +69,69 @@ def test_model_written_sql_routes_through_execute_guarded(monkeypatch):
     assert not any(c["via"] == "raw" for c in calls)
 
 
+def _approved_revenue():
+    return SimpleNamespace(name="revenue", label="Revenue", status="approved", tables=["order_items"],
+                           filters=[], sql="SELECT SUM(sale_price) AS revenue FROM order_items "
+                                           "WHERE status <> 'Cancelled'")
+
+
+def test_a_statement_written_for_an_approved_metric_carries_its_declared_filter(monkeypatch):
+    """BR-7's clause: a finding that computes a quantity a metric defines uses the definition.
+    The chat and deep paths hand the executor the declared-filter rules of the question they
+    answer; the explorer handed it none, so "revenue by category" ran over cancelled lines
+    while the same question in chat did not. The rules ride on the statement's own question.
+    """
+    ex, _ = _explorer(monkeypatch)
+    ex.connection_id = "c-declared"
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
+                        lambda connection_id=None, **kw: [_approved_revenue()])
+    seen: list[dict] = []
+
+    def _fake_guarded(conn, sql, *, query_id, schema=None, **kw):
+        seen.append(kw)
+        return SimpleNamespace(error=None, rows=[[7]], columns=["n"], row_count=1, sql=sql)
+
+    monkeypatch.setattr(executor_mod, "execute_guarded", _fake_guarded)
+    sql = "SELECT category, SUM(sale_price) FROM order_items GROUP BY 1"
+    asyncio.run(ex._run(sql, think="Domain Commerce | angle=mix | What is revenue by category?", schema=SCHEMA))
+    asyncio.run(ex._run(sql, think="Domain Catalog | angle=mix | How many products are there?", schema=SCHEMA))
+
+    [rule] = seen[0]["metric_rules"]
+    assert rule["metric"] == "revenue" and rule["tables"] == ["order_items"]
+    assert any("Cancelled" in f for f in rule["filters"])
+    assert seen[1]["metric_rules"] is None, "a statement about nothing declared runs as written"
+
+
+def test_the_declared_filter_reaches_the_statement_the_finding_keeps(monkeypatch):
+    """Through the real executor: the statement that RAN, and so the one a finding cites, is
+    over the metric's rows."""
+    ex, _ = _explorer(monkeypatch)
+    ex.connection_id = "c-declared"
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
+                        lambda connection_id=None, **kw: [_approved_revenue()])
+    ran: list[str] = []
+
+    class _Conn:
+        dialect = "duckdb"
+        _connection_id = "c-declared"
+
+        def execute(self, query_id, sql, **kw):
+            ran.append(sql)
+            return SimpleNamespace(error=None, rows=[["a", 1.0]], columns=["category", "s"],
+                                   row_count=1, sql=sql, doors=[], caveats=[])
+
+        def get_schema(self):
+            return "TABLE: order_items (10 rows)\n  category  VARCHAR\n  sale_price  DOUBLE\n  status  VARCHAR\n"
+
+        def dry_run(self, _sql):
+            return (True, "")
+
+    ex._conn = _Conn()
+    asyncio.run(ex._run("SELECT category, SUM(sale_price) AS s FROM order_items GROUP BY 1",
+                        think="What is revenue by category?", schema=ex._conn.get_schema()))
+    assert "Cancelled" in ex._last_executed_sql, ex._last_executed_sql
+
+
 def test_the_shared_runner_gets_no_llm_repair_hooks(monkeypatch):
     """Deterministic-only by construction: Phase 8 already runs its OWN repair loop, so handing
     the shared runner a fix prompt + provider would give the explorer two competing retries."""
