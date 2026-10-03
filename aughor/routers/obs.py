@@ -631,7 +631,7 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
     is served from the Migration 10 column — it has been written since the failover work
     and read by nothing, so this is its first reader.
     """
-    from aughor.obs.usage import ensure_catalogue_prices, price_for, rollup
+    from aughor.obs.usage import cost_of_call, ensure_catalogue_prices, rollup
     win = resolve_window(range, since=since, until=until)
     # TJ-1 — ask the provider's catalogue for rates (at most hourly) BEFORE pricing: the
     # refresh had no caller, so every call on this instance priced at nothing.
@@ -663,12 +663,9 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
         r = by_role.setdefault(role, {"role": role, "calls": 0, "total_tokens": 0})
         r["calls"] += 1
         r["total_tokens"] += int(e.get("total_tokens") or 0)
-        price = price_for(str(e.get("provider") or ""), str(e.get("model") or ""))
-        if price is None:
-            unpriced += 1
-        else:
-            cost += (int(e.get("prompt_tokens") or 0) / 1e6) * price.input_per_1m
-            cost += (int(e.get("completion_tokens") or 0) / 1e6) * price.output_per_1m
+        usd, priced = cost_of_call(e)
+        cost += usd
+        unpriced += 0 if priced else 1
     tokens = sum(int(e.get("total_tokens") or 0) for e in rows)
     no_usage = sum(1 for e in rows if e.get("total_tokens") is None)
     return {
@@ -683,8 +680,9 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
         # were both consulted; what is still unpriced has no published rate — the
         # provider's silence, not this platform's.
         "pricing": {"catalogue_consulted": True, "catalogue_rows_loaded": catalogue_rows,
-                    "unpriced_means": ("no declared price and none published in the "
-                                       "provider's model catalogue")},
+                    "unpriced_means": ("no declared price and no fixed rate published in the "
+                                       "provider's model catalogue — a router's quote of -1 "
+                                       "means its price follows the model it routes to")},
         "calls_without_usage": no_usage,
         "usage_coverage": round(1 - no_usage / len(rows), 3) if rows else None,
         # A rate whose denominator is invisible gets read as "right now". Both halves ship.

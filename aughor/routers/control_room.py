@@ -114,7 +114,7 @@ def _window_cost(win) -> dict:
     figure that cannot be completed says so: `unpriced_calls` is the number that stops a
     small total reading as a cheap day.
     """
-    from aughor.obs.usage import price_for
+    from aughor.obs.usage import cost_of_call
     try:
         rows = Ledger.default().session_events(
             kind="llm_call", since=win.since, until=win.until, limit=20000)
@@ -123,12 +123,9 @@ def _window_cost(win) -> dict:
         return {"usd": None, "unpriced_calls": None, "is_complete": False, "calls": 0}
     usd, unpriced = 0.0, 0
     for e in rows:
-        price = price_for(str(e.get("provider") or ""), str(e.get("model") or ""))
-        if price is None:
-            unpriced += 1
-            continue
-        usd += (int(e.get("prompt_tokens") or 0) / 1e6) * price.input_per_1m
-        usd += (int(e.get("completion_tokens") or 0) / 1e6) * price.output_per_1m
+        call_usd, priced = cost_of_call(e)
+        usd += call_usd
+        unpriced += 0 if priced else 1
     return {"usd": round(usd, 4), "unpriced_calls": unpriced,
             "is_complete": unpriced == 0, "calls": len(rows)}
 

@@ -110,21 +110,15 @@ def priced_calls(since: str, until: str) -> list[dict]:
     """
     from aughor.kernel.ledger import Ledger
     from aughor.obs.session_log import LLM_CALL
-    from aughor.obs.usage import price_for
+    from aughor.obs.usage import cost_of_call
 
     rows = Ledger.default().session_events(kind=LLM_CALL, since=since, until=until,
                                            limit=CALL_READ_LIMIT)
     out: list[dict] = []
     for r in rows:
         row = dict(r)
-        price = price_for(str(row.get("provider") or ""), str(row.get("model") or ""))
-        if price is None or row.get("total_tokens") is None:
-            row["cost_usd"] = None
-        else:
-            pt = int(row.get("prompt_tokens") or 0)
-            ct = int(row.get("completion_tokens") or 0)
-            row["cost_usd"] = ((pt / 1_000_000.0) * price.input_per_1m
-                               + (ct / 1_000_000.0) * price.output_per_1m)
+        usd, priced = cost_of_call(row)
+        row["cost_usd"] = usd if priced and row.get("total_tokens") is not None else None
         out.append(row)
     return out
 
