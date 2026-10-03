@@ -353,6 +353,34 @@ No new store — the verdict store IS the lesson store (one store per concept).
 - Falsifier: per agent, a held-out golden set's pass rate must move after corrections. Two
   weeks of real use without movement → the block is removed, not kept.
 
+### Receipts — 2026-10-03 (later), the three flags on a fresh install
+
+Taken on a scratch API started from this branch (:8010, every store isolated into a scratch directory, the live
+deployment untouched — `lsof` on its data files showed only its own pid), a fresh install with no connection beyond
+the builtins, the live model configuration copied (`gemini-3.1-flash-lite`), 19 model calls in all. The detail and
+every fix are in PENDING item 50; the short form:
+
+- **`slack.managed_supervisor` (GRADUATION_QUEUE).** The child spawned and heartbeated, then exited 0 after its
+  first heartbeat: with no bot there is no socket, and the reconcile timer was unref'd, so the host restarted it every
+  5 s — on a fresh install it would have hit its hourly cap before the first bot existed. Its output went to
+  /dev/null while the cap message said "check the supervisor's own log", and the card hid the supervisor row until a
+  bot existed. Fixed; then 0 restarts in 70 s, `kill -9` recovered in 15 s with the exit named, Restart gave a new
+  pid, every start in the log, the freshest heartbeat on the status. The live-workspace half is the AO-2 measure.
+- **`agents.testing_centre` (EXPERIMENT).** One call drafted six questions with a reason each and no SQL; a write
+  at certify was refused; two certified by hand; the suite ran the production path and failed both — for real
+  reasons it could not yet say. Now an abstain carries the path's own sentence and a mismatch the framed SQL and the
+  first rows of both sides. The defects: "October" taken for an entity name and probed in the data (named, in
+  `semantic/answer_resolution.py`), and `in 2023` dropped from a ranking.
+- **`agents.learning_loop` (EXPERIMENT).** A `correct` verdict backfilled the agent, headline and SQL from the turn;
+  the same question then framed the corrected half-open range and said its period, and a new question carried the
+  lesson; an accepted new answer became a candidate from use (an accepted repeat of a golden's question did not — the
+  dedupe); a configuration change re-ran the suite in the background within 10 s: before 0/2, after 2/3, the month
+  golden newly passing. Not driven live: the nightly run and the every-fifth-verdict trigger.
+- **Fallout fixed at the cause:** on a fresh install the shipped `revenue`/`aov` applied to NO listed connection
+  (scoped to `samples`, which the registry never lists, while the Workspace folds the samples tables in) — the
+  Workspace now reads them; the door fold, the MCP agent fold and the Slack bot all read the quick path's `inv_id`
+  (a ✅ on a quick Slack answer found no turn before); the folded grid is last-wins.
+
 ### Order and cost
 
 AO-0 → AO-1 → AO-3 → AO-2a,e (no model calls, no new processes) → AO-4 → AO-2b,c,d →

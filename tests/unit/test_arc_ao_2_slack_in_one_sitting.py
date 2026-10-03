@@ -402,6 +402,43 @@ def test_an_exited_child_is_restarted_after_a_backoff(tmp_path, monkeypatch):
     assert s.restarts >= 1 and s.last_exit_code == 1
 
 
+def test_the_managed_child_writes_its_own_log_and_the_status_names_it(tmp_path, monkeypatch):
+    """Receipt 2026-10-03: the child's output went to /dev/null while the cap message said
+    'check the supervisor's own log'. Now the log exists, is appended across starts with a
+    dated line, and the status says where it is."""
+    import os
+    import sys
+    from aughor.slackbots import managed
+    monkeypatch.setattr(managed.ManagedSupervisor, "_npx", staticmethod(lambda: "/usr/bin/npx"))
+    log = tmp_path / "logs" / "supervisor.log"
+    host = managed.ManagedSupervisor(api_url="u", runtime_key="k", cwd=_tmp_supervisor(tmp_path),
+                                     log_path=log, spawn=lambda *a: _Proc(),
+                                     flag_enabled=lambda name: True)
+    # The REAL spawn, with a child that only prints: its words land in the log, under a header.
+    proc = host._real_spawn([sys.executable, "-c", "print('child says hi')"], tmp_path, dict(os.environ))
+    proc.wait(timeout=30)
+    proc = host._real_spawn([sys.executable, "-c", "import sys; print('again', file=sys.stderr)"],
+                            tmp_path, dict(os.environ))
+    proc.wait(timeout=30)
+    text = log.read_text(encoding="utf-8")
+    assert text.count("--- supervisor started") == 2 and "child says hi" in text and "again" in text
+    assert host.start() == "running"
+    assert host.status().log_path == str(log)
+    host.stop()
+
+
+def test_the_status_carries_the_freshest_heartbeat_even_with_no_bot(slack_ok):
+    """On a fresh install there is no bot card to read liveness from; the supervisor
+    status is the one place that says whether the process the API runs is LISTENING."""
+    from aughor.slackbots import managed, store
+    assert managed.managed_status()["heartbeat"] is None
+    store.record_heartbeat("host:1", [], [], 30000)
+    store.record_heartbeat("host:2", ["sb_1"], [{"id": "sb_2", "error": "bad token"}], 30000)
+    hb = managed.managed_status()["heartbeat"]
+    assert hb["supervisor_id"] == "host:2" and hb["running"] == 1 and hb["failed"] == 1
+    assert hb["fresh"] is True and hb["last_seen_at"] and hb["since"]
+
+
 def test_the_managed_key_opens_the_runtime_route_and_a_regenerate_does_not_touch_it(client, slack_ok):
     from aughor.slackbots import store
     managed_key = store.issue_managed_key()

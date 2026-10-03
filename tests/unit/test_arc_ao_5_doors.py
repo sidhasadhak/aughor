@@ -269,7 +269,8 @@ def test_each_enabled_custom_agent_becomes_a_tool_that_asks_as_it(monkeypatch):
             {"type": "rows", "rows": [[49]], "row_count": 1},
             {"type": "receipt_id", "receipt_id": "rc-9"},
             {"type": "headline", "headline": "There were 49 orders."},
-            {"type": "done", "investigation_id": "inv-9"},
+            # The quick path's spelling of the turn id — the one the live door met (2026-10-03).
+            {"type": "done", "inv_id": "inv-9"},
         ]))
 
     client = _mcp_client({
@@ -303,3 +304,34 @@ def test_an_unreachable_api_registers_nothing_and_raises_nothing():
     from aughor.mcp import server as S
     client = _mcp_client({})
     assert asyncio.run(S.register_agent_tools(client)) == []
+
+
+# ── the fold reads the quick path's own spelling of the turn ─────────────────────────
+
+def test_the_fold_takes_the_turn_id_from_the_quick_paths_done_frame(monkeypatch):
+    """Receipt 2026-10-03: a live door answer carried a receipt and NO investigation id — the
+    quick path names its turn `inv_id` on `done`, the deep path `investigation_id` on
+    `start`, and the fold read one spelling. A verdict needs the turn, so both are read."""
+    import asyncio
+    from aughor.custom_agents import reach
+
+    async def _stream(_req, _user):
+        for e in [{"type": "headline", "headline": "October."},
+                  {"type": "columns", "columns": ["probe"]},
+                  {"type": "rows", "rows": [[1]], "row_count": 1},
+                  {"type": "sql", "sql": "SELECT 1"},
+                  # The grid the closing prose is about — emitted again, last wins (the live
+                  # door handed one row back twice before this).
+                  {"type": "columns", "columns": ["month", "revenue"]},
+                  {"type": "rows", "rows": [["2023-10", 49602.4]], "row_count": 1},
+                  {"type": "receipt_id", "receipt_id": "rc-7"},
+                  {"type": "done", "inv_id": "quick-7", "has_receipt": True}]:
+            yield f"data: {json.dumps(e)}\n\n"
+
+    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", _stream)
+    out = asyncio.run(reach.fold_ask(agent_id="ua_x", question="q", connection_id="workspace",
+                                     principal_ref="api:http:t", session_id="", depth="quick", max_rows=50))
+    assert out["investigation_id"] == "quick-7" and out["receipt_id"] == "rc-7"
+    assert out["headline"] == "October." and out["frames"] == 8
+    assert out["columns"] == ["month", "revenue"] and out["rows"] == [["2023-10", 49602.4]]
+    assert out["row_count"] == 1 and out["truncated"] is False

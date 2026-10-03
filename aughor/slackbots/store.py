@@ -206,6 +206,30 @@ def _fresh(row: dict, now: Optional[datetime] = None) -> bool:
     return now - seen < stale_after
 
 
+def latest_heartbeat() -> Optional[dict]:
+    """The freshest beat any supervisor sent — who, when, how many bots it has open, and
+    whether the beat is still fresh. What the managed host's status shows beside the
+    process state: a running pid that never beat is not listening, and on a fresh install
+    with no bot yet there is no card to read liveness from (AO-2b receipt, 2026-10-03)."""
+    # Freshest first; two beats in the same second (seconds precision) are told apart by
+    # what they have open — the one listening for bots is the one a reader wants named.
+    rows = sorted(_RUNTIME.all(),
+                  key=lambda r: (str(r.get("last_seen_at") or ""), len(r.get("running") or [])),
+                  reverse=True)
+    if not rows:
+        return None
+    r = rows[0]
+    return {"supervisor_id": str(r.get("id") or ""), "since": str(r.get("since") or ""),
+            "last_seen_at": str(r.get("last_seen_at") or ""),
+            "running": len(r.get("running") or []), "failed": len(r.get("failed") or []),
+            "fresh": _fresh(r)}
+
+
+def store_dir() -> Path:
+    """Where this store's files live — the managed host writes the child's log beside them."""
+    return Path(_DIR)
+
+
 def liveness_fields(bot_id: str) -> dict:
     """``listening`` (the fresh beat that has this bot open) and ``liveness_hint`` (why
     not, with the command) — what the bot card and the agent's Map read."""

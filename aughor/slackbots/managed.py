@@ -59,6 +59,10 @@ class Status:
     cwd: str = ""
     #: What would stop a start before it is tried — said, so the fix is named.
     preconditions: list[str] = field(default_factory=list)
+    #: Where the child's own stdout/stderr land (appended across restarts). The first
+    #: receipt (2026-10-03) found them on /dev/null while the cap message said "check the
+    #: supervisor's own log" — there was none to check.
+    log_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -72,10 +76,11 @@ class ManagedSupervisor:
     """One child process, one watcher thread. ``spawn`` is injectable for tests."""
 
     def __init__(self, *, api_url: str, runtime_key: str, cwd: Optional[Path] = None,
-                 spawn=None, flag_enabled=None):
+                 spawn=None, flag_enabled=None, log_path: Optional[Path] = None):
         self._api_url = api_url
         self._runtime_key = runtime_key
         self._cwd = cwd or supervisor_dir()
+        self._log_path = log_path
         self._spawn = spawn or self._real_spawn
         self._flag_enabled = flag_enabled or _flag_on
         self._proc: Any = None
@@ -118,9 +123,23 @@ class ManagedSupervisor:
             env.pop(k, None)
         return env
 
+    def log_path(self) -> Path:
+        """The child's log: beside the Slack store's files unless the host was given one."""
+        if self._log_path is None:
+            from aughor.slackbots.store import store_dir
+            self._log_path = store_dir() / "supervisor.log"
+        return self._log_path
+
     def _real_spawn(self, cmd: list[str], cwd: Path, env: dict[str, str]):
-        return subprocess.Popen(cmd, cwd=str(cwd), env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        """The child's stdout and stderr go to its log, appended across restarts with a
+        dated line between runs — so "exited with code 1" has a reason a person can read."""
+        path = self.log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as log:
+            log.write(f"--- supervisor started {_now_iso()} by the API ({' '.join(cmd)})\n")
+            log.flush()
+            return subprocess.Popen(cmd, cwd=str(cwd), env=env,
+                                    stdout=log, stderr=subprocess.STDOUT)
 
     # ── lifecycle ────────────────────────────────────────────────────────────────
     def start(self) -> str:
@@ -134,6 +153,7 @@ class ManagedSupervisor:
             self._status.preconditions = self.preconditions()
             self._status.command = self.command()
             self._status.cwd = str(self._cwd)
+            self._status.log_path = str(self.log_path())
             if self._status.preconditions:
                 self._status.state = "failed"
                 self._status.last_error = "; ".join(self._status.preconditions)
@@ -178,7 +198,7 @@ class ManagedSupervisor:
                     self._status.state = "stopped"
                     self._status.last_error = (
                         f"exited {len(self._exits)} times in an hour (last code {code}); "
-                        "not restarting — check the supervisor's own log and the bot card")
+                        f"not restarting — read {self.log_path()} and the bot card, then Restart")
                     self._proc = None
                     continue
                 failures += 1
@@ -271,10 +291,23 @@ def stop_managed_supervisor() -> None:
 
 
 def managed_status() -> dict[str, Any]:
+    """The host's state plus the freshest heartbeat any supervisor sent: a running pid is
+    the process; the beat is whether it is LISTENING — and on a fresh install, with no
+    bot card yet to read liveness from, this is the only place that says so."""
     if _HOST is None:
         s = Status(flag=_flag_on(FLAG))
         if s.flag:
             s.state = "stopped"
             s.last_error = "the flag is on but the host was not started — restart the API"
-        return s.to_dict()
-    return _HOST.status().to_dict()
+        d = s.to_dict()
+    else:
+        d = _HOST.status().to_dict()
+    try:
+        from aughor.slackbots.store import latest_heartbeat
+        d["heartbeat"] = latest_heartbeat()
+    except Exception as exc:                            # noqa: BLE001 — the state still shows
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the supervisor heartbeat store could not be read; the status shows no beat",
+                 counter="slack.managed_heartbeat_read")
+        d["heartbeat"] = None
+    return d

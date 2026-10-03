@@ -71,15 +71,16 @@ async def fold_ask(*, agent_id: str, question: str, connection_id: str = "",
                 deltas.append(str(frame.get("headline") or frame.get("delta") or ""))
             elif t == "sql":
                 out["sql"] = str(frame.get("sql") or "")
-            elif t == "columns" and not out["columns"]:
+            elif t == "columns":
+                # Last wins, as the Slack bot reads it: a turn may run several queries and
+                # emit its grid more than once; the one the closing prose is about is the one
+                # it finished on. Receipt 2026-10-03: first-wins columns + appended rows gave
+                # a door caller one row twice.
                 out["columns"] = list(frame.get("columns") or [])
             elif t == "rows":
                 rows = list(frame.get("rows") or [])
-                room = max_rows - len(out["rows"])
-                if room > 0:
-                    out["rows"].extend(rows[:room])
-                if len(rows) > room:
-                    out["truncated"] = True
+                out["rows"] = rows[:max_rows]
+                out["truncated"] = len(rows) > max_rows
                 if frame.get("row_count") is not None:
                     out["row_count"] = frame.get("row_count")
             elif t == "receipt_id":
@@ -87,7 +88,11 @@ async def fold_ask(*, agent_id: str, question: str, connection_id: str = "",
             elif t == "error":
                 out["error"] = str(frame.get("message") or frame.get("error") or "error")
             elif t == "done":
-                out["investigation_id"] = str(frame.get("investigation_id") or out["investigation_id"])
+                # The quick path names the turn here as `inv_id` (the deep path as
+                # `investigation_id` on its start frame). Receipt 2026-10-03: the fold read
+                # one spelling, so a door answer carried a receipt and no turn to judge.
+                out["investigation_id"] = str(frame.get("investigation_id") or frame.get("inv_id")
+                                              or out["investigation_id"])
             if frame.get("investigation_id") and not out["investigation_id"]:
                 out["investigation_id"] = str(frame["investigation_id"])
     if not out["headline"] and deltas:

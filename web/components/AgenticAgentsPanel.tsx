@@ -1015,8 +1015,19 @@ function AgentBenchmark({ agent, onChanged, onError }: {
               </span>
             )}
             {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
-              <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 12 }}>
+              <div key={p.golden_id} className="aug-fs-sm" style={{ color: "var(--t3)" }}>
                 ✗ {p.question} — {p.error}
+                {/* Receipt 2026-10-03: a mismatch with no SQL sent the reader to guess; the
+                    statement the path framed, and both row sets, ride the result. */}
+                {p.generated_sql && (
+                  <div className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)",
+                    whiteSpace: "pre-wrap", marginTop: 2 }}>
+                    {p.generated_sql}
+                    {p.reference_rows && p.generated_rows && (
+                      <div>expected {JSON.stringify(p.reference_rows)} · got {JSON.stringify(p.generated_rows)}</div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
             {(evalResult.diff?.newly_failing?.length ?? 0) > 0 && (

@@ -325,3 +325,41 @@ def test_accepting_the_staged_skill_saves_through_the_governed_door(monkeypatch)
                              params={"inv_id": "inv-s1"})
     result = inbox._accept_skill_draft(p, actor="person")
     assert result.ok is True and outcomes == [("executed", "saved learned skill sk_1")]
+
+
+# ── the fold: the Workspace reads the samples metrics whose tables it folds in ───────
+
+def test_the_workspace_reads_the_samples_metrics_it_folds_in(monkeypatch, tmp_path):
+    """Receipt 2026-10-03, fresh install: the shipped metrics are scoped to `samples`, an id
+    the registry never lists, while the Workspace folds the samples TABLES in — so `revenue`
+    and `aov` applied to no listed connection and the drafter had no governed metric. The
+    tables and their metrics travel together; the Workspace's own entry of a name still
+    wins, a global one still fills the gaps, and any other connection folds nothing."""
+    from aughor.db import registry
+    from aughor.semantic import metrics as m
+    from aughor.semantic.metrics import MetricDefinition
+    path = tmp_path / "metrics.instance.json"
+    m.save_metric(MetricDefinition(name="revenue", connection="samples", label="Rev samples",
+                                   sql="SUM(total_amount)"), path=path)
+    m.save_metric(MetricDefinition(name="aov", connection="samples", label="AOV", sql="AVG(total_amount)"), path=path)
+    m.save_metric(MetricDefinition(name="aov", connection="workspace", label="AOV mine", sql="AVG(x)"), path=path)
+    m.save_metric(MetricDefinition(name="units", label="Units", sql="SUM(q)"), path=path)      # global
+
+    # No samples warehouse on disk → the Workspace folds nothing in.
+    monkeypatch.setattr(registry, "get_meta",
+                        lambda cid: {"builtin_workspace": True} if cid == "workspace" else {})
+    assert {x.name for x in m.list_metrics(path, connection_id="workspace")} == {"aov", "units"}
+
+    # The warehouse is present → its metrics ride along; the Workspace's own `aov` shadows.
+    monkeypatch.setattr(registry, "get_meta",
+                        lambda cid: ({"builtin_workspace": True, "seed_duckdb": "/x/samples.duckdb"}
+                                     if cid == "workspace" else {}))
+    got = {x.name: x.label for x in m.list_metrics(path, connection_id="workspace")}
+    assert got == {"revenue": "Rev samples", "aov": "AOV mine", "units": "Units"}
+    assert m.get_metric("revenue", path, connection_id="workspace").sql == "SUM(total_amount)"
+    assert m.get_metric("aov", path, connection_id="workspace").label == "AOV mine"
+    assert m.get_metric("nope", path, connection_id="workspace") is None
+    # Another connection folds nothing: only the global entry applies.
+    assert {x.name for x in m.list_metrics(path, connection_id="c9")} == {"units"}
+    # Unscoped reads are byte-identical to before: every row.
+    assert len(m.list_metrics(path)) == 4

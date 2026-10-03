@@ -211,10 +211,14 @@ def _frame_on_production_path(agent: UserAgent):
         )
         if result.outcome != "framed":
             # The production path stopped before a statement existed — a refusal, a clarify
-            # it could not skip, a failure. Said as the golden's error, never as empty SQL.
+            # it could not skip, a failure. Said as the golden's error, never as empty SQL —
+            # WITH the path's own words: an abstain carries its reason as the headline, a
+            # failure as the error (receipt 2026-10-03: "ended 'abstained'" alone sent a
+            # person to the logs for a sentence the result already held).
+            why = (result.error or "").strip() or " ".join(str(getattr(result, "headline", "") or "").split())
             raise RuntimeError(
                 f"production path ended '{result.outcome}' before framing SQL"
-                + (f": {result.error}" if result.error else ""))
+                + (f": {why[:300]}" if why else ""))
         return (result.sql or "").strip()
 
     return _gen
@@ -282,6 +286,10 @@ def evaluate_agent(agent: UserAgent, db=None,
                     entry["error"] = "no SQL generated"
                     result["per_question"].append(entry)
                     continue
+                # The statement the path framed rides the entry: a failure a person cannot
+                # read the SQL of is not actionable (receipt 2026-10-03 — "result mismatch
+                # vs reference" with nothing else sent the reader to guess).
+                entry["generated_sql"] = sql
                 got = db.execute("__agent_eval_gen__", sql)
                 if got.error:
                     entry["error"] = f"generated SQL failed: {got.error}"
@@ -289,6 +297,8 @@ def evaluate_agent(agent: UserAgent, db=None,
                     entry["passed"] = results_match(ref.rows, got.rows)
                     if not entry["passed"]:
                         entry["error"] = "result mismatch vs reference"
+                        entry["reference_rows"] = [[str(v) for v in r][:8] for r in (ref.rows or [])[:3]]
+                        entry["generated_rows"] = [[str(v) for v in r][:8] for r in (got.rows or [])[:3]]
             except Exception as exc:  # one golden's failure never aborts the suite
                 entry["error"] = f"{type(exc).__name__}: {exc}"
             result["per_question"].append(entry)

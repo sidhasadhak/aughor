@@ -238,6 +238,10 @@ class AughorClient:
                 acc["error"] = str(ev.get("message") or ev.get("error") or "error")
             if ev.get("investigation_id") and not acc["investigation_id"]:
                 acc["investigation_id"] = str(ev["investigation_id"])
+            # The quick path names its turn `inv_id` on the done frame (as `ask` below
+            # already reads); the agent fold read one spelling and lost the turn (2026-10-03).
+            if ev.get("type") == "done" and ev.get("inv_id") and not acc["investigation_id"]:
+                acc["investigation_id"] = str(ev["inv_id"])
         if not acc["headline"] and deltas:
             acc["headline"] = max(deltas, key=len)
         if acc["row_count"] is None and acc["rows"]:

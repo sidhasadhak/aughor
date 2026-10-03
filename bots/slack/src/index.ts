@@ -151,11 +151,21 @@ async function beat(failed: { id: string; error: string }[]): Promise<void> {
   }
 }
 
+// AO-2b — under the API's host this process must outlive an empty registry: the sockets
+// are what keep a standalone run alive, and on a FRESH install there are none yet, so an
+// unref'd timer let the child exit 0 after its first heartbeat and the host restarted it
+// every five seconds until its hourly cap (measured 2026-10-03 on a scratch API: seven
+// restarts in a minute). Managed, the reconcile timer holds the process open and the first
+// bot a person creates is picked up on the next tick.
+const managedByApi = process.env.AUGHOR_MANAGED_BY_API === "1";
+
 const first = await supervisor.reconcile();
 if (first.running === 0) {
-  console.error(
-    "No bots to run. Create one in Aughor (Slack bots → New), or fill in " +
-    ".env.local with SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET.",
+  console.error(managedByApi
+    ? "No bots to run yet — waiting; the first bot created in Aughor (Integrations → Slack) " +
+      `is picked up within ${Math.round(RECONCILE_MS / 1000)}s.`
+    : "No bots to run. Create one in Aughor (Slack bots → New), or fill in " +
+      ".env.local with SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET.",
   );
 } else {
   console.log(
@@ -174,8 +184,10 @@ const timer = setInterval(() => {
     await beat(r.failed);
   });
 }, RECONCILE_MS);
-// Reconciling must never be the reason the process stays alive; the sockets are.
-timer.unref?.();
+// Standalone, reconciling must never be the reason the process stays alive; the sockets
+// are, and a person watching the terminal sees "No bots to run" and an exit. Managed, the
+// API's host IS the watcher, and an exit here is a restart loop (see above).
+if (!managedByApi) timer.unref?.();
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {

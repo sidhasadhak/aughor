@@ -4962,6 +4962,11 @@ export interface ManagedSupervisorStatus {
   pid: number | null; started_at: string; restarts: number;
   last_exit_code: number | null; last_error: string;
   command: string[]; cwd: string; preconditions: string[];
+  /** AO-2b receipt — where the child's own output lands, and the freshest heartbeat any
+   *  supervisor sent (a running pid that never beat is not listening). */
+  log_path: string;
+  heartbeat: { supervisor_id: string; since: string; last_seen_at: string;
+               running: number; failed: number; fresh: boolean } | null;
 }
 
 export async function getManagedSupervisor(): Promise<ManagedSupervisorStatus> {
@@ -7944,7 +7949,10 @@ export interface AgentEvalResult {
   total: number;
   at: string;
   duration_ms?: number;
-  per_question: { golden_id: string; question: string; passed: boolean; error: string }[];
+  per_question: { golden_id: string; question: string; passed: boolean; error: string;
+                  /** The statement the production path framed, and on a mismatch the first rows
+                   *  of both sides — so a failure is readable where it is shown (2026-10-03). */
+                  generated_sql?: string; reference_rows?: string[][]; generated_rows?: string[][] }[];
   /** AO-6/AO-7d — what changed since the previous stamp. */
   diff?: {
     before: { passed: number; total: number; at: string } | null;

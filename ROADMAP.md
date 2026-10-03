@@ -10351,9 +10351,27 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > inbox. AO-5 ✅ — each custom agent an MCP tool with its caller a principal; a per-agent key, an HTTP door and
 > an embed page; a Teams bot (Bot Framework, signature verified, reply through the Connector); a webhook that is a
 > conversation turn; an A2A card and endpoint. Every door carries its own credential and opens nothing else.
-> **The arc is built. Still owed:** the AO-2 measure on a fresh install (no Slack workspace was touched) and the
-> three flags' receipts (`slack.managed_supervisor`, `agents.testing_centre`, `agents.learning_loop`). AO-6's
-> private-thread clause was built later the same day (above); its live receipt waits on the same workspace.
+> **The arc is built.** AO-6's private-thread clause was built later the same day (above); its live receipt waits
+> on a Slack workspace.
+> **Receipts 2026-10-03 (later), on a scratch API from this branch (:8010, every store isolated, a fresh install,
+> `gemini-3.1-flash-lite`, 19 model calls in all — PENDING item 50 holds the detail):** `slack.managed_supervisor` —
+> the child spawned, heartbeated, and exited 0 after its first heartbeat because a fresh install has no socket to
+> hold it; the host restarted it every 5 s and would have hit its hourly cap before the first bot existed; its output
+> went to /dev/null while the cap message said "check the supervisor's own log"; and the card hid the row until a bot
+> existed. All three fixed; then zero restarts in 70 s, a `kill -9` recovered in 15 s with the exit named, Restart
+> gave a new pid, every start in the log, the freshest heartbeat on the status. `agents.testing_centre` — one call
+> drafted six questions with a reason each and no SQL; a write was refused at certify; the suite ran the production
+> path and FAILED both certified goldens for real reasons it could not yet say — an abstain with no sentence, a
+> mismatch with no SQL — now said on the result and the tab; the defects themselves: "October" taken for an entity
+> name and probed (named, in `answer_resolution.py`), and `in 2023` dropped from a ranking. `agents.learning_loop` —
+> a `correct` verdict backfilled the agent, headline and SQL from the turn; the same question then framed the
+> corrected half-open range and said its period; an accepted new answer became a candidate from use; a configuration
+> change re-ran the suite in the background within 10 s: before 0/2, after 2/3, the month golden newly passing.
+> **Fallout fixed at the cause:** the Workspace now reads the `samples`-scoped metrics whose tables it folds in (a
+> fresh install had governed metrics on NO listed connection); the door fold, the MCP agent fold and the Slack bot
+> all read the quick path's `inv_id` (a ✅ on a quick Slack answer found no turn before); the folded grid is
+> last-wins. **Still owed:** the AO-2 measure by a person on a fresh install (the flag's live-workspace receipt), the
+> nightly run live, the every-fifth-verdict trigger live, and the month-name abstain.
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

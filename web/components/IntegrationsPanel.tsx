@@ -489,17 +489,26 @@ export function IntegrationsPanel() {
                 {/* AO-2b — the supervisor the API runs itself, when the flag is on: its
                     state in a sentence, and the one control. Off, one line says how it
                     is started by hand. */}
-                {p.alt_door === "slack_app" && bots.length > 0 && supervisor && (
+                {/* Shown with NO bots too when the API manages it: on a fresh install the
+                    supervisor runs before the first bot exists, and a row that waits for a
+                    bot card reads as "nothing is running" (receipt, 2026-10-03). */}
+                {p.alt_door === "slack_app" && supervisor && (bots.length > 0 || supervisor.managed) && (
                   <div className="aug-fs-xs" style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
                     paddingTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ color: supervisor.state === "running" ? "var(--grn4)"
-                      : supervisor.state === "off" ? "var(--t3)" : "var(--amb4)", flex: 1 }}>
+                      : supervisor.state === "off" ? "var(--t3)" : "var(--amb4)", flex: 1 }}
+                      title={supervisor.log_path ? `the supervisor's own log: ${supervisor.log_path}` : undefined}>
                       {supervisor.state === "off"
                         ? "Supervisor: started by hand — cd bots/slack && npm run dev (turn on "
                           + "slack.managed_supervisor to let the API run it)"
                         : supervisor.state === "running"
                           ? `Supervisor: run by the API · pid ${supervisor.pid} · since ${formatDateTime(supervisor.started_at)}`
                             + (supervisor.restarts ? ` · restarted ${supervisor.restarts}×` : "")
+                            + (supervisor.heartbeat
+                                ? (supervisor.heartbeat.fresh
+                                    ? ` · listening — heartbeat ${formatDateTime(supervisor.heartbeat.last_seen_at)}, ${supervisor.heartbeat.running} bot(s) open`
+                                    : ` · NOT listening — last heartbeat ${formatDateTime(supervisor.heartbeat.last_seen_at)}`)
+                                : " · no heartbeat yet")
                           : `Supervisor: ${supervisor.state} — ${supervisor.last_error || "no reason recorded"}`}
                     </span>
                     {supervisor.managed && (
