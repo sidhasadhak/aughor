@@ -117,6 +117,11 @@ def test_a_lead_that_names_what_came_back_heads_the_answer():
     assert I._lead_sentence(announced, Q2, CATEGORIES) == ("", announced)
     # a value the question itself named is the question's, not the answer's
     assert I._lead_sentence("Jeans is listed below.\n\n" + TABLE, "How did Jeans do?", ["Jeans"])[0] == ""
+    # an opener that ends in a colon introduces its table, whatever it names (Q2, 2026-10-03)
+    colon = ("The product categories generating the highest revenue between March 5, 2026, and September 4, 2026, are "
+             "led by Outerwear & Coats and Jeans, with the following breakdown of total revenue and average order "
+             "value (AOV):\n\n" + TABLE)
+    assert I._lead_sentence(colon, Q2, CATEGORIES) == ("", colon)
 
 
 def test_the_values_a_lead_can_name_are_the_text_its_rows_hold():

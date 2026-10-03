@@ -29,20 +29,21 @@ function phrase(col: string): string {
     .replace(/^(?:pct|percent|perc) (?=(?:change|growth|increase|decrease|diff|difference|delta)\b)/, "");
 }
 
-/** The months a chart draws when it draws fewer than its result holds, as titles name them ("Sep 2025 –
- *  Aug 2026", "Sep – Nov 2025"): a change has none for the month it is measured from, and Q3's change chart,
- *  drawn from September 2025, was captioned "Aug 2025 – Aug 2026" (2026-10-03). "" when it draws every month
- *  or its x column holds no months. */
+/** The months a chart draws, as titles name them: "Sep 2025 – Aug 2026", "Sep – Nov 2025", "Jul 2026". "" unless
+ *  every point it draws is a month. */
 function drawnMonths(rows: unknown[][], x: number, measures: number[]): string {
-  const months = (rs: unknown[][]) => rs.map((r) => String(r[x] ?? "")).sort();
-  const all = months(rows);
-  const drawn = months(rows.filter((r) => measures.some((i) => isNumeric(r[i]))));
-  if (!drawn.length || (drawn[0] === all[0] && drawn[drawn.length - 1] === all[all.length - 1])) return "";
-  const a = drawn[0].match(MONTH_START), b = drawn[drawn.length - 1].match(MONTH_START);
-  if (!a || !b) return "";
+  const drawn = rows.filter((r) => measures.some((i) => isNumeric(r[i]))).map((r) => String(r[x] ?? "")).sort();
+  if (!drawn.length || !drawn.every((v) => MONTH_START.test(v))) return "";
+  const a = drawn[0].match(MONTH_START)!, b = drawn[drawn.length - 1].match(MONTH_START)!;
   const m = (g: RegExpMatchArray) => MONTHS_SHORT[Number(g[2]) - 1];
   if (a[1] === b[1] && a[2] === b[2]) return `${m(a)} ${a[1]}`;
   return a[1] === b[1] ? `${m(a)} – ${m(b)} ${a[1]}` : `${m(a)} ${a[1]} – ${m(b)} ${b[1]}`;
+}
+
+/** A title's period written in months — "Aug 2025 – Aug 2026", "Aug – Dec 2025", "Jul 2026", "2025" — not in days. */
+function namesMonths(period: string): boolean {
+  const words = period.split(/\s+|–/).filter(Boolean);
+  return words.some((w) => /^\d{4}$/.test(w)) && words.every((w) => /^\d{4}$/.test(w) || MONTHS_SHORT.includes(w));
 }
 
 function listed(names: string[]): string {
@@ -57,8 +58,13 @@ export function chartCaption(title: string, columns: string[], rows: unknown[][]
   if (!inferred || !DRAWS_ITS_MEASURES.has(inferred.type) || !inferred.yCols.length) return title;
   const drawnIdx = inferred.type === "grouped-bar" ? inferred.yCols : inferred.yCols.slice(0, 1);
   const drawn = drawnIdx.map((i) => columns[i]);
+  // The months it draws, not the window its SQL filtered on: a change has none for the month it is measured from,
+  // and a query that read August only to measure September from it returns September on (Q3, 2026-10-03).
   const months = inferred.xCol >= 0 ? drawnMonths(rows, inferred.xCol, drawnIdx) : "";
-  const period = (text: string) => (months ? text.replace(/ — [^—]*$/, ` — ${months}`) : text);
+  const period = (text: string) => {
+    const said = text.match(/ — ([^—]*)$/);
+    return months && said && said[1] !== months && namesMonths(said[1]) ? `${text.slice(0, said.index)} — ${months}` : text;
+  };
   const measured = plottedMeasures(columns, rows, classifyColumns(columns, rows).numericIdxs).map((i) => columns[i]);
   if (measured.every((m) => drawn.includes(m))) return period(title);
   const by = [inferred.xCol, inferred.colorCol]
@@ -68,3 +74,27 @@ export function chartCaption(title: string, columns: string[], rows: unknown[][]
   const caption = `${listed(drawn.map(phrase))}${by.length ? ` by ${listed(by)}` : ""}${cut >= 0 ? title.slice(cut) : ""}`;
   return period(caption.charAt(0).toUpperCase() + caption.slice(1));
 }
+
+/** The one series an auto chart draws — its x values and its measure's — or null when it draws another form,
+ *  several series or fewer than two points. */
+function drawnSeries(columns: string[], rows: unknown[][], chartType?: string | null): Map<string, number> | null {
+  if (String(chartType ?? "auto").toLowerCase() !== "auto" || rows.length < 2) return null;
+  const inferred = inferChartType(columns, rows);
+  if (!inferred || !DRAWS_ITS_MEASURES.has(inferred.type) || inferred.type === "grouped-bar"
+      || (inferred.colorCol ?? -1) >= 0 || inferred.xCol < 0 || inferred.yCols[0] === undefined) return null;
+  const series = new Map<string, number>();
+  for (const r of rows) if (isNumeric(r[inferred.yCols[0]])) series.set(String(r[inferred.xCol]), Number(r[inferred.yCols[0]]));
+  return series.size >= 2 ? series : null;
+}
+
+/** The results whose chart another result's chart already draws: every point of its series is a point of the
+ *  other's. Q3 (2026-10-03) drew monthly revenue twice — September to August, and again from the August before.
+ *  The longer is drawn; of two the same, the first. */
+export function repeatedCharts(results: { id: string; columns: string[]; rows: unknown[][]; chartType?: string | null }[]): Set<string> {
+  const all = results.map((r) => ({ id: r.id, s: drawnSeries(r.columns, r.rows, r.chartType) }));
+  const same = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a));
+  return new Set(all.filter((a, i) => a.s && all.some((b, j) => j !== i && b.s
+    && (b.s.size > a.s!.size || (b.s.size === a.s!.size && j < i))
+    && [...a.s!].every(([x, y]) => b.s!.has(x) && same(y, b.s!.get(x)!)))).map((a) => a.id));
+}
+

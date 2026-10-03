@@ -10401,7 +10401,9 @@ def _lead_sentence(text: str, question: str = "", values: Iterable = ()) -> tupl
     def answers(sentence: str) -> bool:
         return _states_a_figure(sentence, question) or _names_a_value(sentence, values, question)
 
-    if not answers(lead):
+    # An opener that ends in a colon introduces what follows: Q2's "…are led by Outerwear & Coats and Jeans, with
+    # the following breakdown of total revenue and average order value (AOV):" headed its table (2026-10-03).
+    if lead.rstrip().endswith(":") or not answers(lead):
         return "", t
     rest = t[len(lead):].strip()
     if len(lead) <= 240:

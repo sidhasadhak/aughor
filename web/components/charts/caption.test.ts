@@ -29,6 +29,16 @@ describe("a chart's caption", () => {
       pct, rows, "auto")).toBe("Change by month where status = Complete — Sep – Nov 2025");
   });
 
+  it("names the months its rows hold, not the window its query read", () => {
+    // Q3's change (2026-10-03): read from August 2025 to measure September from it, returned September on
+    const rows = [["2025-11-01", "64012.67", "3602.49"], ["2025-10-01", "60410.18", "6333.81"], ["2025-09-01", "54076.37", "-3053.65"]];
+    expect(chartCaption("Monthly revenue and revenue change by month — Aug – Nov 2025", ["month", "monthly_revenue", "revenue_change"],
+      rows, "auto")).toBe("Revenue change by month — Sep – Nov 2025");
+    // a window in days is not rewritten in months
+    expect(chartCaption("Monthly revenue and revenue change by month — 4 Aug – 3 Nov 2025", ["month", "monthly_revenue", "revenue_change"],
+      rows, "auto")).toBe("Revenue change by month — 4 Aug – 3 Nov 2025");
+  });
+
   it("keeps the title where the chart draws every measure, or where a chart type was chosen", () => {
     const one = { columns: ["category", "revenue"], rows: [["Jeans", "10"], ["Swim", "8"], ["Socks", "3"]] };
     expect(chartCaption("Revenue by category — Jul 2026", one.columns, one.rows, "auto")).toBe("Revenue by category — Jul 2026");

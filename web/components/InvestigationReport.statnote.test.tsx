@@ -270,3 +270,38 @@ describe("a chart's caption", () => {
     expect(screen.getByTitle(`Data + SQL behind “${title}”`)).toBeInTheDocument();
   });
 });
+
+/** Q3 (2026-10-03) drew monthly revenue twice: September to August with its order count, and again from the August
+ *  before. A chart another chart already draws is not drawn again; its source stays. */
+describe("a chart another chart already draws", () => {
+  it("is not drawn again, and its data and SQL stay a click away", () => {
+    const months = ["2025-08-01", "2025-09-01", "2025-10-01", "2025-11-01"];
+    const revenue = ["57130.02", "54076.37", "60410.18", "64012.67"];
+    const result = (id: string, title: string, columns: string[], rows: string[][]) => ({
+      phase_id: id, phase_name: title, phase_icon: "", status: "complete", summary: "", caveats: [],
+      findings: [{ finding_id: id, title, claim: null, interpretation: "", sql: "SELECT 1", columns, rows,
+        row_count: rows.length, key_numbers: [], chart_type: "auto", stat_note: null, is_significant: false }] });
+    const shorter = "Monthly revenue and order count by month — Sep – Nov 2025";
+    const report = { headline: "Revenue grew", executive_summary: "", confidence: "HIGH", phases: [
+      result("adhoc_2", shorter, ["month", "monthly_revenue", "orders"], months.slice(1).map((m, i) => [m, revenue[i + 1], String(655 + i)])),
+      result("adhoc_3", "Monthly revenue by month — Aug – Nov 2025", ["month", "monthly_revenue"], months.map((m, i) => [m, revenue[i]])),
+    ] } as never;
+    const { container } = render(<ReportView report={report} onShowSource={vi.fn()} />);
+    expect([...container.querySelectorAll("figcaption")].map((f) => f.textContent)).toEqual(["Monthly revenue by month — Aug – Nov 2025"]);
+    expect(screen.getByTitle(`Data + SQL behind “${shorter}”`)).toBeInTheDocument();
+    expect(screen.queryByText(/Data · 3 rows/)).not.toBeInTheDocument();
+  });
+
+  it("draws two different series both", () => {
+    const result = (id: string, title: string, rows: string[][]) => ({
+      phase_id: id, phase_name: title, phase_icon: "", status: "complete", summary: "", caveats: [],
+      findings: [{ finding_id: id, title, claim: null, interpretation: "", sql: "SELECT 1", columns: ["month", "value"], rows,
+        row_count: rows.length, key_numbers: [], chart_type: "auto", stat_note: null, is_significant: false }] });
+    const report = { headline: "Revenue grew", executive_summary: "", confidence: "HIGH", phases: [
+      result("adhoc_2", "Revenue by month — Sep – Nov 2025", [["2025-09-01", "54076.37"], ["2025-10-01", "60410.18"], ["2025-11-01", "64012.67"]]),
+      result("adhoc_3", "Orders by month — Aug – Nov 2025", [["2025-08-01", "663"], ["2025-09-01", "655"], ["2025-10-01", "707"], ["2025-11-01", "703"]]),
+    ] } as never;
+    const { container } = render(<ReportView report={report} onShowSource={vi.fn()} />);
+    expect(container.querySelectorAll("figcaption")).toHaveLength(2);
+  });
+});
