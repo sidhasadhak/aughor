@@ -174,3 +174,6 @@ evals/llm_exp/
 # Untracked on purpose: this repo is public, and redistributing a skill library inside
 # it is a deliberate decision, not a side effect of running an importer.
 data/packs/
+
+# A vitest run started from the repo root writes its cache here; there is no root package.
+/node_modules/
