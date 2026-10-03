@@ -45,6 +45,7 @@ const DRAWINGS = {
   "components/ERDiagram.tsx":       "relationship edges between table cards",
   "components/ProcessMapper.tsx":   "the process map itself — nodes, edges, hit areas",
   "components/brief/Sparkline.tsx": "the sparkline path, area fill and end dot",
+  "components/query/GeometryOutline.tsx": "a cell's geometry drawn to its own bounds — paths and dots computed per value (DE-5e)",
   "components/DomainIntelPanel.tsx":"an empty-state illustration of a linked network",
   "components/agentops/ActivityChart.tsx":
     "stacked run bars, the hatch pattern and the brush overlay — chart marks with\n     pointer semantics (drag-to-brush over discrete buckets), not a glyph",

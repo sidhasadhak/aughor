@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { CellMenu, type CellMenuTarget } from "@/components/query/CellMenu";
 import { ColumnValuePicker, type LiveDistinct } from "@/components/query/ColumnValuePicker";
+import { ValueViewer } from "@/components/query/ValueViewer";
 import { NULL_GLYPH } from "@/lib/query/cellMenu";
 import type { TypedColumn } from "@/lib/api";
 
@@ -87,19 +88,6 @@ const norm = (s: Sel) => ({
  *  columns, which is not a view of anything; DataGrip transposes a page for the same
  *  reason. The cap is STATED on screen rather than silently applied. */
 const TRANSPOSE_ROWS = 30;
-
-/** Pretty-print for the value viewer: JSON gets indented, everything else is shown
- *  exactly as it came back. No trimming — the viewer exists precisely for the values
- *  the cell had to truncate. */
-function viewerText(v: Cell): string {
-  if (v === null || v === undefined) return NULL_GLYPH;
-  const s = String(v);
-  const t = s.trim();
-  if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
-    try { return JSON.stringify(JSON.parse(t), null, 2); } catch { /* not JSON after all */ }
-  }
-  return s;
-}
 
 export function ResultsGrid({
   columns,
@@ -717,28 +705,10 @@ export function ResultsGrid({
           the grid rather than floating over it, so the row it came from stays on
           screen beside it. */}
       {showValue && sel && (
-        <div style={{ flexShrink: 0, borderTop: "1px solid var(--b1)", background: "var(--bg-1)",
-          display: "flex", flexDirection: "column", maxHeight: 220 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px" }}>
-            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{focusedName}</span>
-            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-              row {sel.r1 + 1}{focused === null ? " · NULL" : ` · ${formatCount(String(focused).length)} chars`}
-            </span>
-            <span style={{ flex: 1 }} />
-            <Button size="xs" variant="ghost"
-              onClick={() => { navigator.clipboard?.writeText(focused === null ? "" : String(focused)).catch(() => {}); }}>
-              <Icon name="copy" size={12} /> Copy value
-            </Button>
-            <Button size="xs" variant="ghost" onClick={() => setShowValue(false)} aria-label="Close">
-              <Icon name="close" size={12} />
-            </Button>
-          </div>
-          <pre className="aug-fs-sm" data-testid="grid-value-text" style={{ margin: 0, padding: "0 10px 10px",
-            overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
-            fontFamily: "var(--font-mono)", color: focused === null ? "var(--t3)" : "var(--t2)" }}>
-            {viewerText(focused)}
-          </pre>
-        </div>
+        // DE-5e — by what the value is: a JSON tree, an image once asked, a geometry's outline, or the text.
+        <ValueViewer value={focused} column={focusedName} row={sel.r1 + 1}
+          declaredType={transposed ? null : (columnsTyped?.find(c => c.name === focusedName)?.type ?? null)}
+          onClose={() => setShowValue(false)} />
       )}
     </div>
   );

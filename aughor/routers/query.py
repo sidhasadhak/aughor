@@ -190,7 +190,35 @@ def _json_cell(v):
     """A DB value as a JSON-native cell: real null, native numbers/strings/bools,
     ISO strings for temporal types, strings for everything JSON can't say
     (bytes, UUIDs, intervals). Decimal → float: this is a display path, and the
-    legacy string shape remains available where exactness matters."""
+    legacy string shape remains available where exactness matters.
+
+    DE-5e — a cell is a SCALAR, by the contract the grid reads (`TypedQueryResult.rows`): a STRUCT, MAP,
+    LIST or JSON value arrives as its JSON text, which the viewer parses back into a tree, and bytes
+    arrive as hex — the one text every engine's binary and WKB geometry reads the same in. Measured
+    before: a DuckDB STRUCT reached the grid as an object (rendered `[object Object]`), bytes as Python's
+    `b'…'` repr and a Postgres BYTEA as `<memory at 0x…>`."""
+    import datetime as _dt
+    import decimal as _dec
+    import json as _json
+    import math as _math
+    if v is None or isinstance(v, (bool, int, str)):
+        return v
+    if isinstance(v, float):
+        return v if _math.isfinite(v) else str(v)
+    if isinstance(v, _dec.Decimal):
+        return float(v)
+    if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
+        return v.isoformat()
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        return bytes(v).hex()
+    if isinstance(v, (list, tuple, dict)):
+        return _json.dumps(_json_value(v), ensure_ascii=False)
+    return str(v)
+
+
+def _json_value(v):
+    """A nested value as JSON-native Python, for `_json_cell` to serialise — the same conversions as a
+    cell, one level down, so a Decimal inside a STRUCT is a number and a date inside a LIST is ISO text."""
     import datetime as _dt
     import decimal as _dec
     import math as _math
@@ -202,10 +230,12 @@ def _json_cell(v):
         return float(v)
     if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
         return v.isoformat()
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        return bytes(v).hex()
     if isinstance(v, (list, tuple)):
-        return [_json_cell(x) for x in v]
+        return [_json_value(x) for x in v]
     if isinstance(v, dict):
-        return {str(k): _json_cell(x) for k, x in v.items()}
+        return {str(k): _json_value(x) for k, x in v.items()}
     return str(v)
 
 

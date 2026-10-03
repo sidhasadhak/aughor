@@ -159,7 +159,8 @@ def test_a_warehouse_offers_typed_values_named_for_the_stage_and_a_bounded_read(
     ("INT64", None, None, "BIGINT"), ("FLOAT64", None, None, "DOUBLE"), ("NUMERIC", None, None, "DECIMAL(38,9)"),
     ("NUMERIC", 12, 2, "DECIMAL(12,2)"), ("FIXED", 38, 0, "BIGINT"), ("NEWDECIMAL", 10, 4, "DECIMAL(10,4)"),
     ("BOOL", None, None, "BOOLEAN"), ("NEWDATE", None, None, "DATE"), ("TIMESTAMP_NTZ", None, None, "TIMESTAMP"),
-    ("DATETIME", None, None, "TIMESTAMP"), ("GEOGRAPHY", None, None, "VARCHAR"), ("", None, None, ""),
+    # DE-5e: a shape, a document or bytes keeps its own name — the stage reads it as text all the same.
+    ("DATETIME", None, None, "TIMESTAMP"), ("GEOGRAPHY", None, None, "GEOGRAPHY"), ("", None, None, ""),
 ])
 def test_a_driver_type_is_named_the_way_the_stage_reads_it(kind, precision, scale, named):
     from aughor.connectors.base import stage_type

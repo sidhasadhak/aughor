@@ -93,6 +93,50 @@ describe("DE-5b — the right-click menu feeds the filter chips", () => {
     expect(screen.getByTestId("grid-value-text")).toHaveTextContent("Shipped");
   });
 
+  describe("DE-5e — the viewer shows a value by what it is, and says how it read it", () => {
+    const RICH_COLUMNS = ["doc", "shape", "pic"];
+    const RICH_TYPED = [{ name: "doc", type: "JSON" }, { name: "shape", type: "VARCHAR" }, { name: "pic", type: "VARCHAR" }];
+    const RICH_ROWS: Cell[][] = [['{"a": [1, 2], "b": {"c": null}}', "POINT (4.9 52.37)", "https://img.example.com/cat.png"]];
+    const open = (text: string) => {
+      render(<ResultsGrid columns={RICH_COLUMNS} columnsTyped={RICH_TYPED} rows={RICH_ROWS} onAddFilter={() => {}} />);
+      fireEvent.contextMenu(screen.getByText(text));
+      fireEvent.click(screen.getByTestId("cell-open"));
+    };
+
+    it("a JSON document is a tree, with the text one toggle away", () => {
+      open('{"a": [1, 2], "b": {"c": null}}');
+      expect(screen.getByTestId("viewer-kind")).toHaveTextContent("JSON · declared JSON");
+      const tree = screen.getByTestId("json-tree");
+      expect(tree).toHaveTextContent("{2 keys}");
+      expect(tree).toHaveTextContent("a: [2 items]");
+      expect(tree).toHaveTextContent("c: ∅");
+      // Collapsing a node hides its children and keeps its summary.
+      fireEvent.click(screen.getAllByTestId("json-node")[1]);
+      expect(tree).not.toHaveTextContent("0: 1");
+      expect(tree).toHaveTextContent("a: [2 items]");
+      fireEvent.click(screen.getByTestId("viewer-raw"));
+      expect(screen.getByTestId("grid-value-text")).toHaveTextContent('"a": [');
+    });
+
+    it("a geometry is drawn to its own bounds, and the caption says what it is drawn from", () => {
+      open("POINT (4.9 52.37)");
+      expect(screen.getByTestId("viewer-kind")).toHaveTextContent("geometry · WKT, read from the text, declared VARCHAR");
+      expect(screen.getByTestId("geometry-outline")).toBeInTheDocument();
+      expect(screen.getByTestId("geometry-caption"))
+        .toHaveTextContent("Point · 1 position · longitude 4.9 to 4.9, latitude 52.37 to 52.37");
+      expect(screen.getByTestId("geometry-caption")).toHaveTextContent("not on a map");
+    });
+
+    it("an image URL is not loaded until asked, and says why", () => {
+      const { container } = (() => { open("https://img.example.com/cat.png"); return { container: document.body }; })();
+      expect(screen.getByTestId("viewer-kind")).toHaveTextContent("image URL · img.example.com, declared VARCHAR");
+      expect(container.querySelector("img")).toBeNull();
+      expect(screen.getByTestId("image-note")).toHaveTextContent("loading it tells img.example.com that you looked");
+      fireEvent.click(screen.getByTestId("image-load"));
+      expect(screen.getByTestId("image-view")).toHaveAttribute("src", "https://img.example.com/cat.png");
+    });
+  });
+
   it("without a chip bar to feed, the menu offers copy and open only, and no column has a picker", () => {
     render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} />);
     expect(screen.queryAllByTestId("grid-col-pick")).toHaveLength(0);

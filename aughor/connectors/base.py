@@ -23,11 +23,29 @@ _FLOAT_KINDS = frozenset({"FLOAT", "FLOAT64", "DOUBLE", "REAL"})
 _DECIMAL_KINDS = frozenset({"NUMERIC", "BIGNUMERIC", "DECIMAL", "NEWDECIMAL", "FIXED", "NUMBER"})
 
 
+#: DE-5e — the kinds whose own name is kept: a document, a shape or bytes. The stage reads these as text (its
+#: `_empty_type` falls through to a string for any name it does not know), and the grid's type line and value
+#: viewer read them for what they are. Measured before: BigQuery's GEOGRAPHY and JSON, Snowflake's VARIANT,
+#: OBJECT and ARRAY, MySQL's JSON and GEOMETRY and every engine's bytes all reached the web as "VARCHAR".
+_KEPT_KINDS = frozenset({
+    "JSON", "JSONB", "VARIANT", "OBJECT", "ARRAY", "RECORD", "STRUCT", "LIST", "MAP", "ROW", "SUPER",
+    "GEOGRAPHY", "GEOMETRY", "GEOPOINT",
+    "BYTES", "BLOB", "BINARY", "VARBINARY", "BYTEA", "TINY_BLOB", "MEDIUM_BLOB", "LONG_BLOB",
+})
+
+
 def stage_type(kind: object, precision: object = None, scale: object = None) -> str:
     """A driver's column type in the names the cross-source stage reads — BIGINT, DOUBLE, DECIMAL(p,s), BOOLEAN, DATE,
     TIMESTAMP, VARCHAR. The stage types a column from its values, so this name decides only a column holding no value,
-    which would otherwise be staged as text."""
+    which would otherwise be staged as text.
+
+    DE-5e: a document, shape or bytes kind keeps its own name (`_KEPT_KINDS`, the bare word before any `(…)` or
+    `<…>`), because the name is a fact the person reads under the column and the viewer reads to open the value;
+    the stage still types such a column from its values, and an all-null one as text."""
     k = str(kind or "").strip().upper()
+    bare = k.split("(", 1)[0].split("<", 1)[0].strip()
+    if bare in _KEPT_KINDS:
+        return k
     if k in _INTEGER_KINDS:
         return "BIGINT"
     if k in _FLOAT_KINDS:

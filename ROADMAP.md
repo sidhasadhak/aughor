@@ -10574,6 +10574,40 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > not built; the bound path stays at the connector's cap; "Load more" is a window over a re-run, so a table
 > that changed between pages shows it at the seam, and only an ORDER BY makes the seam exact. Next: DE-5e.
 
+> **Status 2026-10-03 — DE-5e BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first, and the
+> premise was wrong in the useful direction:* no engine hands the web a geometry it can recognise by type.
+> DuckDB's spatial extension is never installed (and could not be downloaded from the build machine, HTTP 403);
+> every warehouse connector's `stage_type` named a GEOGRAPHY, GEOMETRY, JSON, VARIANT, OBJECT, ARRAY, STRUCT or
+> BYTES column "VARCHAR" — a test pinned it — and Postgres names a PostGIS column `TYPE(<oid>)`; the value shapes
+> differ by engine (BigQuery WKT text, Snowflake GeoJSON text, PostGIS hex EWKB, MySQL bytes with a 4-byte SRID
+> before the WKB); and on the value path a DuckDB STRUCT reached the grid as an object (`[object Object]`), bytes
+> as Python's `b'…'` repr and a BYTEA as `<memory at 0x…>`. *Built, at the causes first:* a cell is a scalar by
+> the grid's own contract — a STRUCT, MAP, LIST or JSON value arrives as its JSON text and bytes as hex, the one
+> text every engine's binary and WKB reads the same in (`routers/query.py _json_cell`); a document, shape or
+> bytes kind keeps its own type name through `stage_type` (the stage's `_empty_type` already reads any name it
+> does not know as text), so the type line under the column says GEOGRAPHY where it said VARCHAR. *Then the
+> viewers:* `web/lib/query/cellKind.ts` reads what a value IS from the value first and the declared type second
+> — WKT (all seven types, Z/M, EMPTY, an `SRID=n;` prefix), GeoJSON (a geometry or a Feature), WKB as hex (plain,
+> PostGIS EWKB with its flags and SRID, ISO type codes, MySQL's SRID prefix), an image URL or inline image, a
+> whole JSON document — strictly: a WKB must consume every byte and a WKT parse to its end, so a hex id is never
+> a shape; `ValueViewer.tsx` replaces the grid's one text pane with a JSON tree (collapsible, nulls as `∅`), an
+> image that is not loaded until asked — the note says loading it tells that host you looked — and a geometry
+> drawn to its own bounds (`GeometryOutline.tsx`: dots, polylines, closed paths; no base map, and the caption
+> says so, with the type, the positions, the bounds, whether they fit longitude and latitude, and the SRID); the
+> header says how the value was read ("geometry · WKT, read from the text, declared VARCHAR"), and a Text toggle
+> shows the raw value under any viewer. *Receipt:* `web/lib/query/cellKind.test.ts` (11) — the three encodings,
+> the refusals (an md5, a byte too many, a sha256-length string that starts like a point, an unknown type code),
+> bounds, the one-line description, images, documents, the kind and how it is said; `ResultsGrid.test.tsx` opens
+> a JSON cell as a tree and collapses a node, a WKT cell as an outline with its caption, an image URL that is not
+> loaded until the click; `tests/unit/test_de5e_cell_values.py` (24) — scalars from a DuckDB STRUCT, LIST, MAP,
+> JSON and BLOB through `/query/run` with their own type names, the hex and JSON-text cells, sixteen kind names
+> kept and five stage names unchanged, the stage's all-null fallback; tsc and the seven gates green. *Left,
+> named:* no live geometry was read from any engine on the build machine (no spatial extension, no warehouse
+> driver) — the parsers are held to the encodings' definitions and to hand-built bytes, and the first live
+> GEOGRAPHY from theLook is the owed receipt; PostGIS still shows `TYPE(<oid>)` as its name, the value is read
+> all the same; no map, by decision — the outline is the shape at its own scale; a binary that is not WKB shows
+> as hex text, there is no hex-dump pane. Next: DE-5f.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each
