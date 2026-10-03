@@ -82,6 +82,26 @@ describe("DE-5d — the cut is said for what it is", () => {
   });
 });
 
+describe("DE-5f — a result opened from a cell is a page of its own", () => {
+  it("the pager names it, and its count runs with its own bound value", async () => {
+    api.countQueryRows.mockResolvedValue({ total: 2, as_of: "2026-10-03T12:31:35+00:00", duration_ms: 1, sql: "", error: null, code: null });
+    const related = result({
+      sql: 'SELECT * FROM "orders" WHERE "buyer" = :v', params: { v: "c'1" },
+      label: "orders rows related to customers.id = c'1", rows: [[1], [2]], row_count: 2,
+      caveats: ["Related through customers.id = orders.buyer — 100% value overlap; declared foreign key."],
+    });
+    render(
+      <ResultsPanel results={[result(), related]} resultIdx={1} onResultIdx={() => {}} error="" running={false}
+        connId="c1" pageSize={3} runKey={1} params={{ lo: 0 }} />,
+    );
+    expect(screen.getByTestId("results-pager")).toHaveTextContent("Results 2 of 2 · orders rows related to customers.id = c'1");
+    expect(screen.getByText(/Related through customers.id = orders.buyer/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("count-all"));
+    await waitFor(() => expect(screen.getByTestId("count-result")).toHaveTextContent("2 rows in all"));
+    expect(api.countQueryRows).toHaveBeenCalledWith("c1", 'SELECT * FROM "orders" WHERE "buyer" = :v', { v: "c'1" });
+  });
+});
+
 describe("DE-5d — Count all rows", () => {
   it("asks the server for the statement with the run's bound values and shows the total with its as-of", async () => {
     api.countQueryRows.mockResolvedValue({

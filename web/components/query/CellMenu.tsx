@@ -38,6 +38,7 @@ export function CellMenu({
   onFilter,
   onPickValues,
   onOpenValue,
+  onRelated,
   onClose,
 }: {
   target: CellMenuTarget;
@@ -47,6 +48,9 @@ export function CellMenu({
   onFilter: (phrase: string) => void;
   onPickValues: () => void;
   onOpenValue: () => void;
+  /** DE-5f — open the rows related to this value through a verified join. Absent when the statement
+   *  reads no one table, or the grid is transposed: then no column is any table's column. */
+  onRelated?: () => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -94,7 +98,9 @@ export function CellMenu({
           </>
         )}
         {canFilter && item(`Pick values in ${target.column}…`, () => { onPickValues(); onClose(); }, "list", "cell-pick-values")}
-        {canFilter && rule}
+        {onRelated && !target.header && !isNull
+          && item("Related rows…", () => { onRelated(); onClose(); }, "link", "cell-related")}
+        {(canFilter || (onRelated && !target.header && !isNull)) && rule}
         {!target.header && (
           <>
             {item("Copy value", () => copy(target.value === null ? "" : String(target.value)), "copy", "cell-copy")}

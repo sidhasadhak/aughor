@@ -137,6 +137,64 @@ describe("DE-5b — the right-click menu feeds the filter chips", () => {
     });
   });
 
+  describe("DE-5f — related rows through the joins the data bears out", () => {
+    const JOINS = {
+      table: "orders", column: "status", ontology: "not built" as const,
+      joins: [
+        { table: "orders", column: "status", other_table: "statuses", other_column: "code", match: "declared" as const,
+          overlap: 1, verdict: "verified" as const, cardinality: null, source: "join_map" as const, openable: true,
+          sentence: "100% value overlap; declared foreign key" },
+        { table: "orders", column: "status", other_table: "shipments", other_column: "status", match: "inferred" as const,
+          overlap: 0, verdict: "rejected" as const, cardinality: null, source: "join_map" as const, openable: false,
+          sentence: "0% value overlap — the columns share a name and not their values" },
+      ],
+    };
+
+    it("is not offered when the statement reads no one table", () => {
+      render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}} />);
+      fireEvent.contextMenu(screen.getByText("Complete"));
+      expect(screen.queryByTestId("cell-related")).toBeNull();
+    });
+
+    it("lists each join with its evidence, offers the ones the data bears out, and opens through the owner", async () => {
+      const fetchRelated = vi.fn(async () => JOINS);
+      const onOpenRelated = vi.fn();
+      render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}}
+        sourceTable="orders" fetchRelated={fetchRelated} onOpenRelated={onOpenRelated} />);
+      fireEvent.contextMenu(screen.getByText("Complete"));
+      fireEvent.click(screen.getByTestId("cell-related"));
+      await waitFor(() => expect(screen.getAllByTestId("related-join")).toHaveLength(2));
+      expect(fetchRelated).toHaveBeenCalledWith("status");
+      const [open, closed] = screen.getAllByTestId("related-open");
+      expect(open).toHaveTextContent('statuses · code = "Complete"');
+      expect(open).not.toBeDisabled();
+      expect(closed).toBeDisabled();
+      const sentences = screen.getAllByTestId("related-sentence").map(el => el.textContent ?? "");
+      expect(sentences[0]).toContain("100% value overlap; declared foreign key · the schema");
+      expect(sentences[1]).toContain("0% value overlap — the columns share a name and not their values");
+      fireEvent.click(open);
+      expect(onOpenRelated).toHaveBeenCalledWith(JOINS.joins[0], "status", "Complete");
+      expect(screen.queryByTestId("related-rows-picker")).toBeNull();
+    });
+
+    it("says when no verified join touches the column, and whether an ontology is built", async () => {
+      render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}}
+        sourceTable="orders" fetchRelated={async () => ({ ...JOINS, joins: [] })} onOpenRelated={() => {}} />);
+      fireEvent.contextMenu(screen.getByText("Shipped"));
+      fireEvent.click(screen.getByTestId("cell-related"));
+      await waitFor(() => expect(screen.getByTestId("related-note")).toHaveTextContent(
+        "No verified join touches orders.status — nothing to open. No ontology is built for this connection"));
+    });
+
+    it("is not offered on a NULL", () => {
+      render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}}
+        sourceTable="orders" fetchRelated={async () => JOINS} onOpenRelated={() => {}} />);
+      fireEvent.contextMenu(screen.getByText("∅"));
+      expect(screen.getByTestId("cell-menu")).toBeInTheDocument();
+      expect(screen.queryByTestId("cell-related")).toBeNull();
+    });
+  });
+
   it("without a chip bar to feed, the menu offers copy and open only, and no column has a picker", () => {
     render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} />);
     expect(screen.queryAllByTestId("grid-col-pick")).toHaveLength(0);

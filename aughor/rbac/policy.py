@@ -116,6 +116,8 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # DE-5d — the count and the next page of a cut result run the person's statement again.
     ("POST", "/query/count"): P.ANALYSIS_RUN,
     ("POST", "/query/more"): P.ANALYSIS_RUN,
+    # DE-5f — the rows related to a value run a composed statement through the same door.
+    ("POST", "/query/related"): P.ANALYSIS_RUN,
     ("POST", "/query/semantic"): P.ANALYSIS_RUN,
     ("POST", "/query/semantic/text-columns"): P.ANALYSIS_RUN,
     ("POST", "/query/cross-source-join"): P.ANALYSIS_RUN,

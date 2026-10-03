@@ -143,6 +143,7 @@
   "aughor/routers/query.py::query_count._work::execute_with_params::{_source}": {"dialect": "native", "author": "person", "note": "DE-5d: the count, with the run's bound values"},
   "aughor/routers/query.py::query_more._work::execute_typed::{_source}": {"dialect": "native", "author": "person", "note": "DE-5d: one page of the person's statement, through the run's door under the run's label"},
   "aughor/routers/query.py::query_more._work::execute_with_params_typed::{_source}": {"dialect": "native", "author": "person", "note": "DE-5d: the page, with the run's bound values"},
+  "aughor/routers/query.py::query_related._work::execute_with_params_typed::{_source}": {"dialect": "generated", "author": "person", "note": "DE-5f: the rows on the other side of a verified join — composed here, identifiers quoted for the engine, the value bound; run under the person's label through the run's door"},
   "aughor/routers/query.py::query_semantic._work::execute::semantic_operator": {"dialect": "native", "author": "person", "note": "a person's SQL inside a portable wrapper"},
   "aughor/routers/query.py::query_semantic_text_columns._work::execute::__semantic_cols__": {"dialect": "native", "author": "person", "note": "a person's SQL inside a portable wrapper"},
   "aughor/semantic/answer_divergence.py::measure_impact::execute::divergence-impact": {"dialect": "native", "author": "stored", "note": "the SQL earlier runs of the question executed"},

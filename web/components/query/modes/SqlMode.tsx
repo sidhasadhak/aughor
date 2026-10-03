@@ -146,6 +146,15 @@ export function SqlMode({
   // page from the results footer is of the statement that RAN, with the values it ran with.
   const [ranParams, setRanParams] = useState<Record<string, unknown> | undefined>(undefined);
   const [runKey, setRunKey] = useState(0);
+  // DE-5f — a result the panel opened from a cell (related rows) becomes the next page of the pager.
+  const resultsRef = useRef<TypedQueryResult[]>([]);
+  useEffect(() => { resultsRef.current = results; }, [results]);
+  const appendResult = useCallback((r: TypedQueryResult) => {
+    const next = [...resultsRef.current, r];
+    resultsRef.current = next;
+    setResults(next);
+    setResultIdx(next.length - 1);
+  }, []);
   const appendRows = useCallback((idx: number, page: TypedQueryPage) => {
     setResults(prev => prev.map((r, i) => i !== idx ? r : {
       ...r,
@@ -849,6 +858,7 @@ export function SqlMode({
               pageSize={limit}
               runKey={runKey}
               onAppendRows={appendRows}
+              onAppendResult={appendResult}
               failedSql={failedSql}
               onApplyFix={(fixed) => {
                 // Into the document, never into a run. Applying is the user accepting a

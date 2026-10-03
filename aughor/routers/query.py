@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -777,6 +777,148 @@ async def query_more(body: _QueryMoreRequest, request: Request):
                              code=CODE_FAILED, duration_ms=duration_ms, caveats=caveats)
     typed = _typed_response(result, payload, _limit, duration_ms, None, caveats, requested_sql=body.sql)
     typed.update({"offset": _offset, "ordered": ordered})
+    return typed
+
+
+# ── DE-5f — the rows related to a value, through the joins the data bears out ───────────────────
+#
+# Two doors (`aughor.sql.related`): the joins that touch one table column, each with its evidence — the
+# engine's declared key, the measured value overlap, the ontology's cardinality — and the rows on the other
+# side of one of them for one value. The rows are opened only through a join the data bears out (verified,
+# or declared and not disputed); a name match nobody probed, or a pair the values disprove, is listed with
+# its evidence and refused. The statement is composed here, identifiers quoted for the engine and the value
+# BOUND, and runs through the run's door under the run's label like every other statement in this file.
+
+CODE_JOIN_NOT_VERIFIED = "JOIN_NOT_VERIFIED"
+
+
+@router.get("/connections/{conn_id}/related-joins")
+async def related_joins_route(conn_id: str, table: str, column: str, schema: Optional[str] = None):
+    """DE-5f — every join that touches ``table.column``, in either direction, with its evidence in the
+    catalog's words: the ontology's relationships first (overlap and measured cardinality), then the verified
+    join map. `openable` says whether the rows may be opened through it. `ontology` says whether one is built."""
+    from aughor.db.connection import open_connection_for
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        try:
+            joins, notes = _related_joins_for(db, conn_id, table, column, schema)
+        finally:
+            _close_quietly(db)
+        return {"table": table, "column": column, "joins": [j.as_dict() for j in joins], **notes}
+
+    return await loop.run_in_executor(None, _work)
+
+
+def _related_joins_for(db, conn_id: str, table: str, column: str, schema: Optional[str]):
+    from aughor.ontology.store import load_latest_ontology
+    from aughor.routers._shared import get_schema_cached
+    from aughor.sql.related import related_joins
+    schema_text = get_schema_cached(conn_id, db)
+    try:
+        ontology = load_latest_ontology(conn_id, schema or None)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the ontology is best-effort here; the join map stands", counter="query.related.ontology")
+        ontology = None
+    return related_joins(db, conn_id, table, column, schema_text=schema_text, ontology=ontology)
+
+
+class _RelatedRowsRequest(BaseModel):
+    conn_id: str
+    #: The column the value was read from, and the value.
+    table: str
+    column: str
+    value: Any
+    #: The other side of the join to open.
+    other_table: str
+    other_column: str
+    schema_name: Optional[str] = None
+    limit: int = 500
+    source: Literal["query_builder", "query_workbench"] = "query_workbench"
+
+
+@router.post("/query/related")
+async def query_related(body: _RelatedRowsRequest, request: Request):
+    """DE-5f — the rows of ``other_table`` whose ``other_column`` holds the value, typed, through the run's door
+    under the run's label with the value bound — only through a join the data bears out. A refusal is the typed
+    shape with no rows and a code: `JOIN_NOT_VERIFIED` (with the join's own evidence, when there is one),
+    `BLOCKED`, `FAILED`. The response carries the statement, its bound `params`, a `label` for the pager, and
+    the join's evidence as a caveat, so the rows say what relates them."""
+    import time as _t
+    from aughor.db.connection import gate_user_sql, open_connection_for
+    from aughor.sql.related import find_edge, related_label, related_sql
+
+    _check_conn_org(request, body.conn_id)
+    if body.value is None:
+        raise HTTPException(status_code=400, detail="a NULL has no related rows — there is no value to match")
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _refusal(error: str, code: Optional[str], join=None, caveats: Optional[list] = None) -> dict:
+        return {"columns": [], "columns_typed": [], "rows": [], "row_count": 0, "truncated": False, "cut_by": None,
+                "duration_ms": 0.0, "sql": "", "params": {"v": body.value}, "cached": False, "error": error,
+                "code": code, "receipt_id": None, "caveats": list(caveats or []), "format": "typed",
+                "label": related_label(body.other_table, body.table, body.column, body.value),
+                "join": join.as_dict() if join is not None else None}
+
+    loop = asyncio.get_running_loop()
+    try:
+        joins, _notes = await loop.run_in_executor(
+            None, lambda: _related_joins_for(db, body.conn_id, body.table, body.column, body.schema_name))
+    except Exception as exc:
+        _close_quietly(db)
+        return _refusal(f"the joins could not be read: {exc}", CODE_FAILED)
+    edge = find_edge(joins, body.other_table, body.other_column)
+    if edge is None:
+        _close_quietly(db)
+        return _refusal(f"no verified join from {body.table}.{body.column} to {body.other_table}."
+                        f"{body.other_column} — the rows are not opened on a guess", CODE_JOIN_NOT_VERIFIED)
+    if not edge.openable:
+        _close_quietly(db)
+        return _refusal(f"{body.table}.{body.column} = {edge.other_table}.{edge.other_column}: {edge.sentence}",
+                        CODE_JOIN_NOT_VERIFIED, join=edge)
+
+    _sql = related_sql(db, edge.other_table, edge.other_column, body.schema_name)
+    blocked = gate_user_sql(body.conn_id, body.source, _sql)
+    if blocked is not None:
+        _close_quietly(db)
+        return _refusal(blocked.error or "refused by the safety gate", CODE_BLOCKED, join=edge)
+    _limit = max(1, min(int(body.limit), 50_000))
+    _params = {"v": body.value}
+    _source = body.source
+    _wrapped = f"SELECT * FROM ({_sql}) __q LIMIT {_limit + 1}"
+    evidence = (f"Related through {body.table}.{body.column} = {edge.other_table}.{edge.other_column} — "
+                f"{edge.sentence}.")
+
+    def _work():
+        t0 = _t.monotonic()
+        try:
+            result, payload = db.execute_with_params_typed(_source, _wrapped, _params)
+        finally:
+            _close_quietly(db)
+        return result, payload, (_t.monotonic() - t0) * 1000
+
+    result, payload, duration_ms = await _watched_as_the_run(db, _work, body, request)
+    caveats = [evidence, *list(getattr(result, "caveats", []) or [])]
+    if result.error:
+        out = _refusal(result.error, CODE_FAILED, join=edge, caveats=caveats)
+        out.update({"sql": _sql, "duration_ms": round(duration_ms, 1)})
+        return out
+    if payload is None:
+        out = _refusal("this connector returns no typed rows, so the related rows cannot be shown in the grid",
+                       CODE_FAILED, join=edge, caveats=caveats)
+        out.update({"sql": _sql, "duration_ms": round(duration_ms, 1)})
+        return out
+    typed = _typed_response(result, payload, _limit, duration_ms, None, caveats, requested_sql=_sql)
+    typed.update({"params": _params, "label": related_label(edge.other_table, body.table, body.column, body.value),
+                  "join": edge.as_dict(), "code": None})
     return typed
 
 

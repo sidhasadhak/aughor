@@ -40,7 +40,8 @@ import { Icon } from "@/components/ui/icon";
 import { csvFilename, downloadText } from "@/lib/query/csv";
 import { EXTRACTORS, extractorById, guessTableName } from "@/lib/query/extractors";
 import { applyFilters } from "@/lib/query/resultFilter";
-import type { TypedQueryPage, TypedQueryResult } from "@/lib/api";
+import type { RelatedJoin, TypedQueryPage, TypedQueryResult } from "@/lib/api";
+import type { Cell } from "@/lib/query/resultFilter";
 
 const noteStyle: React.CSSProperties = { fontSize: 13, color: "var(--t3)" };
 
@@ -103,6 +104,7 @@ export function ResultsPanel({
   pageSize,
   runKey,
   onAppendRows,
+  onAppendResult,
 }: {
   /** SE-8B — every statement's result, in run order. One entry for a single run. */
   results: TypedQueryResult[];
@@ -131,6 +133,9 @@ export function ResultsPanel({
   runKey?: number;
   /** DE-5d — append a page the server returned to `results[idx]`. Without it, no "Load more". */
   onAppendRows?: (idx: number, page: TypedQueryPage) => void;
+  /** DE-5f — add a result the panel opened from a cell (related rows) as a new page of the pager. Without
+   *  it, the cell menu offers no related rows. */
+  onAppendResult?: (result: TypedQueryResult) => void;
 }) {
   // "" | "ok" | "fail" — a click must always produce a visible outcome.
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
@@ -162,13 +167,17 @@ export function ResultsPanel({
   const columns = result?.columns ?? EMPTY_COLS;
   const rawRows = result?.rows ?? EMPTY_ROWS;
   const nextPage = Math.min(Math.max(1, pageSize ?? 500), MAX_PAGE);
+  // DE-5f — a result opened from a cell ran with its own bound value; the run's values are the fallback.
+  const effectiveParams = result?.params ?? params;
+  const [relatedError, setRelatedError] = useState("");
+  useEffect(() => { setRelatedError(""); }, [runKey, resultIdx]);
 
   const countAll = async () => {
     if (!connId || !result) return;
     setCount({ status: "busy" });
     try {
       const { countQueryRows } = await import("@/lib/api");
-      const r = await countQueryRows(connId, result.sql, params);
+      const r = await countQueryRows(connId, result.sql, effectiveParams);
       if (r.total === null) setCount({ status: "failed", message: r.error ?? r.code ?? "no answer" });
       else setCount({ status: "done", total: r.total, asOf: r.as_of });
     } catch (e) {
@@ -183,7 +192,7 @@ export function ResultsPanel({
     try {
       const { loadMoreRows } = await import("@/lib/api");
       // The offset is every row shown so far, filtered or not: the page continues the RESULT.
-      const page = await loadMoreRows(connId, result.sql, rawRows.length, nextPage, params);
+      const page = await loadMoreRows(connId, result.sql, rawRows.length, nextPage, effectiveParams);
       if (page.error) setMoreError(page.error);
       else onAppendRows(resultIdx, page);
     } catch (e) {
@@ -222,6 +231,35 @@ export function ResultsPanel({
       return r.values.length ? { values: r.values, truncated: r.truncated, source } : null;
     };
   }, [connId, sourceTable]);
+
+  // DE-5f — the rows related to a value, through the joins the data bears out. Offered on the same terms
+  // as the live read: the statement reads exactly one table, so a result column is that table's column.
+  const fetchRelated = useMemo(() => {
+    if (!connId || !sourceTable) return undefined;
+    const { table, schema } = sourceTable;
+    return async (column: string) => {
+      const { getRelatedJoins } = await import("@/lib/api");
+      return getRelatedJoins(connId, table, column, schema);
+    };
+  }, [connId, sourceTable]);
+  const onOpenRelated = useMemo(() => {
+    if (!connId || !sourceTable || !onAppendResult) return undefined;
+    const { table, schema } = sourceTable;
+    return async (join: RelatedJoin, column: string, value: Cell) => {
+      setRelatedError("");
+      try {
+        const { openRelatedRows } = await import("@/lib/api");
+        const r = await openRelatedRows(connId, {
+          table, column, value, otherTable: join.other_table, otherColumn: join.other_column, schema,
+        }, nextPage);
+        // A refusal is said where the person is looking, not opened as an empty page.
+        if (r.error && r.code) setRelatedError(r.error);
+        else onAppendResult(r);
+      } catch (e) {
+        setRelatedError(e instanceof Error ? e.message : "the related rows could not be opened");
+      }
+    };
+  }, [connId, sourceTable, onAppendResult, nextPage]);
 
   // DE-5b — a chip from a click on the grid: the same object a typed phrase makes, and the bar
   // opens with it, so the chip is seen the moment it narrows the rows.
@@ -358,8 +396,8 @@ export function ResultsPanel({
               disabled={resultIdx === 0} onClick={() => onResultIdx(resultIdx - 1)}>
               <Icon name="chevl" size={13} />
             </Button>
-            <span className="aug-fs-ui" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
-              Results {resultIdx + 1} of {results.length}
+            <span className="aug-fs-ui" data-testid="results-pager" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
+              Results {resultIdx + 1} of {results.length}{result?.label ? ` · ${result.label}` : ""}
             </span>
             <Button variant="ghost" size="xs" title="Next statement's result"
               disabled={resultIdx >= results.length - 1} onClick={() => onResultIdx(resultIdx + 1)}>
@@ -515,6 +553,9 @@ export function ResultsPanel({
                 onAddFilter={addFilterPhrase}
                 truncated={!!result.truncated}
                 fetchDistinct={fetchDistinct}
+                sourceTable={sourceTable?.table}
+                fetchRelated={fetchRelated}
+                onOpenRelated={onOpenRelated}
               />
             </div>
             {/* Every viz stays MOUNTED — the card seeds its controls once, so an
@@ -619,6 +660,12 @@ export function ResultsPanel({
           <>
             <span>·</span>
             <span data-testid="more-result" style={{ color: "var(--red4)" }}>{moreError}</span>
+          </>
+        )}
+        {relatedError && (
+          <>
+            <span>·</span>
+            <span data-testid="related-result" style={{ color: "var(--red4)" }}>{relatedError}</span>
           </>
         )}
         {result.cached && (<><span>·</span><span>cached</span></>)}

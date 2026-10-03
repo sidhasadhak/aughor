@@ -10608,6 +10608,56 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > all the same; no map, by decision — the outline is the shape at its own scale; a binary that is not WKB shows
 > as hex text, there is no hex-dump pane. Next: DE-5f.
 
+> **Status 2026-10-03 — DE-5f BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:* the
+> ontology's relationships carry the measured value overlap and cardinality, but only between tables that
+> resolve to object types, and one edge per type pair; the join map (`tools/schema.py`) carries declared keys
+> and name matches with no overlap until the join guard probes them (`sql/join_guard.py verified_join_edges`,
+> cached per connection); the one door that opened "linked rows" (`/objects/{type}/{pk}/links/{link}`) needs
+> object types and a measured cardinality and refuses N:N; and the typed `/query/run` response says nothing
+> about which table an output column came from, so the cell menu knows a table only when the statement reads
+> exactly one (`singleTable`, DE-5c's rule). *Built:* `sql/related.py` gathers every join touching one table
+> column in either direction — the ontology's edges first, with their overlap and the cardinality read from
+> this column's side, then the verified join map for the pairs the ontology does not hold — and gives each a
+> verdict and a sentence in the catalog's own words: `verified` ("100% value overlap; declared foreign key"),
+> `declared` ("declared foreign key — not probed"), `disputed` ("DECLARED foreign key, but only 12% value
+> overlap — the declaration and the data disagree"), `rejected` ("0% value overlap — the columns share a name
+> and not their values"), `unprobed` ("name match — not probed, so not opened on the name alone"); only the
+> first two open rows. `GET /connections/{id}/related-joins?table&column` lists them and says whether an
+> ontology is built; `POST /query/related` composes the one statement — `SELECT * FROM "customers" WHERE "id"
+> = :v`, identifiers quoted for the engine, the value BOUND and never in the text — looks the join up again
+> and refuses with `JOIN_NOT_VERIFIED` and the join's own evidence when it is not one the data bears out, then
+> runs it through the run's door under the run's label (`gate_user_sql`, the parse step, the safety check, the
+> row policy, redaction, audit, metering), answering the typed shape with the statement, its `params`, a
+> `label` and the evidence as the first caveat ("Related through orders.buyer = customers.id — 100% value
+> overlap; declared foreign key."). The cell menu offers "Related rows…" when the statement reads one table and
+> the cell is not NULL; the picker lists each join with its sentence and its source (the ontology, the
+> schema), offers the openable ones, shows the others disabled with their evidence, and says when no verified
+> join touches the column and whether an ontology is built; an opened result becomes the next page of the
+> pager, named by its label, and its count and pages run with its own bound value. *Receipt:*
+> `tests/unit/test_de5f_related_rows.py` (17) on a DuckDB with a declared key, a name match the values bear
+> out and one they disprove, probed for real — the declared key at 100% overlap, both sides of the key column,
+> the disproved pair listed and not openable, an empty list for a column no join touches; the rows opened
+> through the declared key with a quoted key bound (`c'1`), one audit row under the run's label, the statement
+> and label and caveat as written; the other way round and through the verified name match; the three
+> refusals (a disproved pair, a pair no join connects, a NULL) and the 404; a saved ontology edge leading
+> with 97% overlap and `N:1`, read as `1:N` from the other side, deduplicating the map's copy, and riding the
+> opened rows' caveat; the six verdicts and their sentences; the statement's quoting for two engines; the
+> RBAC row; the door census holds the new site; 131 tests across the related, census, RBAC, DE-5d, DE-5e,
+> join and metadata suites green. Web: four `ResultsGrid` cases (not offered without a table or on a NULL,
+> the list with its evidence and the disabled rejected join, the empty note) and one `ResultsPanel` case
+> (the labelled page whose count runs with its own value); tsc and the seven gates green; the typed client
+> regenerated. The broad sweep's other failures are the build machine's (no `google`, `pyarrow`, `pymysql` or
+> `opentelemetry`, no vector store) and three not traced to this wave before the commit — two BigQuery
+> binding cases, a pptx caption test and the lowercase-`information_schema` ratchet, whose only hit among
+> this arc's files is DE-3b's `metadata_strategy` literal. *Left, named:* the related rows are offered only
+> when the statement reads one table — a join's
+> result column has no one table to ask until the typed response carries the lineage DE-4 already writes on
+> the receipt; a join the guard could not probe opens only when the engine declares it; the picker reads the
+> joins on each open, the probes being cached per connection; the live ontology receipt is owed where one is
+> built (theLook). Next: Arc DE is built through DE-5f — the owed live receipts (theLook's parse-step audit,
+> lineage count and GEOGRAPHY, the Trino container, Postgres and MySQL metadata reads, BigQuery bytes) wait
+> for the machine that holds the connections.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

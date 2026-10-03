@@ -2999,6 +2999,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/{conn_id}/related-joins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Related Joins Route
+         * @description DE-5f — every join that touches ``table.column``, in either direction, with its evidence in the
+         *     catalog's words: the ontology's relationships first (overlap and measured cardinality), then the verified
+         *     join map. `openable` says whether the rows may be opened through it. `ontology` says whether one is built.
+         */
+        get: operations["related_joins_route_connections__conn_id__related_joins_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections/{conn_id}/restore-samples": {
         parameters: {
             query?: never;
@@ -11292,6 +11314,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/query/related": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Related
+         * @description DE-5f — the rows of ``other_table`` whose ``other_column`` holds the value, typed, through the run's door
+         *     under the run's label with the value bound — only through a join the data bears out. A refusal is the typed
+         *     shape with no rows and a code: `JOIN_NOT_VERIFIED` (with the join's own evidence, when there is one),
+         *     `BLOCKED`, `FAILED`. The response carries the statement, its bound `params`, a `label` for the pager, and
+         *     the join's evidence as a caveat, so the rows say what relates them.
+         */
+        post: operations["query_related_query_related_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/query/run": {
         parameters: {
             query?: never;
@@ -16986,6 +17032,34 @@ export interface components {
              * @default
              */
             reason: string;
+        };
+        /** _RelatedRowsRequest */
+        _RelatedRowsRequest: {
+            /** Column */
+            column: string;
+            /** Conn Id */
+            conn_id: string;
+            /**
+             * Limit
+             * @default 500
+             */
+            limit: number;
+            /** Other Column */
+            other_column: string;
+            /** Other Table */
+            other_table: string;
+            /** Schema Name */
+            schema_name?: string | null;
+            /**
+             * Source
+             * @default query_workbench
+             * @enum {string}
+             */
+            source: "query_builder" | "query_workbench";
+            /** Table */
+            table: string;
+            /** Value */
+            value: unknown;
         };
         /** _RestoreVersionRequest */
         _RestoreVersionRequest: {
@@ -22768,6 +22842,41 @@ export interface operations {
             path: {
                 conn_id: string;
                 entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    related_joins_route_connections__conn_id__related_joins_get: {
+        parameters: {
+            query: {
+                table: string;
+                column: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
             };
             cookie?: never;
         };
@@ -36538,6 +36647,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_QuickFixRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_related_query_related_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_RelatedRowsRequest"];
             };
         };
         responses: {

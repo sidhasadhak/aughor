@@ -3867,6 +3867,67 @@ export interface TypedQueryResult {
   receipt_id?: string | null;
   caveats?: string[];
   format: "typed";
+  /** DE-5f — a result the panel opened from a cell carries the bound values its statement ran with, and a
+   *  label for the pager. A run's result has neither. */
+  params?: Record<string, unknown>;
+  label?: string;
+}
+
+/** DE-5f — one join touching a column, with its evidence in the catalog's words. */
+export interface RelatedJoin {
+  table: string;
+  column: string;
+  other_table: string;
+  other_column: string;
+  match: "declared" | "exact" | "inferred";
+  overlap: number | null;
+  verdict: "verified" | "declared" | "disputed" | "rejected" | "unprobed";
+  cardinality: string | null;
+  source: "ontology" | "join_map";
+  /** Whether rows may be opened through it: verified, or declared and not disputed. */
+  openable: boolean;
+  sentence: string;
+}
+
+export interface RelatedJoinsAnswer {
+  table: string;
+  column: string;
+  joins: RelatedJoin[];
+  ontology: "built" | "not built";
+  /** Why the join map could not be read, when it could not. */
+  join_map?: string;
+}
+
+/** DE-5f — `GET /connections/{id}/related-joins`: the joins the data bears out that touch one column. */
+export async function getRelatedJoins(connId: string, table: string, column: string, schema?: string): Promise<RelatedJoinsAnswer> {
+  const qs = new URLSearchParams({ table, column });
+  if (schema) qs.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/related-joins?${qs.toString()}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Could not read the joins");
+  }
+  return res.json();
+}
+
+/** DE-5f — the rows on the other side of one verified join, for one value. The typed shape, plus the
+ *  statement that ran, its bound `params`, a `label`, the `join` and its evidence as a caveat; a refusal has
+ *  no rows and a `code` (`JOIN_NOT_VERIFIED`, `BLOCKED`, `FAILED`). */
+export interface RelatedRowsResult extends TypedQueryResult {
+  code?: string | null;
+  join?: RelatedJoin | null;
+}
+
+export async function openRelatedRows(
+  connId: string,
+  args: { table: string; column: string; value: unknown; otherTable: string; otherColumn: string; schema?: string },
+  limit = 500, signal?: AbortSignal,
+): Promise<RelatedRowsResult> {
+  return postCutRequest<RelatedRowsResult>("/query/related", {
+    conn_id: connId, table: args.table, column: args.column, value: args.value,
+    other_table: args.otherTable, other_column: args.otherColumn, limit, source: "query_workbench",
+    ...(args.schema ? { schema_name: args.schema } : {}),
+  }, signal);
 }
 
 /** DE-5d — `POST /query/count`: how many rows the statement returns in all. `total` is null on a

@@ -43,8 +43,9 @@ import { Icon } from "@/components/ui/icon";
 import { CellMenu, type CellMenuTarget } from "@/components/query/CellMenu";
 import { ColumnValuePicker, type LiveDistinct } from "@/components/query/ColumnValuePicker";
 import { ValueViewer } from "@/components/query/ValueViewer";
+import { RelatedRowsPicker } from "@/components/query/RelatedRowsPicker";
 import { NULL_GLYPH } from "@/lib/query/cellMenu";
-import type { TypedColumn } from "@/lib/api";
+import type { RelatedJoin, RelatedJoinsAnswer, TypedColumn } from "@/lib/api";
 
 /** The glyph for a real SQL NULL. Distinct from "" on purpose — defined beside the cell helpers (DE-5b),
  *  so the menu and the picker share it without importing the grid. */
@@ -97,10 +98,19 @@ export function ResultsGrid({
   onAddFilter,
   truncated,
   fetchDistinct,
+  sourceTable,
+  fetchRelated,
+  onOpenRelated,
 }: {
   columns: string[];
   columnsTyped?: TypedColumn[];
   rows: Cell[][];
+  /** DE-5f — the one table the statement reads, when it reads one; the related-rows entry needs it. */
+  sourceTable?: string;
+  /** DE-5f — the joins touching a column of that table, with their evidence. */
+  fetchRelated?: (column: string) => Promise<RelatedJoinsAnswer>;
+  /** DE-5f — open the rows on the other side of one join for one value. */
+  onOpenRelated?: (join: RelatedJoin, column: string, value: Cell) => void;
   /** DE-5b/c — a phrase for the filter chips (the grammar in `lib/query/resultFilter`). Absent, the
    *  right-click menu offers only copy and open, and no column has a value picker. */
   onAddFilter?: (phrase: string) => void;
@@ -138,6 +148,10 @@ export function ResultsGrid({
   // index, like the selection, so a hidden column cannot leave it pointing at the wrong one.
   const [menu, setMenu] = useState<CellMenuTarget | null>(null);
   const [picker, setPicker] = useState<number | null>(null);
+  // DE-5f — the related-rows picker: which cell asked, and where the menu was.
+  const [related, setRelated] = useState<{ column: string; value: Cell; x: number; y: number } | null>(null);
+  const canRelate = !!sourceTable && !!fetchRelated && !!onOpenRelated && !transposed;
+  const fetchJoinsFor = useCallback(() => fetchRelated!(related!.column), [fetchRelated, related]);
 
   const numeric = useMemo(() => {
     const out = new Set<string>();
@@ -150,7 +164,7 @@ export function ResultsGrid({
   const shapeKey = `${columns.join("\u0000")}|${rows.length}`;
   useEffect(() => {
     setSel(null); setHidden(new Set()); setTransposed(false); setShowValue(false);
-    setMenu(null); setPicker(null);
+    setMenu(null); setPicker(null); setRelated(null);
   }, [shapeKey]);
 
   // ── Transpose ──────────────────────────────────────────────────────────────
@@ -672,7 +686,18 @@ export function ResultsGrid({
           onFilter={phrase => onAddFilter?.(phrase)}
           onPickValues={() => setPicker(menu.col)}
           onOpenValue={() => setShowValue(true)}
+          onRelated={canRelate ? () => setRelated({ column: menu.column, value: menu.value, x: menu.x, y: menu.y }) : undefined}
           onClose={() => setMenu(null)}
+        />
+      )}
+      {related && canRelate && (
+        <RelatedRowsPicker
+          key={`${shapeKey}|${related.column}|${String(related.value)}`}
+          table={sourceTable!} column={related.column} value={related.value}
+          fetchJoins={fetchJoinsFor}
+          onOpen={join => onOpenRelated!(join, related.column, related.value)}
+          onClose={() => setRelated(null)}
+          x={related.x} y={related.y}
         />
       )}
       {picker !== null && onAddFilter && !transposed && visibleIdx[picker] !== undefined && (
