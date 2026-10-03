@@ -3641,7 +3641,9 @@ export async function getMeasureGrains(connId: string): Promise<MeasureGrains> {
 /** Distinct non-null values for a column — powers the filter-value picker. */
 export async function getColumnDistinct(
   connId: string, table: string, column: string, schema?: string, limit = 200,
-): Promise<{ values: (string | null)[]; truncated: boolean }> {
+  /** DE-5d: a table the route could not read answers a typed refusal — `error` in the engine's words
+   *  and `code: "DISTINCT_FAILED"` — never a bare empty list that reads as "the column has no values". */
+): Promise<{ values: (string | null)[]; truncated: boolean; error?: string; code?: string }> {
   const qs = new URLSearchParams({ table, column, limit: String(limit) });
   if (schema) qs.set("schema", schema);
   const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/distinct?${qs.toString()}`);
@@ -3855,6 +3857,9 @@ export interface TypedQueryResult {
   row_count: number;
   /** True when the server's n+1 probe row proved there is more beyond the limit. */
   truncated: boolean;
+  /** DE-5d — WHAT cut the result, when it was cut: the person's own `limit`, the connection's row
+   *  `budget`, or the connector's per-call `cap` (below the limit asked for). null when whole. */
+  cut_by?: "limit" | "budget" | "cap" | null;
   duration_ms: number;
   sql: string;
   cached: boolean;
@@ -3862,6 +3867,69 @@ export interface TypedQueryResult {
   receipt_id?: string | null;
   caveats?: string[];
   format: "typed";
+}
+
+/** DE-5d — `POST /query/count`: how many rows the statement returns in all. `total` is null on a
+ *  refusal, whose `code` is `BLOCKED`, `NOT_WRAPPABLE` or `FAILED` and whose `error` is the gate's or the
+ *  engine's own words. `as_of` is when the engine answered — the number says when it was true. */
+export interface QueryCount {
+  total: number | null;
+  as_of: string;
+  duration_ms: number;
+  sql: string;
+  error: string | null;
+  code: string | null;
+}
+
+/** DE-5d — `POST /query/more`: one page of a cut result, in the typed shape, plus where it starts and
+ *  whether the statement orders its rows (null: could not tell). A refusal is the same shape with no
+ *  rows and a `code` — `PAGE_BILLED_AS_SCAN` on an engine that bills each statement as a full scan. */
+export interface TypedQueryPage extends TypedQueryResult {
+  offset: number;
+  ordered: boolean | null;
+  code?: string | null;
+}
+
+async function postCutRequest<T>(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) throw new QueryCancelled();
+    throw e;
+  }
+  if (!res.ok) {
+    if (res.status === 499) throw new QueryCancelled();
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Query failed");
+  }
+  return res.json();
+}
+
+/** DE-5d — count every row the statement returns, through the run's door with the run's bound values. */
+export async function countQueryRows(
+  connId: string, sql: string, params?: Record<string, unknown>, signal?: AbortSignal,
+): Promise<QueryCount> {
+  return postCutRequest<QueryCount>("/query/count", {
+    conn_id: connId, sql, source: "query_workbench",
+    ...(params && Object.keys(params).length ? { params } : {}),
+  }, signal);
+}
+
+/** DE-5d — the next `limit` rows of the statement after the `offset` already shown. */
+export async function loadMoreRows(
+  connId: string, sql: string, offset: number, limit: number,
+  params?: Record<string, unknown>, signal?: AbortSignal,
+): Promise<TypedQueryPage> {
+  return postCutRequest<TypedQueryPage>("/query/more", {
+    conn_id: connId, sql, offset, limit, source: "query_workbench",
+    ...(params && Object.keys(params).length ? { params } : {}),
+  }, signal);
 }
 
 /** Thrown when the user cancelled the run — distinct from a query that failed, because

@@ -142,7 +142,12 @@ def _typed_mirror_slice(max_rows: int) -> None:
     if sink is None or not sink.get("armed"):
         return
     try:
-        sink["rows"] = sink["rows"][:max_rows]
+        if len(sink["rows"]) > max_rows:
+            # DE-5d: the budget cut rows the connector had returned whole, so the connector's own
+            # `truncated` (its cap was not reached) is no longer the truth — the response would
+            # say "complete" over a result the budget shortened.
+            sink["rows"] = sink["rows"][:max_rows]
+            sink["truncated"] = True
     except Exception:
         sink["armed"] = False
 
@@ -782,16 +787,27 @@ class DatabaseConnection(ABC):
         has to know how this engine reads it."""
 
     def execute_typed(self, hypothesis_id: str, sql: str, *,
-                      sql_dialect: str | None = None) -> "tuple[QueryResult, dict | None]":
+                      sql_dialect: str | None = None,
+                      max_rows: int | None = None) -> "tuple[QueryResult, dict | None]":
         """SE-0: run ``execute()`` while capturing raw (pre-stringification) row values
         and cursor types as a side channel. Returns ``(result, payload)`` where the
         legacy ``result`` is byte-identical to a plain ``execute()`` and ``payload`` is
         ``{rows, types, truncated}`` — or ``None`` when this connector has no capture
         site, or the security post-pass disarmed the capture (fail closed, never a redaction
         bypass). It takes no `internal` declaration: a typed capture of a statement that skipped the
-        PII and audit post-pass would be an unredacted side channel (GM-5)."""
+        PII and audit post-pass would be an unredacted side channel (GM-5).
+
+        DE-5d: ``max_rows`` is the number of rows the caller asked for. Given, the statement runs through
+        :meth:`execute_bounded` — the same door, every check, and up to that many rows instead of the
+        connector's per-call cap (500 or 2,000), which until DE-5d silently cut every workbench run above
+        it whatever limit the person chose; the connection's row budget (`security/sandbox.py`) stays the
+        ceiling. A connector without its own ``execute_bounded`` reads its cap, as before."""
         statement = sql_for_engine(self, sql, sql_dialect)
-        result, payload = self._capture_typed(hypothesis_id, lambda: self.execute(hypothesis_id, statement))
+        if max_rows:
+            run = lambda: self.execute_bounded(hypothesis_id, statement, max_rows)  # noqa: E731
+        else:
+            run = lambda: self.execute(hypothesis_id, statement)  # noqa: E731
+        result, payload = self._capture_typed(hypothesis_id, run)
         if statement != sql:
             _add_doors(result, [f"translated:duckdb→{self.dialect}"], first=True)
         return result, payload

@@ -26,8 +26,8 @@
  * re-draws them over that set, and an incompatible pick degrades rather than throws
  * (the card's own rule).
  */
-import { useDeferredValue, useMemo, useState } from "react";
-import { formatCount } from "@/lib/format";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { formatCount, formatTimestamp } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type VizConfig } from "@/components/charts/vizConfig";
@@ -40,9 +40,31 @@ import { Icon } from "@/components/ui/icon";
 import { csvFilename, downloadText } from "@/lib/query/csv";
 import { EXTRACTORS, extractorById, guessTableName } from "@/lib/query/extractors";
 import { applyFilters } from "@/lib/query/resultFilter";
-import type { TypedQueryResult } from "@/lib/api";
+import type { TypedQueryPage, TypedQueryResult } from "@/lib/api";
 
 const noteStyle: React.CSSProperties = { fontSize: 13, color: "var(--t3)" };
+
+/** DE-5d — what cut the result, in the footer's words. The server says WHICH of the three cuts it
+ *  was (`cut_by`); a result from an older server that only says `truncated` keeps the old line. */
+export function cutNote(result: Pick<TypedQueryResult, "row_count" | "cut_by">): string {
+  const n = formatCount(result.row_count);
+  switch (result.cut_by) {
+    case "limit": return `cut at ${n} rows — more exist beyond this limit`;
+    case "budget": return `cut at ${n} rows by this connection's row budget — more exist`;
+    case "cap": return `cut at ${n} rows — this connector returns at most that many a call, whatever the limit`;
+    default: return "truncated — more rows exist beyond this limit";
+  }
+}
+
+/** The outcome of "Count all rows": idle, running, a total with its as-of, or the refusal's words. */
+type CountState =
+  | { status: "idle" }
+  | { status: "busy" }
+  | { status: "done"; total: number; asOf: string }
+  | { status: "failed"; message: string };
+
+/** The most rows one "Load more" asks for — the row budget's own ceiling. */
+const MAX_PAGE = 10_000;
 
 // Module-level constants, not inline `[]`: a fresh array each render would be a new
 // dependency for the filter memo, so it would recompute on every parent render.
@@ -77,6 +99,10 @@ export function ResultsPanel({
   onApplyFix,
   maximized,
   onToggleMaximize,
+  params,
+  pageSize,
+  runKey,
+  onAppendRows,
 }: {
   /** SE-8B — every statement's result, in run order. One entry for a single run. */
   results: TypedQueryResult[];
@@ -97,6 +123,14 @@ export function ResultsPanel({
   /** SE-8B — the ⤢ button: the editor collapses and the results take the column. */
   maximized?: boolean;
   onToggleMaximize?: () => void;
+  /** DE-5d — the bound values the run used, so a count or a page is of the SAME statement. */
+  params?: Record<string, unknown>;
+  /** DE-5d — the run's row limit: how many rows one "Load more" asks for. */
+  pageSize?: number;
+  /** DE-5d — changes on every new run, so a count from the last run is not shown over this one. */
+  runKey?: number;
+  /** DE-5d — append a page the server returned to `results[idx]`. Without it, no "Load more". */
+  onAppendRows?: (idx: number, page: TypedQueryPage) => void;
 }) {
   // "" | "ok" | "fail" — a click must always produce a visible outcome.
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
@@ -111,9 +145,53 @@ export function ResultsPanel({
   const [renaming, setRenaming] = useState("");      // viz id being renamed
   const [renameDraft, setRenameDraft] = useState("");
 
+  // DE-5d — "Count all rows" and "Load more" for a cut result. Both go to the server, which runs the
+  // statement again through the run's door; the panel only shows what came back, and says a refusal
+  // in the server's words. Reset when a new run lands or the pager moves: a total belongs to one
+  // run of one statement, and its as-of says when it was true.
+  const [count, setCount] = useState<CountState>({ status: "idle" });
+  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreError, setMoreError] = useState("");
+  useEffect(() => {
+    setCount({ status: "idle" });
+    setMoreBusy(false);
+    setMoreError("");
+  }, [runKey, resultIdx]);
+
   const result = results[resultIdx] ?? null;
   const columns = result?.columns ?? EMPTY_COLS;
   const rawRows = result?.rows ?? EMPTY_ROWS;
+  const nextPage = Math.min(Math.max(1, pageSize ?? 500), MAX_PAGE);
+
+  const countAll = async () => {
+    if (!connId || !result) return;
+    setCount({ status: "busy" });
+    try {
+      const { countQueryRows } = await import("@/lib/api");
+      const r = await countQueryRows(connId, result.sql, params);
+      if (r.total === null) setCount({ status: "failed", message: r.error ?? r.code ?? "no answer" });
+      else setCount({ status: "done", total: r.total, asOf: r.as_of });
+    } catch (e) {
+      setCount({ status: "failed", message: e instanceof Error ? e.message : "no answer" });
+    }
+  };
+
+  const loadMore = async () => {
+    if (!connId || !result || !onAppendRows) return;
+    setMoreBusy(true);
+    setMoreError("");
+    try {
+      const { loadMoreRows } = await import("@/lib/api");
+      // The offset is every row shown so far, filtered or not: the page continues the RESULT.
+      const page = await loadMoreRows(connId, result.sql, rawRows.length, nextPage, params);
+      if (page.error) setMoreError(page.error);
+      else onAppendRows(resultIdx, page);
+    } catch (e) {
+      setMoreError(e instanceof Error ? e.message : "could not load more rows");
+    } finally {
+      setMoreBusy(false);
+    }
+  };
   // Filtering runs over every returned row on each keystroke. Deferred so typing stays
   // responsive on a full-limit result — the grid catching up a frame late is a far
   // better trade than the input stuttering.
@@ -137,9 +215,11 @@ export function ResultsPanel({
     return async (column: string) => {
       const { getColumnDistinct } = await import("@/lib/api");
       const r = await getColumnDistinct(connId, table, column, schema);
-      // The route answers an empty list for a column it could not read (an alias, a refusal) as
-      // readily as for an empty column; the picker then shows the rows and says they are a sample.
-      return r.values.length ? { values: r.values, truncated: r.truncated, source: schema ? `${schema}.${table}` : table } : null;
+      const source = schema ? `${schema}.${table}` : table;
+      // DE-5d: a table the route could not read is a typed refusal, and the picker says it in the
+      // engine's words. An empty list with no error is an empty column, and the rows then speak.
+      if (r.error) return { values: [], truncated: false, source, error: r.error };
+      return r.values.length ? { values: r.values, truncated: r.truncated, source } : null;
     };
   }, [connId, sourceTable]);
 
@@ -492,9 +572,53 @@ export function ResultsPanel({
         {result.truncated && (
           <>
             <span>·</span>
-            <span style={{ color: "var(--amb4)" }}>
-              truncated — more rows exist beyond this limit
+            <span data-testid="cut-note" style={{ color: "var(--amb4)" }}>
+              {cutNote(result)}
             </span>
+            {/* DE-5d — the two things a cut result can ask for next, each a statement the server runs
+                through the same door as the query. The count's as-of rides with the number. */}
+            {connId && (
+              <Button
+                variant="ghost" size="xs" className="aug-fs-ui" data-testid="count-all"
+                disabled={count.status === "busy"}
+                title="Count every row this statement returns — run through the same door as the query"
+                onClick={countAll}
+              >
+                {count.status === "busy" ? "Counting…" : "Count all rows"}
+              </Button>
+            )}
+            {connId && onAppendRows && (
+              <Button
+                variant="ghost" size="xs" className="aug-fs-ui" data-testid="load-more"
+                disabled={moreBusy}
+                title={`Fetch the next ${formatCount(nextPage)} rows through the same door, after the ${formatCount(rawRows.length)} shown`}
+                onClick={loadMore}
+              >
+                {moreBusy ? "Loading…" : `Load ${formatCount(nextPage)} more`}
+              </Button>
+            )}
+          </>
+        )}
+        {count.status === "done" && (
+          <>
+            <span>·</span>
+            <span data-testid="count-result">
+              {formatCount(count.total)} {count.total === 1 ? "row" : "rows"} in all · as of {formatTimestamp(count.asOf, "short")}
+            </span>
+          </>
+        )}
+        {count.status === "failed" && (
+          <>
+            <span>·</span>
+            <span data-testid="count-result" style={{ color: "var(--red4)" }}>
+              Could not count — {count.message}
+            </span>
+          </>
+        )}
+        {moreError && (
+          <>
+            <span>·</span>
+            <span data-testid="more-result" style={{ color: "var(--red4)" }}>{moreError}</span>
           </>
         )}
         {result.cached && (<><span>·</span><span>cached</span></>)}

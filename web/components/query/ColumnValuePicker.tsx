@@ -21,8 +21,9 @@ import { formatCount } from "@/lib/format";
 import { NULL_GLYPH, distinctFromRows, pickedPhrase, type DistinctValue } from "@/lib/query/cellMenu";
 import type { Cell } from "@/lib/query/resultFilter";
 
-/** What a live read of the table answers. `source` names the table. */
-export interface LiveDistinct { values: (string | null)[]; truncated: boolean; source: string }
+/** What a live read of the table answers. `source` names the table. DE-5d: `error` is the route's typed
+ *  refusal, in the engine's words — the table was asked and could not be read, which is not "no values". */
+export interface LiveDistinct { values: (string | null)[]; truncated: boolean; source: string; error?: string }
 
 /** How many values the list shows before it says "and N more". */
 const SHOWN = 200;
@@ -58,27 +59,33 @@ export function ColumnValuePicker({
     let stale = false;
     setLive("loading");
     fetchDistinct(column)
-      .then(r => { if (!stale) setLive(r && r.values.length ? r : null); })
+      .then(r => { if (!stale) setLive(r && (r.values.length || r.error) ? r : null); })
       .catch(() => { if (!stale) setLive(null); });
     return () => { stale = true; };
   }, [column, truncated, fetchDistinct]);
 
   const fromRows = useMemo(() => distinctFromRows(rows, columnIndex), [rows, columnIndex]);
+  // DE-5d: the table's answer, once it has one — a list, or a refusal. A refusal is said, and the
+  // values then come from the rows.
+  const answer: LiveDistinct | null = live && live !== "loading" ? live : null;
+  const refused = !!answer?.error;
+  const liveRead = !!answer && !answer.error;
   const values: DistinctValue[] = useMemo(() => {
-    if (live && live !== "loading") return live.values.map(v => ({ value: v, count: 0 }));
+    if (liveRead && answer) return answer.values.map(v => ({ value: v, count: 0 }));
     return fromRows;
-  }, [live, fromRows]);
-  const liveRead = !!live && live !== "loading";
+  }, [answer, liveRead, fromRows]);
 
   const source = live === "loading"
     ? "Reading the table's values…"
-    : liveRead
+    : liveRead && answer
       // The live read is the route's `SELECT DISTINCT … WHERE … IS NOT NULL`: NULL is never in the
       // list, so the line says so rather than letting its absence read as "the column has none".
-      ? `From the table ${live.source}, read live${live.truncated ? ` — the first ${formatCount(live.values.length)},` : " —"} NULL not listed`
-      : truncated
-        ? `From the ${formatCount(rows.length)} rows shown — the result was cut, so more values may exist`
-        : `From the ${formatCount(rows.length)} rows shown`;
+      ? `From the table ${answer.source}, read live${answer.truncated ? ` — the first ${formatCount(answer.values.length)},` : " —"} NULL not listed`
+      : refused && answer
+        ? `The table ${answer.source} could not be read live (${answer.error}) — from the ${formatCount(rows.length)} rows shown; the result was cut, so more values may exist`
+        : truncated
+          ? `From the ${formatCount(rows.length)} rows shown — the result was cut, so more values may exist`
+          : `From the ${formatCount(rows.length)} rows shown`;
 
   const q = search.trim().toLowerCase();
   const shown = values.filter(v => !q || String(v.value ?? NULL_GLYPH).toLowerCase().includes(q));

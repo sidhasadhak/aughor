@@ -170,6 +170,17 @@ describe("DE-5c — the value picker says where its values come from", () => {
       "the result was cut, so more values may exist"));
   });
 
+  it("DE-5d — a live read the engine refused is said in the engine's words, and the rows speak", async () => {
+    const live = async () => ({ values: [], truncated: false, source: "orders", error: "Catalog Error: Table with name orders does not exist!" });
+    render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}}
+      truncated fetchDistinct={live} />);
+    fireEvent.click(screen.getAllByTestId("grid-col-pick")[0]);
+    await waitFor(() => expect(screen.getByTestId("picker-source")).toHaveTextContent(
+      "The table orders could not be read live (Catalog Error: Table with name orders does not exist!) — from the 3 rows shown"));
+    // The values on offer are the rows' own: "Complete" is in the grid AND in the picker's list.
+    expect(screen.getAllByText("Complete")).toHaveLength(2);
+  });
+
   it("the menu's pick entry opens the same picker for that column", () => {
     render(<ResultsGrid columns={COLUMNS} columnsTyped={TYPED} rows={ROWS} onAddFilter={() => {}} />);
     fireEvent.contextMenu(screen.getByText("10"));

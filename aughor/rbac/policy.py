@@ -113,6 +113,9 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # as /ask (they execute; the pure helpers build-sql/decompile/postproc stay at
     # the write floor). Object-level org scoping is separate (query.py DATA-06).
     ("POST", "/query/run"): P.ANALYSIS_RUN,
+    # DE-5d — the count and the next page of a cut result run the person's statement again.
+    ("POST", "/query/count"): P.ANALYSIS_RUN,
+    ("POST", "/query/more"): P.ANALYSIS_RUN,
     ("POST", "/query/semantic"): P.ANALYSIS_RUN,
     ("POST", "/query/semantic/text-columns"): P.ANALYSIS_RUN,
     ("POST", "/query/cross-source-join"): P.ANALYSIS_RUN,

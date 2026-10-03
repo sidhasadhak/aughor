@@ -10536,6 +10536,44 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > receipt — an MCP client refused under identity before and served after — is DE-2a's test, and the audit page is
 > the governance feed's data-access view. Next: DE-5d.
 
+> **Status 2026-10-03 — DE-5d BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:* the row
+> limit the Run menu sends was not the cut — `execute_typed` ran every statement under the connector's per-call
+> cap (500 on DuckDB, Postgres and SQLite; 2,000 elsewhere), so limits of 1,000, 5,000 and 50,000 all came back
+> as 500 rows, `truncated`, and the presets above 500 were a promise the connector never kept; the budget slice
+> (`row-budget:10000`) did not mark the typed sink truncated, so a budget-cut result would have read as whole once
+> the cap was lifted; `COUNT(*)` over a person's statement under the person's label passes `validated`,
+> `safety-checked`, `pii-checked` and `audited` — the run's door; nothing counted a statement's rows and nothing
+> paged them; on a 3M-row DuckDB table an OFFSET page costs what a re-run to the same depth costs (13.6 ms
+> against 11.6 ms at 500; 68.7 against 72.8 at 50,000) and `COUNT(*)` 35 ms, so paging is not the dearer path
+> there — where BigQuery bills every statement as a scan of its tables, each page would cost what the whole
+> result cost, which is the study's falsifier. *Built:* `execute_typed(max_rows=)` runs the typed read through
+> `execute_bounded`, so the limit is honoured up to the connection's row budget, and the typed response says
+> what cut it — `cut_by` is `limit`, `budget` or `cap` (a parameterised run, which has no bounded read, still
+> stops at the cap and says so); `POST /query/count` wraps the statement in `COUNT(*)` (`sql/paging.py`) and
+> runs it through the run's door under the run's label with the run's bound values, answering the total with
+> its `as_of` or a typed refusal (`BLOCKED`, `NOT_WRAPPABLE`, `FAILED`) whose total is null, never 0;
+> `POST /query/more` runs the next page the same way (`LIMIT n+1 OFFSET shown`), typed, with `offset`,
+> `ordered` and a caveat when the statement's outermost query has no ORDER BY, so a page can repeat or skip
+> rows; each declaration now says what a re-run costs (`rerun_cost`: local, compute, bytes_scanned, unknown)
+> and on a `bytes_scanned` engine (BigQuery, S3) the page is refused with `PAGE_BILLED_AS_SCAN`, naming the
+> higher-limit re-run as the way that is billed once; the BigQuery connector writes `bytes-processed`,
+> `bytes-billed` and `cache-hit` on the trail from the job's own statistics, so the owed theLook measurement
+> reads from the doors; the `/distinct` route answers a table it could not read with `DISTINCT_FAILED` and the
+> engine's words, and the picker says them. The results footer names the cut, offers "Count all rows" (the
+> total and its as-of, or the refusal) and "Load N more" (appended to the grid, the caveats joined once); both
+> reset on a new run. *Receipt:* `tests/unit/test_de5d_count_and_more.py` (24) — the limit honoured at 1,000
+> and 5,000, the budget at 50,000 said as `budget`, a bound run's `cap`; the count's total and aware `as_of`,
+> one audit row per count under the run's label and the door words on the same statement; the typed refusals;
+> the page's cells in order with the probe, the unordered caveat, the refusal on a bytes-scanned engine with
+> the count still answered; every engine's `rerun_cost`, the ORDER BY reader on nine shapes, the BigQuery cost
+> words, the RBAC rows; the door census holds the six new call sites (and one DE-3c site it had missed); 115
+> tests across the query, census, SE-0, cache, GM-3, declaration and cut-read suites green; web:
+> `ResultsPanel.test.tsx` (9) and the picker's refusal line, 1,513 web tests and all seven gates green, the
+> typed client regenerated. *Left, named:* the live BigQuery bytes receipt is owed from the machine that holds
+> theLook; paging a BigQuery result for free from the job's own result table is the better path there and is
+> not built; the bound path stays at the connector's cap; "Load more" is a window over a re-run, so a table
+> that changed between pages shows it at the seam, and only an ORDER BY makes the seam exact. Next: DE-5e.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

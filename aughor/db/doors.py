@@ -52,6 +52,11 @@ WORDS: dict[str, str] = {
                "retried)",
     "guarded": "checked by the {d} guard",
     "unchecked": "NOT checked by the {d} guard: it could not run on this statement",
+    # DE-5d — what the engine said the statement cost, where the engine bills by bytes (BigQuery): the
+    # measurement the study's paging falsifier asks for, on the trail of every statement that has one.
+    "bytes-processed": "read {d} bytes on the engine",
+    "bytes-billed": "billed by the engine for {d} bytes",
+    "cache-hit": "answered from the engine's result cache: nothing billed",
 }
 
 #: The guards a statement can be checked by, as a reader knows them.

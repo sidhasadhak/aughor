@@ -38,6 +38,20 @@ def _is_timestamp_date_clash(error: str) -> bool:
     return bool(_TS_DATE_CLASH.search(error or ""))
 
 
+def _say_what_it_cost(job) -> None:
+    """DE-5d — the job's own account of what it read and what was billed, as door words on the
+    statement's trail (`bytes-processed:N`, `bytes-billed:N`, `cache-hit`). BigQuery bills by bytes
+    scanned, not rows returned, so a page of a result costs what the whole statement costs; these
+    words are how that is measured on a live connection rather than asserted. Absent fields say
+    nothing — a fake job in a test, or a job the client did not finish describing."""
+    for word, attr in (("bytes-processed", "total_bytes_processed"), ("bytes-billed", "total_bytes_billed")):
+        n = getattr(job, attr, None)
+        if isinstance(n, int) and not isinstance(n, bool):
+            passed(f"{word}:{n}")
+    if getattr(job, "cache_hit", None) is True:
+        passed("cache-hit")
+
+
 def _retype_date_literals(sql: str) -> str:
     """The failed SQL with bare date literals in comparisons cast to TIMESTAMP —
     or "" when there is nothing to rewrite (parse failure included: a query we
@@ -270,6 +284,7 @@ class BigQueryConnection(Connector):
                 rows_it = job.result(max_results=max_rows + 1)
                 schema = list(rows_it.schema)
                 raw = [list(row.values()) for row in rows_it]
+                _say_what_it_cost(job)
             offer_typed_rows(raw[:max_rows], truncated=len(raw) > max_rows,
                              types=[stage_type(getattr(field, "field_type", ""), getattr(field, "precision", None),
                                                getattr(field, "scale", None)) for field in schema])

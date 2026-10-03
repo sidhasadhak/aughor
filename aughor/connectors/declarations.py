@@ -44,6 +44,15 @@ EngineFamily = Literal["postgres", "mysql", "sqlite", "bigquery", "snowflake", "
 MetadataStatus = Literal["supported", "unsupported", "unknown"]
 METADATA_FACTS = ("columns", "primary_keys", "foreign_keys", "comments")
 
+#: DE-5d — what running the same statement AGAIN costs on this engine, which decides whether a cut result
+#: may be paged (`routers/query.py` `/query/more`). ``local``: the engine is this process or a local file,
+#: nothing is billed. ``compute``: a re-run spends the engine's time (a warehouse's credits, a server's CPU)
+#: and no metered byte bill. ``bytes_scanned``: every statement reads its tables' bytes again and THAT is
+#: what is billed — so each page of a result costs a full scan, where one re-run with a higher limit costs
+#: one. ``unknown``: not a SQL engine, or not measured. The study's falsifier (§6): paging is wrong where it
+#: costs more than re-running, so on a `bytes_scanned` engine the page is refused and the refusal says why.
+RerunCost = Literal["local", "compute", "bytes_scanned", "unknown"]
+
 
 def _facts(columns: MetadataStatus = "supported", primary_keys: MetadataStatus = "unknown",
            foreign_keys: MetadataStatus = "unknown", comments: MetadataStatus = "unknown") -> dict[str, MetadataStatus]:
@@ -123,6 +132,9 @@ class EngineDeclaration:
     #: foreign keys and comments, and why where it is not `supported`.
     metadata_facts: dict[str, MetadataStatus] = field(default_factory=lambda: dict(_META_NOT_READ_YET))
     metadata_detail: str = ""
+    #: DE-5d — what a re-run of the same statement costs here (`RerunCost`); decides whether a cut
+    #: result may be paged.
+    rerun_cost: RerunCost = "unknown"
 
     @property
     def secret_fields(self) -> list[str]:
@@ -215,6 +227,7 @@ def _f(key: str, label: str, placeholder: str = "", *, secret: bool = False, opt
 ENGINES: tuple[EngineDeclaration, ...] = (
     EngineDeclaration(
         type="duckdb", label="DuckDB", category="built-in", blurb="Local analytical database file",
+        rerun_cost="local",
         dsn_preview="*.duckdb",
         fields=(_f("dsn", "File path", "/path/to/file.duckdb"),
                 _f("schema_name", "Schema (optional)", "main", optional=True)),
@@ -226,6 +239,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="postgres", label="PostgreSQL", category="built-in", blurb="Connect to a Postgres database",
+        rerun_cost="compute",
         dsn_preview="postgresql://***",
         fields=(_f("dsn", "Connection string", "postgresql://user:pass@host:5432/db", secret=True),
                 _f("schema_name", "Schema", "public")),
@@ -240,6 +254,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="bigquery", label="BigQuery", category="warehouse", blurb="Google Cloud data warehouse",
+        rerun_cost="bytes_scanned",
         dsn_preview="bigquery://project-id",
         fields=(_f("project_id", "Project ID", "my-gcp-project"),
                 _f("dataset", "Dataset", "analytics"),
@@ -263,6 +278,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="snowflake", label="Snowflake", category="warehouse", blurb="Cloud data warehouse",
+        rerun_cost="compute",
         dsn_preview="snowflake://account.region",
         fields=(_f("account", "Account identifier", "xy12345.us-east-1"),
                 _f("user", "Username", "analyst"),
@@ -281,6 +297,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="mysql", label="MySQL", category="warehouse", blurb="Connect to a MySQL database",
+        rerun_cost="compute",
         dsn_preview="mysql://host:3306/db",
         fields=(_f("host", "Host", "localhost"), _f("port", "Port", "3306"), _f("user", "Username", "root"),
                 _f("password", "Password", "", secret=True), _f("database", "Database", "mydb")),
@@ -297,6 +314,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="motherduck", label="MotherDuck", category="warehouse", blurb="DuckDB in the cloud", badge="New",
+        rerun_cost="compute",
         dsn_preview="md:my_database",
         fields=(_f("token", "MotherDuck token", "eyJhbGc… (or set MOTHERDUCK_TOKEN)", secret=True),
                 _f("database", "Database", "my_database"), _f("schema_name", "Schema", "main")),
@@ -308,6 +326,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="exasol", label="Exasol", category="warehouse", blurb="In-memory analytics database", badge="New",
+        rerun_cost="compute",
         dsn_preview="exa://host:8563",
         fields=(_f("host", "Host:Port", "demodb.exasol.com:8563"), _f("user", "Username", "sys"),
                 _f("password", "Password", "", secret=True), _f("schema_name", "Schema", "RETAIL")),
@@ -324,6 +343,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="trino", label="Trino", category="warehouse", blurb="Distributed SQL over many sources",
+        rerun_cost="compute",
         badge="Preview", dsn_preview="trino://host:8080",
         fields=(_f("host", "Host:Port", "trino.example.com:8080"), _f("user", "Username", "analyst"),
                 _f("password", "Password (blank when the cluster takes none)", "", secret=True, optional=True),
@@ -341,6 +361,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="gsheets", label="Google Sheets", category="api", blurb="Read worksheets as tables", badge="New",
+        rerun_cost="local",
         dsn_preview="gsheet://spreadsheet-id",
         fields=(_f("spreadsheet_id", "Spreadsheet ID or URL", "https://docs.google.com/spreadsheets/d/…"),
                 # The sheet must be shared "Anyone with the link can view" — read via the public CSV
@@ -354,6 +375,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="local_upload", label="Create or modify table", category="file",
+        rerun_cost="local",
         blurb="Upload CSV, Parquet, Excel or JSON into your Workspace", dsn_preview="local://uploads/",
         fields=(),   # no config fields — files arrive through POST /connections/{id}/files
         drivers=("duckdb",), connector="aughor.connectors.file.local_upload:LocalUploadConnection",
@@ -364,6 +386,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="s3", label="Amazon S3", category="file", blurb="Object storage bucket",
+        rerun_cost="bytes_scanned",
         dsn_preview="s3://bucket/prefix",
         fields=(_f("bucket", "Bucket", "my-data-bucket"), _f("prefix", "Key prefix", "data/sales/"),
                 _f("region", "Region", "us-east-1"), _f("key_id", "Access Key ID", "AKIA…", secret=True),
@@ -375,6 +398,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="sqlite", label="SQLite", category="file", blurb="A SQLite database file",
+        rerun_cost="local",
         dsn_preview="*.sqlite / *.db",
         fields=(_f("dsn", "File path", "/path/to/file.sqlite"),),
         drivers=("ibis",), connector="aughor.connectors.file.sqlite:SQLiteConnection",
@@ -385,6 +409,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="federated", label="Federated", category="federation", blurb="Combine existing connections",
+        rerun_cost="compute",
         dsn_preview="federated://",
         fields=(),   # no config fields — members are chosen through POST /connections/federate
         drivers=("duckdb",), connector="aughor.connectors.federated:FederatedConnection",
@@ -395,6 +420,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="stripe", label="Stripe", category="api", blurb="Payments & billing data", badge="Preview",
+        rerun_cost="local",
         dsn_preview="stripe://",
         fields=(_f("secret_key", "Secret key", "sk_live_…", secret=True),
                 _f("objects", "Objects to sync (optional)", "charges,customers,subscriptions,invoices", optional=True)),
@@ -405,6 +431,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="hubspot", label="HubSpot", category="api", blurb="CRM & marketing data", dsn_preview="hubspot://",
+        rerun_cost="local",
         fields=(_f("access_token", "Access token", "pat-na1-…", secret=True),
                 _f("objects", "Objects to sync (optional)", "contacts,companies,deals,tickets", optional=True)),
         drivers=("requests",), connector="aughor.connectors.api.hubspot:HubSpotConnector",
@@ -414,6 +441,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="salesforce", label="Salesforce", category="api", blurb="CRM objects & pipelines",
+        rerun_cost="local",
         dsn_preview="salesforce://",
         fields=(_f("username", "Username", "user@org.com"), _f("password", "Password", "", secret=True),
                 _f("security_token", "Security token", "token123…", secret=True),
@@ -428,6 +456,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     # take no queries, and are categorised but not registered (`open_connection` never sees them).
     EngineDeclaration(
         type="confluence", label="Confluence", category="knowledge", blurb="Team wiki & knowledge",
+        rerun_cost="unknown",
         dsn_preview="https://org.atlassian.net",
         fields=(_f("base_url", "Base URL", "https://yourorg.atlassian.net"),
                 _f("username", "Username", "user@example.com"),
@@ -438,6 +467,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
     ),
     EngineDeclaration(
         type="notion", label="Notion", category="knowledge", blurb="Docs & databases", dsn_preview="notion://",
+        rerun_cost="unknown",
         fields=(_f("integration_token", "Integration token", "secret_…", secret=True),
                 _f("database_ids", "Database IDs", "id1,id2 (optional)", optional=True)),
         drivers=("requests",), connector=None, dialect=None, metadata_strategy="none",

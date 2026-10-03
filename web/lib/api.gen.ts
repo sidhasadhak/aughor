@@ -2933,6 +2933,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/{conn_id}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Connection Declared Metadata
+         * @description DE-3c — the engine's declared metadata, typed: for each of columns, primary keys, foreign
+         *     keys and comments, whether this engine's read is supported, unsupported or unknown (and
+         *     why), plus the keys and comments it declares. An empty list from an engine that supports
+         *     keys means the schema declares none; from one that does not, that there is nothing to read.
+         */
+        get: operations["connection_declared_metadata_connections__conn_id__metadata_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections/{conn_id}/prewarm": {
         parameters: {
             query?: never;
@@ -5527,6 +5550,9 @@ export interface paths {
          * Get Context Graph Lineage
          * @description Wave P4 — what depends on this node, with the expression that would break.
          *
+         *     DE-4: ``column`` narrows the walk to the dependents whose receipt read that column of the
+         *     table; a dependent whose columns were never traced is kept and says so.
+         *
          *     The lineage walker (`govern/lineage.py`) has been built and tested since Wave G7 with
          *     no route and no caller: the question "what breaks if this table changes" was answerable
          *     and unasked. This is the seam.
@@ -6920,6 +6946,90 @@ export interface paths {
          *     happened — "no match" and "your embedder is not running" are not the same news.
          */
         get: operations["knowledge_status_endpoint_knowledge_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/{connection_id}/entity/{entity}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Knowledge Describe Entity
+         * @description One business object type (or, where no ontology is built, the graph's table node), as
+         *     the ontology measured it.
+         */
+        get: operations["knowledge_describe_entity_knowledge__connection_id__entity__entity__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/{connection_id}/graph/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Knowledge Search Graph
+         * @description Search the connection's knowledge graph — tables, governed metrics, glossary terms and
+         *     past findings — with the measured join overlap between tables. `available=false` means no
+         *     graph has been built; a `notice` says results were withheld by data governance.
+         */
+        get: operations["knowledge_search_graph_knowledge__connection_id__graph_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/{connection_id}/table-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Knowledge Table Health
+         * @description Data-quality verdicts for a table: which checks passed or failed, how many violations,
+         *     how stale each verdict is. `checked=false` means no checks have run, which is not healthy.
+         */
+        get: operations["knowledge_table_health_knowledge__connection_id__table_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/{connection_id}/trusted-queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Knowledge Trusted Queries
+         * @description The verified query patterns for a connection, each with the warrant it carries.
+         */
+        get: operations["knowledge_trusted_queries_knowledge__connection_id__trusted_queries_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10394,6 +10504,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org-settings/agent-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Policy
+         * @description What an outside agent may do for this organisation: the saved policy (or the default,
+         *     `run`), the environment's narrowing, and the EFFECTIVE result of the two.
+         */
+        get: operations["get_agent_policy_org_settings_agent_policy_get"];
+        /**
+         * Put Agent Policy
+         * @description Set the organisation's agent policy. A person with ADMIN_MANAGE_ORG; never the agent.
+         */
+        put: operations["put_agent_policy_org_settings_agent_policy_put"];
+        post?: never;
+        /**
+         * Delete Agent Policy
+         * @description Drop the saved policy — the organisation falls back to the default, `run`.
+         */
+        delete: operations["delete_agent_policy_org_settings_agent_policy_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org-settings/effective": {
         parameters: {
             query?: never;
@@ -10974,6 +11113,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/query/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Count
+         * @description DE-5d — how many rows the statement returns in all, for a result the row limit cut. ``COUNT(*)`` over
+         *     the person's statement, through the run's door under the run's label. ``as_of`` is when the engine
+         *     answered: the table may have changed by the time the number is read, so the number says when it was
+         *     true. A refusal carries a ``code`` (`BLOCKED`, `NOT_WRAPPABLE`, `FAILED`) and the gate's or the engine's
+         *     own words; ``total`` is then null, never 0.
+         */
+        post: operations["query_count_query_count_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/query/cross-source-join": {
         parameters: {
             query?: never;
@@ -11042,6 +11205,33 @@ export interface paths {
          *     (default off → 404).
          */
         post: operations["query_federated_answer_query_federated_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/query/more": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query More
+         * @description DE-5d — the next page of a cut result: rows ``offset`` onward of the person's statement, typed, through
+         *     the run's door under the run's label, with one extra row asked for as the proof there is more.
+         *
+         *     Refused with `PAGE_BILLED_AS_SCAN` on an engine whose declaration says a re-run is billed as a scan of
+         *     the statement's tables (`rerun_cost == "bytes_scanned"`: BigQuery, S3) — there each page costs what the
+         *     whole result cost and one re-run with a higher limit is cheaper, which is the study's falsifier for
+         *     this feature; the refusal says so and names the alternative. A page of a statement with no ORDER BY on
+         *     its outermost query says, in its caveats, that pages may repeat or skip rows.
+         */
+        post: operations["query_more_query_more_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15939,6 +16129,15 @@ export interface components {
             /** Sql Template */
             sql_template?: string | null;
         };
+        /** _AgentPolicyBody */
+        _AgentPolicyBody: {
+            /** Connections */
+            connections?: string[] | null;
+            /** Level */
+            level: string;
+            /** Tools */
+            tools?: string[] | null;
+        };
         /** _AlterColumnRequest */
         _AlterColumnRequest: {
             /** Column */
@@ -16667,6 +16866,50 @@ export interface components {
             order_by: string;
             /** Table */
             table: string;
+        };
+        /** _QueryCountRequest */
+        _QueryCountRequest: {
+            /** Conn Id */
+            conn_id: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Source
+             * @default query_workbench
+             * @enum {string}
+             */
+            source: "query_builder" | "query_workbench";
+            /** Sql */
+            sql: string;
+        };
+        /** _QueryMoreRequest */
+        _QueryMoreRequest: {
+            /** Conn Id */
+            conn_id: string;
+            /**
+             * Limit
+             * @default 500
+             */
+            limit: number;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Source
+             * @default query_workbench
+             * @enum {string}
+             */
+            source: "query_builder" | "query_workbench";
+            /** Sql */
+            sql: string;
         };
         /** _QueryRunRequest */
         _QueryRunRequest: {
@@ -22454,6 +22697,37 @@ export interface operations {
             };
         };
     };
+    connection_declared_metadata_connections__conn_id__metadata_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     prewarm_connection_connections__conn_id__prewarm_post: {
         parameters: {
             query?: never;
@@ -26515,6 +26789,7 @@ export interface operations {
                 node_id?: string | null;
                 table?: string | null;
                 schema_name?: string | null;
+                column?: string | null;
             };
             header?: never;
             path?: never;
@@ -28755,6 +29030,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    knowledge_describe_entity_knowledge__connection_id__entity__entity__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                entity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    knowledge_search_graph_knowledge__connection_id__graph_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    knowledge_table_health_knowledge__connection_id__table_health_get: {
+        parameters: {
+            query: {
+                table: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    knowledge_trusted_queries_knowledge__connection_id__trusted_queries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -34838,6 +35245,79 @@ export interface operations {
             };
         };
     };
+    get_agent_policy_org_settings_agent_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    put_agent_policy_org_settings_agent_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_AgentPolicyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_policy_org_settings_agent_policy_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_effective_settings_org_settings_effective_get: {
         parameters: {
             query?: {
@@ -35850,6 +36330,39 @@ export interface operations {
             };
         };
     };
+    query_count_query_count_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_QueryCountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     query_cross_source_join_query_cross_source_join_post: {
         parameters: {
             query?: never;
@@ -35926,6 +36439,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_FederatedAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_more_query_more_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_QueryMoreRequest"];
             };
         };
         responses: {
