@@ -285,6 +285,28 @@ def test_a_second_silence_ends_the_turn_as_silent_not_as_budget(provider):
     assert len(result.steps) == 1                  # one nudge, then it stops
 
 
+def test_an_answer_the_caller_refuses_is_handed_back_once_with_its_draft(provider):
+    """The analyst stopped with every result flagged and answered from one of them (2026-10-01, 22:37)."""
+    from aughor.llm import faux
+    set_responses(["Chicago is slowest", FauxToolCall(payload={"sql": "SELECT 2"}, name="run_sql"),
+                   "no centre stands out", *["held again"] * 8])
+    why = "Every result you have carries a guard's warning."
+    result = run_tool_loop(provider, "sys", "q", [_tool()], max_steps=10, stop_check=lambda answer: why)
+
+    assert result.answer == "no centre stands out"              # the second stop is the answer
+    assert [s.tool for s in result.steps] == ["(answer held)", "run_sql"]
+    shown = faux.calls()[-2].kwargs["messages"]                  # the call after the hand-back
+    assert shown[-2:] == [{"role": "assistant", "content": "Chicago is slowest"}, {"role": "user", "content": why}]
+
+
+def test_no_check_and_no_road_left_keep_the_first_answer(provider):
+    set_responses(["Chicago is slowest"])
+    assert run_tool_loop(provider, "sys", "q", [_tool()]).answer == "Chicago is slowest"
+    set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"), "Chicago is slowest", "after a hold"])
+    result = run_tool_loop(provider, "sys", "q", [_tool()], max_steps=3, stop_check=lambda a: "not yet")
+    assert result.answer == "Chicago is slowest"                # one call left: no room to re-measure
+
+
 def test_the_nudge_does_not_let_the_turn_exceed_its_budget(provider):
     """The recovery must not become an extra step the ceiling does not cover."""
     set_responses(["", *[FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql")] * 20])
@@ -358,3 +380,31 @@ def test_a_call_the_model_never_made_is_not_invented(provider, scripted, why):
     assert invented == [], f"{why}: a function call was invented for it"
     assert any(m["role"] == "user" and "tool" in str(m.get("content", "")).lower()
                for m in messages[1:]), f"{why}: the feedback never reached the model"
+
+
+# ── what the caller measured before the first step (2026-10-02) ───────────────────────────────
+# Code measured Q1's units sold by its declared definition before the analyst's first step; named only
+# in its instructions, the figure lost to the analyst's own count of order lines.
+
+def test_a_preface_rides_the_question_and_invents_no_call(provider):
+    """Read with the question, as results — never as a call the model did not make (Gemini refuses one
+    that carries no signature of its own)."""
+    from aughor.llm import faux
+
+    set_responses(["7,027 units"])
+    run_tool_loop(provider, "sys", "how many units?", [_tool()], preface="run_sql: SELECT … → 7027")
+    messages = faux.calls()[-1].kwargs["messages"]
+    assert [m["role"] for m in messages] == ["system", "user"]
+    assert messages[1]["content"] == "how many units?\n\nrun_sql: SELECT … → 7027"
+
+    set_responses(["four"])                                     # none: the question as it always was
+    run_tool_loop(provider, "sys", "what is 2+2?", [_tool()])
+    assert faux.calls()[-1].kwargs["messages"][1]["content"] == "what is 2+2?"
+
+
+def test_a_spent_budget_still_writes_up_with_the_preface(provider):
+    from aughor.llm import faux
+
+    set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"), "7,027 units"])
+    run_tool_loop(provider, "sys", "how many units?", [_tool()], max_steps=1, preface="measured: 7027")
+    assert faux.calls()[-1].kwargs["messages"][1]["content"] == "how many units?\n\nmeasured: 7027"

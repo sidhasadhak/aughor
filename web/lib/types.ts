@@ -317,6 +317,8 @@ export interface AnswerReport {
   frame?: OntologyFrame | null;
   // IP-1 — the Verifier's rule-outs for the move the report states; absent when it states none.
   rule_outs?: RuleOuts | null;
+  /** The question's shape — "describe" measured what was asked; older reports omit it. */
+  question_shape?: string | null;
 }
 
 /** IP-1 — the known ways a reported move can be the data rather than the business: the playbook's

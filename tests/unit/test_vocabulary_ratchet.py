@@ -379,7 +379,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # a shape in which the pre-fix and post-fix sorts happened to agree, so it passed
          # against the defect it was written to catch. Renaming a kind here would return it
          # to testing a palette this deployment does not serve.
-         "web/components/automations/AutomationPalette.test.tsx"),
+         "web/components/automations/AutomationPalette.test.tsx",
+         # The thinking row's test builds a `ChatTurn` by hand, and the turn's `mode` is a
+         # wire literal the type admits only as `"ask" | "investigate"` — the row renders
+         # for the second and nothing else. The file spells it ONCE, as a typed constant
+         # every fixture takes; what a reader is shown says "Thinking…", "Thought process"
+         # and "Agent".
+         "web/components/ChatMessage.trace.test.tsx"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
         "must mirror the backend contract field-for-field, and the SSE→UIMessage seam is "

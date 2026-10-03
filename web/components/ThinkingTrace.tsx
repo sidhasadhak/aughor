@@ -27,7 +27,7 @@ export function turnToTraceState(turn: ChatTurn, running: boolean): Investigatio
     cachedQuestion: turn.cachedQuestion,
     humanFeedback: null,
     queryMode: turn.queryMode as InvestigationState["queryMode"],
-    routeReasoning: null,
+    routeReasoning: shapeReading(turn.route?.shape || turn.deepReport?.question_shape),
     routeConfidence: null,
     subQuestions: turn.subQuestions,
     subqAnswers: turn.subqAnswers,
@@ -35,6 +35,12 @@ export function turnToTraceState(turn: ChatTurn, running: boolean): Investigatio
     investigationPhases: turn.phases,
     deepReport: turn.deepReport,
   };
+}
+
+/** What the route step says of a question's shape: a describe answer measured what was asked and
+ *  tested no hypotheses — "Multi-hypothesis analysis" was said of every Agent answer. */
+export function shapeReading(shape?: string | null): string | null {
+  return shape === "describe" ? "Measured what was asked" : null;
 }
 
 type StepStatus = "pending" | "running" | "done" | "error";
@@ -335,6 +341,24 @@ function StepDot({ status }: { status: StepStatus; verdict?: Verdict }) {
       <span className="inline-flex rounded-[var(--r-pill)] h-1.5 w-1.5 border border-zinc-600/70" />
     </span>
   );
+}
+
+/** The label the closed trace shows while a turn runs: the step in hand, replaced as the
+ *  next one starts. Null before any step exists. */
+export function latestThought(state: InvestigationState): string | null {
+  const steps = deriveSteps(state);
+  // Which line is "the latest" takes three preferences, because two of the steps are not
+  // news. The route is settled in the first second, and the trailing "Analysing the
+  // data…" is running for the whole turn — a row that showed it would never change. So:
+  // the step being worked on; else the conclusion that landed last; else whichever of
+  // those two placeholders is all there is so far.
+  const placeholder = (id: string) => id === "route" || id.startsWith("synthesize");
+  const landed = (s: Step) => s.status === "done" || s.status === "error";
+  const step = steps.find(s => s.status === "running" && !placeholder(s.id))
+    ?? [...steps].reverse().find(s => landed(s) && !placeholder(s.id))
+    ?? steps.find(s => s.status === "running")
+    ?? [...steps].reverse().find(landed);
+  return step?.label ?? null;
 }
 
 export interface SourceOpen {

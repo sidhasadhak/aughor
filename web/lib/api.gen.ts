@@ -11113,7 +11113,9 @@ export interface paths {
         put?: never;
         /**
          * Query Run
-         * @description Execute a SQL query against a registered connection.
+         * @description Execute a SQL query against a registered connection — as written. A statement that measures
+         *     a declared metric without the metric's filter is told so in its caveats, never rewritten
+         *     (`semantic.enforcement.declared_filter_notes`).
          */
         post: operations["query_run_query_run_post"];
         delete?: never;
@@ -16090,18 +16092,16 @@ export interface components {
         /**
          * _ColumnConfigEdit
          * @description One human edit to one column's {visible, sample, index} config (R11).
-         *     Only the flags present in the body change; the entry becomes source=human.
+         *     Only the fields present in the body change; the entry becomes source=human. A ``note``
+         *     replaces the column's note — ``""`` clears it — and the replaced note is kept in its history.
          */
         _ColumnConfigEdit: {
             /** Column */
             column: string;
             /** Index */
             index?: boolean | null;
-            /**
-             * Note
-             * @default
-             */
-            note: string;
+            /** Note */
+            note?: string | null;
             /** Sample */
             sample?: boolean | null;
             /** Table */

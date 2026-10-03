@@ -98,6 +98,26 @@ def test_the_inflections_of_a_business_word_share_one_stem(family):
     assert len({stem(w) for w in family}) == 1, {w: stem(w) for w in family}
 
 
+def test_a_name_property_is_never_read_from_a_lone_determiner():
+    """theLook (2026-10-01): "customers who placed their first order" framed a breakdown by `first_name`, as "the
+    last 12 months" framed one by `last_name` — `_name` dropped as a generic tail left a bare ordinal to match."""
+    from aughor.ontology.models import EntityProperty, OntologyEntity
+    props = {p: EntityProperty(name=p, semantic_type="dimension")
+             for p in ("first_name", "last_name", "country", "last_campaign_name")}
+    graph = OntologyGraph(connection_id="t", schema_fingerprint="f", entities={"User": OntologyEntity(
+        id="User", display_name="Customer", source_tables=["thelook.users"], identity_key="id", grain_verified=True,
+        properties=props)})
+
+    def said(question: str) -> list[tuple[str, str]]:
+        return [(t.text, t.target) for t in frame_question(question, graph).terms if t.kind == "property"]
+    assert said("Of customers who placed their first order, what share came from each country?") == [
+        ("country", "User.country")]
+    assert said("How has revenue trended over the last 12 months?") == []
+    assert said("List customers by first name and last name") == [
+        ("first name", "User.first_name"), ("last name", "User.last_name")]
+    assert said("Count customers by last campaign") == [("last campaign", "User.last_campaign_name")]
+
+
 # ── nothing declared, nothing framed ────────────────────────────────────────────────────────
 
 

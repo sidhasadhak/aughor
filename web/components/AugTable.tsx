@@ -13,10 +13,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme, type ThemeConfig } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
-import { cleanLabel, formatTableNumber, formatPercent, displayCellValue } from "@/lib/format";
+import { cleanLabel, formatMoney, formatTableNumber, formatPercent, displayCellValue } from "@/lib/format";
 import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
 import { sqlColKey, sqlRowObjects } from "@/lib/sqlTable";
 import { useOrgSettings } from "@/lib/useOrgSettings";
+import { rawCells, TableActions } from "@/components/TableActions";
 
 // ── Theme-mode hook ──────────────────────────────────────────────────────────
 // Ant Design's theme tokens must be real colors (it derives shades), so we can't
@@ -154,13 +155,13 @@ function fmt(col: string, v: unknown): React.ReactNode {
       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatPercent(n, 1)}</span>;
     }
   }
-  // Monetary columns — prefix the configured reporting currency symbol (when one is set).
+  // Monetary columns — to the cent, with the currency symbol when one is known. A column that names
+  // its own currency (refund_chf → CHF) overrides the workspace default. 359,224.30 read "359,224.3"
+  // (2026-10-02): an amount that drops its last zero reads unlike the cents beside it.
   if (isMoneyColumn(col)) {
     const money = Number(v);
-    // A column that names its own currency (refund_chf → CHF) overrides the workspace default.
-    const sym = columnCurrencySymbol(col);
-    if (sym && !isNaN(money) && s.trim() !== "") {
-      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{sym}{formatTableNumber(money)}</span>;
+    if (!isNaN(money) && s.trim() !== "") {
+      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatMoney(money, columnCurrencySymbol(col))}</span>;
     }
   }
   // Large / numeric cells — the FULL number with separators, never K/M/B: a column is read
@@ -206,6 +207,8 @@ interface SqlResultTableProps {
   totals?: boolean;
   /** Max rendered width (px) per cell — long text truncates with an ellipsis + tooltip. Default 320. */
   maxColWidth?: number;
+  /** Names the CSV a reader downloads from the table's Copy / CSV actions. Default "table". */
+  name?: string;
 }
 
 export function SqlResultTable({
@@ -215,6 +218,7 @@ export function SqlResultTable({
   columnOverrides = {},
   totals = true,
   maxColWidth = 320,
+  name = "table",
 }: SqlResultTableProps) {
   // Re-render when org settings change (currency/date) so the inline cell formatting
   // below re-reads them — tables previously read at render but never subscribed.
@@ -310,15 +314,19 @@ export function SqlResultTable({
 
   return (
     <div className="flex flex-col gap-1.5">
-      {showToggle && (
+      {rows.length > 0 && (
         <div className="flex items-center">
-          <button
+          {showToggle && (<button
             onClick={() => setShowTotals(v => !v)}
             title="Show a totals row summing numeric columns"
             className={`aug-fs-xs px-2 py-0.5 rounded border transition-colors ${showTotals ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
           >
             Σ Totals {showTotals ? "on" : "off"}
-          </button>
+          </button>)}
+          {/* Every row, raw: the grid shows a hundred a page, and its header is a separate table. */}
+          <div className="ml-auto">
+            <TableActions name={name} read={() => ({ columns, rows: rawCells(rows as unknown[][]) })} />
+          </div>
         </div>
       )}
       <AugTable<Record<string, unknown>>

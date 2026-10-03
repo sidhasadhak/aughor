@@ -3,61 +3,35 @@
 /**
  * BriefProse — the single inline-emphasis renderer for every answer surface.
  *
- * Replaces the two drifting number-coloring impls (RichText in
- * InvestigationReport, the ad-hoc `fmt` brightening in ChatMessage). One rule,
- * tuned for a published-brief read:
- *   - **bold**            → real bold, brightened (the primary emphasis)
- *   - +1.2K / -$2.1M      → the ONLY semantic color (emerald / red), medium weight
- *   - $1,234 · 12% · 9999 → inherit the body color (figures read as text, not signals)
- *   - everything else     → inherits the surrounding body color
+ * One rule, at the user's word (2026-09-30): "no colouring of the output text at all —
+ * only bold or normal text". `**bold**` renders bold in the body colour; everything else —
+ * figures, signed changes, `*italics*` — renders as normal text.
  *
- * ONE font: figures render in the body font (weight + color carry the emphasis),
- * never a second monospace face mid-sentence — the Databricks report treatment,
- * where "$1.2M" reads in the same type as the words around it. Bold wins over
- * number rules (the alternation lists `**…**` first), so a bolded delta like
- * **-$2.1M** renders bold, not red.
+ * Signed changes used to be the one hue (emerald / red), and the pass that found them split
+ * the text around every figure: the leftover piece after the year in "2026-03-02" starts
+ * with a minus sign, so a whole paragraph of an Agent answer turned red from there to its
+ * end. With no colour there is nothing for a figure pattern to decide, so there is none.
  */
 
 import React from "react";
 import { localizeCurrency } from "@/lib/orgSettings";
+import { ProseTable } from "@/components/TableActions";
 
-// The signed-delta alternatives are BOUNDED on both sides: a `-3` inside
-// `c0e1c05a-3f4d-…` or a date's `2026-09-15` is an id fragment, not a loss, and it
-// rendered in the adverse red until SP-10 (the user's first live bundle showed its
-// proposal id in red pieces). A real delta stands alone: preceded and followed by
-// nothing wordish or hyphen-joined.
-const EMPHASIS_RE =
-  /(\*\*[^*]+\*\*|\*[^*\n]+\*|(?<![\w-])[+]\$?[\d,]+(?:\.\d+)?[KMBk]?%?(?![\w-])|(?<![\w-])-\$?[\d,]+(?:\.\d+)?[KMBk]?%?(?![\w-])|\$[\d,]+(?:\.\d+)?[KMBk]?|\d+(?:\.\d+)?%|\b\d{4,}(?:,\d{3})*\b)/g;
+const EMPHASIS_RE = /(\*\*[^*]+\*\*|\*[^*\n]+\*)/g;
 
-/** Parse a narrative string into emphasized inline nodes. Reused by bullets. */
+/** Parse a narrative string into inline nodes: bold, or normal text. Reused by bullets. */
 export function renderEmphasis(text: string): React.ReactNode[] {
   if (!text) return [];
-  // Honour the configured reporting currency before emphasis is applied, so "$69.81" → "€69.81"
-  // everywhere prose, headlines and bullets render (no-op for USD / unset).
+  // Honour the configured reporting currency, so "$69.81" → "€69.81" everywhere prose,
+  // headlines and bullets render (no-op for USD / unset).
   text = localizeCurrency(text);
   return text.split(EMPHASIS_RE).map((part, i) => {
     if (!part) return null;
-    if (part.startsWith("**") && part.endsWith("**"))
-      return (
-        // Weight-only emphasis — bold stays the SAME color as the surrounding body, so a
-        // sentence reads in one colour (the user's "different colours" note). Reserve hue
-        // for the one real signal: a signed +/- delta (below).
-        <strong key={i} className="font-semibold">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    // Single-asterisk italic (LLMs emit these too) — subtle, inherits color.
+    if (part.length > 4 && part.startsWith("**") && part.endsWith("**"))
+      return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
+    // Single-asterisk italic (models emit these) reads as normal text, markers dropped.
     if (part.length > 2 && part.startsWith("*") && part.endsWith("*"))
-      return <em key={i} className="italic">{part.slice(1, -1)}</em>;
-    if (/^\+/.test(part))
-      return <span key={i} className="font-medium tabular-nums text-emerald-400">{part}</span>;
-    if (/^-/.test(part) && /\d/.test(part))
-      return <span key={i} className="font-medium tabular-nums text-red-400">{part}</span>;
-    // Plain figures ($1,234 · 12% · 9999) inherit the surrounding body color — no
-    // brightening. One color for the reading text; only **bold** (below) and a signed
-    // +/- delta (a real favourability signal) stand out. tabular-nums keeps digits aligned.
-    if (/\$[\d,]+|\d+%|\b\d{4,}/.test(part))
-      return <span key={i} className="tabular-nums">{part}</span>;
+      return <React.Fragment key={i}>{part.slice(1, -1)}</React.Fragment>;
     return <React.Fragment key={i}>{part}</React.Fragment>;
   });
 }
@@ -148,30 +122,28 @@ export function renderProseBlocks(text: string): React.ReactNode[] {
       if (body.length) {
         flush();
         out.push(
-          <div key={`t${out.length}`} className="overflow-x-auto my-2">
-            <table className="aug-text-ui border-collapse">
-              <thead>
-                <tr>
-                  {header.map((h, hi) => (
-                    <th key={hi} className="text-left font-medium text-zinc-400 px-2 py-1 border-b border-zinc-700">
-                      {renderEmphasis(h)}
-                    </th>
+          <ProseTable key={`t${out.length}`}>
+            <thead>
+              <tr>
+                {header.map((h, hi) => (
+                  <th key={hi} className="text-left font-medium text-zinc-400 px-2 py-1 border-b border-zinc-700">
+                    {renderEmphasis(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {body.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((c, ci) => (
+                    <td key={ci} className="text-zinc-300 px-2 py-1 border-b border-zinc-800 whitespace-nowrap">
+                      {renderEmphasis(c)}
+                    </td>
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {body.map((row, ri) => (
-                  <tr key={ri}>
-                    {row.map((c, ci) => (
-                      <td key={ci} className="text-zinc-300 px-2 py-1 border-b border-zinc-800 whitespace-nowrap">
-                        {renderEmphasis(c)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>,
+              ))}
+            </tbody>
+          </ProseTable>,
         );
         i = j - 1;
         continue;

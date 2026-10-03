@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { ReportView } from "@/components/ReportView";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
-import { ThinkingTrace } from "@/components/ThinkingTrace";
+import { ThinkingTrace, shapeReading } from "@/components/ThinkingTrace";
 import { SourcePanel, type SourcePanelData } from "@/components/ChatMessage";
 import { formatTimestamp } from "@/lib/format";
 import type { Hypothesis, QueryCitation, Report, AnswerReport, ExplorationReport, SubQuestion, SubQuestionAnswer, InvestigationState } from "@/lib/types";
@@ -56,7 +56,7 @@ function investigationToTraceState(
     cachedQuestion: null,
     humanFeedback: null,
     queryMode,
-    routeReasoning: null,
+    routeReasoning: shapeReading(deep?.question_shape),
     routeConfidence: null,
     subQuestions: (reportRaw?.sub_questions ?? []) as SubQuestion[],
     subqAnswers: (reportRaw?.subq_answers ?? []) as SubQuestionAnswer[],
@@ -271,14 +271,14 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 </div>
               )}
             </div>
-            {/* The user's input, AS THEY TYPED IT — the same right-aligned bubble the live
-                chat shows, so a restored run still reads as the conversation it was. */}
+            {/* The user's input, AS THEY TYPED IT — right-aligned as the live chat shows it,
+                so a restored run still reads as the conversation it was. No box (the user,
+                2026-09-30): purple text for an Agent question, blue for a Quick one. */}
             <div className="flex justify-end">
               <div style={{
-                maxWidth: "75%", background: "var(--vio2, rgba(139,92,246,0.25))",
-                border: "1px solid var(--vio3, rgba(139,92,246,0.4))",
-                borderRadius: 12, padding: "8px 14px",
-                fontSize: 15, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
+                maxWidth: "75%", padding: "4px 0",
+                fontSize: 15, fontWeight: 600, lineHeight: 1.5,
+                color: reportType === "direct" ? "var(--blue5)" : "var(--vio5)",
               }}>
                 {localizeCurrency(inv.question)}
               </div>
@@ -288,12 +288,12 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
 
           {/* Agent trace — the run's thinking, reconstructed from the stored phases so it is
               inspectable when the investigation is viewed later (item 5). Collapsed by default
-              ("Thinking complete", Genie-style); its query nodes open the Source-data drawer. */}
+              ("Thought process", Genie-style); its query nodes open the Source-data drawer. */}
           {reportRaw && (reportType === "investigate" || reportType === "explore") && (
             <details className="group">
               <summary className="cursor-pointer list-none flex items-center gap-2 aug-fs-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
                 <span className="inline-flex h-1.5 w-1.5 rounded-[var(--r-pill)] bg-zinc-500" />
-                Thinking complete
+                Thought process
                 <span className="ml-0.5 text-zinc-500 select-none">
                   <span className="inline group-open:hidden">▶</span>
                   <span className="hidden group-open:inline">▼</span>
@@ -360,7 +360,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
         <div style={{
           position: "absolute", bottom: 0, left: 0, right: 0,
           height: 260, pointerEvents: "none", zIndex: 1,
-          background: "linear-gradient(to bottom, transparent 0%, #0d0e11 60%)",
+          background: "linear-gradient(to bottom, transparent 0%, var(--bg-canvas) 60%)",
         }} />
       )}
 

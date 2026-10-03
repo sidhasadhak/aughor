@@ -445,6 +445,10 @@ class AnswerReport(TypedDict):
     # measured with, so an accepted recommendation can be asked "did it work?" against the same
     # number. Absent on reports written before this and on runs whose intake carried no metric.
     spec: NotRequired[Optional[dict]]
+    # The sentences the trace check withheld (`report_checks.withhold_untraced`), as written: each
+    # `{from, text, figures}`. Kept for audit and never rendered — the answer says a sentence was withheld.
+    # Absent when nothing was.
+    withheld: NotRequired[Optional[list]]
 
 
 class AgentState(TypedDict):

@@ -32,6 +32,30 @@ def test_finding_flags_and_code_notes_decide_before_prose():
     assert _phase_significance_signal(q) is True
 
 
+def test_a_phase_that_claims_nothing_is_no_side_of_a_contradiction():
+    """The scheduled theLook run of 2026-10-01: the decomposition flagged a finding and the baseline's stats marker
+    said within normal variance — and the Question Intake's spec table and the Declared breakdowns' grids were named
+    beside the baseline as saying so too. Replayed over the 254 stored reports of two phases or more, the detector
+    found 155 significance contradictions, every one naming the Question Intake; once a phase that claims nothing
+    takes no side, 13 — each between a flagged finding and a code-written verdict."""
+    unflagged = [{"is_significant": False, "stat_note": None}]
+    phases = [
+        {"phase_name": "Baseline & Anomaly Assessment", "findings": unflagged,
+         "summary": "Revenue rose 1.1%. [stats.py: σ=0.73 — within normal variance]"},
+        {"phase_name": "Metric Decomposition", "summary": "AOV rose 6.9%.",
+         "findings": [{"is_significant": True, "stat_note": None}]},
+        {"phase_name": "Question Intake", "summary": "Measuring governed Revenue.", "findings": unflagged},
+        {"phase_name": "Declared breakdowns", "summary": "4 breakdowns.", "findings": unflagged * 4},
+    ]
+    def named(ps):
+        return [c.phases for c in detect_contradictions(ps).items]
+    assert named(phases) == [["Metric Decomposition", "Baseline & Anomaly Assessment"]]
+    assert named(phases[1:]) == []                                      # no stated verdict, no tension
+    noted = {"phase_name": "Cross-Sectional Scan", "summary": "",          # a code-written note states one
+             "findings": [{"is_significant": False, "stat_note": "this ordering is not evidence of a difference"}]}
+    assert named(phases[1:] + [noted]) == [["Metric Decomposition", "Cross-Sectional Scan"]]
+
+
 def test_no_structured_signal_falls_back_to_prose():
     assert _phase_significance_signal({"phase_name": "x", "summary": "A notable peak.", "findings": []}) is None
     phases = [

@@ -13,8 +13,17 @@
 export const DATE_COL = /(_date|_at|_time|created_at|updated_at|timestamp)$/i;
 
 /** Date column NAME — the suffix form OR a bare temporal name (month/week/period/…). The
- *  superset used by the shared classifier; a value-prefix match (`DATE_VALUE_RE`) also counts. */
-export const DATE_NAME = /(_date|_at|_time|created_at|updated_at|timestamp|^date$|^month$|^week$|^period$|^quarter$|^day$|^year$)/i;
+ *  superset used by the shared classifier; a value-prefix match (`DATE_VALUE_RE`) also counts.
+ *
+ *  The suffixes are anchored to the END of the name. Unanchored, `_time` inside
+ *  `total_first_time_customers` made a count of customers a date, and the theLook repeat-rate
+ *  answer of 2026-10-01 drew its traffic-source chart with customer counts read as years
+ *  ("Jan 1000 … Jan 9000") and its country chart as a heatmap with counts for categories. */
+export const DATE_NAME = /(_date|_at|_time|created_at|updated_at|timestamp)$|^(date|month|week|period|quarter|day|year)$/i;
+
+/** A bare calendar-grain NAME — the one way a column of plain numbers is a date (`year` holding
+ *  2025, `month` holding 7). */
+const GRAIN_NAME = /^(date|month|week|period|quarter|day|year)$/i;
 
 /** Share / ratio column names → render as percentages. */
 export const SHARE_COL = /(share|pct|percent|rate|ratio|proportion)/i;
@@ -22,9 +31,22 @@ export const SHARE_COL = /(share|pct|percent|rate|ratio|proportion)/i;
 // Change / delta / period-over-period metric column names.
 // When ANY numeric column matches this pattern the question is a COMPARISON question
 // (MoM, YoY, delta, growth rate) — heatmap and stacked-bar are the wrong charts.
-// Also catches lag/prev/prior columns — their presence signals a POP query even when
-// no explicit delta column was computed.
-export const CHANGE_METRIC_COL = /(change|delta|growth|mom|yoy|wow|qoq|pct_change|percent_change|_chg$|_diff$|vs_prev|^prev_|_prev$|^prior_|_prior$|^lag_|_lag$)/i;
+export const CHANGE_METRIC_COL = /(change|delta|growth|mom|yoy|wow|qoq|pct_change|percent_change|_chg$|_diff$|vs_prev)/i;
+
+/** The period before's own value beside its series — a LAG column, `prev_month_revenue`. Its
+ *  presence still signals a period-over-period query, but it is the series shifted by one row, not
+ *  a change: it counted as one, and a chart of Q3's growth result plotted "Prev Month Revenue" —
+ *  August's revenue against September — where the growth rate beside it was the answer (theLook,
+ *  2026-10-02). Never plotted, never offered as a measure while another is there. */
+export const PRIOR_PERIOD_COL = /(^prev_|_prev$|^previous_|^prior_|_prior$|^lag_|_lag$)/i;
+
+/** A change column that is a PERCENT change — `pct_change`, `growth_rate` — leads an absolute one
+ *  (`revenue_change`) on a chart, and reads as a percentage. */
+export const PERCENT_CHANGE_COL = /(pct|percent|rate|ratio)/i;
+
+export function isPriorPeriodCol(col: string): boolean {
+  return PRIOR_PERIOD_COL.test(col) && !CHANGE_METRIC_COL.test(col);   // `revenue_vs_prev` is a change
+}
 
 /** Ordinal / identifier columns — never abbreviate or treat as a measure. */
 export const ORDINAL_COL = /(year|month|day|week|rank|_id$|^id$)/i;
@@ -83,11 +105,13 @@ export function isNumeric(v: unknown): boolean {
  *  Prevents NULL-heavy leading rows (e.g. first month of MoM lag queries) from
  *  mis-classifying numeric columns as categorical. A 20-row cap breaks LAG/LEAD
  *  queries where the first N rows (one per category for the first period) are all
- *  NULL — so we scan everything. */
+ *  NULL — so we scan everything. A result's rows carry a SQL NULL as the string "NULL"
+ *  (as `isDeadColumn` reads it): taken for a value, it made Q3's two change columns
+ *  categories and its chart a heatmap of raw floats (theLook, 2026-10-02). */
 export function firstNonNull(rows: unknown[][], colIdx: number): unknown {
   for (let i = 0; i < rows.length; i++) {
     const v = (rows[i] as unknown[])[colIdx];
-    if (v !== null && v !== undefined && v !== "") return v;
+    if (v !== null && v !== undefined && v !== "" && v !== "NULL") return v;
   }
   return rows[0]?.[colIdx as number];
 }
@@ -150,7 +174,13 @@ export function classifyColumns(
   columns.forEach((col, i) => {
     if (isDeadColumn(rows, i)) return;
     const firstVal = firstNonNull(rows, i);
-    const isDate = DATE_NAME.test(col) || TEMPORAL_GRAIN_COL.test(col)
+    // A column of plain numbers is a date only when it is NAMED as a calendar grain. A
+    // timestamp suffix is not enough: `avg_delivery_time` holds hours and `has_shipped_at`
+    // a count — measures, whatever their names end with. A timestamp arrives as an ISO
+    // string, which the value test reads.
+    const plainNumber = isNumeric(firstVal) && !(firstVal instanceof Date);
+    const isDate = (DATE_NAME.test(col) && (!plainNumber || GRAIN_NAME.test(col)))
+      || TEMPORAL_GRAIN_COL.test(col)
       || (typeof firstVal === "string" && DATE_VALUE_RE.test(firstVal));
     const numeric = !isDate && !isIdLike(col) && isNumeric(firstVal);
     if (isDate) dateIdxs.push(i);
@@ -158,6 +188,168 @@ export function classifyColumns(
     else catIdxs.push(i);
   });
   return { dateIdxs, numericIdxs, catIdxs };
+}
+
+/** How far a written value may sit from the number it was rounded from: "6.9" was written to one
+ *  place, so anything within 0.05 of it is the same number. An unrounded value gets a hair. */
+function writtenTolerance(written: unknown, value: number): number {
+  const m = typeof written === "string" ? /^-?\d*\.(\d+)$/.exec(written.trim()) : null;
+  return Math.max(m ? 0.5 * 10 ** -m[1].length : 0, Math.abs(value) * 1e-9);
+}
+
+/** Does column `r` equal `scale` × column `a` ÷ column `b` on every row that has all three? */
+function isRatioOf(rows: unknown[][], r: number, a: number, b: number, scale: number): boolean {
+  let checked = 0;
+  for (const row of rows) {
+    const rv = row[r];
+    const x = Number(rv), av = Number(row[a]), bv = Number(row[b]);
+    if (rv === null || rv === undefined || rv === "" || !Number.isFinite(x)
+        || !Number.isFinite(av) || !Number.isFinite(bv) || bv === 0) continue;
+    const want = scale * av / bv;
+    if (Math.abs(x - want) > writtenTolerance(rv, want)) return false;
+    checked += 1;
+  }
+  return checked >= 2;
+}
+
+export interface RateParts {
+  rate: number;
+  num: number;
+  den: number;
+  /** The rate is written ×100 (6.9 for 6.9%), not as a fraction. */
+  scaled: boolean;
+}
+
+/**
+ * Each rate whose numerator and denominator are in the same result: a column NAMED as a share or
+ * rate (`repeat_rate`, `pct_returned`) that equals one other numeric column divided by another on
+ * every row — as a fraction or ×100, to the precision it was written at.
+ *
+ * Checked on the values, never assumed from the names: the parts are in the result so the rate
+ * can be checked, and the rate is what was asked. Measured 2026-10-01 on the theLook repeat-rate
+ * answer: each cut came back as `[cut, total_first_time_customers, repeat_customers, repeat_rate]`
+ * and every chart plotted a count — the line took the first measure, the bars the biggest.
+ */
+export function rateParts(columns: string[], rows: unknown[][], numericIdxs: number[]): RateParts[] {
+  const out: RateParts[] = [];
+  for (const r of numericIdxs.filter((i) => SHARE_COL.test(columns[i] || ""))) {
+    found: for (const a of numericIdxs) {
+      if (a === r) continue;
+      for (const b of numericIdxs) {
+        if (b === r || b === a) continue;
+        for (const scale of [1, 100]) {
+          if (isRatioOf(rows, r, a, b, scale)) {
+            out.push({ rate: r, num: a, den: b, scaled: scale === 100 });
+            break found;
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** A per-row average (`avg_hours_to_ship`) and a row count (`order_count`, `n_orders`). */
+const AVERAGE_COL = /(^|_)(avg|average|mean)(_|$)/i;
+const COUNT_COL = /(^|_)(count|cnt|num|n)(_|$)/i;
+
+/**
+ * The measures a chart of this result plots, in column order: its numeric columns less the ones
+ * that are there to make another checkable —
+ *   · named instrumentation (`numerator`, `denominator`, a bare `n`);
+ *   · a rate's own numerator and denominator (`rateParts`);
+ *   · the row count beside an average: the average is the measure, the count is how many rows it
+ *     averaged. Plotting both put item counts and hours on one "Value" axis (theLook's fulfilment
+ *     answer, 2026-10-01).
+ * Every numeric column stands when that would leave none.
+ */
+export function plottedMeasures(columns: string[], rows: unknown[][], numericIdxs: number[]): number[] {
+  const support = new Set<number>();
+  for (const p of rateParts(columns, rows, numericIdxs)) {
+    support.add(p.num);
+    support.add(p.den);
+  }
+  if (numericIdxs.some((i) => AVERAGE_COL.test(columns[i] || ""))) {
+    for (const i of numericIdxs) {
+      if (COUNT_COL.test(columns[i] || "") && !AVERAGE_COL.test(columns[i] || "")) support.add(i);
+    }
+  }
+  for (const i of numericIdxs) if (INSTRUMENTATION_COL.test(columns[i] || "")) support.add(i);
+  for (const i of numericIdxs) if (isPriorPeriodCol(columns[i] || "")) support.add(i);
+  const kept = numericIdxs.filter((i) => !support.has(i));
+  return kept.length ? kept : numericIdxs;
+}
+
+/** The measures a chart offers to plot: every numeric column but the period before's own value
+ *  (`isPriorPeriodCol`) — unless that leaves none. */
+export function offeredMeasures(columns: string[], numericIdxs: number[]): number[] {
+  const kept = numericIdxs.filter((i) => !isPriorPeriodCol(columns[i] || ""));
+  return kept.length ? kept : numericIdxs;
+}
+
+/**
+ * The bar's band when the first label REPEATS across rows while another label is unique to each:
+ * a result that stacks several cuts in one table (`[dimension, value, …]` — "country / China",
+ * "traffic_source / Email"), or a grouping beside the label each row owns. A rate or an average
+ * cannot be stacked, so the bar is the label each row owns, coloured by the repeating one when it
+ * has few values. Null when the first label is already unique, when no other label is, or when
+ * every measure adds up — a stacked total is a composition, and stays one.
+ *
+ * Measured 2026-10-01: the Agent's repeat-rate answer put its source and country cuts in one
+ * result, and the chart drew all 18 rates on two bars, "country" and "traffic_source".
+ */
+export function uniqueLabelBand(columns: string[], rows: unknown[][], catIdxs: number[],
+                                measureIdxs: number[]): { band: number; group?: number } | null {
+  if (catIdxs.length < 2 || !measureIdxs.length) return null;
+  const first = catIdxs[0];
+  if (countUnique(rows, first) >= rows.length) return null;
+  if (measureIdxs.every((i) => ADDITIVE_COL.test(columns[i] || "") && !SHARE_COL.test(columns[i] || ""))) return null;
+  const band = catIdxs.find((i) => i !== first && countUnique(rows, i) === rows.length);
+  if (band === undefined) return null;
+  return countUnique(rows, first) <= 8 ? { band, group: first } : { band };
+}
+
+/** Fewer records than this behind a rate, and it is too few to compare with the others: a rate of
+ *  1 in 2 reads 50%. The rule of thumb for a proportion that stops moving with a few records. */
+export const TOO_FEW_TO_COMPARE = 30;
+
+/**
+ * The rows whose rate rests on too few records to compare — read from the rate's own denominator,
+ * beside it in the result (`rateParts`) — and that denominator's column. Empty unless some row has
+ * enough: when every group is small, none is smaller than the others.
+ */
+export function tooFewToCompare(columns: string[], rows: unknown[][], numericIdxs: number[],
+                                rateCol: string): { den: string; rows: Set<number> } {
+  const r = columns.indexOf(rateCol);
+  const part = r < 0 ? undefined : rateParts(columns, rows, numericIdxs).find((p) => p.rate === r);
+  const few = new Set<number>();
+  if (part) {
+    rows.forEach((row, i) => {
+      const n = Number(row[part.den]);
+      if (Number.isFinite(n) && n < TOO_FEW_TO_COMPARE) few.add(i);
+    });
+  }
+  return few.size && few.size < rows.length && part
+    ? { den: columns[part.den], rows: few } : { den: "", rows: new Set() };
+}
+
+/**
+ * The rates in this result that read as PERCENTAGES with no unit declared: a rate whose numerator
+ * and denominator are beside it, written ×100 or as a fraction that never exceeds 1 — a share of
+ * a whole. Maps the column to whether it is already ×100. A ratio of parts above 1 (orders per
+ * customer) is not a percentage and is left out.
+ */
+export function percentRates(columns: string[], rows: unknown[][], numericIdxs: number[]): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  for (const p of rateParts(columns, rows, numericIdxs)) {
+    const fraction = rows.every((row) => {
+      const v = Number(row[p.rate]);
+      return row[p.rate] === null || row[p.rate] === undefined || row[p.rate] === ""
+        || (Number.isFinite(v) && v >= 0 && v <= 1.0001);
+    });
+    if (p.scaled || fraction) out.set(columns[p.rate], p.scaled);
+  }
+  return out;
 }
 
 /**

@@ -536,6 +536,18 @@ def synthetic_default_off(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_guard_process_caches():
+    """Clear the time-order guard's probe cache between tests. It is keyed by connection id and
+    probe SQL, which is right where one id names one database and wrong in a test session, where
+    every fixture's fresh in-memory database is called "test" — a count cached by one test was
+    served to the next, which built different rows under the same name."""
+    from aughor.sql import time_order_guard as _tog
+    _tog._PROBE_CACHE.clear()
+    yield
+    _tog._PROBE_CACHE.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_provider_process_caches():
     """Clear the LLM provider's process-global caches between tests.
 

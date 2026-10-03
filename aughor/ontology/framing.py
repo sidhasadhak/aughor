@@ -260,6 +260,8 @@ _VIA_RANK = {"derived name": 0, "name": 1, "promise": 1, "display name": 2, "api
 _DETERMINERS = frozenset({"the", "each", "every", "a", "an", "all", "only", "both", "its", "their", "this", "these",
                           "those", "top", "first", "last", "one", "two", "three", "four", "five", "six", "seven", "eight",
                           "nine", "ten"})
+#: The same words stemmed, as a property's name is read (`_property_stems`).
+_DETERMINER_STEMS = _stem_set(*_DETERMINERS)
 _SENTENCE_END = re.compile(r"[?!;]|\.(?=\s|$)")
 _CLAUSE_BREAK = re.compile(r"[?!;:,]|\.(?=\s|$)")
 
@@ -307,9 +309,13 @@ def _readable_properties(entity: OntologyEntity) -> dict[str, EntityProperty]:
 
 def _property_stems(entity: OntologyEntity, name: str) -> list[tuple[tuple[str, ...], str]]:
     """The ways a question names a property: its name with a generic tail dropped, and — as a weaker short name —
-    without the type's own name in front (`seller_state` on Seller is also just "state")."""
+    without the type's own name in front (`seller_state` on Seller is also just "state").
+
+    The tail stays when dropping it would leave a lone determiner: `first_name` is asked as "first name", and a bare
+    "first" is what a question says of an order ("placed their first order") — read as the property, it made a
+    breakdown by customers' first names (theLook, 2026-10-01), as "the last 12 months" made one by `last_name`."""
     stems = list(_stems(name))
-    while len(stems) > 1 and stems[-1] in _GENERIC_TAIL:
+    while len(stems) > 1 and stems[-1] in _GENERIC_TAIL and not (len(stems) == 2 and stems[0] in _DETERMINER_STEMS):
         stems.pop()
     out = [(tuple(stems), "name")]
     owns = {_stems(entity.id), _stems(entity.api_name), *(_stems(t.rsplit(".", 1)[-1]) for t in entity.source_tables)}

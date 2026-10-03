@@ -81,14 +81,18 @@ class Violation(str):
     """
 
     disclosure: str
+    #: The figures a grounding violation found untraced, as the prose wrote them — what
+    #: `withhold_untraced` takes out when the repair attempt did not fix them.
+    figures: tuple
 
-    def __new__(cls, repair: str, disclosure: str = ""):
+    def __new__(cls, repair: str, disclosure: str = "", figures: tuple = ()):
         obj = super().__new__(cls, repair)
         obj.disclosure = disclosure or ""
+        obj.figures = tuple(figures or ())
         return obj
 
 
-def reader_disclosure(violations: list) -> str:
+def reader_disclosure(violations: list, *, repaired: bool = True) -> str:
     """The one sentence the REPORT carries when checks still fail after the repair attempt.
 
     Built from each violation's `.disclosure`; a plain string (a check that predates the
@@ -106,7 +110,11 @@ def reader_disclosure(violations: list) -> str:
             parts.append(d)
     if not parts:
         return ""
-    return "Deterministic checks after the repair attempt: " + "; ".join(parts) + "."
+    # An answer in the analyst's own words (item 3) has no writer and so no repair attempt:
+    # the disclosure says what happened, not what happens on the writer's path.
+    lead = ("Deterministic checks after the repair attempt: " if repaired
+            else "Deterministic checks on this answer: ")
+    return lead + "; ".join(parts) + "."
 
 
 def _float_or_none(s: str) -> Optional[float]:
@@ -265,24 +273,70 @@ def _close(a: float, b: float, rel: float = 0.01) -> bool:
     return b != 0 and abs(a - b) <= abs(b) * rel + 1e-6
 
 
-def _derived_from_evidence(v: float, vals: list[float]) -> bool:
+def _written_tolerance(written: str) -> float:
+    """Half a unit in the last place the figure is written to: 8,022 → 0.5, 406.08 → 0.005."""
+    decimals = len(written.split(".", 1)[1]) if "." in written else 0
+    return 0.5 * 10 ** -decimals + 1e-9
+
+
+#: What follows a figure written as a percentage.
+_PERCENT_AFTER = re.compile(r"\s*(%|percent\b|per cent\b|pp\b|percentage points?\b|points?\b)", re.I)
+#: What follows a figure written as a multiple ("1.5x", "2.3 times").
+_RATIO_AFTER = re.compile(r"\s*(x\b|×|times\b|-?fold\b)", re.I)
+#: A significance THRESHOLD ("p > 0.05", "α = 0.01") is a convention the prose states, not a
+#: measurement the evidence holds — the p-value measured is what the evidence carries.
+_THRESHOLD_BEFORE = re.compile(r"(?:\bp(?:-value)?|α|\balpha)\s*[<>=≤≥]{1,2}\s*$", re.I)
+
+
+def _derived_from_evidence(v: float, vals: list[float], written: str = "",
+                           percent: bool = True, ratio: bool = False) -> bool:
     """True when `v` is arithmetic the evidence licenses: a percent change ((b−a)/a·100, either
-    sign), a share (b/a·100) or a raw delta (b−a) of two evidence values, within 1%.
+    sign) or a share (b/a·100) of two evidence values within 1%, or their raw delta (b−a) to
+    the precision `v` is written in.
 
     This is the credit the explorer's claim-grounding has carried since its first live run
     (`aughor/explorer/verify.py`) and the deep path's check did not: the Direkteingabe
     specimen's "+26.8%" — (37,925 − 29,903) / 29,903 — was the ONLY figure #36 flagged, and
     the message then presented the two correct quoted figures beside it as fabrications. A
     model that does correct arithmetic over the evidence is not inventing; refusing the
-    arithmetic is the "restriction" half of the Track-A rule, not the "verification" half."""
+    arithmetic is the "restriction" half of the Track-A rule, not the "verification" half.
+
+    Item 6 (2026-09-30) narrowed two credits that let a wrong total through once the true one
+    is in the evidence. A DIFFERENCE is in the evidence's own units, so it must match to the
+    precision it is written in, as a quoted figure must — at 1% a hand-added 1,299,882.88
+    passed as "1,299,928.70 minus some row". A CHANGE or SHARE is a percentage, so it licenses
+    only a figure written as one (``percent``) — at 1%, any 100 in the evidence made every
+    figure near another value "a share of it"."""
+    tol = _written_tolerance(written) if written else None
     for a in vals:
         if a == 0:
             continue
         for b in vals:
-            if _close(v, (b - a) / a * 100.0) or _close(v, abs(b - a) / abs(a) * 100.0) \
-                    or _close(v, b / a * 100.0) or _close(v, b - a):
+            if percent and (_close(v, (b - a) / a * 100.0) or _close(v, abs(b - a) / abs(a) * 100.0)
+                            or _close(v, b / a * 100.0)):
+                return True
+            if (abs(v - (b - a)) <= tol) if tol is not None else _close(v, b - a):
+                return True
+            if ratio and _close(v, b / a):          # "Jeans took 1.5x Sweaters' revenue"
                 return True
     return False
+
+
+def _row_pair_sums(evidence: str) -> list[float]:
+    """The sum of each two numbers in ONE row of a result table in the evidence (cells joined by
+    ` | `) — two stages of one record added up. The fulfilment answer of 2026-10-01 said its
+    centres took "3.95 to 4.01 days" from placed to delivered: each centre's two averages added,
+    true to the digit, and the sentence was withheld as untraced. Within a row only: a sum across
+    rows is a total, and a total is quoted from the TOTAL line or not at all (item 6)."""
+    sums: list[float] = []
+    for line in (evidence or "").splitlines():
+        if " | " not in line:
+            continue
+        cells = [c.strip() for c in line.split(" | ")]
+        nums = [f for f in (_float_or_none(_clean_number(c)) for c in cells if _NUM_RE.fullmatch(c))
+                if f is not None]
+        sums.extend(a + b for i, a in enumerate(nums) for b in nums[i + 1:])
+    return sums
 
 
 def check_grounding(prose: str, evidence: str) -> list[str]:
@@ -310,18 +364,32 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
         return []
     have = _evidence_number_set(evidence)
     vals = _evidence_values(evidence)
+    row_sums = _row_pair_sums(evidence)
     bad_figs: list[str] = []
     contexts: list[str] = []
     for segment in _SENTENCE_RE.split(prose):
         if _COMPACT_SUFFIX.search(segment):
             continue
-        for n in _NUM_RE.findall(segment):
+        for m in _NUM_RE.finditer(segment):
+            n = m.group(0)
             clean = _clean_number(n)
             f = _float_or_none(clean) if clean else None
-            if f is None or abs(f) < 10:
+            # A small WHOLE number is a rank, a count of segments or a list number —
+            # coincidental and not worth a retry. A small figure written with decimals is a
+            # measurement: "approximately 3.98 days across all centres" was an average the
+            # model computed itself (2026-10-01), and it went unchecked because it was < 10.
+            if f is None or (abs(f) < 10 and "." not in clean):
                 continue
-            if clean in have or _derived_from_evidence(f, vals):
+            if _THRESHOLD_BEFORE.search(segment[:m.start()]):
                 continue
+            # "406.10" is the evidence's 406.1 written to cents — the set holds it without the zero
+            bare = clean.rstrip("0").rstrip(".") if "." in clean else clean
+            if clean in have or bare in have or _derived_from_evidence(
+                    f, vals, written=clean, percent=bool(_PERCENT_AFTER.match(segment, m.end())),
+                    ratio=bool(_RATIO_AFTER.match(segment, m.end()))):
+                continue
+            if any(abs(f - s) <= _written_tolerance(clean) for s in row_sums):
+                continue                    # two values of one row added, to the precision written
             if clean not in bad_figs:
                 bad_figs.append(n.strip("+-"))
             ctx = segment.strip()
@@ -335,7 +403,79 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
         f"{pitfall(36)} these figures are neither quoted from nor derived from the evidence: "
         f"{figs} (in {where}) — replace each with the evidence's own value or describe it "
         "qualitatively.",
-        f"figures in the summary could not be traced to the evidence, quoted or derived: {figs} (#36)")]
+        f"figures in the summary could not be traced to the evidence, quoted or derived: {figs} (#36)",
+        figures=tuple(bad_figs))]
+
+
+def withhold_untraced(synth: Any, violations: list, question: str = "",
+                      record: Optional[list] = None) -> list[str]:
+    """A figure the trace check still refuses after the one repair attempt is not published.
+
+    Before item 6 (2026-09-30) it shipped: the Agent answer to "top 10 categories by revenue"
+    said the ten made 1,299,882.88 together, the check named the figure, the repair kept it,
+    and the only trace of the failure was a clause in the confidence note. Now each sentence
+    of the headline, summary or bottom line that states such a figure is taken out, the
+    summary says a figure was withheld (withheld is said, never implied), and the violation's
+    reader sentence says so in place of repeating the figure. A headline that carried one is
+    withheld with it, and the answer has no headline: it used to be replaced by the question,
+    which headed the page with a sentence that answered nothing. Returns the figures withheld;
+    empty leaves ``synth`` untouched.
+
+    ``record`` receives each sentence taken out, as written — ``{"from", "text", "figures"}``
+    — for the report to keep unshown. Without it the sentence was gone: the fulfilment answer
+    of 2026-10-01 withheld its opening sentence and nothing said what that sentence had been."""
+    held = [v for v in violations or [] if getattr(v, "figures", ())]
+    figs = list(dict.fromkeys(fig for v in held for fig in v.figures))
+    if not figs:
+        return []
+    pats = [(fig, re.compile(r"(?<![\d,.])" + re.escape(fig) + r"(?![\d,])")) for fig in figs]
+
+    def _carried(text: str) -> list[str]:
+        return [fig for fig, p in pats if p.search(text or "")]
+
+    # What is taken out is a LINE's unit: a table row whole, any other line by its sentences. Cut
+    # by sentences alone, an answer's table was one "sentence" from a header cell's "Avg." to the
+    # note beneath it, and an untraced figure in the note took the table too (2026-10-01, 22:37).
+    def _units(text: str) -> list[list[str]]:
+        return [[line] if line.lstrip().startswith("|") else [s for s in _SENTENCE_RE.split(line) if s.strip()]
+                for line in text.split("\n")]
+
+    def _kept(text: str, lines: list[list[str]]) -> str:
+        kept = []
+        for line, units in zip(text.split("\n"), lines):
+            stay = [u for u in units if not _carried(u)]
+            if not units or len(stay) == len(units):
+                kept.append(line)           # untouched, blank lines and table rows as written
+            elif stay:
+                kept.append(" ".join(u.strip() for u in stay))
+        return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+
+    fields = {f: str(getattr(synth, f, "") or "") for f in ("executive_summary", "closing_summary")}
+    lines = {f: _units(t) for f, t in fields.items()}
+    out = [{"from": f, "text": u.strip(), "figures": _carried(u)}
+           for f, ls in lines.items() for units in ls for u in units if _carried(u)]
+    headline = str(getattr(synth, "headline", "") or "")
+    if _carried(headline):
+        out.insert(0, {"from": "headline", "text": headline.strip(), "figures": _carried(headline)})
+    if not out:
+        return []                           # not found where it was reported: say nothing new
+    for f, text in fields.items():
+        setattr(synth, f, _kept(text, lines[f]))
+    if out[0]["from"] == "headline":
+        synth.headline = ""
+    removed = len(out)
+    if record is not None:
+        record.extend(out)
+    one = len(figs) == 1
+    note = (f"{'A figure' if one else 'Some figures'} in this answer could not be traced to the "
+            f"query results, so {'the sentence' if removed == 1 else f'the {removed} sentences'} "
+            f"stating {'it' if one else 'them'} {'was' if removed == 1 else 'were'} withheld.")
+    summary = str(getattr(synth, "executive_summary", "") or "").rstrip()
+    # A paragraph of its own under an answer laid out in lines — never the last row of its table.
+    synth.executive_summary = (summary + ("\n\n" if "\n" in summary else " ") + note).strip()
+    for v in held:
+        v.disclosure = "a figure that could not be traced to the query results was withheld (#36)"
+    return figs
 
 
 #: Claim words a noise-level ranking cannot support. Tight on purpose: each asserts that a

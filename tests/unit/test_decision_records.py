@@ -461,3 +461,18 @@ def test_a_truncated_field_is_counted_not_silently_clipped():
     before = _counter("learning.decision_record.truncated")
     decisions.record_decision("converse.tool", "x" * 10_000, ["a", "b"], chosen="a")
     assert _counter("learning.decision_record.truncated") - before == 1
+
+
+def test_a_turn_that_began_with_a_preface_captures_no_replay(closed_window, monkeypatch):
+    """Its first decision read results code measured before it; a rebuild from the question alone would
+    put a different input in front of the decider, so it is not captured (2026-10-02)."""
+    from aughor.llm.faux import FauxToolCall
+    from aughor.obs import session_log
+    emitted = []
+    monkeypatch.setattr(session_log, "emit", lambda kind, **kw: emitted.append((kind, kw)))
+    closed_window.open_window(calls=10, minutes=5, opened_by="t", reason="preface test")
+    _wipe()
+    _loop(_two_tools(), [FauxToolCall(payload={}, name="run_sql"), "done"], trace_id="tr-1",
+          replay_args={"builder": "analyst_system_prompt", "intake": "{}", "budget": 6},
+          preface="measured: 7027")
+    assert [k for k, _ in emitted if k == "decision_replay"] == []

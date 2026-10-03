@@ -15,9 +15,10 @@ partial-recall: it must NEVER flag a correct query (the semantic_validator
 false-positive scar), so every guard below errs toward staying silent.
 
 It flags iff ALL hold in the OUTERMOST query scope:
-  1. ≥2 RAW base tables are joined directly (CTE / subquery sources are EXCLUDED —
-     pre-aggregating each satellite in its own CTE is the CORRECT fix, so it must
-     not trip);
+  1. ≥2 RAW base tables are joined directly — or through a CTE / subquery that hands a
+     table's rows on as they are (`_rows_kept_as_read`). One that aggregates or
+     de-duplicates is EXCLUDED: pre-aggregating each satellite in its own CTE is the
+     CORRECT fix, so it must not trip;
   2. those base tables share a foreign-key ROOT (both carry a column that roots to
      the same FK, i.e. both are on the "many" side of the same hub key; date/time
      surrogate keys are excluded);
@@ -42,6 +43,9 @@ class FanoutIssue:
     aggregates: list[str] = field(default_factory=list)  # offending aggregate exprs (text)
     kind: str = "chasm"                # "chasm" (≥2 satellites) | "parent_fanout" (one-to-many)
     children: list[str] = field(default_factory=list)    # for parent_fanout: the many-side tables
+    #: A table in it was read through a CTE or subquery that keeps the table's rows as they are
+    #: (`_rows_kept_as_read`). Said, never rewritten: the rewrites below take one flat SELECT.
+    through_cte: bool = False
 
     def to_prompt_text(self) -> str:
         if self.kind == "dim_ratio":
@@ -98,10 +102,35 @@ def _singular(t: str) -> str:
     return t[:-1] if t.endswith("s") else t
 
 
+def _rows_kept_as_read(source, cte_names: set[str]) -> str | None:
+    """The stored table a CTE or subquery reads, when it hands that table's rows on as they are — no aggregate,
+    GROUP BY, DISTINCT, window, QUALIFY or LIMIT — so joining it multiplies rows exactly as joining the table would.
+    None for one that aggregates or de-duplicates: pre-aggregating in a CTE is the fix, and stays unflagged.
+
+    The fulfilment answer of 2026-10-01 averaged each order's lead time over a CTE of orders joined to a CTE of
+    order items on `order_id` — once per item — and that statement passed with no caveat, after the same join
+    written over the two tables had been flagged twice."""
+    from sqlglot import exp
+    sel = getattr(source, "expression", None)
+    if not isinstance(sel, exp.Select):
+        return None
+    if any(sel.args.get(k) for k in ("group", "distinct", "qualify", "limit", "having")):
+        return None
+    if any(p.find(exp.AggFunc, exp.Window) for p in sel.expressions):
+        return None
+    table = getattr(sel.args.get("from_") or sel.args.get("from"), "this", None)
+    if not isinstance(table, exp.Table) or table.name.lower() in cte_names:
+        return None
+    return table.name.lower()
+
+
 def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "duckdb"):
     """Return a FanoutIssue if the OUTER scope fans out across ≥2 shared-root
     satellites with non-distinct aggregates over both, else None. Best-effort:
-    any parse/analysis error returns None (never raise into the pipeline)."""
+    any parse/analysis error returns None (never raise into the pipeline).
+
+    A CTE or subquery that keeps its table's rows as they are counts as that table
+    (`_rows_kept_as_read`); one that aggregates or de-duplicates is excluded, as before."""
     try:
         import sqlglot
         from sqlglot import exp
@@ -128,6 +157,7 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
     cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
     alias_to_table: dict[str, str] = {}   # alias-or-name(lower) -> real base table (lower, bare)
     base_tables: set[str] = set()
+    through: set[str] = set()             # the base tables read through a CTE or subquery
     for alias, source in root.sources.items():
         if isinstance(source, exp.Table):
             name = source.name.lower()
@@ -137,6 +167,12 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
             alias_to_table[alias.lower()] = bare
             alias_to_table[name] = bare
             base_tables.add(bare)
+        else:
+            bare = _rows_kept_as_read(source, cte_names)
+            if bare:
+                alias_to_table[alias.lower()] = bare
+                base_tables.add(bare)
+                through.add(bare)
 
     if len(base_tables) < 2:
         return None
@@ -186,7 +222,8 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
         aggregated = [t for t in sats if t in agg_tables]
         if len(aggregated) >= 2:
             aggs = sorted({a for t in aggregated for a in agg_tables[t]})
-            return FanoutIssue(hub_root=r, satellites=sorted(aggregated), aggregates=aggs[:6])
+            return FanoutIssue(hub_root=r, satellites=sorted(aggregated), aggregates=aggs[:6],
+                               through_cte=bool(through & set(aggregated)))
 
     # ── Single parent-measure fan-out (the one-to-many case the multi-satellite
     # check above misses): SUM/AVG of a PARENT's measure across a join to a finer-
@@ -209,6 +246,7 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
             return FanoutIssue(
                 hub_root=r, satellites=[parent], children=sorted(children),
                 aggregates=sorted(set(parent_aggs))[:6], kind="parent_fanout",
+                through_cte=bool(through & {parent, *children}),
             )
 
     return None
@@ -1379,7 +1417,7 @@ def build_parent_fanout_rewrite(sql: str, finding: "FanoutIssue", dialect: str =
         sel = sqlglot.parse_one(sql, read=dialect)
     except Exception:
         return None
-    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+    if not isinstance(sel, exp.Select) or sel.args.get("with_") or sel.args.get("with"):
         return None  # only a single flat SELECT (detect_fanout already excludes CTE sources)
 
     alias_to_table = {(t.alias_or_name or "").lower(): t.name.lower() for t in sel.find_all(exp.Table)}
@@ -1516,7 +1554,7 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutIssue", dialect: str = 
         sel = sqlglot.parse_one(sql, read=dialect)
     except Exception:
         return None
-    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+    if not isinstance(sel, exp.Select) or sel.args.get("with_") or sel.args.get("with"):
         return None
 
     alias_to_table = {(t.alias_or_name or "").lower(): t.name.lower() for t in sel.find_all(exp.Table)}
@@ -1748,7 +1786,7 @@ def _extract_dim_ratio(sql: str, table_cols: dict | None = None, dialect: str = 
         sel = sqlglot.parse_one(sql, read=dialect)
     except Exception:
         return None
-    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+    if not isinstance(sel, exp.Select) or sel.args.get("with_") or sel.args.get("with"):
         return None  # CTE/derived sources are already the fix
 
     # Exactly two RAW base tables (FROM + one JOIN), no subqueries.
@@ -1952,6 +1990,9 @@ def defan(sql: str, finding: "FanoutIssue", dialect: str = "duckdb"):
     if finding is None:
         return None
     from aughor.stats import bump
+    if finding.through_cte:
+        bump("guard.defan.declined.through_cte")
+        return None
     bump(f"guard.defan.attempt.{finding.kind}")
     rewritten = None
     if finding.kind == "parent_fanout":

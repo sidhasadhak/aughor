@@ -204,7 +204,7 @@ def test_the_walk_finds_the_doors(sites):
     """A walk that found nothing would pass every test below. These sites are the study's own examples."""
     for key in ("aughor/sql/join_guard.py::_probe_overlap::execute::__domain_probe__",
                 "aughor/monitors/runner.py::_query::rows::__monitor__",
-                "aughor/routers/query.py::query_run._work::execute::{_source}",
+                "aughor/routers/query.py::_query_run._work::execute::{_source}",
                 "aughor/agent/investigate.py::_execute_safe::execute_guarded::{phase_id}",
                 "aughor/semantic/metrics.py::compute_value::execute::__metric_value__"):
         assert key in sites, f"the walk no longer finds {key}"

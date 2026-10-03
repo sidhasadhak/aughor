@@ -241,13 +241,14 @@ class _MergeEntitiesRequest(BaseModel):
 
 class _ColumnConfigEdit(BaseModel):
     """One human edit to one column's {visible, sample, index} config (R11).
-    Only the flags present in the body change; the entry becomes source=human."""
+    Only the fields present in the body change; the entry becomes source=human. A ``note``
+    replaces the column's note — ``""`` clears it — and the replaced note is kept in its history."""
     table: str
     column: str
     visible: Optional[bool] = None
     sample: Optional[bool] = None
     index: Optional[bool] = None
-    note: str = ""
+    note: Optional[str] = None
 
 
 class _ComputedPropertyOverride(BaseModel):
@@ -3127,8 +3128,7 @@ def put_column_config(
     Invalidates the schema cache so pruning changes AND notes reach the next
     prompt (a note rides the column line since 2026-08-14 — before that, the
     endpoint accepted one and nothing read it, and a note-only edit was 422'd)."""
-    if (body.visible is None and body.sample is None and body.index is None
-            and not (body.note or "").strip()):
+    if body.visible is None and body.sample is None and body.index is None and body.note is None:
         raise HTTPException(status_code=422,
                             detail="pass at least one of visible/sample/index/note")
     from aughor.ontology.column_config import set_column_flags

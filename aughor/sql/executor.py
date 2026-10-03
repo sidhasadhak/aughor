@@ -79,7 +79,7 @@ def preflight_harden(conn: "DatabaseConnection", sql: str, schema: str, *,
 
     Both are SQL→SQL rewrites gated on a clean dry-run (a rewrite is adopted only if
     it binds), so on already-correct SQL this is a no-op. Extracted so every answer
-    path shares the SAME hardening: the ADA runner (below) and the explore loop (which
+    path shares the SAME hardening: the deep-analysis runner (below) and the explore loop (which
     had neither de-fan nor preflight-repair before) both call it. Fail-open — any
     internal hiccup returns the SQL unchanged. ``counter_prefix`` keeps each caller's
     /dev/stats series distinct (``ada.exec_*`` vs ``explore.exec_*``)."""
@@ -203,6 +203,7 @@ def execute_guarded(
     fix_prompt_template: Optional[str] = None,
     provider_factory: Optional[Callable[..., Any]] = None,
     sql_dialect: Optional[str] = None,
+    metric_rules: Optional[list] = None,
 ):
     """Execute SQL with the guard battery and one self-correction retry. Returns QueryResult.
 
@@ -223,6 +224,13 @@ def execute_guarded(
     ``None`` for a statement written for this engine. It is applied HERE, once, before
     the first guard, so the hardening, the trust gate, the value-domain guards and any
     repair all read the statement the engine will run, not the one the platform wrote.
+
+    `metric_rules` are the declared filters of the metrics the QUESTION targets
+    (`semantic.enforcement.declared_filter_rules`), supplied by the caller's layer for a
+    statement a model wrote. Each is put on the scopes that compute its metric before the
+    statement runs — the first one and any repair of it — and only when the result
+    dry-runs clean. ``None`` (every caller that runs a person's own SQL) leaves the
+    statement exactly as written.
     """
     from pydantic import BaseModel
     from aughor.db.dialects import sql_for_engine
@@ -244,6 +252,51 @@ def execute_guarded(
         _steps.append("guarded:preflight")
         if sql != _unhardened:
             _steps.append("repaired:preflight")
+
+    # A declared metric is its formula AND the rows it is over. The formula reached every
+    # statement of the five runs measured 2026-09-29 and the filter reached none (July
+    # revenue 426,292.28 published, 365,320.51 declared), so the filter is put on the
+    # statement here rather than asked for in a prompt. A rewrite that does not dry-run is
+    # not adopted, and then the result SAYS its figure is off the declared definition.
+    _declared_caveats: list[str] = []
+
+    def _declared(statement: str) -> str:
+        if not metric_rules:
+            return statement
+        try:
+            from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+            from aughor.sql.metric_filter_guard import enforce_metric_filters
+            if "guarded:declared-filter" not in _steps:
+                _steps.append("guarded:declared-filter")
+            _rewritten, _applied = enforce_metric_filters(
+                statement, metric_rules, dialect=getattr(conn, "dialect", "duckdb"))
+            if not _applied:
+                return statement
+            _what = "; ".join(dict.fromkeys(
+                f"{a['metric']} is declared over {a['filter']} on {a['table']}" for a in _applied))
+            if conn.dry_run(_rewritten)[0]:
+                emit_guard_receipt(
+                    "declared_filter", "rewrote_sql",
+                    detail=f"{_what} — every figure this statement computes there is over "
+                           "those rows",
+                    before=statement, after=_rewritten)
+                if "repaired:declared-filter" not in _steps:
+                    _steps.append("repaired:declared-filter")
+                return _rewritten
+            emit_guard_receipt(
+                "declared_filter", "flagged",
+                detail=f"{_what} — the filter could not be added, so it executes as written",
+                before=statement)
+            _declared_caveats.append(
+                f"declared-filter guard: {_what}, and this statement does not apply it — "
+                "its figure is not the declared one")
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "declared-filter guard is fail-open; the statement executes as "
+                           "written", counter="sql.declared_filter_guard")
+        return statement
+
+    sql = _declared(sql)
 
     # AL-01 — route the generated SQL through the one Trust plane's
     # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
@@ -348,7 +401,9 @@ def execute_guarded(
         _guard_caveats.append(f"zero-row check: {_zero_diag}")
 
     def _attach_caveats(res, extra: list[str]):
-        extra = [*extra, *_unchecked_caveats]
+        # Two kinds of caveat ride every result: a declared filter this statement does not
+        # apply, and a guard that could not run (GM-4).
+        extra = [*extra, *_declared_caveats, *_unchecked_caveats]
         if extra:
             res.caveats = list(dict.fromkeys([*res.caveats, *extra]))
         _add_doors(res, _before, first=True)
@@ -386,6 +441,33 @@ def execute_guarded(
                      counter="trust.e1_live")
             return []
 
+    # A duration between two timestamps that run backwards on a real share of rows: the
+    # statement is correct SQL and its average is still wrong (theLook, 2026-10-01 — items
+    # recorded as shipped before they were created on 19,360 of 33,272 rows, and a fulfilment
+    # time published as 3.12 days whose true value is 3.98). Checked on the statement that RAN,
+    # at exit, like E1; a statement measuring no duration is not probed and says nothing.
+    def _time_order_caveats(res) -> list[str]:
+        if getattr(res, "error", None) or not getattr(res, "sql", ""):
+            return []
+        try:
+            from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+            from aughor.sql.time_order_guard import time_order_check
+            from aughor.sql.trust_checks import connection_column_types
+            _trun = time_order_check(
+                conn, res.sql, getattr(conn, "dialect", "duckdb") or "duckdb",
+                column_types=lambda: connection_column_types(getattr(conn, "_connection_id", ""), conn))
+            if _trun is None:
+                return []
+            _steps.append(_trun.door)
+            for _f in _trun.findings:
+                emit_guard_receipt("time_order", "flagged", detail=_f.detail(), before=res.sql)
+            return [_f.caveat() for _f in _trun.findings] + _trun.notes + _trun.caveats()
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "the time-order guard is advisory; the result proceeds uncaveated",
+                     counter="sql.time_order_guard")
+            return []
+
     # CA-2 — a filter literal the guard can bind DETERMINISTICALLY (a stored-value spelling,
     # or the same value in a sibling column of the same table) is repaired without a model
     # call: AST surgery, dry-run, and the guard re-probed on the result. The deep path's
@@ -416,7 +498,8 @@ def execute_guarded(
                     _fg_stats.inc("filter_guard.deterministic_repair")
                     _steps.append("repaired:deterministic")
                     _det_retry.sql = _fixed
-                    return _attach_caveats(_det_retry, _e1_caveats(_fixed))
+                    return _attach_caveats(_det_retry, [*_e1_caveats(_fixed),
+                                                        *_time_order_caveats(_det_retry)])
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "deterministic filter repair is best-effort; the model fix loop "
@@ -434,7 +517,8 @@ def execute_guarded(
         # the guards above have run; return the raw result WITH its caveats attached
         # (previously they were dropped here — the WP-1a swallow seam).
         if fix_prompt_template is None or provider_factory is None:
-            return _attach_caveats(result, [*_guard_caveats, *_e1_caveats(result.sql)])
+            return _attach_caveats(result, [*_guard_caveats, *_e1_caveats(result.sql),
+                                            *_time_order_caveats(result)])
 
         class _Fix(BaseModel):
             fixed_sql: str
@@ -518,6 +602,9 @@ def execute_guarded(
                 user=fix_prompt,
                 response_model=_Fix,
             )
+            # A repair is a new statement from a model that was not told the declared
+            # filter — it takes the same guard the first one did, before it runs.
+            fix.fixed_sql = _declared(fix.fixed_sql)
             with mlflow_tool_span("sql.execute.retry",
                                   {"query_id": query_id, "sql": fix.fixed_sql,
                                    "dialect": getattr(conn, "dialect", "")}):
@@ -569,4 +656,5 @@ def execute_guarded(
     # A NOVEL-literal caveat (CA-2) never enters the fix block above, so it is attached here —
     # the only knowledge the reader has that the zero is an absence, not a measurement.
     _novel_caveats = [c for c in _guard_caveats if "the segment is absent, not zero" in c]
-    return _attach_caveats(result, [*_novel_caveats, *_e1_caveats(result.sql)])
+    return _attach_caveats(result, [*_novel_caveats, *_e1_caveats(result.sql),
+                                    *_time_order_caveats(result)])

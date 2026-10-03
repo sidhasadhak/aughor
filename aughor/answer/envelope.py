@@ -118,31 +118,41 @@ def _cells(line: str) -> list[str]:
     return [c.strip().replace("\\|", "|") for c in _UNESCAPED_PIPE.split(s)]
 
 
-def lift_tables(text: str) -> tuple[str, list[Grid]]:
-    """Every GFM table in ``text``, parsed and REMOVED, with the prose that remains.
+def table_at(lines: list[str], i: int) -> Optional[tuple[list[str], list[list[Any]], int]]:
+    """The GFM table that starts at ``lines[i]`` — (columns, rows, the index after it) — or None.
 
     A table is a header line containing a pipe, a delimiter row directly under it, and the
     contiguous pipe-bearing lines after that. Only the delimiter's shape decides — never
-    the content — so prose with a pipe in it is left exactly as written.
+    the content — so prose with a pipe in it is left exactly as written. The one reading of
+    a table: :func:`lift_tables` and the PDF's summary both use it.
     """
+    line = lines[i]
+    if not ("|" in line and i + 1 < len(lines) and _is_delimiter(lines[i + 1])):
+        return None
+    columns = _cells(line)
+    rows: list[list[Any]] = []
+    j = i + 2
+    while j < len(lines) and lines[j].strip() and "|" in lines[j]:
+        cells = _cells(lines[j])
+        rows.append((cells + [""] * len(columns))[: len(columns)])
+        j += 1
+    return columns, rows, j
+
+
+def lift_tables(text: str) -> tuple[str, list[Grid]]:
+    """Every GFM table in ``text`` (as :func:`table_at` reads one), parsed and REMOVED, with
+    the prose that remains."""
     lines = (text or "").split("\n")
     kept: list[str] = []
     grids: list[Grid] = []
     i = 0
     while i < len(lines):
-        line = lines[i]
-        if "|" in line and i + 1 < len(lines) and _is_delimiter(lines[i + 1]):
-            columns = _cells(line)
-            rows: list[list[Any]] = []
-            j = i + 2
-            while j < len(lines) and lines[j].strip() and "|" in lines[j]:
-                cells = _cells(lines[j])
-                rows.append((cells + [""] * len(columns))[: len(columns)])
-                j += 1
+        found = table_at(lines, i)
+        if found:
+            columns, rows, i = found
             grids.append(Grid(columns=columns, rows=rows))
-            i = j
             continue
-        kept.append(line)
+        kept.append(lines[i])
         i += 1
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip(), grids
 

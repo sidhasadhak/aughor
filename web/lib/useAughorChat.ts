@@ -58,16 +58,24 @@ export function useAughorChat({
   onError,
   onData,
 }: UseAughorChatOptions) {
-  // Callbacks ride refs so a re-rendered parent handing a fresh closure does not
-  // rebuild the Chat and throw the conversation away. Mirrored in an effect —
-  // the refs are only ever read at request/stream time, never during render.
+  // Callbacks — and the connection — ride refs so a re-rendered parent handing a fresh
+  // closure does not rebuild the Chat and throw the conversation away. Mirrored in an
+  // effect — the refs are only ever read at request/stream time, never during render.
+  //
+  // The connection most of all: the canvas mounts the panel before its connection has
+  // loaded, so a `?chat=` link restored its turns into a Chat that the arriving connection
+  // then replaced with an empty one of the same id — the link opened an empty conversation,
+  // on every reload (2026-10-02). A new conversation is a new session id, which the panel
+  // makes on a connection change; the connection alone never rebuilds the Chat.
   const onErrorRef = useRef(onError);
   const onDataRef = useRef(onData);
   const bodyRef = useRef(body);
+  const connectionRef = useRef(connectionId);
   useEffect(() => {
     onErrorRef.current = onError;
     onDataRef.current = onData;
     bodyRef.current = body;
+    connectionRef.current = connectionId;
   });
 
   const chat = useMemo(
@@ -81,7 +89,7 @@ export function useAughorChat({
           // client to be the only memory. Resolved per request, so a late-arriving
           // canvas/schema pin applies without rebuilding the conversation.
           body: () => ({
-            connection_id: connectionId,
+            connection_id: connectionRef.current,
             session_id: sessionId,
             ...(bodyRef.current ?? {}),
           }),
@@ -100,7 +108,7 @@ export function useAughorChat({
           }
         },
       }),
-    [connectionId, sessionId],
+    [sessionId],
   );
 
   // FL-1b — on mount, ask the transport whether this conversation has an

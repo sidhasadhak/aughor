@@ -93,7 +93,9 @@ def test_a_question_that_reaches_nothing_declared_leaves_the_intake_byte_identic
     question = "How many sellers are there in each state?"
     framed, framed_prompt = _run(monkeypatch, intake, question, framed=True)
     bare, bare_prompt = _run(monkeypatch, intake, question, framed=False)
+    from aughor.agent.sql_context import sql_context
     written = INTAKE_PROMPT.format(question=question, schema=SCHEMA, scan_context="", events_section="",
+                                   sql_context=sql_context(object()),   # the engine and the clock, as the intake states them
                                    origin_finding_section=I._render_origin_finding_section(None))
     assert framed_prompt == written and bare_prompt == written      # the prompt the intake wrote before ON-10
     assert "ontology_frame" not in framed["_ada_intake"]

@@ -240,6 +240,26 @@ def test_burndown_hard_binds_the_resolved_reading(monkeypatch):
     assert it.metric_sql == parsed           # hard-bound to the user's earlier choice, not governed
 
 
+def test_a_reading_the_intake_pinned_itself_is_never_bound_as_a_choice(monkeypatch):
+    """theLook, 2026-10-02: the one-metric intake of 09-29 pinned units_sold's COUNT(id) to "total revenue and units
+    sold" (source probe), and every run after bound COUNT(id) to "total revenue" as "your previously-chosen reading".
+    A reviewer's verdict binds, and says it is a reviewer's."""
+    from aughor.org.context import current_org_id
+    from aughor.semantic import ambiguity_ledger as L
+    parsed = "COUNT(DISTINCT refund_id) / COUNT(DISTINCT order_id) * 100"
+    for conn_id, source in (("c_probe_only", "probe"), ("c_reviewed", "verdict")):
+        L.save_resolution(L.AmbiguityResolution(
+            connection_id=conn_id, org_id=current_org_id() or "", dim_kind="AmbiIntent", dim_facet="aggregation",
+            subject="definition of Fragrance refund rate", resolved_reading="a reading",
+            resolved_sql=parsed, resolution_source=source))
+    probed = _intake(metric_sql=_GOVERNED.sql)
+    assert I._apply_resolved_metric_reading(probed, "c_probe_only", _ProbeConn({"refund_id": 20.2})) is None
+    assert probed.metric_sql == _GOVERNED.sql
+    reviewed = _intake(metric_sql=_GOVERNED.sql)
+    note = I._apply_resolved_metric_reading(reviewed, "c_reviewed", _ProbeConn({"refund_id": 20.2}))
+    assert note and note.startswith("Using a reviewer's reading") and reviewed.metric_sql == parsed
+
+
 def test_burndown_noop_when_unresolved(monkeypatch):
     it = _intake()
     conn = _ProbeConn({"refund_id": 20.2})
