@@ -32,36 +32,21 @@ class DialectCapabilities:
     unsupported_features: frozenset[str] = field(default_factory=frozenset)
 
 
-# Only HIGH-CONFIDENCE footguns, cross-checked against db/dialects.py:
-#   - QUALIFY: supported on snowflake/bigquery/duckdb; ERRORS on postgres/mysql.
-#   - ILIKE:   supported on postgres/snowflake/duckdb; ERRORS on bigquery/mysql.
+# Only HIGH-CONFIDENCE footguns, cross-checked against the writer rules:
+#   - QUALIFY: supported on snowflake/bigquery/duckdb/exasol; ERRORS on postgres/mysql/trino.
+#   - ILIKE:   supported on postgres/snowflake/duckdb; ERRORS on bigquery/mysql/trino.
 #   - SAFE_DIVIDE: bigquery-only.   DIV0/IFF: snowflake-only.   DATE_TRUNC: absent on mysql.
+#
+# DE-3b: each row is DERIVED from the engine's declaration (`connectors/declarations.py`,
+# `refuses_functions` / `refuses_features`) — the refusal is stated once, beside the engine's
+# writer rules, and read here. (DE-3a had given Exasol its own row: QUALIFY supported, its
+# date arithmetic DAYS_BETWEEN / SECONDS_BETWEEN rather than DATEDIFF.)
+from aughor.connectors.declarations import derive_refusals  # noqa: E402
+
 _CAPS: dict[str, DialectCapabilities] = {
-    "bigquery": DialectCapabilities(
-        "bigquery",
-        unsupported_functions=frozenset({"DIV0", "IFF", "DATEDIFF"}),
-        unsupported_features=frozenset({FEATURE_ILIKE}),
-    ),
-    "snowflake": DialectCapabilities(
-        "snowflake",
-        unsupported_functions=frozenset({"SAFE_DIVIDE"}),
-    ),
-    "mysql": DialectCapabilities(
-        "mysql",
-        unsupported_functions=frozenset({"DATE_TRUNC", "DATE_DIFF", "SAFE_DIVIDE", "DIV0", "IFF"}),
-        unsupported_features=frozenset({FEATURE_QUALIFY, FEATURE_ILIKE}),
-    ),
-    "postgres": DialectCapabilities(
-        "postgres",
-        unsupported_functions=frozenset({"SAFE_DIVIDE", "DIV0", "IFF"}),
-        unsupported_features=frozenset({FEATURE_QUALIFY}),
-    ),
-    # DE-3a — Exasol's own row, now that it declares `exasol`: QUALIFY is SUPPORTED (under the borrowed `postgres`
-    # name the writer was told to avoid it); its date arithmetic is DAYS_BETWEEN / SECONDS_BETWEEN, not DATEDIFF.
-    "exasol": DialectCapabilities(
-        "exasol",
-        unsupported_functions=frozenset({"SAFE_DIVIDE", "IFF", "DATEDIFF"}),
-    ),
+    dialect: DialectCapabilities(dialect, unsupported_functions=frozenset(functions),
+                                 unsupported_features=frozenset(features))
+    for dialect, (functions, features) in derive_refusals().items()
 }
 
 _PERMISSIVE = DialectCapabilities("")   # duckdb / sqlite / motherduck / unknown → no diagnostics

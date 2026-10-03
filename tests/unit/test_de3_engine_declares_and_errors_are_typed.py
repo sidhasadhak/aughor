@@ -213,8 +213,8 @@ def test_the_pool_closes_a_lost_connection_and_hands_out_only_what_answers():
 def test_every_connection_class_answers_is_healthy():
     """The base answers through `test()`; each warehouse connector answers more cheaply, with its own check."""
     warehouse = {"BigQueryConnection", "SnowflakeConnection", "MySQLConnection", "ExasolConnection",
-                 "MotherDuckConnection", "PostgresConnection", "DuckDBConnection", "SQLiteConnection",
-                 "LocalUploadConnection"}
+                 "TrinoConnection", "MotherDuckConnection", "PostgresConnection", "DuckDBConnection",
+                 "SQLiteConnection", "LocalUploadConnection"}
     assert warehouse <= {c.__name__ for c in CLASSES}
     for cls in CLASSES:
         assert callable(getattr(cls, "is_healthy", None)), cls.__name__

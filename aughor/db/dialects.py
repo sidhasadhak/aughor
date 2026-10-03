@@ -45,59 +45,13 @@ _TRANSPILE_NOTE = (
 # Native-execution dialects: the LLM's SQL runs verbatim, so it must be correct
 # in THIS dialect. Concise, high-yield rules (bucketing / diff / safe-divide /
 # casting / string-agg) — the operations LLMs most often get wrong cross-dialect.
-_DIALECT_RULES: dict[str, str] = {
-    "bigquery": """
-BIGQUERY (GoogleSQL) DIALECT RULES (violations cause query errors):
-- Date bucketing: DATE_TRUNC(date_col, MONTH) or TIMESTAMP_TRUNC(ts, MONTH) / DATETIME_TRUNC(dt, MONTH). The grain (DAY/WEEK/MONTH/QUARTER/YEAR) is an UNQUOTED keyword, and the column is the FIRST arg — NOT date_trunc('month', col).
-- Date differences: DATE_DIFF(d1, d2, DAY) / TIMESTAMP_DIFF(a, b, SECOND) (unit is an unquoted keyword, last arg).
-- TIMESTAMP vs DATE: BigQuery does NOT coerce between them in comparisons. This is the single most common error in generated SQL here, and it has TWO forms — a bare '2026-08-01' literal IS a DATE, and an explicit DATE '2026-08-01' is one too. So BOTH `ts_col >= '2026-08-01'` and `ts_col >= DATE '2026-08-01'` are type errors against a TIMESTAMP column. Write `ts_col >= TIMESTAMP '2026-08-01'`, or `DATE(ts_col) >= '2026-08-01'` when day precision is meant. Writing DATE in front of the literal does NOT make it match a TIMESTAMP column — it is what makes it a DATE.
-- Division: use SAFE_DIVIDE(a, b) to avoid divide-by-zero errors (returns NULL).
-- Type casting: CAST(x AS INT64 | FLOAT64 | NUMERIC | STRING | DATE | TIMESTAMP). Use INT64/FLOAT64/STRING — NOT INTEGER/VARCHAR. SAFE_CAST(...) returns NULL on failure.
-- String aggregation: STRING_AGG(col, ',').
-- Identifiers: backtick-quote `project.dataset.table`. Reference SELECT aliases in GROUP BY/ORDER BY by position or alias (allowed), but NOT in WHERE/HAVING.
-""".strip(),
-    "snowflake": """
-SNOWFLAKE DIALECT RULES (violations cause query errors):
-- Date bucketing: DATE_TRUNC('MONTH', ts) (grain quoted, column second). Supports MINUTE/HOUR/DAY/WEEK/MONTH/QUARTER/YEAR.
-- Date differences: DATEDIFF('day', d1, d2) / DATEDIFF('second', a, b) (unit quoted, FIRST arg). TIMESTAMPDIFF(unit, a, b) is also valid — do not "fix" it away.
-- Division: use DIV0(a, b) (returns 0 on zero denominator) or IFF(b = 0, NULL, a / b).
-- Type casting: x::NUMBER / x::VARCHAR / CAST(x AS NUMBER). TRY_CAST(...) returns NULL on failure.
-- String aggregation: LISTAGG(col, ',') WITHIN GROUP (ORDER BY col); to build an array use ARRAY_AGG(col).
-- Filter by a window function: use QUALIFY (e.g. QUALIFY ROW_NUMBER() OVER (PARTITION BY x ORDER BY y) = 1) — you CANNOT put a window function in WHERE.
-- Semi-structured (VARIANT/OBJECT/ARRAY): navigate with colon/bracket paths — col:field, col:a.b, col['k']; cast the leaf with ::STRING/::NUMBER. Expand an array into rows with LATERAL FLATTEN(input => col) f, then read f.value.
-- Case-insensitive match: ILIKE '%text%' (not LOWER(col) LIKE).
-- Identifiers fold to UPPERCASE unless double-quoted. You CANNOT reference SELECT aliases in WHERE/HAVING.
-""".strip(),
-    "mysql": """
-MYSQL DIALECT RULES (violations cause query errors):
-- Date bucketing: MySQL has NO date_trunc. Month → DATE_FORMAT(ts, '%Y-%m-01'); day → DATE(ts); year → DATE_FORMAT(ts, '%Y-01-01'); week (Mon start) → DATE_SUB(DATE(ts), INTERVAL WEEKDAY(ts) DAY). NEVER call date_trunc().
-- Date differences: DATEDIFF(d1, d2) for whole days; TIMESTAMPDIFF(SECOND, a, b) for seconds (note: DATEDIFF takes exactly 2 args, no unit).
-- Division: guard zero denominators with NULLIF — a / NULLIF(b, 0).
-- Type casting: CAST(x AS SIGNED | DECIMAL(38,6) | CHAR | DATE | DATETIME). MySQL has no ::TYPE syntax and no CAST AS INT/VARCHAR (use SIGNED/CHAR).
-- String aggregation: GROUP_CONCAT(col SEPARATOR ',').
-- Identifiers: backtick-quote. You CAN reference SELECT aliases in GROUP BY/HAVING (MySQL extension).
-""".strip(),
-    "exasol": """
-EXASOL DIALECT RULES (violations cause query errors):
-- Date bucketing: DATE_TRUNC('MONTH', ts) (grain quoted, column second) or TRUNC(d, 'MM'); grains DAY/WEEK/MONTH/QUARTER/YEAR.
-- Date differences: DAYS_BETWEEN(d1, d2) for days, SECONDS_BETWEEN(a, b) for seconds, MONTHS_BETWEEN(a, b) for months. There is NO DATEDIFF.
-- Division: guard zero denominators with NULLIF — a / NULLIF(b, 0).
-- Type casting: CAST(x AS DECIMAL(36,6)) / CAST(x AS VARCHAR(2000)) / CAST(x AS DATE) / CAST(x AS TIMESTAMP). A VARCHAR needs a length; there is no ::TYPE syntax.
-- String aggregation: LISTAGG(col, ',') WITHIN GROUP (ORDER BY col), or GROUP_CONCAT(col SEPARATOR ',').
-- Filter by a window function: QUALIFY is supported (QUALIFY ROW_NUMBER() OVER (PARTITION BY x ORDER BY y) = 1).
-- Identifiers fold to UPPERCASE unless double-quoted. You CANNOT reference SELECT aliases in WHERE/HAVING.
-- Row limit: LIMIT n [OFFSET m].
-""".strip(),
-    "postgres": """
-POSTGRESQL DIALECT RULES (violations cause query errors):
-- Date bucketing: DATE_TRUNC('month'|'week'|'day'|'quarter'|'year', ts).
-- Date differences: (d1 - d2) yields an INTEGER day count for dates; EXTRACT(EPOCH FROM (a - b)) for seconds between timestamps.
-- Division: integer/integer truncates — cast one side (a::numeric / b) and guard zero with NULLIF(b, 0).
-- Type casting: x::numeric / x::text / CAST(x AS date).
-- String aggregation: STRING_AGG(col, ',').
-- You CANNOT reference SELECT aliases in WHERE/HAVING/GROUP BY.
-""".strip(),
-}
+#
+# DE-3b: the blocks live on each engine's declaration (`connectors/declarations.py`,
+# `writer_rules`) and are DERIVED here, one per dialect — stated once, referenced here.
+from aughor.connectors.declarations import derive_writer_rules  # noqa: E402
+
+_DIALECT_RULES: dict[str, str] = derive_writer_rules()
+
 
 
 def rules_for_dialect(dialect: str) -> str:

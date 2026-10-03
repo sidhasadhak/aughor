@@ -15,7 +15,7 @@ from aughor.db.errors import classify_error
 from aughor.db.single_flight import single_flight_build
 
 
-ConnectorCategory = Literal["warehouse", "file", "api", "knowledge"]
+ConnectorCategory = Literal["warehouse", "file", "api", "knowledge", "federation"]
 
 _INTEGER_KINDS = frozenset({"INTEGER", "INT", "INT64", "BIGINT", "SMALLINT", "TINYINT", "LONG", "LONGLONG", "SHORT",
                             "TINY", "INT24", "YEAR"})

@@ -1,5 +1,6 @@
 "use client";
 import { Pending, SkeletonRows } from "@/components/ui/motion";
+import { CONNECTORS } from "@/lib/connectors.gen";
 
 /**
  * CatalogScreen — Unity Catalog-style 4-level hierarchy
@@ -137,21 +138,13 @@ function ColumnDistribution({ d }: { d: DistributionProfile }) {
   );
 }
 
-const CONN_TAG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  duckdb:       { label: "DuckDB",      color: "#fbbf24", bg: "var(--amb1)", border: "var(--amb2)" },
-  postgres:     { label: "Postgres",    color: "var(--blue4)", bg: "var(--blue1)", border: "var(--blue2)" },
-  bigquery:     { label: "BigQuery",    color: "var(--grn4)", bg: "var(--grn1)", border: "var(--grn2)" },
-  snowflake:    { label: "Snowflake",   color: "var(--blue4)", bg: "var(--blue1)", border: "var(--blue2)" },
-  mysql:        { label: "MySQL",       color: "var(--amb4)", bg: "var(--amb1)", border: "var(--amb2)" },
-  local_upload: { label: "Files",       color: "var(--vio4)", bg: "var(--vio1)", border: "var(--vio2)" },
-  s3:           { label: "S3",          color: "var(--amb4)", bg: "var(--amb1)", border: "var(--amb2)" },
-  federated:    { label: "Federated",   color: "var(--grn4)", bg: "var(--grn1)", border: "var(--grn2)" },
-  stripe:       { label: "Stripe",      color: "var(--blue4)", bg: "var(--blue1)", border: "var(--blue2)" },
-  hubspot:      { label: "HubSpot",     color: "var(--amb4)", bg: "var(--amb1)", border: "var(--amb2)" },
-  salesforce:   { label: "Salesforce",  color: "var(--cyn4)", bg: "var(--cyn1)", border: "var(--cyn2)" },
-  confluence:   { label: "Confluence",  color: "var(--blue4)", bg: "var(--blue1)", border: "var(--blue2)" },
-  notion:       { label: "Notion",      color: "var(--t2)", bg: "var(--bg-1)", border: "var(--b2)" },
-};
+// DE-3b: the label and the colour are facts on each engine's one declaration
+// (`lib/connectors.gen.ts`, generated from `aughor/connectors/declarations.py`). This map had
+// drifted — MotherDuck, Exasol, Google Sheets and SQLite were missing — which a generated map
+// cannot do. The chip is neutral with the brand colour as its text.
+const CONN_TAG: Record<string, { label: string; color: string; bg: string; border: string }> = Object.fromEntries(
+  Object.values(CONNECTORS).map(c => [c.type, { label: c.label, color: c.brandColor, bg: "var(--bg-1)", border: "var(--b2)" }]),
+);
 
 // ── Connector action panel (sync / upload / knowledge-sync) ───────────────────
 

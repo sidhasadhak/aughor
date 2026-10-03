@@ -9,25 +9,13 @@
  */
 
 import React from "react";
+import { CONNECTORS } from "@/lib/connectors.gen";
 
-export const BRAND_COLORS: Record<string, string> = {
-  duckdb:       "#FBBF24",
-  postgres:     "#6f9bcc",
-  bigquery:     "#4285F4",
-  snowflake:    "#29B5E8",
-  mysql:        "#00A3C7",
-  motherduck:   "#FFD000",
-  exasol:       "#1B68DF",
-  gsheets:      "#0F9D58",
-  local_upload: "#3B82F6",
-  s3:           "#569A31",
-  stripe:       "#7a73ff",
-  hubspot:      "#FF7A59",
-  salesforce:   "#00A1E0",
-  confluence:   "#2684FF",
-  notion:       "#c4c4cc",
-  federated:    "#34d399",
-};
+// DE-3b: the colour is one fact on each engine's declaration (`aughor/connectors/declarations.py`,
+// via `lib/connectors.gen.ts`); the drawings below are hand-made and stay here.
+export const BRAND_COLORS: Record<string, string> = Object.fromEntries(
+  Object.values(CONNECTORS).map(c => [c.type, c.brandColor]),
+);
 
 export function brandColor(type: string): string {
   return BRAND_COLORS[type] ?? "#8a8a93";

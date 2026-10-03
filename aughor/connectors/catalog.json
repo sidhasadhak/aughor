@@ -1,17 +1,23 @@
 {
-  "version": 1,
+  "version": 2,
   "generated_by": "scripts/gen_connector_catalog.py",
+  "source": "aughor/connectors/declarations.py",
   "notes": {
     "secrets": "Treat every key in `secret_fields` as a credential: never place it in a URL, a query string, or a log line. Aughor stores the `dsn` in its own Fernet-encrypted column and encrypts the other secret-flagged values in the connection registry.",
     "install": "`base` means the standard install already carries the driver; any other value is a pip extra — e.g. `pip install 'aughor[warehouse]'`.",
     "env": "`env` lists environment variables honoured in place of a form field; `fallback_for` names that field.",
-    "knowledge": "`knowledge` connectors index documents for synthesis context; they are not SQL connectors and take no queries.",
+    "knowledge": "`knowledge` connectors index documents for synthesis context; they are not SQL connectors and take no queries (`connector` and `dialect` are null).",
+    "sql": "`dialect` is the sqlglot dialect the engine reads. `native_sql` true means SQL runs as written; false means the DuckDB the writer authors is transpiled. `param_style` is the driver's bind style, null when the connector refuses to bind. `refuses` lists constructs that error on the engine. `support_tier` is core, supported or preview.",
     "live": "GET /connectors/types on a running API returns the same fields plus per-install driver availability."
   },
   "types": [
     {
       "type": "bigquery",
+      "label": "BigQuery",
       "category": "warehouse",
+      "blurb": "Google Cloud data warehouse",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "bigquery://project-id",
       "fields": [
         {
@@ -30,7 +36,8 @@
           "key": "credentials",
           "label": "Service account JSON path (or blank for ADC)",
           "placeholder": "/path/to/sa.json",
-          "secret": true
+          "secret": true,
+          "optional": true
         }
       ],
       "secret_fields": [
@@ -40,6 +47,24 @@
         "google.cloud.bigquery"
       ],
       "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.bigquery:BigQueryConnection",
+      "dialect": "bigquery",
+      "native_sql": true,
+      "param_style": "at",
+      "engine_read_only": false,
+      "metadata_strategy": "driver_api",
+      "refuses": {
+        "functions": [
+          "DATEDIFF",
+          "DIV0",
+          "IFF"
+        ],
+        "features": [
+          "ilike"
+        ]
+      },
+      "brand_color": "#4285F4",
+      "engine_family": "bigquery",
       "env": [
         {
           "name": "GOOGLE_APPLICATION_CREDENTIALS",
@@ -51,7 +76,11 @@
     },
     {
       "type": "confluence",
+      "label": "Confluence",
       "category": "knowledge",
+      "blurb": "Team wiki & knowledge",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "https://org.atlassian.net",
       "fields": [
         {
@@ -76,7 +105,8 @@
           "key": "space_keys",
           "label": "Space keys",
           "placeholder": "ENG,PROD (empty = all)",
-          "secret": false
+          "secret": false,
+          "optional": true
         }
       ],
       "secret_fields": [
@@ -85,11 +115,27 @@
       "drivers": [
         "requests"
       ],
-      "install": "crm"
+      "install": "crm",
+      "connector": null,
+      "dialect": null,
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": null,
+      "metadata_strategy": "none",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#2684FF",
+      "engine_family": "standard"
     },
     {
       "type": "duckdb",
+      "label": "DuckDB",
       "category": "built-in",
+      "blurb": "Local analytical database file",
+      "badge": null,
+      "support_tier": "core",
       "dsn_preview": "*.duckdb",
       "fields": [
         {
@@ -102,18 +148,35 @@
           "key": "schema_name",
           "label": "Schema (optional)",
           "placeholder": "main",
-          "secret": false
+          "secret": false,
+          "optional": true
         }
       ],
       "secret_fields": [],
       "drivers": [
         "duckdb"
       ],
-      "install": "base"
+      "install": "base",
+      "connector": null,
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#FBBF24",
+      "engine_family": "postgres"
     },
     {
       "type": "exasol",
+      "label": "Exasol",
       "category": "warehouse",
+      "blurb": "In-memory analytics database",
+      "badge": "New",
+      "support_tier": "preview",
       "dsn_preview": "exa://host:8563",
       "fields": [
         {
@@ -147,22 +210,58 @@
       "drivers": [
         "pyexasol"
       ],
-      "install": "warehouse"
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.exasol:ExasolConnection",
+      "dialect": "exasol",
+      "native_sql": true,
+      "param_style": null,
+      "engine_read_only": false,
+      "metadata_strategy": "engine_catalog",
+      "refuses": {
+        "functions": [
+          "DATEDIFF",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": []
+      },
+      "brand_color": "#1B68DF",
+      "engine_family": "postgres"
     },
     {
       "type": "federated",
+      "label": "Federated",
       "category": "federation",
+      "blurb": "Combine existing connections",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "federated://",
       "fields": [],
       "secret_fields": [],
       "drivers": [
         "duckdb"
       ],
-      "install": "base"
+      "install": "base",
+      "connector": "aughor.connectors.federated:FederatedConnection",
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": "duckdb",
+      "engine_read_only": false,
+      "metadata_strategy": "cursor_description",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#34d399",
+      "engine_family": "postgres"
     },
     {
       "type": "gsheets",
+      "label": "Google Sheets",
       "category": "api",
+      "blurb": "Read worksheets as tables",
+      "badge": "New",
+      "support_tier": "supported",
       "dsn_preview": "gsheet://spreadsheet-id",
       "fields": [
         {
@@ -175,18 +274,35 @@
           "key": "sheets",
           "label": "Sheet/tab names",
           "placeholder": "Sheet1,Sheet2 (empty = first sheet)",
-          "secret": false
+          "secret": false,
+          "optional": true
         }
       ],
       "secret_fields": [],
       "drivers": [
         "duckdb"
       ],
-      "install": "base"
+      "install": "base",
+      "connector": "aughor.connectors.api.gsheets:GoogleSheetsConnector",
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": "duckdb",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#0F9D58",
+      "engine_family": "postgres"
     },
     {
       "type": "hubspot",
+      "label": "HubSpot",
       "category": "api",
+      "blurb": "CRM & marketing data",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "hubspot://",
       "fields": [
         {
@@ -199,7 +315,8 @@
           "key": "objects",
           "label": "Objects to sync (optional)",
           "placeholder": "contacts,companies,deals,tickets",
-          "secret": false
+          "secret": false,
+          "optional": true
         }
       ],
       "secret_fields": [
@@ -208,22 +325,54 @@
       "drivers": [
         "requests"
       ],
-      "install": "crm"
+      "install": "crm",
+      "connector": "aughor.connectors.api.hubspot:HubSpotConnector",
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": "duckdb",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#FF7A59",
+      "engine_family": "postgres"
     },
     {
       "type": "local_upload",
+      "label": "Create or modify table",
       "category": "file",
+      "blurb": "Upload CSV, Parquet, Excel or JSON into your Workspace",
+      "badge": null,
+      "support_tier": "core",
       "dsn_preview": "local://uploads/",
       "fields": [],
       "secret_fields": [],
       "drivers": [
         "duckdb"
       ],
-      "install": "base"
+      "install": "base",
+      "connector": "aughor.connectors.file.local_upload:LocalUploadConnection",
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#3B82F6",
+      "engine_family": "postgres"
     },
     {
       "type": "motherduck",
+      "label": "MotherDuck",
       "category": "warehouse",
+      "blurb": "DuckDB in the cloud",
+      "badge": "New",
+      "support_tier": "supported",
       "dsn_preview": "md:my_database",
       "fields": [
         {
@@ -252,6 +401,18 @@
         "duckdb"
       ],
       "install": "base",
+      "connector": "aughor.connectors.warehouse.motherduck:MotherDuckConnection",
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": "duckdb",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#FFD000",
+      "engine_family": "postgres",
       "env": [
         {
           "name": "MOTHERDUCK_TOKEN",
@@ -262,7 +423,11 @@
     },
     {
       "type": "mysql",
+      "label": "MySQL",
       "category": "warehouse",
+      "blurb": "Connect to a MySQL database",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "mysql://host:3306/db",
       "fields": [
         {
@@ -302,11 +467,36 @@
       "drivers": [
         "pymysql"
       ],
-      "install": "warehouse"
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.mysql:MySQLConnection",
+      "dialect": "mysql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#00A3C7",
+      "engine_family": "mysql"
     },
     {
       "type": "notion",
+      "label": "Notion",
       "category": "knowledge",
+      "blurb": "Docs & databases",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "notion://",
       "fields": [
         {
@@ -319,7 +509,8 @@
           "key": "database_ids",
           "label": "Database IDs",
           "placeholder": "id1,id2 (optional)",
-          "secret": false
+          "secret": false,
+          "optional": true
         }
       ],
       "secret_fields": [
@@ -328,11 +519,27 @@
       "drivers": [
         "requests"
       ],
-      "install": "crm"
+      "install": "crm",
+      "connector": null,
+      "dialect": null,
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": null,
+      "metadata_strategy": "none",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#c4c4cc",
+      "engine_family": "standard"
     },
     {
       "type": "postgres",
+      "label": "PostgreSQL",
       "category": "built-in",
+      "blurb": "Connect to a Postgres database",
+      "badge": null,
+      "support_tier": "core",
       "dsn_preview": "postgresql://***",
       "fields": [
         {
@@ -354,11 +561,33 @@
       "drivers": [
         "psycopg2"
       ],
-      "install": "base"
+      "install": "base",
+      "connector": null,
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#6f9bcc",
+      "engine_family": "postgres"
     },
     {
       "type": "s3",
+      "label": "Amazon S3",
       "category": "file",
+      "blurb": "Object storage bucket",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "s3://bucket/prefix",
       "fields": [
         {
@@ -399,11 +628,27 @@
       "drivers": [
         "duckdb"
       ],
-      "install": "base"
+      "install": "base",
+      "connector": "aughor.connectors.file.s3:S3Connection",
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": "duckdb",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#569A31",
+      "engine_family": "postgres"
     },
     {
       "type": "salesforce",
+      "label": "Salesforce",
       "category": "api",
+      "blurb": "CRM objects & pipelines",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "salesforce://",
       "fields": [
         {
@@ -434,7 +679,8 @@
           "key": "objects",
           "label": "Objects to sync (optional)",
           "placeholder": "Account,Contact,Opportunity,Lead,Case",
-          "secret": false
+          "secret": false,
+          "optional": true
         }
       ],
       "secret_fields": [
@@ -444,11 +690,27 @@
       "drivers": [
         "requests"
       ],
-      "install": "crm"
+      "install": "crm",
+      "connector": "aughor.connectors.api.salesforce:SalesforceConnector",
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": "duckdb",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#00A1E0",
+      "engine_family": "postgres"
     },
     {
       "type": "snowflake",
+      "label": "Snowflake",
       "category": "warehouse",
+      "blurb": "Cloud data warehouse",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "snowflake://account.region",
       "fields": [
         {
@@ -494,11 +756,29 @@
       "drivers": [
         "snowflake.connector"
       ],
-      "install": "warehouse"
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.snowflake:SnowflakeConnection",
+      "dialect": "snowflake",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "SAFE_DIVIDE"
+        ],
+        "features": []
+      },
+      "brand_color": "#29B5E8",
+      "engine_family": "snowflake"
     },
     {
       "type": "sqlite",
+      "label": "SQLite",
       "category": "file",
+      "blurb": "A SQLite database file",
+      "badge": null,
+      "support_tier": "supported",
       "dsn_preview": "*.sqlite / *.db",
       "fields": [
         {
@@ -512,11 +792,27 @@
       "drivers": [
         "ibis"
       ],
-      "install": "warehouse"
+      "install": "warehouse",
+      "connector": "aughor.connectors.file.sqlite:SQLiteConnection",
+      "dialect": "sqlite",
+      "native_sql": false,
+      "param_style": "named",
+      "engine_read_only": null,
+      "metadata_strategy": "pragma",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#0F80CC",
+      "engine_family": "sqlite"
     },
     {
       "type": "stripe",
+      "label": "Stripe",
       "category": "api",
+      "blurb": "Payments & billing data",
+      "badge": "Preview",
+      "support_tier": "preview",
       "dsn_preview": "stripe://",
       "fields": [
         {
@@ -529,7 +825,8 @@
           "key": "objects",
           "label": "Objects to sync (optional)",
           "placeholder": "charges,customers,subscriptions,invoices",
-          "secret": false
+          "secret": false,
+          "optional": true
         }
       ],
       "secret_fields": [
@@ -538,7 +835,89 @@
       "drivers": [
         "requests"
       ],
-      "install": "crm"
+      "install": "crm",
+      "connector": "aughor.connectors.api.stripe:StripeConnector",
+      "dialect": "duckdb",
+      "native_sql": false,
+      "param_style": "duckdb",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [],
+        "features": []
+      },
+      "brand_color": "#7a73ff",
+      "engine_family": "postgres"
+    },
+    {
+      "type": "trino",
+      "label": "Trino",
+      "category": "warehouse",
+      "blurb": "Distributed SQL over many sources",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "trino://host:8080",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host:Port",
+          "placeholder": "trino.example.com:8080",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "analyst",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password (blank when the cluster takes none)",
+          "placeholder": "",
+          "secret": true,
+          "optional": true
+        },
+        {
+          "key": "catalog",
+          "label": "Catalog",
+          "placeholder": "hive",
+          "secret": false
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "default",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "trino"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.trino:TrinoConnection",
+      "dialect": "trino",
+      "native_sql": true,
+      "param_style": null,
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATEDIFF",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE",
+          "TIMESTAMPDIFF"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#DD00A1",
+      "engine_family": "standard"
     }
   ]
 }

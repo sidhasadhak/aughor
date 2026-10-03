@@ -24,6 +24,7 @@ import {
   SQLite,
   StandardSQL,
 } from "@codemirror/lang-sql";
+import { CONNECTORS } from "@/lib/connectors.gen";
 
 /** The engine facts we get from a connection row. Both fields are optional because
  *  `dialect` only exists on connections that went through the SE-0 contract. */
@@ -41,24 +42,30 @@ export type EngineFamily =
   | "snowflake"
   | "standard";
 
-/** Engines whose grammar is Postgres-compatible for editing purposes. DuckDB is the
- *  load-bearing entry: it is this product's default engine and has no CM6 dialect. */
-const POSTGRES_FAMILY = new Set([
-  "duckdb", "postgres", "postgresql", "local_upload", "aughor_ops", "motherduck",
-  "federated", "exasol",
-]);
+/** DE-3b: the family is one fact on each engine's declaration (`engineFamily` in
+ *  `lib/connectors.gen.ts`, generated from `aughor/connectors/declarations.py`), looked up by
+ *  connector type or by dialect. The dialect names below are the ones a connection row can
+ *  carry that are not themselves a connector type. DuckDB is the load-bearing entry: it is
+ *  this product's default engine and has no CM6 dialect, and its grammar is Postgres-shaped. */
+const DIALECT_FAMILY: Record<string, EngineFamily> = {
+  duckdb: "postgres", postgres: "postgres", postgresql: "postgres", aughor_ops: "postgres",
+  mysql: "mysql", mariadb: "mysql", sqlite: "sqlite", bigquery: "bigquery", snowflake: "snowflake",
+};
+
+function familyOf(raw: string): EngineFamily | null {
+  const byType = CONNECTORS[raw];
+  if (byType) return byType.engineFamily as EngineFamily;
+  const byDialect = Object.values(CONNECTORS).find(c => c.dialect === raw);
+  if (byDialect) return byDialect.engineFamily as EngineFamily;
+  return DIALECT_FAMILY[raw] ?? null;
+}
 
 export function engineFamily(hint: EngineHint | null | undefined): EngineFamily {
   // `dialect` wins when present: it is the backend's own declaration of what will
   // execute the SQL, while conn_type only says how we connected.
   const raw = (hint?.dialect || hint?.conn_type || "").trim().toLowerCase();
   if (!raw) return "standard";
-  if (POSTGRES_FAMILY.has(raw)) return "postgres";
-  if (raw === "mysql" || raw === "mariadb") return "mysql";
-  if (raw === "sqlite") return "sqlite";
-  if (raw === "bigquery") return "bigquery";
-  if (raw === "snowflake") return "snowflake";
-  return "standard";
+  return familyOf(raw) ?? "standard";
 }
 
 /** The CodeMirror dialect for this connection — drives tokenizing and keyword

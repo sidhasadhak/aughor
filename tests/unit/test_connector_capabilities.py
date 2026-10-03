@@ -63,6 +63,11 @@ NO_BINDING = {
         "pyexasol takes query_params by formatting them into the statement text rather "
         "than sending bind values, and the package is installed nowhere here, so the claim "
         "cannot be checked against the driver. See warehouse/exasol.py.",
+    "TrinoConnection":
+        "the trino DBAPI binds positionally (`?`), which the editor's named placeholders "
+        "cannot be rewritten into without a name→position map nobody has run against a live "
+        "cluster; refusing visibly beats a rendering unproven on the engine. DE-3b's live "
+        "receipt on a Trino container decides it. See warehouse/trino.py.",
 }
 
 #: Connectors with no driver-handle abort, with the reason. Same contract as NO_BINDING:

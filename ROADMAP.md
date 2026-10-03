@@ -10416,6 +10416,42 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > from a column walk; the live receipt the study named — a theLook answer whose receipt names its columns — waits
 > for the user's machine, the unit receipt stands in. Next: DE-3b.
 
+> **Status 2026-10-03 — DE-3b BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:* an engine
+> was spread over seventeen non-test files, not the fourteen the study counted (three more since: `db/connection.py`,
+> `db/errors.py`, `agent/sql_context.py`); the registry kept six parallel dicts; the web kept not three hand copies
+> but five, and two had drifted — the connection modal (`app/page.tsx`) and the catalog's tags knew nothing of
+> MotherDuck, Exasol, Google Sheets or SQLite, and the modal asked MySQL for a DSN where the server reads host, port,
+> user, password and database; a generator and a drift test already existed for `catalog.json` alone; and the
+> federated connector's class said `warehouse` while the picker filed it under `federation`. *Built:*
+> `aughor/connectors/declarations.py` — one `EngineDeclaration` per engine, eighteen in all: identity, label and
+> blurb, category and badge, DSN preview, form fields with secrets and optionals, drivers, the connector class, the
+> sqlglot dialect, native or transpiled, bind style, engine read-only, writer rules, refused constructs, support tier
+> (core / supported / preview), metadata strategy, environment variables, brand colour, the editor's grammar family,
+> the prompt's spelling, and the driver's exception names for a lost connection, a timeout and a cancel. Derived
+> from it, by pure functions a test can run on a mutated tuple: the registry's six tables and its registrations;
+> `db/dialects._DIALECT_RULES`; `db/capabilities._CAPS`; `agent/sql_context._ENGINE_NAMES`; `db/errors`' driver
+> names (only the standard library's and the HTTP stacks' are written there now); `connectors/catalog.json`
+> (version 2: dialect, native, bind style, tier, strategy, refusals) and `web/lib/connectors.gen.ts`, both written
+> by `scripts/gen_connector_catalog.py`; and the five web maps read the generated one — the picker's labels and
+> badges, the brand colours, the editor's dialect family, the connection modal's types and fields, the catalog's
+> tags — so the two drifted copies are whole. Each connector class keeps its own `dialect` / `writes_native_sql` /
+> `param_style` / category, and a test holds every class to its declaration (federated now says `federation`).
+> *Trino* (§6 item 37(d)): declared once and its connector written — `warehouse/trino.py`: the door, typed errors,
+> `is_healthy`, `EXPLAIN (TYPE VALIDATE)` as the dry run, `information_schema` metadata, no bind style since the
+> DBAPI binds positionally (a decision recorded in the capability test); `trino>=0.330.0` pinned in `[warehouse]`
+> and locked. It reaches the picker, the writer rules, the capability contract, the prompt, the error typing and
+> the catalog from the declaration alone. *Receipt:* `tests/unit/test_de3b_one_declaration.py` (21) — the
+> registry's tables equal the derivation; every registered class agrees with its declaration; the two built-ins
+> and `connection_traits`; rules, capabilities and names derived; the generated files current; a made-up engine
+> appended to the tuple reaching every derived surface with nothing else edited, its exception name typed; Trino's
+> facts everywhere and its connector run through the door on a fake driver (a result returned, a lost connection
+> typed `connection`); 120 tests across the connector catalog, categories, dependencies, capabilities, DE-3 and
+> lockfile suites; 1,503 web tests and the seven gates green. *Left, named:* the live Trino receipt waits for the
+> container on the user's machine; `PROVIDED_BY` (import module → distribution) stays a hand-kept map by design,
+> shared across engines; the brand drawings in `BrandLogos.tsx` are hand-made, not data; the two built-ins in
+> `db/connection.py` declare their dialect on the class and are held to the declaration by the test rather than
+> reading it. Next: DE-3c.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

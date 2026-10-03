@@ -235,7 +235,7 @@ Each `uv sync` leaves exactly the extras it names and removes any others — so 
 | `export` | PDF / PowerPoint reports | Export answers **501**, naming the extra |
 | `semantic` | Semantic search over past analyses (embedded Qdrant — no server needed) | Reads return no hits, writes no-op |
 | `fastread` | Faster bulk table reads (polars) | Falls back to DuckDB automatically |
-| `warehouse` | Snowflake, BigQuery, MySQL | Those connectors are unavailable |
+| `warehouse` | Snowflake, BigQuery, MySQL, Exasol, Trino | Those connectors are unavailable |
 | `crm`, `cloud-storage`, `knowledge-sync` | Stripe/HubSpot/Salesforce, Azure Blob, Confluence/Notion | Those connectors are unavailable |
 | `observability`, `evals` | OTel/Langfuse export, eval harnesses | Tracing and harnesses unavailable |
 

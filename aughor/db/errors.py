@@ -22,21 +22,23 @@ CANCELLED = "cancelled"
 SQL = "sql"
 KINDS = (CONNECTION, TIMEOUT, CANCELLED, SQL)
 
+# DE-3b: a DRIVER's exception names live on its engine's declaration (`connectors/declarations.py`:
+# `connection_errors` / `timeout_errors` / `cancelled_errors`) and are derived here; only the names
+# no engine owns — the standard library's and the HTTP stacks' — are written in this module.
+from aughor.connectors.declarations import derive_error_names  # noqa: E402
+
+_DRIVER_NAMES = derive_error_names()
+
 #: Exception class names that are a lost or unreachable connection on their own.
 _CONNECTION_NAMES = frozenset({
-    "InterfaceError",                                  # psycopg2 / pymysql / snowflake: "connection already closed"
-    "ConnectionException",                             # duckdb
-    "ExaCommunicationError", "ExaConnectionError", "ExaConnectionDsnError", "ExaConnectionFailedError",   # pyexasol
-    "ServiceUnavailable", "InternalServerError", "RetryError",                                            # google
     "ConnectionError", "ConnectionResetError", "ConnectionRefusedError", "ConnectionAbortedError",         # stdlib
     "BrokenPipeError", "RemoteDisconnected", "ConnectError", "ReadError", "WriteError",                   # http
-})
+}) | _DRIVER_NAMES["connection"]
 #: Exception class names that are a timeout on their own.
-_TIMEOUT_NAMES = frozenset({"TimeoutError", "DeadlineExceeded", "ExaQueryTimeoutError", "ReadTimeout",
-                            "ConnectTimeout", "Timeout", "ReadTimeoutError", "WriteTimeout", "PoolTimeout"})
+_TIMEOUT_NAMES = frozenset({"TimeoutError", "ReadTimeout", "ConnectTimeout", "Timeout", "ReadTimeoutError",
+                            "WriteTimeout", "PoolTimeout"}) | _DRIVER_NAMES["timeout"]
 #: Exception class names that are a cancelled statement on their own.
-_CANCELLED_NAMES = frozenset({"InterruptException", "QueryCanceledError", "QueryCanceled", "CancelledError",
-                              "Cancelled", "ExaQueryAbortError", "KeyboardInterrupt"})
+_CANCELLED_NAMES = frozenset({"CancelledError", "Cancelled", "KeyboardInterrupt"}) | _DRIVER_NAMES["cancelled"]
 #: pymysql's `OperationalError` carries a SQL refusal (1792, a read-only transaction) as readily as a lost server;
 #: the errno decides. 2002/2003: cannot connect; 2006: server has gone away; 2013: lost connection during query;
 #: 2055: lost connection to the server at the socket; 4031: the server closed an idle connection.

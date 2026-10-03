@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCount } from "@/lib/format";
+import { CONNECTORS } from "@/lib/connectors.gen";
 import {
   addConnection,
   getConnectorTypes,
@@ -42,24 +43,11 @@ const WORKSPACE_ID = "workspace";
 
 // ── Display metadata per connector ────────────────────────────────────────────
 
-const META: Record<string, { label: string; blurb: string; badge?: string }> = {
-  duckdb:       { label: "DuckDB",       blurb: "Local analytical database file" },
-  postgres:     { label: "PostgreSQL",   blurb: "Connect to a Postgres database" },
-  bigquery:     { label: "BigQuery",     blurb: "Google Cloud data warehouse" },
-  snowflake:    { label: "Snowflake",    blurb: "Cloud data warehouse" },
-  mysql:        { label: "MySQL",        blurb: "Connect to a MySQL database" },
-  motherduck:   { label: "MotherDuck",   blurb: "DuckDB in the cloud", badge: "New" },
-  exasol:       { label: "Exasol",       blurb: "In-memory analytics database", badge: "New" },
-  gsheets:      { label: "Google Sheets", blurb: "Read worksheets as tables", badge: "New" },
-  local_upload: { label: "Create or modify table", blurb: "Upload CSV, Parquet, Excel or JSON into your Workspace" },
-  s3:           { label: "Amazon S3",    blurb: "Object storage bucket" },
-  federated:    { label: "Federated",    blurb: "Combine existing connections" },
-  stripe:       { label: "Stripe",       blurb: "Payments & billing data", badge: "Preview" },
-  hubspot:      { label: "HubSpot",      blurb: "CRM & marketing data" },
-  salesforce:   { label: "Salesforce",   blurb: "CRM objects & pipelines" },
-  confluence:   { label: "Confluence",   blurb: "Team wiki & knowledge" },
-  notion:       { label: "Notion",       blurb: "Docs & databases" },
-};
+// DE-3b: generated from each engine's one declaration (`aughor/connectors/declarations.py`,
+// via `lib/connectors.gen.ts`), so a new engine is on this panel the day it is declared.
+const META: Record<string, { label: string; blurb: string; badge?: string }> = Object.fromEntries(
+  Object.values(CONNECTORS).map(c => [c.type, { label: c.label, blurb: c.blurb, badge: c.badge ?? undefined }]),
+);
 
 /** The categories this panel draws, in the order it draws them.
  *

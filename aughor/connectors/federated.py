@@ -40,7 +40,10 @@ MATERIALIZE_CAP  = 500_000   # max rows pulled into federation DuckDB for non-na
 class FederatedConnection(Connector):
     """Unified DuckDB namespace across multiple heterogeneous connections."""
 
-    connector_category = "warehouse"
+    # DE-3b: the class says what its declaration says — the picker always filed this type under
+    # `federation` (`registry.CATEGORIES`) while the class claimed `warehouse`; the drift test
+    # caught the disagreement.
+    connector_category = "federation"
     # DE-1 — an in-memory DuckDB this connector attaches sources into is writable by construction; the door's
     # checks are the read-only boundary, said on every result's doors.
     engine_read_only = False

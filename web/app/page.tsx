@@ -1,5 +1,6 @@
 "use client";
 import { connectionLabel } from "@/lib/names";
+import { CONNECTORS } from "@/lib/connectors.gen";
 import { ErrorState } from "@/components/ui/states";
 
 import { useEffect, useRef, useState } from "react";
@@ -980,85 +981,20 @@ function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, wor
 
 // ── Connector type catalogue (static — mirrors backend registry) ──────────────
 
-const CONNECTOR_TYPES = [
-  { type: "postgres",     label: "PostgreSQL",    category: "built-in",  icon: "db" },
-  { type: "duckdb",       label: "DuckDB",         category: "built-in",  icon: "db" },
-  { type: "bigquery",     label: "BigQuery",       category: "warehouse", icon: "db" },
-  { type: "snowflake",    label: "Snowflake",      category: "warehouse", icon: "db" },
-  { type: "mysql",        label: "MySQL",          category: "warehouse", icon: "db" },
-  { type: "local_upload", label: "Local Files",    category: "file",      icon: "catalog" },
-  { type: "s3",           label: "S3 / R2",        category: "file",      icon: "catalog" },
-  { type: "stripe",       label: "Stripe",         category: "api",       icon: "db" },
-  { type: "hubspot",      label: "HubSpot",        category: "api",       icon: "db" },
-  { type: "salesforce",   label: "Salesforce",     category: "api",       icon: "db" },
-  { type: "federated",    label: "Federated",      category: "federated", icon: "canvas" },
-  { type: "confluence",   label: "Confluence",     category: "knowledge", icon: "catalog" },
-  { type: "notion",       label: "Notion",         category: "knowledge", icon: "catalog" },
-] as const;
+// DE-3b: generated from each engine's one declaration (`lib/connectors.gen.ts`). This copy had
+// drifted — MotherDuck, Exasol, Google Sheets and SQLite were missing, and MySQL took a DSN where
+// the server wanted host/port/user/password/database — which a derived list cannot do.
+const CONNECTOR_TYPES: ReadonlyArray<{ type: string; label: string; category: string; icon: "db" | "catalog" | "canvas" }> =
+  Object.values(CONNECTORS).map(c => ({
+    type: c.type, label: c.label, category: c.category,
+    icon: c.category === "federation" ? "canvas" : (c.category === "file" || c.category === "knowledge") ? "catalog" : "db",
+  }));
 
-type ConnType = typeof CONNECTOR_TYPES[number]["type"];
+type ConnType = string;
 
-// Per-type field definitions
-const CONN_FIELDS: Record<ConnType, Array<{ key: string; label: string; placeholder: string; secret?: boolean; optional?: boolean }>> = {
-  postgres: [
-    { key: "dsn",         label: "Connection string",   placeholder: "postgresql://user:pass@host:5432/db", secret: true },
-    { key: "schema_name", label: "Schema",               placeholder: "public", optional: true },
-  ],
-  duckdb: [
-    { key: "dsn",         label: "File path",            placeholder: "/path/to/file.duckdb" },
-    { key: "schema_name", label: "Schema",               placeholder: "main", optional: true },
-  ],
-  bigquery: [
-    { key: "project_id",  label: "Project ID",           placeholder: "my-gcp-project" },
-    { key: "dataset",     label: "Dataset",              placeholder: "analytics", optional: true },
-    { key: "credentials", label: "Service account JSON path (blank = ADC)", placeholder: "/path/to/sa.json", secret: true, optional: true },
-  ],
-  snowflake: [
-    { key: "account",     label: "Account identifier",   placeholder: "xy12345.us-east-1" },
-    { key: "user",        label: "Username",             placeholder: "analyst" },
-    { key: "password",    label: "Password",             placeholder: "", secret: true },
-    { key: "database",    label: "Database",             placeholder: "PROD" },
-    { key: "schema_name", label: "Schema",               placeholder: "PUBLIC", optional: true },
-    { key: "warehouse",   label: "Warehouse",            placeholder: "COMPUTE_WH", optional: true },
-  ],
-  mysql: [
-    { key: "dsn",         label: "Connection string",    placeholder: "mysql://user:pass@host:3306/mydb", secret: true },
-  ],
-  local_upload: [],
-  federated:    [],  // member connections selected in a separate picker
-  stripe: [
-    { key: "secret_key",  label: "Secret key",      placeholder: "sk_live_…",    secret: true },
-    { key: "objects",     label: "Objects to sync", placeholder: "charges,customers,subscriptions", optional: true },
-  ],
-  hubspot: [
-    { key: "access_token",label: "Access token",    placeholder: "pat-na1-…",    secret: true },
-    { key: "objects",     label: "Objects to sync", placeholder: "contacts,companies,deals,tickets", optional: true },
-  ],
-  salesforce: [
-    { key: "username",       label: "Username",        placeholder: "user@org.com", secret: false as boolean },
-    { key: "password",       label: "Password",        placeholder: "",             secret: true },
-    { key: "security_token", label: "Security token",  placeholder: "token123…",    secret: true },
-    { key: "domain",         label: "Domain",          placeholder: "login",        optional: true as boolean },
-    { key: "objects",        label: "Objects to sync", placeholder: "Account,Contact,Opportunity", optional: true as boolean },
-  ],
-  s3: [
-    { key: "bucket",  label: "Bucket",            placeholder: "my-data-bucket" },
-    { key: "prefix",  label: "Key prefix",        placeholder: "data/sales/", optional: true },
-    { key: "region",  label: "Region",            placeholder: "us-east-1" },
-    { key: "key_id",  label: "Access Key ID",     placeholder: "AKIA…", secret: true },
-    { key: "secret",  label: "Secret Access Key", placeholder: "", secret: true },
-  ],
-  confluence: [
-    { key: "base_url",   label: "Base URL",    placeholder: "https://yourorg.atlassian.net" },
-    { key: "username",   label: "Username",    placeholder: "user@example.com" },
-    { key: "api_token",  label: "API token",   placeholder: "ATATT3…", secret: true },
-    { key: "space_keys", label: "Space keys",  placeholder: "ENG,PROD (empty = all spaces)", optional: true },
-  ],
-  notion: [
-    { key: "integration_token", label: "Integration token", placeholder: "secret_…", secret: true },
-    { key: "database_ids",      label: "Database IDs",      placeholder: "id1,id2 (optional)", optional: true },
-  ],
-};
+// Per-type field definitions — the declaration's, so the modal asks what the server reads.
+const CONN_FIELDS: Record<ConnType, Array<{ key: string; label: string; placeholder: string; secret?: boolean; optional?: boolean }>> =
+  Object.fromEntries(Object.values(CONNECTORS).map(c => [c.type, c.fields.map(f => ({ ...f }))]));
 
 function AddConnectionForm({
   onSave,
@@ -1109,7 +1045,7 @@ function AddConnectionForm({
     { label: "Warehouse",  items: CONNECTOR_TYPES.filter(t => t.category === "warehouse") },
     { label: "File",       items: CONNECTOR_TYPES.filter(t => t.category === "file") },
     { label: "API / CRM",  items: CONNECTOR_TYPES.filter(t => t.category === "api") },
-    { label: "Federation", items: CONNECTOR_TYPES.filter(t => t.category === "federated") },
+    { label: "Federation", items: CONNECTOR_TYPES.filter(t => t.category === "federation") },
     { label: "Knowledge",  items: CONNECTOR_TYPES.filter(t => t.category === "knowledge") },
   ];
 
