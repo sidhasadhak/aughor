@@ -66,8 +66,14 @@ stateless and light (httpx only), so it starts fast under a stdio launcher.
 2. **Run the MCP server** (usually your MCP client launches this for you — see below):
    ```bash
    python -m aughor.mcp           # stdio  (Claude Desktop/Code/Cursor)
-   python -m aughor.mcp --http    # streamable-HTTP on 127.0.0.1:8765
+   AUGHOR_MCP_TOKEN=… python -m aughor.mcp --http                  # streamable-HTTP on 127.0.0.1:8765
+   AUGHOR_MCP_TOKEN=… python -m aughor.mcp --http --host 0.0.0.0   # …served to other machines
    ```
+   `--http` needs `AUGHOR_MCP_TOKEN` and refuses to start without it (DE-2a, ROADMAP §3.51): every HTTP
+   client presents it as `Authorization: Bearer <token>`, because the tools behind it call the API with this
+   process's own key and principal. Make one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   The transport security is built for the host actually served — before DE-2a a loopback-only allowlist was
+   fixed at import, and `--host 0.0.0.0` answered every remote client `421 Invalid Host header`.
 
 ## Connecting a client
 
@@ -100,6 +106,10 @@ claude mcp add aughor --env AUGHOR_API_URL=http://127.0.0.1:8000 \
 | `AUGHOR_API_KEY` | _(unset)_ | Sent as `X-Api-Key` when the API enforces one (`AUGHOR_API_KEY` on the server). |
 | `AUGHOR_MCP_TIMEOUT` | `60` | Timeout (s) for plain calls. |
 | `AUGHOR_MCP_DEEP_TIMEOUT` | `300` | Timeout (s) for the streaming `ask` / `deep_analysis` tools. A `deep_analysis` that exceeds it returns an `investigation_id` to poll with `get_investigation`. |
+| `AUGHOR_MCP_ORG` | _(unset)_ | The principal this server acts as when the API requires identity (`AUGHOR_REQUIRE_IDENTITY=1`) and no OIDC issuer is configured: sent as `X-Aughor-Org`, with `AUGHOR_MCP_USER` (default `mcp`) as `X-Aughor-User`. Unset, every MCP call is refused with a 401 in identity mode (DE-2a). |
+| `AUGHOR_MCP_USER` | `mcp` | The user the server acts as, beside `AUGHOR_MCP_ORG`. |
+| `AUGHOR_MCP_BEARER` | _(unset)_ | An OIDC token for an API with an issuer configured, sent as `Authorization: Bearer …`. |
+| `AUGHOR_MCP_TOKEN` | _(unset)_ | **Server side, `--http` only.** The bearer every HTTP MCP client must present; `--http` refuses to start without it. |
 
 ## Verification (2026-06-21, live on `workspace`/missimi)
 

@@ -10253,6 +10253,24 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > door (pre-existing); no text fallback for a lock clause when the statement does not parse (`PIVOT … FOR share IN
 > (…)` would match), since an unparseable statement is refused at the door anyway. Next: DE-2a.
 
+> **Status 2026-10-03 — DE-2a BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first,* run live
+> on the build machine before the change: `--http --host 0.0.0.0` answered a remote client (`Host: 203.0.113.5`)
+> `421 Invalid Host header` on every request, and a loopback client with no credential at all got a full session —
+> whose tools call the API with the server's own key and principal. *Built:* `AughorClient` presents the principal
+> it is given — `AUGHOR_MCP_BEARER` as `Authorization: Bearer …`, `AUGHOR_MCP_ORG` and `AUGHOR_MCP_USER` (default
+> `mcp`) as the `X-Aughor-*` seam — and nothing when given none, so identity-off installs are byte-identical; the
+> API compares its key with `hmac.compare_digest`; `--http` refuses to start without `AUGHOR_MCP_TOKEN`, every HTTP
+> request presents it as a bearer (constant-time; otherwise a 401 with a `WWW-Authenticate` challenge that names
+> the variable), and the transport security is built for the host actually served — FastMCP's loopback allowlist on
+> loopback, its own non-loopback posture elsewhere — before FastMCP bakes it into its session manager. *Receipt:*
+> `tests/unit/test_de2a_mcp_principal.py`: through the real app with identity required, the client's call is
+> refused 401 without a principal and served with one; the key comparison is seen going through `compare_digest`;
+> a live `--http --host 0.0.0.0` subprocess refuses a remote client and a loopback client without the token (401,
+> not 421) and serves the remote client that presents it; 332 tests across the MCP, auth and identity suites pass.
+> `docs/MCP_SERVER.md` carries the four variables. *Left, named:* the server still acts as ONE principal for every
+> HTTP client it serves — the per-caller policy is DE-2b; stdio needs no token, since the launcher's own process is
+> the credential. Next: DE-3a and DE-3d.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

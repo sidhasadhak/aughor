@@ -16,9 +16,11 @@ the API process exactly as they do for the web app.
 """
 from __future__ import annotations
 
+import hmac
 from typing import Annotated, Any, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 
 from aughor.mcp.client import AughorClient
@@ -458,6 +460,89 @@ def _spotlight_runner(api: "AughorClient", name: str):
                                              args=dict(args or {}))
 
     return _run
+
+
+# ── DE-2a (ROADMAP §3.51): the HTTP transport has a door ─────────────────────────
+#
+# Measured on 2026-10-03 before this existed, `--http --host 0.0.0.0` on this machine: a
+# loopback client with no credential at all got a full session (the tools then call the
+# API with THIS process's key and principal), and a remote client got `421 Invalid Host
+# header` on every request — FastMCP fixes a loopback-only host allowlist when the
+# `FastMCP` object is built at import, before `--host` is read, so the flag served nobody
+# it was meant to serve. Two rules now: every HTTP request carries a bearer token the
+# operator set (`AUGHOR_MCP_TOKEN`), compared in constant time; and the transport security
+# is built for the host actually served, as FastMCP would have built it had it known.
+
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def transport_security_for(host: str) -> TransportSecuritySettings:
+    """FastMCP's own transport-security posture, for the host actually served.
+
+    Loopback keeps FastMCP's DNS-rebinding protection with its loopback allowlist. Any other host gets what
+    FastMCP gives a non-loopback host it is told about at construction — protection off, since the names a
+    remote client will put in `Host` cannot be enumerated here — and the bearer gate is the door instead."""
+    if host in _LOOPBACK_HOSTS:
+        return TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
+            allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
+        )
+    return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
+
+class BearerGate:
+    """Pure-ASGI: every HTTP request presents ``Authorization: Bearer <token>`` or is refused with a 401.
+
+    The comparison is constant-time (`hmac.compare_digest`), the refusal names what is missing and carries a
+    `WWW-Authenticate` challenge, and nothing else is read from the request — the MCP app behind the gate
+    decides everything else."""
+
+    def __init__(self, app: Any, token: str) -> None:
+        if not token:
+            raise ValueError("BearerGate needs a token")
+        self.app = app
+        self._token = token.encode("utf-8")
+
+    def _presented(self, scope: dict) -> bytes:
+        for name, value in scope.get("headers") or []:
+            if name == b"authorization":
+                scheme, _, credential = value.partition(b" ")
+                return credential.strip() if scheme.lower() == b"bearer" else b""
+        return b""
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        presented = self._presented(scope)
+        if presented and hmac.compare_digest(presented, self._token):
+            return await self.app(scope, receive, send)
+        body = (b'{"error":"unauthorized","detail":"this MCP server requires `Authorization: Bearer <token>`; '
+                b'the token is AUGHOR_MCP_TOKEN on the server"}')
+        await send({"type": "http.response.start", "status": 401, "headers": [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+            (b"www-authenticate", b'Bearer realm="aughor-mcp"'),
+        ]})
+        await send({"type": "http.response.body", "body": body})
+
+
+def http_app(token: str, host: str):
+    """The streamable-HTTP app behind the bearer gate, with its transport security built for ``host``.
+
+    Set BEFORE `streamable_http_app()`: FastMCP creates its session manager on the first call and bakes the
+    security settings into it, so this is called once, from the entry point, before anything is served."""
+    mcp.settings.host = host
+    mcp.settings.transport_security = transport_security_for(host)
+    return BearerGate(mcp.streamable_http_app(), token)
+
+
+def serve_http(host: str, port: int, token: str) -> None:
+    """Serve `http_app` with uvicorn — what `mcp.run(transport="streamable-http")` does, with the door in front."""
+    import uvicorn
+
+    mcp.settings.port = port
+    uvicorn.run(http_app(token, host), host=host, port=port, log_level=mcp.settings.log_level.lower())
 
 
 def _automation_description(row: dict) -> str:

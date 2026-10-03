@@ -30,6 +30,15 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 _ROW_SAMPLE = 50
 _FINDING_CAP = 25
 
+# DE-2a (ROADMAP §3.51) — the principal this client acts as. The API's identity mode
+# (`AUGHOR_REQUIRE_IDENTITY=1`) resolves a caller from an OIDC bearer, or — while no issuer
+# is configured — from the `X-Aughor-Org` / `X-Aughor-User` seam (`security/authz`). This
+# client sent neither, so every MCP call was refused with a 401 the moment identity was
+# required (the dbx study's finding 3). The header names are spelled here rather than
+# imported: this module stays httpx-only by design, and a test holds the two spellings equal.
+IDENTITY_ORG_HEADER = "X-Aughor-Org"
+IDENTITY_USER_HEADER = "X-Aughor-User"
+
 
 class AughorError(RuntimeError):
     """An Aughor API call failed (a non-2xx response or a transport error). The
@@ -46,6 +55,12 @@ class AughorClient:
     calls, default 60s), ``AUGHOR_MCP_DEEP_TIMEOUT`` (the streaming ask/deep tools,
     default 300s). Tests inject ``transport=httpx.ASGITransport(app=…)`` to drive the
     real app in-process.
+
+    The principal (DE-2a), when the API requires identity: ``AUGHOR_MCP_BEARER`` is sent as
+    ``Authorization: Bearer …`` (an OIDC token, for an API with an issuer configured);
+    ``AUGHOR_MCP_ORG`` and ``AUGHOR_MCP_USER`` (default ``mcp``) are sent as the
+    ``X-Aughor-Org`` / ``X-Aughor-User`` seam a self-hosted API resolves while no issuer is
+    configured. Unset, nothing is sent and identity-off installs are byte-identical.
     """
 
     def __init__(
@@ -56,6 +71,9 @@ class AughorClient:
         timeout: Optional[float] = None,
         deep_timeout: Optional[float] = None,
         transport: Optional[httpx.BaseTransport] = None,
+        org: Optional[str] = None,
+        user: Optional[str] = None,
+        bearer: Optional[str] = None,
     ) -> None:
         self.base_url = (base_url or os.environ.get("AUGHOR_API_URL") or DEFAULT_BASE_URL).rstrip("/")
         self.api_key = api_key if api_key is not None else os.environ.get("AUGHOR_API_KEY", "")
@@ -64,12 +82,23 @@ class AughorClient:
             deep_timeout if deep_timeout is not None else os.environ.get("AUGHOR_MCP_DEEP_TIMEOUT", "300")
         )
         self._transport = transport
+        self.org = (org if org is not None else os.environ.get("AUGHOR_MCP_ORG", "")).strip()
+        self.user = (user if user is not None else os.environ.get("AUGHOR_MCP_USER", "")).strip()
+        self.bearer = (bearer if bearer is not None else os.environ.get("AUGHOR_MCP_BEARER", "")).strip()
 
     # ── plumbing ────────────────────────────────────────────────────────────────
     def _headers(self) -> dict[str, str]:
         h = {"accept": "application/json"}
         if self.api_key:
             h["X-Api-Key"] = self.api_key
+        # DE-2a — the principal this client acts as, so an API that requires identity can
+        # resolve one: a verified bearer where an issuer is configured, the header seam where
+        # not. The user defaults to `mcp` once an org is named, so the audit row says who.
+        if self.bearer:
+            h["Authorization"] = f"Bearer {self.bearer}"
+        if self.org:
+            h[IDENTITY_ORG_HEADER] = self.org
+            h[IDENTITY_USER_HEADER] = self.user or "mcp"
         return h
 
     def _mk_client(self, timeout: Optional[float] = None) -> httpx.AsyncClient:

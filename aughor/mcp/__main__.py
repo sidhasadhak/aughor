@@ -2,15 +2,24 @@
 
 Default transport is stdio — the form Claude Desktop / Claude Code / Cursor launch. The
 ``--http`` form serves streamable-HTTP for HTTP MCP clients (on 127.0.0.1:8765 by default,
-deliberately not the API's :8000).
+deliberately not the API's :8000). It needs ``AUGHOR_MCP_TOKEN`` (DE-2a): every HTTP
+client presents it as ``Authorization: Bearer …``, because the tools behind it call the API
+with this process's own key and principal.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 
-from aughor.mcp.server import mcp, register_automation_tools, register_spotlight_tools
+from aughor.mcp.server import mcp, register_automation_tools, register_spotlight_tools, serve_http
+
+_TOKEN_HELP = (
+    "[aughor.mcp] --http needs AUGHOR_MCP_TOKEN. Every HTTP client presents it as "
+    "`Authorization: Bearer <token>`; without one, anyone who reaches the port calls the API as this "
+    "process. Make one with:  python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+)
 
 
 def main() -> None:
@@ -60,9 +69,12 @@ def main() -> None:
                   file=sys.stderr)
 
     if args.http:
-        mcp.settings.host = args.host
-        mcp.settings.port = args.port
-        mcp.run(transport="streamable-http")
+        # DE-2a — a door on the HTTP transport, and the transport security built for the host actually served
+        # (FastMCP fixed a loopback-only allowlist at import, so `--host 0.0.0.0` answered a remote client 421).
+        token = os.environ.get("AUGHOR_MCP_TOKEN", "").strip()
+        if not token:
+            sys.exit(_TOKEN_HELP)
+        serve_http(args.host, args.port, token)
     else:
         mcp.run()  # stdio — the default transport for Claude Desktop/Code/Cursor
 

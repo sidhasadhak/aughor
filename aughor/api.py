@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -251,8 +252,10 @@ def _require_auth(request: Request, key: str | None = Security(_api_key_header))
     this is behaviourally identical to the old key-only check.
     """
     exempt = any(request.url.path.startswith(p) for p in _AUTH_EXEMPT)
-    # 1. Shared-secret front door (unchanged): coarse lock when exposed beyond localhost.
-    if _API_KEY and not exempt and key != _API_KEY:
+    # 1. Shared-secret front door (unchanged): coarse lock when exposed beyond localhost. Compared in constant
+    #    time (DE-2a): `!=` returns at the first differing byte, which is a timing oracle on a secret an outside
+    #    agent presents on every call.
+    if _API_KEY and not exempt and not hmac.compare_digest(str(key or ""), _API_KEY):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     # 2. Identity (SEC-01). Off by default; exempt paths (health/docs) never require it.
