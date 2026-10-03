@@ -4338,6 +4338,11 @@ export interface SlackBotSummary {
   /** AO-1e — why the PLATFORM switched this bot off ("its agent 'X' was deleted"); ""
    *  when a person paused it or it is on. Cleared by the server on resume. */
   disabled_reason: string;
+  /** AO-2a — the supervisor heartbeat that has this bot's socket open, or null when
+   *  nothing is listening (the record being "enabled" says nothing about that). */
+  listening: { supervisor_id: string; since: string; last_seen_at: string } | null;
+  /** Why nothing is listening, with the command to start it; "" while listening. */
+  liveness_hint: string;
   team_id: string;
   bot_user_id: string;
   /** DS-5 — the agent this bot is a door ONTO. On the wire since RC-5 (`to_safe_dict`
@@ -4863,6 +4868,9 @@ export async function createSlackBot(body: {
  *  status, never a disclosure — a lost key is re-issued, not recovered. */
 export async function issueSupervisorKey(): Promise<{
   key: string; env_line: string; issued_at: string;
+  /** AO-2e — the key this one replaced keeps opening the door until then ("" on a first
+   *  issue), so the running supervisor is not dark between Regenerate and the restart. */
+  previous_valid_until: string; previous_valid_for_s: number;
 }> {
   const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`, { method: "POST" });
   if (!res.ok) throw new Error(`Could not issue a supervisor key (${res.status})`);
@@ -4870,10 +4878,10 @@ export async function issueSupervisorKey(): Promise<{
 }
 
 export async function getSupervisorKeyStatus(): Promise<{
-  issued: boolean; issued_at: string;
+  issued: boolean; issued_at: string; previous_valid_until: string; grace_s: number;
 }> {
   const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`);
-  if (!res.ok) return { issued: false, issued_at: "" };
+  if (!res.ok) return { issued: false, issued_at: "", previous_valid_until: "", grace_s: 0 };
   return res.json();
 }
 

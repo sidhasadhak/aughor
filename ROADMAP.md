@@ -10327,7 +10327,11 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > and the fleet rows read one shared window and say it; the live model has a dated declared price and an unpriced
 > tile says **unpriced**; five surfaces say *could not read — retry* on a failed fetch (a component test per site);
 > finished runs of a custom agent draw green with their duration; "built-in" replaces "charter" on screen and the
-> ratchet's comment is true. Next: AO-2a, AO-2e.
+> ratchet's comment is true. (The model-id ratchet refused a shipped price row, rightly: the rate is the operator's
+> declaration, `AUGHOR_MODEL_PRICES`.) AO-2a ✅ — the supervisor heartbeats after every reconcile and the bot card
+> and the Map say *listening since …* or *not listening* with the one command. AO-2e ✅ — the key routes and the
+> heartbeat are admin acts in POLICY, and a rotation keeps the replaced key for ten minutes, said on the screen.
+> Next: AO-4.
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

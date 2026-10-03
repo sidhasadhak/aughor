@@ -90,6 +90,15 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # gated like an admin write even though it is a GET. Reading it is equivalent to
     # holding every bot token in the org.
     ("GET", "/slack-bots/runtime"): P.ADMIN_MANAGE_ORG,
+    # AO-2a — the supervisor's heartbeat: the same caller as the runtime read (the
+    # route checks the same key), so the same entry.
+    ("POST", "/slack-bots/runtime/heartbeat"): P.ADMIN_MANAGE_ORG,
+    # AO-2e — minting the supervisor's key is minting the right to read every raw token
+    # above; it was unlisted, so it fell to the write floor (and its status GET was open).
+    # Measured 2026-10-03: on a default install anyone on the port could mint a key and
+    # then read the tokens.
+    ("POST", "/slack-bots/supervisor-key"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/slack-bots/supervisor-key"): P.ADMIN_MANAGE_ORG,
     ("POST", "/slack-bots"): P.ADMIN_MANAGE_ORG,
     ("PATCH", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
     ("DELETE", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,

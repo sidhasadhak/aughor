@@ -34,6 +34,7 @@ import {
   type SlackBotSummary,
   type UserAgent,
 } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 import { bindingProblem, patchBodyFor, type SlackBotChanges } from "@/lib/slackBots";
 
 import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
@@ -81,6 +82,8 @@ export function IntegrationsPanel() {
    *  on screen. It is returned once — the panel holds it only until the card closes. */
   const [keyIssued, setKeyIssued] = useState(false);
   const [freshKey, setFreshKey] = useState("");
+  // AO-2e — until when the key a Regenerate replaced still opens the door.
+  const [graceUntil, setGraceUntil] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -349,6 +352,23 @@ export function IntegrationsPanel() {
                                     : "paused"}
                                 </span>
                               )}
+                              {/* AO-2a — "enabled" is the record; LISTENING is the socket.
+                                  The card said the first and implied the second on a
+                                  machine where no supervisor ran. */}
+                              {b.enabled && (
+                                b.listening ? (
+                                  <span className="aug-fs-xs" style={{ color: "var(--grn4)",
+                                    marginLeft: 6 }}
+                                    title={`supervisor ${b.listening.supervisor_id} · last heard ${b.listening.last_seen_at}`}>
+                                    listening since {formatDateTime(b.listening.since)}
+                                  </span>
+                                ) : (
+                                  <span className="aug-fs-xs" style={{ color: "var(--amb4)",
+                                    marginLeft: 6 }} title={b.liveness_hint}>
+                                    {b.liveness_hint || "not listening — start the supervisor"}
+                                  </span>
+                                )
+                              )}
                             </span>
                             <Button variant="ghost" size="xs" disabled={busy === b.id}
                               onClick={() => {
@@ -455,6 +475,7 @@ export function IntegrationsPanel() {
                           try {
                             const k = await issueSupervisorKey();
                             setFreshKey(k.env_line);
+                            setGraceUntil(k.previous_valid_until || "");
                             setKeyIssued(true);
                           } catch (e) { setError((e as Error).message); }
                           finally { setBusy(""); }
@@ -476,7 +497,10 @@ export function IntegrationsPanel() {
                           lineHeight: 1.5 }}>
                           Copy this now — it is shown once. Paste it into the bot
                           supervisor&apos;s <code>.env.local</code>, then restart that
-                          process. Regenerating replaces it and the old one stops working.
+                          process.{" "}
+                          {graceUntil
+                            ? `The key it replaces keeps working until ${formatDateTime(graceUntil)}, so the running supervisor stays up until you restart it.`
+                            : "Regenerating later replaces it; the replaced key keeps working for a few minutes so the running supervisor can be restarted."}
                         </div>
                       </div>
                     )}

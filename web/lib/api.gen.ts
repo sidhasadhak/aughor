@@ -273,7 +273,11 @@ export interface paths {
         };
         /**
          * List Agents
-         * @description The fleet roster: each agent's charter + effective governance + recent spend.
+         * @description The fleet roster: each agent's charter + effective governance + spend in the window.
+         *
+         *     ``range`` / ``since`` / ``until`` are the shared Agent Ops window (``obs/timeseries``
+         *     names; the default is its default, 24h) — every number here is read over it, and the
+         *     window rides on each row as ``window`` so the page can say so.
          *
          *     No ``recommended_model`` any more, and no ``POST /agents/apply-recommended-models``
          *     to apply one: both existed only to serve per-charter model ids this repo hardcoded,
@@ -505,6 +509,11 @@ export interface paths {
          *     recorded to report, and ``spend`` says so with the flag to turn on rather than
          *     returning zeros: a confident 0 tokens and an unmeasured 0 tokens look identical
          *     on a tile, and only one of them is true.
+         *
+         *     AO-3 (2026-10-03): everything here is read over ONE window — the shared Agent Ops
+         *     range, 24h by default — and the window rides on the response. Measured before: the
+         *     roster row said 76.7K tokens (24h, from the fleet fold) and this page said 3.5M
+         *     (all time) for the same agent, and nothing on either screen said which was which.
          */
         get: operations["user_agent_observability_agents_custom__agent_id__observability_get"];
         put?: never;
@@ -6554,7 +6563,10 @@ export interface paths {
         /**
          * List Jobs
          * @description The fleet: recent jobs (newest first), each tagged with its agent + the
-         *     compute it spent. ``state=active`` returns only in-flight jobs.
+         *     compute it spent. ``state=active`` returns only in-flight jobs. ``range`` (a named
+         *     Agent Ops window) or ``since`` / ``until`` (ISO-8601 UTC, half-open) bound
+         *     ``created_at`` — AO-3: a page that captions a window can ask for exactly that window
+         *     instead of the newest N of any age. No window named means no bound, as before.
          */
         get: operations["list_jobs_jobs_get"];
         put?: never;
@@ -11864,6 +11876,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/slack-bots/runtime/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Bots Heartbeat
+         * @description The supervisor's word that it is alive, after every reconcile (AO-2a).
+         *
+         *     Gated exactly like the runtime read — it is the same process speaking — and the ONLY
+         *     writer of the liveness store. Measured 2026-10-03: nothing started the supervisor,
+         *     nothing watched it, and the bot card said "enabled" on a machine where it was not
+         *     running. The card now reads *listening since …* from the last beat, or *not
+         *     listening* with the command once the beats stop.
+         */
+        post: operations["slack_bots_heartbeat_slack_bots_runtime_heartbeat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/slack-bots/supervisor-key": {
         parameters: {
             query?: never;
@@ -11873,8 +11911,9 @@ export interface paths {
         };
         /**
          * Supervisor Key Status
-         * @description Whether a key exists and when it was minted — never the key. Issued once, and a
-         *     lost one is re-issued rather than recovered.
+         * @description Whether a key exists, when it was minted, and until when the previous one still
+         *     opens the door — never the key. Issued once, and a lost one is re-issued rather than
+         *     recovered.
          */
         get: operations["supervisor_key_status_slack_bots_supervisor_key_get"];
         put?: never;
@@ -14161,6 +14200,28 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HeartbeatBody */
+        HeartbeatBody: {
+            /**
+             * Failed
+             * @default []
+             */
+            failed: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Reconcile Ms
+             * @default 30000
+             */
+            reconcile_ms: number;
+            /**
+             * Running
+             * @default []
+             */
+            running: string[];
+            /** Supervisor Id */
+            supervisor_id: string;
         };
         /** HistoryOut */
         HistoryOut: {
@@ -17738,6 +17799,9 @@ export interface operations {
         parameters: {
             query?: {
                 workspace_id?: string | null;
+                range?: string;
+                since?: string;
+                until?: string;
             };
             header?: never;
             path?: never;
@@ -18178,7 +18242,11 @@ export interface operations {
     };
     user_agent_observability_agents_custom__agent_id__observability_get: {
         parameters: {
-            query?: never;
+            query?: {
+                range?: string;
+                since?: string;
+                until?: string;
+            };
             header?: never;
             path: {
                 agent_id: string;
@@ -28207,6 +28275,9 @@ export interface operations {
                 conn_id?: string | null;
                 kind?: string | null;
                 limit?: number;
+                range?: string;
+                since?: string;
+                until?: string;
             };
             header?: never;
             path?: never;
@@ -37621,6 +37692,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    slack_bots_heartbeat_slack_bots_runtime_heartbeat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HeartbeatBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

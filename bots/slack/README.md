@@ -74,6 +74,14 @@ npm install
 npm run dev
 ```
 
+After every reconcile (30 s by default) the supervisor POSTs a heartbeat to
+`/slack-bots/runtime/heartbeat` — which bots it has open, which failed to start, and
+how often it reconciles — with the same key the registry read uses. That is what the
+bot card in **Integrations → Slack** and the agent's Map read: *listening since …*
+when a beat arrived within three reconcile intervals, otherwise *not listening* with
+the command above. A heartbeat that cannot be delivered never stops a socket; the
+process logs the change of state once and the card says so until it lands.
+
 Socket Mode connects **out** to Slack over a WebSocket, so there is no public
 URL, tunnel, or webhook endpoint to expose.
 

@@ -3,8 +3,9 @@ import type { SlackBotSummary, UserAgent } from "@/lib/api";
 import { bindingProblem, patchBodyFor, slackStepBotNote } from "./slackBots";
 
 const bot: SlackBotSummary = {
-  id: "sb_1", name: "Aughor", enabled: true, disabled_reason: "", team_id: "T1",
-  bot_user_id: "U1", agent_id: "ua_1", connection_id: "", agent_view: false,
+  id: "sb_1", name: "Aughor", enabled: true, disabled_reason: "", listening: null,
+  liveness_hint: "", team_id: "T1", bot_user_id: "U1", agent_id: "ua_1", connection_id: "",
+  agent_view: false,
 };
 const agent = (over: Partial<UserAgent> = {}): UserAgent => ({
   id: "ua_1", name: "The Look Analyst", instructions: "", connection_id: "8233e4fd",

@@ -38,7 +38,9 @@ def list_slack_bots():
     A bot bound to no connection is org-level and stays listed everywhere — it answers
     about whatever the caller asks, so no workspace owns it yet."""
     from aughor.metastore import scoped_to_workspace
-    return {"bots": [b.to_safe_dict()
+    # AO-2a — each row says whether anything is LISTENING for it, from the supervisor's
+    # last heartbeat; "enabled" alone read as alive on a machine where nothing ran.
+    return {"bots": [{**b.to_safe_dict(), **store.liveness_fields(b.id)}
                      for b in scoped_to_workspace(store.list_bots(), key="connection_id")]}
 
 
@@ -94,16 +96,21 @@ def issue_supervisor_key():
     honest version of that.
     """
     raw = store.issue_supervisor_key()
+    status = store.supervisor_key_status()
     return {"key": raw, "env_line": f"AUGHOR_RUNTIME_KEY={raw}",
-            "issued_at": store.supervisor_key_issued_at()}
+            "issued_at": status["issued_at"],
+            # AO-2e — the replaced key keeps working this long, so the running supervisor
+            # is not dark between "Regenerate" and the restart.
+            "previous_valid_until": status["previous_valid_until"],
+            "previous_valid_for_s": store.KEY_GRACE_S if status["previous_valid_until"] else 0}
 
 
 @router.get("/slack-bots/supervisor-key")
 def supervisor_key_status():
-    """Whether a key exists and when it was minted — never the key. Issued once, and a
-    lost one is re-issued rather than recovered."""
-    at = store.supervisor_key_issued_at()
-    return {"issued": bool(at), "issued_at": at}
+    """Whether a key exists, when it was minted, and until when the previous one still
+    opens the door — never the key. Issued once, and a lost one is re-issued rather than
+    recovered."""
+    return store.supervisor_key_status()
 
 
 def _refuse_without_a_front_door(request: Request) -> None:
@@ -167,6 +174,30 @@ def slack_bots_runtime(request: Request):
     _refuse_without_a_front_door(request)
     bots = [b for b in store.list_bots(include_disabled=False) if b.bot_token and b.app_token]
     return {"bots": [store.get_bot_decrypted(b.id).to_dict() for b in bots]}
+
+
+class HeartbeatBody(BaseModel):
+    supervisor_id: str
+    running: list[str] = []
+    failed: list[dict] = []
+    reconcile_ms: int = 30000
+
+
+@router.post("/slack-bots/runtime/heartbeat")
+def slack_bots_heartbeat(body: HeartbeatBody, request: Request):
+    """The supervisor's word that it is alive, after every reconcile (AO-2a).
+
+    Gated exactly like the runtime read — it is the same process speaking — and the ONLY
+    writer of the liveness store. Measured 2026-10-03: nothing started the supervisor,
+    nothing watched it, and the bot card said "enabled" on a machine where it was not
+    running. The card now reads *listening since …* from the last beat, or *not
+    listening* with the command once the beats stop.
+    """
+    _refuse_without_a_front_door(request)
+    row = store.record_heartbeat(body.supervisor_id.strip()[:200] or "unnamed",
+                                 body.running, body.failed, body.reconcile_ms)
+    return {"recorded": True, "supervisor_id": row["id"], "since": row["since"],
+            "running": len(row["running"]), "failed": len(row["failed"])}
 
 
 @router.get("/slack-bots/{bot_id}")

@@ -23,7 +23,9 @@ import { createMemoryState } from "@chat-adapter/state-memory";
 import { createArrivalPoster, createAskStream, createFactChecker, createVerdictPoster } from "./aughor.js";
 import { buildBot } from "./bot.js";
 import { createChartRenderer } from "./chart.js";
-import { createRegistry, type BotRecord } from "./registry.js";
+import { hostname } from "node:os";
+
+import { createHeartbeat, createRegistry, type BotRecord } from "./registry.js";
 import { createSupervisor } from "./supervisor.js";
 
 /** How often to ask Aughor what should be running. */
@@ -120,6 +122,27 @@ const supervisor = createSupervisor({
   },
 });
 
+// AO-2a — after every reconcile, tell Aughor what is listening. The id names THIS
+// process; the API keeps the last beat and the bot card reads liveness from it.
+const postHeartbeat = createHeartbeat();
+const supervisorId = `${hostname()}:${process.pid}:${new Date().toISOString()}`;
+let heartbeatLanded: boolean | null = null;
+async function beat(failed: { id: string; error: string }[]): Promise<void> {
+  const ok = await postHeartbeat({
+    supervisor_id: supervisorId, running: supervisor.runningIds(), failed,
+    reconcile_ms: RECONCILE_MS,
+  });
+  // Say it on a CHANGE of state only — a heartbeat that fails every 30 s would otherwise
+  // bury the bot's own log, and the API's card already says "not listening".
+  if (ok !== heartbeatLanded) {
+    console[ok ? "log" : "warn"](ok
+      ? "heartbeat: Aughor knows this supervisor is listening"
+      : "heartbeat: Aughor could not be told this supervisor is listening (the bot card "
+        + "will read 'not listening' until it can) — check AUGHOR_API_URL / AUGHOR_RUNTIME_KEY");
+    heartbeatLanded = ok;
+  }
+}
+
 const first = await supervisor.reconcile();
 if (first.running === 0) {
   console.error(
@@ -132,13 +155,15 @@ if (first.running === 0) {
   );
 }
 for (const f of first.failed) console.error(`  bot ${f.id} did not start: ${f.error}`);
+await beat(first.failed);
 
 const timer = setInterval(() => {
-  void supervisor.reconcile().then((r) => {
+  void supervisor.reconcile().then(async (r) => {
     if (r.started.length || r.stopped.length || r.restarted.length) {
       console.log(`reconciled: +${r.started.length} -${r.stopped.length} ` +
                   `~${r.restarted.length} (${r.running} running)`);
     }
+    await beat(r.failed);
   });
 }, RECONCILE_MS);
 // Reconciling must never be the reason the process stays alive; the sockets are.
