@@ -70,6 +70,24 @@ def test_aggregating_the_child_is_correct_and_not_flagged():
     assert detect_fanout(sql, COLS) is None
 
 
+def test_a_parent_joined_on_its_own_key_is_no_satellite_and_its_condition_sums_nothing():
+    """Q3 (2026-10-03): the true answer's query was called an over-count of 'user' — orders and order_items both
+    carry user_id — though it joins items to their order on order_id, the order's own key, and sums the items:
+    the order's status only chose which. A parent measure summed across its items still over-counts."""
+    cols = {"orders": ["order_id", "user_id", "status", "num_of_item", "created_at"],
+            "order_items": ["id", "order_id", "user_id", "product_id", "status", "sale_price"]}
+    join = " FROM orders o JOIN order_items oi ON o.order_id = oi.order_id GROUP BY 1"
+    assert detect_fanout("SELECT DATE(o.created_at), SUM(CASE WHEN o.status = 'Complete' THEN oi.sale_price "
+                         "ELSE 0 END)" + join, cols) is None
+    assert detect_fanout("SELECT DATE(o.created_at), SUM(IF(o.status = 'Complete', oi.sale_price, 0))" + join,
+                         cols, dialect="bigquery") is None
+    f = detect_fanout("SELECT DATE(o.created_at), SUM(o.num_of_item)" + join, cols)
+    assert f is not None and f.kind == "parent_fanout" and f.satellites == ["orders"]
+    # beside an item measure it is still the parent's sum that over-counts — not a chasm of 'user'
+    f = detect_fanout("SELECT DATE(o.created_at), SUM(o.num_of_item), SUM(oi.sale_price)" + join, cols)
+    assert f is not None and f.kind == "parent_fanout" and f.satellites == ["orders"]
+
+
 def test_unrelated_tables_not_flagged():
     sql = ("SELECT SUM(o.order_total) FROM orders o "
            "JOIN products p ON p.product_id = o.order_id")  # no shared root

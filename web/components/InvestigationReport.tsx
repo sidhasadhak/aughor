@@ -17,6 +17,7 @@ import { Pending } from "@/components/ui/motion";
 import React, { useState } from "react";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { chartCaption, repeatedCharts } from "@/components/charts/caption";
 import { FigureSources, FindingFigures, isOneRecord } from "@/components/FindingFigures";
 import { SqlResultTable } from "@/components/AugTable";
 import { AnswerProse } from "@/components/chat/AnswerProse";
@@ -39,6 +40,7 @@ import { Icon } from "@/components/ui/icon";
 import { QuestionFrame } from "@/components/QuestionFrame";
 import type { OntologyFrame, RuleOuts } from "@/lib/types";
 import { withUniqueKeys } from "@/lib/listKeys";
+import { namesPeriod } from "@/lib/format";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -236,16 +238,20 @@ function sourceLabel(title: string): string {
   return t.length > 46 ? t.slice(0, 46).trimEnd() + "…" : t;
 }
 
-function EvidenceBlock({ finding, onShowSource, answer = "" }: { finding: InvestigationFinding; onShowSource?: ShowSource; answer?: string }) {
+function EvidenceBlock({ finding, onShowSource, answer = "", repeat = false }: { finding: InvestigationFinding; onShowSource?: ShowSource; answer?: string;
+  /** Another result's chart draws this one's series: only its source is shown (`repeatedCharts`). */
+  repeat?: boolean }) {
   const { verdict, warning } = splitStatNote(finding.stat_note);
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
-  const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
+  const hasChart = !repeat && hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
   // One record is its figures in a line, never a one-row table — and only those the answer does
   // not already state (`FindingFigures`).
   const oneRecord = hasData && !hasChart && isOneRecord(finding.columns, finding.rows as unknown[][]);
   // CA-4 "title = claim": the claim leads the figure; the query's descriptive
-  // name stays on the source-data affordance below.
-  const headline = finding.claim?.trim() || finding.title;
+  // name stays on the source-data affordance below. Without a claim the figure is
+  // captioned by what it draws, which can be fewer measures than the result holds.
+  const headline = finding.claim?.trim()
+    || chartCaption(finding.title, finding.columns, finding.rows as unknown[][], finding.chart_type);
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -282,7 +288,7 @@ function EvidenceBlock({ finding, onShowSource, answer = "" }: { finding: Invest
       )}
 
       {/* Trend strip — sparkline + period-over-period % (time-series findings only) */}
-      <TrendStrip columns={finding.columns} rows={finding.rows} />
+      {!repeat && <TrendStrip columns={finding.columns} rows={finding.rows} />}
 
       {/* Key numbers — one inline prose line, not a tile row (R16 P1) */}
       {finding.key_numbers.length > 0 && <KeyNumbersInline metrics={finding.key_numbers} />}
@@ -314,7 +320,7 @@ function EvidenceBlock({ finding, onShowSource, answer = "" }: { finding: Invest
 
       {/* One record — its figures; otherwise the data table (collapsed) when there is no chart */}
       {oneRecord && <FindingFigures columns={finding.columns} row={finding.rows[0] as unknown[]} answer={answer} />}
-      {hasData && !hasChart && !oneRecord && (
+      {hasData && !hasChart && !oneRecord && !repeat && (
         <FindingTable columns={finding.columns} rows={finding.rows} label="Data" />
       )}
       {/* The per-finding SQL + "Open in Query Builder" used to live here; for a swifter
@@ -331,12 +337,16 @@ function EvidenceBlock({ finding, onShowSource, answer = "" }: { finding: Invest
 const _norm = (s: string) => s.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
 const restated = (summary: string, execSummary?: string) =>
   !!summary && !!execSummary && _norm(execSummary).includes(_norm(summary));
+/** The same sentence, whatever ends it: a headline drops its full stop, and a stored one-sentence answer
+ *  (Q1, 2026-10-03) was headline and summary both, a full stop apart — printed twice. */
+const sameSentence = (a?: string, b?: string) =>
+  !!a && !!b && _norm(a).replace(/[.!?]+$/, "") === _norm(b).replace(/[.!?]+$/, "");
 
 /** A finding the body draws at all. */
 const drawn = (f: { interpretation: string; columns: string[]; error?: string }) =>
   !!(f.interpretation || f.columns.length > 0 || f.error);
 
-function PhaseSection({ phase, onShowSource, execSummary, answer }: { phase: InvestigationPhase; onShowSource?: ShowSource; execSummary?: string; answer?: string }) {
+function PhaseSection({ phase, onShowSource, execSummary, answer, repeats }: { phase: InvestigationPhase; onShowSource?: ShowSource; execSummary?: string; answer?: string; repeats?: Set<string> }) {
   if (phase.status === "skipped") return null;
   const findings = phase.findings.filter(drawn);
   if (!phase.summary && findings.length === 0) return null;
@@ -348,7 +358,8 @@ function PhaseSection({ phase, onShowSource, execSummary, answer }: { phase: Inv
     // narrative; which internal phase produced a finding is process, not insight.
     <BriefSection>
       {phase.summary && !summaryRedundant && <BriefProse text={phase.summary} />}
-      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} answer={answer} />)}
+      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} answer={answer}
+                                        repeat={repeats?.has(f.finding_id)} />)}
     </BriefSection>
   );
 }
@@ -508,8 +519,12 @@ export function InvestigationReportView({
   const answer = [report.headline, report.executive_summary, report.closing_summary].filter(Boolean).join("\n");
   const says = (s?: string) => !!s && answer.toLowerCase().includes(s.toLowerCase());
   const simple = simpleResults(analysisPhases, report.executive_summary);
+  // A chart another result's chart already draws is not drawn again; a result that carries its own claim keeps its figure.
+  const repeats = repeatedCharts(analysisPhases.flatMap((p) => p.findings.filter((f) => drawn(f) && !f.claim?.trim())
+    .map((f) => ({ id: f.finding_id, columns: f.columns, rows: f.rows as unknown[][], chartType: f.chart_type }))));
 
-  const periodStr = says(report.observation_period) && (!report.comparison_basis || says(report.comparison_basis))
+  const periodStr = (says(report.observation_period) || namesPeriod(answer, report.observation_period ?? ""))
+    && (!report.comparison_basis || says(report.comparison_basis))
     ? ""
     : [
       report.observation_period,
@@ -538,7 +553,7 @@ export function InvestigationReportView({
           from the same sentence) — one text, rendered once. Rendered as markdown: a question
           that asks to see the data is answered in the analyst's own words (item 3), whose
           table and list must read as a table and a list, not as pipes and asterisks. */}
-      {report.executive_summary && report.executive_summary.trim() !== report.headline?.trim()
+      {report.executive_summary && !sameSentence(report.executive_summary, report.headline)
         && <AnswerProse text={report.executive_summary} />}
 
       <BriefMeta
@@ -563,7 +578,8 @@ export function InvestigationReportView({
           <FigureSources results={simple} answer={answer} onShowSource={onShowSource} />
         </BriefSection>
       ) : withUniqueKeys(analysisPhases, p => p.phase_id).map(([key, phase]) => (
-        <PhaseSection key={key} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} answer={answer} />
+        <PhaseSection key={key} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} answer={answer}
+                      repeats={repeats} />
       ))}
 
       {/* Bottom line — a short closing summary that lands the answer at the END of the

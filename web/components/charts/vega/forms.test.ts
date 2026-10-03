@@ -5,7 +5,7 @@
  * counting marks is not painting, and "a fill that looks like a colour" is not a token.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as vl from "vega-lite";
 import { View, parse } from "vega";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
@@ -203,5 +203,83 @@ describe("a number under a thousand is rounded on the chart", () => {
     walk((view.scenegraph() as unknown as { root?: { items?: [] } }).root?.items);
     expect(texts).toEqual(expect.arrayContaining(["787.4", "9.6K", "7.4K", "0.0019"]));
     expect(texts.filter((t) => /\d\.\d{5,}/.test(t))).toEqual([]);      // no raw float anywhere on the chart
+  });
+});
+
+/** The text a chart SHOWS: labels Vega hid for overlapping (opacity 0) are not read. */
+async function shownText(columns: string[], rows: unknown[][], width = 500): Promise<string[]> {
+  const out = resolveVegaSpec({ columns, rows, chartType: "auto", showLabels: true })!;
+  const compiled = vl.compile({ ...out.spec, width, height: out.defaultH } as Parameters<typeof vl.compile>[0],
+                              { config }).spec;
+  const view = new View(parse(compiled), { renderer: "none" });
+  await view.runAsync();
+  const texts: string[] = [];
+  const walk = (nodes: { items?: unknown[]; text?: unknown; opacity?: number }[] | undefined) => {
+    for (const n of nodes ?? []) {
+      // a label of two lines (a month over its year) is one label, read as one
+      if (n.opacity !== 0 && (typeof n.text === "string" || Array.isArray(n.text))) {
+        texts.push(Array.isArray(n.text) ? n.text.join(" ") : n.text);
+      }
+      walk(n.items as typeof nodes);
+    }
+  };
+  walk((view.scenegraph() as unknown as { root?: { items?: [] } }).root?.items);
+  return texts;
+}
+
+const MONTHS = ["2025-08-01", "2025-09-01", "2025-10-01", "2025-11-01", "2025-12-01", "2026-01-01", "2026-02-01",
+                "2026-03-01", "2026-04-01", "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01"];
+const REVENUE = [55965.77, 50543.93, 58007.77, 64251.7, 59989.8, 67298.94, 68648, 78272.25, 79059.67, 86425.5,
+                 92802.42, 109975.57, 117163.37];
+const SHORT = ["Aug 2025", "Sep", "Oct", "Nov", "Dec", "Jan 2026", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"];
+
+describe("a month axis labels every month", () => {
+  // theLook Q3 (2026-10-03): thirteen "%b %Y" labels ran together and three were dropped. The viewer
+  // was in Zurich, where a local axis put August's tick before August's first point — pinned here, so
+  // the test means the same on a runner that keeps UTC.
+  let tz: string | undefined;
+  beforeAll(() => { tz = process.env.TZ; process.env.TZ = "Europe/Zurich"; });
+  afterAll(() => { if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz; });
+
+  it("on a trend: the year on the first month and on January", async () => {
+    const texts = await shownText(["month", "monthly_revenue"], MONTHS.map((m, i) => [m, String(REVENUE[i])]));
+    expect(texts).toEqual(expect.arrayContaining(SHORT));
+  });
+
+  it("on a change chart too, spelled as the trend spells it", async () => {
+    const rows = MONTHS.map((m, i) => [m, String(REVENUE[i]), i ? String(REVENUE[i - 1]) : "NULL",
+                                       i ? String(REVENUE[i] - REVENUE[i - 1]) : "NULL"]);
+    const texts = await shownText(["month", "monthly_revenue", "prev_month_revenue", "revenue_change"], rows);
+    expect(texts).toEqual(expect.arrayContaining(["Sep 2025", ...SHORT.slice(2)]));
+    expect(texts.filter((t) => /Sept/.test(t))).toEqual([]);
+  });
+});
+
+/** Q2's ranking (2026-10-03): its last value tick, "250.0K", centred ~14px short of the end, ran past the chart's
+ *  edge and was cut. Every value label stays inside the plot, at any width. */
+describe("a value axis keeps its end labels inside the chart", () => {
+  const Q2 = [["Outerwear & Coats", "229793.89", "150.78"], ["Jeans", "213177.98", "102.64"], ["Sweaters", "139504.09", "76.90"],
+    ["Swim", "117253.80", "60.28"], ["Fashion Hoodies & Sweatshirts", "115836.57", "56.40"], ["Suits & Sport Coats", "104985.21", "123.22"],
+    ["Sleep & Lounge", "98155.39", "50.91"], ["Tops & Tees", "88963.76", "43.93"], ["Shorts", "83797.55", "46.74"], ["Dresses", "80372.45", "88.03"]];
+
+  it.each([500, 725])("on a ranking %ipx wide", async (width) => {
+    const out = resolveVegaSpec({ columns: ["category", "total_revenue", "average_order_value"], rows: Q2,
+                                  chartType: "auto", showLabels: true })!;
+    const compiled = vl.compile({ ...out.spec, width, height: out.defaultH } as Parameters<typeof vl.compile>[0],
+                                { config }).spec;
+    const view = new View(parse(compiled), { renderer: "none" });
+    await view.runAsync();
+    const ends: number[] = [];
+    const walk = (nodes: { items?: unknown[]; text?: unknown; role?: string; bounds?: { x2: number } }[] | undefined,
+                  role = "") => {
+      for (const n of nodes ?? []) {
+        const r = n.role || role;
+        if (r === "axis-label" && typeof n.text === "string" && /K$/.test(n.text)) ends.push(n.bounds!.x2);
+        walk(n.items as typeof nodes, r);
+      }
+    };
+    walk((view.scenegraph() as unknown as { root?: { items?: [] } }).root?.items);
+    expect(ends.length).toBeGreaterThan(3);
+    expect(Math.max(...ends)).toBeLessThanOrEqual(view.width());
   });
 });

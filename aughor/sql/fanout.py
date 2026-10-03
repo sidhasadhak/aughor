@@ -189,6 +189,11 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
     # ── 2. shared FK roots among ≥2 base tables ───────────────────────────────
     shared: dict[str, list[str]] = {}
     bts = sorted(base_tables)
+    # A table joined onto its OWN key attaches one row and is no satellite of a hub — the demotion
+    # `_chasm_roots` already makes (`_pk_attached_tables`). Q3's orders ⋈ order_items ON order_id was
+    # called a chasm of 'user' for both carrying user_id, and the true answer was capped (2026-10-03).
+    # It stays a PARENT below: a parent measure summed across its children still over-counts.
+    pk_attached = _pk_attached_tables(tree, root)
     for i in range(len(bts)):
         for j in range(i + 1, len(bts)):
             common = roots_by_table[bts[i]] & roots_by_table[bts[j]]
@@ -199,6 +204,16 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
                         shared[r].append(t)
     if not shared:
         return None
+
+    def _in_condition(col, stop) -> bool:
+        """Is the column read only as a CASE/IF condition inside the aggregate — choosing rows, not
+        summed? `SUM(CASE WHEN o.status = 'Complete' THEN oi.sale_price ELSE 0 END)` sums order items."""
+        node = col
+        while node is not None and node is not stop:
+            if isinstance(node.parent, exp.If) and node.arg_key == "this":
+                return True
+            node = node.parent
+        return False
 
     # ── 3. non-distinct aggregates referencing columns of ≥2 shared-root tables ─
     # Only aggregates in the OUTER scope (root.expression is the outer Select).
@@ -211,6 +226,8 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
             continue
         # collect the base tables referenced by this aggregate's column args
         for col in agg.find_all(exp.Column):
+            if _in_condition(col, agg):
+                continue
             tref = (col.table or "").lower()
             bt = alias_to_table.get(tref)
             if bt:
@@ -219,7 +236,7 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
     # COUNT(*) and unqualified aggregates carry no table ref — conservatively
     # ignored (we only flag when we can attribute aggregates to ≥2 satellites).
     for r, sats in shared.items():
-        aggregated = [t for t in sats if t in agg_tables]
+        aggregated = [t for t in sats if t in agg_tables and t not in pk_attached]
         if len(aggregated) >= 2:
             aggs = sorted({a for t in aggregated for a in agg_tables[t]})
             return FanoutIssue(hub_root=r, satellites=sorted(aggregated), aggregates=aggs[:6],

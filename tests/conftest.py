@@ -170,6 +170,9 @@ for _env, _file in (
     # IP-2 — the industries chosen at install. Unpinned, a test that writes a choice would narrow the
     # developer's live deployment to it; registered in the same commit as aughor/packs/industry_choice.py.
     ("AUGHOR_INDUSTRIES_FILE", "industries.json"),
+    # The organisation's settings. Unpinned, the suite read the live file: a Briefing test failed on
+    # whatever this install's organisation had declared (2026-10-03).
+    ("AUGHOR_ORG_SETTINGS_FILE", "org_settings.json"),
 ):
     os.environ[_env] = os.path.join(_test_stores_dir, _file)   # assigned, not setdefault
 

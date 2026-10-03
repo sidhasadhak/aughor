@@ -654,3 +654,30 @@ def test_a_column_named_for_a_measure_code_measured_is_marked_when_counted_elsew
     result = an._record_evidence(turn, {"sql": lines}, {"columns": ["total_revenue", "units_sold"],
                                                       "rows": [["359224.30", "6012"]], "row_count": 1})
     assert list(result.get("not_the_declared_measure") or {}) == ["units_sold"]
+
+
+def test_a_statement_that_reads_a_declared_rule_off_another_table_does_not_run(monkeypatch):
+    """Q3 (2026-10-03): the frame read "completed orders" as rule completed_orders — orders.status in ('Complete') —
+    and the analyst's second query filtered order_items.status = 'Complete'; its every figure became the answer,
+    beside a first query that had kept to the rule."""
+    frame = {"start": {"entity": "Order", "table": "orders"}, "rules": [{
+        "id": "completed_orders", "label": "Completed orders", "entity": "Order", "matched": "completed orders",
+        "words": "Order.status is one of Complete", "usable": True,
+        "filters": [{"path": "status", "op": "in", "values": ["Complete"]}]}]}
+    turn = an.AnalystTurn(connection_id="c", conn=None, state={
+        "question": "How has monthly revenue from completed orders trended?", "_ada_intake": {"ontology_frame": frame},
+        "investigation_phases": []})
+    items = ("WITH m AS (SELECT DATE_TRUNC(DATE(created_at), MONTH) AS month, SUM(sale_price) AS revenue "
+             "FROM order_items WHERE status = 'Complete' GROUP BY 1) SELECT month, revenue FROM m")
+    join = "FROM orders o JOIN order_items oi ON o.order_id = oi.order_id"
+    kept = (f"SELECT DATE_TRUNC(DATE(o.created_at), MONTH) AS month, "
+            f"SUM(CASE WHEN o.status = 'Complete' THEN oi.sale_price ELSE 0 END) AS revenue {join} GROUP BY 1")
+    both = f"SELECT SUM(oi.sale_price) {join} WHERE o.status = 'Complete' AND oi.status = 'Complete'"
+    # the statement that misreads the rule is refused, naming the rule; the run never reaches the warehouse
+    monkeypatch.setattr("aughor.agent.converse_tools.run_sql", lambda *a, **k: (_ for _ in ()).throw(AssertionError("it ran")))
+    run = next(t for t in an.analyst_tools(turn, session_id="s", shape="describe") if t.name == "run_sql").run
+    refused = run({"sql": items})
+    assert refused["kind"] == "declared_rule" and "orders.status in ('Complete')" in refused["error"]
+    assert "order_items.status" in refused["error"] and turn.state["investigation_phases"] == []
+    # one that keeps to it — as a condition, or beside another filter — runs
+    assert an._rule_misread(turn, kept) == "" and an._rule_misread(turn, both) == ""

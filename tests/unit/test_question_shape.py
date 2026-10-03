@@ -101,6 +101,36 @@ def test_a_lead_that_announces_the_answer_does_not_head_it():
     assert I._lead_sentence(answered, Q2) == ("Outerwear & Coats brought in the most, $237,836.63, of the 10", TABLE)
 
 
+CATEGORIES = ["Outerwear & Coats", "Jeans", "Sweaters", "Suits & Sport Coats", "Fashion Hoodies & Sweatshirts",
+              "Swim", "Sleep & Lounge", "Shorts", "Tops & Tees", "Intimates"]
+
+
+def test_a_lead_that_names_what_came_back_heads_the_answer():
+    """Q2's answer of 2026-10-03 opened with its leader and its last, and no figure: an answer all the same."""
+    lead = ("The product category with the highest revenue over the last six months (March 4, 2026, to "
+            "September 3, 2026) was Outerwear & Coats, while Intimates generated the least among the top 10 "
+            "categories.")
+    text = lead + "\n\n" + TABLE
+    assert I._lead_sentence(text, Q2, CATEGORIES) == (lead.rstrip("."), TABLE)
+    assert I._lead_sentence(text, Q2) == ("", text), "without the rows it names nothing it read"
+    announced = "The following table lists the 10 product categories by revenue.\n\n" + TABLE
+    assert I._lead_sentence(announced, Q2, CATEGORIES) == ("", announced)
+    # a value the question itself named is the question's, not the answer's
+    assert I._lead_sentence("Jeans is listed below.\n\n" + TABLE, "How did Jeans do?", ["Jeans"])[0] == ""
+    # an opener that ends in a colon introduces its table, whatever it names (Q2, 2026-10-03)
+    colon = ("The product categories generating the highest revenue between March 5, 2026, and September 4, 2026, are "
+             "led by Outerwear & Coats and Jeans, with the following breakdown of total revenue and average order "
+             "value (AOV):\n\n" + TABLE)
+    assert I._lead_sentence(colon, Q2, CATEGORIES) == ("", colon)
+
+
+def test_the_values_a_lead_can_name_are_the_text_its_rows_hold():
+    state = {"investigation_phases": [{"findings": [{"rows": [
+        ["Outerwear & Coats", "237836.63", "2026-07-01", "July 2026", "NULL", None, "Q3 2026"],
+        ["Jeans", "214128.38", "2026-08-01", "August 2026", "", "nan", "Outerwear & Coats"]]}]}]}
+    assert I._result_values(state) == ["Outerwear & Coats", "Jeans"]
+
+
 def test_a_long_lead_heads_the_answer_by_its_first_clause_and_a_sentence_runs_past_vs():
     clause = "Outerwear & Coats led with $237,836.63 at an AOV of $150.82"
     tail = "jeans followed with $214,128.38, " + ", ".join(f"category {i} with ${i},000" for i in range(12))
@@ -119,12 +149,19 @@ def test_only_a_describe_question_with_a_conclusion_is_answered_in_the_analysts_
     assert got.headline == "Fulfilment takes about 3 days at every centre"
     assert "| NY/NJ | 3.12 |" in got.executive_summary
     assert got.recommendations == [] and got.data_gaps == [] and got.attribution_waterfall == []
+    # a one-sentence answer is its headline, and nothing again beneath it (Q1, 2026-10-03)
+    one = I._conclusion_as_answer({"_analyst_conclusion": "July 2026 brought in $359,224.30 from 7,027 units."},
+                                  {"question_shape": "describe"}, ASKED[0])
+    assert (one.headline, one.executive_summary) == ("July 2026 brought in $359,224.30 from 7,027 units", "")
     assert I._conclusion_as_answer({"_analyst_conclusion": CONCLUSION}, {"question_shape": "diagnose"}, q) is None
     assert I._conclusion_as_answer({}, {"question_shape": "describe"}, q) is None
 
 
 SQL = ("SELECT dc.name AS centre, SUM(oi.sale_price) AS revenue FROM order_items AS oi "
        "JOIN distribution_centers AS dc ON oi.dc_id = dc.id GROUP BY 1")
+
+
+_synthesize = I.ada_synthesize
 
 
 def _state(conclusion: str) -> dict:
@@ -150,7 +187,6 @@ def test_the_writer_is_never_called_for_a_describe_answer(monkeypatch):
         raise AssertionError("the writer was called for a describe answer")
     monkeypatch.setattr(I, "_provider", _no_model)
     monkeypatch.setattr(I, "_fast_synthesis_rescue", _no_model)
-    _synthesize = I.ada_synthesize
 
     out = _synthesize(_state("NY/NJ led with 1,200.50. Together the two made 2,000.75. "
                              "Savannah made 800.25."))["answer_report"]
@@ -163,6 +199,20 @@ def test_the_writer_is_never_called_for_a_describe_answer(monkeypatch):
     assert "2,111.00" not in out["executive_summary"]
     assert out["executive_summary"].endswith("so the sentence stating it was withheld.")
     assert calls == []
+
+
+def test_an_opener_that_does_not_answer_gives_way_to_the_ranked_rows(monkeypatch):
+    """Q2 had no headline in three runs (2026-10-02/03) — "The following table lists…" — over rows that held
+    the answer. Its first and last row head it, by the measure the rows are ordered on, and the figures trace."""
+    monkeypatch.setattr(I, "_provider", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no model")))
+    state = _state("The following table lists the centres by revenue.\n\n| Centre | Revenue |\n| --- | --- |\n"
+                   "| NY/NJ | $1,200.50 |\n| Savannah | $800.25 |\n| Houston | $310.00 |")
+    state["investigation_phases"][0]["findings"][0]["rows"].append(["Houston", "310"])
+    out = _synthesize(state)["answer_report"]
+    assert out["headline"] == "NY/NJ has the highest revenue, $1,200.50, and Houston the lowest of the 3, $310"
+    assert out["executive_summary"].startswith("The following table lists")
+    state["investigation_phases"][0]["findings"][0]["rows"][1][1] = "1500"          # not ordered: no ranking
+    assert I._ranked_headline(state, "") == ""
 
 
 # ── Totals the analyst can quote ─────────────────────────────────────────────────────

@@ -223,6 +223,25 @@ describe("a simple answer", () => {
     expect(screen.getByText("July 2026")).toBeInTheDocument();
   });
 
+  it("prints the sentence once when the summary is the headline with its full stop", () => {
+    const { container } = render(<ReportView report={q1(STATED, { executive_summary: `${STATED}.` })} onShowSource={vi.fn()} />);
+    expect(container.textContent?.split("7,027 units were sold")).toHaveLength(2);
+  });
+
+  it("names no period the answer names in other words", () => {
+    // Q2 (2026-10-03): "between March 5, 2026, and September 4, 2026", then "5 March – 4 September 2026" beneath
+    const days = render(<ReportView report={q1("Revenue between March 5, 2026, and September 4, 2026 was $359,224.30 "
+      + "from 7,027 units", { observation_period: "5 March – 4 September 2026" })} onShowSource={vi.fn()} />);
+    expect(days.queryByText("5 March – 4 September 2026")).not.toBeInTheDocument();
+    days.unmount();
+    const months = render(<ReportView report={q1("Revenue grew from $359,224.30 in September 2025 to 7,027 units in "
+      + "August 2026", { observation_period: "September 2025–August 2026" })} onShowSource={vi.fn()} />);
+    expect(months.queryByText("September 2025–August 2026")).not.toBeInTheDocument();
+    months.unmount();
+    render(<ReportView report={q1(STATED, { observation_period: "5 March – 4 September 2026" })} onShowSource={vi.fn()} />);
+    expect(screen.getByText("5 March – 4 September 2026")).toBeInTheDocument();
+  });
+
   it("keeps the full layout when a result carries more than its figures", () => {
     const report = q1(STATED) as unknown as { phases: { findings: { interpretation: string }[] }[] };
     report.phases[1].findings[0].interpretation = "Units fell short of the plan.";
@@ -230,5 +249,59 @@ describe("a simple answer", () => {
     expect(screen.getByText("Units fell short of the plan.")).toBeInTheDocument();
     expect(screen.getByText(/units_sold — 2026-07-01/)).toBeInTheDocument();
     expect(screen.queryByText("7,027")).not.toBeInTheDocument();     // still not printed twice
+  });
+});
+
+/** A chart is captioned by what it draws (2026-10-03): Q2's revenue bars sat under "Revenue and average order
+ *  value by category"; the source link keeps the result's own title. */
+describe("a chart's caption", () => {
+  it("names the measure drawn, not every measure the result holds", () => {
+    const title = "Revenue and average order value by category — 4 Mar – 3 Sep 2026";
+    const report = {
+      headline: "Outerwear & Coats led", executive_summary: "", confidence: "HIGH",
+      phases: [{ phase_id: "adhoc_2", phase_name: title, phase_icon: "", status: "complete", summary: "", caveats: [],
+        findings: [{ finding_id: "f1", title, claim: null, interpretation: "", sql: "SELECT 1",
+          columns: ["category", "revenue", "average_order_value"],
+          rows: [["Outerwear & Coats", "237836.63", "150.82"], ["Jeans", "214128.38", "102.26"], ["Intimates", "85036.08", "36.72"]],
+          row_count: 3, key_numbers: [], chart_type: "auto", stat_note: null, is_significant: false }] }],
+    } as never;
+    const { container } = render(<ReportView report={report} onShowSource={vi.fn()} />);
+    expect(container.querySelector("figcaption")?.textContent).toBe("Revenue by category — 4 Mar – 3 Sep 2026");
+    expect(screen.getByTitle(`Data + SQL behind “${title}”`)).toBeInTheDocument();
+  });
+});
+
+/** Q3 (2026-10-03) drew monthly revenue twice: September to August with its order count, and again from the August
+ *  before. A chart another chart already draws is not drawn again; its source stays. */
+describe("a chart another chart already draws", () => {
+  it("is not drawn again, and its data and SQL stay a click away", () => {
+    const months = ["2025-08-01", "2025-09-01", "2025-10-01", "2025-11-01"];
+    const revenue = ["57130.02", "54076.37", "60410.18", "64012.67"];
+    const result = (id: string, title: string, columns: string[], rows: string[][]) => ({
+      phase_id: id, phase_name: title, phase_icon: "", status: "complete", summary: "", caveats: [],
+      findings: [{ finding_id: id, title, claim: null, interpretation: "", sql: "SELECT 1", columns, rows,
+        row_count: rows.length, key_numbers: [], chart_type: "auto", stat_note: null, is_significant: false }] });
+    const shorter = "Monthly revenue and order count by month — Sep – Nov 2025";
+    const report = { headline: "Revenue grew", executive_summary: "", confidence: "HIGH", phases: [
+      result("adhoc_2", shorter, ["month", "monthly_revenue", "orders"], months.slice(1).map((m, i) => [m, revenue[i + 1], String(655 + i)])),
+      result("adhoc_3", "Monthly revenue by month — Aug – Nov 2025", ["month", "monthly_revenue"], months.map((m, i) => [m, revenue[i]])),
+    ] } as never;
+    const { container } = render(<ReportView report={report} onShowSource={vi.fn()} />);
+    expect([...container.querySelectorAll("figcaption")].map((f) => f.textContent)).toEqual(["Monthly revenue by month — Aug – Nov 2025"]);
+    expect(screen.getByTitle(`Data + SQL behind “${shorter}”`)).toBeInTheDocument();
+    expect(screen.queryByText(/Data · 3 rows/)).not.toBeInTheDocument();
+  });
+
+  it("draws two different series both", () => {
+    const result = (id: string, title: string, rows: string[][]) => ({
+      phase_id: id, phase_name: title, phase_icon: "", status: "complete", summary: "", caveats: [],
+      findings: [{ finding_id: id, title, claim: null, interpretation: "", sql: "SELECT 1", columns: ["month", "value"], rows,
+        row_count: rows.length, key_numbers: [], chart_type: "auto", stat_note: null, is_significant: false }] });
+    const report = { headline: "Revenue grew", executive_summary: "", confidence: "HIGH", phases: [
+      result("adhoc_2", "Revenue by month — Sep – Nov 2025", [["2025-09-01", "54076.37"], ["2025-10-01", "60410.18"], ["2025-11-01", "64012.67"]]),
+      result("adhoc_3", "Orders by month — Aug – Nov 2025", [["2025-08-01", "663"], ["2025-09-01", "655"], ["2025-10-01", "707"], ["2025-11-01", "703"]]),
+    ] } as never;
+    const { container } = render(<ReportView report={report} onShowSource={vi.fn()} />);
+    expect(container.querySelectorAll("figcaption")).toHaveLength(2);
   });
 });

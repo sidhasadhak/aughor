@@ -291,7 +291,28 @@ class TestIntakeCoverageClamp:
         note = _clamp_intake_to_coverage(it, "2019-01-09", "2026-10-02", question="last 6 months",
                                          today="2026-09-30")
         assert note and "re-anchored" in note
-        assert it.observation_end == "2026-09-29" and it.observation_start == "2026-03-31"
+        assert it.observation_end == "2026-09-29" and it.observation_start == "2026-03-30"   # six months to the day
+
+    def test_a_window_the_question_gives_a_length_is_that_long(self):
+        """Q2, 2026-10-03: the intake model counted "the last 6 months" to the settled day 4 September from
+        4 March — six months and a day (on 10-02 it was right). Code counts it from the window's end; whole
+        months stay whole, and a comparison that ran up to the window still does."""
+        q2 = "Which 10 product categories brought in the most revenue in the last 6 months?"
+        it = _intake(cross_sectional=True, observation_start="2026-03-04", observation_end="2026-09-04")
+        note = _clamp_intake_to_coverage(it, "2019-01-09", "2026-10-02", question=q2, today="2026-10-03",
+                                         settle_days=29)
+        assert (it.observation_start, it.observation_end) == ("2026-03-05", "2026-09-04")
+        assert note and "began 2026-03-04" in note
+        it = _intake(observation_start="2025-09-01", observation_end="2026-08-31",
+                     comparison_start="2024-09-01", comparison_end="2025-08-31")
+        assert _clamp_intake_to_coverage(it, "2019-01-09", "2026-10-02", question="over the last 12 months",
+                                         today="2026-10-03", settle_days=29) is None
+        assert it.observation_start == "2025-09-01"
+        it = _intake(observation_start="2026-03-04", observation_end="2026-09-04",
+                     comparison_start="2025-09-04", comparison_end="2026-03-03")
+        _clamp_intake_to_coverage(it, "2019-01-09", "2026-10-02", today="2026-10-03", settle_days=29,
+                                  question="revenue in the last six months vs the six months before")
+        assert (it.comparison_start, it.comparison_end) == ("2025-09-05", "2026-03-04")
 
     def test_a_cross_sectional_intake_gets_no_comparison_verdict(self):
         """The Q2 re-run, 2026-09-30: a cross-sectional intake carried a placeholder
@@ -406,6 +427,7 @@ class TestTrailingPartialGuard:
         assert note and "2025-06" in note
         assert "incomplete" in note.lower() or "partial" in note.lower()
         assert "may be incomplete" in it.observation_label   # honest relabel
+        assert it.observation_label.endswith("June 2025 may be incomplete"), "the month in words, not 2025-06"
 
     def test_full_final_month_not_flagged(self):
         it = _intake()

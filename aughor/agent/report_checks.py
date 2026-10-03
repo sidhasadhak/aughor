@@ -221,10 +221,15 @@ def _evidence_number_set(evidence: str) -> set[str]:
     """
     out: set[str] = set()
 
+    # Zeros after a decimal point only: stripped from a whole number, 60410.18 rounded to "6041", and Q3's true
+    # "$60,410" was withheld as untraced, its table row with it (2026-10-03).
+    def _bare(text: str) -> str:
+        return (text.rstrip("0").rstrip(".") if "." in text else text) or "0"
+
     def _add_roundings(value: float) -> None:
         for dp in (0, 1, 2):
-            out.add(f"{value:.{dp}f}".rstrip("0").rstrip(".") or "0")
-            out.add(f"{abs(value):.{dp}f}".rstrip("0").rstrip(".") or "0")
+            out.add(_bare(f"{value:.{dp}f}"))
+            out.add(_bare(f"{abs(value):.{dp}f}"))
 
     for n in _NUM_RE.findall(evidence or ""):
         clean = _clean_number(n)

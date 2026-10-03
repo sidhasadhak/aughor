@@ -15,6 +15,7 @@
 
 import React from "react";
 import { localizeCurrency } from "@/lib/orgSettings";
+import { monthsInTables } from "@/lib/format";
 import { ProseTable } from "@/components/TableActions";
 
 const EMPHASIS_RE = /(\*\*[^*]+\*\*|\*[^*\n]+\*)/g;
@@ -99,7 +100,7 @@ function isTableRule(line: string): boolean {
  * misreading than leaving it alone.
  */
 export function renderProseBlocks(text: string): React.ReactNode[] {
-  const lines = (text || "").split("\n");
+  const lines = monthsInTables(text || "").split("\n");
   const out: React.ReactNode[] = [];
   let para: string[] = [];
 

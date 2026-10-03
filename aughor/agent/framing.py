@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.ontology.framing import DEFAULT_HOPS, Frame, frame_question
+from aughor.ontology.framing import DEFAULT_HOPS, Frame, frame_question, frame_reading
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,16 @@ def person_synonyms(connection_id: str) -> list:
         return []
 
 
+def _read_for_its_shape(frame: Optional[Frame]) -> Optional[Frame]:
+    """A question that asks to SEE the data tests no driver, and its reading names none: Q3's ended "Starting from
+    Order (orders); testing revenue, gender, status." over a table of monthly revenue (2026-10-03)."""
+    if frame is not None and frame.defines:
+        from aughor.agent.investigate import question_shape
+        if question_shape(frame.question) == "describe":
+            frame.reading = frame_reading(frame, tests=False)
+    return frame
+
+
 def choose_definition(frame: Frame, graph: Any, *, provider: Any = None, synonyms: Any = (),
                       dialect: str = "duckdb", conn_id: str = "", trace_id: str = "",
                       inv_id: str = "") -> Frame:
@@ -130,8 +140,8 @@ def choose_definition(frame: Frame, graph: Any, *, provider: Any = None, synonym
     if not name:
         frame.notes.append("a model read none of the declared definitions as what the question means")
         return frame
-    return frame_question(frame.question, graph, synonyms=synonyms, hops=frame.hops, dialect=dialect, choice=name,
-                          chosen_by="model")
+    return _read_for_its_shape(frame_question(frame.question, graph, synonyms=synonyms, hops=frame.hops,
+                                              dialect=dialect, choice=name, chosen_by="model"))
 
 
 def resolve_frame(question: str, connection_id: str, schema_name: Optional[str] = None, *, dialect: str = "duckdb",
@@ -151,7 +161,7 @@ def resolve_frame(question: str, connection_id: str, schema_name: Optional[str] 
     # counted (the run's trace id, never the question's text), so how often wording misses is known.
     from aughor.ontology.framing_misses import record as _record_miss
     _record_miss(frame, graph, connection_id, schema_name, trace_id=trace_id, inv_id=inv_id)
-    return frame
+    return _read_for_its_shape(frame)
 
 
 def frame_from_state(state: dict, *, dialect: str = "duckdb", provider: Any = None) -> Optional[Frame]:
