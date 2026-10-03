@@ -10336,6 +10336,42 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > has no counts; the picker is not offered on a transposed grid. Next: DE-5's hygiene (CSV formulas, upload types),
 > then DE-4.
 
+> **Status 2026-10-03 — DE-5's hygiene BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first, and
+> finding 10 moved:* on DuckDB 1.5.2 the CSV sniffer types a column of integers too large for BIGINT as DOUBLE
+> before `_suggest_type` ever sees it — two distinct 23-digit ids both arrive as 1.2345678901234568e+22, and no
+> cast after the read can bring the digits back, so the loss is at the reader, not in the suggestion the study
+> blamed; the sniffer keeps `02134` as text but reads `-00042` as the BIGINT -42; and the suggester did offer BIGINT
+> for the text zip column, which accepting turns into 2134. The web's five CSV producers all import one `toCsv`, so
+> finding 9 has one door; the Python `rows_to_csv` is the closed-loop grader's output contract, byte-for-byte
+> pandas, not an export a person opens, and is untouched. *Finding 9:* `toCsv` writes a string cell that opens with
+> `=`, `@`, a tab or a carriage return — or with `+`/`-` followed by anything but a number as people write one (a
+> currency mark, digit groups, a decimal, an exponent, a percent) — with a leading `'`, the mark every spreadsheet
+> reads as "text" and shows, so the reader sees the cell was a formula and can take the one character off; a
+> number cell and a signed amount (`-$5,421.84`, `+12%`) are never touched; a column name is a cell too; the TSV
+> clipboard copy is left as the cell's own text, since a copied value is pasted into editors and chats, not only
+> sheets; `formulaCellCount` is exported for a surface to say how many cells it prefixed, and none does yet.
+> *Finding 10, at the reader:* for a CSV or TSV, a numeric-sniffed column whose raw text holds a value with a
+> leading zero, or holds integer literals only where the sniffer said DOUBLE (overflow is the only reason it
+> does), is read as VARCHAR by the reader's own `types=` option — the file's text, not the parsed value cast back;
+> a column pinned (reload) or overridden (ingest) to VARCHAR rides the same option, so a VARCHAR pin reproduces the
+> digits where a TRY_CAST over the sniffed read kept the DOUBLE's spelling; `analyze_file` says why on the column
+> (`kept_as_text`: "leading zeros" / "integers beyond BIGINT") and the import review shows it as a chip, so
+> VARCHAR where a number was expected is explained, not implied; a person's override to a number is still their
+> call. *Finding 10, at the suggester:* a leading-zero digit string is offered no numeric type, and integer
+> literals BIGINT refused are never offered as DOUBLE. Parquet and JSON carry their own types and are left alone.
+> *Receipt:* `tests/unit/test_de5_hygiene_upload_types.py` (10) — the premise re-measured on the engine the test
+> runs on, the reader option quoting names and leaving a non-CSV reader alone, the reasons named, a real DOUBLE
+> column with one oversized value left a DOUBLE, analyze saying why with the preview exact, the suggester still
+> tightening `12`/`4.5`/`true` while declining `02134` and the 23-digit id, ingest keeping every digit and pinning
+> VARCHAR, a fresh connector reproducing it from the pin, the override honoured, an ordinary file unchanged;
+> `web/lib/query/csv.test.ts` (13) — the byte string for each case, and TableActions' answer-table fixture
+> (`-$5,421.84`) exporting as before; 290 tests across the upload, costume, seed, intake, storage and connector
+> suites green (the BigQuery binding tests with their driver installed), 1,503 web tests and all seven gates green,
+> the token ratchet lowered to 890 as the gate asked. *Left, named:* no export surface yet says how many cells it
+> prefixed; a DOUBLE column holding both fractions and an oversized integer keeps the DOUBLE, and that value's
+> rounding, since the column is a number; the live receipt the study named — `02134` surviving an upload on the
+> user's machine — has the unit receipt here and the screenshot still owed. Next: DE-4.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

@@ -377,7 +377,18 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                       confirmation this screen gives that a cast took. */}
                   <ColumnTypeIcon type={chosen[c.name] ?? detected} size={13} />
                   <span style={{ flex: "1 1 0", minWidth: 0, fontSize: 12, fontWeight: 500, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                  <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
+                  {/* DE-5's hygiene: the reader would have made this column a number and changed its
+                      values, so it is text — and the row SAYS so, rather than showing VARCHAR where
+                      a number was expected and leaving the reader to wonder. */}
+                  {c.kept_as_text && (
+                    <span className="aug-fs-xs" data-testid="kept-as-text"
+                      title={`A number would have changed these values (${c.kept_as_text}), so the column is read as text. Pick a type here to override.`}
+                      style={{ fontWeight: 600, padding: "1px 7px", borderRadius: "var(--r1)", whiteSpace: "nowrap", flexShrink: 0,
+                        background: "color-mix(in srgb, var(--amb4) 16%, transparent)", color: "var(--amb4)" }}>
+                      kept as text · {c.kept_as_text}
+                    </span>
+                  )}
                   <select value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
                     style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}

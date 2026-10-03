@@ -652,6 +652,10 @@ export interface ColumnAnalysis {
    *  Carries WHY the text column is about to become a number, so the review row can say
    *  it rather than showing an unexplained type change. */
   detected_format: { kind: string; unit: string; example: string | null } | null;
+  /** DE-5's hygiene — set when the reader would have typed this column as a number and
+   *  changed its values (leading zeros dropped, integers beyond BIGINT rounded), so it was
+   *  read as text instead. Says why, so the review row can. */
+  kept_as_text?: string | null;
 }
 
 export interface FileAnalysis {
