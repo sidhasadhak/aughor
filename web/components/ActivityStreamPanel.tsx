@@ -171,7 +171,7 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
                   call, what it was for, and whether the primary backend refused. */}
               {e.charter_id && (
                 <span className="aug-fs-xs" style={{ color: "var(--cyn4)" }}
-                  title="the agent charter that owned this run">{e.charter_id}</span>
+                  title="the built-in agent that owned this run">{e.charter_id}</span>
               )}
               {e.role && (
                 <span className="aug-fs-xs" style={{ color: "var(--t2)" }}

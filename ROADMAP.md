@@ -10315,8 +10315,19 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > AO-2a,e ship without a flag; AO-2b, AO-6 and AO-7 behind flags, off by default; AO-0.1 spends one model call when
 > the pre-check starts; the API owns the Slack process after a one-day spike; one configuration token replaces three
 > pasted secrets; agent mode by default for new Slack apps; per-agent lessons live in the verdict store; the dead
-> autonomy ladder is fixed and its skills staged to the inbox; five refusals are recorded as §4.8. Nothing is built.
-> Next: AO-0.
+> autonomy ladder is fixed and its skills staged to the inbox; five refusals are recorded as §4.8.
+>
+> **Build log (2026-10-03, the user: *"finish it back to back"*).** AO-0 ✅ — the one model call confirmed C1 (the
+> captured chat prompt carried none of the agent's instructions; the answer was a bare count), the production build
+> put every layer's code on screen within 330 ms with the panel filled by 1.8 s after 26–29 API calls, and `$0.00`
+> was a missing price. AO-1 ✅ a–e — the brief leads the chat body and the analyst loop, a delegate runs as itself
+> and relays its headline, the evaluation frames each golden on the quick path stopped before the execute,
+> `purpose` is writable at every door and the pack path keeps the creator's edits, a delete returns a receipt and
+> switches its bots off with the reason on the card. AO-3 ✅ — the roster, the observability route, the jobs route
+> and the fleet rows read one shared window and say it; the live model has a dated declared price and an unpriced
+> tile says **unpriced**; five surfaces say *could not read — retry* on a failed fetch (a component test per site);
+> finished runs of a custom agent draw green with their duration; "built-in" replaces "charter" on screen and the
+> ratchet's comment is true. Next: AO-2a, AO-2e.
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

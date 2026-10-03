@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AutomationGraph } from "@/components/AutomationGraph";
+import { ReadFailed } from "@/components/ui/states";
 import {
   Automation,
   AutomationRun,
@@ -138,12 +139,17 @@ export function AutomationsPanel({ connId }: Props) {
    *  every load, to answer a question nobody asked, is the wrong trade. */
   const [elsewhere, setElsewhere] = useState<{ count: number; where: string[] } | null>(null);
 
+  // AO-3 — a list whose read REJECTED is said with a Retry; it used to become `[]` and
+  // render "No automations yet" over automations that exist.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     try {
       setAutomations(await getAutomations(conn || undefined));
-    } catch {
+      setLoadError(null);
+    } catch (e) {
       setAutomations([]);
+      setLoadError(String((e as Error)?.message || e));
     } finally {
       setLoading(false);
     }
@@ -433,7 +439,10 @@ export function AutomationsPanel({ connId }: Props) {
         )}
         {showSpinner && <div style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</div>}
 
-        {view === "list" && !showSpinner && (
+        {view === "list" && !showSpinner && loadError && (
+          <ReadFailed what="the automations" error={loadError} onRetry={() => { void load(); }} />
+        )}
+        {view === "list" && !showSpinner && !loadError && (
           automations.length === 0
             ? <EmptyState onAdd={() => { setCanvasFor(null); setCreateName("Untitled automation");
                                          setCreating({}); setView("canvas"); }}

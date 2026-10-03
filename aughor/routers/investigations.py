@@ -1573,8 +1573,14 @@ def _answer_core(
     assumed_default: bool = False,
     persist_question: str = "",
     surface: str = "",
+    frame_only: bool = False,
 ) -> "_AnswerCoreResult":
     """Answer one question, synchronously, reporting progress through ``emit``.
+
+    ``frame_only`` (AO-1c) — stop once the statement is framed and guarded, before the
+    user-facing execute: the agent evaluation's door onto the PRODUCTION prompt. The
+    result's ``outcome`` is ``"framed"`` and ``sql`` is what would have run; nothing is
+    executed, narrated or persisted.
 
     This is the whole quick-answer pipeline, and it is SYNC because it always was:
     every ``await`` it used to carry was an ``asyncio.to_thread`` around blocking
@@ -2719,6 +2725,20 @@ def _answer_core(
                 logger.debug("chat filter value-domain guard is best-effort; skipped: %s", _e)
 
         _checkpoint()   # before the user-facing execute — the query is not free either
+        if frame_only:
+            # AO-1c — the agent evaluation stops HERE: the statement is what the production
+            # path would run (its prompt carried the agent's brief, documents, packs, schema
+            # scope, metrics and corrections; the lint, preflight and grounded-literal guards
+            # have already rewritten it), and the caller executes it against the golden's
+            # reference on its own door. Nothing below this line runs: no execute, no
+            # narrative, no `save_chat_turn` — an evaluation must not become a chat turn.
+            return _AnswerCoreResult(
+                outcome="framed", sql=final_sql, headline="",
+                guard_receipts=list(receipts), doors=list(_checked),
+                chart_type=getattr(answer, "chart_type", "auto") or "auto",
+                intent=getattr(answer, "intent", "") or "",
+                approach=list(getattr(answer, "approach", []) or []),
+            )
         emit("sql", {"sql": final_sql})
         result = _execute_chat_sql(db, final_sql)
 

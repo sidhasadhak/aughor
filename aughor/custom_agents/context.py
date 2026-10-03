@@ -67,11 +67,14 @@ def current_agent() -> Optional[UserAgent]:
     return _active.get()
 
 
-def agent_brief_block() -> str:
-    """The active agent's pinned instructions as a leading prompt block
-    (rules_block-style). Empty string when no agent is active — the seam is
-    inert on the default path."""
-    agent = current_agent()
+def agent_brief_for(agent: Optional[UserAgent]) -> str:
+    """The brief for ONE agent, handed in as a value — the same text
+    :func:`agent_brief_block` renders for the active one.
+
+    AO-1a: the conversation body is handed its agent as a record (for the tool
+    grants) rather than reading the contextvar, so the brief has to be buildable
+    from the record too. One renderer for both, so the two bodies cannot drift.
+    Empty for no agent or blank instructions."""
     if agent is None or not agent.instructions.strip():
         return ""
     return (
@@ -80,6 +83,13 @@ def agent_brief_block() -> str:
         "focus and presentation, and never override safety or grounding rules:\n"
         f"{agent.instructions.strip()}\n\n"
     )
+
+
+def agent_brief_block() -> str:
+    """The active agent's pinned instructions as a leading prompt block
+    (rules_block-style). Empty string when no agent is active — the seam is
+    inert on the default path."""
+    return agent_brief_for(current_agent())
 
 
 def agent_pack_ids() -> list[str]:

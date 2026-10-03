@@ -47,6 +47,10 @@ class SlackBot(BaseModel):
     id: str = ""
     name: str = ""
     enabled: bool = True
+    #: AO-1e — WHY a bot is off, when the platform switched it off rather than a person
+    #: ("its agent 'X' was deleted"). Shown on the card beside "paused"; cleared the
+    #: moment a person resumes the bot. "" for a bot a person paused, or one that is on.
+    disabled_reason: str = ""
 
     # ── the binding ──
     agent_id: str = ""          # the UserAgent whose instructions/docs/packs answer

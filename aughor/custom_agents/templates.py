@@ -121,24 +121,40 @@ def get_template(pack_id: str) -> Optional[dict]:
 
 
 def create_from_template(pack_id: str, *, name: str = "", connection_id: str = "",
-                         schema_scope: str = "") -> Optional[dict]:
+                         schema_scope: str = "", instructions: str = "", purpose: str = "",
+                         doc_ids: Optional[list[str]] = None,
+                         pack_ids: Optional[list[str]] = None,
+                         tool_grants: Optional[list[str]] = None,
+                         owner: str = "") -> Optional[dict]:
     """Create a UserAgent from a pack. Returns ``{agent, suggested_goldens}`` or None.
 
     The pack is BOUND (``pack_ids``), not absorbed: its recipes and anti-patterns keep
     steering from the pack itself, so improving the pack improves every agent hired from it.
     No goldens are written — see the module docstring — and the suggestions ride back on the
     response so the creator is asked for the reference SQL while they still have the context.
+
+    AO-1d: the pack path takes the SAME body the scratch path takes. ``instructions``,
+    when given, are the creator's edit of the template's stance (the Create flow prefills
+    the textarea from the pack and lets them edit it; this used to be thrown away and the
+    pack's text written instead). ``doc_ids``, ``tool_grants`` and ``purpose`` were simply
+    not accepted. The template's pack is always among ``pack_ids`` — creating from a pack
+    and then not binding it would be the one thing this door must not do.
     """
     tpl = get_template(pack_id)
     if tpl is None:
         return None
     from aughor.custom_agents import create_agent
 
+    bound = [pack_id] + [p for p in (pack_ids or []) if p and p != pack_id]
     agent = create_agent(
         name=name.strip() or tpl["name"],
-        instructions=tpl["instructions"],
+        instructions=(instructions or "").strip() or tpl["instructions"],
+        purpose=purpose or "",
         connection_id=connection_id,
         schema_scope=schema_scope,
-        pack_ids=[pack_id],
+        doc_ids=list(doc_ids or []),
+        pack_ids=bound,
+        tool_grants=list(tool_grants or []),
+        owner=owner,
     )
     return {"agent": agent.model_dump(), "suggested_goldens": tpl["suggested_goldens"]}

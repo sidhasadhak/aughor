@@ -4335,6 +4335,9 @@ export interface SlackBotSummary {
   id: string;
   name: string;
   enabled: boolean;
+  /** AO-1e — why the PLATFORM switched this bot off ("its agent 'X' was deleted"); ""
+   *  when a person paused it or it is on. Cleared by the server on resume. */
+  disabled_reason: string;
   team_id: string;
   bot_user_id: string;
   /** DS-5 — the agent this bot is a door ONTO. On the wire since RC-5 (`to_safe_dict`
@@ -6716,12 +6719,20 @@ export interface FleetJob {
   duration_ms: number | null;
 }
 
-export async function getJobs(params?: { state?: string; conn_id?: string; kind?: string; limit?: number }): Promise<FleetJob[]> {
+export async function getJobs(params?: {
+  state?: string; conn_id?: string; kind?: string; limit?: number;
+  /** AO-3 — the shared window (`rangeParams`): a named range, or ISO-8601 UTC bounds on
+   *  `created_at`, half-open. Omit all three for no bound. */
+  range?: string; since?: string; until?: string;
+}): Promise<FleetJob[]> {
   const q = new URLSearchParams();
   if (params?.state) q.set("state", params.state);
   if (params?.conn_id) q.set("conn_id", params.conn_id);
   if (params?.kind) q.set("kind", params.kind);
   if (params?.limit) q.set("limit", String(params.limit));
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
   const res = await fetch(`${getApiBase()}/jobs${q.toString() ? `?${q}` : ""}`);
   if (!res.ok) return [];
   return res.json();
@@ -6757,13 +6768,23 @@ export interface AgentRosterEntry {
   knobs?: AgentKnob[];
   governance: AgentGovernance;
   spend: AgentSpend;
+  /** AO-3 — the window `spend` was read over; the built-in agent's page captions it. */
+  window?: ReadWindow;
   backend?: string;
 }
 
-export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[]> {
-  const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
-  const res = await fetch(`${getApiBase()}/agents${q}`);
-  if (!res.ok) return [];
+/** AO-3 — throws on a failed read (it returned `[]`, which the roster rendered as "no
+ *  built-in agents"); takes the shared window, which rides back on every row. */
+export async function getAgents(
+  workspaceId?: string, params?: { range?: string; since?: string; until?: string },
+): Promise<AgentRosterEntry[]> {
+  const q = new URLSearchParams();
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
+  const res = await fetch(`${getApiBase()}/agents${q.toString() ? `?${q}` : ""}`);
+  if (!res.ok) throw new Error((await res.text()) || `agents read failed (${res.status})`);
   return res.json();
 }
 
@@ -7574,8 +7595,8 @@ export async function getActionRoster(
 }
 
 export async function createUserAgent(body: {
-  name: string; instructions?: string; connection_id?: string; schema_scope?: string;
-  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
+  name: string; instructions?: string; purpose?: string; connection_id?: string;
+  schema_scope?: string; doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
 }): Promise<UserAgent> {
   const res = await fetch(`${getApiBase()}/agents/custom`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -7672,8 +7693,13 @@ export async function proposeUserAgent(body: {
   return res.json();
 }
 
+/** AO-1d — the pack path takes the scratch path's body: the creator's edited instructions,
+ *  purpose, documents and extra packs ride along (the template's pack is always bound by
+ *  the server). Before, only the first four fields were sent and the edits were dropped. */
 export async function createUserAgentFromTemplate(body: {
-  pack_id: string; name?: string; connection_id?: string; schema_scope?: string;
+  pack_id: string; name?: string; instructions?: string; purpose?: string;
+  connection_id?: string; schema_scope?: string;
+  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
 }): Promise<{ agent: UserAgent; suggested_goldens: { question: string; needs: string }[] }> {
   const res = await fetch(`${getApiBase()}/agents/custom/from-template`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -7684,8 +7710,9 @@ export async function createUserAgentFromTemplate(body: {
 }
 
 export async function patchUserAgent(agentId: string, body: {
-  name?: string; instructions?: string; connection_id?: string; schema_scope?: string;
-  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[]; enabled?: boolean;
+  name?: string; instructions?: string; purpose?: string; connection_id?: string;
+  schema_scope?: string; doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
+  enabled?: boolean;
 }): Promise<UserAgent> {
   const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -7695,11 +7722,49 @@ export async function patchUserAgent(agentId: string, body: {
   return res.json();
 }
 
-export async function deleteUserAgent(agentId: string): Promise<boolean> {
+/** AO-1e — what a delete MOVED besides the row: the server switches off the Slack bots that
+ *  fronted the agent (each now says why on its card), detaches the automations that ran as it
+ *  (they stay, bound to nobody), and keeps its configuration revisions. A step that could not
+ *  run is said in `*_error`, never folded into an empty list. */
+export interface AgentDeleteReceipt {
+  deleted: string;
+  name: string;
+  bots_disabled: { id: string; name: string }[];
+  automations_detached: { id: string; name: string }[];
+  revisions_kept: number;
+  bots_disabled_error?: string;
+  automations_detached_error?: string;
+  revisions_kept_error?: string;
+}
+
+export async function deleteUserAgent(agentId: string): Promise<AgentDeleteReceipt> {
   const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
     method: "DELETE",
   });
-  return res.ok;
+  if (!res.ok) throw new Error((await res.text()) || `delete agent failed (${res.status})`);
+  return res.json();
+}
+
+/** One sentence for the receipt, for the roster to show once the agent is gone. */
+export function describeAgentDeleteReceipt(r: AgentDeleteReceipt): string {
+  const parts: string[] = [`Deleted “${r.name}”.`];
+  if (r.bots_disabled.length) {
+    parts.push(`${r.bots_disabled.length} Slack bot${r.bots_disabled.length === 1 ? "" : "s"} `
+      + `switched off (${r.bots_disabled.map(b => b.name).join(", ")}).`);
+  } else if (r.bots_disabled_error) {
+    parts.push(`Its Slack bots could not be switched off: ${r.bots_disabled_error}`);
+  }
+  if (r.automations_detached.length) {
+    parts.push(`${r.automations_detached.length} automation`
+      + `${r.automations_detached.length === 1 ? "" : "s"} now run as nobody `
+      + `(${r.automations_detached.map(a => a.name).join(", ")}).`);
+  } else if (r.automations_detached_error) {
+    parts.push(`Its automations could not be detached: ${r.automations_detached_error}`);
+  }
+  parts.push(r.revisions_kept_error
+    ? "Its configuration history could not be counted."
+    : `${r.revisions_kept} configuration revision${r.revisions_kept === 1 ? "" : "s"} kept.`);
+  return parts.join(" ");
 }
 
 // ── Measured agents: golden questions + evaluation ────────────────────────────
@@ -7779,7 +7844,13 @@ export interface AgentRunSummary {
 export type UserAgentSpend = {
   measured: true; calls: number; total_tokens: number;
   cost_usd: number | null; cost_is_complete: boolean; failure_rate: number | null;
+  /** AO-3 — the counts behind `cost_is_complete`, so a tile can say "unpriced" rather
+   *  than `$0.00` when every call lacked a price. */
+  unpriced_calls: number; calls_without_usage: number;
 };
+
+/** The window a response's numbers were read over (AO-3): every tile captions it. */
+export interface ReadWindow { range: string; since: string; until: string }
 
 export interface AgentTraceStats {
   trace_count: number;
@@ -7792,15 +7863,28 @@ export interface AgentTraceStats {
 
 export interface AgentObservability {
   agent_id: string;
+  window: ReadWindow;
   run_count: number;
+  /** How many of the agent's newest runs were scanned for the window; equal to a cap
+   *  (200) means a busier window than this page can count. */
+  runs_scanned: number;
   runs: AgentRunSummary[];
   trace_stats: AgentTraceStats | null;
   spend: UserAgentSpend;
 }
 
-export async function getAgentObservability(agentId: string): Promise<AgentObservability | null> {
-  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/observability`);
-  if (!res.ok) return null;
+/** AO-3 — throws on a failed read (it returned `null`, and every caller rendered the
+ *  empty state for it). Takes the shared window; the server defaults to 24h. */
+export async function getAgentObservability(
+  agentId: string, params?: { range?: string; since?: string; until?: string },
+): Promise<AgentObservability> {
+  const q = new URLSearchParams();
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/observability`
+    + (q.toString() ? `?${q}` : ""));
+  if (!res.ok) throw new Error((await res.text()) || `observability read failed (${res.status})`);
   return res.json();
 }
 

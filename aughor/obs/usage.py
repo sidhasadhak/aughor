@@ -101,6 +101,55 @@ PRICES: dict[tuple[str, str], Price] = {
     ("openrouter", ":free"): Price(0.0, 0.0, "2026-07-28"),
 }
 
+#: AO-3 (2026-10-03) — prices the OPERATOR declares, for a provider whose API publishes
+#: none. Google's does not, so the catalogue refresh (OpenRouter only) never learns the
+#: platform's own model's rate, and every call on the default install rendered `$0.00` —
+#: 150 of 150 in the measured day. The rate cannot live here: a model id in shipped code
+#: is a claim about another vendor's catalogue this repo cannot keep true (the model-id
+#: ratchet, `test_llm_model_catalog`). So the operator states it, dated, in one env var:
+#:
+#:     AUGHOR_MODEL_PRICES="gemini:<model-id>=0.25/1.50@2026-09-15;openai:<id>=2/8@2026-09-01"
+#:
+#: `provider:model-prefix=input/output@as_of`, USD per 1M tokens, entries split on `;`.
+#: A declared rate outranks the catalogue, like the table above; an entry that does not
+#: parse is dropped and said in the log, never guessed.
+MODEL_PRICES_ENV = "AUGHOR_MODEL_PRICES"
+
+
+def declared_prices_from_env(raw: str) -> dict[tuple[str, str], Price]:
+    """Parse ``AUGHOR_MODEL_PRICES``. Unparseable entries are skipped and logged."""
+    import logging
+    out: dict[tuple[str, str], Price] = {}
+    for entry in (raw or "").split(";"):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            key, rates = entry.split("=", 1)
+            provider, model = key.split(":", 1)
+            rates, _, as_of = rates.partition("@")
+            inp, outp = rates.split("/", 1)
+            price = Price(float(inp), float(outp), as_of.strip() or "undated")
+            if not provider.strip() or not model.strip():
+                raise ValueError("empty provider or model")
+        except (ValueError, TypeError) as exc:
+            logging.getLogger(__name__).warning(
+                "%s: entry %r ignored (%s) — expected provider:model=input/output@YYYY-MM-DD",
+                MODEL_PRICES_ENV, entry, exc)
+            continue
+        out[(provider.strip().lower(), model.strip().lower())] = price
+    return out
+
+
+def _load_declared_prices() -> None:
+    import os
+    declared = declared_prices_from_env(os.environ.get(MODEL_PRICES_ENV, ""))
+    if declared:
+        PRICES.update(declared)
+        price_for.cache_clear()
+
+
+
 
 def _as_rate(value: Any) -> Optional[float]:
     """A price as a float, or None when the catalogue gave something that is not one.
@@ -211,6 +260,10 @@ def price_for(provider: str, model: str) -> Optional[Price]:
     if best is not None:
         return best[1]
     return _CATALOGUE_PRICES.get((p, m))
+
+
+# The operator's declared rates join the table once the lookup exists to be cleared.
+_load_declared_prices()
 
 
 #: The key a rollup row carries for a missing axis value. NAMED so readers of the

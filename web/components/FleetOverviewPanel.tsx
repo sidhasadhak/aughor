@@ -47,7 +47,8 @@ import {
 } from "@/lib/api";
 import { fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
-import { compactNumber, formatCount, pct, relTime } from "@/lib/format";
+import { compactNumber, formatCost, formatCount, pct, relTime } from "@/lib/format";
+import { ReadFailed } from "@/components/ui/states";
 
 type Density = "calm" | "noc";
 type JobFilter = "active" | "all" | "succeeded" | "failed";
@@ -111,6 +112,11 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
 
   const params = useMemo(() => rangeParams(range), [range]);
 
+  // AO-3 — a chart or an attention list whose read REJECTED says so with a Retry; each
+  // used to fall through to its empty state ("No agent runs in this window", "Nothing
+  // needs a human"), which is the one thing a failed read must never say.
+  const [chartError, setChartError] = useState<string | null>(null);
+  const [attentionError, setAttentionError] = useState<string | null>(null);
   const load = useCallback(() => {
     getFleetOverview({ ...params, include_runners: showRunners })
       .then(d => { setData(d); setError(null); })
@@ -121,8 +127,11 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
     // different quantity, and on any history predating the attribution column every bar
     // reads "(unattributed)".
     getObsTimeseries({ source: "jobs", ...params })
-      .then(setChart).catch(() => setChart(null));
-    getNeedsHuman(100).then(d => setAttention(d.rows)).catch(() => {});
+      .then(c => { setChart(c); setChartError(null); })
+      .catch(e => { setChart(null); setChartError(String(e?.message || e)); });
+    getNeedsHuman(100)
+      .then(d => { setAttention(d.rows); setAttentionError(null); })
+      .catch(e => setAttentionError(String(e?.message || e)));
   }, [params, showRunners]);
 
   useEffect(() => {
@@ -249,7 +258,11 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
             action={attention.length > 0 && onOpenAttention
               ? { label: `${attention.length} waiting · open Attention →`, onClick: onOpenAttention }
               : undefined} />
-          {attention.length === 0 ? (
+          {attentionError ? (
+            <Card>
+              <ReadFailed what="what needs a human" error={attentionError} onRetry={load} />
+            </Card>
+          ) : attention.length === 0 ? (
             <Card>
               <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
                 {/* No count. It said "three" while there were four, and five after
@@ -399,10 +412,10 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
               title="Tokens spent by agent runs" />
 
             <StatTile label="Cost"
-              value={tiles.cost?.usd == null ? "—" : `$${tiles.cost.usd.toFixed(2)}`}
+              value={formatCost(tiles.cost?.usd, tiles.cost?.calls, tiles.cost?.unpriced_calls)}
               accent="var(--chart-2)" expandable onClick={() => openProv({
                 eyebrow: "Where this number comes from", title: "Cost",
-                value: tiles.cost?.usd == null ? "—" : `$${tiles.cost.usd.toFixed(2)}`,
+                value: formatCost(tiles.cost?.usd, tiles.cost?.calls, tiles.cost?.unpriced_calls),
                 window: windowText,
                 definition: "Model calls in the window priced from the provider's own published "
                   + "catalogue — never a hardcoded rate. A model the catalogue does not price "
@@ -477,6 +490,9 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                 )}
               </div>
             </div>
+          ) : chartError ? (
+            <ReadFailed what="the run chart" error={chartError} onRetry={load}
+              style={{ margin: "10px 0 4px" }} />
           ) : (
             <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "10px 0 4px" }}>
               No agent runs in this window.

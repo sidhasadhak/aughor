@@ -213,6 +213,45 @@ provable live without the next, and so that the first three cost no model calls.
 3. Read the usage store for `gemini-3.1-flash-lite`'s price row — decides whether D2 is a
    missing price or a missing join.
 
+**Results (2026-10-03, run on the main checkout's live API, pid 98854, before any of this arc's
+code existed).**
+
+1. **C1 confirmed.** Capture window `arc-ao-0` (8 calls, 6 min); one question, *"How many
+   orders were placed yesterday?"*, `POST /ask` with `agent_id=ua_aaeb9e07870a`,
+   `connection_id=8233e4fd`, `depth=quick`; trace `99c4c32c`, 16.8 s, five model calls captured.
+   The three converse-body calls open *"You are Aughor's analyst — the conversation over the
+   whole platform…"*; the builder's recorded `extra` is history + prior answers + the origin
+   line; the string *"Report yesterday's sales"* appears in none of the five captured prompts
+   (the capture is capped at 2,000 characters, so the top of each prompt is what was read —
+   and "lead the prompt" is the claim under test). The answer: *"Order Count: 49"* after the
+   grounding guard rewrote the model's *"There were 108 orders placed yesterday"* — a bare
+   count, no revenue, no seven-day comparison, no largest contributor, the four things the
+   instructions ask for. `git status data/` on the live checkout unchanged by the run.
+   AO-1a stands.
+2. **E8 is a dev artefact; the real wait is the API wave.** `next build` in the worktree (hard-
+   linked `node_modules`), `next start -p 3210` (the port the API's CORS already reserves for
+   a prod preview), each layer opened by URL from a fresh origin:
+
+   | layer | JS chunks | last chunk | API calls | last API reply | LCP |
+   |---|---|---|---|---|---|
+   | fleet | 31 | 328 ms | 29 | 1,724 ms | 468 → 1,760 ms |
+   | agents | 32 | 176 ms | 28 | 1,640 ms | — |
+   | attention | 31 | 150 ms | 28 | 1,310 ms | — |
+   | activity | 32 | 141 ms | 27 | 1,240 ms | — |
+   | automations | 32 | 167 ms | 27 | 1,237 ms | — |
+   | hub | 31 | 146 ms | 26 | 1,389 ms | — |
+   | departures | 31 | 148 ms | 27 | 1,247 ms | — |
+
+   Every layer's code is on screen within a third of a second; the panel fills when the last
+   of 26–29 API calls answers, 1.2–1.8 s. The 2–5 s blanks the test saw were the dev server
+   compiling lazy chunks. What remains is a product fact: opening ANY layer fires the whole
+   workspace's fetch set. Recorded as a hygiene line (one fetch set per layer), not a wave.
+3. **D2 is a missing price.** `obs/usage.py` `PRICES` declares one row, `("openrouter",
+   ":free")`; `refresh_catalogue_prices` reads OpenRouter's catalogue only; the live backend
+   is `gemini` / `gemini-3.1-flash-lite`. `GET /obs/usage-summary?range=24h`: 150 calls, 150
+   unpriced, `cost_usd 0.0`. No join is wrong; nothing declares the rate. AO-3 declares it with
+   its date and source, and renders **unpriced** wherever a row lacks one.
+
 ### AO-1 · The stance reaches every body (quality)
 
 - a. `converse_system_prompt` prepends `agent_brief_block()` when an agent is active; the

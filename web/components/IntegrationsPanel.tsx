@@ -342,7 +342,12 @@ export function IntegrationsPanel() {
                               <strong>{b.name}</strong>
                               {!b.enabled && (
                                 <span className="aug-fs-xs" style={{ color: "var(--t3)",
-                                  marginLeft: 6 }}>paused</span>
+                                  marginLeft: 6 }}
+                                  title={b.disabled_reason || undefined}>
+                                  {b.disabled_reason
+                                    ? `off — ${b.disabled_reason}`
+                                    : "paused"}
+                                </span>
                               )}
                             </span>
                             <Button variant="ghost" size="xs" disabled={busy === b.id}

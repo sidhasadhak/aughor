@@ -327,14 +327,22 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # calls `/control-room/fleet`, both frozen alongside the route below. The word
         # reaches no reader: the layer is labelled "Overview" and the table "All agents".
         r"(?i)\bfleet", ("web",),
-        ("web/components/FleetOverviewPanel.tsx", "web/lib/api.ts"),
+        ("web/components/FleetOverviewPanel.tsx", "web/lib/api.ts",
+         # AO-3's read-failure test mounts the panel and stubs its client by their frozen
+         # names — the same reason the route tests above may spell `control-room`. The
+         # word reaches no reader from a test. The rename to `OverviewPanel` is a PENDING
+         # hygiene line; when it lands, this entry and the test's imports go with it.
+         "web/components/readFailed.test.tsx"),
         "retired from the UI; the layer is 'Overview'",
     ),
     "charter": (
         # The API's row discriminant IS `kind: "charter"` (see FleetCharterRow), so these
-        # files spell it to match the wire. Exempted as TYPE vocabulary, never as prose —
-        # the visible strings say "built-in", "custom" and "Agents", and a charter's own
-        # page is reached from a layer called Roster.
+        # files spell it to match the wire. Exempted as TYPE vocabulary, never as prose.
+        # This comment claimed the visible strings said "built-in" while the exempted
+        # roster file still rendered "Charters · Org", "Loading charters…", a "charter"
+        # chip twice and "This charter owns no job kind" (Arc AO's test, 2026-10-03). Made
+        # true with AO-3: inside the exempted files the word survives only as the wire
+        # discriminant and in comments; `test_arc_ao_3` reads the rendered strings.
         r"(?i)charter", ("web",),
         ("web/lib/api.ts", "web/components/FleetOverviewPanel.tsx",
          "web/components/AgenticAgentsPanel.tsx"),
@@ -457,7 +465,9 @@ BASELINE: dict[str, int] = {
     "blueprint": 0,
     # 72 → 4: the wire-discriminant files were exempted with their reason (the API row
     # kind IS "charter"), and the two places it reached prose now say "built-in".
-    "charter": 4,
+    # 4 → 3 (AO-3, 2026-10-03): the activity stream's tooltip said "the agent charter";
+    # what remains is the wire field `charter_id` and one type literal.
+    "charter": 3,
     "control_room": 26,
     "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is

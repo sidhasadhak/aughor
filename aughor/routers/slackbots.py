@@ -200,7 +200,10 @@ def update_slack_bot(bot_id: str, body: SlackBotBody):
     incoming = SlackBot(**{**body.model_dump(), "id": bot_id,
                            "created_at": stored.created_at,
                            "team_id": stored.team_id, "slack_app_id": stored.slack_app_id,
-                           "bot_user_id": stored.bot_user_id})
+                           "bot_user_id": stored.bot_user_id,
+                           # AO-1e — a platform-written reason survives an edit and is
+                           # cleared the moment a person switches the bot back on.
+                           "disabled_reason": "" if body.enabled else stored.disabled_reason})
     merged = merge_secrets(incoming, stored)
     # Re-verify only when a credential actually changed — an ordinary rename should not
     # depend on Slack being reachable.

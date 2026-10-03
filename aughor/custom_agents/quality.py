@@ -183,36 +183,41 @@ def results_match(ref_rows: list, gen_rows: list) -> bool:
     return True
 
 
-# ── Generation (the product chat prompt, minimal sections) ───────────────────
+# ── Generation (the PRODUCTION quick path, stopped before it executes) ───────
 
-def _generate_sql(question: str, schema: str) -> str:
-    """SQL for a golden question with the CURRENT coder model. The active agent's
-    brief leads the prompt exactly like the live quick path."""
-    from pydantic import BaseModel, Field
+def _frame_on_production_path(agent: UserAgent):
+    """A generator that frames each golden question the way a user's question is framed.
 
-    from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
-    from aughor.llm.provider import get_provider
-    from aughor.custom_agents.context import agent_brief_block
+    AO-1c. Until 2026-10-03 the suite ran its own prompt — `CHAT_PROMPT` with every
+    section empty but the schema, the legacy `CHAT_SQL_SYSTEM`, the brief prepended — so
+    the "goldens 5/5" chip certified a prompt no user drives: no documents, no packs, no
+    schema scope, no governed metrics, no corrections, none of the guards that rewrite a
+    statement before it runs. Now it is `answer_core` with ``frame_only``: the same
+    prelude, the same model call, the same lint, preflight and literal guards, stopped at
+    the statement. The schema argument is ignored on purpose — the production path reads
+    the connection itself, through the agent's scope.
+    """
+    from aughor.db.registry import BUILTIN_ID
 
-    class _Answer(BaseModel):
-        sql: str = ""
-        headline: str = ""
-        chart_type: str = "auto"
-        intent: str = ""
-        approach: list[str] = Field(default_factory=list)
+    def _gen(question: str, schema: str) -> str:   # noqa: ARG001 — the caller's contract
+        from aughor.routers.investigations import answer_core
+        result = answer_core(
+            question, agent.connection_id or BUILTIN_ID, [],
+            emit=lambda _name, _payload: None,
+            skip_clarify=True,                      # an evaluation cannot answer a question
+            purpose="agent_eval",
+            schema_scope=agent.schema_scope or None,
+            frame_only=True,
+        )
+        if result.outcome != "framed":
+            # The production path stopped before a statement existed — a refusal, a clarify
+            # it could not skip, a failure. Said as the golden's error, never as empty SQL.
+            raise RuntimeError(
+                f"production path ended '{result.outcome}' before framing SQL"
+                + (f": {result.error}" if result.error else ""))
+        return (result.sql or "").strip()
 
-    prompt = CHAT_PROMPT.format(
-        schema=schema, history_section="", question=question, schema_qualifier="",
-        kb_patterns_section="", conn_kb_section="", sql_examples_section="",
-        metrics_section="", exploration_section="", causal_section="",
-        document_section="",
-    )
-    brief = agent_brief_block()
-    if brief:
-        prompt = brief + prompt
-    answer: _Answer = get_provider("coder").complete(
-        system=CHAT_SQL_SYSTEM, user=prompt, response_model=_Answer, temperature=0.0)
-    return (answer.sql or "").strip()
+    return _gen
 
 
 # ── The evaluation ────────────────────────────────────────────────────────────
@@ -235,7 +240,7 @@ def evaluate_agent(agent: UserAgent, db=None,
         from aughor.db.connection import open_connection_for
         from aughor.db.registry import BUILTIN_ID
         db = open_connection_for(agent.connection_id or BUILTIN_ID)
-    gen = generate or _generate_sql
+    gen = generate or _frame_on_production_path(agent)
     schema = ""
     try:
         schema = db.get_schema()

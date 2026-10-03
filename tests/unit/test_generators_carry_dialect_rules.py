@@ -16,7 +16,10 @@ _ROOTS = ("aughor", "evals")
 _RULE_NAMES = {"writer_rules", "_writer_rules", "dialect_rules"}
 
 #: A builder whose rules ride the schema its caller hands it — and the caller that must carry them.
-_RIDES_THE_CALLER = {("aughor/custom_agents/quality.py", "_generate_sql"): "evaluate_agent"}
+#: Empty since AO-1c (2026-10-03): the agent evaluation no longer builds a prompt of its own — it
+#: frames each golden on the production quick path (`answer_core(frame_only=True)`), whose builder
+#: is held below under `aughor/routers/investigations.py`.
+_RIDES_THE_CALLER: dict[tuple[str, str], str] = {}
 
 
 def _modules():
@@ -66,9 +69,13 @@ def _function(module: str, name: str):
 def test_the_scan_finds_the_builders_it_must_hold():
     """A scan that finds nothing passes everything, so it must find the builders known today."""
     builders = list(_prompt_builders())
-    assert len(builders) >= 5
+    # Four since AO-1c: `custom_agents/quality.py` stopped building its own prompt and rides
+    # the quick path's (the one builder fewer is the point of that wave, not a loss of cover).
+    assert len(builders) >= 4
     assert {m for m, _ in builders} >= {"aughor/routers/investigations.py", "aughor/agent/benchmarks.py",
-                                        "aughor/custom_agents/quality.py", "evals/run_golden.py"}
+                                        "evals/run_golden.py"}
+    assert "aughor/custom_agents/quality.py" not in {m for m, _ in builders}, (
+        "the agent evaluation grew a prompt of its own again — it must frame on the production path")
 
 
 def test_every_prompt_builder_carries_the_engine_rules():

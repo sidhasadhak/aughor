@@ -162,7 +162,6 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
     from aughor.kernel.jobs import concurrency_policy
     from aughor.obs.timeseries import (JOB_READ_LIMIT, bucket_edges, job_rows,
                                        resolve_window)
-    from aughor.obs.usage import usage_report
     from aughor.custom_agents.store import list_agents as list_personas
 
     ledger = Ledger.default()
@@ -336,13 +335,6 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
     # Personas are a permanent surface (flag endgame Wave 2, 2026-08-06) — the
     # fleet table always lists user-defined agents; an empty roster is honest.
     personas_on = True
-    persona_usage: dict[str, Any] = {}
-    if personas_on:
-        try:
-            report = usage_report(axes=("agent_id",))
-            persona_usage = {r.key.get("agent_id"): r for r in report.rows}
-        except Exception:
-            logger.warning("fleet: custom-agent usage rollup failed", exc_info=True)
     # A custom agent's work is CALLS in the session log, not jobs in the kernel — it
     # answers inside a request rather than submitting a run. Folding those calls into
     # the same columns the charters use (runs, spark, tokens, last run) is what lets one
@@ -356,6 +348,18 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
                 events_by_agent.setdefault(e["agent_id"], []).append(e)
     except Exception:
         logger.warning("fleet: custom-agent event scan failed", exc_info=True)
+    # AO-3 (2026-10-03): the row's calls and tokens are rolled up from the SAME windowed
+    # scan the spark and "last run" read — not from `usage_report`, which read the newest
+    # 5,000 calls of any age and gave the row an all-time number beside a windowed spark.
+    persona_usage: dict[str, Any] = {}
+    if personas_on and events_by_agent:
+        try:
+            from aughor.obs.usage import rollup
+            report = rollup([e for rows in events_by_agent.values() for e in rows],
+                            axes=("agent_id",))
+            persona_usage = {r.key.get("agent_id"): r for r in report.rows}
+        except Exception:
+            logger.warning("fleet: custom-agent usage rollup failed", exc_info=True)
     for persona in (list_personas() if personas_on else []):
         usage_row = persona_usage.get(persona.id)
         if usage_row is None:

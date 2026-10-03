@@ -109,6 +109,9 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
   // The agent being composed. Exactly the fields the runtime reads.
   const [template, setTemplate] = useState<AgentTemplate | null>(null);
   const [name, setName] = useState("");
+  // AO-1d — the one line the delegation roster reads ("what this agent is for"); the
+  // store always had the column, no door let a person write it.
+  const [purpose, setPurpose] = useState("");
   const [instructions, setInstructions] = useState("");
   const [connectionId, setConnectionId] = useState("");
   const [schemaScope, setSchemaScope] = useState("");
@@ -180,7 +183,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
   };
 
   const startBlank = () => {
-    setTemplate(null); setName(""); setInstructions("");
+    setTemplate(null); setName(""); setPurpose(""); setInstructions("");
     setPackIds([]); setSeeds([]);
     setStep("scope");
   };
@@ -190,17 +193,18 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
   const create = useCallback(async () => {
     setBusy(true); setError(null);
     try {
-      // The template path takes the SAME bindings as the scratch path. It always accepted
-      // them; the previous UI sent only `pack_id`, so an agent created from a pack could not be
-      // named — and its suggested goldens, returned so the creator could supply SQL "while
-      // they still have the domain in mind", were discarded.
+      // The template path takes the SAME body as the scratch path. Measured 2026-10-03
+      // (AO-1d): this flow let the creator edit the prefilled instructions and tick documents
+      // on the Define step, then sent neither — the agent was born with the pack's text and
+      // no documents, and nothing said so. Both paths now send everything the person set.
       const agent = template
         ? (await createUserAgentFromTemplate({
-            pack_id: template.pack_id, name: name.trim(),
+            pack_id: template.pack_id, name: name.trim(), instructions, purpose,
             connection_id: connectionId, schema_scope: schemaScope,
+            doc_ids: docIds, pack_ids: packIds,
           })).agent
         : await createUserAgent({
-            name: name.trim(), instructions, connection_id: connectionId,
+            name: name.trim(), instructions, purpose, connection_id: connectionId,
             schema_scope: schemaScope, doc_ids: docIds, pack_ids: packIds,
           });
       // Goldens are written after the agent exists — each needs its id. A failure here
@@ -221,8 +225,8 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
     } catch (e) {
       setError(String((e as Error)?.message || e));
     } finally { setBusy(false); }
-  }, [template, name, instructions, connectionId, schemaScope, docIds, packIds, goldens,
-      onCreated]);
+  }, [template, name, purpose, instructions, connectionId, schemaScope, docIds, packIds,
+      goldens, onCreated]);
 
   const idx = STEPS.findIndex(s => s.id === step);
 
@@ -411,6 +415,13 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
               <input className="aug-input" value={name} maxLength={120} autoFocus
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Retention Analyst" style={{ width: "100%", maxWidth: 420 }} />
+            </Field>
+            <Field label="What it is for"
+              hint="One line. Other agents read this when deciding whether to hand it a question — never the instructions.">
+              <input className="aug-input" value={purpose} maxLength={240}
+                onChange={e => setPurpose(e.target.value)}
+                placeholder="e.g. Churn and retention questions for the subscriptions team"
+                style={{ width: "100%", maxWidth: 560 }} />
             </Field>
           </Section>
 

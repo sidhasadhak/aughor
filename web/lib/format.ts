@@ -167,6 +167,21 @@ export function formatMoney(n: number | null | undefined, symbol: string): strin
 }
 
 /**
+ * A MODEL-SPEND tile's value (Arc AO-3): the priced total in USD, "unpriced" when calls ran
+ * and not one of them had a price, "—" when nothing is known. `$0.00` on a tile whose every
+ * call was unpriced was the measured defect — it read as "free" on five screens while the
+ * platform's own model had no rate declared. A partial total is still a figure (a floor),
+ * and the caller captions it as one from `unpricedCalls`.
+ */
+export function formatCost(usd: number | null | undefined, calls: number | null | undefined,
+                           unpricedCalls: number | null | undefined): string {
+  if (usd === null || usd === undefined || isNaN(usd)) return "—";
+  const n = calls ?? 0;
+  if (n > 0 && (unpricedCalls ?? 0) >= n) return "unpriced";
+  return formatMoney(usd, "$");
+}
+
+/**
  * Canonical DATA-TABLE cell value — the FULL number, always, with thousands separators:
  * 102870539329 → "102,870,539,329". Small decimals trimmed ("3.1400" → "3.14").
  *

@@ -372,7 +372,15 @@ export interface paths {
         get: operations["get_user_agent_agents_custom__agent_id__get"];
         put?: never;
         post?: never;
-        /** Delete User Agent */
+        /**
+         * Delete User Agent
+         * @description Delete an agent and everything that would keep answering as it (AO-1e).
+         *
+         *     The receipt says what moved: which Slack bots were switched off (each now carries
+         *     `disabled_reason`), which automations were detached from it, and that its configuration
+         *     revisions are kept. Before 2026-10-03 the row and its goldens went and the bot's socket
+         *     stayed open, answering as an agent that no longer existed.
+         */
         delete: operations["delete_user_agent_agents_custom__agent_id__delete"];
         options?: never;
         head?: never;
@@ -15769,6 +15777,11 @@ export interface components {
              */
             pack_ids: string[];
             /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /**
              * Schema Scope
              * @default
              */
@@ -15779,13 +15792,29 @@ export interface components {
              */
             tool_grants: string[];
         };
-        /** UserAgentFromTemplate */
+        /**
+         * UserAgentFromTemplate
+         * @description AO-1d — the pack path takes the scratch path's body. Before, four fields: the Create
+         *     flow let a person edit the prefilled instructions and tick documents, then sent only
+         *     `pack_id`, `name`, `connection_id`, `schema_scope`, and the agent was born with the
+         *     pack's text and no documents — silently.
+         */
         UserAgentFromTemplate: {
             /**
              * Connection Id
              * @default
              */
             connection_id: string;
+            /**
+             * Doc Ids
+             * @default []
+             */
+            doc_ids: string[];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
             /**
              * Name
              * @default
@@ -15794,10 +15823,25 @@ export interface components {
             /** Pack Id */
             pack_id: string;
             /**
+             * Pack Ids
+             * @default []
+             */
+            pack_ids: string[];
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /**
              * Schema Scope
              * @default
              */
             schema_scope: string;
+            /**
+             * Tool Grants
+             * @default []
+             */
+            tool_grants: string[];
         };
         /** UserAgentPatch */
         UserAgentPatch: {
@@ -15813,6 +15857,8 @@ export interface components {
             name?: string | null;
             /** Pack Ids */
             pack_ids?: string[] | null;
+            /** Purpose */
+            purpose?: string | null;
             /** Schema Scope */
             schema_scope?: string | null;
             /** Tool Grants */
