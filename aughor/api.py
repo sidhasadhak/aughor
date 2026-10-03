@@ -240,7 +240,11 @@ _api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
 _AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/", "/auth/config",
                 # AO-2d — Slack's browser redirect after an install carries no key; the
                 # route verifies a sealed state instead. Its own prefix, deliberately.
-                "/slack-bots/oauth/")
+                "/slack-bots/oauth/",
+                # AO-5 — the headless doors to a custom agent carry their OWN credential
+                # (the agent's key as a bearer, or the Bot Framework's signature) and the
+                # A2A card is public by definition. Each by its own prefix.
+                "/doors/", "/.well-known/")
 
 
 def api_key_configured() -> bool:
@@ -1099,6 +1103,8 @@ app.include_router(charts.router)  # RC-2 — the chart door for surfaces that c
 app.include_router(automations.router)  # Wave A — condition→effect (self-gates on automations.engine)
 app.include_router(mcpservers_router.router)  # VA-9d — the MCP allowlist (an empty one reaches nothing)
 app.include_router(hooks.router)        # DS-17 — the inbound webhook door (own token; see _AUTH_EXEMPT)
+from aughor.routers import doors as doors_router  # noqa: E402 — AO-5, beside the other door
+app.include_router(doors_router.router)  # AO-5 — HTTP, webhook, A2A and Teams doors to a custom agent (own keys; see _AUTH_EXEMPT)
 app.include_router(obs_router.router)  # Wave CR1/CR2 — traces + activity over the session log
 app.include_router(control_room.router)  # Wave CR3/CR4 — fleet overview + needs-a-human (views only)
 app.include_router(preferences.router)  # SP-3 — per-user cosmetic preferences (theme/density; the arc's one new store)

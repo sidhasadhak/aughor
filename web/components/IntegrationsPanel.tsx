@@ -73,7 +73,8 @@ export function IntegrationsPanel() {
   const [connections, setConnections] = useState<Connection[]>([]);
   /** The record whose edit form is open, and the form's draft. One at a time. */
   const [editBot, setEditBot] = useState<string | null>(null);
-  const [botDraft, setBotDraft] = useState({ name: "", agent_id: "", connection_id: "", channel_id: "" });
+  const [botDraft, setBotDraft] = useState({ name: "", agent_id: "", connection_id: "", channel_id: "",
+    rehearse: false });
   /** The connection a NEW app asks on. Defaults to the chosen agent's own binding, which
    *  is the pairing the ask door insists on; a bot created with none used to fall back to
    *  the supervisor's default and be refused on every @mention. */
@@ -382,7 +383,8 @@ export function IntegrationsPanel() {
                               onClick={() => {
                                 setEditBot(editing ? null : b.id);
                                 setBotDraft({ name: b.name, agent_id: b.agent_id,
-                                  connection_id: b.connection_id, channel_id: b.channel_id ?? "" });
+                                  connection_id: b.connection_id, channel_id: b.channel_id ?? "",
+                                  rehearse: b.rehearse ?? false });
                               }}>
                               {editing ? "Cancel" : "Edit"}
                             </Button>
@@ -449,6 +451,15 @@ export function IntegrationsPanel() {
                               <input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
                                 aria-label="Home channel" placeholder="Home channel — #name or C… (optional)"
                                 onChange={e => setBotDraft(d => ({ ...d, channel_id: e.target.value }))} />
+                              {/* AO-6 — rehearse: a post from an automation AS this bot waits in
+                                  Attention for a person's click before it reaches the channel. */}
+                              <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center",
+                                gap: 6, color: "var(--t2)", cursor: "pointer" }}>
+                                <input type="checkbox" checked={botDraft.rehearse}
+                                  onChange={e => setBotDraft(d => ({ ...d, rehearse: e.target.checked }))} />
+                                Rehearse — hold every automation post as this bot for a person&apos;s click
+                                (&quot;always allow&quot; on the held post lifts it per channel)
+                              </label>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <Button variant="default" size="xs" disabled={busy === b.id}
                                   onClick={() => saveBot(b, botDraft)}>

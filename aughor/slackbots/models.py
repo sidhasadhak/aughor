@@ -90,6 +90,11 @@ class SlackBot(BaseModel):
     #: AS this bot lands when it names no channel, and what the card shows as "posts to".
     #: "" means no default; a bot answers mentions wherever it is invited regardless.
     channel_id: str = ""
+    #: AO-6 — REHEARSE: a post from an automation AS this bot is held for a person first
+    #: (the departure gate's approval door) and reaches the channel on their click; the
+    #: held text is readable in Attention before anyone else sees it. A standing grant
+    #: ("always allow" on the card) lifts it per channel. False = posts as its effect says.
+    rehearse: bool = False
 
     created_at: str = Field(default_factory=now_iso_z)
     updated_at: str = Field(default_factory=now_iso_z)

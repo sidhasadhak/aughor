@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/.well-known/agent.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A2A Agent Card
+         * @description The Agent Card: Aughor's enabled custom agents as skills, each at its own endpoint.
+         */
+        get: operations["a2a_agent_card__well_known_agent_json_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/access/explain": {
         parameters: {
             query?: never;
@@ -392,6 +412,28 @@ export interface paths {
         patch: operations["patch_user_agent_agents_custom__agent_id__patch"];
         trace?: never;
     };
+    "/agents/custom/{agent_id}/doors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Doors
+         * @description AO-5 — every door into this agent with its state: the MCP tool name, the HTTP door
+         *     and its key (issued when, never what), the embed page, the webhook, the A2A card, and
+         *     the Teams bots that front it.
+         */
+        get: operations["agent_doors_agents_custom__agent_id__doors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/custom/{agent_id}/evaluate": {
         parameters: {
             query?: never;
@@ -437,6 +479,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/{agent_id}/goldens/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Agent Goldens
+         * @description AO-6 — draft golden QUESTIONS from the connection's metric catalogue and the agent's
+         *     purpose: one model call, up to six candidates, no SQL (the model may not certify).
+         *     Refused with the reason while the testing centre's flag is off.
+         */
+        post: operations["draft_agent_goldens_agents_custom__agent_id__goldens_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/custom/{agent_id}/goldens/{golden_id}": {
         parameters: {
             query?: never;
@@ -449,6 +513,28 @@ export interface paths {
         post?: never;
         /** Delete Agent Golden */
         delete: operations["delete_agent_golden_agents_custom__agent_id__goldens__golden_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/custom/{agent_id}/goldens/{golden_id}/certify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Certify Agent Golden
+         * @description A person turns a CANDIDATE (drafted from the catalogue, or an answer accepted in
+         *     use) into a golden the suite counts, with the SQL they say is right (AO-6, AO-7c).
+         *     The same read-only parse the hand-written path runs; a judge never certifies.
+         */
+        post: operations["certify_agent_golden_agents_custom__agent_id__goldens__golden_id__certify_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -480,6 +566,51 @@ export interface paths {
          *     tightened a cap.
          */
         put: operations["set_user_agent_guardrails_agents_custom__agent_id__guardrails_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/custom/{agent_id}/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue Agent Key Route
+         * @description Mint the agent's HTTP-door key and return it ONCE. Issuing replaces (a rotation is
+         *     the same gesture); the status never discloses it.
+         */
+        post: operations["issue_agent_key_route_agents_custom__agent_id__key_post"];
+        /** Revoke Agent Key Route */
+        delete: operations["revoke_agent_key_route_agents_custom__agent_id__key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/custom/{agent_id}/learning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Learning
+         * @description AO-7d — the loop's receipt: verdicts and corrections this agent earned, candidates
+         *     waiting for a person's SQL, goldens certified from use, and the pass count before →
+         *     after the latest evaluation. The flags' states are on it, so an empty receipt says
+         *     whether the loop is off or merely unused.
+         */
+        get: operations["agent_learning_agents_custom__agent_id__learning_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -4110,6 +4241,92 @@ export interface paths {
         get: operations["document_original_documents__doc_id__original_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/doors/a2a/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A2A Send
+         * @description JSON-RPC 2.0, method ``message/send`` (A2A): the message's text parts are the
+         *     question; the result is a completed Task whose artifact carries the headline and the
+         *     answer's data. Other methods are refused with the JSON-RPC error that names them.
+         */
+        post: operations["a2a_send_doors_a2a__agent_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/doors/agents/{agent_id}/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Door Ask
+         * @description Ask the agent, as itself. JSON by default — the folded answer: headline, SQL, rows,
+         *     receipt — or the ask door's own SSE with ``?stream=1`` for a caller that renders it.
+         */
+        post: operations["door_ask_doors_agents__agent_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/doors/agents/{agent_id}/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Door Webhook
+         * @description A webhook that is a conversation turn: a question in, the agent's answer out — in the
+         *     response, and to ``callback_url`` when one is given (the delivery's outcome is said).
+         */
+        post: operations["door_webhook_doors_agents__agent_id__webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/doors/teams/{bot_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Teams Messages
+         * @description The bot's messaging endpoint. A signed `message` activity becomes a question to the
+         *     bot's agent; the answer goes back through the Bot Connector at the activity's own
+         *     serviceUrl. Anything else the Framework sends (typing, membership) is acknowledged.
+         */
+        post: operations["teams_messages_doors_teams__bot_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12182,6 +12399,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/teams-bots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Teams Bots */
+        get: operations["list_teams_bots_teams_bots_get"];
+        put?: never;
+        /**
+         * Create Teams Bot
+         * @description Bind an Azure Bot registration (app id + password) to a custom agent. The messaging
+         *     endpoint to set on the registration is returned — this API's public HTTPS origin plus
+         *     `/doors/teams/{id}/messages` — and said to be missing when no origin is declared.
+         */
+        post: operations["create_teams_bot_teams_bots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/teams-bots/{bot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Teams Bot */
+        delete: operations["delete_teams_bot_teams_bots__bot_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/traces": {
         parameters: {
             query?: never;
@@ -13844,6 +14101,31 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DoorAsk */
+        DoorAsk: {
+            /**
+             * Asker
+             * @default
+             */
+            asker: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Depth
+             * @default quick
+             */
+            depth: string;
+            /** Question */
+            question: string;
+            /**
+             * Session Id
+             * @default
+             */
+            session_id: string;
+        };
         /** DraftRequest */
         DraftRequest: {
             /** Area */
@@ -14185,6 +14467,11 @@ export interface components {
              * @default []
              */
             wrong_usage_examples: string[];
+        };
+        /** GoldenCertify */
+        GoldenCertify: {
+            /** Reference Sql */
+            reference_sql: string;
         };
         /** GoldenCreate */
         GoldenCreate: {
@@ -15609,6 +15896,11 @@ export interface components {
              */
             name: string;
             /**
+             * Rehearse
+             * @default false
+             */
+            rehearse: boolean;
+            /**
              * Signing Secret
              * @default
              */
@@ -15741,6 +16033,41 @@ export interface components {
         TableAnnotationIn: {
             /** Description */
             description: string;
+        };
+        /** TeamsBotBody */
+        TeamsBotBody: {
+            /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /** App Id */
+            app_id: string;
+            /**
+             * App Password
+             * @default
+             */
+            app_password: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Tenant Id
+             * @default
+             */
+            tenant_id: string;
         };
         /**
          * TextInputContent
@@ -16117,6 +16444,11 @@ export interface components {
         /** VerdictIn */
         VerdictIn: {
             /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /**
              * Connection Id
              * @default
              */
@@ -16179,6 +16511,36 @@ export interface components {
             scope_key: string;
             /** Target Id */
             target_id: string;
+        };
+        /** WebhookAsk */
+        WebhookAsk: {
+            /**
+             * Asker
+             * @default
+             */
+            asker: string;
+            /**
+             * Callback Url
+             * @default
+             */
+            callback_url: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Depth
+             * @default quick
+             */
+            depth: string;
+            /** Question */
+            question: string;
+            /**
+             * Session Id
+             * @default
+             */
+            session_id: string;
         };
         /** _ActionOverride */
         _ActionOverride: {
@@ -17405,6 +17767,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    a2a_agent_card__well_known_agent_json_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     explain_access_access_explain_get: {
         parameters: {
             query: {
@@ -18190,6 +18572,37 @@ export interface operations {
             };
         };
     };
+    agent_doors_agents_custom__agent_id__doors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     evaluate_user_agent_agents_custom__agent_id__evaluate_post: {
         parameters: {
             query?: never;
@@ -18287,6 +18700,37 @@ export interface operations {
             };
         };
     };
+    draft_agent_goldens_agents_custom__agent_id__goldens_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_agent_golden_agents_custom__agent_id__goldens__golden_id__delete: {
         parameters: {
             query?: never;
@@ -18298,6 +18742,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    certify_agent_golden_agents_custom__agent_id__goldens__golden_id__certify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                golden_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenCertify"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -18364,6 +18844,99 @@ export interface operations {
                 "application/json": components["schemas"]["GuardrailBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_agent_key_route_agents_custom__agent_id__key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_agent_key_route_agents_custom__agent_id__key_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_learning_agents_custom__agent_id__learning_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -24308,6 +24881,152 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    a2a_send_doors_a2a__agent_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    door_ask_doors_agents__agent_id__ask_post: {
+        parameters: {
+            query?: {
+                stream?: boolean;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoorAsk"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    door_webhook_doors_agents__agent_id__webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookAsk"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    teams_messages_doors_teams__bot_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -38299,6 +39018,90 @@ export interface operations {
                 "application/json": components["schemas"]["_FlagPatch"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_teams_bots_teams_bots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_teams_bot_teams_bots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamsBotBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_teams_bot_teams_bots__bot_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

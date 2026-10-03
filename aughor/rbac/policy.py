@@ -113,6 +113,20 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("PATCH", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
     ("DELETE", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
 
+    # ── Doors to a custom agent (AO-5) ──
+    # Minting or revoking an agent's key is minting a way in for a caller with no session;
+    # a Teams bot binds an Azure registration to an agent. Admin acts, like a Slack bot.
+    ("POST", "/agents/custom/{agent_id}/key"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/agents/custom/{agent_id}/key"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/teams-bots"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/teams-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
+    # The doors themselves carry their own credential (the agent's key as a bearer; the
+    # Bot Framework's signature) and are auth-exempt by prefix in `api.py` — open here.
+    ("POST", "/doors/agents/{agent_id}/ask"): None,
+    ("POST", "/doors/agents/{agent_id}/webhook"): None,
+    ("POST", "/doors/a2a/{agent_id}"): None,
+    ("POST", "/doors/teams/{bot_id}/messages"): None,
+
     # ── Connection lifecycle ──
     ("POST", "/connections"): P.CONNECTION_CREATE,
     # Seeding the demo writes a DuckDB file and makes a new connection appear, which is

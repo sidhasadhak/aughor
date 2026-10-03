@@ -436,6 +436,79 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
     return added
 
 
+async def register_agent_tools(client: "AughorClient | None" = None) -> list[str]:
+    """AO-5a — one tool per ENABLED custom agent: `ask_<slug>`, described by the agent's
+    purpose, answering through `/ask` AS that agent (its brief, documents, packs, grants)
+    with this process named as the principal. Same posture as the two registrars above:
+    never raises, returns what it added, skips a collision rather than shadowing — an
+    agent called "Ask" must not replace the governed `ask`.
+
+    The caller is a principal (DE-2a's half that this transport can do today): the ask
+    door attributes the turn to `mcp:<AUGHOR_MCP_PRINCIPAL or host>` when no session is in
+    scope, so the agent's verdicts and spend know an MCP client asked, and which.
+    """
+    api = client or _client
+    try:
+        agents = await api.list_user_agents()
+    except Exception as exc:                       # the API is down, or the route is old
+        _log.warning("could not read the custom agents: %s", exc)
+        return []
+
+    from aughor.custom_agents.reach import mcp_tool_name
+    taken = set(getattr(mcp._tool_manager, "_tools", {}) or {})
+    added: list[str] = []
+    for row in agents:
+        if not row.get("enabled", True) or not row.get("id"):
+            continue
+        name = mcp_tool_name(_Row(row))
+        if name in taken:
+            _log.warning("agent tool %r collides with an existing tool — skipped", name)
+            continue
+        mcp.add_tool(_agent_runner(api, str(row["id"]), str(row.get("connection_id") or "")),
+                     name=name, description=_agent_description(row))
+        taken.add(name)
+        added.append(name)
+    return added
+
+
+class _Row:
+    """A dict row with attribute access, for the one helper that reads `.name`/`.id`."""
+    def __init__(self, row: dict):
+        self.id = str(row.get("id") or "")
+        self.name = str(row.get("name") or "")
+
+
+def _agent_description(row: dict) -> str:
+    purpose = str(row.get("purpose") or "").strip()
+    scope = str(row.get("schema_scope") or "").strip()
+    conn = str(row.get("connection_id") or "").strip()
+    desc = f"Ask the custom agent '{row.get('name')}'"
+    desc += f" — {purpose}" if purpose else " (no purpose written; its instructions decide)"
+    desc += f". Answers on connection {conn}" if conn else ". Answers on the connection you name"
+    desc += f", schema {scope}" if scope else ""
+    desc += (". Returns the agent's own answer: headline, the SQL that ran, rows and a receipt; "
+             "the agent's grants only ever PROPOSE, never execute.")
+    return desc
+
+
+def _agent_runner(api: "AughorClient", agent_id: str, connection_id: str):
+    """A factory, not a loop lambda (the late-binding trap the other runners refuse)."""
+    import os
+    import socket
+
+    async def run(
+        question: Annotated[str, Field(description="The question for this agent, in plain words.")],
+        connection: Annotated[Optional[str], Field(
+            description="A connection id from list_connections; only needed when the agent is unbound.")] = None,
+        asker: Annotated[Optional[str], Field(
+            description="Who is asking, for attribution (an email or a service name).")] = None,
+    ) -> dict:
+        who = asker or os.environ.get("AUGHOR_MCP_PRINCIPAL") or socket.gethostname()
+        return await api.ask_as_agent(agent_id, question, connection or connection_id, asker=who)
+
+    return run
+
+
 def _spotlight_description(row: dict) -> str:
     """The declared description IS the routing policy on this transport too — plus a
     compact rendering of the declared arguments, because this transport's runner takes

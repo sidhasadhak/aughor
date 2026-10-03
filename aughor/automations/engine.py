@@ -1024,13 +1024,25 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
     # ("always allow", SP-12b). A hand-built chain never sets `require_approval`, so it is
     # untouched, exactly as a hand-built declared write is. The verdict is `approval_required`,
     # which the run loop already turns into a durable inbox proposal and a paused run.
-    if bool(effect.config.get("require_approval")):
+    # AO-6 — a bot in REHEARSE holds every post as it the same way: a person reads the
+    # text in Attention and promotes it with a click; "always allow" lifts it per channel.
+    rehearsing = False
+    try:
+        from aughor.slackbots.store import get_bot
+        _bot = get_bot(bot_id) if bot_id else None
+        rehearsing = bool(_bot and getattr(_bot, "rehearse", False))
+    except Exception as exc:                            # noqa: BLE001 — a hold is said below
+        logger.debug("rehearse read for bot %s failed: %s", bot_id, exc)
+    if bool(effect.config.get("require_approval")) or rehearsing:
         from aughor.actions import grants
         grant = grants.matching_send_grant(automation.id, channel, connection_id=automation.conn_id)
         if grant is None:
+            why = ("this bot is rehearsing — its posts reach the channel on a person's click"
+                   if rehearsing and not effect.config.get("require_approval")
+                   else "a drafted Slack post")
             return EffectOutcome(
                 kind=effect.kind, target=f"{bot_id}:{channel}", status="approval_required",
-                message=(f"a drafted Slack post to {channel or '(unnamed channel)'} waits "
+                message=(f"{why} to {channel or '(unnamed channel)'} waits "
                          f"for a person — accept it in the inbox, or accept with 'always "
                          f"allow' to let this chain post there unattended from now on"))
         grants.bump_use(grant.id)

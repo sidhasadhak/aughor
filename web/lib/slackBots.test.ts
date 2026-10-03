@@ -20,6 +20,7 @@ describe("patchBodyFor", () => {
     expect(body).toEqual({
       name: "Aughor", enabled: true, agent_id: "ua_1", connection_id: "8233e4fd", agent_view: false,
       channel_id: "",   // AO-2f — a plain field like the rest, carried even when unset
+      rehearse: false,  // AO-6 — likewise
     });
   });
   it("applies the change over the record", () => {

@@ -511,8 +511,10 @@ describe("TJ-4 — a reaction is a verdict", () => {
 
     bot.processReaction(reaction(adapter, "white_check_mark"));
     await settle();
+    // AO-7b: no headline from this process — the verdict door reads the answer's own from
+    // the turn's record; the question rides in the note, where it was never a headline.
     expect(verdicts).toEqual([{ investigationId: "inv-9", verdict: "accept",
-      note: "slack reaction :white_check_mark: by amit", headline: "how many orders?" }]);
+      note: 'slack reaction :white_check_mark: by amit on "how many orders?"' }]);
 
     bot.processReaction(reaction(adapter, "x", true, "some-other-message-in-the-thread"));
     await settle();

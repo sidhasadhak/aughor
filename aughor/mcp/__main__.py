@@ -10,7 +10,8 @@ import argparse
 import asyncio
 import sys
 
-from aughor.mcp.server import mcp, register_automation_tools, register_spotlight_tools
+from aughor.mcp.server import (mcp, register_agent_tools, register_automation_tools,
+                               register_spotlight_tools)
 
 
 def main() -> None:
@@ -30,6 +31,10 @@ def main() -> None:
     ap.add_argument(
         "--no-spotlight", action="store_true",
         help="Skip registering the Spotlight platform roster as tools (SP-5).",
+    )
+    ap.add_argument(
+        "--no-agents", action="store_true",
+        help="Skip registering this deployment's custom agents as tools (AO-5a).",
     )
     args = ap.parse_args()
 
@@ -58,6 +63,13 @@ def main() -> None:
         if added_sp:
             print(f"[aughor.mcp] exposed the Spotlight roster ({len(added_sp)} tools)",
                   file=sys.stderr)
+
+    # AO-5a — every enabled custom agent as a tool, under the same never-fatal posture.
+    if not getattr(args, "no_agents", False):
+        added_ag = asyncio.run(register_agent_tools())
+        if added_ag:
+            print(f"[aughor.mcp] exposed {len(added_ag)} custom agent(s) as tools: "
+                  f"{', '.join(added_ag)}", file=sys.stderr)
 
     if args.http:
         mcp.settings.host = args.host

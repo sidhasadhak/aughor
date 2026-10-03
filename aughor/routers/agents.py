@@ -559,12 +559,17 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
         raise HTTPException(status_code=404, detail="No such agent")
     if not body.question.strip() or not body.reference_sql.strip():
         raise HTTPException(status_code=422, detail="question and reference_sql are required")
+    _check_reference_sql(body.reference_sql)
+    return add_golden(agent_id, body.question, body.reference_sql)
+
+
+def _check_reference_sql(sql: str) -> None:
     # WP-1c — fail CLOSED on unparseable SQL: `is_mutating` returns False on a parse
     # failure, so an unparseable statement previously slipped past the read-only check.
     # Goldens are user-authored ground truth; a parse failure is a user error to fix.
     import sqlglot
     try:
-        _parsed = sqlglot.parse_one(body.reference_sql)
+        _parsed = sqlglot.parse_one(sql)
     except Exception:
         _parsed = None
     if _parsed is None:
@@ -572,9 +577,8 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
             status_code=422,
             detail="reference_sql could not be parsed — provide valid, read-only SQL")
     from aughor.sql.readonly import is_mutating
-    if is_mutating(body.reference_sql):
+    if is_mutating(sql):
         raise HTTPException(status_code=422, detail="reference_sql must be read-only")
-    return add_golden(agent_id, body.question, body.reference_sql)
 
 
 @router.delete("/agents/custom/{agent_id}/goldens/{golden_id}")
@@ -585,6 +589,100 @@ def delete_agent_golden(agent_id: str, golden_id: str):
     if not delete_golden(golden_id, agent_id=agent_id):
         raise HTTPException(status_code=404, detail="No such golden")
     return {"deleted": golden_id}
+
+
+class GoldenCertify(BaseModel):
+    reference_sql: str
+
+
+@router.post("/agents/custom/{agent_id}/goldens/{golden_id}/certify")
+def certify_agent_golden(agent_id: str, golden_id: str, body: GoldenCertify):
+    """A person turns a CANDIDATE (drafted from the catalogue, or an answer accepted in
+    use) into a golden the suite counts, with the SQL they say is right (AO-6, AO-7c).
+    The same read-only parse the hand-written path runs; a judge never certifies."""
+    from aughor.custom_agents.store import certify_golden
+    if not body.reference_sql.strip():
+        raise HTTPException(status_code=422, detail="reference_sql is required to certify")
+    _check_reference_sql(body.reference_sql)
+    row = certify_golden(golden_id, agent_id, body.reference_sql)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such golden")
+    return row
+
+
+@router.post("/agents/custom/{agent_id}/goldens/draft", status_code=201)
+def draft_agent_goldens(agent_id: str):
+    """AO-6 — draft golden QUESTIONS from the connection's metric catalogue and the agent's
+    purpose: one model call, up to six candidates, no SQL (the model may not certify).
+    Refused with the reason while the testing centre's flag is off."""
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.learning import draft_synthetic_goldens
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    try:
+        return {"drafted": draft_synthetic_goldens(agent)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/agents/custom/{agent_id}/doors")
+def agent_doors(agent_id: str):
+    """AO-5 — every door into this agent with its state: the MCP tool name, the HTTP door
+    and its key (issued when, never what), the embed page, the webhook, the A2A card, and
+    the Teams bots that front it."""
+    import os
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.reach import doors_for
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    doors = doors_for(agent, public_api=os.environ.get("AUGHOR_PUBLIC_API_URL", ""),
+                      public_web=os.environ.get("AUGHOR_WEB_URL", ""))
+    try:
+        from aughor.teamsbots.store import bots_for_agent
+        doors["teams"] = {"bots": [b.to_safe_dict() for b in bots_for_agent(agent_id)],
+                          "state": "open" if bots_for_agent(agent_id) else "no bot"}
+    except Exception as exc:                            # noqa: BLE001 — said, not hidden
+        doors["teams"] = {"bots": [], "state": f"could not read: {exc}"}
+    return doors
+
+
+@router.post("/agents/custom/{agent_id}/key")
+def issue_agent_key_route(agent_id: str):
+    """Mint the agent's HTTP-door key and return it ONCE. Issuing replaces (a rotation is
+    the same gesture); the status never discloses it."""
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.keys import agent_key_issued_at, issue_agent_key
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    raw = issue_agent_key(agent_id)
+    return {"key": raw, "issued_at": agent_key_issued_at(agent_id),
+            "header": f"Authorization: Bearer {raw}",
+            "curl": (f"curl -sS -X POST \"$AUGHOR_API/doors/agents/{agent_id}/ask\" "
+                     f"-H 'Authorization: Bearer {raw}' -H 'content-type: application/json' "
+                     "-d '{\"question\": \"How many orders yesterday?\", \"asker\": \"me@example.com\"}'")}
+
+
+@router.delete("/agents/custom/{agent_id}/key")
+def revoke_agent_key_route(agent_id: str):
+    from aughor.custom_agents.keys import revoke_agent_key
+    if not revoke_agent_key(agent_id):
+        raise HTTPException(status_code=404, detail="No key is issued for this agent")
+    return {"revoked": agent_id}
+
+
+@router.get("/agents/custom/{agent_id}/learning")
+def agent_learning(agent_id: str):
+    """AO-7d — the loop's receipt: verdicts and corrections this agent earned, candidates
+    waiting for a person's SQL, goldens certified from use, and the pass count before →
+    after the latest evaluation. The flags' states are on it, so an empty receipt says
+    whether the loop is off or merely unused."""
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.learning import learning_summary
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return learning_summary(agent_id)
 
 
 @router.get("/agents/custom/{agent_id}/observability")

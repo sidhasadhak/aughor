@@ -30,6 +30,8 @@ class VerdictIn(BaseModel):
     # reads back (dead code at BOTH ends, gap in the middle — the S2 lesson).
     sql_source: str = ""
     corrected_sql: str = ""
+    # AO-7a — optional; the store reads it from the turn's record when a caller omits it.
+    agent_id: str = ""
 
 
 @router.post("/verify/verdict")
@@ -39,7 +41,7 @@ def post_verdict(v: VerdictIn):
         return record_verdict(
             connection_id=v.connection_id, investigation_id=v.investigation_id,
             verdict=v.verdict, note=v.note, headline=v.headline,
-            sql_source=v.sql_source, corrected_sql=v.corrected_sql,
+            sql_source=v.sql_source, corrected_sql=v.corrected_sql, agent_id=v.agent_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

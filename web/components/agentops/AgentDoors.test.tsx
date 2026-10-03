@@ -15,12 +15,22 @@ const stubs = {
   reject: false,
 };
 
+const doors = () => ({
+  mcp: { state: "open", tool: "ask_the_look_analyst", how: "registered at start" },
+  http: { state: "no key", key_issued_at: "", url: "/doors/agents/ua_1/ask", hint: "issue a key" },
+  embed: { state: "needs the HTTP key", url: "/embed/agent/ua_1" },
+  webhook: { state: "needs the HTTP key", url: "/doors/agents/ua_1/webhook" },
+  a2a: { state: "needs the HTTP key", card: "/.well-known/agent.json", url: "/doors/a2a/ua_1" },
+  teams: { state: "no bot", bots: [] },
+});
+
 vi.mock("@/lib/api", async importOriginal => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
     getSlackBots: () => stubs.reject ? Promise.reject(new Error("502")) : Promise.resolve(stubs.bots),
     getAutomations: () => Promise.resolve(stubs.automations),
+    getAgentDoors: () => Promise.resolve(doors()),
   };
 });
 
@@ -42,7 +52,7 @@ const bot = (over: Partial<SlackBotSummary>): SlackBotSummary => ({
 });
 
 describe("the Doors tab", () => {
-  it("lists chat, the bot with its liveness, the automation, and the doors not built yet", async () => {
+  it("lists chat, the bot with its liveness, the automation, and every headless door with its state", async () => {
     stubs.bots = [bot({ listening: { supervisor_id: "h:1", since: "2026-10-03T00:00:00Z", last_seen_at: "2026-10-03T00:00:30Z" } }),
                   bot({ id: "sb_other", agent_id: "ua_other" })];
     stubs.automations = [{ id: "au_1", name: "Daily as the agent", enabled: true, agent_id: "ua_1",
@@ -53,7 +63,12 @@ describe("the Doors tab", () => {
     expect(screen.queryByText("sb_other")).toBeNull();
     expect(screen.getByText("listening")).toBeInTheDocument();
     expect(screen.getByText("Daily as the agent")).toBeInTheDocument();
-    expect(screen.getAllByText("not built yet")).toHaveLength(2);
+    // AO-5 — the headless doors, each with its state; none is left off the list.
+    expect(screen.getByText("MCP tool ask_the_look_analyst")).toBeInTheDocument();
+    expect(screen.getByText("no key")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Issue key" })).toBeInTheDocument();
+    expect(screen.getAllByText("needs the HTTP key")).toHaveLength(3);
+    expect(screen.getByText("no bot")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Open automation" }));
     expect(openAutomation).toHaveBeenCalledWith("au_1");
   });

@@ -20,6 +20,7 @@ import { Chat, StreamingPlan, type Adapter, type FileUpload, type SentMessage, t
 import { csvFilename, renderGrid, worthShowing, type Grid } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
 import type { ArrivalPoster, AskChunk, AskStream, FactChecker, TurnArtifacts, VerdictPoster } from "./aughor.js";
+import { createTurnMap } from "./turnmap.js";
 
 export const BOT_USERNAME = "aughor";
 
@@ -67,6 +68,7 @@ export function buildBot({
   postArrival,
   factCheck,
   postVerdict,
+  turnMapFile,
 }: {
   ask: AskStream;
   /** Absent in tests that only care about the text half. */
@@ -79,6 +81,8 @@ export function buildBot({
   factCheck?: FactChecker;
   /** TJ-4 — a reaction is a verdict; absent in tests that only exercise the ask half. */
   postVerdict?: VerdictPoster;
+  /** AO-7b — where the message→turn map is persisted; absent (tests) keeps it in memory. */
+  turnMapFile?: string;
 }): Chat {
   const bot = new Chat({
     userName: BOT_USERNAME,
@@ -91,17 +95,21 @@ export function buildBot({
 
   // TJ-4 — which message carried which turn. The streamed answer and its exhibits by
   // message id, and the thread's latest answer as the fallback for a reaction on any
-  // other message in the thread. In memory and bounded: a restart forgets, and a
-  // reaction on a forgotten answer records nothing rather than a guess.
-  const byMessage = new Map<string, TurnArtifacts>();
-  const byThread = new Map<string, TurnArtifacts>();
+  // other message in the thread. Bounded, and since AO-7b PERSISTED (`turnmap.ts`): a
+  // restart used to forget every answer, and a ✅ the next morning recorded nothing.
+  // A reaction on an answer the map does not hold still records nothing rather than a guess.
+  const byMessage = createTurnMap<TurnArtifacts>({
+    file: turnMapFile ? turnMapFile.replace(/\.json$/, "") + ".messages.json" : "",
+    log: (l) => console.log(l),
+  });
+  const byThread = createTurnMap<TurnArtifacts>({
+    file: turnMapFile ? turnMapFile.replace(/\.json$/, "") + ".threads.json" : "",
+    log: (l) => console.log(l),
+  });
   const remember = (threadId: string, turn: TurnArtifacts | null, ...ids: (string | undefined)[]) => {
     if (!turn?.investigationId) return;
     for (const id of ids) if (id) byMessage.set(id, turn);
     byThread.set(threadId, turn);
-    for (const m of [byMessage, byThread]) {
-      while (m.size > 500) { const first = m.keys().next().value; if (first === undefined) break; m.delete(first); }
-    }
   };
   const ACCEPT = new Set(["white_check_mark", "heavy_check_mark", "✅", "✔️"]);
   const REJECT = new Set(["x", "negative_squared_cross_mark", "❌", "❎"]);
@@ -115,9 +123,11 @@ export function buildBot({
     if (!turn) return;
     const who = event.user?.userName || event.user?.userId || "someone";
     // Law 8: the message carries no receipt and the reaction needs none — nothing is posted back.
+    // AO-7b: the headline is left to the verdict door, which reads the answer's own from the
+    // turn's record — this process only ever knew the QUESTION, and sent it as the headline.
     await postVerdict({
       investigationId: turn.investigationId, verdict,
-      note: `slack reaction :${raw}: by ${who}`, headline: turn.question,
+      note: `slack reaction :${raw}: by ${who} on "${turn.question.slice(0, 120)}"`,
     });
   });
 

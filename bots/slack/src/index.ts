@@ -67,6 +67,10 @@ async function makeBot(record: BotRecord) {
       AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
       AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
     }),
+    // AO-7b — the message→turn map outlives a restart, so a ✅ tomorrow still lands.
+    // One file per bot, beside .env.local; "" would keep it in memory.
+    turnMapFile: process.env.AUGHOR_TURN_MAP_FILE
+      ?? `.aughor-turns.${record.id || "env"}.json`,
     adapters: {
       slack: createSlackAdapter({
         mode: "socket",

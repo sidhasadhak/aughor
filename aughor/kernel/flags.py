@@ -88,6 +88,10 @@ FLAG_ENV = {
     "ask.query_objects": "AUGHOR_ASK_QUERY_OBJECTS",
     # AO-2b (2026-10-03): the API spawns, watches and restarts the Slack supervisor.
     "slack.managed_supervisor": "AUGHOR_SLACK_MANAGED_SUPERVISOR",
+    # AO-6 (2026-10-03): the agents' testing centre — drafted questions, the nightly run.
+    "agents.testing_centre": "AUGHOR_AGENTS_TESTING_CENTRE",
+    # AO-7 (2026-10-03): one closed learning loop per custom agent.
+    "agents.learning_loop": "AUGHOR_AGENTS_LEARNING_LOOP",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "framing.choice_confidence": "AUGHOR_FRAMING_CHOICE_CONFIDENCE",
     "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
@@ -324,6 +328,14 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "agents.testing_centre": {
+        "label": "A testing centre for custom agents",
+        "description": "On an agent's Quality tab, 'Draft questions' asks the model for up to six golden QUESTIONS drawn from the connection's governed metrics and the agent's purpose — one model call per batch; the model never writes the answer, a person certifies each with SQL before it counts. Every night each enabled agent with certified goldens is re-measured on the production path and the result says which goldens newly fail or pass. Costs one model call per certified golden per agent per night. Off by default → the tab is exactly as today: goldens by hand, evaluation on a click.",
+    },
+    "agents.learning_loop": {
+        "label": "Let each custom agent learn from the verdicts on its own answers",
+        "description": "A reviewer's reject or correct on one of the agent's answers becomes a line in its brief ('corrected before', the last three, bounded); an accepted answer becomes a golden CANDIDATE on its Quality tab for a person to certify with SQL; a configuration change or every fifth verdict re-runs its evaluation, and the page shows what it learned — corrections, goldens certified from use, pass before → after. Nothing a model authored is saved as a fact; no weights move. Off by default → verdicts are recorded exactly as today and the agent's brief is unchanged.",
+    },
     "slack.managed_supervisor": {
         "label": "Run the Slack bot supervisor from the API",
         "description": "The API starts the Slack socket supervisor (bots/slack) itself when it boots, watches it, and restarts it with a backoff when it exits — so a Slack bot listens without anyone opening a terminal. Integrations → Slack shows the process's state and a Restart button, and the bot card reads listening from its heartbeat. Needs Node.js and bots/slack/node_modules (the installer provisions them when this is on). Off by default → nothing is spawned; the supervisor is started by hand with `npm run dev`, exactly as today.",
@@ -451,6 +463,17 @@ EXPERIMENT: dict = {
                        "(§3.48 BR-4): a person given the Day and the Month Briefing for theLook "
                        "beside the standing one cannot name a move only the dated one carries — "
                        "then the recipes ship without prose, or the flag is deleted",
+    # Arc AO-6 (ROADMAP §3.52), 2026-10-03 — one model call per drafted batch, N per nightly run.
+    "agents.testing_centre": "do drafted questions become goldens a person certifies, and does a nightly "
+                             "diff catch a regression a person would otherwise have met in a channel? "
+                             "Falsifier (§3.52): fewer than a third of drafted questions certified "
+                             "after a month of use, or no nightly diff ever named a real regression "
+                             "→ the drafter is removed; the nightly run stays only if it caught one",
+    # Arc AO-7 (ROADMAP §3.52), 2026-10-03 — no new store; the verdict store is the lesson store.
+    "agents.learning_loop": "does a per-agent loop move a held-out golden set's pass rate for that "
+                            "agent? Falsifier (§3.52): two weeks of real use with the loop on and no "
+                            "movement on any agent's suite → the 'corrected before' block is removed, "
+                            "not kept; candidates from use stay only if a person certified one",
     # PENDING item 19 (ROADMAP §3.38) — the ML review's point 5, its first level: the warehouse's
     # measured data in the SQL writer's context. The context it adds is measured model-free
     # (evals/linker_recall_eval.py reports the recall it rides on; the block's size is pinned);

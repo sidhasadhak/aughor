@@ -348,7 +348,11 @@ export function createVerdictPoster(
         method: "POST",
         headers: { "content-type": "application/json", ...authHeaders },
         body: JSON.stringify({
-          connection_id: env.AUGHOR_CONNECTION_ID ?? "",
+          // AO-7b — the same fallback the ask stream uses (it said "workspace", this said
+          // ""), and the rest is left EMPTY on purpose: the verdict door reads the agent,
+          // the headline and the SQL from the turn's own record, which is truer than
+          // anything this process remembers.
+          connection_id: env.AUGHOR_CONNECTION_ID ?? "workspace",
           investigation_id: body.investigationId,
           verdict: body.verdict,
           note: body.note ?? "",

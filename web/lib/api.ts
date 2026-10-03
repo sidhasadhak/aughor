@@ -4348,6 +4348,8 @@ export interface SlackBotSummary {
   slack_app_id?: string;
   /** AO-2f — optional home channel (`C…` or `#name`); "" means none. */
   channel_id?: string;
+  /** AO-6 — posts from automations as this bot are held for a person's click first. */
+  rehearse?: boolean;
   team_id: string;
   bot_user_id: string;
   /** DS-5 — the agent this bot is a door ONTO. On the wire since RC-5 (`to_safe_dict`
@@ -4375,6 +4377,8 @@ export interface SlackBotPatch {
   signing_secret?: string;
   /** AO-2f — the home channel; carried by `patchBodyFor` like the rest. */
   channel_id?: string;
+  /** AO-6 — rehearse; carried by `patchBodyFor` like the rest. */
+  rehearse?: boolean;
 }
 
 /** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
@@ -4972,6 +4976,83 @@ export async function restartManagedSupervisor(): Promise<ManagedSupervisorStatu
     let detail = "";
     try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
     throw new Error(detail || `Could not restart the supervisor (${res.status})`);
+  }
+  return res.json();
+}
+
+/** AO-5 — every door into a custom agent, with its state (the Doors tab's data). */
+export interface AgentDoorsInfo {
+  mcp: { state: string; tool: string; how: string };
+  http: { state: string; key_issued_at: string; url: string; hint: string };
+  embed: { state: string; url: string };
+  webhook: { state: string; url: string };
+  a2a: { state: string; card: string; url: string };
+  teams: { state: string; bots: TeamsBotSummary[] };
+}
+
+export interface TeamsBotSummary {
+  id: string; name: string; enabled: boolean; agent_id: string; connection_id: string;
+  app_id: string; app_password: string; tenant_id: string; created_at: string; updated_at: string;
+}
+
+export async function getAgentDoors(agentId: string): Promise<AgentDoorsInfo> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/doors`);
+  if (!res.ok) throw new Error((await res.text()) || `doors read failed (${res.status})`);
+  return res.json();
+}
+
+/** Mint the agent's HTTP-door key — returned ONCE, with the header and a curl to copy. */
+export async function issueAgentKey(agentId: string): Promise<{
+  key: string; issued_at: string; header: string; curl: string;
+}> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/key`, { method: "POST" });
+  if (!res.ok) throw new Error((await res.text()) || `key issue failed (${res.status})`);
+  return res.json();
+}
+
+export async function revokeAgentKey(agentId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/key`, { method: "DELETE" });
+  if (!res.ok) throw new Error((await res.text()) || `key revoke failed (${res.status})`);
+}
+
+export async function createTeamsBot(body: {
+  name: string; agent_id: string; connection_id?: string; app_id: string; app_password: string; tenant_id?: string;
+}): Promise<{ bot: TeamsBotSummary; messaging_endpoint: string; needs: string[] }> {
+  const res = await fetch(`${getApiBase()}/teams-bots`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Teams bot (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deleteTeamsBot(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/teams-bots/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Could not delete the Teams bot (${res.status})`);
+}
+
+/** AO-5b — the folded answer a headless door returns (also what the embed page renders). */
+export interface DoorAnswer {
+  agent_id: string; question: string; headline: string; sql: string;
+  columns: string[]; rows: unknown[][]; row_count: number | null;
+  receipt_id: string; investigation_id: string; error: string; truncated: boolean;
+}
+
+export async function askThroughDoor(agentId: string, key: string, body: {
+  question: string; asker?: string;
+}): Promise<DoorAnswer> {
+  const res = await fetch(`${getApiBase()}/doors/agents/${encodeURIComponent(agentId)}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `the door said ${res.status}`);
   }
   return res.json();
 }
@@ -7848,6 +7929,14 @@ export interface AgentGolden {
   question: string;
   reference_sql: string;
   created_at: string;
+  /** AO-6/AO-7 — `certified` (a person's SQL; the suite counts it) or `candidate`
+   *  (drafted from the catalogue, or an answer accepted in use; waiting for a person). */
+  status?: "certified" | "candidate";
+  source?: "person" | "use" | "synthetic";
+  from_investigation?: string;
+  /** For a candidate from use, what the answer said; for a drafted one, why it was drafted. */
+  headline?: string;
+  certified_at?: string;
 }
 
 export interface AgentEvalResult {
@@ -7856,6 +7945,58 @@ export interface AgentEvalResult {
   at: string;
   duration_ms?: number;
   per_question: { golden_id: string; question: string; passed: boolean; error: string }[];
+  /** AO-6/AO-7d — what changed since the previous stamp. */
+  diff?: {
+    before: { passed: number; total: number; at: string } | null;
+    newly_failing: string[];
+    newly_passing: string[];
+  };
+}
+
+/** AO-7d — the loop's receipt for one agent. */
+export interface AgentLearning {
+  agent_id: string;
+  loop_on: boolean;
+  centre_on: boolean;
+  verdicts: number;
+  corrections: number;
+  candidates_from_use: number;
+  candidates_synthetic: number;
+  certified_from_use: number;
+  certified_synthetic: number;
+  certified: number;
+  before: { passed: number; total: number; at: string } | null;
+  after: { passed: number; total: number; at: string } | null;
+}
+
+export async function getAgentLearning(agentId: string): Promise<AgentLearning> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/learning`);
+  if (!res.ok) throw new Error((await res.text()) || `learning read failed (${res.status})`);
+  return res.json();
+}
+
+/** AO-6/AO-7c — a person certifies a candidate with the SQL they say is right. */
+export async function certifyAgentGolden(agentId: string, goldenId: string, referenceSql: string): Promise<AgentGolden> {
+  const res = await fetch(
+    `${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens/${encodeURIComponent(goldenId)}/certify`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reference_sql: referenceSql }) });
+  if (!res.ok) throw new Error((await res.text()) || `certify failed (${res.status})`);
+  return res.json();
+}
+
+/** AO-6 — draft golden QUESTIONS from the catalogue and the purpose (one model call). The
+ *  server refuses with 409 while the testing centre's flag is off; the reason is the message. */
+export async function draftAgentGoldens(agentId: string): Promise<{ drafted: AgentGolden[] }> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens/draft`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `draft failed (${res.status})`);
+  }
+  return res.json();
 }
 
 export async function listAgentGoldens(agentId: string): Promise<AgentGolden[]> {

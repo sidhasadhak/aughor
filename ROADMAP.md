@@ -10340,7 +10340,19 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > default with its events, one-way, the README rewritten. AO-2d ✅ — one configuration token creates the app
 > from the rendered manifest; an Install button on HTTPS; the app-level token stays one paste (Slack has no API
 > for it — the falsifier met and said). AO-2f ✅ — a home channel on the record. The AO-2 measure is still owed:
-> no Slack workspace was touched. Next: AO-6, AO-7, AO-5.
+> no Slack workspace was touched. AO-6 ✅ (flag `agents.testing_centre`, off) — questions drafted from the
+> catalogue as candidates a person certifies with SQL, the suite counts certified goldens only and records its
+> diff, a nightly run from the heartbeat, and rehearse on the bot record through the approval door already built;
+> left: a mention answered in a private thread first. AO-7 ✅ a–e (flag `agents.learning_loop`, off) — verdicts
+> carry the agent and are backfilled from the turn, the agent's own corrections lead its brief and its priors,
+> an accepted answer becomes an uncertified candidate, a change or five verdicts re-evaluates and the page says
+> the delta, run evidence comes from the manifest or the reward label, and a crystallised skill is staged to the
+> inbox. AO-5 ✅ — each custom agent an MCP tool with its caller a principal; a per-agent key, an HTTP door and
+> an embed page; a Teams bot (Bot Framework, signature verified, reply through the Connector); a webhook that is a
+> conversation turn; an A2A card and endpoint. Every door carries its own credential and opens nothing else.
+> **The arc is built. Still owed:** the AO-2 measure on a fresh install (no Slack workspace was touched), the
+> three flags' receipts (`slack.managed_supervisor`, `agents.testing_centre`, `agents.learning_loop`), and a
+> mention answered in a private thread first (AO-6's one unbuilt clause).
 
 **The waves.** Each begins by re-measuring its premise. The first three repair defects against stated behaviour.
 

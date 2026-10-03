@@ -190,6 +190,60 @@ class AughorClient:
         """
         return await self._post(f"/automations/{automation_id}/run")
 
+    # ── AO-5a: custom agents as tools ───────────────────────────────────────────
+    async def list_user_agents(self) -> list[dict]:
+        """The deployment's custom agents (the roster the registrar reads at start)."""
+        payload = await self._get("/agents/custom")
+        return list(payload or []) if isinstance(payload, list) else []
+
+    async def ask_as_agent(self, agent_id: str, question: str, connection: str = "", *,
+                           asker: str = "") -> dict:
+        """One question through `/ask` AS a custom agent, folded to one answer — the same
+        fold the HTTP door makes server-side (`custom_agents/reach.fold_ask`): headline,
+        the SQL that ran, rows (capped), receipt and investigation id. This process is the
+        principal (`api:mcp:<asker>`), attributed by the ask door when no session is in scope."""
+        body = {
+            "question": question, "connection_id": connection or "workspace",
+            "agent_id": agent_id, "depth": "quick", "allow_clarify": False,
+            "principal_ref": f"api:mcp:{(asker or 'anonymous')[:64]}", "history": [],
+            "session_id": "",
+        }
+        acc: dict[str, Any] = {"agent_id": agent_id, "question": question, "headline": "",
+                               "sql": "", "columns": [], "rows": [], "row_count": None,
+                               "receipt_id": "", "investigation_id": "", "error": "",
+                               "truncated": False}
+        deltas: list[str] = []
+        async for ev in self._stream_sse("POST", "/ask", body, timeout=self.deep_timeout):
+            t = ev.get("type")
+            if t == "headline":
+                acc["headline"] = str(ev.get("headline") or "")
+            elif t == "headline_delta":
+                deltas.append(str(ev.get("headline") or ev.get("delta") or ""))
+            elif t == "sql":
+                acc["sql"] = str(ev.get("sql") or "")
+            elif t == "columns" and not acc["columns"]:
+                acc["columns"] = list(ev.get("columns") or [])
+            elif t == "rows":
+                rows = list(ev.get("rows") or [])
+                room = 200 - len(acc["rows"])
+                if room > 0:
+                    acc["rows"].extend(rows[:room])
+                if len(rows) > room:
+                    acc["truncated"] = True
+                if ev.get("row_count") is not None:
+                    acc["row_count"] = ev.get("row_count")
+            elif t == "receipt_id":
+                acc["receipt_id"] = str(ev.get("receipt_id") or ev.get("id") or "")
+            elif t == "error":
+                acc["error"] = str(ev.get("message") or ev.get("error") or "error")
+            if ev.get("investigation_id") and not acc["investigation_id"]:
+                acc["investigation_id"] = str(ev["investigation_id"])
+        if not acc["headline"] and deltas:
+            acc["headline"] = max(deltas, key=len)
+        if acc["row_count"] is None and acc["rows"]:
+            acc["row_count"] = len(acc["rows"])
+        return acc
+
     async def ask(
         self,
         question: str,

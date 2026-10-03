@@ -15,7 +15,7 @@
  */
 import type { SlackBotPatch, SlackBotSummary, UserAgent } from "@/lib/api";
 
-export type SlackBotChanges = Partial<Pick<SlackBotPatch, "name" | "enabled" | "agent_id" | "connection_id" | "channel_id">>;
+export type SlackBotChanges = Partial<Pick<SlackBotPatch, "name" | "enabled" | "agent_id" | "connection_id" | "channel_id" | "rehearse">>;
 
 export function patchBodyFor(bot: SlackBotSummary, changes: SlackBotChanges): SlackBotPatch {
   return {
@@ -28,6 +28,8 @@ export function patchBodyFor(bot: SlackBotSummary, changes: SlackBotChanges): Sl
     agent_view: bot.agent_view ?? false,
     // AO-2f — the home channel is a plain field like the rest: a whole-record write.
     channel_id: bot.channel_id ?? "",
+    // AO-6 — likewise rehearse: an edit that omitted it would switch it off.
+    rehearse: bot.rehearse ?? false,
     ...changes,
   };
 }

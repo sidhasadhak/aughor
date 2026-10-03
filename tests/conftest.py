@@ -191,6 +191,9 @@ for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR
                  # dir-keyed store needs the directory family too, a lesson paid twice.
                  "AUGHOR_DATASETS_DIR",
                  "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR",
+                 # AO-5 — a custom agent's HTTP-door keys (`custom_agents/keys.py`) and the
+                 # Teams bot records (`teamsbots/store.py`), added in the SAME COMMIT.
+                 "AUGHOR_AGENTS_DIR", "AUGHOR_TEAMSBOTS_DIR",
                  # VA-11 — integration apps/grants/pending live under this dir; added in
                  # the SAME COMMIT as aughor/integrations/store.py (the rule a live-data
                  # write bought).

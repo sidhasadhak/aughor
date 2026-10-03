@@ -36,16 +36,16 @@ import { Button } from "@/components/ui/button";
 import { askSpotlight } from "@/lib/commandRegistry";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
-  createAgentGolden, createUserAgent,
+  certifyAgentGolden, createAgentGolden, createUserAgent,
   createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent, describeAgentDeleteReceipt,
-  evaluateUserAgent, getAgentGuardrails, getAgentObservability, getAgents,
+  draftAgentGoldens, evaluateUserAgent, getAgentGuardrails, getAgentLearning, getAgentObservability, getAgents,
   getConnections, getJobs,
   getActionRoster,
   getLlmConfig, getPacks, listAgentAlertRules, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
   restoreAgentRevision, setAgentGuardrails,
   type AgentAlertRule, type AgentDeleteReceipt,
-  type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentKnob, type AgentObservability,
+  type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentKnob, type AgentLearning, type AgentObservability,
   type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
   type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
 } from "@/lib/api";
@@ -852,34 +852,129 @@ export function CustomAgentOverview({ agent, onOpenTrace, range }: {
 function AgentBenchmark({ agent, onChanged, onError }: {
   agent: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
 }) {
-  const [goldens, setGoldens] = useState<AgentGolden[]>([]);
+  const [all, setAll] = useState<AgentGolden[]>([]);
   const [goldenDraft, setGoldenDraft] = useState({ question: "", reference_sql: "" });
   const [evaluating, setEvaluating] = useState(false);
   const [evalResult, setEvalResult] = useState<AgentEvalResult | null>(null);
+  // AO-6/AO-7 — candidates wait above the suite for a person's SQL; the learning receipt
+  // says what the loop did; "Draft questions" is refused with its reason while off.
+  const [certifying, setCertifying] = useState<{ id: string; sql: string } | null>(null);
+  const [drafting, setDrafting] = useState(false);
+  const [learning, setLearning] = useState<AgentLearning | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    listAgentGoldens(agent.id).then(setGoldens).catch(() => {});
-  }, [agent.id]);
+    listAgentGoldens(agent.id).then(setAll).catch(() => {});
+    getAgentLearning(agent.id).then(setLearning).catch(() => setLearning(null));
+  }, [agent.id, tick]);
+  // Every golden written before AO-6 is certified: the field is absent on an older API.
+  const goldens = all.filter(g => (g.status ?? "certified") === "certified");
+  const candidates = all.filter(g => g.status === "candidate");
 
   const addGolden = async () => {
     if (!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()) return;
     try {
       const g = await createAgentGolden(agent.id, goldenDraft);
-      setGoldens(gs => [...gs, g]);
+      setAll(gs => [...gs, g]);
       setGoldenDraft({ question: "", reference_sql: "" });
     } catch (e) { onError(e instanceof Error ? e.message : "Add golden failed."); }
+  };
+
+  const certify = async () => {
+    if (!certifying || !certifying.sql.trim()) return;
+    try {
+      await certifyAgentGolden(agent.id, certifying.id, certifying.sql);
+      setCertifying(null);
+      setTick(t => t + 1);
+    } catch (e) { onError(e instanceof Error ? e.message : "Certify failed."); }
+  };
+
+  const draft = async () => {
+    setDrafting(true);
+    onError(null);
+    try { await draftAgentGoldens(agent.id); setTick(t => t + 1); }
+    catch (e) { onError(e instanceof Error ? e.message : "Draft failed."); }
+    finally { setDrafting(false); }
   };
 
   const runEvaluation = async () => {
     setEvaluating(true);
     onError(null);
-    try { setEvalResult(await evaluateUserAgent(agent.id)); onChanged(); }
+    try { setEvalResult(await evaluateUserAgent(agent.id)); onChanged(); setTick(t => t + 1); }
     catch (e) { onError(e instanceof Error ? e.message : "Evaluation failed."); }
     finally { setEvaluating(false); }
   };
 
+  const questionOf = (id: string) => all.find(g => g.id === id)?.question ?? id;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {learning && (
+        <div className="aug-fs-sm" style={{ color: "var(--t2)", padding: "8px 11px",
+          background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+          {learning.loop_on ? (
+            <>
+              Learned <strong>{formatCount(learning.corrections)}</strong> correction{learning.corrections === 1 ? "" : "s"}
+              {" · "}<strong>{formatCount(learning.certified_from_use)}</strong> golden{learning.certified_from_use === 1 ? "" : "s"} certified from use
+              {learning.before && learning.after ? (
+                <>{" · "}pass {learning.before.passed}/{learning.before.total} → <strong>{learning.after.passed}/{learning.after.total}</strong></>
+              ) : learning.after ? (
+                <>{" · "}pass <strong>{learning.after.passed}/{learning.after.total}</strong> (no earlier stamp)</>
+              ) : " · not yet evaluated"}
+            </>
+          ) : (
+            <>The learning loop is off (flag <code>agents.learning_loop</code>): verdicts on this
+            agent&apos;s answers are recorded but teach it nothing as itself — {formatCount(learning.verdicts)} so far.</>
+          )}
+        </div>
+      )}
+
+      {candidates.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",
+          border: "1px dashed var(--b1)", borderRadius: "var(--r2)" }}>
+          <span className="aug-label">Candidates — waiting for a person&apos;s SQL</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            A candidate counts for nothing until you certify it with the SQL you say is right.
+            An answer you accepted in use brings the SQL that answered as a starting point; a
+            drafted question brings none.
+          </span>
+          {candidates.map(c => (
+            <div key={c.id} className="aug-fs-sm" style={{ display: "flex", flexDirection: "column", gap: 4,
+              color: "var(--t2)", paddingTop: 6, borderTop: "1px solid var(--b1)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <StatusChip hue={c.source === "use" ? "accent" : "muted"} strength="soft">
+                  {c.source === "use" ? "from use" : "drafted"}
+                </StatusChip>
+                <span style={{ flex: 1 }}>{c.question}</span>
+                <Button variant="secondary" size="xs"
+                  onClick={() => setCertifying({ id: c.id, sql: c.reference_sql || "" })}>Certify</Button>
+                <Button variant="ghost" size="xs" onClick={async () => {
+                  await deleteAgentGolden(agent.id, c.id);
+                  setAll(gs => gs.filter(x => x.id !== c.id));
+                }}>Dismiss</Button>
+              </div>
+              {c.headline && (
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                  {c.source === "use" ? `the answer said: ${c.headline}` : c.headline}
+                </span>
+              )}
+              {certifying?.id === c.id && (
+                <>
+                  <textarea className="aug-input" rows={3} value={certifying.sql}
+                    placeholder="The reference SQL you certify (read-only)"
+                    onChange={e => setCertifying({ id: c.id, sql: e.target.value })} />
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <Button size="xs" variant="default" onClick={certify}
+                      disabled={!certifying.sql.trim()}>Certify with this SQL</Button>
+                    <Button size="xs" variant="ghost" onClick={() => setCertifying(null)}>Cancel</Button>
+                  </span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {goldens.length === 0 && (
         <p className="aug-fs-sm" style={{
           color: "var(--t2)", margin: 0, padding: "8px 11px", background: "var(--bg-1)",
@@ -897,7 +992,13 @@ function AgentBenchmark({ agent, onChanged, onError }: {
           <span style={{ fontSize: 11, color: "var(--t3)" }}>
             re-run after editing instructions or documents
           </span>
-          <span style={{ marginLeft: "auto" }}>
+          <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }}>
+            <Button size="xs" variant="ghost" onClick={draft} disabled={drafting}
+              title={learning && !learning.centre_on
+                ? "Refused while the testing centre is off (flag agents.testing_centre) — the server says so"
+                : "One model call: up to six questions from the governed metrics and this agent's purpose, as candidates"}>
+              {drafting ? "Drafting…" : "Draft questions"}
+            </Button>
             <Button size="xs" variant="outline" onClick={runEvaluation}
               disabled={evaluating || goldens.length === 0}>
               {evaluating ? "Evaluating…" : "Run evaluation"}
@@ -908,11 +1009,26 @@ function AgentBenchmark({ agent, onChanged, onError }: {
           <div style={{ fontSize: 12, color: evalResult.passed === evalResult.total
             ? "var(--grn5)" : "var(--amb5)" }}>
             {evalResult.passed}/{evalResult.total} passing
+            {evalResult.diff?.before && (
+              <span style={{ color: "var(--t3)" }}>
+                {" "}(was {evalResult.diff.before.passed}/{evalResult.diff.before.total})
+              </span>
+            )}
             {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
               <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 12 }}>
                 ✗ {p.question} — {p.error}
               </div>
             ))}
+            {(evalResult.diff?.newly_failing?.length ?? 0) > 0 && (
+              <div className="aug-fs-sm" style={{ color: "var(--red4)" }}>
+                newly failing: {evalResult.diff!.newly_failing.map(questionOf).join(" · ")}
+              </div>
+            )}
+            {(evalResult.diff?.newly_passing?.length ?? 0) > 0 && (
+              <div className="aug-fs-sm" style={{ color: "var(--grn5)" }}>
+                newly passing: {evalResult.diff!.newly_passing.map(questionOf).join(" · ")}
+              </div>
+            )}
           </div>
         )}
         {goldens.map(g => (
@@ -920,9 +1036,12 @@ function AgentBenchmark({ agent, onChanged, onError }: {
             fontSize: 12, color: "var(--t2)" }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
               whiteSpace: "nowrap" }} title={g.reference_sql}>{g.question}</span>
+            {g.source && g.source !== "person" && (
+              <StatusChip hue="muted" strength="soft">{g.source === "use" ? "from use" : "drafted"}</StatusChip>
+            )}
             <Button variant="ghost" size="xs" onClick={async () => {
               await deleteAgentGolden(agent.id, g.id);
-              setGoldens(gs => gs.filter(x => x.id !== g.id));
+              setAll(gs => gs.filter(x => x.id !== g.id));
             }}>Remove</Button>
           </div>
         ))}

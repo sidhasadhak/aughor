@@ -228,7 +228,10 @@ def evaluate_agent(agent: UserAgent, db=None,
 
     ``db``/``generate`` are injectable for tests; by default the agent's bound
     connection (or the builtin) is opened and the coder model generates."""
-    goldens = list_goldens(agent.id)[:MAX_GOLDENS_PER_EVAL]
+    # AO-6: CERTIFIED goldens only — a candidate has no SQL a person vouched for, and a
+    # suite that counted one would be measuring the model against the model.
+    goldens = list_goldens(agent.id, status="certified")[:MAX_GOLDENS_PER_EVAL]
+    before = dict(agent.last_eval) if isinstance(agent.last_eval, dict) else None
     started = time.monotonic()
     result: dict = {"passed": 0, "total": len(goldens), "per_question": [],
                     "at": datetime.now(timezone.utc).isoformat()}
@@ -295,6 +298,10 @@ def evaluate_agent(agent: UserAgent, db=None,
         release_agent(token)
 
     result["duration_ms"] = round((time.monotonic() - started) * 1000, 1)
+    # AO-6/AO-7d — what changed since the last stamp rides on the result: the goldens that
+    # newly fail or newly pass, and the pass count before. That delta is the receipt.
+    from aughor.custom_agents.learning import eval_diff
+    result["diff"] = eval_diff(before, result)
     record_eval(agent.id, result)
     # MLflow — the evaluation as a TOOL span when a trace is active (advisory).
     try:

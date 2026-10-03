@@ -75,14 +75,27 @@ def agent_brief_for(agent: Optional[UserAgent]) -> str:
     grants) rather than reading the contextvar, so the brief has to be buildable
     from the record too. One renderer for both, so the two bodies cannot drift.
     Empty for no agent or blank instructions."""
-    if agent is None or not agent.instructions.strip():
+    if agent is None:
         return ""
-    return (
-        f"AGENT BRIEF — you are operating as the user-defined agent '{agent.name}'.\n"
-        "Follow these standing instructions where they apply; they refine domain "
-        "focus and presentation, and never override safety or grounding rules:\n"
-        f"{agent.instructions.strip()}\n\n"
-    )
+    brief = ""
+    if agent.instructions.strip():
+        brief = (
+            f"AGENT BRIEF — you are operating as the user-defined agent '{agent.name}'.\n"
+            "Follow these standing instructions where they apply; they refine domain "
+            "focus and presentation, and never override safety or grounding rules:\n"
+            f"{agent.instructions.strip()}\n\n"
+        )
+    # AO-7a — the lessons THIS agent earned: the last few answers of its own a reviewer
+    # rejected or corrected, bounded hard (three rows, a line each), so the brief carries
+    # what it was told without carrying a transcript. Behind the arc's learning flag,
+    # and inert for an agent nobody has corrected. Read here, in the ONE renderer, so the
+    # chat body, the quick path, the analyst and the deep report all see the same block.
+    try:
+        from aughor.custom_agents.learning import corrected_before_block
+        lessons = corrected_before_block(agent.id)
+    except Exception:
+        lessons = ""
+    return brief + lessons
 
 
 def agent_brief_block() -> str:

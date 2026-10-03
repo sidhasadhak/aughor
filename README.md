@@ -217,6 +217,7 @@ aughor/
 | `AUGHOR_DEFAULT_POSTGRES_DSN` | — | Pre-loads a Postgres connection on startup |
 | `AUGHOR_QDRANT_PATH` | `data/qdrant` | Embedded vector store for semantic search (`semantic` extra) — in-process, no server |
 | `AUGHOR_QDRANT_URL` | — | Set to pin a Qdrant *server* instead of the embedded store (e.g. `http://localhost:6333`) |
+| `AUGHOR_PUBLIC_API_URL` | — | This API's public HTTPS origin, when it has one. It turns a Slack install into a button (the OAuth callback), gives a Teams bot its messaging endpoint, and puts absolute URLs on an agent's doors and A2A card. Unset, those say what is missing instead of guessing. |
 | `AUGHOR_MODEL_PRICES` | — | Rates for a provider whose API publishes none, so spend tiles say a number instead of **unpriced**: `provider:model=input/output@date`, USD per 1M tokens, `;`-separated. Google publishes no price endpoint; for the default install's model the list price carried by the aggregators on 2026-09-15 was `gemini:gemini-3.1-flash-lite=0.25/1.50@2026-09-15` — re-check it, the date is part of the claim. A declared rate outranks the catalogue; the product itself ships no model id. |
 
 **Before exposing Aughor beyond `localhost`,** read [SECURITY.md](SECURITY.md) — the defaults assume a trusted single-user machine (`AUGHOR_API_KEY` gates requests when set; `AUGHOR_CORS_ORIGINS` scopes browsers; `AUGHOR_SECRET_KEY` encrypts stored credentials).

@@ -31,6 +31,8 @@ class SlackBotBody(BaseModel):
     agent_view: bool = False
     #: AO-2f — optional home channel; see `SlackBot.channel_id`.
     channel_id: str = ""
+    #: AO-6 — hold automation posts as this bot for a person's click; see `SlackBot.rehearse`.
+    rehearse: bool = False
 
 
 @router.get("/slack-bots")
