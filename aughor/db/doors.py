@@ -112,8 +112,10 @@ def mark_lost(conn: Any) -> None:
     returning it to its idle bucket, and never hands one out."""
     try:
         conn._engine_lost = True
-    except Exception:  # noqa: BLE001 — a connection object that cannot carry the mark is not pooled either
-        pass
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a connection object that cannot carry the lost mark is not pooled either",
+                 counter="doors.mark_lost_failed")
 
 
 def connection_lost(conn: Any) -> bool:

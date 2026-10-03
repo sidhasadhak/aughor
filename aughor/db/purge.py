@@ -10,8 +10,8 @@ stale intelligence — a correctness *and* privacy hazard.
 
 Design:
   • **Platform owns the orchestration, the Agent owns its stores.** The platform
-    purges what it owns inline (uploads, matcache, type-overrides, the data/ file
-    artifacts, the metastore row, canvases) and delegates every AGENT-owned store to
+    purges what it owns inline (uploads, matcache, type-overrides, declared metadata,
+    the data/ file artifacts, the metastore row, canvases) and delegates every AGENT-owned store to
     **registered purge hooks** (``aughor.kernel.registries.purge_hooks``), so this
     module never imports the agent. The hooks are registered at startup by
     ``aughor.agent.bootstrap.register_agent_plugins``.
@@ -111,6 +111,13 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
         counts["type_overrides"] = 1 if type_overrides.purge_connection(conn_id) else 0
     except Exception as e:
         tolerate(e, "purge: type_overrides", counter="conn.purge.type_overrides")
+
+    # ── Declared metadata (platform) — the engine's keys and comments, as last read ──
+    try:
+        from aughor.db import metadata
+        counts["declared_metadata"] = 1 if metadata.invalidate(conn_id) else 0
+    except Exception as e:
+        tolerate(e, "purge: declared metadata", counter="conn.purge.declared_metadata")
 
     # ── Canvases (+ their saved artifacts) scoped to this connection (platform) ──
     try:

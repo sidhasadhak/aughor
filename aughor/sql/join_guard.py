@@ -421,6 +421,12 @@ def _probe_overlap_derived(conn: "DatabaseConnection", tree, a: _Side, b: _Side,
 _HLL_MIN_ROWS = max(1, int(os.getenv("AUGHOR_JOIN_HLL_MIN_ROWS", "1000000")))
 
 
+def overlap_threshold() -> float:
+    """The value-overlap fraction below which a join is not borne out by its values. Public so
+    a caller that words a join's evidence (DE-5f's related rows) draws the same line the guard does."""
+    return _THRESHOLD
+
+
 def hll_min_rows() -> int:
     """The per-table row-count threshold above which join overlap is HLL-estimated rather
     than exactly probed (env ``AUGHOR_JOIN_HLL_MIN_ROWS``). Public so the explorer's phase-4

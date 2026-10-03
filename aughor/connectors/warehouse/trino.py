@@ -129,8 +129,10 @@ class TrinoConnection(Connector):
             try:
                 if cur is not None:
                     cur.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(close_exc, "trino: best-effort cursor close; the result is already read",
+                         counter="trino.cursor_close_failed", conn_id=self._connection_id)
         elapsed_ms = (time.monotonic() - _t0) * 1000
         return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
 
@@ -148,7 +150,7 @@ class TrinoConnection(Connector):
         try:
             cur = self._conn.cursor()
             cur.execute(
-                "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                "SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                 "WHERE table_schema = ? ORDER BY table_name, ordinal_position",
                 [self._schema_name or "default"],
             )
@@ -174,5 +176,7 @@ class TrinoConnection(Connector):
     def close(self) -> None:
         try:
             self._conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "trino: best-effort connection close", counter="trino.close_failed",
+                     conn_id=self._connection_id)

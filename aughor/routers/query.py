@@ -175,7 +175,10 @@ def _output_sources(rows) -> dict[str, dict]:
             continue
         try:
             d = _json.loads(detail or "{}")
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a lineage row whose detail does not parse names no output source",
+                     counter="query.output_sources.detail_unparsed")
             continue
         if "output" not in (d.get("roles") or []):
             continue
@@ -704,8 +707,9 @@ async def _watched_as_the_run(db, work, body: _QueryCountRequest, request: Reque
 def _close_quietly(db) -> None:
     try:
         db.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "query: best-effort connection close", counter="query.close_failed")
 
 
 def _count_response(body: _QueryCountRequest, total: Optional[int], as_of: str, duration_ms: float,
@@ -863,6 +867,7 @@ def _related_joins_for(db, conn_id: str, table: str, column: str, schema: Option
     from aughor.ontology.store import load_latest_ontology
     from aughor.routers._shared import get_schema_cached
     from aughor.sql.related import related_joins
+    from aughor.tools.schema import join_map_for
     schema_text = get_schema_cached(conn_id, db)
     try:
         ontology = load_latest_ontology(conn_id, schema or None)
@@ -870,7 +875,8 @@ def _related_joins_for(db, conn_id: str, table: str, column: str, schema: Option
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the ontology is best-effort here; the join map stands", counter="query.related.ontology")
         ontology = None
-    return related_joins(db, conn_id, table, column, schema_text=schema_text, ontology=ontology)
+    return related_joins(db, conn_id, table, column, schema_text=schema_text, join_map=join_map_for,
+                         ontology=ontology)
 
 
 class _RelatedRowsRequest(BaseModel):

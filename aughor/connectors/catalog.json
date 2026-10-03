@@ -1043,7 +1043,7 @@
         "foreign_keys": "unsupported",
         "comments": "unknown"
       },
-      "metadata_detail": "Trino declares no primary or foreign keys; information_schema.columns.comment is not read yet"
+      "metadata_detail": "Trino declares no primary or foreign keys; INFORMATION_SCHEMA.COLUMNS.COMMENT is not read yet"
     }
   ]
 }

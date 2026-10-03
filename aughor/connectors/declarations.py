@@ -357,7 +357,7 @@ ENGINES: tuple[EngineDeclaration, ...] = (
         brand_color="#DD00A1", engine_family="standard",
         connection_errors=("TrinoConnectionError",),
         metadata_facts=_facts("supported", "unsupported", "unsupported", "unknown"),
-        metadata_detail="Trino declares no primary or foreign keys; information_schema.columns.comment is not read yet",
+        metadata_detail="Trino declares no primary or foreign keys; INFORMATION_SCHEMA.COLUMNS.COMMENT is not read yet",
     ),
     EngineDeclaration(
         type="gsheets", label="Google Sheets", category="api", blurb="Read worksheets as tables", badge="New",

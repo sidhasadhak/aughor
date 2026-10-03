@@ -15,7 +15,7 @@ not bear out opens into missing rows).
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 #: The verdicts, and which of them open rows.
 OPENABLE = frozenset({"verified", "declared"})
@@ -48,11 +48,6 @@ class RelatedJoin:
 
 def _base(table: str) -> str:
     return (table or "").split(".")[-1].strip('"`[]').lower()
-
-
-def _threshold() -> float:
-    from aughor.sql.join_guard import _THRESHOLD
-    return float(_THRESHOLD)
 
 
 def verdict_for(match: str, overlap: Optional[float], *, rejected: bool) -> str:
@@ -91,16 +86,20 @@ def _edge(table: str, column: str, other_table: str, other_column: str, match: s
 
 
 def related_joins(db, conn_id: str, table: str, column: str, *, schema_text: str,
-                  ontology: Any = None) -> tuple[list[RelatedJoin], dict]:
+                  join_map: Callable[..., Optional[dict]], ontology: Any = None) -> tuple[list[RelatedJoin], dict]:
     """Every join edge touching ``table.column``, in either direction, with its evidence — the ontology's
     relationships first (they carry overlap and cardinality), then the verified join map for the pairs the
     ontology does not hold (a table that resolved to no object type). Returns the edges and the notes a
-    caller says beside them (`ontology`: built or not; `join_map`: why it could not be read, when it could not)."""
+    caller says beside them (`ontology`: built or not; `join_map`: why it could not be read, when it could not).
+
+    ``join_map`` is the join inference, handed in by the caller as ``join_map(db, table_cols, cache_key=…)``:
+    it is the agent's schema tool, and this module is platform, which does not import the agent."""
     notes: dict = {"ontology": "built" if ontology is not None else "not built"}
     out: list[RelatedJoin] = []
     seen: set[tuple[str, str]] = set()
     tkey, ckey = _base(table), (column or "").lower()
-    threshold = _threshold()
+    from aughor.sql.join_guard import overlap_threshold
+    threshold = overlap_threshold()
 
     def _take(ft: str, fc: str, tt: str, tc: str) -> bool:
         if _base(ft) != tkey or (fc or "").lower() != ckey:
@@ -127,9 +126,8 @@ def related_joins(db, conn_id: str, table: str, column: str, *, schema_text: str
     try:
         from aughor.db.schema_render import parse_schema_tables
         from aughor.sql.join_guard import verified_join_edges
-        from aughor.tools.schema import join_map_for
         table_cols = parse_schema_tables(schema_text or "")
-        joins = (join_map_for(db, table_cols, cache_key=conn_id) or {}).get("joins") or []
+        joins = (join_map(db, table_cols, cache_key=conn_id) or {}).get("joins") or []
         verified, rejected_edges = verified_join_edges(db, joins, cache_key=conn_id)
     except Exception as exc:
         notes["join_map"] = f"not read: {exc}"

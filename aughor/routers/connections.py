@@ -393,8 +393,10 @@ async def connection_declared_metadata(conn_id: str):
         finally:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(close_exc, "connections/declared-metadata: best-effort connection close",
+                         counter="connections.declared_metadata.close_failed", conn_id=conn_id)
     return await loop.run_in_executor(None, _work)
 
 

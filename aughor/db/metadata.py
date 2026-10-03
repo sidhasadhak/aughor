@@ -248,8 +248,11 @@ def read_declared_metadata(conn, *, cache_key: Optional[str] = None, ttl: float 
 _CACHE: dict[str, tuple[float, MetadataRead]] = {}
 
 
-def invalidate(cache_key: str) -> None:
-    _CACHE.pop(cache_key, None)
+def invalidate(cache_key: str) -> bool:
+    """Forget what was read for ``cache_key`` (a connection id). True when there was something to
+    forget — the delete cascade (`db/purge.py`) counts it, so a deleted connection's declared keys
+    and comments are not handed to a connection that later takes its id."""
+    return _CACHE.pop(cache_key, None) is not None
 
 
 def declared_join_candidates(read: MetadataRead, table_cols: dict[str, list[str]]) -> list[dict]:

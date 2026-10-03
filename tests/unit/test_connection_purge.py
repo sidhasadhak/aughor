@@ -112,6 +112,12 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     (isolated / f"benchmarks_{conn}.json").write_text("[]")
     (isolated / f"sync_state_{conn}.json").write_text("{}")
     type_overrides.set_override(conn, "t", "c", "DOUBLE")
+    import time
+
+    from aughor.db import metadata                                  # DE-3c: read once, kept per connection
+    read = metadata.MetadataRead(engine="duckdb", strategy="catalog", facts={}, detail={})
+    metadata._CACHE[conn] = (time.monotonic(), read)
+    metadata._CACHE["other_conn"] = (time.monotonic(), read)
     inv9 = history.create_investigation("q", conn)
     evidence_store.append_claim(EvidenceClaim(
         investigation_id=inv9, claim_text="x", confidence=0.5))
@@ -147,6 +153,7 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     assert leftovers == [], f"orphaned artifacts: {leftovers}"
     assert not root.exists()
     assert type_overrides.get_override(conn, "t", "c") is None
+    assert conn not in metadata._CACHE and metadata._CACHE.pop("other_conn", None) is not None
     assert history.list_investigation_ids(conn, limit=1000) == []
 
     # ── the cascade is OBSERVABLE (it actually ran) ──────────────────────────────
@@ -162,6 +169,7 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     assert counts["benchmarks"] == 1
     assert counts["sync_state"] == 1
     assert counts["type_overrides"] == 1
+    assert counts["declared_metadata"] == 1
     assert counts["investigations"] == 1
     assert counts["evidence_claims"] == 1
     assert counts["ambiguity_resolutions"] == 1
