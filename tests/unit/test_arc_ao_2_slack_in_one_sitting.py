@@ -172,13 +172,20 @@ def test_a_new_manifest_is_in_agent_mode_with_its_events():
     from aughor.slackbots.manifest import AGENT_EVENTS, BOT_EVENTS, render_manifest
     m = render_manifest(name="x")
     assert "agent_view" in m["features"]
+    # The first live `apps.manifest.create` (2026-10-03) was refused: "invalid_manifest:
+    # Remove assistant_view feature". Slack's reference: new apps can only use agent_view,
+    # and agent_view requires agent_description (max 300) — an empty object is refused too.
+    assert "assistant_view" not in m["features"]
+    assert m["features"]["agent_view"] == {"agent_description": "Ask about your data."}
+    long = render_manifest(name="x", description="d" * 400)
+    assert len(long["features"]["agent_view"]["agent_description"]) == 300
     assert "assistant:write" in m["oauth_config"]["scopes"]["bot"]
     events = m["settings"]["event_subscriptions"]["bot_events"]
     assert events == list(BOT_EVENTS) + list(AGENT_EVENTS), \
         "the README told a person to add these by hand; the manifest must carry them"
     assert "redirect_urls" not in m["oauth_config"], "no public origin, no redirect"
     legacy = render_manifest(name="x", agent_view=False)
-    assert "agent_view" not in legacy["features"]
+    assert "agent_view" not in legacy["features"] and "assistant_view" not in legacy["features"]
     assert legacy["settings"]["event_subscriptions"]["bot_events"] == list(BOT_EVENTS)
 
 

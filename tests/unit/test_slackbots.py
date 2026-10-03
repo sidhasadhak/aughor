@@ -145,6 +145,9 @@ def test_agent_view_is_opt_in_and_brings_its_scope():
 
     on = render_manifest(name="b", agent_view=True)
     assert "agent_view" in on["features"]
+    # Slack refuses the pair on a new app, and refuses agent_view without its description.
+    assert "assistant_view" not in on["features"]
+    assert on["features"]["agent_view"]["agent_description"]
     assert "assistant:write" in on["oauth_config"]["scopes"]["bot"]
 
 

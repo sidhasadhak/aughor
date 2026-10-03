@@ -13,7 +13,8 @@ Two values are load-bearing:
 * **`agent_view`** — only when the record says so. The adapter's `agentView` requires an
   app in this mode, and turning it on against an `assistant_view` app makes `stopStream`
   send a parameter that app cannot accept, which costs the final message of every answer.
-  Manifest and record are written in one act so the two cannot disagree.
+  Manifest and record are written in one act so the two cannot disagree. The manifest
+  carries `agent_view` and never `assistant_view`: Slack refuses the pair on a new app.
 """
 from __future__ import annotations
 
@@ -88,12 +89,18 @@ def render_manifest(*, name: str, description: str = "", agent_view: bool = True
     if redirect_url:
         manifest["oauth_config"]["redirect_urls"] = [redirect_url]
     if agent_view:
-        # Slack's Agent/Assistant surface: the native stop button and the session
-        # lifecycle RC-2's progress cards ride on.
-        manifest["features"]["assistant_view"] = {
-            "assistant_description": (description or "Ask about your data.")[:140],
+        # Slack's Agent surface: the native stop button and the session lifecycle RC-2's
+        # progress cards ride on. `agent_view` ALONE, with its required description.
+        #
+        # Until 2026-10-03 this rendered `assistant_view` AND an empty `agent_view` — a pair
+        # nobody had sent to `apps.manifest.create`. The first live create was refused:
+        # "invalid_manifest: Remove assistant_view feature". Slack's manifest reference:
+        # "New apps can only use agent_view", and `agent_view.agent_description` is
+        # required when the subgroup is present (max 300 characters) — the empty object
+        # would have been the next refusal.
+        manifest["features"]["agent_view"] = {
+            "agent_description": (description or "Ask about your data.")[:300],
         }
-        manifest["features"]["agent_view"] = {}
         manifest["oauth_config"]["scopes"]["bot"].append("assistant:write")
         manifest["settings"]["event_subscriptions"]["bot_events"] += list(AGENT_EVENTS)
     return manifest
