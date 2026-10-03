@@ -44,9 +44,17 @@ def test_describe_entity_returns_the_object_type_not_the_table_node(graph):
     assert KT.describe_entity("samples", "ecommerce.orders")["object_type"]["object_type"] == "order"
 
 
-def test_the_same_call_over_mcp_returns_the_identical_body(graph):
-    from aughor.mcp import server
+def test_the_same_call_over_mcp_returns_the_identical_body(graph, monkeypatch):
+    import httpx
 
+    from aughor.api import app
+    from aughor.mcp import server
+    from aughor.mcp.client import AughorClient
+
+    # DE-2c: the MCP tool reaches the one body THROUGH the API (`GET /knowledge/{c}/entity/{e}`),
+    # under the request's organisation and RBAC; here the API is the app itself, in-process.
+    monkeypatch.setattr(server, "_client", AughorClient(base_url="http://t", api_key="",
+                                                        transport=httpx.ASGITransport(app=app)))
     conversation = pt.describe_entity("samples", {"entity": "order_item"})
     mcp = asyncio.run(server.describe_entity(connection="samples", entity="order_item"))
     assert conversation == mcp and conversation["kind"] == "object_type"

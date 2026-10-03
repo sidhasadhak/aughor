@@ -49,6 +49,10 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("POST", "/access/grants"): P.ADMIN_MANAGE_ROLES,
     ("DELETE", "/access/grants"): P.ADMIN_MANAGE_ROLES,
     ("PUT", "/org-settings"): P.ADMIN_MANAGE_ORG,
+    # DE-2b — the organisation's agent policy is set by a person who manages the org, never by
+    # the agent it governs (the route refuses the agent mark on its own).
+    ("PUT", "/org-settings/agent-policy"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/org-settings/agent-policy"): P.ADMIN_MANAGE_ORG,
     ("PATCH", "/agents/{agent_id}"): P.ADMIN_MANAGE_ORG,
     ("PUT", "/system/flags/{name}"): P.ADMIN_MANAGE_ORG,
     ("POST", "/metastore/workspaces/{workspace_id}/grants"): P.ADMIN_MANAGE_ORG,

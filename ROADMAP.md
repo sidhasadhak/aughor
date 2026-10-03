@@ -10488,6 +10488,54 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > infer from names alone — the function takes `declared` and they do not hand it; comments are read and returned,
 > not yet shown in the schema text or the UI. Next: DE-2b.
 
+> **Status 2026-10-03 — DE-2b and DE-2c BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Measured first:*
+> `orgsettings/` is one JSON file for the install plus workspace overrides, not keyed by organisation — the one
+> per-org setting is the LLM binding, in its own SQLite table; the audit log is shaped around SQL, has no principal
+> column, and no MCP call was audited; the four knowledge tools ran in the MCP process with no principal bound, so
+> every read was the default organisation's, the clearance trim saw no caller and the connection-owner check
+> never ran; the server's eighteen tools carried no `readOnlyHint` or `destructiveHint`; and the RBAC table cannot
+> tell `read` from `run` from `act` for an agent — `/exploration/{c}/start` and every Spotlight call fall to
+> `resource.write`. *DE-2b:* `orgsettings/agent_policy.py` keeps one policy per organisation in the LLM binding's
+> store (§6 item 37(c): no new store) — `level` read / run / act, `connections` and `tools` allowlists, who set it
+> and when; the default is `run` with nobody named, `act` is saved only with a person's name, the environment
+> (`AUGHOR_AGENT_POLICY_LEVEL` / `_CONNECTIONS` / `_TOOLS`) can only narrow it and the effective policy says when
+> it did; it is read on every call. `mcp/policy.py` is the one level map — the eighteen tools, the routes a method
+> alone cannot classify, Spotlight's act limb (held to the roster by a test) — with four stable codes. The MCP
+> client marks every call its own (`X-Aughor-Agent: mcp`, `X-Aughor-Tool`); `rbac/agent_gate.py`, an app-wide
+> dependency after identity and RBAC, is inert for every unmarked request and, for a marked one, checks the tool
+> allowlist, the level the route needs and the connection the request names in its path, query or JSON body,
+> refuses with a 403 carrying the code, and writes every call — allowed or refused — to the Ledger as
+> `mcp.tool_call` with the principal, the tool, the route, the verdict and bounded arguments; the governance feed
+> lists it under data access with a one-line summary. `GET` / `PUT` / `DELETE /org-settings/agent-policy` (PUT and
+> DELETE need `ADMIN_MANAGE_ORG`, and refuse the agent mark with `AGENT_POLICY_NOT_SELF_SET` before anything else)
+> show the saved, the environment's and the effective policy. The MCP server (`PolicedFastMCP`) reads the
+> effective policy from the API with its own principal, hides a disallowed tool from `tools/list`, refuses one
+> called by name with the same code, applies the default `run` when the API cannot be asked, and stamps every
+> tool with its hints — a read `readOnlyHint`, an act `destructiveHint`, a run neither. Under the default,
+> `cancel_job`, the automation tools and Spotlight's acts are hidden until a person grants `act`: today's exposure
+> made explicit, as decided. *DE-2c:* `GET /knowledge/{connection}/graph/search`, `/entity/{entity}`,
+> `/table-health` and `/trusted-queries` run the four bodies in the API process under the request's organisation,
+> user, RBAC and connection-owner check; the MCP tools reach them through the client; the bodies stay where the
+> chat tools call them in-process. *Receipt:* `tests/unit/test_de2b_agent_policy.py` (18) — the default and its
+> reasons; a saved policy read on the next call, `act` by nobody refused; the environment narrowing and never
+> widening, an unreadable cap the tightest; every registered tool with a level, the routes classified, the act
+> names the roster's own; an unmarked request untouched under a `read` policy; the default refusing `cancel_job`
+> by name with its code and serving a read; a `read` policy refusing `/chat` with `required_level: run` and a
+> person's `act` opening the cancel; tool and connection allowlists refusing by name, the connection in the body
+> included; two agent calls audited with their principal and on the governance feed, the summaries saying allowed
+> and refused; the policy route set by a person and refusing the agent; the server hiding `explore` under `read`
+> and refusing it by name, listing `cancel_job` with its destructive hint under `act`, a tool allowlist, the
+> default when the API is down; the knowledge tools calling the API with the mark and the tool name, the routes
+> answering in the API process, a `read` policy still reading them; 381 tests across the 25 MCP, principal,
+> knowledge, roster, trace, registry and platform-tool suites green, and the 693-test RBAC / audit / governance /
+> MCP sweep. (The four doors joined the existing knowledge router — a first draft wrote them as a new module of the
+> same name and took the documents, glossary and knowledge-source doors with it; the knowledge-sources suite caught
+> it before the commit.) *Left, named:* the connection check reads the
+> path, the query and a JSON body — a connection named any other way is not checked; the web shows no policy page
+> yet (the routes carry it); with identity off every agent is the default organisation's, as before; the live
+> receipt — an MCP client refused under identity before and served after — is DE-2a's test, and the audit page is
+> the governance feed's data-access view. Next: DE-5d.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

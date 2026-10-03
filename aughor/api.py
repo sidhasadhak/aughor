@@ -389,10 +389,13 @@ class _TraceFlushMiddleware:
             telemetry.flush_traces()
 
 
+from aughor.rbac.agent_gate import enforce_agent_policy  # noqa: E402
 from aughor.rbac.deps import enforce_rbac  # noqa: E402
 
+# DE-2b: the organisation's agent policy, enforced on every request the MCP client marks as
+# its own and inert for every other caller — after identity (the principal) and RBAC.
 app = FastAPI(title="Aughor API", lifespan=_lifespan,
-              dependencies=[Depends(_require_auth), Depends(enforce_rbac)])
+              dependencies=[Depends(_require_auth), Depends(enforce_rbac), Depends(enforce_agent_policy)])
 app.add_middleware(_OrgContextMiddleware)
 app.add_middleware(_WorkspaceContextMiddleware)
 app.add_middleware(_TraceFlushMiddleware)

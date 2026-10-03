@@ -48,8 +48,90 @@ Every answer is auditable: `ask` and `deep_analysis` results carry a `receipt` w
 executed SQL, the input tables, and the trust guards that fired.
 """
 
-mcp = FastMCP("Aughor", instructions=_INSTRUCTIONS)
 _client = AughorClient()
+
+
+class PolicedFastMCP(FastMCP):
+    """DE-2b (ROADMAP §3.51) — the server lists and runs only what the organisation's agent
+    policy allows.
+
+    The policy is the API's (`GET /org-settings/agent-policy`, read with this server's
+    principal, cached thirty seconds); the API enforces it again on every call, so this is
+    the courtesy, not the lock: a disallowed tool is HIDDEN from `tools/list` rather than
+    offered and failed, and one called by name anyway is refused with the same stable code
+    the API would give. Every tool carries the protocol's hints — `readOnlyHint` for a read,
+    `destructiveHint` for an act — from the one level map (`mcp/policy.py`). When the API
+    cannot be asked, the install's default (`run`) is applied, which is what the API will
+    enforce anyway.
+    """
+
+    async def list_tools(self):
+        from aughor.mcp.policy import tool_annotations, tool_level
+        policy = await current_policy()
+        out = []
+        for t in await super().list_tools():
+            level = tool_level(t.name)
+            if not (policy.allows_tool(t.name) and policy.allows_level(level)):
+                continue
+            out.append(t.model_copy(update={"annotations": tool_annotations(level)}))
+        return out
+
+    async def call_tool(self, name: str, arguments: dict):
+        import json as _json
+
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        from aughor.mcp.client import CURRENT_TOOL
+        from aughor.mcp.policy import CODE_LEVEL, CODE_TOOL, refusal, tool_level
+        policy = await current_policy()
+        level = tool_level(name)
+        if name in getattr(self._tool_manager, "_tools", {}):
+            if not policy.allows_tool(name):
+                raise ToolError(_json.dumps(refusal(CODE_TOOL, tool=name, policy_level=policy.level)))
+            if not policy.allows_level(level):
+                raise ToolError(_json.dumps(refusal(CODE_LEVEL, tool=name, policy_level=policy.level, required=level)))
+        token = CURRENT_TOOL.set(name)
+        try:
+            return await super().call_tool(name, arguments)
+        finally:
+            CURRENT_TOOL.reset(token)
+
+
+_POLICY_TTL = 30.0
+_policy_cache: list = []   # [(fetched_at, AgentPolicy)]
+
+
+async def current_policy():
+    """The effective agent policy for this server's principal, from the API; the default when
+    the API cannot say (and that is logged once per fetch, not hidden)."""
+    import time as _time
+
+    from aughor.orgsettings.agent_policy import DEFAULT_POLICY, AgentPolicy
+    if _policy_cache and (_time.monotonic() - _policy_cache[0][0]) < _POLICY_TTL:
+        return _policy_cache[0][1]
+    policy = DEFAULT_POLICY
+    try:
+        answer = await _client.agent_policy()
+        eff = (answer or {}).get("effective") or {}
+        policy = AgentPolicy(
+            level=str(eff.get("level") or "run"),
+            connections=tuple(eff["connections"]) if eff.get("connections") is not None else None,
+            tools=tuple(eff["tools"]) if eff.get("tools") is not None else None,
+            set_by=str(eff.get("set_by") or ""), source=str(eff.get("source") or "saved"),
+        )
+    except Exception as exc:
+        _log.warning("could not read the agent policy from the API (%s); applying the default, `run`", exc)
+    _policy_cache[:] = [(_time.monotonic(), policy)]
+    return policy
+
+
+def forget_policy() -> None:
+    """Drop the cached policy, so the next list or call reads it again (tests, and a client
+    that was just granted more)."""
+    _policy_cache.clear()
+
+
+mcp = PolicedFastMCP("Aughor", instructions=_INSTRUCTIONS)
 
 
 @mcp.tool()
@@ -200,15 +282,13 @@ async def cancel_job(
 
 # ── Wave S6 — knowledge tools over the stores this program built ────────────────────
 #
-# In-process reads rather than REST round-trips, deliberately and against the module's
-# general rule: these four read committed artifacts and local stores, so a hop through the
-# API would add latency and a second failure mode to answer a question the process can
-# already answer. The governed path still runs in the API for everything that EXECUTES —
-# `ask`, `deep_analysis`, `explore` are unchanged.
-#
-# Every tool that returns table-derived data goes through G5's clearance trim. MCP is an
-# EXTERNAL agent surface: skipping the trim here would be a bigger hole than skipping it
-# internally, because the consumer is not a person who might notice.
+# Wave S6 read these four IN this process, "deliberately and against the module's general
+# rule", to save a hop. DE-2c (ROADMAP §3.51) reversed that: in this process no principal is
+# bound, so every read was the default organisation's, the clearance trim saw no caller and
+# the connection-owner check never ran — the hop it saved was the governance. The bodies
+# stay in `knowledge_tools.py` (the API's chat tools call them in-process too); these tools
+# now reach them through `GET /knowledge/{connection}/…`, under the request's organisation,
+# user and RBAC, like every other tool here.
 
 @mcp.tool()
 async def search_graph(
@@ -222,9 +302,7 @@ async def search_graph(
     before asking Aughor to re-derive anything. `available=false` means no graph has been
     built yet. A `notice` means some results were withheld by data governance — the data
     exists, your credentials do not reach it."""
-    from aughor.mcp.knowledge_tools import search_graph as _search
-
-    return _search(connection, query, limit=limit)
+    return await _client.search_graph(connection, query, limit=limit)
 
 
 @mcp.tool()
@@ -240,9 +318,7 @@ async def describe_entity(
     agent and a person asking what a Shipment is get one answer. `kind` says where it came from: the
     ontology (`object_type`), or — where none is built — the knowledge graph's table node (`table`).
     `available=false` with a `notice` means it exists but is withheld by data governance."""
-    from aughor.mcp.knowledge_tools import describe_entity as _describe
-
-    return _describe(connection, entity)
+    return await _client.describe_entity(connection, entity)
 
 
 @mcp.tool()
@@ -254,9 +330,7 @@ async def get_table_health(
     many violations, and how STALE each verdict is. Use it before trusting a number from a
     table: a verdict computed against yesterday's data is not authoritative today.
     `checked=false` means no checks have run — which is NOT the same as healthy."""
-    from aughor.mcp.knowledge_tools import get_table_health as _health
-
-    return _health(connection, table)
+    return await _client.get_table_health(connection, table)
 
 
 @mcp.tool()
@@ -268,9 +342,7 @@ async def list_trusted_queries(
     `human_pinned` (a person settled this question), `eval_promoted` (it passed every eval
     run), or `recorded`. Reuse the SQL structure of a trusted query rather than writing a
     new one — and prefer a human-pinned pattern over a promoted one when both exist."""
-    from aughor.mcp.knowledge_tools import list_trusted_queries as _trusted
-
-    return _trusted(connection, limit=limit)
+    return await _client.list_trusted_queries(connection, limit=limit)
 
 
 # ── traces (VA-5) ────────────────────────────────────────────────────────────────
@@ -398,8 +470,10 @@ async def register_automation_tools(client: "AughorClient | None" = None) -> lis
         if name in taken:
             _log.warning("automation tool %r collides with an existing tool — skipped", name)
             continue
+        from aughor.mcp.policy import tool_annotations
         mcp.add_tool(_automation_runner(api, automation_id), name=name,
-                     description=_automation_description(row))
+                     description=_automation_description(row),
+                     annotations=tool_annotations("act"))       # DE-2b: a run changes something
         taken.add(name)
         added.append(name)
     return added
@@ -431,8 +505,10 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
         if name in taken:
             _log.warning("Spotlight tool %r collides with an existing tool — skipped", name)
             continue
+        from aughor.mcp.policy import spotlight_tool_level, tool_annotations
         mcp.add_tool(_spotlight_runner(api, name), name=name,
-                     description=_spotlight_description(row))
+                     description=_spotlight_description(row),
+                     annotations=tool_annotations(spotlight_tool_level(name)))   # DE-2b
         taken.add(name)
         added.append(name)
     return added

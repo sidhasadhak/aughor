@@ -41,7 +41,9 @@ def test_the_client_presents_the_principal_it_is_given_and_nothing_otherwise(mon
     for var in _PRINCIPAL_VARS:
         monkeypatch.delenv(var, raising=False)
     bare = AughorClient(base_url="http://t", api_key="")._headers()
-    assert bare == {"accept": "application/json"}, bare            # identity-off installs: byte-identical
+    # Identity-off installs present no PRINCIPAL header; DE-2b added the agent mark, which is
+    # what lets the API apply the organisation's agent policy to this client's calls.
+    assert bare == {"accept": "application/json", "X-Aughor-Agent": "mcp"}, bare
 
     monkeypatch.setenv("AUGHOR_MCP_ORG", "acme")
     monkeypatch.setenv("AUGHOR_MCP_BEARER", "head.body.sig")

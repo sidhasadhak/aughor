@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from contextvars import ContextVar
 from typing import Any, AsyncIterator, Optional
 
 import httpx
@@ -38,6 +39,13 @@ _FINDING_CAP = 25
 # imported: this module stays httpx-only by design, and a test holds the two spellings equal.
 IDENTITY_ORG_HEADER = "X-Aughor-Org"
 IDENTITY_USER_HEADER = "X-Aughor-User"
+#: DE-2b — the mark that makes a request an agent's own, and the tool it serves. Spelled here
+#: so this module stays httpx-only; `aughor.mcp.policy` imports them from here.
+AGENT_HEADER = "X-Aughor-Agent"
+TOOL_HEADER = "X-Aughor-Tool"
+AGENT_MARK = "mcp"
+#: The MCP tool a request serves, set by the server around each call (`PolicedFastMCP`).
+CURRENT_TOOL: ContextVar[str] = ContextVar("aughor_mcp_current_tool", default="")
 
 
 class AughorError(RuntimeError):
@@ -99,6 +107,12 @@ class AughorClient:
         if self.org:
             h[IDENTITY_ORG_HEADER] = self.org
             h[IDENTITY_USER_HEADER] = self.user or "mcp"
+        # DE-2b — every call this client makes is an agent's own, and says which tool it serves,
+        # so the API applies the organisation's agent policy to it and audits it with its principal.
+        h[AGENT_HEADER] = AGENT_MARK
+        tool = CURRENT_TOOL.get()
+        if tool:
+            h[TOOL_HEADER] = tool
         return h
 
     def _mk_client(self, timeout: Optional[float] = None) -> httpx.AsyncClient:
@@ -435,6 +449,23 @@ class AughorClient:
 
     async def run_span(self, trace_id: str, span_id: str) -> Any:
         return await self._get(f"/traces/{trace_id}/spans/{span_id}")
+
+    # ── DE-2b: the organisation's agent policy, as the API answers it ─────────────
+    async def agent_policy(self) -> dict:
+        return await self._get("/org-settings/agent-policy")
+
+    # ── DE-2c: the knowledge tools, through the API like everything else ───────────
+    async def search_graph(self, connection: str, query: str, *, limit: int = 10) -> dict:
+        return await self._get(f"/knowledge/{connection}/graph/search", params={"q": query, "limit": limit})
+
+    async def describe_entity(self, connection: str, entity: str) -> dict:
+        return await self._get(f"/knowledge/{connection}/entity/{entity}")
+
+    async def get_table_health(self, connection: str, table: str) -> dict:
+        return await self._get(f"/knowledge/{connection}/table-health", params={"table": table})
+
+    async def list_trusted_queries(self, connection: str, *, limit: int = 25) -> dict:
+        return await self._get(f"/knowledge/{connection}/trusted-queries", params={"limit": limit})
 
 
 def _clean(params: Optional[dict]) -> Optional[dict]:

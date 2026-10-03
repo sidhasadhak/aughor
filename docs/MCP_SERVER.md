@@ -33,8 +33,27 @@ that fired. The answer is verified, not plausible.
 | `get_briefing` | The executive Briefing — impact-ranked verdict, signals, citations. | built from governed metrics + verified findings; re-validated on refresh. |
 | `explore` | Kick off autonomous background exploration of a connection. | subject to agent governance (a paused Scout won't auto-run). |
 | `list_jobs` / `get_job` / `cancel_job` | The agent fleet — running/finished work, each with agent + real cost. | the legible view over the kernel's metered jobs. |
+| `search_graph` / `describe_entity` / `get_table_health` / `list_trusted_queries` | What Aughor already knows: the knowledge graph, one object type, a table's quality verdicts, the trusted query patterns. | $0 reads, through the API (DE-2c) under the caller's organisation and clearances. |
+| `list_runs` / `inspect_run` / `read_run_span` | Debug an answer: which runs, one run's shape, one span's payload. | the summary plus one span, never a whole trace. |
 
 There is deliberately **no raw `query` tool**.
+
+### What each tool needs — and the organisation's agent policy (DE-2b)
+
+Every tool is one of three things, and says so in its MCP hints: a **read** (`readOnlyHint`)
+looks things up; a **run** starts explorations and analyses, which spend model calls; an
+**act** (`destructiveHint`) changes something — `cancel_job`, an exposed automation, Spotlight's
+staged acts. Which of the three an outside agent may do is the organisation's **agent policy**:
+
+| | |
+|---|---|
+| Where it lives | `GET /org-settings/agent-policy` — the saved policy, the environment's narrowing and the effective result. Kept with the organisation's other per-org setting (the LLM binding's store), not a new store. |
+| Default | `run`, set by nobody: today's exposure made explicit. `act` is given only by a person. |
+| Who sets it | `PUT /org-settings/agent-policy` `{"level": "read"\|"run"\|"act", "connections": [...]?, "tools": [...]?}` — a person with `ADMIN_MANAGE_ORG`. An agent that tries is refused with `AGENT_POLICY_NOT_SELF_SET`. `DELETE` returns to the default. |
+| Allowlists | `connections` (connection ids) and `tools` (tool names); `null` means all. |
+| Environment | `AUGHOR_AGENT_POLICY_LEVEL`, `AUGHOR_AGENT_POLICY_CONNECTIONS`, `AUGHOR_AGENT_POLICY_TOOLS` (server side) can only **narrow** what is saved, never widen it. |
+| Enforcement | Every call this client makes carries `X-Aughor-Agent: mcp` and `X-Aughor-Tool: <tool>`; the API checks the policy on those calls and refuses with a 403 whose `detail.code` is one of `AGENT_LEVEL_DENIED`, `AGENT_TOOL_DENIED`, `AGENT_CONNECTION_DENIED`, `AGENT_POLICY_NOT_SELF_SET`. The server also hides a disallowed tool from `tools/list` and refuses one called by name with the same code. |
+| Audit | Every agent call, allowed or refused, is a `mcp.tool_call` event in the Ledger with its principal, tool, route, verdict and bounded arguments — listed on the governance feed under *data access*. |
 
 ## Architecture
 
@@ -45,7 +64,8 @@ in-process import of the app:
  Claude Desktop / Code / Cursor
         │  (stdio or streamable-HTTP, MCP protocol)
         ▼
- aughor.mcp.server  (FastMCP — 11 governed tools, rich docstrings)
+ aughor.mcp.server  (FastMCP — eighteen governed tools plus the opted-in automations and
+        │           the Spotlight roster; lists what the organisation's agent policy allows)
         │  aughor.mcp.client.AughorClient  (httpx; SSE-folds /chat + /investigate)
         ▼  HTTP  (AUGHOR_API_URL, X-Api-Key)
  Aughor REST API  ──►  the real governed path
@@ -110,6 +130,8 @@ claude mcp add aughor --env AUGHOR_API_URL=http://127.0.0.1:8000 \
 | `AUGHOR_MCP_USER` | `mcp` | The user the server acts as, beside `AUGHOR_MCP_ORG`. |
 | `AUGHOR_MCP_BEARER` | _(unset)_ | An OIDC token for an API with an issuer configured, sent as `Authorization: Bearer …`. |
 | `AUGHOR_MCP_TOKEN` | _(unset)_ | **Server side, `--http` only.** The bearer every HTTP MCP client must present; `--http` refuses to start without it. |
+| `AUGHOR_AGENT_POLICY_LEVEL` | _(unset)_ | **API side (DE-2b).** Caps every organisation's agent policy at `read`, `run` or `act`; it can only narrow what an organisation saved. |
+| `AUGHOR_AGENT_POLICY_CONNECTIONS` / `AUGHOR_AGENT_POLICY_TOOLS` | _(unset)_ | **API side.** Comma-separated allowlists intersected with the organisation's own. |
 
 ## Verification (2026-06-21, live on `workspace`/missimi)
 
