@@ -7514,7 +7514,7 @@ its own limit: *"The probability is STATED, not measured"* — no provider here 
 so [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) is the instrument that would
 say whether the numbers mean anything, **and it has never been run against a model.**
 
-#### CP-1 · Choice and Score reach the binding, and every ask is classified in SHADOW
+#### CP-1 · Choice and Score reach the binding, and every ask is classified in SHADOW — ✅ BUILT, merged 2026-09-23 · #542
 
 **First, because its corpus cannot be backfilled** — the same reasoning that reordered Arc CB.
 Every day without shadow logging is a day of calibration data that cannot be recovered.
@@ -7544,7 +7544,7 @@ option is absent from the closed set cannot be answered. **Falsifier:** if the s
 agrees with what ran on essentially every ask, there is no decision here to take and the arc's
 second movement is ceremony — record that and stop at CP-2.
 
-#### CP-2 · Calibrate before anything obeys it
+#### CP-2 · Calibrate before anything obeys it — ✅ BUILT, merged 2026-09-23 · #542; 🔴 its receipt TAKEN 2026-10-04, and its falsifier holds
 
 Run [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) for real against the
 shadow corpus — ECE plus its shuffled-context control — and publish the number. The routing
@@ -7584,7 +7584,42 @@ cannot be brought to a usable band, the arc stops here with the shadow log kept 
 observability feature — and says so in this section rather than leaving CP-3 reading as merely
 unstarted.
 
-#### CP-3 · Route on it, behind a flag
+🔴 **TAKEN 2026-10-04 — and the instrument had been measuring nothing.** The corpus is 111 asks
+(2026-09-23 to 10-03, 110 of them on theLook). Read as written, `observed_grids` was 0 on all
+111: the stream's wrapper counts `columns` frames and its sniff list never named that frame, so
+the count could not move, and `steps_implied` scored an ECE of 0.88 against a constant — while
+every test passed, because each handed the fold an outcome and none asked the wrapper what it
+had counted. `agreed` read 0 of 109 for a second reason: it compared the treatment's words with
+the door's depth ("multi_query" against "deep"), two vocabularies with no member in common, so
+this arc's falsifier could not fire. And the two prior-turn levers were judged with no prior
+turn. All three are repaired at the cause: what a turn did is read from its own trace
+(`treatment.observed_for_trace` — the loop steps that returned rows, the analyst's investigation
+tools, one statement on the fast path; TJ-2's `step` event is what made that count durable),
+agreement is the judged treatment's TIER against the tier that served, the door passes the
+previous turn, and `GET /obs/treatment-calibration` takes the reading on the running install —
+the fold had tests and no caller. Older rows are read again from their traces while the log
+still holds them (14 days); the 111 are kept in `evals/treatment_shadow_corpus_2026-10-04.json`.
+
+**The reading, taken on a copy of the live log.** `steps_implied`: ECE **0.41** (n 109) — stated
+at about 1.0 on 83 rows and right on 61% of them; its score separates the turns that ran three
+or more queries from the rest at an AUC of 0.63. `from_last_result`: ECE 0.14, one answer ("no")
+at about 1.0 on every row. The falsifier: the judged tier agreed with the tier that served on
+**18 of 109**, so there is a decision here to take — and the disagreement runs almost all one
+way. 85 of the 87 asks the analyst served were judged a light treatment (since 2026-09-24 the
+web's Agent button sends every ask to the analyst); 6 of the 24 served by the light bodies were
+judged an investigation. The census's "deep is chosen 0 times in 60" no longer describes the door.
+
+**So this section's falsifier holds for now: no lever is in a usable band, and CP-3 is not
+built.** A router that escalates up on this judge would act on 6 asks in eleven days with
+nothing fitted behind it, and the stated confidence is a single value, so "low confidence
+escalates" has nothing to read. What re-opens it: two weeks of the repaired corpus (the count
+is real now and the prior turn rides); or the labelling sitting this section names for
+`treatment`; or a paid comparison of the analyst against the light bodies on the asks judged an
+investigation. The saving the corpus does show — of 18 analyst-served asks judged one query, 16
+ran fewer than three — is a route DOWN, which this arc forbids, and the Agent button is a
+person's choice.
+
+#### CP-3 · Route on it, behind a flag — ⏸ NOT BUILT: held 2026-10-04 by CP-2's falsifier (its receipt, above)
 
 Only now does a treatment decide anything. Flag-gated exactly as `semops.jev_cheap_tier` is
 ([kernel/flags.py:92](aughor/kernel/flags.py:92)), default OFF, graduating only on a live

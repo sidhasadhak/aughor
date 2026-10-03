@@ -29,8 +29,8 @@ def _row(**kw):
 def test_steps_implied_is_scored_against_the_queries_that_actually_ran():
     """A real label from a real outcome: the turn ran two grids, and a prediction of "two or
     three" was right."""
-    rows = [_row(steps_implied_score=2.0, steps_implied_p=0.8, observed_grids=2),
-            _row(steps_implied_score=2.0, steps_implied_p=0.8, observed_grids=3)]
+    rows = [_row(steps_implied_score=2.0, steps_implied_p=0.8, observed_queries=2),
+            _row(steps_implied_score=2.0, steps_implied_p=0.8, observed_queries=3)]
     got = calibrate(rows)["levers"]["steps_implied"]
     assert got["available"] and got["n"] == 2
     assert got["ece"] == pytest.approx(0.2, abs=1e-6), "confident 0.8, right 2 of 2"
@@ -40,15 +40,15 @@ def test_a_prediction_is_scored_against_its_BAND_not_an_exact_count():
     """The levels are ranges, so predicting 2.6 for a turn that ran three queries is a GOOD
     prediction. Scoring it wrong would make the number measure the scale's granularity
     rather than the judge."""
-    inside = calibrate([_row(steps_implied_score=2.4, steps_implied_p=0.9, observed_grids=3)])
-    outside = calibrate([_row(steps_implied_score=2.4, steps_implied_p=0.9, observed_grids=9)])
+    inside = calibrate([_row(steps_implied_score=2.4, steps_implied_p=0.9, observed_queries=3)])
+    outside = calibrate([_row(steps_implied_score=2.4, steps_implied_p=0.9, observed_queries=9)])
     assert inside["levers"]["steps_implied"]["bins"][0]["accuracy"] == 1.0
     assert outside["levers"]["steps_implied"]["bins"][0]["accuracy"] == 0.0
 
 
 def test_from_last_result_is_right_exactly_when_no_query_ran():
-    rows = [_row(from_last_result=True, from_last_result_p=0.7, observed_grids=0),
-            _row(from_last_result=True, from_last_result_p=0.7, observed_grids=2)]
+    rows = [_row(from_last_result=True, from_last_result_p=0.7, observed_queries=0),
+            _row(from_last_result=True, from_last_result_p=0.7, observed_queries=2)]
     got = calibrate(rows)["levers"]["from_last_result"]
     assert got["available"] and got["n"] == 2
     assert got["bins"][0]["accuracy"] == 0.5
@@ -68,6 +68,17 @@ def test_a_row_with_no_observed_outcome_cannot_be_scored():
     must not be counted as either right or wrong."""
     got = calibrate([_row(steps_implied_score=2.0, steps_implied_p=0.8)])
     assert got["levers"]["steps_implied"]["available"] is False
+
+
+def test_the_dead_stream_count_is_not_a_label():
+    """`observed_grids` was counted off a frame the stream wrapper never parsed: 0 on all 111
+    rows of the live corpus (2026-10-04), which scored `steps_implied` at an ECE of 0.88
+    against a constant. A row that carries only that key has no outcome."""
+    got = calibrate([_row(steps_implied_score=2.0, steps_implied_p=0.9, observed_grids=0,
+                          from_last_result=False, from_last_result_p=0.9)])
+    assert got["rows"] == 1 and got["rows_with_an_observed_outcome"] == 0
+    assert got["levers"]["steps_implied"]["available"] is False
+    assert got["levers"]["from_last_result"]["available"] is False
 
 
 # ── what it refuses to label ─────────────────────────────────────────────────────────────

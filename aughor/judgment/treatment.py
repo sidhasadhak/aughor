@@ -123,6 +123,61 @@ LEVERS: tuple[Any, ...] = (TREATMENT, INTENT, SPECIFICITY, STEPS_IMPLIED, STAKES
                            CAUSAL, GOVERNED_METRIC, FROM_LAST_RESULT, FOLLOW_UP)
 
 
+#: The TIER each treatment is served by, in the vocabulary of what serves a turn. Three of
+#: the four are one tier: a lookup, a single query and a multi-query are all answered by the
+#: light bodies (the fast path, or the conversation's tool loop), and only an investigation
+#: earns the analyst. Until 2026-10-04 `agreed` compared the treatment's own words with the
+#: door's depth ("multi_query" against "deep"), two vocabularies that share no member: on the
+#: live corpus it read 0 of 109 and could never have read anything else, so the arc's
+#: falsifier could not fire.
+TIER_FOR = {"lookup": "light", "single_query": "light", "multi_query": "light",
+            "investigation": "heavy"}
+
+
+def observed_for_trace(trace_id: str) -> dict:
+    """What a turn DID, read from its own session events — the label two levers are scored on.
+
+    The count used to be taken off the answer's stream: one per `columns` frame. The stream's
+    wrapper parses only the frames its sniff list names, `columns` was never on it, and so the
+    count was 0 on every row the shadow ever wrote — 111 of 111 on the live install, measured
+    2026-10-04, with the calibration reading an ECE of 0.88 off a label that was a constant.
+    The comment beside it said nothing persisted the number. Since TJ-2 something does: every
+    loop step is a `step` event under the run's trace, and every statement a `sql.execute`.
+
+    ``queries`` is the number of deliberate queries: a loop step that returned rows, or one of
+    the analyst's own investigation tools (each is a measured slice). A turn with no loop —
+    the fast path — writes one statement by construction, so it is 1 when a statement ran.
+    ``statements`` is everything that reached the warehouse, guards and repairs included.
+    ``body`` is which body served: the analyst, the conversation, or the fast path.
+
+    Returns ``{}`` when the trace cannot be read, so a row is left unlabelled rather than
+    labelled zero.
+    """
+    if not trace_id:
+        return {}
+    try:
+        from aughor.agent.analyst import INVESTIGATION_TOOLS
+        from aughor.kernel.ledger import Ledger
+        events = Ledger.default().session_events(trace_id=trace_id, limit=5000, ascending=True)
+    except Exception as exc:  # noqa: BLE001 — an unreadable trace is an unlabelled row
+        logger.debug("the turn's trace could not be read: %s", exc)
+        return {}
+    if not events:
+        return {}
+    names = {(e.get("kind"), e.get("name")) for e in events}
+    steps = [e for e in events if e.get("kind") == "step"]
+    statements = sum(1 for e in events
+                     if e.get("kind") == "tool_call" and e.get("name") == "sql.execute")
+    if steps:
+        queries = sum(1 for e in steps
+                      if e.get("row_count") is not None or e.get("name") in INVESTIGATION_TOOLS)
+    else:
+        queries = 1 if statements else 0
+    body = ("analyst" if ("tool_call", "ask.analyst") in names
+            else "converse" if ("tool_call", "ask.converse") in names else "quick")
+    return {"queries": queries, "statements": statements, "body": body}
+
+
 def state_for(question: str, *, prior_turn: str = "") -> str:
     """The state the levers are judged against.
 
@@ -195,12 +250,14 @@ def shadow(question: str, *, ran: str, prior_turn: str = "", conn_id: str = "",
             question, prior_turn=prior_turn, provider=provider)
         row = as_row(got)
         row["ran"] = ran
-        for k, v in (observed or {}).items():
+        from aughor import telemetry
+        seen = {**observed_for_trace(telemetry.current_trace_id() or ""), **(observed or {})}
+        for k, v in seen.items():
             row[f"observed_{k}"] = v
         # The comparison this corpus exists for, computed once at write time so the falsifier
         # ("the shadow agrees with what ran on essentially every ask, so there is no decision
         # here to take") is one fold over one column rather than a join per read.
-        row["agreed"] = (row.get("treatment") == ran) if row.get("treatment") else None
+        row["agreed"] = agreed(row)
         from aughor.obs.session_log import emit
         emit(TREATMENT_SHADOW, name="treatment_shadow", conn_id=conn_id or None, payload=row)
         return row
@@ -209,5 +266,46 @@ def shadow(question: str, *, ran: str, prior_turn: str = "", conn_id: str = "",
         return None
 
 
-__all__ = ["LEVERS", "SHADOW_FLAG", "TREATMENT_SHADOW", "as_row", "classify", "shadow",
+def served_tier(row: Mapping[str, Any]) -> Optional[str]:
+    """The tier that served the turn: heavy for the analyst or a deep investigation, light for
+    the fast path and the conversation. None when the row does not say which body ran."""
+    body = row.get("observed_body")
+    if not body:
+        return None
+    return "heavy" if body == "analyst" or row.get("observed_investigation") else "light"
+
+
+def agreed(row: Mapping[str, Any]) -> Optional[bool]:
+    """Did the judged treatment name the tier that served the turn? None when either is unknown."""
+    judged = TIER_FOR.get(str(row.get("treatment") or ""))
+    served = served_tier(row)
+    if judged is None or served is None:
+        return None
+    return judged == served
+
+
+def shadow_corpus(*, limit: int = 5000, org_id: Optional[str] = None) -> list[dict]:
+    """The shadow rows, each with what its turn did.
+
+    A row written before 2026-10-04 carries the dead stream count and no body. While its
+    trace is still in the log (the log keeps 14 days) the turn's facts are read from it here,
+    and agreement is taken again in the one vocabulary; once the trace is gone the row stays
+    unlabelled. A row that already carries ``observed_queries`` is returned as written.
+    """
+    from aughor.kernel.ledger import Ledger
+    out: list[dict] = []
+    newest = Ledger.default().session_events(kind=TREATMENT_SHADOW, limit=limit, org_id=org_id)
+    for ev in reversed(newest):
+        row = dict(ev.get("payload") or {})
+        if "observed_queries" not in row:
+            for k, v in observed_for_trace(str(ev.get("trace_id") or "")).items():
+                row[f"observed_{k}"] = v
+            row["agreed"] = agreed(row)
+        row["at"] = ev.get("at")
+        out.append(row)
+    return out
+
+
+__all__ = ["LEVERS", "SHADOW_FLAG", "TIER_FOR", "TREATMENT_SHADOW", "agreed", "as_row",
+           "classify", "observed_for_trace", "served_tier", "shadow", "shadow_corpus",
            "state_for"]
