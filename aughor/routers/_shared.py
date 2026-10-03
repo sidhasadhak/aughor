@@ -35,6 +35,21 @@ def get_schema_cached(conn_id: str, db) -> str:
     return schema
 
 
+def peek_schema_cached(conn_id: str) -> str | None:
+    """The cached schema text for a connection, under any scope, WITHOUT rendering one when
+    it is cold. For a reader that wants the schema if it is already in hand and can do
+    without it otherwise (DE-4's receipt lineage): the widest scope wins, since a broader
+    view binds every column a narrower one would."""
+    best: tuple[int, str] | None = None
+    now = _time.monotonic()
+    for key, (at, text) in list(_schema_cache.items()):
+        if not key.startswith(f"{conn_id}\x00") or (now - at) >= _SCHEMA_CACHE_TTL:
+            continue
+        if best is None or len(text) > best[0]:
+            best = (len(text), text)
+    return best[1] if best else None
+
+
 def invalidate_schema_cache(conn_id: str) -> None:
     # Drop every schema-scope variant cached for this connection (keys are "conn_id\x00scope").
     prefix = f"{conn_id}\x00"

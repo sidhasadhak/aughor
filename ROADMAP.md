@@ -10372,6 +10372,50 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > rounding, since the column is a number; the live receipt the study named — `02134` surviving an upload on the
 > user's machine — has the unit receipt here and the screenshot still owed. Next: DE-4.
 
+> **Status 2026-10-03 — DE-4 BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first:*
+> `scripts/de4_lineage_precheck.py` over the golden set's 66 statements (53 reference, 13 accepted alternates)
+> against the seeded ecommerce fixture: 122 of 136 output columns resolve to a table column (108 certain, 14
+> likely), no statement fails to qualify, about 10 ms a statement; the 14 that do not resolve are every `COUNT(*)`,
+> which rests on a table and no column — the study's 130 counted those as resolved to their table; here they are
+> said as such. theLook's audit is owed from the user's machine: `uv run python scripts/de4_lineage_precheck.py
+> --connection 8233e4fd --limit 2000` reads the audited statements and the connection's schema in its own dialect.
+> *Measured on the way:* no structured schema exists at execution time — `get_schema()` is text, held 300 s by the
+> router's cache — so a receipt qualifies against the text already in hand (`sqlglot_schema`: names only, all
+> `qualify` needs; sqlglot matches a statement's `schema.table` to a flat `table` and a bare `table` to a nested
+> one, measured); the quality store's rules carry a column and its results dropped it; `govern/lineage.py` found
+> its sites by a regex over SQL text. *Built:* `aughor/sql/lineage.py` — sqlglot's `qualify` and `lineage` over one
+> statement: output, filter, join and group columns, each edge *certain* (the parser bound it, with the schema or
+> an explicit alias), *likely* (bound through a CTE or a subquery) or *possible* (by name only: no schema, one
+> source); a row count rests on the tables its select reads, said so, never dropped; a `SELECT *` with no schema,
+> a statement sqlglot cannot parse, or one that is not a SELECT falls back to TABLE level with the reason; a
+> dialect the door records that sqlglot spells otherwise is mapped, an unknown one parses generically. *On the
+> receipt* (§6 item 37(f): the Ledger's lineage rows, no store of its own): the three producers —
+> `_write_answer_receipt` (chat, deep analysis, monitors), `_write_builder_receipt` (builder, workbench; the
+> connection's dialect, the schema from the cache when warm, never rendered for this) and the explorer's finding
+> (the schema rendered once per run) — write one `("column", "column:t.c", {roles, confidence, as})` row per
+> column read, a `("column", "table:t", …)` row for an output resting on a table, and one `("lineage",
+> "level:column|table", why)` row, so a reader tells "read no column" from "columns not traced", and a receipt
+> from before DE-4 reads as not traced; the payload carries `columns` for the context graph. *Readers:* the public
+> receipt gains `columns`, and the "Why this number" drawer shows *Columns read* with each column's resolution,
+> the row counts as such, and the fallback's reason; a quality result gains `column_name` (added to the store in
+> place; the rules always had it), a column-level caveat rides only the answers whose receipt read that column, an
+> untraced receipt keeps the table scope; `govern/lineage.py` reads a finding node's `columns` (from the receipt,
+> through the context graph) and reports *reads orders.status* as the site instead of a line of text, keeps the
+> text scan for a node from before, and `dependents_of(…, column=)` / `GET /graph/lineage?column=` narrow a walk to
+> one column — a dependent whose columns were never traced is kept and says so, since a preview that hid it would
+> under-report what a change breaks. *Receipt:* `tests/unit/test_de4_column_lineage.py` (20) — the schema map;
+> outputs, filters, joins and groups with their resolution on a CTE join; a row count on its tables; no-schema
+> binding by name and by alias; the `SELECT *` fallback with and without a schema; not-a-SELECT and not-parsed;
+> dialect names; BigQuery's three-part spelling; the receipt rows and what a reader gets back, an untraced receipt
+> reading as not traced, the strongest resolution winning across statements; a column caveat riding only the
+> answers that read the column (`orders.status` on the answers that read `orders.status`, and on no others); the
+> builder receipt carrying its columns through the Ledger into the public receipt; the dependency walk on a
+> column; the golden-set floor (≥ 122 of 136, every unresolved output a `COUNT(*)` on a table); 1,124 tests across
+> the receipt, lineage, quality, context-graph, explorer and trust suites green; the web gates green. *Left,
+> named:* theLook's number; types are not on the receipt's columns; a receipt from before DE-4 cannot be excluded
+> from a column walk; the live receipt the study named — a theLook answer whose receipt names its columns — waits
+> for the user's machine, the unit receipt stands in. Next: DE-3b.
+
 **The waves.** Each begins by re-measuring its premise. Only the first has a safety consequence.
 
 - **DE-1 · The read-only promise holds at every door.** The parse step runs at the shared door step in each

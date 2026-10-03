@@ -420,6 +420,25 @@ def parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     return _parse_schema_tables(schema_str)
 
 
+def sqlglot_schema(schema_str: str) -> dict:
+    """DE-4 — the rendered schema as sqlglot's `qualify` takes it: ``{table: {column: type}}``,
+    or ``{schema: {table: {column: type}}}`` when any table is rendered schema-qualified (a bare
+    one then sits under ``main``). Names are all `qualify` needs to bind a column to its table,
+    so the type is ``UNKNOWN`` throughout; sqlglot matches a statement's ``schema.table`` to a
+    flat ``table`` by its trailing parts, and a bare ``table`` to a nested one when the name is
+    unique (measured, DE-4's pre-check)."""
+    tables = _parse_schema_tables(schema_str or "")
+    if not tables:
+        return {}
+    if not any("." in str(t) for t in tables):
+        return {str(t): {str(c): "UNKNOWN" for c in cols} for t, cols in tables.items()}
+    out: dict = {}
+    for t, cols in tables.items():
+        s, _, n = str(t).rpartition(".")
+        out.setdefault(s or "main", {})[n] = {str(c): "UNKNOWN" for c in cols}
+    return out
+
+
 def _fk_root(col: str) -> str | None:
     """Normalised foreign-key root for a *key-like* column, else None.
 

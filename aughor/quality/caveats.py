@@ -47,7 +47,11 @@ def caveat_for(result: Result) -> str:
     what = result.detail or f"failed {result.rule_name or 'a quality check'}"
     run = f" [run {result.run_id}]" if result.run_id else ""
     count = f" ({result.violations} violation(s))" if result.violations else ""
-    return f"`{result.table_name}` {what}{count}{run}{_age_note(result)}"
+    # DE-4: a verdict about one column names the column, so the reader knows which part of
+    # the table the concern is about.
+    column = getattr(result, "column_name", "") or ""
+    name = f"{result.table_name}.{column}" if column else result.table_name
+    return f"`{name}` {what}{count}{run}{_age_note(result)}"
 
 
 def assemble(
@@ -92,8 +96,12 @@ def caveats_for_answer(
     declaration_caveats: Iterable[str] = (),
     trust_caveats: Iterable[str] = (),
     org_id: Optional[str] = None,
+    columns: Optional[Iterable[str]] = None,
 ) -> list[str]:
     """Q4: the caveats that ride an answer over ``tables``.
+
+    DE-4: ``columns`` (``table.column`` the answer read) keeps a column-level caveat to the
+    answers that read that column; None — columns not traced — keeps every caveat, as before.
 
     Best-effort by construction — a health store that cannot be read must never fail an
     answer, because a quality plane that can break answers is a quality plane operators
@@ -103,7 +111,8 @@ def caveats_for_answer(
     try:
         from aughor.quality.results import latest_for_tables
 
-        health = [r for r in latest_for_tables(connection_id, list(tables), org_id=org_id)
+        health = [r for r in latest_for_tables(connection_id, list(tables), org_id=org_id,
+                                               columns=columns)
                   if not r.passed]
     except Exception as exc:
         from aughor.kernel.errors import tolerate

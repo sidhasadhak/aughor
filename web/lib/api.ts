@@ -6884,6 +6884,15 @@ export interface PublicReceipt {
   connection: { id: string | null; name: string | null; dialect: string | null };
   executed_sql: PublicReceiptSql[];
   input_tables: string[];
+  /** DE-4 — the columns the statement read, each with how it was resolved. `level` is
+   *  "column" (traced), "table" (fell back to tables, `note` says why) or null for a receipt
+   *  written before columns were traced — which is not the same as reading none. */
+  columns: {
+    level: "column" | "table" | null;
+    note: string | null;
+    columns: { table: string; column: string; roles: string[]; confidence: "certain" | "likely" | "possible" | null; as: string[] }[];
+    tables_only: { table: string; roles: string[]; as: string[]; note: string | null }[];
+  };
   guards: PublicReceiptGuard[];          // each names a guard that FIRED, with its action
   caveats: string[];
   metrics: {

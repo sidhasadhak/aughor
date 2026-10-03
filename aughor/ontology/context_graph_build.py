@@ -143,6 +143,8 @@ def load_investigation_findings(
             "text": text,
             "sql": str(payload.get("sql") or ""),
             "tables": [str(t) for t in (payload.get("tables") or [])],
+            # DE-4: the columns the receipt traced, when it did.
+            **({"columns": [str(c) for c in payload["columns"]]} if payload.get("columns") else {}),
             "source": "evidence_ledger",
             "generated_at": art.get("created_at", ""),
             "receipt_kind": art.get("kind", ""),

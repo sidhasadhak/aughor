@@ -146,11 +146,14 @@ class _QueryRunRequest(BaseModel):
     params: Optional[dict] = None
 
 
-def _write_builder_receipt(conn_id: str, sql: str) -> Optional[str]:
+def _write_builder_receipt(conn_id: str, sql: str, db=None) -> Optional[str]:
     """WP-10: a signed provenance receipt for a Query Builder run — the exact SQL that ran +
     its input tables, resolvable via GET /receipt/{id} (so "Why this number" opens the same
     drawer as an answer). Best-effort. Keyed by the SQL hash, so re-running the same query
-    versions one receipt rather than spamming the ledger."""
+    versions one receipt rather than spamming the ledger.
+
+    DE-4: the columns the statement read ride beside the tables, qualified against the schema
+    text already cached for the connection when there is one — never rendered for this."""
     try:
         import hashlib
         from aughor.kernel.ledger import Ledger
@@ -158,9 +161,22 @@ def _write_builder_receipt(conn_id: str, sql: str) -> Optional[str]:
         tables = sorted({t.table for t in extract_tables(sql) if t.table})
         key = f"builder:{conn_id}:{hashlib.sha1(sql.encode('utf-8')).hexdigest()[:12]}"
         lineage = [("source_sql", "sql", sql)] + [("input", f"table:{t}", None) for t in tables]
+        columns: list[str] = []
+        try:
+            from aughor.routers._shared import peek_schema_cached
+            from aughor.trust.lineage_edges import column_edges, dialect_for_connection, payload_columns
+            dialect = getattr(db, "dialect", None) or dialect_for_connection(conn_id)
+            rows = column_edges([sql], dialect=dialect, schema_text=peek_schema_cached(conn_id))
+            lineage.extend(rows)
+            columns = payload_columns(rows)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "column lineage is best-effort; the receipt keeps its tables",
+                     counter="query.builder_receipt_columns")
         return Ledger.default().artifact_write(
             "builder", key,
-            {"question": "Query Builder run", "headline": "", "sql": sql, "tables": tables},
+            {"question": "Query Builder run", "headline": "", "sql": sql, "tables": tables,
+             **({"columns": columns} if columns else {})},
             conn_id=conn_id, lineage=lineage,
         )
     except Exception as exc:
@@ -473,7 +489,7 @@ async def _query_run(body: _QueryRunRequest, request: Request):
 
     # WP-10: a successful run gets a signed receipt so the UI can open "Why this number".
     # Record the user's ORIGINAL SQL (not the internal LIMIT-wrapped form the executor ran).
-    receipt_id = _write_builder_receipt(body.conn_id, body.sql) if not result.error else None
+    receipt_id = _write_builder_receipt(body.conn_id, body.sql, db) if not result.error else None
     caveats = list(getattr(result, "caveats", []) or [])
 
     if _typed and typed_payload is not None:

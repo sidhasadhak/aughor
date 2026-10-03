@@ -249,6 +249,16 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                 if t not in seen:
                     seen.add(t)
                     lineage.append(("input", f"table:{t}", None))
+        # DE-4: the columns each statement read, beside its tables, each edge saying how it was
+        # resolved; and one row saying whether columns were traced at all.
+        _columns: list[str] = []
+        try:
+            from aughor.trust.lineage_edges import column_edges, dialect_for_connection, payload_columns
+            _col_rows = column_edges(sqls, dialect=dialect_for_connection(connection_id), schema_text=schema)
+            lineage.extend(_col_rows)
+            _columns = payload_columns(_col_rows)
+        except Exception:
+            logger.debug("column lineage skipped", exc_info=True)
         enf = None
         try:
             from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
@@ -363,6 +373,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             kind, natural_key,
             {"question": question, "headline": headline or question,
              "sql": sqls[0] if sqls else "", "tables": sorted(seen),
+             **({"columns": _columns} if _columns else {}),
              **({"cost": _cost} if _cost is not None else {}),
              **({"model": _model} if _model else {}),
              **({"agent": _agent} if _agent else {}),

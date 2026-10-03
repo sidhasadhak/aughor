@@ -682,6 +682,11 @@ def finding_node_data(f: dict) -> dict:
     """
     data = {"sql": f.get("sql", ""), "tables": list(f.get("tables") or []),
             "generated_at": f.get("generated_at", "")}
+    # DE-4: the `table.column` names the finding's receipt traced, so a dependency walk reads
+    # them instead of scanning the SQL. Emitted only when present — a finding from before
+    # column lineage serializes as before.
+    if f.get("columns"):
+        data["columns"] = [str(c) for c in f["columns"]]
     # P3: the id a human verdict is filed under, when the source records one. Emitted only
     # when present, so a graph built from sources without it serializes as before.
     if f.get("investigation_id"):
