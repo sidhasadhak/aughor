@@ -744,3 +744,97 @@ def test_the_agent_path_reads_the_schema_through_the_shared_cache(monkeypatch):
     assert len(reads) == 1                                   # the second ask hit the cache
     assert set(first["context_timings"]) == {"schema_s", "link_s", "catalog_s"}
     assert set(second["context_timings"]) == {"schema_s", "link_s", "catalog_s"}
+
+
+# ── the period a report states is the one its figures were measured over ──────
+
+
+def test_a_statement_window_needs_both_bounds():
+    """The days a statement's literal bounds read — half-open ends a day early, BETWEEN keeps
+    both ends, DATE literals count — and no window from a one-sided bound, which is open."""
+    sw = an.statement_window
+    assert sw("WHERE d >= '2026-08-01' AND d < '2026-09-01'") == ("2026-08-01", "2026-08-31")
+    assert sw("WHERE d BETWEEN DATE '2026-07-01' AND DATE '2026-07-31'") == ("2026-07-01", "2026-07-31")
+    assert sw("WHERE CAST(d AS DATE) >= DATE '2026-08-10' "
+              "AND CAST(d AS DATE) <= DATE '2026-08-18'") == ("2026-08-10", "2026-08-18")
+    assert sw("WHERE d >= '2026-08-01'") is None
+    assert sw("SELECT COUNT(*) FROM orders") is None
+
+
+_AUG = {"observation_start": "2026-08-01", "observation_end": "2026-08-31",
+        "observation_label": "August 2026"}
+
+
+def test_a_report_states_the_period_its_figures_were_measured_over():
+    """Every figure measured outside the stated window: the report states the measured period
+    and says why among its caveats. One figure inside it: the stated period stands."""
+    report = {"observation_period": "August 2026", "data_gaps": []}
+    an._attach_measured_period(report, _AUG, [
+        {"tool": "baseline", "start": "2026-07-01", "end": "2026-07-31"}])
+    assert report["observation_period"] == "Jul 2026"
+    assert any("read as August 2026" in g and "measured over Jul 2026" in g
+               for g in report["data_gaps"])
+    assert report["period_as_measured"]["within_stated"] is False
+
+    kept = {"observation_period": "August 2026", "data_gaps": []}
+    an._attach_measured_period(kept, _AUG, [
+        {"tool": "run_sql", "start": "2026-07-01", "end": "2026-07-31"},
+        {"tool": "baseline", "start": "2026-08-10", "end": "2026-08-18"}])
+    assert kept["observation_period"] == "August 2026" and kept["data_gaps"] == []
+
+
+def test_no_readable_window_and_a_cross_section_leave_the_label_alone():
+    """A window the code cannot read is not evidence of a mismatch, and a cross-sectional scan
+    states its data coverage, not a window."""
+    for intake, windows in ((_AUG, []), ({**_AUG, "cross_sectional": True},
+                                         [{"tool": "x", "start": "2026-07-01", "end": "2026-07-31"}])):
+        report = {"observation_period": "August 2026", "data_gaps": []}
+        an._attach_measured_period(report, intake, windows)
+        assert report == {"observation_period": "August 2026", "data_gaps": []}
+
+
+def test_the_agent_run_states_the_window_its_phase_ran_on(monkeypatch, traffic_db, faux_llm):
+    """Through the runner: the spec reads August, the model runs the baseline on July, and
+    the finished report says July — with the reason — rather than the spec's August."""
+    from aughor.llm.faux import FauxToolCall
+
+    def _intake(state, conn=None):
+        return {"_ada_intake": {
+            "metric_label": "sessions", "metric_sql": "SUM(sessions)",
+            "metric_table": "traffic", "date_column": "traffic.day",
+            "observation_start": "2026-08-01", "observation_end": "2026-08-18",
+            "observation_label": "August 2026", "comparison_start": "", "comparison_end": "",
+            "dimensions": [], "data_understanding_block": ""},
+            "investigation_phases": [{"phase_id": "intake", "phase_name": "Question Intake",
+                                      "phase_icon": "🎯", "status": "complete",
+                                      "summary": "spec resolved", "findings": []}]}
+
+    def _baseline(state, conn):
+        return {"investigation_phases": state.get("investigation_phases", []) + [{
+            "phase_id": "baseline", "phase_name": "Baseline", "phase_icon": "📈",
+            "status": "complete", "summary": "July runs flat.",
+            "findings": [{"finding_id": "b1", "title": "Daily sessions", "sql": "SELECT 1",
+                          "columns": ["day", "sessions"], "rows": [["2026-07-01", 30]],
+                          "row_count": 1, "error": None, "interpretation": "",
+                          "key_numbers": [], "chart_type": "line", "stat_note": None,
+                          "is_significant": False}]}]}
+
+    def _synthesize(state):
+        return {"answer_report": {"headline": "Sessions held", "executive_summary": "…",
+                                  "metric": "sessions", "observation_period": "August 2026",
+                                  "comparison_basis": "", "total_change_label": "",
+                                  "phases": state.get("investigation_phases") or [],
+                                  "attribution_waterfall": [], "confidence": "LOW",
+                                  "confidence_justification": "", "recommendations": [],
+                                  "data_gaps": []}}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_intake, baseline=_baseline,
+                 synthesize=_synthesize)
+    faux_llm.set_responses([
+        FauxToolCall(payload={"observation_start": "2026-07-01",
+                              "observation_end": "2026-07-18"}, name="baseline"),
+        "July sessions held flat.",
+    ])
+    result = an.run_analyst("conn-t", "why did sessions move in August?", persist=False)
+    assert result.report["observation_period"] == "1–18 Jul 2026"
+    assert any("read as August 2026" in g for g in result.report["data_gaps"])

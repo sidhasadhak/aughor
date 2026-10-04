@@ -85,6 +85,10 @@ class AnalystTurn:
     #: What code measured before the first call (`_measure_declared`): ``(sql, result as the model
     #: reads a tool result)`` — handed to the model as results, never as calls it made.
     measured_by_code: list = field(default_factory=list)
+    #: The windows this turn's figures were measured over — each phase tool's spec and each
+    #: ad-hoc statement's literal bounds (`_note_window`) — for `_attach_measured_period`. On
+    #: the turn for `frame_breakdowns_ran`'s reason: a private state key must be on AgentState.
+    windows_measured: list = field(default_factory=list)
 
     @property
     def intake(self) -> dict:
@@ -109,7 +113,11 @@ class AnalystTurn:
 
 #: A date bound in a WHERE clause — its operator, the day, and whatever follows the day inside
 #: the quotes (a time, a zone). Bounded and anchored; never a parser.
-_ADHOC_BOUND_RE = re.compile(r"""([><]=?)\s*(?:TIMESTAMP\s*)?['"](\d{4}-\d{2}-\d{2})([^'"]{0,40})['"]""", re.I)
+_ADHOC_BOUND_RE = re.compile(r"""([><]=?)\s*(?:(?:TIMESTAMP|DATETIME|DATE)\s*\(?\s*)?['"](\d{4}-\d{2}-\d{2})([^'"]{0,40})['"]""", re.I)
+#: ``BETWEEN '<day>' AND '<day>'`` — both ends kept, as SQL keeps them.
+_ADHOC_BETWEEN_RE = re.compile(
+    r"""BETWEEN\s*(?:(?:TIMESTAMP|DATETIME|DATE)\s*\(?\s*)?['"](\d{4}-\d{2}-\d{2})[^'"]{0,40}['"]\s*\)?\s*"""
+    r"""AND\s*(?:(?:TIMESTAMP|DATETIME|DATE)\s*\(?\s*)?['"](\d{4}-\d{2}-\d{2})[^'"]{0,40}['"]""", re.I)
 #: What may follow the day in a bound that is the START of that day.
 _ADHOC_MIDNIGHT_RE = re.compile(r"(?:[ T]00:00(?::00(?:\.0+)?)?)?\s*(?:Z|UTC|[+-]00(?::?00)?)?", re.I)
 _ADHOC_DATEY = re.compile(r"(_at|date|day|month|year|period)$", re.I)
@@ -141,6 +149,26 @@ def _adhoc_window(text: str) -> str:
         return start if end <= start else f"{start} → {end}"
     days = list(dict.fromkeys(day for _, day, _ in bounds))
     return days[0] if len(days) == 1 else f"{days[0]} → {days[-1]}"
+
+
+def statement_window(text: str) -> Optional[tuple[str, str]]:
+    """``(first day, last day)`` a statement's literal date bounds read — a lower AND an upper
+    bound, or a ``BETWEEN`` — or None. Stricter than `_adhoc_window`, which names whatever days
+    a title can show: a one-sided bound is an open window, and naming it by its one day would
+    claim a period nobody measured. A bound kept with ``<`` at the start of a day ends the day
+    before it."""
+    bounds = _ADHOC_BOUND_RE.findall(text or "")
+    lowers = [day for op, day, _ in bounds if op.startswith(">")]
+    uppers = [(date.fromisoformat(day) - timedelta(days=1)).isoformat()
+              if op == "<" and _ADHOC_MIDNIGHT_RE.fullmatch(rest) else day
+              for op, day, rest in bounds if op.startswith("<")]
+    for lo, hi in _ADHOC_BETWEEN_RE.findall(text or ""):
+        lowers.append(lo)
+        uppers.append(hi)
+    if not lowers or not uppers:
+        return None
+    start, end = min(lowers), max(uppers)
+    return (start, end) if start <= end else None
 
 
 _MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -638,6 +666,9 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                 "skipped_reason": None,
                 "caveats": [],
             }]}, tool="run_sql")
+            _window = statement_window(ran)
+            if _window:
+                _note_window(turn, _window[0], _window[1], "run_sql")
     except Exception as exc:                      # noqa: BLE001 — never break a tool
         from aughor.kernel.errors import tolerate
         tolerate(exc, "ad-hoc evidence capture is best-effort; the tool result stands",
@@ -670,6 +701,45 @@ def _spec_overrides(intake: dict, args: dict) -> dict:
         spec["metric_sql"] = metric_sql
         spec["metric_label"] = str(args.get("metric_label") or "").strip() or metric_sql
     return spec
+
+
+def _note_window(turn: "AnalystTurn", start: str, end: str, tool: str, fresh: Any = True) -> None:
+    """Record the days a tool's figures were measured over, for `_attach_measured_period`.
+    Only a run that produced something counts: a phase that came back empty measured nothing."""
+    if start and end and fresh:
+        turn.windows_measured.append({"tool": tool, "start": str(start), "end": str(end)})
+
+
+def _attach_measured_period(report: dict, intake: Optional[dict], windows: Optional[list]) -> None:
+    """The report states the period its figures were MEASURED over.
+
+    `observation_period` is the intake spec's label, and the analyst's phase tools run on a copy
+    of that spec with the model's own window (`_spec_overrides`) — so a report could say "August
+    2026" over figures that were all July's, and nothing compared the two (noted 2026-10-02).
+    When no recorded window lies inside the stated one, the report states the measured period
+    instead and says why among its caveats; when one does, the stated period stands. A run that
+    recorded no window — a cross-sectional scan, statements without literal bounds — keeps its
+    label: a window the code cannot read is not evidence of a mismatch."""
+    intake = intake or {}
+    start, end = str(intake.get("observation_start") or ""), str(intake.get("observation_end") or "")
+    windows = [w for w in (windows or []) if w.get("start") and w.get("end")]
+    if not windows or not start or not end or intake.get("cross_sectional"):
+        return
+    within = [w for w in windows if start <= w["start"] and w["end"] <= end]
+    stated = str(report.get("observation_period") or "") or _window_words(f"{start} → {end}")
+    distinct = list(dict.fromkeys((w["start"], w["end"]) for w in windows))
+    measured = "; ".join(_window_words(a if a == b else f"{a} → {b}") for a, b in distinct)
+    report["period_as_measured"] = {"stated": stated, "windows": windows,
+                                    "within_stated": bool(within)}
+    if within:
+        return
+    report["observation_period"] = measured
+    note = (f"The question was read as {stated}, but every figure below was measured over "
+            f"{measured} — so that is the period this report states.")
+    gaps = list(report.get("data_gaps") or [])
+    if note not in gaps:
+        gaps.append(note)
+    report["data_gaps"] = gaps
 
 
 def _phase_payload(fresh: list[dict]) -> dict:
@@ -974,6 +1044,8 @@ def baseline(turn: AnalystTurn, args: dict) -> dict:
     state = dict(turn.state)
     state["_ada_intake"] = _spec_overrides(turn.intake, args)
     fresh = turn.merge(ada_baseline(state, turn.conn), tool="baseline")
+    _note_window(turn, state["_ada_intake"].get("observation_start"),
+                 state["_ada_intake"].get("observation_end"), "baseline", fresh)
     out = _phase_payload(fresh)
     if turn.state.get("_baseline_sigma") is not None:
         out["sigma"] = turn.state["_baseline_sigma"]
@@ -992,7 +1064,9 @@ def decompose(turn: AnalystTurn, args: dict) -> dict:
         matched = [d for d in dims if dim.lower() in d.lower()]
         spec["dimensions"] = (matched or [dim]) + [d for d in dims if d not in matched]
     state["_ada_intake"] = spec
-    return _phase_payload(turn.merge(ada_decompose(state, turn.conn), tool="decompose"))
+    fresh = turn.merge(ada_decompose(state, turn.conn), tool="decompose")
+    _note_window(turn, spec.get("observation_start"), spec.get("observation_end"), "decompose", fresh)
+    return _phase_payload(fresh)
 
 
 def _scan(state: dict, conn, **kwargs) -> dict:
@@ -1026,6 +1100,8 @@ def cross_section(turn: AnalystTurn, args: dict) -> dict:
         state = dict(turn.state)
         state["_ada_intake"] = _spec_overrides(turn.intake, args)
     fresh += turn.merge(_scan(state, turn.conn, **kwargs), tool="cross_section")
+    _note_window(turn, state["_ada_intake"].get("observation_start"),
+                 state["_ada_intake"].get("observation_end"), "cross_section", fresh)
     return _phase_payload(fresh)
 
 
@@ -1705,6 +1781,8 @@ def run_analyst(
             synth = ada_synthesize(state)
             report = synth.get("answer_report")
             state.update(synth)
+            if report is not None:
+                _attach_measured_period(report, turn.intake, turn.windows_measured)
         except Exception:
             logger.warning("analyst: synthesis failed; the phases stand without a report",
                            exc_info=True)
