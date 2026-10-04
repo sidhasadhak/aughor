@@ -30,7 +30,9 @@
  * dash that reads as "nothing happened".
  */
 import { needsYouTitle } from "@/lib/names";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { useVisiblePoll } from "@/lib/useVisiblePoll";
 
 import { ActivityChart, colorFor } from "@/components/agentops/ActivityChart";
 import { ProvenanceDrawer, type Provenance } from "@/components/agentops/ProvenanceDrawer";
@@ -135,19 +137,21 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
       .catch(e => setAttentionError(String(e?.message || e)));
   }, [params, showRunners]);
 
+  // Only while this layer is on screen: a hidden Overview reloaded four endpoints every 15 s
+  // and on every job event (useVisiblePoll's note). Shown again, it refreshes at once.
+  const active = useVisiblePoll(load, 15_000);   // slow fallback if the stream is down
+  const activeRef = useRef(active);
+  useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => {
     load();
-    const unsub = subscribeKernelEvents(() => load(), { kinds: ["job.state"] });
-    const iv = setInterval(load, 15_000);   // slow fallback if the stream is down
-    return () => { unsub(); clearInterval(iv); };
+    const unsub = subscribeKernelEvents(() => { if (activeRef.current) load(); },
+                                        { kinds: ["job.state"] });
+    return () => { unsub(); };
   }, [load]);
 
   // The waiting timers count up on their own — an age frozen at fetch time reads as a
   // stale page, and "how long has this been waiting" is the whole point of the strip.
-  useEffect(() => {
-    const iv = setInterval(() => setTick(t => t + 1000), 1000);
-    return () => clearInterval(iv);
-  }, []);
+  useVisiblePoll(useCallback(() => setTick(t => t + 1000), []), 1000);
 
   const liveByKind = useMemo(() => {
     const m: Record<string, number> = {};

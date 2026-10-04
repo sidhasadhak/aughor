@@ -15,6 +15,8 @@ import { connectionLabel, needsYouTitle } from "@/lib/names";
 import { getConnections as listConnectionsForNames, type Connection as ConnectionForNames } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
+import { useVisiblePoll } from "@/lib/useVisiblePoll";
+
 import { Button } from "@/components/ui/button";
 import { ProposalCardById } from "@/components/ProposalCard";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
@@ -75,11 +77,9 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
       .catch(e => setError(String(e?.message || e)));
   }, []);
 
-  useEffect(() => {
-    load();
-    const iv = setInterval(load, 10_000);
-    return () => clearInterval(iv);
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
+  // Only while the Attention layer is on screen (useVisiblePoll's note); refreshed on return.
+  useVisiblePoll(load, 10_000);
 
   const resolveAlert = async (row: NeedsHumanRow) => {
     setBusy(row.id);
