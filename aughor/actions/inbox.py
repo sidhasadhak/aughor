@@ -479,6 +479,21 @@ def get_proposal(proposal_id: str) -> Optional[StagedProposal]:
             c.close()
 
 
+def proposals_for_trace(trace_id: str) -> list[StagedProposal]:
+    """The proposals one run staged, oldest first — what a chat turn's approval cards are
+    drawn from when the thread is reopened (the live `proposal_staged` frame is not kept)."""
+    if not trace_id:
+        return []
+    with _LOCK:
+        c = _conn()
+        try:
+            rows = c.execute("SELECT * FROM staged_proposals WHERE org_id=? AND trace_id=? "
+                             "ORDER BY created_at ASC", (current_org_id(), trace_id)).fetchall()
+            return [_row(r) for r in rows]
+        finally:
+            c.close()
+
+
 def list_proposals(connection_id: Optional[str] = None, status: Optional[str] = None,
                    limit: int = 100) -> list[StagedProposal]:
     org = current_org_id()

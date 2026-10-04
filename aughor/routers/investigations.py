@@ -6560,6 +6560,17 @@ def get_chat_session_turns(session_id: str):
     return turns
 
 
+def _staged_proposal_parts(trace_id: str) -> list[dict]:
+    """`data-proposal_staged` parts for the proposals one run staged — the stream's own shape."""
+    if not trace_id:
+        return []
+    from aughor.actions.inbox import proposals_for_trace
+    return [{"type": "data-proposal_staged", "data": {
+                "proposal_id": p.id, "kind": p.kind, "connection_id": p.connection_id,
+                "action_id": p.action_id}}
+            for p in proposals_for_trace(trace_id)]
+
+
 def _turn_to_ui_messages(t: dict) -> list[dict]:
     """One stored chat turn as an AI-SDK `UIMessage` pair (CA-1).
 
@@ -6636,6 +6647,10 @@ def _turn_to_ui_messages(t: dict) -> list[dict]:
     if t.get("overview_report"):
         parts.append({"type": "data-overview_report",
                       "data": {"overview_report": t["overview_report"]}})
+    # The approval cards the turn staged. The live `proposal_staged` frame is not stored, so a
+    # reopened chat drew none (CT-5's survey: every proposal kind); the proposals the turn's
+    # run staged are found by its trace and sent as the same part the stream sent.
+    parts.extend(_staged_proposal_parts(t.get("trace_id") or ""))
     if (t.get("status") or "complete") == "interrupted":
         parts.append({"type": "data-error", "data": {
             "message": f"This answer was interrupted — {UNCERTAIN_RESULT}.",

@@ -792,7 +792,7 @@ def get_session_turns(session_id: str) -> list[dict]:
     _org, _op = ((" AND org_id = ?", [current_org_id()])
                  if require_identity_enabled() else ("", []))
     rows = c.execute(
-        f"""SELECT id, question, headline, report_json, started_at, status, kind
+        f"""SELECT id, question, headline, report_json, started_at, status, kind, trace_id
            FROM investigations
            WHERE session_id = ? AND {_THREAD_TURN_KINDS}{_org}
            ORDER BY started_at ASC""",
@@ -801,7 +801,7 @@ def get_session_turns(session_id: str) -> list[dict]:
     # Fallback: maybe the caller passed a row id directly (old single-turn items)
     if not rows:
         rows = c.execute(
-            f"""SELECT id, question, headline, report_json, started_at, status, kind
+            f"""SELECT id, question, headline, report_json, started_at, status, kind, trace_id
                FROM investigations
                WHERE id = ? AND kind = 'chat'{_org}""",
             (session_id, *_op),

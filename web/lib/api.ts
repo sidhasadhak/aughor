@@ -5397,6 +5397,11 @@ export type NewAutomation = {
    *  their arrows allow). An authored field: every update payload must carry it, or
    *  a rename silently re-serialises a parallel chain. */
   scheduling?: "ordered" | "parallel";
+  /** SP-13 — the IANA clock the schedule is read in ("" = UTC). Sent on create from a draft
+   *  that carries one; an update that leaves it out keeps the stored clock. */
+  timezone?: string;
+  /** SP-8 — the agent a drafted chain runs as. Honoured on create only. */
+  agent_id?: string;
 };
 
 // ── HB-6 · the hub-wide map — every automation on one screen ──────────────────

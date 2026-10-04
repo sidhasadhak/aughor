@@ -14121,6 +14121,11 @@ export interface components {
         /** CreateAutomationRequest */
         CreateAutomationRequest: {
             /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /**
              * Condition Logic
              * @default all
              */
@@ -14168,6 +14173,11 @@ export interface components {
              * @default ordered
              */
             scheduling: string;
+            /**
+             * Timezone
+             * @default
+             */
+            timezone: string;
         };
         /** CreateCanvasRequest */
         CreateCanvasRequest: {

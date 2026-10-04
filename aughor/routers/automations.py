@@ -59,7 +59,19 @@ class CreateAutomationRequest(BaseModel):
     #: 200 and the flag never persisted. Found by driving it live, and it is the SAME shape
     #: as the half-added-column trap the store warns about one layer down — a request model
     #: that silently ignores a key is the HTTP spelling of a named binding that does.
+    #: A save that does not SEND it keeps the stored value (`update`): the flag is flipped
+    #: by its own door (`POST /automations/{id}/exposed`), and the canvas's full-record
+    #: save, which never carried it, was un-exposing every chain it touched.
     exposed_as_tool: bool = False
+    #: SP-13 — the IANA clock a schedule trigger's cron is read in ("" = UTC). Missing from
+    #: this model, a draft's timezone was lost when the editor saved it, and every canvas save
+    #: reset a stored one to UTC. Like `exposed_as_tool`, an update that does not send it
+    #: keeps the stored value.
+    timezone: str = ""
+    #: SP-8 — the custom agent this chain runs AS (its runs and spend attributed there).
+    #: Honoured on CREATE, for a drafted chain finished in the editor; an update keeps the
+    #: stored one, as it always has. An id that names no agent is refused.
+    agent_id: str = ""
 
 
 class ProposeRequest(BaseModel):
@@ -409,6 +421,11 @@ def create(body: CreateAutomationRequest):
         automation = Automation(**payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
+    if automation.agent_id:
+        from aughor.custom_agents import get_agent
+        if get_agent(automation.agent_id) is None:
+            raise HTTPException(status_code=422,
+                                detail=f"no agent with id {automation.agent_id!r} to run this chain as")
     # HB-2 — a DECLARED automation is born on probation, addressed to its declarer.
     # With identity off `current_user_id()` is "" and the gate's probation check is
     # inert (nobody to address the review to) — built and waiting on OIDC, exactly as
@@ -432,7 +449,14 @@ def update(automation_id: str, body: CreateAutomationRequest):
         # `last_status` went back to null (the card read "never run" again) and
         # `agent_id` — which the engine reads to decide who a step runs AS — went back
         # to empty. Third of its family in this subsystem, which is why it now has a test.
-        automation = Automation(**body.model_dump(), id=automation_id,
+        # And the fields set by OTHER doors — the MCP flag, the schedule's clock — are kept
+        # unless this request actually sends them: the canvas saves the whole record it
+        # draws, which never included either, and was resetting both on every save.
+        authored = body.model_dump(exclude={"agent_id"})
+        for kept in ("exposed_as_tool", "timezone"):
+            if kept not in body.model_fields_set:
+                authored[kept] = getattr(existing, kept)
+        automation = Automation(**authored, id=automation_id,
                                 created_at=existing.created_at,
                                 agent_id=existing.agent_id,
                                 last_run_at=existing.last_run_at,

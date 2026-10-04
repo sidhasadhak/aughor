@@ -45,7 +45,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import {
-  blankDraft, DesignControls, StepInspector, updatePayload, type Draft,
+  blankDraft, DesignControls, StepInspector, updatePayload, type Draft, type DraftKeeps,
 } from "@/components/automations/AutomationAuthor";
 import { DeployMenu } from "@/components/automations/DeployMenu";
 import {
@@ -834,7 +834,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
   automation?: Automation;
   /** DS-1R — canvas-first creation: the connection the new automation will belong to,
    *  and (for a DS-15 proposal) the draft to start from instead of a blank canvas. */
-  create?: { connId: string; seed?: Draft };
+  create?: { connId: string; seed?: Draft; keeps?: DraftKeeps };
   /** Create mode's exit: the record the server now holds. */
   onCreated?: (a: Automation) => void;
   /** DS-1R — the ONE header row. The canvas owns it so the identity, the mode and the
@@ -1649,6 +1649,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
           <DesignControls
             automation={automation ?? null}
             connId={create?.connId ?? automation?.conn_id ?? ""}
+            keeps={create?.keeps}
             name={header?.name ?? automation?.name ?? ""}
             draft={draft}
             onDraft={d => setDraft(d)}
