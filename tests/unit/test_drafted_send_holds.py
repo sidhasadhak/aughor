@@ -10,7 +10,9 @@ transport and the bot store are stubbed):
 * accepting it POSTS once and the resumed chain reads the real thread ts downstream;
 * accept with "always allow" mints a standing send-grant, and the NEXT run posts unattended;
 * a hand-built post (no `require_approval`) never parks — untouched, like a hand-built write;
-* the drafted-hold helper marks slack_post.
+* the drafted-hold helper marks slack_post;
+* the parked send carries the text the unattended path would post (an envelope rendered),
+  and an accept ends as an unattended send does: its chart drawn, its thread filed.
 """
 from __future__ import annotations
 
@@ -125,3 +127,71 @@ def test_the_grant_is_bound_to_the_channel_not_blanket(_slack_stub):
     accept_proposal(pending.id, actor="person:amit", mint_grant=True)
     assert grants.matching_send_grant(a.id, "#ops", connection_id="conn-send") is not None
     assert grants.matching_send_grant(a.id, "#general", connection_id="conn-send") is None
+
+
+def test_a_parked_send_carries_the_answer_it_was_bound_to(_slack_stub):
+    """A drafted post bound to an answer's envelope parks with the text the unattended path
+    would post — the envelope rendered — and the accept posts exactly that. The raw
+    `message` was frozen before (2026-10-04), so an envelope-bound send reached the card,
+    and then the channel, as nothing."""
+    from aughor.actions.inbox import accept_proposal, proposals_for_run
+
+    a = upsert_automation(Automation(
+        name="revenue delivery", conn_id="conn-send",
+        conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
+        effects=[Effect(kind="slack_post", alias="tell", config={
+            "bot_id": "sb_1", "channel": "#ops", "require_approval": True,
+            "envelope": {"question": "What was revenue yesterday?",
+                         "headline": "Revenue was 12,345 yesterday."}})],
+        max_retries=0))
+    run = _run(a)
+    pending = [p for p in proposals_for_run(run.id) if p.pending][0]
+    assert "Revenue was 12,345 yesterday." in pending.params["message"]
+
+    result, _ = accept_proposal(pending.id, actor="person:amit")
+    assert result.ok
+    assert _slack_stub[-1]["message"] == pending.params["message"]
+
+
+def test_an_accepted_send_draws_its_chart_and_files_its_thread(_slack_stub, monkeypatch, client):
+    """The accept ends as the unattended send ends: the chart goes into the thread the post
+    opened, and the thread is filed on what the send is about — the link a reply in that
+    thread is matched to (`routers/arrivals.py` looks it up by `channel:ts`), which refused
+    every reply under an accepted send as "not filed on any object" before. Pressed at the
+    DOOR: the after-steps live in the accept route, because the inbox may not import the
+    engine (`test_the_inbox_never_imports_the_automation_engine`)."""
+    from aughor.actions.inbox import proposals_for_run
+    from aughor.automations import engine
+    from aughor.hub.links import list_links
+
+    monkeypatch.setattr("aughor.automations.engine.resume_run", lambda rid, **kw: None)
+
+    grid = {"columns": ["region", "revenue"], "rows": [["East", 12], ["West", 9]]}
+    monkeypatch.setattr(engine, "chart_grid", lambda effect, context: dict(grid))
+    drawn: list = []
+    monkeypatch.setattr(engine, "_attach_chart",
+                        lambda effect, automation, bot, info, channel:
+                        drawn.append((effect.config.get(engine.CHART_GRID_KEY), info.get("ts"))))
+
+    a = upsert_automation(Automation(
+        name="regional revenue", conn_id="conn-send",
+        conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
+        effects=[Effect(kind="slack_post", alias="tell", config={
+            "bot_id": "sb_1", "channel": "#ops", "message": "revenue by region",
+            "about": "metric:revenue", "require_approval": True})],
+        max_retries=0))
+    run = _run(a)
+    pending = [p for p in proposals_for_run(run.id) if p.pending][0]
+    assert pending.params[engine.CHART_GRID_KEY]["rows"] == grid["rows"]
+
+    # By the route's name, not its path: the path's prefix is frozen until its rename.
+    accept = client.app.url_path_for("accept_inbox", proposal_id=pending.id)
+    response = client.post(accept, json={"actor": "person:amit"})
+    assert response.status_code == 200, response.text
+    reply = response.json()
+    assert reply["status"] == "executed"
+    ts = f"ts{len(_slack_stub)}"                      # the stub numbers its posts
+    assert drawn == [(grid, ts)]                      # the chart, into the post's thread
+    filed = [ln for ln in list_links(kind="thread") if ln.get("ref") == f"#ops:{ts}"]
+    assert len(filed) == 1 and filed[0]["object_ref"] == "metric:revenue"
+    assert reply["outcome"].get("link_id") == filed[0]["id"]

@@ -28,9 +28,12 @@ _LOGS_PATH     = _ACTIONS_DIR / "action_logs.json"
 # every outbound send the platform has ever made — a security surface, not episode
 # detail — and being a file is what made it unreadable: nobody queries a file. Opened
 # on the live install that day, `data/action_logs.json` held 336 rows of which 336 had
-# `status: failed`. Every outbound delivery on that install had failed, and it had gone
-# unnoticed for as long as the file had existed, next to a properly indexed 61,696-row
-# `audit_log` that anyone would have seen.
+# `status: failed` — and READ (2026-09-22), the reasons were 332 × "Trigger is disabled"
+# for one switched-off trigger over six days in July, plus 4 sends to a deliberate
+# blackhole test target. No real send had ever failed; the record had called a skip a
+# failure (fixed the same day: a disabled trigger now logs `skipped`). The point stands
+# either way: a file next to a properly indexed 61,696-row `audit_log` is where a real
+# failure would have hidden, and now it cannot.
 #
 # It is also the shape the file store serves worst: append-only and growing, read by
 # `list_logs` in full and sliced in Python, with no index and no time range.

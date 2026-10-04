@@ -184,6 +184,33 @@ def _resume_parked_run(proposal_id: str) -> None:
                        exc_info=True)
 
 
+def _finish_accepted_send(proposal_id: str, result) -> str:
+    """An accepted Slack send ends as an unattended one does: its chart in the thread the
+    post opened, and the thread filed on what the send is about, so a reply there reaches
+    that object (`engine.finish_accepted_slack_post`). Here at the ROUTER for
+    `_resume_parked_run`'s reason — the inbox may not import the engine — and before the
+    resume, so a later step that replies into the thread finds the chart already there.
+
+    Only an executed Slack send reaches the engine; best-effort, because the post has
+    already happened. Returns the filed link id, or "".
+    """
+    if not result.ok or not (result.outcome or {}).get("ts"):
+        return ""
+    try:
+        from aughor.actions.inbox import get_proposal
+        p = get_proposal(proposal_id)
+        if p is None or p.kind != "outbound_send" or (p.params or {}).get("trigger_id"):
+            return ""
+        from aughor.automations.engine import finish_accepted_slack_post
+        return finish_accepted_slack_post(p.params or {}, result.outcome or {},
+                                          proposer=p.proposer)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an accepted send's chart and filing are best-effort — the post stands",
+                 counter="inbox.accepted_send")
+        return ""
+
+
 @router.get("/inbox")
 def list_inbox(connection_id: str = BUILTIN_ID, status: Optional[str] = Query(default=None)):
     """The staged proposals for a connection (optionally filtered by status) — the review queue."""
@@ -211,6 +238,7 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
     from aughor.actions.inbox import accept_proposal
     result, grant_id = accept_proposal(proposal_id, actor=body.actor, mint_grant=body.mint_grant,
                                        fills=body.fills or None)
+    link_id = _finish_accepted_send(proposal_id, result)
     _resume_parked_run(proposal_id)
     if result.status == "not_found":
         raise HTTPException(status_code=404, detail="No such proposal")
@@ -218,8 +246,8 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
         raise HTTPException(status_code=409, detail={"status": result.status, "message": result.message})
     if result.ok:
         return {"status": result.status, "action_id": result.action_id,
-                "outcome": result.outcome, "granted_by": result.granted_by,
-                "minted_grant": grant_id}
+                "outcome": {**(result.outcome or {}), **({"link_id": link_id} if link_id else {})},
+                "granted_by": result.granted_by, "minted_grant": grant_id}
     raise HTTPException(status_code=result.http_status(),
                         detail={"status": result.status, "action_id": result.action_id,
                                 "message": result.message, **result.detail})

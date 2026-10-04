@@ -118,7 +118,11 @@ class ActionLog:
     investigation_id: str
     rec_index:        int
     recommendation:   str
-    status:           Literal["ok", "failed", "timeout"]
+    #: `skipped` (2026-09-22): the trigger was disabled, so nothing was sent. It used to
+    #: be written as `failed`, and on the live install that made 332 refusals of one
+    #: switched-off trigger read as 332 failed deliveries — a defect in the RECORD, not
+    #: in delivery. A row that was never attempted must not count as an attempt that lost.
+    status:           Literal["ok", "failed", "timeout", "skipped"]
     http_status:      Optional[int]
     error:            Optional[str]
     fired_at:         str

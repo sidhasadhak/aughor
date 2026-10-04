@@ -35,6 +35,7 @@ import json
 import logging
 import math
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Callable, Optional
@@ -84,6 +85,10 @@ class AnalystTurn:
     #: What code measured before the first call (`_measure_declared`): ``(sql, result as the model
     #: reads a tool result)`` — handed to the model as results, never as calls it made.
     measured_by_code: list = field(default_factory=list)
+    #: The windows this turn's figures were measured over — each phase tool's spec and each
+    #: ad-hoc statement's literal bounds (`_note_window`) — for `_attach_measured_period`. On
+    #: the turn for `frame_breakdowns_ran`'s reason: a private state key must be on AgentState.
+    windows_measured: list = field(default_factory=list)
 
     @property
     def intake(self) -> dict:
@@ -108,7 +113,11 @@ class AnalystTurn:
 
 #: A date bound in a WHERE clause — its operator, the day, and whatever follows the day inside
 #: the quotes (a time, a zone). Bounded and anchored; never a parser.
-_ADHOC_BOUND_RE = re.compile(r"""([><]=?)\s*(?:TIMESTAMP\s*)?['"](\d{4}-\d{2}-\d{2})([^'"]{0,40})['"]""", re.I)
+_ADHOC_BOUND_RE = re.compile(r"""([><]=?)\s*(?:(?:TIMESTAMP|DATETIME|DATE)\s*\(?\s*)?['"](\d{4}-\d{2}-\d{2})([^'"]{0,40})['"]""", re.I)
+#: ``BETWEEN '<day>' AND '<day>'`` — both ends kept, as SQL keeps them.
+_ADHOC_BETWEEN_RE = re.compile(
+    r"""BETWEEN\s*(?:(?:TIMESTAMP|DATETIME|DATE)\s*\(?\s*)?['"](\d{4}-\d{2}-\d{2})[^'"]{0,40}['"]\s*\)?\s*"""
+    r"""AND\s*(?:(?:TIMESTAMP|DATETIME|DATE)\s*\(?\s*)?['"](\d{4}-\d{2}-\d{2})[^'"]{0,40}['"]""", re.I)
 #: What may follow the day in a bound that is the START of that day.
 _ADHOC_MIDNIGHT_RE = re.compile(r"(?:[ T]00:00(?::00(?:\.0+)?)?)?\s*(?:Z|UTC|[+-]00(?::?00)?)?", re.I)
 _ADHOC_DATEY = re.compile(r"(_at|date|day|month|year|period)$", re.I)
@@ -140,6 +149,26 @@ def _adhoc_window(text: str) -> str:
         return start if end <= start else f"{start} → {end}"
     days = list(dict.fromkeys(day for _, day, _ in bounds))
     return days[0] if len(days) == 1 else f"{days[0]} → {days[-1]}"
+
+
+def statement_window(text: str) -> Optional[tuple[str, str]]:
+    """``(first day, last day)`` a statement's literal date bounds read — a lower AND an upper
+    bound, or a ``BETWEEN`` — or None. Stricter than `_adhoc_window`, which names whatever days
+    a title can show: a one-sided bound is an open window, and naming it by its one day would
+    claim a period nobody measured. A bound kept with ``<`` at the start of a day ends the day
+    before it."""
+    bounds = _ADHOC_BOUND_RE.findall(text or "")
+    lowers = [day for op, day, _ in bounds if op.startswith(">")]
+    uppers = [(date.fromisoformat(day) - timedelta(days=1)).isoformat()
+              if op == "<" and _ADHOC_MIDNIGHT_RE.fullmatch(rest) else day
+              for op, day, rest in bounds if op.startswith("<")]
+    for lo, hi in _ADHOC_BETWEEN_RE.findall(text or ""):
+        lowers.append(lo)
+        uppers.append(hi)
+    if not lowers or not uppers:
+        return None
+    start, end = min(lowers), max(uppers)
+    return (start, end) if start <= end else None
 
 
 _MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -637,6 +666,9 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                 "skipped_reason": None,
                 "caveats": [],
             }]}, tool="run_sql")
+            _window = statement_window(ran)
+            if _window:
+                _note_window(turn, _window[0], _window[1], "run_sql")
     except Exception as exc:                      # noqa: BLE001 — never break a tool
         from aughor.kernel.errors import tolerate
         tolerate(exc, "ad-hoc evidence capture is best-effort; the tool result stands",
@@ -669,6 +701,45 @@ def _spec_overrides(intake: dict, args: dict) -> dict:
         spec["metric_sql"] = metric_sql
         spec["metric_label"] = str(args.get("metric_label") or "").strip() or metric_sql
     return spec
+
+
+def _note_window(turn: "AnalystTurn", start: str, end: str, tool: str, fresh: Any = True) -> None:
+    """Record the days a tool's figures were measured over, for `_attach_measured_period`.
+    Only a run that produced something counts: a phase that came back empty measured nothing."""
+    if start and end and fresh:
+        turn.windows_measured.append({"tool": tool, "start": str(start), "end": str(end)})
+
+
+def _attach_measured_period(report: dict, intake: Optional[dict], windows: Optional[list]) -> None:
+    """The report states the period its figures were MEASURED over.
+
+    `observation_period` is the intake spec's label, and the analyst's phase tools run on a copy
+    of that spec with the model's own window (`_spec_overrides`) — so a report could say "August
+    2026" over figures that were all July's, and nothing compared the two (noted 2026-10-02).
+    When no recorded window lies inside the stated one, the report states the measured period
+    instead and says why among its caveats; when one does, the stated period stands. A run that
+    recorded no window — a cross-sectional scan, statements without literal bounds — keeps its
+    label: a window the code cannot read is not evidence of a mismatch."""
+    intake = intake or {}
+    start, end = str(intake.get("observation_start") or ""), str(intake.get("observation_end") or "")
+    windows = [w for w in (windows or []) if w.get("start") and w.get("end")]
+    if not windows or not start or not end or intake.get("cross_sectional"):
+        return
+    within = [w for w in windows if start <= w["start"] and w["end"] <= end]
+    stated = str(report.get("observation_period") or "") or _window_words(f"{start} → {end}")
+    distinct = list(dict.fromkeys((w["start"], w["end"]) for w in windows))
+    measured = "; ".join(_window_words(a if a == b else f"{a} → {b}") for a, b in distinct)
+    report["period_as_measured"] = {"stated": stated, "windows": windows,
+                                    "within_stated": bool(within)}
+    if within:
+        return
+    report["observation_period"] = measured
+    note = (f"The question was read as {stated}, but every figure below was measured over "
+            f"{measured} — so that is the period this report states.")
+    gaps = list(report.get("data_gaps") or [])
+    if note not in gaps:
+        gaps.append(note)
+    report["data_gaps"] = gaps
 
 
 def _phase_payload(fresh: list[dict]) -> dict:
@@ -973,6 +1044,8 @@ def baseline(turn: AnalystTurn, args: dict) -> dict:
     state = dict(turn.state)
     state["_ada_intake"] = _spec_overrides(turn.intake, args)
     fresh = turn.merge(ada_baseline(state, turn.conn), tool="baseline")
+    _note_window(turn, state["_ada_intake"].get("observation_start"),
+                 state["_ada_intake"].get("observation_end"), "baseline", fresh)
     out = _phase_payload(fresh)
     if turn.state.get("_baseline_sigma") is not None:
         out["sigma"] = turn.state["_baseline_sigma"]
@@ -991,7 +1064,9 @@ def decompose(turn: AnalystTurn, args: dict) -> dict:
         matched = [d for d in dims if dim.lower() in d.lower()]
         spec["dimensions"] = (matched or [dim]) + [d for d in dims if d not in matched]
     state["_ada_intake"] = spec
-    return _phase_payload(turn.merge(ada_decompose(state, turn.conn), tool="decompose"))
+    fresh = turn.merge(ada_decompose(state, turn.conn), tool="decompose")
+    _note_window(turn, spec.get("observation_start"), spec.get("observation_end"), "decompose", fresh)
+    return _phase_payload(fresh)
 
 
 def _scan(state: dict, conn, **kwargs) -> dict:
@@ -1025,6 +1100,8 @@ def cross_section(turn: AnalystTurn, args: dict) -> dict:
         state = dict(turn.state)
         state["_ada_intake"] = _spec_overrides(turn.intake, args)
     fresh += turn.merge(_scan(state, turn.conn, **kwargs), tool="cross_section")
+    _note_window(turn, state["_ada_intake"].get("observation_start"),
+                 state["_ada_intake"].get("observation_end"), "cross_section", fresh)
     return _phase_payload(fresh)
 
 
@@ -1469,6 +1546,8 @@ class AnalystResult:
     investigation_id: str
     injected_chars: int = 0
     reinjection_ratio: float = 0.0
+    #: How long the context took before intake — schema, linking, catalog — in seconds.
+    context_timings: dict = field(default_factory=dict)
 
 
 def _base_state(question: str, connection_id: str, investigation_id: str,
@@ -1514,7 +1593,14 @@ def build_analyst_context(connection_id: str, question: str, *,
     es = resolve_execution_scope(connection_id, canvas_id, schema_scope=schema_scope,
                                  schema_context_builder=build_canvas_schema_context)
     conn = es.open()
-    full_schema = conn.get_schema()
+    # The shared, scope-keyed schema cache the deep path reads (WCH-12) — this read went
+    # around it, so every Agent ask re-listed the warehouse before its intake: measured
+    # 2026-10-04 on theLook (BigQuery, 7 tables), 2.5 s a time, untimed and unrecorded.
+    # The three stages are timed now and ride the turn's record (`context_timings`).
+    from aughor.routers._shared import get_schema_cached
+    _t0 = time.monotonic()
+    full_schema = get_schema_cached(es.connection_id, conn)
+    timings = {"schema_s": round(time.monotonic() - _t0, 3)}
     schema = es.schema_context or full_schema
     if es.eff_schema:
         schema = (
@@ -1523,13 +1609,16 @@ def build_analyst_context(connection_id: str, question: str, *,
             f"(e.g. {es.eff_schema}.table_name). Do NOT use bare table names.\n\n"
             + schema
         )
+    _t0 = time.monotonic()
     try:
         from aughor.tools.schema_linker import link_schema
         schema = link_schema(question, schema, connection_id=es.connection_id)
     except Exception:
         logger.warning("analyst: schema-linking pre-filter failed; using full schema",
                        exc_info=True)
+    timings["link_s"] = round(time.monotonic() - _t0, 3)
     data_catalog = ""
+    _t0 = time.monotonic()
     try:
         from aughor.db.schema_render import parse_schema_tables
         from aughor.tools.data_catalog import build_data_catalog
@@ -1539,6 +1628,10 @@ def build_analyst_context(connection_id: str, question: str, *,
     except Exception:
         logger.warning("analyst: data catalog build failed; the linked schema stands",
                        exc_info=True)
+    timings["catalog_s"] = round(time.monotonic() - _t0, 3)
+    logger.info("analyst: context for %s in %.2fs (schema %.2fs, link %.2fs, catalog %.2fs)",
+                es.connection_id, sum(timings.values()), timings["schema_s"],
+                timings["link_s"], timings["catalog_s"])
     return conn, {
         "connection_id": es.connection_id,
         "schema_context": schema,
@@ -1546,6 +1639,7 @@ def build_analyst_context(connection_id: str, question: str, *,
         "canvas_id": canvas_id,
         "canvas_schema_context": es.schema_context or "",
         "data_catalog": data_catalog,
+        "context_timings": timings,
     }
 
 
@@ -1581,6 +1675,7 @@ def run_analyst(
     conn, seed = build_analyst_context(connection_id, question,
                                        canvas_id=canvas_id, schema_scope=schema_scope)
     eff_conn_id = seed.pop("connection_id")
+    context_timings = seed.pop("context_timings", None) or {}
 
     inv_id = ""
     if persist:
@@ -1603,6 +1698,24 @@ def run_analyst(
         # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
         # like any other so the user sees the spec land.
         turn.merge(ada_intake(state, conn), tool="intake")
+        if turn.state.get("_intake_failed"):
+            # Stopped here, as the deep path stops (`investigate.route_after_intake`): the
+            # guards that keep a window inside the data and a month still filling out of a
+            # comparison all live inside the spec, so a loop run without one cannot be
+            # guarded into correctness. This one ran on until 2026-10-04 — the 2026-09-29
+            # Agent run whose intake came back empty named a month still filling as the top
+            # growth. The Question Intake step above says why; the door says nothing was
+            # measured (`stop_reason`).
+            if persist and inv_id:
+                try:
+                    from aughor.db.history import fail_investigation
+                    fail_investigation(inv_id, status="failed")
+                except Exception as exc:                # noqa: BLE001 — the stop stands
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "recording an intake-stopped run as failed is best-effort",
+                             counter="analyst.intake_failed_persist")
+            return AnalystResult(answer="", report=None, steps=[], stop_reason="intake_failed",
+                                 investigation_id=inv_id, context_timings=context_timings)
 
         budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
         # Item 3: measure-and-state or investigate, decided by code from the question.
@@ -1668,6 +1781,8 @@ def run_analyst(
             synth = ada_synthesize(state)
             report = synth.get("answer_report")
             state.update(synth)
+            if report is not None:
+                _attach_measured_period(report, turn.intake, turn.windows_measured)
         except Exception:
             logger.warning("analyst: synthesis failed; the phases stand without a report",
                            exc_info=True)
@@ -1715,6 +1830,7 @@ def run_analyst(
         investigation_id=inv_id,
         injected_chars=result.injected_chars,
         reinjection_ratio=result.reinjection_ratio,
+        context_timings=context_timings,
     )
 
 

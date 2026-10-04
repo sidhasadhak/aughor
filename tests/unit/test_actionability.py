@@ -149,13 +149,15 @@ def test_send_finding_maps_payload(monkeypatch):
     assert p.investigation_id == "insight_42"  # source_id threads through as provenance
 
 
-def test_send_finding_disabled_trigger_reports_failed(monkeypatch, tmp_path):
+def test_send_finding_disabled_trigger_reports_skipped(monkeypatch, tmp_path):
     # End-to-end through the real fire_action with a DISABLED trigger: short-circuits
     # before any network call, so we exercise the wiring without external deps.
+    # `skipped`, not `failed` (2026-09-22): nothing was attempted, and calling it a
+    # failure made 332 refusals read as 332 lost deliveries on the live install.
     import aughor.notifications.store as astore
     monkeypatch.setattr(astore, "get_trigger", lambda tid: _fake_trigger(enabled=False))
     monkeypatch.setattr(astore, "_LOG_PATH", tmp_path / "logs.json", raising=False)
     monkeypatch.setattr(astore, "log_action", lambda log: None)
     out = send_finding_to_trigger("t1", _SendFindingBody(text="hi"))
-    assert out["status"] == "failed"
+    assert out["status"] == "skipped"
     assert "disabled" in (out["error"] or "").lower()

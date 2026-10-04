@@ -130,6 +130,68 @@ def _ask_request(req: InvestigationRequest):
                       agent_id=req.agent_id or None)
 
 
+#: Terminal statuses that mean the investigation did NOT answer. Read from the
+#: investigation RECORD, which is the authority — the stream is a proxy for it.
+_FAILED_STATUSES = ("failed", "timed_out", "interrupted")
+
+#: How long a drained inline run will wait for its record to turn terminal. The drain
+#: ending does NOT mean the reconcile has committed: measured 2026-09-22, a 900s budget
+#: kill closed the stream at 00:20:51Z and the row read `running` for the beat in which
+#: the runner asked — so the killed run was reported `executed`, the effect was filed
+#: "ran inline", and the retry loop absorbed the whole thing invisibly (the same failure
+#: the 2026-09-06 note in `_inline` fixed once, returning through a race instead of a
+#: missing read). Ten seconds is far above the reconcile's real latency and far below a
+#: run's budget, and a row already terminal costs one read and no sleep.
+_RECORD_TERMINAL_WAIT_S = 10.0
+_RECORD_POLL_S = 0.25
+
+
+def terminal_record(inv_id: str, *, wait_s: "float | None" = None) -> dict:
+    """The investigation row once its status is TERMINAL, or ``{}``.
+
+    Polls while the row is missing or still ``running``, bounded by ``wait_s`` — the
+    drain has ended, so "running" can only mean the reconcile has not committed yet.
+    Best-effort: an unreadable store returns ``{}`` rather than raising. The module
+    constants are read at CALL time, deliberately: a def-time default freezes the knob
+    and quietly ignores anyone (a test, an operator shell) who patches it."""
+    if not inv_id:
+        return {}
+    import time as _time
+    if wait_s is None:
+        wait_s = _RECORD_TERMINAL_WAIT_S
+    deadline = _time.monotonic() + max(0.0, wait_s)
+    while True:
+        try:
+            from aughor.db.history import get_investigation
+            row = get_investigation(inv_id) or {}
+        except Exception:
+            return {}
+        if str(row.get("status") or "") not in ("", "running"):
+            return row
+        if _time.monotonic() >= deadline:
+            return row
+        _time.sleep(_RECORD_POLL_S)
+
+
+def record_failure(inv_id: str) -> str:
+    """The persisted verdict for ``inv_id`` when it is a failure, else ``""``.
+
+    Waits for the record to turn terminal first (see :func:`terminal_record` — the race
+    this closes filed two 900s budget kills as `executed` on 2026-09-22). Best-effort: an
+    unreadable history store must not turn a completed run into a reported failure. It
+    only ever ADDS a failure the stream missed.
+    """
+    row = terminal_record(inv_id)
+    status = str(row.get("status") or "")
+    if status not in _FAILED_STATUSES:
+        return ""
+    # The row's own words when it has them — the run's reconcile writes the cause and
+    # what to do about it. The row's `query_count` is never quoted: only a COMPLETED run
+    # writes it, so a failed one read "after 0 queries" for runs that issued dozens.
+    why = str(row.get("error") or "").strip()
+    return why or f"The investigation ended {status} without an answer; nothing recorded why."
+
+
 def refusal_for(req: InvestigationRequest) -> str:
     """Why this investigation cannot run as its agent, or ``""`` when it can.
 
@@ -281,31 +343,8 @@ def run_investigation(
         seen.pop("headline_is_final", None)   # a drain marker, not a result field
         _note_dispatch(caller, req, seen)
 
-    #: Terminal statuses that mean the investigation did NOT answer. Read from the
-    #: investigation RECORD, which is the authority — the stream is a proxy for it.
-    _FAILED_STATUSES = ("failed", "timed_out", "interrupted")
-
     def _record_failure(inv_id: str) -> str:
-        """The persisted verdict for ``inv_id`` when it is a failure, else ``""``.
-
-        Best-effort: an unreadable history store must not turn a completed run into a
-        reported failure. It only ever ADDS a failure the stream missed.
-        """
-        if not inv_id:
-            return ""
-        try:
-            from aughor.db.history import get_investigation
-            row = get_investigation(inv_id) or {}
-        except Exception:
-            return ""
-        status = str(row.get("status") or "")
-        if status not in _FAILED_STATUSES:
-            return ""
-        # The row's own words when it has them — the run's reconcile writes the cause and
-        # what to do about it. The row's `query_count` is never quoted: only a COMPLETED run
-        # writes it, so a failed one read "after 0 queries" for runs that issued dozens.
-        why = str(row.get("error") or "").strip()
-        return why or f"The investigation ended {status} without an answer; nothing recorded why."
+        return record_failure(inv_id)
 
     def _inline(reason: str) -> InvestigationRun:
         """Drain to completion and report what came back — the only path that has waited,

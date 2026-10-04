@@ -504,3 +504,44 @@ def test_a_typed_delta_never_overwrites_the_finished_answer(monkeypatch):
     run = run_investigation(InvestigationRequest(question="q", connection_id="c",
                                                  wait=True))
     assert run.headline == "the whole answer"
+
+
+# ── the record race: a drain ending is not a reconcile committed ────────────────────────────
+
+def test_record_failure_waits_out_the_reconcile_race(monkeypatch):
+    """Measured 2026-09-22: a 900s budget kill closed the stream while the row still read
+    `running`; the runner asked once, got nothing, and filed the killed run as `executed`.
+    The verdict must WAIT for a terminal row — and then quote it."""
+    from aughor.runners import investigation as ri
+    reads = {"n": 0}
+
+    def slow_reconcile(inv_id):
+        reads["n"] += 1
+        if reads["n"] < 3:
+            return {"status": "running"}
+        return {"status": "failed",
+                "error": "Stopped at the Analyst's 900s time budget before answering."}
+    monkeypatch.setattr("aughor.db.history.get_investigation", slow_reconcile)
+    monkeypatch.setattr(ri, "_RECORD_POLL_S", 0.0)
+    why = ri.record_failure("inv1")
+    assert reads["n"] == 3, "the runner must poll past `running`, not trust the first read"
+    assert "900s time budget" in why
+
+
+def test_record_failure_still_reads_a_completed_run_as_success(monkeypatch):
+    """The wait must not manufacture failures: a completed row answers on the first read."""
+    from aughor.runners import investigation as ri
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda inv_id: {"status": "completed"})
+    assert ri.record_failure("inv2") == ""
+
+
+def test_record_failure_gives_up_at_the_deadline_without_inventing_a_verdict(monkeypatch):
+    """A row that never turns terminal inside the window yields no failure — the stream's
+    own reading stands, and nothing is fabricated."""
+    from aughor.runners import investigation as ri
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda inv_id: {"status": "running"})
+    monkeypatch.setattr(ri, "_RECORD_POLL_S", 0.0)
+    monkeypatch.setattr(ri, "_RECORD_TERMINAL_WAIT_S", 0.05)
+    assert ri.record_failure("inv3") == ""

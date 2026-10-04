@@ -187,6 +187,12 @@ class Measurement:
     source: str
     values: list = field(default_factory=list)
     rates: list = field(default_factory=list)
+    #: Measured STRING cells (names, labels) the message may quote verbatim. Law 1 blanks
+    #: exact occurrences from the text before reading numerals: a size token inside a
+    #: quoted product name ("...Sandal 6B(M)US") is not a magnitude claim, and parsing it
+    #: as six billion held a fully grounded send twice on 2026-09-22. Quoted row text is
+    #: grounded by construction — `rendered`'s reasoning, scoped to the quoted spans.
+    texts: list = field(default_factory=list)
     measured_at: str = ""
     as_of: str = ""
     definition: str = ""
@@ -625,6 +631,23 @@ def _definition(text: str, conn_id: str, about: str, declared: str) -> _Check:
                   detail={"cited": cited})
 
 
+def _strip_quoted(text: str, texts: list) -> str:
+    """Blank every verbatim occurrence of a measured string cell from ``text``.
+
+    A write-up that copies a row's name copies its tokens — sizes, model numbers — and a
+    numeral parser reading "6B(M)US" inside a quoted product name manufactures six billion
+    out of a shoe size (held a grounded send twice, 2026-09-22). What the rows themselves
+    say is grounded by construction; only the prose AROUND the quotes makes claims.
+    Longest first, so a name that contains another name is blanked whole; case-insensitive,
+    because a model may re-case a quote without changing what it quotes."""
+    import re as _re
+    out = text or ""
+    for t in sorted({str(t) for t in (texts or []) if len(str(t).strip()) >= 4},
+                    key=len, reverse=True):
+        out = _re.sub(_re.escape(t), " ", out, flags=_re.IGNORECASE)
+    return out
+
+
 def _remeasure(text: str, measurement: Optional[Measurement], dated_records: bool) -> _Check:
     """Law 1. Every stated magnitude must be in the measurement the message departs on,
     taken at departure — re-executed first when it is older than the window."""
@@ -632,7 +655,8 @@ def _remeasure(text: str, measurement: Optional[Measurement], dated_records: boo
         return _Check(NOT_APPLICABLE, "dated records — each number is stated with the moment "
                                       "it was recorded")
     from aughor.explorer.grounding import extract_numerals, numeral_matches_measure
-    numerals = extract_numerals(_strip_dates(text))
+    quoted_stripped = _strip_quoted(text, measurement.texts if measurement else [])
+    numerals = extract_numerals(_strip_dates(quoted_stripped))
     magnitudes = [n for n in numerals if n.enforce]
     percents = [n for n in numerals if n.suffix == "%"]
     if measurement is None:

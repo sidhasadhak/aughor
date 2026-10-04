@@ -25,7 +25,7 @@ interface ActionLog {
   investigation_id: string;
   rec_index:        number;
   recommendation:   string;
-  status:           "ok" | "failed" | "timeout";
+  status:           "ok" | "failed" | "timeout" | "skipped";
   http_status:      number | null;
   error:            string | null;
   fired_at:         string;
@@ -206,7 +206,9 @@ export function ActionHubPanel() {
       const data = await resp.json();
       setTestResult(prev => ({
         ...prev,
-        [id]: data.status === "ok" ? `✓ ${data.http_status}` : `✗ ${data.error || data.http_status}`,
+        [id]: data.status === "ok" ? `✓ ${data.http_status}`
+          : data.status === "skipped" ? `— skipped: ${data.error}`
+          : `✗ ${data.error || data.http_status}`,
       }));
     } catch (e) {
       // Without this, a network error left the button wedged on "…" forever.
@@ -377,6 +379,8 @@ export function ActionHubPanel() {
                           ? <span className="aug-tag aug-tag-green">ok {l.http_status}</span>
                           : l.status === "timeout"
                           ? <span className="aug-tag aug-tag-amber">timeout</span>
+                          : l.status === "skipped"
+                          ? <span className="aug-tag" title={l.error ?? ""}>skipped</span>
                           : <span className="aug-tag aug-tag-red" title={l.error ?? ""}>{l.http_status ? `${l.http_status}` : "failed"}</span>
                         }
                       </td>

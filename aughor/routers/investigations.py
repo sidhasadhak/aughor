@@ -3870,6 +3870,10 @@ async def _stream_analyst(
             # turn renders as a direct answer: what it produced, said plainly, never
             # a report-shaped shell around nothing.
             answer = result.answer or (
+                "Nothing was measured: the question could not be turned into an investigation "
+                "specification — the Question Intake step above says why — and without one the "
+                "checks on its period and window cannot run."
+                if result.stop_reason == "intake_failed" else
                 "The investigation ran out of steps before reaching a conclusion — "
                 "what each step found is above."
                 if result.stop_reason == "budget" else
@@ -3886,7 +3890,10 @@ async def _stream_analyst(
             payload={"body": "analyst", "stop_reason": result.stop_reason,
                      "tools": [s.tool for s in result.steps],
                      "injected_chars": result.injected_chars,
-                     "reinjection_ratio": round(result.reinjection_ratio, 2)},
+                     "reinjection_ratio": round(result.reinjection_ratio, 2),
+                     # The work before intake nothing recorded — schema, linking and
+                     # catalog, in seconds (`analyst.build_analyst_context`).
+                     "context_s": result.context_timings},
         )
         return result
 
