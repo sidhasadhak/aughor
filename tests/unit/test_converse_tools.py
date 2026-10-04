@@ -357,6 +357,29 @@ def test_the_system_prompt_states_rather_than_scripts(fake_conn):
     assert "run_sql" not in prompt, "routing belongs in the tool descriptions, once"
 
 
+def test_the_system_prompt_names_the_engine_its_rules_and_the_clock(monkeypatch):
+    """Every `run_sql` statement is the model's own SQL, and this prompt told it neither the
+    engine nor the date: on theLook (BigQuery) every `date_trunc('month', x)` and every `::`
+    cast it wrote failed. It carries the quick path's writer rules and the clock now — and the
+    clock even when the connection cannot be opened."""
+    from aughor.agent.sql_context import today_utc
+    from aughor.db.dialects import writer_rules
+
+    bq = SimpleNamespace(dialect="bigquery", writes_native_sql=True)
+    monkeypatch.setattr(ct, "_connection", lambda cid: bq)
+    prompt = ct.converse_system_prompt("thelook")
+    assert "SQL DIALECT: BigQuery" in prompt
+    assert writer_rules(bq) in prompt
+    assert f"TODAY: {today_utc()}" in prompt
+
+    def _unopenable(cid):
+        raise KeyError(cid)
+
+    monkeypatch.setattr(ct, "_connection", _unopenable)
+    prompt = ct.converse_system_prompt("gone")
+    assert "SQL DIALECT" not in prompt and f"TODAY: {today_utc()}" in prompt
+
+
 def test_the_identity_is_the_platform_not_one_warehouse(fake_conn):
     """CI-3. The old identity — 'you answer questions about warehouse X' — was the
     single-warehouse voice the roadmap diagnosed; the new one is the platform-wide

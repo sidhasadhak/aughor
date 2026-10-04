@@ -921,6 +921,32 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
     )
 
 
+def _engine_and_clock(connection_id: str) -> str:
+    """The engine this conversation's `run_sql` statements run on, its writer rules, and the
+    clock — the block every other SQL-writing prompt has carried since 2026-09-30
+    (`agent/sql_context.py`) and this one, the body every quick ask and Slack mention
+    reaches, never did. Measured on the live audit, theLook on BigQuery, 2026-08-26 to
+    10-04: of 489 statements this agent ran, 37 failed, and every `date_trunc('month', x)`
+    and every `::` cast it wrote failed (8 of 8 each); eight anchored a window on
+    CURRENT_DATE. The rules are the quick path's own (`db.dialects.writer_rules`), so the two
+    bodies are told the same thing. The clock is said even when the connection cannot be
+    opened; the engine only when it is known."""
+    conn = None
+    if connection_id:
+        try:
+            conn = _connection(connection_id)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the engine is named once the connection opens; the clock stands",
+                     counter="converse.engine_note")
+    from aughor.agent.sql_context import learned_settle_days, sql_context
+    note = sql_context(conn, settle_days=learned_settle_days(connection_id))
+    if conn is not None:
+        from aughor.db.dialects import writer_rules
+        note += "\n\n" + writer_rules(conn)
+    return note
+
+
 def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
                            question: str = "", agent: Any = None) -> str:
     """State, not instructions (the plan's rule for this prompt).
@@ -970,6 +996,7 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
         from aughor.kernel.errors import tolerate
         tolerate(settle_exc, "the settling note is additive; the conversation stands without it",
                  counter="converse.settling_note")
+    sql_note = _engine_and_clock(connection_id)
     lines = [
         "You are Aughor's analyst — the conversation over the whole platform: the "
         f"connected data warehouse '{connection_id}' and everything Aughor has "
@@ -997,6 +1024,7 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
         "as its exhibit, and a table in your prose would be shown twice; name the "
         "figures that matter in a sentence instead.",
         *(["", settling_note] if settling_note else []),
+        *(["", sql_note] if sql_note else []),
         "",
         "If you cannot answer from the data, say what is missing. A stated gap is worth "
         "more than a plausible number.",
