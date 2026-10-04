@@ -34,7 +34,8 @@ describe("MonitorProofRow", () => {
     stubs.backtestMonitor.mockResolvedValue({
       monitor_id: "m1", rule: "anomaly", ok: true, reason: "", sigma: 2.5, days: 365,
       series_from: "2025-10-04", series_to: "2026-10-03", firings: [],
-      sentence: "Over the last 365 days this alert would have fired 41 times.", quieter_sigma: 3.5 });
+      sentence: "would have fired 41 times in the last 365 days; 3.5σ would have fired at most 6 times.",
+      quieter_sigma: 3.5 });
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
 
     render(<MonitorProofRow monitorId="m1" />);
@@ -42,7 +43,8 @@ describe("MonitorProofRow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Backtest" }));
     expect(await screen.findByText(
-      "Over the last 365 days this alert would have fired 41 times. A quieter setting: 3.5σ.")).toBeInTheDocument();
+      "This alert would have fired 41 times in the last 365 days; 3.5σ would have fired at most 6 times.",
+    )).toBeInTheDocument();
     expect(stubs.backtestMonitor).toHaveBeenCalledWith("m1");
 
     fireEvent.click(screen.getByRole("button", { name: "Send test alert" }));

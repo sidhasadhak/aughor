@@ -461,8 +461,11 @@ export function MonitorProofRow({ monitorId }: { monitorId: string }) {
     try {
       if (kind === "backtest") {
         const b = await backtestMonitor(monitorId);
-        const quieter = b.quieter_sigma != null ? ` A quieter setting: ${b.quieter_sigma}σ.` : "";
-        setOutcome({ tone: b.ok ? "ok" : "warn", text: (b.sentence || b.reason) + quieter });
+        // The server's sentence has no subject ("would have fired 3 times in the last 362 days";
+        // the quieter σ, when there is one, is already in it); a failed replay says why instead.
+        setOutcome(b.ok && b.sentence
+          ? { tone: "ok", text: `This alert ${b.sentence}` }
+          : { tone: "warn", text: b.reason || b.sentence || "The backtest could not run." });
       } else {
         const d = await drillMonitor(monitorId, kind === "send");
         const text = !d.fired ? `The rule did not fire on a synthetic outlier: ${d.detail}`
