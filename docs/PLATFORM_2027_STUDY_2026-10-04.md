@@ -1954,6 +1954,112 @@ Six scarcities, six mechanisms, one ledger. If analysis becomes free, this is wh
 
 ---
 
+## The pending ledger against this roadmap
+
+*`PENDING.md` re-read in full on 2026-10-04, as ticked on #565. Every line still open — `[ ]` or `[~]` —
+is placed against this study. The rule applied is the user's: an item that goes against the study is
+discarded. A discard is a struck line in `PENDING.md` with its reason, never a deleted one (the file's own
+rule), and it happens only on the user's adoption; nothing below is struck yet. Six verdicts: **discard**
+(what it contradicts), **reshape** (what it becomes), **keep** (which phase), **receipt owed** (unchanged —
+the repo's rule, not the study's), **the user's** (⚑, unchanged) and **parked** (unchanged).*
+
+The file holds 126 open lines (113 `[ ]`, 13 `[~]`). They are placed as items, not lines: the top list's
+thirteen open items are the same items as their arc lines, two lines are split where their halves go
+different ways, and a few receipts owed sit inside ticked lines — 117 placements.
+
+| Verdict | Placements |
+|---|---|
+| Discard | 20 |
+| Reshape | 12 |
+| Keep, in a phase | 55 |
+| Receipt owed, hygiene, parked or the user's — unchanged | 30 |
+
+**Discarded.** Each contradicts a line of section C, a class in the reassessment table, or a refusal.
+
+| Pending line | Where | Contradicts |
+|---|---|---|
+| TJ-5 the gym, as written — K rollouts to SFT, preference and repair pairs | top item 36 | kill 1: the fine-tuning destination. Its first half is reshaped below |
+| TJ-6 serving a student | top item 37 | kill 1 |
+| MI-4 the first fine-tuned text-to-SQL model | Arc MI | kill 1; class E |
+| MI-5 / MI-6 a model shipped with the app, adapter releases, RL training | Arc MI | kill 1; roadmap §8 (no model weights in the repo) |
+| JD-1's agreement receipt and JD-4's corpus receipt — paid runs to extend the outside judge | Arc JD | kill 5: the cheap-model line, "what is there, left alone" |
+| JD-6 a small local scorer | Arc JD | kill 5; kill 1 |
+| A6 auto-tuning metric definitions — the auto-apply half | Arc JD | section D item 6 and H: a definition is declared by a person; a model may only propose. The propose half is reshaped below |
+| Payments & fintech next, then insurance, a risk-and-fraud function | Arc IP | section P chose five verticals; neither is among them. Revisit after phase 6 |
+| The paid with-and-without-package test on airline (gate 5) | Arc IP | airline is not one of the five; the gate itself is reshaped below |
+| More airline metrics | Arc IP | same |
+| The Human / Agent / Substrate switcher | Arc UI | kill 11: the three planes are architecture, not a control a person uses |
+| The weekly count of new agents and automations in Agent Ops | Arc SP | kill 3: the roster as a product idea; Operations shows work by duty, not a headcount |
+| Documents placed on the canvas (the second half of its line) | Arc DX | kill 7: canvases as surfaces to improve |
+| Pinning from a canvas's chat keeps the card for the connection, not the canvas | Arc CT | kill 7; the cockpit left the canvas with CT-10 |
+| The palette's Runs side rail — rewrite its spec or drop it | Arc DS | kill 7: drop it |
+| Ports and wires coloured by data type | Arc DS | kill 7 |
+| Greyed-out palette items with a link to enable them | Arc DS | kill 7 |
+| The Langflow steps we lack: file read/write, a calculator, the date, a raw LLM step | Arc DS | kill 7, and H's rule for the last: anything that must give the same answer twice is code |
+| The drag fix and drop-a-wire gesture's hands-on test | Arc DS | kill 7 |
+| A web-search vendor for a step | Arc DS | not in the study anywhere; a tool choice with no mechanism behind it |
+
+**Reshaped.** The item survives as something the study names.
+
+| Pending line | Becomes | Phase |
+|---|---|---|
+| TJ-5's first half — problems with known answers from the declared ontology's compiler, scored by execution match | the generator for golden suites and the canary (section O), not a training corpus | 1 |
+| Scores on objects — churn risk per customer (top item 29) | a Claim of kind prediction under the Forecast duty, carrying method 6's licence: refused above a stated stake unless backtested on this install. The SQL-only stand-in is a formula today | 3 |
+| BR-8 the daily ledger — every approved metric's parts per day, so "what we knew on a date" is a query (top item 45) | the settle clock's readings booked as observation claims with two clocks; it is the data half of section G's ledger | 1 |
+| A2 — send close calls to a person, blocked on a real confidence number | a question to the resolved owner, asked once through the gate, as the departure gate already does for a disagreement; the number it waits on is counted confidence | 2 |
+| A6's propose half | the Steward duty proposes a definition; a person confirms | 2 |
+| The with-and-without-package gate | a pack's measured record on connect: how often its claims held on the installs that bound it (section Q) | 6 |
+| A second Slack reply on the same object overwrites the first reply's check | one claim per said statement in the one ledger (section E, item 1) | 1 |
+| The ranker's note kinds, and asking once when two equally trusted sources disagree | section N's conflict rule: tier, then scope, then recency by kind; two at one tier are contested and the owner is asked once | 1 |
+| A limit set by a cockpit proposal schedules no monitor | a card's limit is a watch a mission holds; the mission's page offers the monitor | 5 |
+| `context_graph/` tracked in git and rewritten by the app | the graph becomes a projection of the ledger, rebuilt on demand (section F); nothing of it is tracked | 1 |
+| The "pause for a human" step, off by default so it never fires | on by default, with the approval gate (section E, item 7) | 0 |
+| Idea 12, guess before you look | a person's guess is a Claim of kind prediction with their name on it, scored like any other; optional | 3 |
+
+**Kept, and placed.** The phase each belongs to; the ones marked ⚑ keep their mark.
+
+| Phase | Pending lines |
+|---|---|
+| **0 · Remove the wrong assumptions** | delete the parked object-query tool (top item 30, ⚑); the chooser-confidence switch — run it once, keep or delete (Arc MI); the prompt blocks §6 item 15(d) said to cut back (Arc ON, ⚑ a paid ablation); `aughor migrate-state` run for real (Arc IN, ⚑); `ontology_overrides/` into the data folder (Arc IN); group permissions enforced (Arc HB — identity on); cross-user questions (Arc SP — identity on); Slack approvals tied to the approver (Arc SP — identity on); the proposal approver recorded by screen name (Arc CT — identity on); an automation using another user's account, logged not blocked (VA — identity on); SSO against a real identity provider and the Google account's connect-use-revoke (VA, ⚑); theLook's Day subscription and `briefing.ranges` on — the seven mornings (Arc BR, ⚑); the promise-breach chain run live end to end (Arc HB) — this is the flywheel's first turn; cap hits, guardrail events and budget overruns on the governance feed (Arc MI, ⚑) — one audit sink; the stale roadmap lines (the file's last section) |
+| **1 · The intelligence kernel** | TJ-2's open bullets — exporters reading the one record, the guard table's second meaning, the explorer's step log; TJ-3's step credit and NULL confidence, and ⚑ the audit sitting of 50–100 bronze rows; BR-2's live receipt on theLook (⚑); BR-7's cell, metric and covered days on a finding, and the live exploration run (⚑); the cross-connection hop and object pages that read one connection (Arc ON); links to query-backed types (Arc ON — the other half of that line is built, below); A3 the metric-definition report screen, tried live; A5 questions kept word for word with no expiry — section N's retention rule; accepting a Slack send from the inbox files a thread like an automatic send (Arc HB) — "who else was told" needs every send recorded; the Jev judge checked live (Arc JD) — the canary's job; the data-profiles block's clean rerun (top item 19) and table popularity measured once (Arc SP) — facts for the model, not prose; the consistency and federation screens' flags (Arc PX) |
+| **2 · Agentic inquiry** | CP-3 route on the label (top item 4) — held by its own falsifier until the corpus is repaired; a screen over the misses door (top item 28); a question worded differently, recognised by a synonym a person adds (Arc ON); the links and probation queues given a screen (Arc HB) — Operations; a person accepting, live, a suggestion the platform raised on its own, and the red-team drives (Arc SP) — the phase's exit metric; approval cards with a real cost per run (Arc SP); answer buttons on a deep-link registry (Arc SP) — section U's rule 5; idea 9, the attention budget; idea 14, the UI that does not look generated — section U's rules; the active tab marked by weight alone (Arc CT) — superseded by the navigation rework; the needs-human badge (Arc UI) — Now's badge |
+| **3 · Decision and simulation** | the outcome loop nobody has ever answered (loose ends) — the review question delivered; idea 13, judge a recommendation against its trend |
+| **4 · Action** | one Composio or Arcade tool run end to end through a custom MCP server (VA, ⚑) — an action as a reference to an integration call |
+| **5 · Missions and memory** | the metric step's breakdown and an entity step (Arc DS) — the engine is how a mission acts |
+| **6 · Vertical intelligence** | banking activated by a person (Arc IP, ⚑); loan-level lending metrics (Arc IP); what a clone still lacks — the two datasets (⚑) and the cross-connection declarations (top item 26); idea 10, the data shopping list; the install's industry question and the profile prompt (Arc IP); the coverage share reading "unknown" on BigQuery (Arc CB) — re-measure first, top item 19 found theLook's cache populated |
+| **7 · Platform and ecosystem** | drafting a new package by hand, and old data-quality queries naming sample tables (Arc IP) — the pack kit; promoting a package strips `pack.yaml`'s comments (Arc IP); bundles of steps inside packs (Arc DS, ⚑) — mission and automation templates are declarations; MCP servers that need their own OAuth (VA); the guide searching packs and skills (Arc SP); CT-6 a cockpit out by other doors, on its trigger |
+
+**Unchanged.** Receipts owed on the user's machine: Arc DE's MySQL, Postgres and Trino sections; Arc AO's
+Install-button path over HTTPS, Rehearse on a real workspace, the nightly run and the every-fifth-verdict
+trigger; TJ-4 live, once the app has `reactions:read` (⚑); Jira and Confluence through Atlassian's server;
+revise-in-place and the three drafts proven live; promoting a chain's SQL shown live; the MCP tool step
+seen in a browser; the owners panel's screenshot. Hygiene: the three meanings of "door" and the
+`FleetOverviewPanel` rename (Arc AO — the rename lands with section U); the census's docstrings (Arc TJ);
+the cockpit ask's 67,000 tokens of tool roster (Arc CT); a card that cannot say it is withheld (Arc CT);
+the fixer ignoring a package's data-quality checks and one wrong metric-name match (Arc IP); hard-coded
+colours and bare error lines (Arc UI); the eval suites renamed by purpose and the spend-cap refusal's link
+(Arc PX); re-indexing that does not re-read originals, a chart inside a PDF read as an image, and short
+Confluence pages lost (Arc DX); images and files from MCP tools dropped (VA); the two fixture automations
+and the never-vacuumed database; the three local branches. The user's, unchanged: email in and out (HB-5)
+— in no phase, as section W says; the `[export]` extra. Parked, unchanged: DE-7 the JDBC bridge; private
+Google Sheets and Drive (Arc KI); an outside credential vault (VA); the deliberate refusals of the ontology
+arc (top item 31) — each stays refused with its reason, and the study agrees with every one.
+
+**Lines found stale while placing them.** Arc ON's "nothing can declare a measure that must not be summed
+across periods" — the compiler holds `take: last` and refuses a sum across moments since top item 27
+(`aughor/semantic/object_query.py`); only the links-to-query-backed-types half is open. Arc CB's "the
+coverage share reads unknown for both BigQuery connections because the profiler has nothing cached" —
+top item 19 measured theLook's cache populated on 2026-10-04 (7 tables, 75 columns); the second
+connection is unmeasured. Arc AO's hygiene line already strikes two of its own four clauses.
+
+**What the placement says about the ledger.** Of 117 placements, twenty go against the study, and all
+twenty sit in three places: the fine-tuning destination, the automation canvas, and verticals the
+study did not choose. Nothing in the kernel's own leftovers — the ontology, the hub, the Briefing, the
+gate map — is discarded; most of it is phase 0 or phase 1 work the study depends on. The ledger and the
+study disagree about where value grows, not about what is broken.
+
+---
+
 ## What this study asks of the user
 
 Nothing here is adopted. In the roadmap's own manner (§6, "the user's, not the builder's"), these are
@@ -1976,6 +2082,9 @@ the calls the study needs, each with the recommendation it was written under; no
    each, as the glossary requires; `investigation` stays frozen.*
 7. **The departure gate's law 5** — "a forecast never departs" narrowed to "an unscored forecast never
    departs", in phase 3 and not before. *Recommended: yes, then.*
+8. **The pending ledger** — strike the twenty discarded lines in `PENDING.md` with their reasons, and
+   carry the phase of every kept line onto it, as the section above places them. *Recommended: yes, in
+   the same commit that adopts this study; a struck line is a record, so nothing is lost.*
 
 **Measured while writing this study, and not yet in the roadmap.** Automations have seven triggers and
 thirteen effects, and a broken promise and a new finding are both triggers (roadmap §1 says five, twelve
