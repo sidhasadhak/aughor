@@ -479,7 +479,6 @@ async def register_automation_tools(client: "AughorClient | None" = None) -> lis
     to look for.
     """
     api = client or _client
-    _LIVE_SOURCES.add("automations")
     try:
         exposed = await api.list_automation_tools()
     except Exception as exc:                       # the API is down, or the route is old
@@ -519,7 +518,6 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
     inbox for a human, so nothing an MCP client invokes here executes anything.
     """
     api = client or _client
-    _LIVE_SOURCES.add("spotlight")
     try:
         declared = await api.list_spotlight_tools()
     except Exception as exc:                       # the API is down, or the route is old
@@ -561,7 +559,6 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
     scope, so the agent's verdicts and spend know an MCP client asked, and which.
     """
     api = client or _client
-    _LIVE_SOURCES.add("agents")
     try:
         agents = await api.list_user_agents()
     except Exception as exc:                       # the API is down, or the route is old
@@ -602,8 +599,15 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
 
 #: name → the roster it came from ("automations" | "spotlight" | "agents").
 _DYNAMIC: dict[str, str] = {}
-#: The rosters this server serves — those its registrars were asked for (`--no-…` skips one).
+#: The rosters this server keeps live — set ONLY by `enable_live_tools`, which the entry point
+#: calls (`--no-…` skips one). A registrar never sets it: a test that registers against a stub
+#: must not leave a later `list_tools` reading the real API (it did, once, in the full suite).
 _LIVE_SOURCES: set[str] = set()
+
+
+def enable_live_tools(*sources: str) -> None:
+    """Keep these rosters live for a connected client: "automations", "spotlight", "agents"."""
+    _LIVE_SOURCES.update(s for s in sources if s in ("automations", "spotlight", "agents"))
 _LIVE_TTL = 30.0
 _live_checked: list[float] = []
 

@@ -57,6 +57,8 @@ def test_a_client_sees_declared_arguments_and_a_list_that_changes_without_reconn
     async def run():
         assert await srv.register_spotlight_tools(api) == ["set_preference"]
         assert await srv.register_agent_tools(api) == ["ask_ops"]
+        assert srv._LIVE_SOURCES == set()             # registering never turns the refresh on
+        srv.enable_live_tools("spotlight", "agents")  # the entry point does
         told: list = []
 
         async def on_message(message):
