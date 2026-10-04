@@ -5445,6 +5445,12 @@ async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[s
             from aughor.kernel.errors import tolerate
             tolerate(exc, "overview turn save is best-effort; the tour was already streamed",
                      counter="ask.overview_save")
+    elif rep is not None and rep.unread and not rep.tables_total:
+        # Nothing to tour because nothing here has a profile yet — said, so an empty tour
+        # does not read as an empty dataset.
+        yield _sse("headline", {"headline": (
+            f"None of the {len(rep.unread)} tables here has a profile yet, so there are no "
+            "facts to tour — ask about a specific measure instead.")})
     else:
         yield _sse("headline", {"headline": (
             "I couldn't surface overview facts for this dataset — try asking about a "
@@ -5521,6 +5527,17 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         async for _ev in _stream_overview(req.question, conn_id, req):
             yield _ev
         return
+
+    # A request for a COCKPIT is not a question about data, and this chat drafts none — the
+    # Briefing's Cockpit tab does (CT-9). Said here, before the clarify gate read it as an
+    # under-specified question (2 of the CT receipt's 10 asks) or a model answered it as one.
+    if not req.insight_id:
+        from aughor.cockpit.intent import is_cockpit_ask, where_cockpits_are_made
+        if is_cockpit_ask(req.question):
+            from aughor.kernel.flags import flag_enabled
+            yield _sse("headline", {"headline": where_cockpits_are_made(flag_enabled("cockpit.composed"))})
+            yield _sse("done", {})
+            return
 
     if (req.depth == "auto" and not req.escalate and not req.insight_id
             and not req.skip_clarify):
@@ -5764,7 +5781,8 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
         stream, question=req.question, conn_id=conn_id, door="ask", depth=req.depth,
         canvas_id=req.canvas_id or "", schema=req.schema_name or "",
         purpose=req.purpose or "", agent_id=req.agent_id or "",
-        focus=req.focus.model_dump() if getattr(req, "focus", None) else None)
+        focus=req.focus.model_dump() if getattr(req, "focus", None) else None,
+        prior_turn=_prior_turn_text(req.history))
     # ambient session + asker → trace attribution (RC-4: the asker is why LF-2's
     # user field was empty on every headless door — nobody was setting it)
     stream = _stream_with_session(req.session_id, stream, req.principal_ref or "")
@@ -5977,6 +5995,7 @@ async def stream_with_session_log(
     stream: AsyncGenerator[str, None], *, question: str, conn_id: str,
     door: str = "ask", depth: str = "", canvas_id: str = "", schema: str = "",
     purpose: str = "", agent_id: str = "", focus: Optional[dict] = None,
+    prior_turn: str = "",
 ) -> AsyncGenerator[str, None]:
     """Record the run in the session log (flag ``obs.session_log``).
 
@@ -6016,7 +6035,6 @@ async def stream_with_session_log(
     failed: str | None = None
     headline: str = ""
     receipt_id: str | None = None
-    grids: int = 0
     t0 = _t.monotonic()
     with _tel.bind_trace(run_id):
         session_log.emit(
@@ -6044,11 +6062,6 @@ async def stream_with_session_log(
                         headline = str(frame.get("headline") or "")[:2000]
                     elif kind == "receipt_id":
                         receipt_id = frame.get("receipt_id")
-                    elif kind == "columns":
-                        # CP-2 — one result set reaching the caller. Counted HERE because
-                        # nothing persists it: this is the only moment the number exists,
-                        # and it is the ground truth `steps_implied` is scored against.
-                        grids += 1
                     elif kind == "error":
                         failed = str(frame.get("message") or "")[:2000]
                         session_log.emit(
@@ -6088,13 +6101,28 @@ async def stream_with_session_log(
             # spending switch and is off by default. It swallows everything, so a dead
             # judge or a dead ledger cannot turn a delivered answer into a failed request.
             #
-            # `ran` is what this turn actually did, in the vocabulary the door already
-            # has: its declared depth when it has one, else whether the deep path minted
-            # an investigation. That is the column CP-2 compares the judged treatment
-            # against — and the arc's falsifier reads.
+            # `ran` is the depth the door was asked for, else whether the deep path minted
+            # an investigation. What the turn DID — how many queries, which body — is read
+            # from this run's own trace when the shadow writes its row
+            # (`treatment.observed_for_trace`): it was counted here off `columns` frames
+            # until 2026-10-04, a frame the sniff list above never named, so the count was
+            # 0 on every row and CP-2 scored two levers against a constant.
             _shadow_when_settled(question, ran=(depth or ("deep" if inv_id else "quick")),
-                                 conn_id=conn_id,
-                                 observed={"grids": grids, "ok": failed is None})
+                                 conn_id=conn_id, prior_turn=prior_turn,
+                                 observed={"ok": failed is None,
+                                           "investigation": bool(inv_id)})
+
+
+def _prior_turn_text(history: list) -> str:
+    """The previous turn as the treatment shadow reads it: what was asked and the answer's
+    headline. Two levers (`from_last_result`, `follow_up`) are questions ABOUT the previous
+    turn; judged without it they answered "no" on every row, with full confidence."""
+    if not history:
+        return ""
+    prior = history[-1]
+    asked = str(getattr(prior, "question", "") or "").strip()
+    said = str(getattr(prior, "headline", "") or "").strip()
+    return "\n".join(p for p in (asked[:400], said[:400]) if p)
 
 
 #: The name of the thread a treatment shadow runs on — so a reader of a process sample, or a
@@ -6102,7 +6130,8 @@ async def stream_with_session_log(
 SHADOW_THREAD = "treatment-shadow"
 
 
-def _shadow_when_settled(question: str, *, ran: str, conn_id: str, observed: dict) -> None:
+def _shadow_when_settled(question: str, *, ran: str, conn_id: str, observed: dict,
+                         prior_turn: str = "") -> None:
     """CP-1's treatment shadow, on a thread of its own — never on the event loop.
 
     It was called here directly, from the ``finally`` of an async generator, which runs ON the
@@ -6138,7 +6167,8 @@ def _shadow_when_settled(question: str, *, ran: str, conn_id: str, observed: dic
             target=ctx.run,
             # Looked up when it runs, not when it is scheduled: `treatment.shadow` is what a
             # test replaces, and what a reload would.
-            args=(lambda: treatment.shadow(question, ran=ran, conn_id=conn_id, observed=observed),),
+            args=(lambda: treatment.shadow(question, ran=ran, conn_id=conn_id,
+                                           observed=observed, prior_turn=prior_turn),),
             daemon=True, name=SHADOW_THREAD,
         ).start()
     except Exception as exc:  # noqa: BLE001 — a shadow never costs a turn, nor its scheduling
@@ -6560,6 +6590,17 @@ def get_chat_session_turns(session_id: str):
     return turns
 
 
+def _staged_proposal_parts(trace_id: str) -> list[dict]:
+    """`data-proposal_staged` parts for the proposals one run staged — the stream's own shape."""
+    if not trace_id:
+        return []
+    from aughor.actions.inbox import proposals_for_trace
+    return [{"type": "data-proposal_staged", "data": {
+                "proposal_id": p.id, "kind": p.kind, "connection_id": p.connection_id,
+                "action_id": p.action_id}}
+            for p in proposals_for_trace(trace_id)]
+
+
 def _turn_to_ui_messages(t: dict) -> list[dict]:
     """One stored chat turn as an AI-SDK `UIMessage` pair (CA-1).
 
@@ -6636,6 +6677,10 @@ def _turn_to_ui_messages(t: dict) -> list[dict]:
     if t.get("overview_report"):
         parts.append({"type": "data-overview_report",
                       "data": {"overview_report": t["overview_report"]}})
+    # The approval cards the turn staged. The live `proposal_staged` frame is not stored, so a
+    # reopened chat drew none (CT-5's survey: every proposal kind); the proposals the turn's
+    # run staged are found by its trace and sent as the same part the stream sent.
+    parts.extend(_staged_proposal_parts(t.get("trace_id") or ""))
     if (t.get("status") or "complete") == "interrupted":
         parts.append({"type": "data-error", "data": {
             "message": f"This answer was interrupted — {UNCERTAIN_RESULT}.",

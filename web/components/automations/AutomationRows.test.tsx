@@ -50,6 +50,28 @@ vi.mock("@/lib/api", async (importOriginal) => ({
       reason: "this grant does not carry gmail.send — reconnect google and consent to it",
       params: [] },
   ]),
+  // The allowlisted MCP servers with their stored rosters — the server's shape.
+  listMcpServers: vi.fn(async () => ({ servers: [
+    { id: "srv_jira", name: "Jira", transport: "http", command: "", args: [], env: {}, url: "",
+      has_auth: true, enabled: true, created_at: "", updated_at: "", discovered_at: "",
+      tool_count: 3, callable_count: 1, granted_count: 1, tools: [
+        { server_id: "srv_jira", name: "search_issues", title: "Search issues",
+          description: "Find issues by JQL.", disposition: "callable", reason: "",
+          read_only_hint: true, destructive_hint: null, discovered_at: "",
+          grant_state: "none", grant_reason: "", granted_by: "", granted_at: "", grant_note: "",
+          input_schema: { type: "object", required: ["jql"], properties: {
+            jql: { type: "string", description: "a JQL query" },
+            limit: { type: "integer" } } } },
+        { server_id: "srv_jira", name: "create_issue", title: "Create issue", description: "",
+          disposition: "refused_mutating", reason: "declares writes", read_only_hint: false,
+          destructive_hint: null, discovered_at: "", grant_state: "none", grant_reason: "",
+          granted_by: "", granted_at: "", grant_note: "", input_schema: {} },
+        { server_id: "srv_jira", name: "add_comment", title: "Add comment", description: "",
+          disposition: "refused_mutating", reason: "declares writes", read_only_hint: false,
+          destructive_hint: null, discovered_at: "", grant_state: "active", grant_reason: "",
+          granted_by: "ops@example.com", granted_at: "", grant_note: "", input_schema: {} },
+      ] },
+  ] })),
   getAutomationVocabulary: vi.fn(async () => ({
     kinds: {
       slack_post: { publishes: ["ts", "channel"], bindable: ["message", "thread_ts", "channel"] },
@@ -433,5 +455,32 @@ describe("the Trusted query editor", () => {
     expect(screen.getByText(/runs this once to verify it/i)).toBeInTheDocument();
     expect(screen.getByText(/private to this automation until you promote it/i))
       .toBeInTheDocument();
+  });
+});
+
+
+describe("the MCP call editor", () => {
+  it("offers the tools a step may call, and writes server, tool and typed arguments", async () => {
+    // Before this the step could be placed and configured nowhere: no form set its server
+    // or its tool. A refused (mutating) tool is not offered; one a person granted is.
+    const onChange = vi.fn();
+    const { rerender } = render(<EffectRow e={{ kind: "mcp_call", config: {} }} agents={[]}
+      bots={[]} onChange={onChange} />);
+    fireEvent.change(await screen.findByLabelText("MCP server"), { target: { value: "srv_jira" } });
+    const picked = onChange.mock.lastCall![0] as AutoEffect;
+    expect(picked.config).toEqual({ server_id: "srv_jira", tool: "", arguments: {} });
+
+    rerender(<EffectRow e={picked} agents={[]} bots={[]} onChange={onChange} />);
+    const tools = await screen.findByLabelText("MCP tool");
+    expect([...tools.querySelectorAll("option")].map(o => o.textContent))
+      .toEqual(["Which tool…", "Search issues", "Add comment (granted)"]);
+    fireEvent.change(tools, { target: { value: "search_issues" } });
+    const withTool = onChange.mock.lastCall![0] as AutoEffect;
+
+    rerender(<EffectRow e={withTool} agents={[]} bots={[]} onChange={onChange} />);
+    fireEvent.change(await screen.findByLabelText("limit"), { target: { value: "25" } });
+    expect((onChange.mock.lastCall![0] as AutoEffect).config).toEqual(
+      { server_id: "srv_jira", tool: "search_issues", arguments: { limit: 25 } });
+    expect(screen.getByLabelText("jql")).toHaveAttribute("placeholder", "jql — a JQL query");
   });
 });

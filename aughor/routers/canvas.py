@@ -223,6 +223,10 @@ def delete_canvas_endpoint(canvas_id: str):
         logging.getLogger(__name__).warning(
             "Could not cancel explorer for deleted canvas %s", canvas_id, exc_info=True
         )
+    # Then what only it could show — its cards, its cockpit's history, its exploration —
+    # once nothing is left running to write more of it.
+    from aughor.db.purge import purge_canvas_artifacts
+    purge_canvas_artifacts(canvas_id)
 
 
 @router.get("/canvases/{canvas_id}/schema")

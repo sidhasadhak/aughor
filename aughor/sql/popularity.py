@@ -102,6 +102,19 @@ def save_popularity(sig: PopularitySignal) -> None:
                  counter="obs.popularity", conn_id=sig.connection_id or None)
 
 
+def purge_connection(connection_id: str) -> int:
+    """Forget a connection's mined counts (idea 1 — a delete leaves nothing behind; the
+    table and column names a deleted connection's queries read are its schema). Returns the
+    rows removed. Raises: the purge cascade counts a failure, it does not swallow one."""
+    con = _connect()
+    with con:
+        n = con.execute("DELETE FROM popularity WHERE connection_id = ?", (connection_id,)).rowcount
+        n += con.execute("DELETE FROM popularity_meta WHERE connection_id = ?",
+                         (connection_id,)).rowcount
+    con.close()
+    return max(n, 0)
+
+
 def load_popularity(connection_id: str) -> dict[str, dict[str, int]]:
     """Read-only counts: ``{"table": {t: n}, "column": {"t.c": n}}``; {} buckets on any error."""
     out: dict[str, dict[str, int]] = {"table": {}, "column": {}}

@@ -132,6 +132,8 @@ def declared_prices_from_env(raw: str) -> dict[tuple[str, str], Price]:
             price = Price(float(inp), float(outp), as_of.strip() or "undated")
             if not provider.strip() or not model.strip():
                 raise ValueError("empty provider or model")
+            if price.input_per_1m < 0 or price.output_per_1m < 0:
+                raise ValueError("a negative rate is not a price")
         except (ValueError, TypeError) as exc:
             logging.getLogger(__name__).warning(
                 "%s: entry %r ignored (%s) — expected provider:model=input/output@YYYY-MM-DD",

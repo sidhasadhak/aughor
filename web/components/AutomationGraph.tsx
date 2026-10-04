@@ -45,7 +45,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import {
-  blankDraft, DesignControls, StepInspector, updatePayload, type Draft,
+  blankDraft, DesignControls, StepInspector, updatePayload, type Draft, type DraftKeeps,
 } from "@/components/automations/AutomationAuthor";
 import { DeployMenu } from "@/components/automations/DeployMenu";
 import {
@@ -76,6 +76,7 @@ import {
   canRedo, canUndo, initHistory, pushHistory, redoHistory, resetHistory, undoHistory,
   type History, type PushOptions,
 } from "@/lib/history";
+import { Loading } from "@/components/ui/states";
 
 export type { AutomationGraphData };
 
@@ -834,7 +835,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
   automation?: Automation;
   /** DS-1R — canvas-first creation: the connection the new automation will belong to,
    *  and (for a DS-15 proposal) the draft to start from instead of a blank canvas. */
-  create?: { connId: string; seed?: Draft };
+  create?: { connId: string; seed?: Draft; keeps?: DraftKeeps };
   /** Create mode's exit: the record the server now holds. */
   onCreated?: (a: Automation) => void;
   /** DS-1R — the ONE header row. The canvas owns it so the identity, the mode and the
@@ -1649,6 +1650,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
           <DesignControls
             automation={automation ?? null}
             connId={create?.connId ?? automation?.conn_id ?? ""}
+            keeps={create?.keeps}
             name={header?.name ?? automation?.name ?? ""}
             draft={draft}
             onDraft={d => setDraft(d)}
@@ -1900,7 +1902,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
           // reading "Loading…" underneath its own "nothing was sent" banner. Found by
           // driving it — the banner and the body were reading two different states.
           ) : !shown ? (
-            <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: 16 }}>Loading…</div>
+            <Loading what="the run" style={{ padding: 16 }} />
           ) : (
             <ReactFlow
               nodes={execution!.nodes}

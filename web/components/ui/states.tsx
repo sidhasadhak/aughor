@@ -49,6 +49,29 @@ function Head({ kind, meta }: { kind: string; meta?: React.ReactNode }) {
 }
 
 /**
+ * A read in flight — named, so a person knows WHAT is coming ("Loading agents…"), announced to
+ * assistive tech (`role="status"`), and drawn one way. Arc UI counted 37 hand-rolled "Loading…"
+ * lines across 26 components in five font sizes and two greys, three of them in a hard-coded
+ * Tailwind zinc; `listLoadingStates.test.ts` keeps new ones from being written. `inline` for a
+ * header or a row, where a block would break the line.
+ */
+export function Loading({ what, inline = false, className = "", style }: {
+  /** What is being read, as the screen names it: "agents", "the receipt". */
+  what?: string;
+  inline?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const Tag = inline ? "span" : "div";
+  return (
+    <Tag role="status" aria-live="polite" className={`aug-fs-sm ${className}`.trim()}
+      style={{ color: "var(--t3)", ...style }}>
+      {what ? `Loading ${what}…` : "Loading…"}
+    </Tag>
+  );
+}
+
+/**
  * A list or tile whose fetch REJECTED — the one state this file did not name, and the one
  * that was being rendered as the empty state everywhere (Arc AO-3, measured 2026-10-03: five
  * Agent Ops surfaces said "nothing here" on a failed fetch, teaching the reader the data did

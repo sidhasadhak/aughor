@@ -148,6 +148,8 @@ def delete_catalog(catalog_id: str, org_id: Optional[str] = None) -> bool:
     oid = org_id or current_org_id()
     c = _conn()
     n = c.execute("DELETE FROM catalogs WHERE org_id=? AND id=?", (oid, catalog_id)).rowcount
+    # A catalog's schemas go with it — they were orphaned here (idea 1, 2026-10-04).
+    c.execute("DELETE FROM schemas WHERE org_id=? AND catalog_id=?", (oid, catalog_id))
     c.commit()
     c.close()
     return n > 0

@@ -127,6 +127,24 @@ class _LedgerOut(BaseModel):
     )
 
 
+def _engine_block(state: AgentState, conn: Any = None) -> str:
+    """The engine and the clock (`agent/sql_context.py`) for this run's SQL-writing prompts.
+
+    The deep path builds them once in its intake; the explore branch has no intake, so they come
+    from the connection — the one a sub-question runs on, or the run's own when none is handed."""
+    try:
+        from aughor.agent.sql_context import learned_settle_days, sql_context
+        if conn is None and state.get("connection_id"):
+            from aughor.db.connection import open_connection_for
+            conn = open_connection_for(state["connection_id"])
+        return sql_context(conn, settle_days=learned_settle_days(state.get("connection_id")))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the engine block is additive; an explore prompt stands without it",
+                 counter="explore.engine_block")
+        return ""
+
+
 def build_analysis_ledger(state: AgentState, sql_context: str = "") -> str:
     """Decide canonical entity/metric definitions ONCE so every downstream step
     uses the same identifiers and expressions (prevents figures drifting between
@@ -210,8 +228,9 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         tolerate(_exc, "framing the question is best-effort; the chain is planned from the question as written",
                  counter="explore.frame")
 
-    # Pin canonical definitions for the whole run before planning any sub-questions.
-    analysis_ledger = build_analysis_ledger(state)
+    # Pin canonical definitions for the whole run before planning any sub-questions — told the
+    # engine, as the deep path's ledger is: its metric expressions are SQL every later step reuses.
+    analysis_ledger = build_analysis_ledger(state, sql_context=_engine_block(state))
 
     # Extract explicit user constraints from the question (re-use decompose pattern)
     constraint_section = "No explicit constraints detected."
@@ -605,6 +624,18 @@ def _execute_one_subq(
         logger.warning("schema-linking failed for sub-question; using unlinked schema", exc_info=True)
 
     llm = get_provider("coder")
+    # The engine, its writer rules and the clock: the explore branch runs no intake, so its
+    # planner was told none of them — GM-2's census named it `unstated`. Built from the
+    # connection this sub-question runs on.
+    engine_block = _engine_block(state, conn)
+    dialect_rules = ""
+    try:
+        from aughor.db.dialects import writer_rules
+        dialect_rules = writer_rules(conn)
+    except Exception as _rules_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_rules_exc, "the writer rules are additive; the planner stands without them",
+                 counter="explore.writer_rules")
     # Resilience: a single sub-question's planner hiccup (provider timeout, parse
     # error, oversized context) must NOT abort the whole chain — the chain advances
     # to the next sub-question. But this step produces NO evidence; see the failure
@@ -616,6 +647,8 @@ def _execute_one_subq(
             system="You are a senior data analyst writing SQL for an investigative sub-question.",
             user=PLAN_SUBQ_PROMPT.format(
                 question=state["question"],
+                sql_context=engine_block,
+                dialect_rules=dialect_rules,
                 subq_id=subq.id,
                 purpose=subq.purpose,
                 subq_question=subq.question,

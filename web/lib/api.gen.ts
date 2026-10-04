@@ -2366,6 +2366,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/charts/png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Chart Png Route
+         * @description The chart as a PNG on white, by the one rasterizer (`export.echarts.svg_to_png`).
+         *     204 when there is no honest chart OR no raster — both mean "post the table instead".
+         */
+        post: operations["render_chart_png_route_charts_png_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/charts/svg": {
         parameters: {
             query?: never;
@@ -4655,6 +4676,29 @@ export interface paths {
         get: operations["stream_events_events_stream_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exhibits/table": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Exhibit Table
+         * @description The grid as a door will show it, by the one table builder (`answer.exhibit`).
+         *
+         *     `show` is false for a grid whose one number the sentence already said; `csv` carries
+         *     every row, values as stored, whenever the markdown does not.
+         */
+        post: operations["render_exhibit_table_exhibits_table_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8639,6 +8683,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/monitors/missed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Missed Move
+         * @description Why nothing flagged it: the day scored against the metric's own history, every watch on
+         *     it and what its rule made of that value, a proposal still waiting, settling, held sends —
+         *     and, when "nothing watched it" is the answer, the watch staged for a person to accept.
+         */
+        post: operations["review_missed_move_monitors_missed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/monitors/{monitor_id}": {
         parameters: {
             query?: never;
@@ -9273,6 +9339,37 @@ export interface paths {
          *     must ask for jobs; one headed "tokens by model" must ask for events.
          */
         get: operations["obs_timeseries_obs_timeseries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/treatment-calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Treatment Calibration
+         * @description CP-2's receipt, read from the running install: how far the treatment shadow's two
+         *     self-labelling levers can be trusted, and the arc's falsifier beside them.
+         *
+         *     The fold (`judgment/calibration.calibrate`) had tests and no caller: nothing read the
+         *     shadow rows through it, so the number CP-3 waits on had never been taken on real traffic.
+         *     This is that reading, by the process that owns the log. No row is served, only the fold,
+         *     so no ask's words leave by this door.
+         *
+         *     `rows_with_an_observed_outcome` is the denominator that matters: a row whose turn's trace
+         *     has aged out of the log carries a prediction and no outcome, and is scored on nothing.
+         *     `served` says which body answered the turns the judge was asked about — the falsifier's
+         *     agreement is a share of those, and reads differently when one body serves most of them.
+         */
+        get: operations["treatment_calibration_obs_treatment_calibration_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -13833,6 +13930,64 @@ export interface components {
             to_path: string;
         };
         /**
+         * ChartPngRequest
+         * @description `/charts/svg`'s request, plus the raster scale (2× is legible on a retina screen).
+         */
+        ChartPngRequest: {
+            /** Chart Config */
+            chart_config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Chart Type
+             * @default auto
+             */
+            chart_type: string;
+            /** Column Units */
+            column_units?: {
+                [key: string]: unknown;
+            } | null;
+            /** Columns */
+            columns?: string[];
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+            /**
+             * Labels
+             * @default true
+             */
+            labels: boolean;
+            /**
+             * Money Symbol
+             * @default
+             */
+            money_symbol: string;
+            /** Rows */
+            rows?: unknown[][];
+            /**
+             * Scale
+             * @default 2
+             */
+            scale: number;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Width
+             * @default 760
+             */
+            width: number;
+        };
+        /**
          * ChartSvgRequest
          * @description One chart request, in the vocabulary the `/ask` stream already speaks:
          *     `columns` + `rows` as the grid frames carry them, `chart_type` as the
@@ -14019,6 +14174,11 @@ export interface components {
         /** CreateAutomationRequest */
         CreateAutomationRequest: {
             /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /**
              * Condition Logic
              * @default all
              */
@@ -14066,6 +14226,11 @@ export interface components {
              * @default ordered
              */
             scheduling: string;
+            /**
+             * Timezone
+             * @default
+             */
+            timezone: string;
         };
         /** CreateCanvasRequest */
         CreateCanvasRequest: {
@@ -14476,6 +14641,47 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * ExhibitTableRequest
+         * @description A grid and the door's encodings. `rest` is what the caption says about the rows a
+         *     preview leaves out — the door knows where they went ("attached as CSV").
+         */
+        ExhibitTableRequest: {
+            /** Columns */
+            columns?: string[];
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Max Cols
+             * @default 6
+             */
+            max_cols: number;
+            /**
+             * Max Rows
+             * @default 10
+             */
+            max_rows: number;
+            /**
+             * Money Symbol
+             * @default
+             */
+            money_symbol: string;
+            /**
+             * Preview Rows
+             * @default 5
+             */
+            preview_rows: number;
+            /**
+             * Rest
+             * @default the full result is attached as CSV
+             */
+            rest: string;
+            /** Rows */
+            rows?: unknown[][];
         };
         /** FactCheckRequest */
         FactCheckRequest: {
@@ -15206,6 +15412,30 @@ export interface components {
              * @default
              */
             source: string;
+        };
+        /**
+         * MissedMoveRequest
+         * @description Idea 8 — a move a person found that nothing flagged.
+         */
+        MissedMoveRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Day
+             * @description The day of the move, YYYY-MM-DD.
+             */
+            day: string;
+            /**
+             * Metric
+             * @description The metric that moved, by name or label.
+             */
+            metric: string;
+            /**
+             * Stage
+             * @description Stage the watch that would have caught it, as a proposal a person accepts — when that is the fix.
+             * @default true
+             */
+            stage: boolean;
         };
         /** MoveRequest */
         MoveRequest: {
@@ -22337,6 +22567,39 @@ export interface operations {
             };
         };
     };
+    render_chart_png_route_charts_png_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChartPngRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     render_chart_svg_route_charts_svg_post: {
         parameters: {
             query?: never;
@@ -25956,6 +26219,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    render_exhibit_table_exhibits_table_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExhibitTableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -32643,6 +32941,43 @@ export interface operations {
             };
         };
     };
+    review_missed_move_monitors_missed_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MissedMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_monitor_route_monitors__monitor_id__get: {
         parameters: {
             query?: never;
@@ -33728,6 +34063,37 @@ export interface operations {
                 range?: string;
                 since?: string;
                 until?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    treatment_calibration_obs_treatment_calibration_get: {
+        parameters: {
+            query?: {
                 limit?: number;
             };
             header?: never;

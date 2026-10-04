@@ -773,7 +773,14 @@ def _claims(text: str, investigation_id: str) -> _Check:
                             f"{why} (\"{verb}\" in: {quoted})")
     if problems:
         return _Check(HOLDS, "; ".join(problems), "claim type: " + "; ".join(problems))
-    return _Check(PASSED, f"claims within the analysis's {licence} licence")
+    challenged = ""
+    if investigation_id and any(t == "causal" for _s, t, _v in found):
+        from aughor.govern.departure_basis import analysis_refutation
+        status = analysis_refutation(investigation_id).get("status")
+        challenged = (" — the cause survived the analysis's refutation check" if status == "survived"
+                      else " — the cause was never put to a refutation check" if status == "not_run"
+                      else "")
+    return _Check(PASSED, f"claims within the analysis's {licence} licence{challenged}")
 
 
 def _disagreement(disagreement: Optional[dict], conn_id: str, declared_by: str) -> _Check:

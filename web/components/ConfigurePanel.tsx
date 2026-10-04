@@ -19,6 +19,7 @@ import {
 import { getApiBase } from "@/lib/config";
 import { Icon } from "@/components/ui/icon";
 import { ColumnTypeIcon } from "@/components/icons/columnType";
+import { Loading } from "@/components/ui/states";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SchemaColumn {
@@ -244,7 +245,7 @@ function TableDetail({
       {subtab === "sample" && (
         <div className="flex-1 overflow-auto">
           {loading && (
-            <div className="flex items-center justify-center h-24 aug-fs-sm text-[var(--t2)]">Loading…</div>
+            <Loading what="the sample rows" className="flex items-center justify-center h-24" />
           )}
           {!loading && sampleCols.length > 0 && (
             <SqlResultTable columns={sampleCols} rows={sampleRows as unknown[][]} maxHeight={420} />

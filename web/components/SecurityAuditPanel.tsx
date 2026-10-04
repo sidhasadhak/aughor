@@ -1,5 +1,5 @@
 "use client";
-import { ErrorState } from "@/components/ui/states";
+import { ErrorState, Loading } from "@/components/ui/states";
 import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 
 import { callerLabel, connectionLabel } from "@/lib/names";
@@ -195,7 +195,7 @@ function BudgetEditor({ connId }: { connId: string }) {
   }, [connId]);
 
   if (!budget || !draft) return (
-    <div style={{ fontSize: 12, color: "var(--t3)", padding: "8px 0" }}>Loading budget…</div>
+    <Loading what="the budget" style={{ padding: "8px 0" }} />
   );
 
   async function handleSave() {

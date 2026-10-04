@@ -15,7 +15,18 @@ import type { Adapter } from "chat";
 import type { Author, EmojiValue } from "chat";
 
 import type { AnswerEnvelope, AskOptions, TurnArtifacts, VerdictBody } from "./aughor.js";
-import { buildBot, stripMention, withoutTables } from "./bot.js";
+import type { Grid, TableRendering } from "./artifacts.js";
+import { buildBot, CORRECTION, stripMention, withoutTables } from "./bot.js";
+
+/** CP-5 — the platform's table door as the bot sees it. The bot formats nothing, so this
+ *  stands in for `POST /exhibits/table`: it returns what the door would, and records the
+ *  grid the bot asked about. What the table looks like is pinned in Python. */
+const REGION_TABLE: TableRendering = {
+  markdown: "| Region | Revenue |\n| --- | --- |\n| East | 12 |\n| West | 9 |", csv: null };
+function tableDoor(rendering: TableRendering | null = REGION_TABLE) {
+  const asked: Grid[] = [];
+  return { asked, renderTable: async (g: Grid) => { asked.push(g); return rendering; } };
+}
 
 const THREAD = "slack:C1:1712.001";
 
@@ -138,15 +149,18 @@ describe("buildBot — RC-2", () => {
       rows: [["East", 12], ["West", 9]],
       chartType: "bar",
     });
+    const door = tableDoor();
     const bot = buildBot({
       ask,
       renderChart: async () => Buffer.from("PNGBYTES"),
+      renderTable: door.renderTable,
       adapters: { slack: adapter }, state: createMockState(),
     });
 
     await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
 
     const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(door.asked).toEqual([{ columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]] }]);
     expect(post.markdown).toContain("| East | 12 |");
     expect(post.files.map((f) => f.filename)).toEqual(["chart.png"]);
   });
@@ -159,13 +173,15 @@ describe("buildBot — RC-2", () => {
     });
     const bot = buildBot({
       ask, renderChart: async () => null,
+      renderTable: tableDoor({ markdown: "_2 rows × 7 columns — the full result is attached as CSV._",
+                               csv: "a,b,c,d,e,f,g\n1,2,3,4,5,6,7\n8,9,10,11,12,13,14" }).renderTable,
       adapters: { slack: adapter }, state: createMockState(),
     });
 
     await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
 
     const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
-    expect(post.markdown).toBe("_2 rows × 7 columns — attached as CSV._");
+    expect(post.markdown).toBe("_2 rows × 7 columns — the full result is attached as CSV._");
     expect(post.files.map((f) => f.filename)).toEqual(["why.csv"]);
   });
 
@@ -176,6 +192,7 @@ describe("buildBot — RC-2", () => {
     });
     const bot = buildBot({
       ask, renderChart: async () => Buffer.from("PNGBYTES"),
+      renderTable: tableDoor(null).renderTable,       // the door: not worth a second message
       adapters: { slack: adapter }, state: createMockState(),
     });
 
@@ -192,6 +209,7 @@ describe("buildBot — RC-2", () => {
     });
     const bot = buildBot({
       ask, renderChart: async () => null,       // no honest chart, or no renderer
+      renderTable: tableDoor().renderTable,
       adapters: { slack: adapter }, state: createMockState(),
     });
 
@@ -445,6 +463,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
     const { ask } = askYielding([TABULATED], GRID);
     const bot = buildBot({
       ask, renderChart: async () => Buffer.from("PNGBYTES"),
+      renderTable: tableDoor().renderTable,
       adapters: { slack: adapter }, state: createMockState(),
     });
 
@@ -472,14 +491,18 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
     };
     // The frame-level artifacts disagree with the envelope on purpose: the envelope wins.
     const { ask } = askYielding(["East leads."], { columns: ["x"], rows: [[1]], chartType: "line", envelope });
+    const door = tableDoor();
     const bot = buildBot({
       ask, renderChart: async (req) => { rendered.push(req as unknown as Record<string, unknown>); return Buffer.from("PNG"); },
+      renderTable: door.renderTable,
       adapters: { slack: adapter }, state: createMockState(),
     });
 
     await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
 
     const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(door.asked).toEqual([envelope.grid]);     // the envelope's grid, not the frames'
+
     expect(post.markdown).toContain("| East | 12 |");
     expect(post.markdown).toContain("⚠️ returns counted at request");
     expect(post.markdown).toContain("⚠️ March is still settling");
@@ -497,6 +520,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
     const { ask } = askYielding(["East leads, and it is not close."], GRID);
     const bot = buildBot({
       ask, renderChart: async () => null,
+      renderTable: tableDoor().renderTable,
       adapters: { slack: adapter }, state: createMockState(),
     });
 
@@ -515,6 +539,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
     const { ask } = askYielding(["Revenue was $1.2M."], { envelope });
     const bot = buildBot({
       ask, renderChart: async () => Buffer.from("PNG"),
+      renderTable: tableDoor(null).renderTable,
       adapters: { slack: adapter }, state: createMockState(),
     });
 
@@ -534,6 +559,9 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
     const { ask } = askYielding([TABULATED], { columns: ["region", "revenue"], rows });
     const bot = buildBot({
       ask, renderChart: async () => null,
+      renderTable: tableDoor({
+        markdown: "| Region | Revenue |\n| --- | --- |\n| r0 | 0 |\n\n_Showing 5 of 60 rows — the full result is attached as CSV._",
+        csv: "region,revenue\nr0,0" }).renderTable,
       adapters: { slack: adapter }, state: createMockState(),
     });
 
@@ -560,12 +588,16 @@ describe("buildBot — the check verb (idea 7)", () => {
     const adapter = mockAughorAdapter();
     const { ask, calls } = fakeAsk(["never"]);
     const checked: string[] = [];
+    const door = tableDoor({ markdown: "| Claim | Said | Measured | Verdict | Why |\n| --- | --- | --- | --- | --- |\n"
+                                      + "| Revenue in August was $4.2M | $4.2M | 3,000,000 | contradicted | said $4.2M |", csv: null });
     const bot = buildBot({
-      ask, adapters: { slack: adapter }, state: createMockState(),
+      ask, adapters: { slack: adapter }, state: createMockState(), renderTable: door.renderTable,
       factCheck: async (text) => { checked.push(text); return { ok: true, status: 200, detail: "", envelope: ENVELOPE }; },
     });
 
     await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor check: Revenue in August was $4.2M."));
+
+    expect(door.asked).toEqual([ENVELOPE.grid]);
 
     expect(checked).toEqual(["Revenue in August was $4.2M."]);
     expect(calls).toHaveLength(0);                                   // the ask path was not spent
@@ -636,5 +668,82 @@ describe("TJ-4 — a reaction is a verdict", () => {
     bot.processReaction(reaction(adapter, "white_check_mark", true, "unknown"));
     await settle();
     expect(verdicts).toHaveLength(0);
+  });
+});
+
+// ── a reply that says the answer is wrong (2026-10-04) ───────────────────────────────────
+
+describe("buildBot — a correction said in the thread", () => {
+  function verdicts() {
+    const posted: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => {
+      posted.push(body);
+      return { ok: true, status: 200, detail: "recorded" };
+    };
+    return { posted, postVerdict };
+  }
+
+  async function answered(postVerdict?: (b: VerdictBody) => Promise<{ ok: boolean; status: number; detail: string }>) {
+    const adapter = mockAughorAdapter();
+    const { ask, seen } = askYielding(["Revenue was 365,320."], { investigationId: "inv-42", question: "revenue in 2023?" });
+    const bot = buildBot({ ask, postVerdict, adapters: { slack: adapter }, state: createMockState() });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor revenue in 2023?"));
+    return { adapter, bot, seen };
+  }
+
+  it("a reply that says what is right is recorded as a correction on the thread's answer", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot, seen } = await answered(postVerdict);
+
+    await bot.handleIncomingMessage(adapter, THREAD,
+      createTestMessage("m2", "That's wrong — 2023 means the calendar year, not the last twelve months."));
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0].investigationId).toBe("inv-42");
+    expect(posted[0].verdict).toBe("correct");
+    expect(posted[0].note).toContain("2023 means the calendar year");
+    expect(posted[0].note).toContain("revenue in 2023?");
+    expect(lastPost(adapter)).toBe("Recorded as a correction on this answer.");
+    expect(seen).toHaveLength(1);          // a correction is not a question: nothing is asked
+  });
+
+  it("a reply that only says wrong is a reject", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot } = await answered(postVerdict);
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "no, that is incorrect."));
+    expect(posted.map((v) => v.verdict)).toEqual(["reject"]);
+  });
+
+  it("the people's own conversation in the thread is left alone", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot, seen } = await answered(postVerdict);
+    const before = (adapter.postMessage as unknown as Mock).mock.calls.length;
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "is anything wrong with shipping this week?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m3", "thanks, sharing this with finance"));
+
+    expect(posted).toHaveLength(0);
+    expect(seen).toHaveLength(1);
+    expect((adapter.postMessage as unknown as Mock).mock.calls.length).toBe(before);
+  });
+
+  it("a mention in a thread the bot follows is still answered", async () => {
+    // Once a thread is followed the SDK stops calling the mention handler for it; every
+    // message, mentions included, goes to the followed-thread handler. Without the hand-over
+    // a follow-up question in the bot's own thread would be met with silence.
+    const { adapter, bot, seen } = await answered();
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor and for 2024?"));
+    expect(seen).toHaveLength(2);
+  });
+
+  it("opens with the verdict, or it is not one", () => {
+    for (const yes of ["that's wrong", "That’s wrong — use net revenue", "This is incorrect", "no, it is not right",
+                       "Wrong. The filter is missing", "correction: exclude cancelled lines", "not correct"]) {
+      expect(CORRECTION.test(yes), yes).toBe(true);
+    }
+    for (const no of ["is anything wrong with shipping?", "what went wrong in July?", "I was wrong about the date, ignore me",
+                      "thanks", "that's right", "correctional facilities by state"]) {
+      expect(CORRECTION.test(no), no).toBe(false);
+    }
   });
 });

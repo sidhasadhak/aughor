@@ -101,6 +101,8 @@ investigative chain. Previous sub-question answers are provided as context.
 
 ORIGINAL QUESTION: {question}
 
+{sql_context}
+
 CURRENT SUB-QUESTION:
 ID: {subq_id}
 Purpose: {purpose}
@@ -121,6 +123,8 @@ SCHEMA:
 {events_section}
 DATA PORTRAIT for this sub-question (discovered cardinalities, ranges, distinct values):
 {data_portrait}
+
+{dialect_rules}
 
 Write 1–2 SQL SELECT queries that directly answer this sub-question.
 Rules:

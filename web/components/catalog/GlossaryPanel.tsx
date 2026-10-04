@@ -24,6 +24,7 @@ import {
   getColumnNotes, setColumnNote, type ColumnNoteEntry, type GlossaryTable,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Loading } from "@/components/ui/states";
 
 const LABEL: React.CSSProperties = {
   fontSize: 11, color: "var(--t3)", textTransform: "uppercase",
@@ -114,7 +115,7 @@ export function GlossaryPanel({ table, columns, schema, connectionId }: {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [table]);
 
-  if (loading) return <p style={{ padding: 20, fontSize: 12, color: "var(--t3)" }}>Loading…</p>;
+  if (loading) return <Loading what="the glossary" style={{ padding: 20 }} />;
 
   const colEntry = (c: string) => (entry.columns ?? {})[c] ?? {};
 

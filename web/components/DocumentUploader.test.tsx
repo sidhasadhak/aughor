@@ -300,3 +300,18 @@ describe("curation — settings that were only reachable through the API", () =>
     expect(screen.getByText("some-embedder")).toBeTruthy();
   });
 });
+
+
+describe("a failed read is said, never shown as an empty corpus", () => {
+  it("says the documents and the search status could not be read, with a Retry", async () => {
+    listDocuments.mockRejectedValue(new Error("Reading the documents failed (502)"));
+    getKnowledgeStatus.mockRejectedValue(new Error("Reading the search status failed (502)"));
+
+    render(<DocumentUploader />);
+
+    expect(await screen.findByText(/Could not read the documents/)).toBeInTheDocument();
+    expect(screen.getByText(/Could not read the search status/)).toBeInTheDocument();
+    expect(screen.queryByText(/No documents yet/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Retry" }).length).toBe(2);
+  });
+});

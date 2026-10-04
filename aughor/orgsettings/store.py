@@ -70,6 +70,17 @@ def effective_settings(workspace_id: Optional[str] = None) -> OrgSettings:
     return OrgSettings(**base)
 
 
+_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CNY": "¥", "INR": "₹"}
+
+
+def currency_symbol(code: Optional[str]) -> str:
+    """Display symbol for an ISO currency code; falls back to the bare code so an
+    unmapped currency still reads as '<CODE> 1,234' rather than a wrong '$'."""
+    if not code:
+        return "$"
+    return _SYMBOLS.get(code.upper(), f"{code.upper()} ")
+
+
 def resolve_currency(profile_currency: str = "", workspace_id: Optional[str] = None) -> str:
     """The currency a FIGURE from this data is denominated in — the data's own, else the
     org's declared reporting currency, else USD.

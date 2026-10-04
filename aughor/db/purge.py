@@ -26,7 +26,10 @@ Adding a new connection-keyed store: register a hook in
 ``aughor.agent.bootstrap`` (``register_purge_hook`` / ``register_schema_purge_hook``
 / ``register_investigations_purge_hook``) returning ``{label: count}`` — and add a
 case to ``tests/unit/test_connection_purge.py`` — otherwise a deleted catalog
-orphans it.
+orphans it. A store that is missed is no longer silent: the cascade ends with
+``residue_of``, which reads the DISK (every table with a connection column, every path,
+every JSON/YAML store) and logs what a delete left — measured 2026-10-04, eight kinds of
+store had been outliving every deleted connection.
 """
 from __future__ import annotations
 
@@ -148,9 +151,142 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
     except Exception as e:
         tolerate(e, "purge: metastore catalog", counter="conn.purge.catalog")
 
+    # ── Mined query popularity (platform) — the tables and columns its queries read ──
+    try:
+        from aughor.sql import popularity
+        counts["popularity"] = popularity.purge_connection(conn_id)
+    except Exception as e:
+        tolerate(e, "purge: popularity", counter="conn.purge.popularity")
+
+    # ── The kernel's jobs, events, artifacts (+ lineage) and task traces (platform) ──
+    try:
+        from aughor.kernel.ledger import Ledger
+        for k, v in Ledger.default().purge_connection(conn_id).items():
+            counts[k] = counts.get(k, 0) + v
+    except Exception as e:
+        tolerate(e, "purge: kernel ledger", counter="conn.purge.kernel")
+
     removed = {k: v for k, v in counts.items() if v}
     if removed:
         logger.info("Purged artifacts for deleted connection %s: %s", conn_id, removed)
+
+    # ── And then LOOK. Idea 1: a delete is checked against what is on disk, not against
+    # the list of stores this file knows — a store added later without a purge is found
+    # here the first time anyone deletes a connection, and said.
+    residue = residue_of(conn_id)
+    if residue:
+        logger.warning("Deleted connection %s left residue in %d place(s): %s",
+                       conn_id, len(residue), residue)
+    counts["residue"] = sum(residue.values())
+    return counts
+
+
+#: What a connection delete KEEPS, by table, each with its reason. Records of what the
+#: platform DID, not what it learned: deleting them would let a delete erase the account of
+#: what was read from a warehouse and what it cost.
+KEPT_ON_DELETE = {
+    "audit_log": "the SQL audit log — every statement run against the warehouse, and by whom",
+    "session_events": "the session log — every model call and what it cost",
+}
+#: Columns that hold a connection id in some store or other (`catalog_id` is the metastore's).
+_CONNECTION_COLUMNS = ("conn_id", "connection_id", "catalog_id")
+#: A person's backup folder is not a store; the vector store is binary and has its own hook.
+_NOT_A_STORE = re.compile(r"backup|^qdrant$", re.IGNORECASE)
+#: Text stores larger than this are not read whole by a delete.
+_TEXT_SCAN_MAX_BYTES = 20_000_000
+
+
+def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
+    """Where ``conn_id`` still appears under the data directory — ``{place: count}``.
+
+    The population is the DISK, never a list kept here: every SQLite file's every table with
+    a connection column (rows equal to the id), every path named after it, and every JSON or
+    YAML store mentioning it as a whole token. ``KEPT_ON_DELETE`` tables are not residue. An
+    id shorter than six characters is matched in tables only — as a token it would match
+    words in unrelated files."""
+    import sqlite3
+
+    base = Path(root) if root is not None else _DATA_DIR
+    found: dict[str, int] = {}
+    if not conn_id or not base.exists():
+        return found
+    ids = {conn_id, _safe(conn_id)}
+    token = re.compile("|".join(rf"(?<![A-Za-z0-9]){re.escape(i)}(?![A-Za-z0-9])" for i in ids))
+    named: list[Path] = []                      # a folder named after it counts once
+    for path in sorted(base.rglob("*")):
+        rel = path.relative_to(base)
+        if any(_NOT_A_STORE.search(part) for part in rel.parts):
+            continue
+        if any(rel.is_relative_to(n) for n in named):
+            continue
+        if len(conn_id) >= 6 and token.search(path.name):
+            named.append(rel)
+            found[str(rel)] = 1
+            continue
+        if not path.is_file():
+            continue
+        if path.suffix in (".db", ".sqlite"):
+            try:
+                con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+                con.execute("PRAGMA busy_timeout = 2000")   # a store mid-write waits, never fails the scan
+                try:
+                    for (table,) in con.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+                        if table in KEPT_ON_DELETE:
+                            continue
+                        cols = {r[1] for r in con.execute(f'PRAGMA table_info("{table}")')}
+                        for col in (c for c in _CONNECTION_COLUMNS if c in cols):
+                            n = con.execute(f'SELECT COUNT(*) FROM "{table}" WHERE "{col}" IN '
+                                            f'({",".join("?" * len(ids))})', list(ids)).fetchone()[0]
+                            if n:
+                                found[f"{rel}:{table}.{col}"] = n
+                finally:
+                    con.close()
+            except sqlite3.Error as e:
+                tolerate(e, f"residue: could not read {rel}", counter="conn.purge.residue_read")
+        elif (len(conn_id) >= 6 and path.suffix in (".json", ".jsonl", ".yaml", ".yml")
+              and path.stat().st_size <= _TEXT_SCAN_MAX_BYTES):
+            try:
+                if token.search(path.read_text(encoding="utf-8", errors="replace")):
+                    found[str(rel)] = found.get(str(rel), 0) + 1
+            except OSError as e:
+                tolerate(e, f"residue: could not read {rel}", counter="conn.purge.residue_read")
+    return found
+
+
+#: Kernel artifacts a canvas delete KEEPS: the receipts of runs FILED under it. A chat
+#: answer or a deep report stays in history as a deleted chat thread's runs do (FL-6, and
+#: `purge_chat_session_artifacts`), and its receipt stays with it.
+from aughor.kernel.ledger import RECEIPT_KINDS as CANVAS_KEEPS  # noqa: E402
+
+
+def purge_canvas_artifacts(canvas_id: str) -> dict[str, int]:
+    """Delete what only a canvas could show, once the canvas is gone: its cards and saved
+    chart configs, its cockpit's versions, its saved artifacts, and its exploration (the
+    findings, the jobs and their events). Before this a deleted canvas left them all,
+    unreachable (found by CT-3; measured 2026-10-04 on the live install). Best-effort per
+    store, like the connection cascade; returns ``{artifact: count}``."""
+    counts: dict[str, int] = {}
+    try:
+        from aughor.dashboard.store import purge_scope
+        counts["cards"] = purge_scope("canvas", canvas_id)
+    except Exception as e:
+        tolerate(e, "purge: canvas cards", counter="canvas.purge.cards")
+    try:
+        from aughor.canvas import store as canvas_store
+        canvas_store.delete_canvas_artifacts(canvas_id)
+        counts["saved_artifacts"] = 1
+    except Exception as e:
+        tolerate(e, "purge: canvas saved artifacts", counter="canvas.purge.artifacts")
+    try:
+        from aughor.kernel.ledger import Ledger
+        for k, v in Ledger.default().purge_canvas(canvas_id, keep_kinds=CANVAS_KEEPS).items():
+            counts[k] = counts.get(k, 0) + v
+    except Exception as e:
+        tolerate(e, "purge: canvas kernel rows", counter="canvas.purge.kernel")
+    removed = {k: v for k, v in counts.items() if v}
+    if removed:
+        logger.info("Purged artifacts for deleted canvas %s: %s", canvas_id, removed)
     return counts
 
 

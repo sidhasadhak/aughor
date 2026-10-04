@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AutomationGraph } from "@/components/AutomationGraph";
-import { ReadFailed } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import {
   Automation,
   AutomationRun,
@@ -25,6 +25,7 @@ import {
   getGrants,
   revokeGrant,
 } from "@/lib/api";
+import { type DraftKeeps } from "@/components/automations/AutomationAuthor";
 import { ghostBtn, useIntegrationGrants } from "@/components/automations/AutomationRows";
 import { ProposalCard } from "@/components/ProposalCard";
 import { bindingRefs } from "@/lib/automationFlow";
@@ -93,7 +94,10 @@ export function AutomationsPanel({ connId, focusId }: Props) {
   const [creating, setCreating] =
     useState<{ seed?: { conditions: AutoCondition[]; effects: AutoEffect[] };
                /** SP-11 — the staged draft this canvas is finishing; saving resolves it. */
-               proposalId?: string } | null>(null);
+               proposalId?: string;
+               /** The draft's clock and run-as agent, which the canvas does not draw but the
+                *  saved chain must keep. */
+               keeps?: DraftKeeps } | null>(null);
   const [createName, setCreateName] = useState("");
   const [outcome, setOutcome] = useState("");
   const [proposing, setProposing] = useState(false);
@@ -235,7 +239,8 @@ export function AutomationsPanel({ connId, focusId }: Props) {
       }
       setCanvasFor(null);
       setCreateName(p.draft.name || "Proposed automation");
-      setCreating({ seed: { conditions: p.draft.conditions, effects: p.draft.effects } });
+      setCreating({ seed: { conditions: p.draft.conditions, effects: p.draft.effects },
+                    keeps: { timezone: p.draft.timezone || undefined } });
       setView("canvas");
       // The receipt in one line: the dry run walked the chain without dispatching.
       const steps = (p.draft.effects || []).length;
@@ -453,7 +458,7 @@ export function AutomationsPanel({ connId, focusId }: Props) {
             </div>
           </div>
         )}
-        {showSpinner && <div style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</div>}
+        {showSpinner && <Loading what="automations" />}
 
         {view === "list" && !showSpinner && loadError && (
           <ReadFailed what="the automations" error={loadError} onRetry={() => { void load(); }} />
@@ -505,7 +510,15 @@ export function AutomationsPanel({ connId, focusId }: Props) {
               // SP-11 — only a plain automation draft: saving the canvas creates the
               // CHAIN alone, and superseding a bundle would silently drop its agent
               // half, so a bundle's proposal stays pending for the card to resolve.
-              proposalId: p.kind === "automation_draft" ? p.id : undefined });
+              proposalId: p.kind === "automation_draft" ? p.id : undefined,
+              // Its clock, and — for a plain draft, whose agent already exists — the agent
+              // it runs as. Both were dropped here: the saved chain read its cron in UTC and
+              // ran as nobody in particular.
+              keeps: {
+                timezone: String(chain.timezone ?? "") || undefined,
+                agent_id: p.kind === "automation_draft"
+                  ? String(chain.agent_id ?? "") || undefined : undefined,
+              } });
               setView("canvas");
             }} />
         )}
@@ -534,7 +547,7 @@ export function AutomationsPanel({ connId, focusId }: Props) {
               />
             ) : (
               <AutomationGraph
-                create={{ connId: conn, seed: creating?.seed }}
+                create={{ connId: conn, seed: creating?.seed, keeps: creating?.keeps }}
                 header={{
                   name: createName, onName: setCreateName,
                   onBack: () => { setCreating(null); setView("list"); },

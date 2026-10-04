@@ -9,6 +9,7 @@ import {
   type GroupsCatalogue, type LevelGrant, type ActionTrigger,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Loading, ReadFailed } from "@/components/ui/states";
 
 const ROLE_TINT: Record<string, string> = {
   owner: "var(--blue4)",
@@ -24,6 +25,11 @@ function Chip({ label, tint }: { label: string; tint?: string }) {
       border: `1px solid var(--b1)`, color: tint || "var(--t2)", whiteSpace: "nowrap",
     }}>{label}</span>
   );
+}
+
+/** The server's own reason for a refused write (`api.ts` `refused`) — never a guessed one. */
+function refusal(e: unknown): string {
+  return e instanceof Error ? e.message : "The change was refused";
 }
 
 export function RolesPanel() {
@@ -51,23 +57,31 @@ export function RolesPanel() {
 
   const canManage = !!me?.permissions.includes("admin.manage_roles");
 
+  // A failed read of who you are, the roles or the groups used to come back empty: the panel
+  // then drew its read-only view — as if you lacked the permission — with no roles and no groups.
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
   const load = useCallback(async () => {
-    const [m, cat, au, gc, trg] = await Promise.all([
-      getMyAccess(), getRoleCatalogue(), getAdminUsers(), getGroups(), getActionTriggers(),
-    ]);
-    setMe(m);
-    setRoles(cat);
-    setAdminUsers(au);
-    setCatalogue(gc);
-    setTriggers(trg);
-    setAssignments(m?.permissions.includes("admin.manage_roles") ? await getRoleAssignments() : null);
+    setLoadFailed(null);
+    try {
+      const [m, cat, au, gc, trg] = await Promise.all([
+        getMyAccess(), getRoleCatalogue(), getAdminUsers(), getGroups(), getActionTriggers(),
+      ]);
+      setMe(m);
+      setRoles(cat);
+      setAdminUsers(au);
+      setCatalogue(gc);
+      setTriggers(trg);
+      setAssignments(m?.permissions.includes("admin.manage_roles") ? await getRoleAssignments() : null);
+    } catch (e) {
+      setLoadFailed(refusal(e));
+    }
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const refreshGroups = useCallback(async () => {
-    setCatalogue(await getGroups());
+    try { setCatalogue(await getGroups()); } catch (e) { setErr(refusal(e)); }
   }, []);
 
   const openGroupDetails = useCallback(async (groupId: string) => {
@@ -84,9 +98,10 @@ export function RolesPanel() {
     const id = newGroupId.trim().toLowerCase();
     if (!id) return;
     setBusy(true); setErr(null);
-    const g = await saveGroup({ id, channel_trigger_id: newGroupChannel });
-    if (!g) setErr("Could not create the group — a group id is a lowercase slug, and creating one needs role administration.");
-    else { setNewGroupId(""); setNewGroupChannel(""); await refreshGroups(); }
+    try {
+      await saveGroup({ id, channel_trigger_id: newGroupChannel });
+      setNewGroupId(""); setNewGroupChannel(""); await refreshGroups();
+    } catch (e) { setErr(refusal(e)); }
     setBusy(false);
   };
 
@@ -95,9 +110,10 @@ export function RolesPanel() {
     const p = newMember.trim();
     if (!p) return;
     setBusy(true); setErr(null);
-    const res = await addGroupMember(openGroup, p);
-    if (!res) setErr("Could not add the member — it must be a user:… or agent:… principal.");
-    else { setNewMember(""); setMembers(res); }
+    try {
+      setMembers(await addGroupMember(openGroup, p));
+      setNewMember("");
+    } catch (e) { setErr(refusal(e)); }
     setBusy(false);
   };
 
@@ -106,34 +122,38 @@ export function RolesPanel() {
     const s = newSecurable.trim();
     if (!s) return;
     setBusy(true); setErr(null);
-    const res = await addLevelGrant(`group:${openGroup}`, s, newLevel);
-    if (!res) setErr("Could not add the grant — a securable is kind:id (e.g. domain:supply-chain).");
-    else { setNewSecurable(""); setGrants(await getLevelGrants({ principal: `group:${openGroup}` })); }
+    try {
+      await addLevelGrant(`group:${openGroup}`, s, newLevel);
+      setNewSecurable(""); setGrants(await getLevelGrants({ principal: `group:${openGroup}` }));
+    } catch (e) { setErr(refusal(e)); }
     setBusy(false);
   };
 
   const refreshRoster = useCallback(async () => {
-    setAssignments(await getRoleAssignments());
+    try { setAssignments(await getRoleAssignments()); } catch (e) { setErr(refusal(e)); }
   }, []);
 
   const onAssign = async () => {
     const u = newUser.trim();
     if (!u) return;
     setBusy(true); setErr(null);
-    const res = await assignRole(u, newRole);
-    if (!res) setErr("Could not assign role — check that you have permission.");
-    else { setNewUser(""); await refreshRoster(); }
+    try {
+      await assignRole(u, newRole);
+      setNewUser(""); await refreshRoster();
+    } catch (e) { setErr(refusal(e)); }
     setBusy(false);
   };
 
   const onRevoke = async (userId: string, role: string) => {
     setBusy(true); setErr(null);
-    await revokeRole(userId, role);
+    // A refused revoke used to read as done: the roster re-read, and the role stayed.
+    try { await revokeRole(userId, role); } catch (e) { setErr(refusal(e)); }
     await refreshRoster();
     setBusy(false);
   };
 
-  if (loading) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
+  if (loading) return <Loading what="roles" />;
+  if (loadFailed !== null) return <ReadFailed what="the roles and groups" error={loadFailed} onRetry={load} />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 620 }}>
@@ -181,6 +201,10 @@ export function RolesPanel() {
         </div>
       </div>
 
+      {/* One line for every write this panel makes — the server's reason, in view of the
+          groups and the role assignments alike (it sat under the assignments only). */}
+      {err && <div role="alert" style={{ fontSize: 11, color: "var(--red3, #e5484d)" }}>{err}</div>}
+
       {/* HB-1 — groups: the built-in defaults, and the org's function groups with
           members (people AND agents), a channel, and grants by securable. */}
       {catalogue && (
@@ -221,7 +245,7 @@ export function RolesPanel() {
                     </span>
                     {canManage && (
                       <Button variant="ghost" size="xs" disabled={busy}
-                        onClick={async () => { setBusy(true); await deleteGroup(g.id); if (openGroup === g.id) setOpenGroup(null); await refreshGroups(); setBusy(false); }}
+                        onClick={async () => { setBusy(true); setErr(null); try { await deleteGroup(g.id); if (openGroup === g.id) setOpenGroup(null); } catch (e) { setErr(refusal(e)); } await refreshGroups(); setBusy(false); }}
                         title="Delete this group, its memberships and its grants"
                       >Delete</Button>
                     )}
@@ -241,7 +265,7 @@ export function RolesPanel() {
                                 <Chip label={m} />
                                 {canManage && (
                                   <Button variant="ghost" size="xs" disabled={busy}
-                                    onClick={async () => { setBusy(true); await removeGroupMember(g.id, m); setMembers(await getGroupMembers(g.id)); setBusy(false); }}
+                                    onClick={async () => { setBusy(true); setErr(null); try { await removeGroupMember(g.id, m); } catch (e) { setErr(refusal(e)); } setMembers(await getGroupMembers(g.id)); setBusy(false); }}
                                     title="Remove from the group"
                                   >×</Button>
                                 )}
@@ -269,7 +293,7 @@ export function RolesPanel() {
                                 <Chip label={`${gr.level} · ${gr.securable}`} />
                                 {canManage && (
                                   <Button variant="ghost" size="xs" disabled={busy}
-                                    onClick={async () => { setBusy(true); await removeLevelGrant(gr.principal, gr.securable, gr.level); setGrants(await getLevelGrants({ principal: `group:${g.id}` })); setBusy(false); }}
+                                    onClick={async () => { setBusy(true); setErr(null); try { await removeLevelGrant(gr.principal, gr.securable, gr.level); } catch (e) { setErr(refusal(e)); } setGrants(await getLevelGrants({ principal: `group:${g.id}` })); setBusy(false); }}
                                     title="Revoke this grant"
                                   >×</Button>
                                 )}
@@ -342,8 +366,6 @@ export function RolesPanel() {
                 Assign
               </Button>
             </div>
-            {err && <div style={{ fontSize: 11, color: "var(--red3, #e5484d)" }}>{err}</div>}
-
             {/* Roster */}
             {(assignments && assignments.length > 0) ? (
               <div style={{ borderRadius: "var(--r3)", border: "1px solid var(--b1)", overflow: "hidden" }}>

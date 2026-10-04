@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ReadFailed } from "@/components/ui/states";
 
 function timeAgo(iso?: string | null): string {
   if (!iso) return "never";
@@ -45,14 +46,17 @@ export function KnowledgeSourcesSection() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
 
-  // A load that cannot reach the API leaves the section on its empty state — the state it already
-  // renders before the first answer arrives, and the one it shows when nothing is connected. Every
-  // other call in this component catches (connect, sync), and so does every loader in the panel
-  // beside it; this one did not, so an offline browser got an unhandled rejection instead of
-  // "None yet".
+  // A load that cannot reach the API is said, with a Retry. It used to leave the section on its
+  // empty state ("None yet") — the one it shows when nothing is connected — so a failed read
+  // taught the reader that no source existed.
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
   const load = useCallback(async () => {
-    const out = await getKnowledgeSources().catch(() => null);
-    if (out) { setTypes(out.types); setSources(out.sources); }
+    try {
+      const out = await getKnowledgeSources();
+      setTypes(out.types); setSources(out.sources); setLoadFailed(null);
+    } catch (e) {
+      setLoadFailed(e instanceof Error ? e.message : String(e));
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -135,7 +139,9 @@ export function KnowledgeSourcesSection() {
         <p className="aug-fs-xs text-red-400 font-mono whitespace-pre-wrap">{error}</p>
       )}
 
-      {sources.length === 0 && !connecting && (
+      {loadFailed !== null ? (
+        <ReadFailed what="the knowledge sources" error={loadFailed} onRetry={load} />
+      ) : sources.length === 0 && !connecting && (
         <p className="aug-fs-xs text-zinc-600">
           None yet — connect a wiki and its pages become retrievable context.
         </p>

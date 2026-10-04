@@ -22,6 +22,7 @@ import { MetricsPanel } from "@/components/MetricsPanel";
 import { IntakePanel } from "@/components/intake/IntakePanel";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
+import { Loading } from "@/components/ui/states";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
@@ -271,7 +272,7 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
       </div>
 
       {/* List */}
-      {loading && <p style={{ color: "var(--t3)", fontSize: 12 }}>Loading…</p>}
+      {loading && <Loading what="tables" />}
       <ErrorMsg msg={err} />
       {!loading && tables.length === 0 && (
         <EmptyState text={scopeTable
@@ -433,7 +434,7 @@ function KnowledgeTab({ connId }: { connId: string }) {
         <Btn variant="ghost" onClick={rebuildIndex} disabled={rebuilding}>{rebuilding ? "Rebuilding…" : "Rebuild Vector Index"}</Btn>
       </div>
 
-      {loading && <p style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</p>}
+      {loading && <Loading what="glossary entries" />}
       <ErrorMsg msg={err} />
       {!loading && entries.length === 0 && (
         <EmptyState text="No knowledge entries yet. Add metric definitions, synonyms, or join rules to improve AI query quality." />
@@ -629,7 +630,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
         </Btn>
       </div>
 
-      {loading && <p style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</p>}
+      {loading && <Loading what="test questions" />}
       <ErrorMsg msg={err} />
       {!loading && cases.length === 0 && (
         <EmptyState text="No benchmark cases. Add gold questions to detect SQL regressions automatically." />

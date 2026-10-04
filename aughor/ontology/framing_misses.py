@@ -47,9 +47,14 @@ def record(frame: Any, graph: Any, connection_id: str, schema_name: Optional[str
         return False
 
 
-def misses(connection_id: str, *, limit: int = 200) -> dict:
+def misses(connection_id: str, *, limit: int = 200, graph: Any = None) -> dict:
     """The recorded misses on a connection, newest first: when, the run's trace id, and — only
-    while the session log still keeps it — the question the run was asked."""
+    while the session log still keeps it — the question the run was asked.
+
+    With ``graph``, each readable question also carries ``might_mean``: the declared terms the
+    near-match finder would offer. They are for a PERSON to turn into a synonym, and they frame
+    nothing: on the held-out set of 2026-10-04 two of the nine questions the finder would have
+    framed by itself were framed wrong (ROADMAP §3.32)."""
     from aughor.kernel.ledger import Ledger
     ledger = Ledger.default()
     rows = ledger.events(kind=KIND, conn_id=connection_id, limit=limit)
@@ -57,15 +62,27 @@ def misses(connection_id: str, *, limit: int = 200) -> dict:
     for r in rows:
         trace = r.get("trace_id") or ""
         question = ""
+        scheduled = False
         if trace:
             try:
-                for ev in ledger.session_events(trace_id=trace, limit=20):
+                # The question is on the run's FIRST event. This read the newest twenty events
+                # of the run and looked for it there: every one of theLook's 45 recorded misses
+                # had more than twenty (21 to 193), so each read "not kept" the day after it ran.
+                for ev in ledger.session_events(trace_id=trace, kind="user_request", limit=1,
+                                                ascending=True):
                     payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
-                    question = str(payload.get("question") or "")
-                    if question:
-                        break
+                    asked = str(payload.get("question") or "")
+                    from aughor.automations.temporal import ask_of
+                    question = ask_of(asked)
+                    scheduled = question != asked
             except Exception:  # noqa: BLE001 — an aged-out question reads as not kept, never as an error
                 question = ""
-        out.append({"at": r.get("at"), "trace_id": trace, "question": question or None})
+        row = {"at": r.get("at"), "trace_id": trace, "question": question or None,
+               "scheduled": scheduled}
+        if graph is not None and question:
+            from aughor.ontology.near_match import near_candidates
+            row["might_mean"] = [{"name": c["name"], "label": c["label"], "score": c["score"]}
+                                 for c in near_candidates(question, graph)]
+        out.append(row)
     return {"connection_id": connection_id, "misses": len(out), "recent": out[:25],
             "note": "a question is shown only while the session log still keeps its run"}

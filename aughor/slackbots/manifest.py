@@ -47,7 +47,11 @@ BOT_SCOPES = [
 #: would receive, log and drop — so it is not subscribed to.
 #: `reaction_added` (TJ-4): the bot reads a reaction on its own answer as a verdict; a
 #: reaction removed is not subscribed — a verdict is not un-said by taking the emoji back.
-BOT_EVENTS = ["app_mention", "message.im", "reaction_added"]
+#: `message.channels` (2026-10-04): a reply in a thread the bot has answered arrives without
+#: naming it, so "that's wrong" under an answer is recorded as a correction. Slack then sends
+#: the bot every message in the public channels it has joined; the transport acts on a reply
+#: only inside a thread it follows, and there only on a mention or a correction.
+BOT_EVENTS = ["app_mention", "message.im", "message.channels", "reaction_added"]
 
 #: AO-2c — the events agent mode needs, which `bots/slack/README.md` told a person to add
 #: by hand while the manifest left them out: the Agents & AI Apps surface opens a session

@@ -53,6 +53,11 @@ def set_watermark(connection_id: str, table: str, ts) -> None:
     _save(data)
 
 
+def has_connection(connection_id: str) -> bool:
+    """Does any watermark exist for this connection?"""
+    return connection_id in _load()
+
+
 def clear_watermark(connection_id: str, table: Optional[str] = None) -> None:
     """Forget the watermark for a connection (a table, or all of it) — forces a full scan."""
     data = _load()

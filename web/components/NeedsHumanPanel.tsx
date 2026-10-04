@@ -15,6 +15,8 @@ import { connectionLabel, needsYouTitle } from "@/lib/names";
 import { getConnections as listConnectionsForNames, type Connection as ConnectionForNames } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
+import { useVisiblePoll } from "@/lib/useVisiblePoll";
+
 import { Button } from "@/components/ui/button";
 import { ProposalCardById } from "@/components/ProposalCard";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
@@ -26,6 +28,7 @@ import {
 } from "@/lib/api";
 import { relTime } from "@/lib/format";
 import { approverName } from "@/lib/auth";
+import { Loading, ReadFailed } from "@/components/ui/states";
 
 /** A duration a person reads at a glance — "2h 14m", not 8040000. */
 function humanAge(ms: number): string {
@@ -75,11 +78,9 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
       .catch(e => setError(String(e?.message || e)));
   }, []);
 
-  useEffect(() => {
-    load();
-    const iv = setInterval(load, 10_000);
-    return () => clearInterval(iv);
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
+  // Only while the Attention layer is on screen (useVisiblePoll's note); refreshed on return.
+  useVisiblePoll(load, 10_000);
 
   const resolveAlert = async (row: NeedsHumanRow) => {
     setBusy(row.id);
@@ -94,10 +95,10 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   };
 
   if (error && !data) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--red4)" }}>{error}</div>;
+    return <ReadFailed what="what needs a person" error={error} onRetry={load} style={{ padding: 24 }} />;
   }
   if (!data) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t2)" }}>Loading…</div>;
+    return <Loading what="what needs a person" style={{ padding: 24 }} />;
   }
 
   // Rows arrive sorted by waiting_ms desc, so the head is the oldest — but read it from

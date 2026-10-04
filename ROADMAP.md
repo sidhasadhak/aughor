@@ -7514,7 +7514,7 @@ its own limit: *"The probability is STATED, not measured"* — no provider here 
 so [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) is the instrument that would
 say whether the numbers mean anything, **and it has never been run against a model.**
 
-#### CP-1 · Choice and Score reach the binding, and every ask is classified in SHADOW
+#### CP-1 · Choice and Score reach the binding, and every ask is classified in SHADOW — ✅ BUILT, merged 2026-09-23 · #542
 
 **First, because its corpus cannot be backfilled** — the same reasoning that reordered Arc CB.
 Every day without shadow logging is a day of calibration data that cannot be recovered.
@@ -7544,7 +7544,7 @@ option is absent from the closed set cannot be answered. **Falsifier:** if the s
 agrees with what ran on essentially every ask, there is no decision here to take and the arc's
 second movement is ceremony — record that and stop at CP-2.
 
-#### CP-2 · Calibrate before anything obeys it
+#### CP-2 · Calibrate before anything obeys it — ✅ BUILT, merged 2026-09-23 · #542; 🔴 its receipt TAKEN 2026-10-04, and its falsifier holds
 
 Run [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) for real against the
 shadow corpus — ECE plus its shuffled-context control — and publish the number. The routing
@@ -7584,7 +7584,42 @@ cannot be brought to a usable band, the arc stops here with the shadow log kept 
 observability feature — and says so in this section rather than leaving CP-3 reading as merely
 unstarted.
 
-#### CP-3 · Route on it, behind a flag
+🔴 **TAKEN 2026-10-04 — and the instrument had been measuring nothing.** The corpus is 111 asks
+(2026-09-23 to 10-03, 110 of them on theLook). Read as written, `observed_grids` was 0 on all
+111: the stream's wrapper counts `columns` frames and its sniff list never named that frame, so
+the count could not move, and `steps_implied` scored an ECE of 0.88 against a constant — while
+every test passed, because each handed the fold an outcome and none asked the wrapper what it
+had counted. `agreed` read 0 of 109 for a second reason: it compared the treatment's words with
+the door's depth ("multi_query" against "deep"), two vocabularies with no member in common, so
+this arc's falsifier could not fire. And the two prior-turn levers were judged with no prior
+turn. All three are repaired at the cause: what a turn did is read from its own trace
+(`treatment.observed_for_trace` — the loop steps that returned rows, the analyst's investigation
+tools, one statement on the fast path; TJ-2's `step` event is what made that count durable),
+agreement is the judged treatment's TIER against the tier that served, the door passes the
+previous turn, and `GET /obs/treatment-calibration` takes the reading on the running install —
+the fold had tests and no caller. Older rows are read again from their traces while the log
+still holds them (14 days); the 111 are kept in `evals/treatment_shadow_corpus_2026-10-04.json`.
+
+**The reading, taken on a copy of the live log.** `steps_implied`: ECE **0.41** (n 109) — stated
+at about 1.0 on 83 rows and right on 61% of them; its score separates the turns that ran three
+or more queries from the rest at an AUC of 0.63. `from_last_result`: ECE 0.14, one answer ("no")
+at about 1.0 on every row. The falsifier: the judged tier agreed with the tier that served on
+**18 of 109**, so there is a decision here to take — and the disagreement runs almost all one
+way. 85 of the 87 asks the analyst served were judged a light treatment (since 2026-09-24 the
+web's Agent button sends every ask to the analyst); 6 of the 24 served by the light bodies were
+judged an investigation. The census's "deep is chosen 0 times in 60" no longer describes the door.
+
+**So this section's falsifier holds for now: no lever is in a usable band, and CP-3 is not
+built.** A router that escalates up on this judge would act on 6 asks in eleven days with
+nothing fitted behind it, and the stated confidence is a single value, so "low confidence
+escalates" has nothing to read. What re-opens it: two weeks of the repaired corpus (the count
+is real now and the prior turn rides); or the labelling sitting this section names for
+`treatment`; or a paid comparison of the analyst against the light bodies on the asks judged an
+investigation. The saving the corpus does show — of 18 analyst-served asks judged one query, 16
+ran fewer than three — is a route DOWN, which this arc forbids, and the Agent button is a
+person's choice.
+
+#### CP-3 · Route on it, behind a flag — ⏸ NOT BUILT: held 2026-10-04 by CP-2's falsifier (its receipt, above)
 
 Only now does a treatment decide anything. Flag-gated exactly as `semops.jev_cheap_tier` is
 ([kernel/flags.py:92](aughor/kernel/flags.py:92)), default OFF, graduating only on a live
@@ -7657,6 +7692,32 @@ encodings (width, cap, inline-or-attach).
 **Receipt:** the CP-0 table above re-measured, with `a table for a READER` at 1 and `SVG → PNG`
 at 1. **Falsifier:** the catalogue-timestamp law — if re-measuring shows a door has grown its
 own formatter back, the seam was in the wrong place.
+
+✅ **BUILT 2026-10-04** (branch `claude/second-top-five`, not merged). **The falsifier had already
+fired once:** the Teams door AO-5 merged the day before had grown a FOURTH table builder
+(`teamsbots/reply.py`), so the census re-measured 4, not 3. `aughor/answer/exhibit.py` is the
+one formatter: `format_cell` ports the web data table's rule field for field (`AugTable.tsx`
+`fmt`, `lib/format.ts`, `lib/orgSettings.ts` — share columns as `12.3%`, money to the cent with the
+column's own ISO suffix winning, ids and period keys left as stored, every other number grouped
+in full, a midnight timestamp as its date, null as `—`), and `reader_table` is the one builder —
+the door passes only its encodings (columns before a table stops reading, rows before a preview,
+the preview's length, and where the rest went), and gets whole · captioned preview · caption.
+Consumers: `answer/doors.py` (both Slack selections), `export/document.py` (every data table in a
+PDF or deck, headers as labels), `teamsbots/reply.py`, and the TypeScript mention bot through
+`POST /exhibits/table` — `artifacts.ts` builds no table and `chart.ts` rasterizes nothing: it
+fetches `POST /charts/png`, the one rasterizer (`export.echarts.svg_to_png`) with a URL, and
+`@resvg/resvg-js` left the bot's dependencies. The export's chat and envelope builders now get
+the connection's currency like the deep and explore builders, and the Teams door resolves it
+from its agent's connection. **Census, re-measured by the test that holds it**
+(`tests/unit/test_exhibit_formatter.py`, scanning `aughor/` and `bots/slack/src/`, not a file
+list): a table for a READER **1** (plus the catalog's prompt table, exempt by name — it formats
+for the model), SVG → PNG **1**; both checks fail on `origin/main` by assertion. **Live receipt,
+theLook turn `47a130145460`'s stored envelope:** the grid that read `54496.64009666443` reads
+`$54,496.64` in the scheduled Slack post, the bot's table door, the Teams reply and the PDF/PPTX
+evidence table alike; `/charts/png` returned a 47,990-byte PNG on white. ⏳ **Not here:** the web
+formats in the browser (excluded by declaration, held by the parity cases); the CSV keeps values
+as stored on purpose; "text into Slack" (3) and "attach the exhibits" (2) from CP-0's table are
+not this wave's rows.
 
 **What each wave must show before the next starts:** a live receipt, a mutation test on every
 new guard, and this section updated the same day — a prose claim in §3 rots silently (§7).
@@ -8128,6 +8189,33 @@ recorded.
 only a person's synonym, or a model, reaches them.
 **Fixed after an independent review of the branch (2026-09-24):** a deep run frames its question twice (the door, then the graph's first node), so each miss was counted twice — the door now passes the run's id and a run is one miss.
 
+🔴 **MEASURED AGAIN 2026-10-04 (PENDING item 28) — near-matches are NOT wired, and now with a reason.**
+*On real traffic:* theLook has 45 recorded misses and none is a reworded business term — 13
+scheduled runs and two questions about revenue asked many times. The finder drew
+`completed_orders` from every scheduled run, at a score of 4.0: it read the code-written context
+in front of the ask ("the most recent complete day", the previous report's "order volume"), not
+the ask ("What changed in theLook in the last day?"). And the misses door showed no question at
+all: it read a run's newest twenty events and the question is on the first; all 45 runs held
+more than twenty, so each read "not kept" the day after it ran.
+*On a fresh held-out set* (`evals/framing_near_match_heldout.jsonl`, 25 reworded questions and 18
+controls over four connections' terms, committed before any run on it), under the rule the DEV
+split fitted (offer from a score of 1.0; frame without the chooser when the best leads by 1.0):
+of the 23 reworded questions the exact matcher missed, the finder would frame **6 right and 1
+wrong**, hand the chooser 2 with the meant term among them, and leave **14 missed**; of 16
+controls it would frame **1 wrong** ("Which brand has the highest average unit price?" as
+high-risk payments, on "highest") and hand the chooser 1
+(`evals/framing_near_match_heldout_results_2026-10-04.json`; `--heldout` reproduces it). Two of
+nine frames wrong, each one silently changing the population an answer is computed on, for a
+recall of about a third: the "by design" rule stands, and the earlier 1.5 threshold's "0 of 7
+controls" was the fit, not the finder.
+*What changed instead:* the frame — exact matcher included — is of the ASK
+(`automations.temporal.ask_of` undoes the scheduled grounding by the composer's own headers);
+`GET /framing/misses` reads the run's first event, shows a scheduled run's ask and says it was
+scheduled, and lists what each miss `might_mean` for a PERSON to turn into a synonym. On a copy
+of the live log: 25 of 25 shown misses carry their question, where none did. Still open: a
+screen over that door, and the chooser's behaviour on candidates (a paid run — not worth taking
+on these numbers).
+
 ### 3.33 · The chat's two main buttons can reach the conversation agent (PENDING.md item 15, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; flag `chat.buttons_reach_agent`, **on by default since 2026-09-24**, the user's call over the ⚑)
 
 > **The fact it answers.** Measured: Quick posts `/chat` and the default Agent button posts the
@@ -8341,6 +8429,21 @@ the latter is the `'flights' is not present in this data` bug again (5 tests, ea
 on the user's
 BigQuery connections the profile cache is empty (Arc CB's "unknown" share), so part 2 binds there only once it is
 filled; question-matched rows in place of the first five, and value embeddings (the review's level 2), are not built.
+
+**Rerun 2026-10-04 — no gain on the model the install now answers with, and not a clean run.**
+`evals/data_profiles_ab_2026-10-04.json`: gemini-3.1-flash-lite, the 53 golden and 12 ablation
+questions, three runs a question in each arm, the model pinned, every store in a scratch state.
+The provider's free tier allows 15 requests a minute for this model and two arms at once exceeded
+it: 39 of 195 runs were lost in the off arm and 59 in the on arm, every ablation question after
+the second among them, and a lost run scores 0 — so the headline fold (0.466 → 0.417, t −2.25)
+measures the limit, not the block. What the run can say: where both arms wrote a statement it was
+byte-identical in 107 of 117 runs, and of the ten that differed nine scored the same and one
+higher; with the lost runs set aside, 46 comparable questions read 0.608 → 0.596 (paired t −0.55,
+10 better · 9 worse · 27 unchanged). The 2026-09-24 run, on deepseek-v4.1-flash, read +0.038
+(t 1.49). Neither graduates the flag and this one is not clean enough to delete on; it stays off.
+The "empty profile cache on the BigQuery connections" above is no longer true of theLook: the
+running API serves 7 tables and 75 columns for it — the empty reading came from
+`data/schema_profiles.json`, a legacy file the ledger replaced.
 
 ### 3.39 · The business explorer cannot fuse two groups, and no proposal hides a type (PENDING.md item 20, Arc ON; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag — a guard on a default-on path)
 
@@ -9485,6 +9588,19 @@ cohort equals hand SQL. Mutation test: overwrite instead of supersede and the hi
 **Receipt (⚑ an exploration run on theLook):** the share of that run's findings carrying a cell and a metric;
 *"Suits have the highest return rate"* re-evaluated for 17–26 August by compilation equals hand SQL.
 
+**Measured and narrowed 2026-10-04.** Of theLook's 18 stored findings, two name a quantity an
+approved metric defines (both the return rate) and the declared-filter check that guards chat
+answers flags none of the 18 — and it could not have guarded them: every other path that runs
+model-written SQL hands the executor the declared-filter rules of the question it answers
+(`rules_for_statement`), and the explorer handed it none, so "revenue by category" would run
+over cancelled lines here while the same question in chat did not. **Built:** the explorer's
+statement carries the rules of its own question (`explorer/agent._run`), so the statement that
+ran — the one the finding cites — is over the metric's rows. Two tests, one through the real
+executor; removing the hand-over fails both. **Not built:** a finding recording its cell, its
+metric's name or the days its data covered, and re-evaluation by BR-2's compiler in place of
+the finding's own SQL. ⚑ The exploration run that would show a guarded finding live is approved
+and not yet taken: it needs this branch's code in the running API.
+
 #### BR-8 · The daily ledger — when speed or history demands it (about two weeks, free but for storage)
 
 > **Premise.** BR-2 to BR-7 calculate a range when asked: about one query per table (five on theLook), a few drill
@@ -10221,7 +10337,11 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > **Status 2026-10-03 — DE-1 BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first:* the golden
 > set's 53 statements parsed in all five dialects, 0 refused (`scripts/de1_parse_step_precheck.py --golden`);
 > theLook's audit was not reachable from the build machine, and the same script counts it where it lives
-> (`--connection 8233e4fd --limit 2000`) — that count is owed before merge, and the falsifier reads it. *Built:* the
+> (`--connection 8233e4fd --limit 2000`) — that count is owed before merge, and the falsifier reads it. **Taken
+> 2026-10-04, after the merge (#564), not before it:** of the newest 2,000 audited statements 1,999 ran clean and
+> the parse step would refuse none; over the connection's whole audited history, 22,263 statements, it would
+> refuse 4, none of them valid — the falsifier does not fire (`docs/DE_LIVE_RECEIPT_2026-10-04.md`). The first
+> run counted 0 statements: the pre-check read a key no audit row carries, and said nothing. *Built:* the
 > parse step runs in `_security_pre`, the one step every connector's door calls, in the dialect `through_door` records
 > for the engine behind it — so BigQuery, Snowflake, MySQL, Exasol, SQLite, MotherDuck and every file and API connector
 > validate where only the built-in two did, and `execute_with_params` goes through the door too (it had no trail at
@@ -10684,7 +10804,10 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > one case each in `ResultsGrid` and `ResultsPanel` for a joined statement; tsc, the seven gates, ruff and the
 > vocabulary ratchet green. *Owed, now one command:* `uv run python scripts/de_live_receipts.py --connection
 > 8233e4fd --mysql <id> --postgres <id> --trino <id>` on the machine that holds theLook; its output file is the
-> arc's live receipt. *Left, by decision:* paging a BigQuery result from the job's own result table; a PostGIS
+> arc's live receipt. **theLook's sections taken 2026-10-04** (`docs/DE_LIVE_RECEIPT_2026-10-04.md`): the parse
+> step refuses no valid statement; 5,088 of 7,656 output columns resolve to a table column; on `events` a page
+> and the re-run each bill 384.8 MB; the first GEOGRAPHY is typed as one and arrives as WKT. Still owed: the
+> MySQL, Postgres and Trino sections. *Left, by decision:* paging a BigQuery result from the job's own result table; a PostGIS
 > column still named by its OID on the typed response; no map under a geometry; DE-7's JDBC bridge, recorded,
 > not scheduled.
 

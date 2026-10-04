@@ -23,6 +23,7 @@ import { createMemoryState } from "@chat-adapter/state-memory";
 import { createArrivalPoster, createAskStream, createFactChecker, createVerdictPoster } from "./aughor.js";
 import { buildBot } from "./bot.js";
 import { createChartRenderer } from "./chart.js";
+import { createTableRenderer } from "./artifacts.js";
 import { hostname } from "node:os";
 
 import { createHeartbeat, createRegistry, type BotRecord } from "./registry.js";
@@ -33,8 +34,9 @@ const RECONCILE_MS = Number(process.env.AUGHOR_RECONCILE_MS ?? 30_000);
 
 const apiUrl = process.env.AUGHOR_API_URL ?? "http://127.0.0.1:8000";
 
-/** Built once and shared: the renderer is stateless and holds no per-bot config. */
+/** Built once and shared: the renderers are stateless and hold no per-bot config. */
 const renderChart = createChartRenderer();
+const renderTable = createTableRenderer();
 
 /** One Chat instance for one record — the per-bot wiring lives here, not in the supervisor. */
 async function makeBot(record: BotRecord) {
@@ -48,6 +50,7 @@ async function makeBot(record: BotRecord) {
       AUGHOR_AGENT_ID: record.agent_id,
     }),
     renderChart,
+    renderTable,
     // HB-5 — the note verb's transport: "@bot note: …" files the sentence on the
     // object this thread is about, through the arrivals door's customs.
     postArrival: createArrivalPoster({

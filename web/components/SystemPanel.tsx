@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { getDevStats, resetDevStats, getEvalGraduations, getSystemFlags, setSystemFlag, type DevStats, type EvalGraduation, type SystemFlag } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
 import { getApiBase, getApiBaseSource, setApiBase, normalizeApiBase, API_BASE_DEFAULT } from "@/lib/config";
@@ -182,13 +183,17 @@ export function SystemPanel() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [resetting, setResetting] = useState(false);
 
+  // A failed stats read used to keep the whole tab on "Loading stats…" for good — and with it
+  // the Backend section, the one place a person points this browser at a reachable API.
+  const [statsFailed, setStatsFailed] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
       const s = await getDevStats();
       setStats(s);
+      setStatsFailed(null);
       setLastRefresh(new Date());
-    } catch {
-      // API not reachable
+    } catch (e) {
+      setStatsFailed(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -208,9 +213,13 @@ export function SystemPanel() {
   };
 
   if (!stats) {
+    if (statsFailed === null) return <Loading what="stats" className="flex items-center justify-center h-40" />;
     return (
-      <div className="flex items-center justify-center h-40 text-zinc-500 text-sm">
-        Loading stats…
+      <div className="p-4 overflow-y-auto h-full">
+        <ReadFailed what="the system stats" error={statsFailed} onRetry={load} style={{ marginBottom: 16 }} />
+        <Backend />
+        <FeatureFlags />
+        <PacksManager />
       </div>
     );
   }
@@ -357,7 +366,14 @@ function FeatureFlags() {
   // reader — two halves of one gate, wired to different stores.
   const [graduations, setGraduations] = useState<Map<string, EvalGraduation>>(new Map());
 
-  useEffect(() => { getSystemFlags().then(setFlags).catch(() => setFlags({})); }, []);
+  // A failed read used to become `{}`, and with no flags the section returned null — the
+  // flags vanished from Settings with nothing saying why.
+  const [flagsFailed, setFlagsFailed] = useState<string | null>(null);
+  const readFlags = useCallback(() => {
+    setFlagsFailed(null);
+    getSystemFlags().then(setFlags).catch(e => setFlagsFailed(e instanceof Error ? e.message : String(e)));
+  }, []);
+  useEffect(() => { readFlags(); }, [readFlags]);
   useEffect(() => {
     getEvalGraduations().then(list => {
       const latest = new Map<string, EvalGraduation>();
@@ -366,14 +382,29 @@ function FeatureFlags() {
     }).catch(() => setGraduations(new Map()));
   }, []);
 
+  // A refused change used to leave the switch where it was and say nothing; the server's
+  // reason is shown under the search box until the next change.
+  const [refusedChange, setRefusedChange] = useState<string | null>(null);
   const toggle = async (name: string, value: boolean) => {
     setBusy(name);
-    const updated = await setSystemFlag(name, value);
-    if (updated) setFlags(f => ({ ...f, [name]: updated }));
+    setRefusedChange(null);
+    try {
+      const updated = await setSystemFlag(name, value);
+      setFlags(f => ({ ...f, [name]: updated }));
+    } catch (e) {
+      setRefusedChange(`${name}: ${e instanceof Error ? e.message : "the change was refused"}`);
+    }
     setBusy("");
   };
 
   const entries = Object.entries(flags);
+  if (flagsFailed !== null) {
+    return (
+      <Section title="Feature flags">
+        <ReadFailed what="the feature flags" error={flagsFailed} onRetry={readFlags} />
+      </Section>
+    );
+  }
   if (entries.length === 0) return null;
 
   // The disposition ratchet (flag strategy §5.1): group by declared KIND instead of one
@@ -424,6 +455,9 @@ function FeatureFlags() {
           <Button size="xs" variant="ghost" onClick={() => setQuery("")} className="shrink-0">Clear</Button>
         )}
       </div>
+      {refusedChange && (
+        <p role="alert" className="text-xs pb-2" style={{ color: "var(--red3)" }}>{refusedChange}</p>
+      )}
       {GROUPS.filter(g => byGroup.has(g.key)).map(g => (
         <details key={g.key} open={g.open || !!q} className="mb-2 last:mb-0">
           <summary className="cursor-pointer select-none list-none flex items-baseline gap-2 pt-1 pb-1.5">

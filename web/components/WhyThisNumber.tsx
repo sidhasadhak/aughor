@@ -17,6 +17,7 @@ import {
   type AnswerTrace, type PublicReceipt, type PublicReceiptGuard, type TracedNode,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { renderEmphasis } from "@/components/brief/BriefProse";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
@@ -24,6 +25,7 @@ import { WarrantChip } from "@/components/graph/WarrantChip";
 import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
+import { Loading } from "@/components/ui/states";
 
 // A guard's action → its verdict and verb. `flagged` is the only warned one; a repair is a guard
 // doing its job and the figure surviving it — passed, never red. A receipt is never a refusal.
@@ -140,8 +142,11 @@ function SqlBlock({ q }: { q: PublicReceipt["executed_sql"][number] }) {
   );
 }
 
-function Drawer({ receiptId, preloaded, onClose }: {
+function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
   receiptId: string; preloaded?: PublicReceipt | null; onClose: () => void;
+  /** Idea 11 — the same receipt as a page of its own (`/receipt/<id>`), the address an
+   *  exported figure links to: no scrim, no Escape, centred. */
+  asPage?: boolean;
 }) {
   const [rec, setRec] = useState<PublicReceipt | null>(preloaded ?? null);
   const [state, setState] = useState<"loading" | "ready" | "missing">(
@@ -162,10 +167,11 @@ function Drawer({ receiptId, preloaded, onClose }: {
   }, [receiptId, preloaded]);
 
   useEffect(() => {
+    if (asPage) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, asPage]);
 
   // Wave P1 — the knowledge-graph subgraph this answer stands on. Fetched only when the
   // drawer opens (it costs a graph load) and never blocks the receipt: an answer whose
@@ -199,15 +205,18 @@ function Drawer({ receiptId, preloaded, onClose }: {
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
+      role={asPage ? "main" : "dialog"}
+      aria-modal={asPage ? undefined : "true"}
       aria-label="Why this number — Trust Receipt"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(2px)", zIndex: 300, display: "flex", justifyContent: "flex-end" }}
+      onClick={e => { if (!asPage && e.target === e.currentTarget) onClose(); }}
+      style={asPage
+        ? { minHeight: "100vh", background: "var(--bg-0)", display: "flex", justifyContent: "center" }
+        : { position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(2px)", zIndex: 300, display: "flex", justifyContent: "flex-end" }}
     >
       <div style={{
-        width: "100%", maxWidth: 460, height: "100%", background: "var(--bg-1)",
-        borderLeft: "1px solid var(--b2)", display: "flex", flexDirection: "column",
+        width: "100%", maxWidth: asPage ? 720 : 460, height: asPage ? "auto" : "100%", background: "var(--bg-1)",
+        borderLeft: "1px solid var(--b2)", ...(asPage ? { borderRight: "1px solid var(--b2)", minHeight: "100vh" } : {}),
+        display: "flex", flexDirection: "column",
       }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "14px 16px", borderBottom: "1px solid var(--b1)" }}>
@@ -219,17 +228,19 @@ function Drawer({ receiptId, preloaded, onClose }: {
             </div>
             {rec?.question && <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 4, lineHeight: 1.5 }}>{rec.question}</div>}
           </div>
-          <Button size="xs" variant="ghost" onClick={onClose} aria-label="Close">✕</Button>
+          {asPage
+            ? <Button size="xs" variant="ghost" onClick={onClose}>Open Aughor →</Button>
+            : <Button size="xs" variant="ghost" onClick={onClose} aria-label="Close">✕</Button>}
         </div>
 
         {/* Body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
-          {state === "loading" && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Loading receipt…</div>}
+          {state === "loading" && <Loading what="the receipt" />}
           {state === "missing" && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>No receipt is available for this answer.</div>}
           {rec && (
             <>
               {rec.headline && (
-                <div style={{ fontSize: 13, color: "var(--t1)", fontWeight: 500, lineHeight: 1.5 }}>{rec.headline}</div>
+                <div style={{ fontSize: 13, color: "var(--t1)", fontWeight: 500, lineHeight: 1.5 }}>{renderEmphasis(rec.headline)}</div>
               )}
 
               {rec.executed_sql.length > 0 && (
@@ -447,6 +458,12 @@ function Drawer({ receiptId, preloaded, onClose }: {
       </div>
     </div>
   );
+}
+
+/** Idea 11 — `/receipt/<id>`: the page every exported figure links back to. The drawer's
+ *  own body, so a reader of a PDF or a deck sees exactly what "Why this number" shows. */
+export function TrustReceiptPage({ receiptId }: { receiptId: string }) {
+  return <Drawer receiptId={receiptId} asPage onClose={() => { window.location.href = "/"; }} />;
 }
 
 export function WhyThisNumber({ receiptId }: { receiptId: string }) {

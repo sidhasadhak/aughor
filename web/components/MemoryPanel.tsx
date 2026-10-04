@@ -91,13 +91,18 @@ export function MemoryPanel() {
     getLearningDatasets().then(setDatasets).catch(() => setDatasets(null));
   }, []);
 
+  // A refused export used to end the spinner and change nothing, saying nothing.
+  const [exportRefused, setExportRefused] = useState<string | null>(null);
   const exportNow = async () => {
     setExporting(true);
+    setExportRefused(null);
     try {
       const out = await runLearningExport();
-      if (out) setDatasets({ stats: datasets?.stats ?? {}, gates: out.gates });
+      setDatasets({ stats: datasets?.stats ?? {}, gates: out.gates });
       const fresh = await getLearningDatasets();
       if (fresh) setDatasets(fresh);
+    } catch (e) {
+      setExportRefused(e instanceof Error ? e.message : "The export was refused");
     } finally { setExporting(false); }
   };
 
@@ -230,6 +235,9 @@ export function MemoryPanel() {
                 Distillation (MI-4) does not start until every gate passes; an unchanged corpus
                 exports nothing new, so the button is safe to press.
               </div>
+              {exportRefused && (
+                <p role="alert" className="aug-fs-xs" style={{ color: "var(--red3)", margin: "0 0 8px" }}>{exportRefused}</p>
+              )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                 {Object.entries(datasets.gates).map(([kind, g]) => (
                   <Tile key={kind} label={kind.toUpperCase()}

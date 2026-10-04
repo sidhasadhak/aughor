@@ -157,9 +157,14 @@ def _openai_style_models(base_url: str, key: str, *, timeout: float) -> list[dic
         # here at the edge. This is what lets `obs.usage` price a call from the
         # provider's own catalogue instead of a table somebody has to hand-maintain —
         # the same reason no model id is hardcoded in this product.
+        # A NEGATIVE quote is not a rate. OpenRouter publishes "-1" for its routers
+        # (`openrouter/auto`, `typesafe/jev-router`, …), whose price follows whichever
+        # model they route to. Read as a rate it priced every routed token at minus one
+        # dollar: the Usage page read −$166,759.68 for one week on 2026-10-04, and a spend
+        # alert could never fire on a router. Such a model stays unpriced, and says so.
         for _src, _dst in (("prompt", "price_in"), ("completion", "price_out")):
             _rate = _as_float(pricing.get(_src))
-            if _rate is not None:
+            if _rate is not None and _rate >= 0.0:
                 entry[_dst] = _rate * 1_000_000.0
         out.append(entry)
     return out
@@ -253,9 +258,14 @@ def fetch_live_models(backend: str, *, timeout: float = 6.0) -> tuple[list[dict]
     built-in list because the live fetch failed, here is why" instead of
     presenting a stale fallback as though it were authoritative.
     """
-    from aughor.llm.provider import active_base_url, active_key
+    from aughor.llm.provider import active_base_url, active_key, key_is_undecryptable
 
     base_url = active_base_url(backend)
+    if key_is_undecryptable(backend):
+        # The one model door that sent the stored key unasked: an undecryptable one went to
+        # the provider's model list as the credential, and its refusal was shown as the cause.
+        return [], ("the stored key cannot be decrypted — AUGHOR_SECRET_KEY is missing or does "
+                    "not match the one it was encrypted with; nothing was sent to the provider")
     key = active_key(backend)
     try:
         if backend == "ollama":

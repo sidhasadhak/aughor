@@ -1,5 +1,5 @@
 "use client";
-import { ErrorState } from "@/components/ui/states";
+import { ErrorState, ReadFailed } from "@/components/ui/states";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { countNoun, formatCount } from "@/lib/format";
@@ -230,12 +230,18 @@ export function DocumentUploader() {
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
+  // A failed read of the list used to leave it empty under "No documents yet", and a failed
+  // read of the plane's status showed no banner at all — both read as a healthy, empty corpus.
+  const [docsFailed, setDocsFailed] = useState<string | null>(null);
+  const [statusFailed, setStatusFailed] = useState<string | null>(null);
   const refresh = useCallback(() => {
-    listDocuments().then(setDocs).catch(() => {});
+    const said = (e: unknown) => (e instanceof Error ? e.message : String(e));
+    listDocuments().then(d => { setDocs(d); setDocsFailed(null); }).catch(e => setDocsFailed(said(e)));
     // The plane's own account of itself. Without it this panel shows a list of documents
     // and no hint that nothing can be searched — an unreachable embedder looks exactly
     // like a healthy corpus from here.
-    getKnowledgeStatus().then(setStatus).catch(() => setStatus(null));
+    getKnowledgeStatus().then(st => { setStatus(st); setStatusFailed(null); })
+      .catch(e => { setStatus(null); setStatusFailed(said(e)); });
     getDocumentFormats().then(setFormats).catch(() => setFormats(null));
   }, []);
 
@@ -410,6 +416,9 @@ export function DocumentUploader() {
     <div className="space-y-5">
       {/* What the plane can actually do. Shown only when something is wrong or drifted —
           a banner that appears on every healthy load is a banner nobody reads. */}
+      {statusFailed !== null && (
+        <ReadFailed what="the search status" error={statusFailed} onRetry={refresh} />
+      )}
       {status && !status.ready && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
           <p className="aug-fs-sm text-amber-300">Search is unavailable — {status.reason}.</p>
@@ -1173,7 +1182,9 @@ export function DocumentUploader() {
         </details>
       )}
 
-      {docs.length === 0 && !uploading && (
+      {docsFailed !== null ? (
+        <ReadFailed what="the documents" error={docsFailed} onRetry={refresh} />
+      ) : docs.length === 0 && !uploading && (
         <p className="aug-fs-xs text-zinc-500 text-center py-4">
           No documents yet. Upload one above to give the Agent external context.
         </p>

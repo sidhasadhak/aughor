@@ -12,7 +12,6 @@
   "dependencies": {
     "@chat-adapter/slack": "4.39.0",
     "@chat-adapter/state-memory": "4.39.0",
-    "@resvg/resvg-js": "2.6.2",
     "chat": "4.39.0"
   },
   "devDependencies": {

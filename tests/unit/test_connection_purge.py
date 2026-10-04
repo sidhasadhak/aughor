@@ -332,3 +332,88 @@ def test_purge_counts_a_key_once_when_it_lives_in_store_and_file(isolated):
     assert counts["exploration"] == 1
     assert not (isolated / "exploration_cat_dual.json").exists()    # file gone too
     assert not explorer_store.has_state("cat_dual")
+
+
+def test_a_deleted_connection_leaves_nothing_on_disk():
+    """Idea 1 — "deleting a connection leaves nothing behind". Measured 2026-10-04 on the live
+    install: the two connections deleted in September still had their column-config and doc
+    trees, their indexed schema documents, their watermarks, orphaned metastore schemas,
+    ~1,160 popularity rows each, and the kernel's jobs, events and artifacts.
+
+    Each store is written below by its OWN writer. The oracle is not this list: it is
+    `residue_of`, which reads every SQLite table with a connection column, every path and
+    every JSON/YAML store under the data directory — so a store nobody seeds here still shows
+    up the first time a real delete runs (the cascade logs it)."""
+    from aughor.db import purge
+    from aughor.explorer import watermark
+    from aughor.kernel.ledger import Ledger
+    from aughor.knowledge import indexer
+    from aughor.metastore import store as metastore
+    from aughor.ontology import column_config, doctree
+    from aughor.sql import popularity
+
+    conn = "deadbeef42"
+    column_config.save_table_config(conn, "main", "orders",
+                                    {"status": column_config.ColumnFlags()})
+    doctree.save_doc_tree(doctree.DocTree(connection_id=conn, schema_name="main"))
+    indexer._register(indexer.doctree_doc_id(conn, "main"), "schema.md",
+                      f"Schema documentation — {conn}/main", 3, "2026-10-04T00:00:00Z")
+    watermark.set_watermark(conn, "main.orders", "2026-10-01T00:00:00")
+    metastore.upsert_catalog(conn, name="gone", conn_id=conn)
+    metastore.upsert_schema(conn, "main")
+    popularity.save_popularity(popularity.PopularitySignal(
+        connection_id=conn, table_counts={"orders": 9}, column_counts={"orders.status": 4}))
+    ledger = Ledger.default()
+    ledger.job_insert({"id": f"job-{conn}", "kind": "explore", "conn_id": conn,
+                       "state": "succeeded", "attempt": 1, "created_at": "2026-10-04T00:00:00Z"})
+    ledger.emit("job.finished", {"ok": True}, conn_id=conn, job_id=f"job-{conn}")
+    ledger.artifact_write("profile", f"profile:{conn}", {"tables": 1}, conn_id=conn,
+                          lineage=[("derived_from", "orders", None)])
+    ledger.task_history_insert({"span_id": f"span-{conn}", "trace_id": "t", "task": "explore",
+                                "start_time": "2026-10-04T00:00:00Z",
+                                "labels": {"connection_id": conn}})
+    assert set(purge.residue_of(conn)) >= {                       # the oracle sees the seeds
+        "documents.json", "explore_watermark.json", "metastore.db:schemas.catalog_id",
+        "popularity.db:popularity.connection_id", f"ontology_column_config/{conn}"}
+
+    counts = purge.purge_connection_artifacts(conn)
+
+    assert purge.residue_of(conn) == {}
+    assert counts["residue"] == 0
+    assert counts["popularity"] == 3 and counts["kernel_jobs"] == 1      # 2 counts + 1 meta row
+    assert counts["kernel_artifacts"] == 1 and counts["kernel_lineage"] == 1
+    assert (counts["task_traces"], counts["schema_documents"]) == (1, 1)
+    assert counts["column_config"] == 1 and counts["doc_tree"] == 1
+
+
+def test_a_deleted_canvas_takes_its_cards_and_cockpit_history_and_keeps_its_filed_runs():
+    """CT-3 found it by reading: a deleted canvas left its cards and its cockpit's history
+    behind, unreachable. Measured 2026-10-04 on the live install: four deleted canvases still
+    held 881 kernel artifacts, 680 jobs and 5,478 events. A chat answer filed under the canvas
+    is a RUN and stays, with its receipt — as a deleted chat thread's runs do (FL-6)."""
+    from aughor.dashboard import store as cards
+    from aughor.dashboard.models import DashboardCard
+    from aughor.db import purge
+    from aughor.kernel.ledger import Ledger
+
+    canvas = "cv_gone_01"
+    cards.upsert_card(DashboardCard(connection_id="c1", scope="canvas", scope_ref=canvas,
+                                    title="Revenue"))
+    cards.set_viz_config(f"canvas:{canvas}", "t1", "u1", {"type": "bar"})
+    ledger = Ledger.default()
+    ledger.artifact_write("cockpit", f"cockpit:{canvas}", {"v": 3}, canvas_id=canvas)
+    ledger.artifact_write("finding", f"insight:c1:{canvas}:x", {"h": "x"}, canvas_id=canvas)
+    kept = ledger.artifact_write("chat_answer", "chat:c1:inv1", {"a": 1}, canvas_id=canvas)
+    ledger.job_insert({"id": f"job-{canvas}", "kind": "exploration", "canvas_id": canvas,
+                       "state": "succeeded", "attempt": 1, "created_at": "2026-10-04T00:00:00Z"})
+    ledger.emit("job.finished", {"ok": True}, canvas_id=canvas, job_id=f"job-{canvas}")
+
+    counts = purge.purge_canvas_artifacts(canvas)
+
+    assert cards.list_cards(scope="canvas", scope_ref=canvas) == []
+    assert cards.get_viz_configs(f"canvas:{canvas}", "u1") == {}
+    assert ledger.artifact_latest(f"cockpit:{canvas}") is None
+    assert ledger.artifact_latest(f"insight:c1:{canvas}:x") is None
+    assert ledger.artifact_by_id(kept) is not None                     # the filed run's receipt
+    assert ledger.job_get(f"job-{canvas}") is None
+    assert (counts["cards"], counts["kernel_artifacts"], counts["kernel_jobs"]) == (2, 2, 1)

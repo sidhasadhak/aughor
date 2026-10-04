@@ -69,6 +69,7 @@ const ProcessHealthPanel= dynamic(() => import("@/components/ProcessHealthPanel"
 const PlaybookPanel     = dynamic(() => import("@/components/PlaybookPanel").then(m => ({ default: m.PlaybookPanel })),      { ssr: false, loading });
 const RecommendationInbox= dynamic(() => import("@/components/RecommendationInbox").then(m => ({ default: m.RecommendationInbox })), { ssr: false, loading });
 const DocumentUploader  = dynamic(() => import("@/components/DocumentUploader").then(m => ({ default: m.DocumentUploader })),{ ssr: false, loading });
+const FactCheckPanel    = dynamic(() => import("@/components/FactCheckPanel").then(m => ({ default: m.FactCheckPanel })),{ ssr: false, loading });
 const CatalogScreen     = dynamic(() => import("@/components/CatalogScreen").then(m => ({ default: m.CatalogScreen })),      { ssr: false, loading });
 const CanvasBrowser     = dynamic(() => import("@/components/CanvasBrowser").then(m => ({ default: m.CanvasBrowser })),      { ssr: false, loading });
 const CanvasCreator     = dynamic(() => import("@/components/CanvasCreator").then(m => ({ default: m.CanvasCreator })),      { ssr: false, loading });
@@ -2362,6 +2363,7 @@ export default function Home() {
             {tab === "documents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px" }}>
+                  <FactCheckPanel connectionId={selectedConn} />
                   <DocumentUploader />
                 </div>
               </div>

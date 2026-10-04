@@ -200,11 +200,17 @@ def enrich_ontology_semantics(
     coder_llm: Any,
     glossary: dict,
     schema_context: str,
+    sql_dialect: str = "",
 ) -> OntologyGraph:
     """Enrich a structural OntologyGraph with LLM-derived semantic meaning.
 
     Makes one structured LLM call. Returns the modified graph with
     graph.enriched = True so the store can cache it correctly.
+
+    ``sql_dialect`` is the engine line and its writer rules: the formulas this call writes run
+    on that engine (the validator reads each through the connection's door), and GM-2's census
+    named this prompt `unstated`. Never the clock — a computed property reads today's date at
+    query time. Empty leaves the prompt as it was.
     """
     from aughor.agent.prompts_ontology import ENRICH_ONTOLOGY_PROMPT
 
@@ -226,7 +232,7 @@ def enrich_ontology_semantics(
             structural_summary=structural_summary,
             glossary_excerpt=glossary_excerpt,
             schema=schema_truncated,
-        ),
+        ) + (f"\n\n{sql_dialect}" if sql_dialect else ""),
         response_model=EnrichmentOutput,
         temperature=0.0,
     )

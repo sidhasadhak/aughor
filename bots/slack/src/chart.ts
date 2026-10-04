@@ -1,26 +1,18 @@
 /**
  * RC-2 — the turn's chart, as a PNG Slack will actually show.
  *
- * The grammar stays single-sourced: the SVG comes from Aughor's `/charts/svg`
- * door, which runs the SAME Vega resolver the browser and the PDF use, so the
- * picture posted to a thread is the picture the platform would have drawn. What
- * happens HERE is only the last conversion — SVG to PNG — and it happens here
- * for two reasons.
+ * Slack does not preview SVG; it files it as an attachment nobody opens. So the bot posts
+ * a PNG — and since CP-5 it does not make one. The grammar was always single-sourced (the
+ * SVG comes from the same Vega resolver the browser and the PDF use); the last conversion,
+ * SVG to PNG, used to happen HERE too, with a second copy of resvg, and Arc CP's census
+ * found the same transparent-background defect fixed twice in one day because of it. Now
+ * `POST /charts/png` runs the platform's one rasterizer (`export.echarts.svg_to_png`, drawn
+ * on white so a dark Slack theme cannot swallow the axis text) and this file only carries
+ * the bytes.
  *
- * Slack does not preview SVG; it files it as an attachment nobody opens. And
- * the repo's one rasterizer (`svg_to_png`, reportlab's renderPM) needs a
- * backend that is absent far more often than present — it is dead on this
- * machine right now, which is why PPTX chart images degrade in silence. resvg
- * ships prebuilt binaries and needs no system library, so the conversion lives
- * at the edge that actually knows the destination's format.
- *
- * Every failure returns null and the caller falls back to its data table. A
- * chart is the nice-to-have half of an answer; the numbers are the answer.
+ * Every failure returns null and the caller posts its data table alone. A chart is the
+ * nice-to-have half of an answer; the numbers are the answer.
  */
-import { Resvg } from "@resvg/resvg-js";
-
-/** 2× the renderer's 760pt default — legible on a retina screen without bloating the upload. */
-const PNG_WIDTH = 1520;
 
 export interface ChartRequest {
   columns: string[];
@@ -38,6 +30,8 @@ interface Env {
   AUGHOR_CONNECTION_ID?: string;
 }
 
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 export function createChartRenderer(
   env: Env = process.env,
   fetchImpl: typeof fetch = fetch,
@@ -49,9 +43,8 @@ export function createChartRenderer(
   const connection = env.AUGHOR_CONNECTION_ID ?? "workspace";
 
   return async function renderChart(req) {
-    let svg: string;
     try {
-      const res = await fetchImpl(`${base}/charts/svg`, {
+      const res = await fetchImpl(`${base}/charts/png`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -59,30 +52,13 @@ export function createChartRenderer(
         },
         body: JSON.stringify({ ...req, connection_id: connection }),
       });
-      // 204 is the renderer's honest "this data has no chart worth drawing" —
-      // the same verdict the browser reaches — not an error to report.
+      // 204 is the platform's honest "this data has no chart worth drawing" (or no
+      // raster could be made) — the same verdict the browser reaches, not an error.
       if (res.status === 204 || !res.ok) return null;
-      svg = await res.text();
-      if (!svg.trim().startsWith("<svg")) return null;
+      const png = Buffer.from(await res.arrayBuffer());
+      return png.subarray(0, 8).equals(PNG_MAGIC) ? png : null;
     } catch {
       return null; // the API is down; the answer already went out without a picture
-    }
-
-    try {
-      return Buffer.from(
-        new Resvg(svg, {
-          fitTo: { mode: "width", value: PNG_WIDTH },
-          // Drawn on white, and it is not cosmetic. The SSR renders with the LIGHT print
-          // token set, so its ink is dark; a transparent PNG lets Slack composite that
-          // against whichever theme the READER chose, and on a dark theme the axis text
-          // and the value labels at the bar ends disappear into the background. Seen in a
-          // real thread, 2026-09-23. The Python rasterizer pins the same white for the
-          // same reason (`export.echarts._RASTER_BACKGROUND`).
-          background: "#ffffff",
-        }).render().asPng(),
-      );
-    } catch {
-      return null;
     }
   };
 }

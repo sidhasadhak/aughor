@@ -234,7 +234,7 @@ def test_the_rendered_teams_answer_carries_rows_and_sql():
     from aughor.teamsbots.reply import render_answer
     text = render_answer({"headline": "Two.", "columns": ["n"], "rows": [[1], [2]], "sql": "SELECT 1",
                           "receipt_id": "rc"})
-    assert text.startswith("Two.") and "| n |" in text and "```sql" in text and "receipt rc" in text
+    assert text.startswith("Two.") and "| N |" in text and "```sql" in text and "receipt rc" in text
 
 
 # ── AO-5a · MCP: each custom agent a tool, its caller a principal ───────────────────

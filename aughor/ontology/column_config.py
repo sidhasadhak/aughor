@@ -350,6 +350,18 @@ def sample_disabled(config: dict[tuple[str, str], ColumnFlags]) -> set[tuple[str
     return {k for k, f in config.items() if not f.sample or not f.visible}
 
 
+def purge_connection(conn: str) -> int:
+    """Delete a connection's whole column-config tree (every schema). Returns 1 when one
+    existed. A deleted connection's columns are not a decision anyone keeps: before this,
+    `ontology_column_config/<id>/` outlived every connection ever deleted (idea 1)."""
+    import shutil
+    base = _root() / _safe(conn)
+    if not base.is_dir():
+        return 0
+    shutil.rmtree(base, ignore_errors=True)
+    return 1
+
+
 def load_index_disabled(conn: str) -> set[tuple[str, str]]:
     """(table, column) pairs with ``index: false``, merged across every schema of
     ``conn`` — the consumer-side retire filter for already-persisted value samples

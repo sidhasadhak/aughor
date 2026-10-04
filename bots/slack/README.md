@@ -35,6 +35,7 @@ The surfaces, and what each needs — all of it in the rendered manifest:
 | Native stop button → server-side cancel | agent mode + `assistant:write` | no stop button exists |
 | Chart PNG and CSV attachments | `files:write` | the upload fails; the inline table still posts |
 | Inline table, deep link | the base scopes | works |
+| "That's wrong" in an answer's thread, recorded as a correction | the `message.channels` event (in the manifest since 2026-10-04; `channels:history` already was) | a reply that names no one never arrives, and a correction counts only as ❌ or a mention (an app created before that date: add `message.channels` under Event Subscriptions → Subscribe to bot events and reinstall). Slack then sends the bot every message in the public channels it has joined; it acts only inside a thread it has answered, and there only on a mention or a reply that opens by saying the answer is wrong |
 | The asker's name on a verdict or a note | `users:read` | the Slack user id stands in, and the log says "Could not fetch user info … missing_scope" per message (an app created before this scope was in the manifest: add it under OAuth & Permissions and reinstall) |
 
 **Only for an app created before 2026-10-03 from the old manifest**, at

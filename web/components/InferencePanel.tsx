@@ -11,6 +11,7 @@ import { addLlmModel, cacheProbe, getLlmConfig, getLlmModels, removeLlmModel, se
 import { Button } from "@/components/ui/button";
 import { formatCount } from "@/lib/format";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
+import { Loading } from "@/components/ui/states";
 
 const ROLE_LABEL: Record<string, string> = {
   coder: "Coder — SQL & reasoning",
@@ -342,7 +343,7 @@ export function InferencePanel() {
   };
 
   if (loadErr) return <div style={{ fontSize: 12, color: "var(--red4)" }}>Inference config unavailable: {loadErr}</div>;
-  if (!cfg) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
+  if (!cfg) return <Loading what="the model settings" />;
 
   const isLocal = cfg.local_backends.includes(backend);
   const needsKey = cfg.needs_key.includes(backend);

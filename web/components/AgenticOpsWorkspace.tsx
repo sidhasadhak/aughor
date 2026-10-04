@@ -2,6 +2,8 @@
 import { SkeletonRows } from "@/components/ui/motion";
 
 import { useCallback, useEffect, useState } from "react";
+
+import { useVisiblePoll } from "@/lib/useVisiblePoll";
 import dynamic from "next/dynamic";
 
 import { RangePicker } from "@/components/agentops/RangePicker";
@@ -152,17 +154,14 @@ export function AgenticOpsWorkspace({
 
   // The Attention badge — polled at workspace level so the count is visible
   // from every layer, not only when the Attention panel is open.
-  useEffect(() => {
-    let alive = true;
-    const poll = () => {
-      getNeedsHuman(1).then(d => { if (alive) setAttention(d.count); }).catch(() => {});
-      // HB-2 — what the departures ledger still needs from a person, on its layer's badge.
-      getDepartureSummary().then(d => { if (alive) setDeparturesOwed(d?.awaiting ?? 0); }).catch(() => {});
-    };
-    poll();
-    const iv = setInterval(poll, 20_000);
-    return () => { alive = false; clearInterval(iv); };
+  const pollBadges = useCallback(() => {
+    getNeedsHuman(1).then(d => setAttention(d.count)).catch(() => {});
+    // HB-2 — what the departures ledger still needs from a person, on its layer's badge.
+    getDepartureSummary().then(d => setDeparturesOwed(d?.awaiting ?? 0)).catch(() => {});
   }, []);
+  useEffect(() => { pollBadges(); }, [pollBadges]);
+  // Not while the browser tab is in the background (useVisiblePoll); refreshed on return.
+  useVisiblePoll(pollBadges, 20_000);
 
   // `?create=agent` opens the creation flow on arrival — the command palette's deep link,
   // and a URL anyone can paste. The param is consumed so a refresh does not reopen it.

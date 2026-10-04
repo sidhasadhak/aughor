@@ -714,10 +714,20 @@ class SchemaExplorer:
         self._last_executed_sql = sql
         try:
             if schema:
+                from aughor.semantic.enforcement import rules_for_statement
                 from aughor.sql.executor import execute_guarded
+                # BR-7 — a finding that computes a quantity an approved metric defines is
+                # computed over that metric's rows. `think` is the question this statement was
+                # written to answer; the rules are the ones a chat answer to it would carry
+                # (none unless it names an approved metric that declares a filter). Every
+                # other path that runs model-written SQL already hands the executor these —
+                # the explorer, which writes the Briefing, was the one that did not.
+                rules = rules_for_statement(getattr(self, "connection_id", "") or "", think or None,
+                                            dialect=getattr(self._conn, "dialect", "") or "duckdb")
                 result = await loop.run_in_executor(
                     None, lambda: execute_guarded(
-                        self._conn, sql, query_id="__explorer__", schema=schema, sql_dialect=sql_dialect),
+                        self._conn, sql, query_id="__explorer__", schema=schema, sql_dialect=sql_dialect,
+                        metric_rules=rules),
                 )
             else:
                 result = await loop.run_in_executor(

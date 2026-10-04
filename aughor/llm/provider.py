@@ -591,10 +591,9 @@ def active_key(backend: str) -> str:
 def key_is_undecryptable(backend: str) -> bool:
     """True when a key IS configured for this backend and cannot be decrypted.
 
-    `secretvault.decrypt_secret` returns an undecryptable value as-is — deliberately, so one
-    bad record cannot take down a read path. That leaves every caller holding a string that
-    looks like a key and is a Fernet token, and the only place the difference shows is the
-    provider's reply. Measured: `AUGHOR_SECRET_KEY` unset, and `enc:v1:…` went to Google,
+    `_active_key` keeps an undecryptable stored key in its encrypted form for exactly this
+    check (the vault itself returns empty) — a string that looks like a key and is a Fernet
+    token, whose only other sign would be the provider's reply. Measured: `AUGHOR_SECRET_KEY` unset, and `enc:v1:…` went to Google,
     which answered "Please pass a valid API key" — true of what it got, false about what was
     wrong, and expensive, because it sends a person to rotate a key that works.
     """
@@ -703,13 +702,16 @@ def endpoint_for(backend: str) -> tuple[str, str]:
 
 
 def _active_key(backend: str) -> str:
-    from aughor.secretvault import decrypt_secret
+    """The backend's key, decrypted — or, when the stored key cannot be decrypted, the stored
+    value itself, still encrypted, ON PURPOSE: every model door asks `key_is_undecryptable`
+    first and refuses it by name before anything is sent. The vault hands no other caller a
+    ciphertext (`secretvault.decrypt_secret` returns empty), so this is the one place a stored
+    `enc:…` value survives, and only to be refused."""
+    from aughor.secretvault import decrypt_secret, readable
     org_enc = (_org_overlay().get("keys") or {}).get(backend)
-    if org_enc:
-        return decrypt_secret(org_enc) or ""
-    enc = (_cfg().get("keys") or {}).get(backend)
+    enc = org_enc or (_cfg().get("keys") or {}).get(backend)
     if enc:
-        return decrypt_secret(enc) or ""
+        return (decrypt_secret(enc) or "") if readable(enc) else enc
     return os.getenv(_KEY_ENV.get(backend, ""), "") or ""
 
 

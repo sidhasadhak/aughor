@@ -21,6 +21,7 @@ import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import type { EvalsLayer } from "@/components/EvalsWorkspace";
+import { Loading } from "@/components/ui/states";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -152,7 +153,7 @@ export function EvalSuitesPanel({ connId, onLayerChange }: Props) {
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-        {loading && <p style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</p>}
+        {loading && <Loading what="eval suites" />}
         {error && <p style={{ color: "var(--red4, #ef4444)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
         {/* ── LIST ── */}

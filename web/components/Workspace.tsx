@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { LayerVisibleContext } from "@/lib/useVisiblePoll";
 
 /**
  * One perspective layer of a `<Workspace>` — an id, a switcher icon, a label,
@@ -142,7 +143,7 @@ function Layer({ show, children }: { show: boolean; children: React.ReactNode })
         overflow: "hidden",
       }}
     >
-      {children}
+      <LayerVisibleContext.Provider value={show}>{children}</LayerVisibleContext.Provider>
     </div>
   );
 }

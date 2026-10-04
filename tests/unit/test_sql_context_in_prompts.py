@@ -189,3 +189,35 @@ def test_an_empty_intake_reply_is_asked_once_more(monkeypatch):
     assert not out.get("_intake_failed")
     assert out["_ada_intake"]["metric_sql"] == "SUM(sale_price)"
     assert "TODAY: " in out["_ada_intake"]["sql_context"]
+
+
+# ── The last two model prompts GM-2's census named `unstated` ─────────────────────────
+
+
+def test_the_explore_planner_and_the_ontology_enricher_are_told_the_engine(monkeypatch):
+    """The explore branch runs no intake, so its sub-question planner was told no engine; the
+    ontology enricher's formulas likewise. The planner gets the block and the writer rules; a
+    formula gets the engine and the rules but never the clock — it reads today at query time."""
+    from aughor.agent import explore as E
+    from aughor.agent.prompts_explore import PLAN_SUBQ_PROMPT
+    from aughor.db.dialects import writer_rules
+    from aughor.ontology import enricher
+
+    block = E._engine_block({"connection_id": "c1"}, _Native())
+    assert block.startswith("SQL DIALECT: BigQuery") and "TODAY: " in block
+    assert {"sql_context", "dialect_rules"} <= {
+        f for _, f, _, _ in __import__("string").Formatter().parse(PLAN_SUBQ_PROMPT) if f}
+
+    seen = {}
+
+    class _LLM:
+        def complete(self, *, system, user, response_model, temperature=None):
+            seen["user"] = user
+            raise RuntimeError("stop after the prompt")
+
+    dialect = "\n\n".join((C.dialect_line(_Native()), writer_rules(_Native())))
+    graph = SimpleNamespace(entities={}, relationships=[], metrics={}, computed_properties=[])
+    monkeypatch.setattr(enricher, "_render_structural_summary", lambda g: "")
+    with pytest.raises(RuntimeError):
+        enricher.enrich_ontology_semantics(graph, _LLM(), {}, "", sql_dialect=dialect)
+    assert seen["user"].endswith(dialect) and "TODAY:" not in seen["user"]

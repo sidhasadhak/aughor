@@ -102,3 +102,73 @@ def render_chart_svg_route(req: ChartSvgRequest) -> Response:
     if not svg:
         return Response(status_code=204)
     return Response(content=svg, media_type="image/svg+xml")
+
+
+# ── CP-5 (ROADMAP §3.22): the one rasterizer and the one table, as doors ──────────────
+#
+# The Slack mention bot is TypeScript, so it cannot call `svg_to_png` or `reader_table` —
+# before this it carried its own copy of each (`resvg-js` in `chart.ts`, `gfmTable` in
+# `artifacts.ts`), and CP-0 measured the same transparent-background defect fixed twice in
+# one day because of it. These two routes are those functions with a URL: the bot sends its
+# ENCODINGS (width; columns, rows and preview before a table stops reading) and posts what
+# comes back. It formats nothing and rasterizes nothing itself.
+
+
+class ChartPngRequest(ChartSvgRequest):
+    """`/charts/svg`'s request, plus the raster scale (2× is legible on a retina screen)."""
+    scale: float = 2.0
+
+
+@router.post("/charts/png")
+def render_chart_png_route(req: ChartPngRequest) -> Response:
+    """The chart as a PNG on white, by the one rasterizer (`export.echarts.svg_to_png`).
+    204 when there is no honest chart OR no raster — both mean "post the table instead"."""
+    from aughor.export.echarts import svg_to_png
+
+    svg = render_chart_svg_route(req)
+    if svg.status_code != 200:
+        return Response(status_code=204)
+    png = svg_to_png(bytes(svg.body).decode("utf-8"), scale=max(0.5, min(float(req.scale), 4.0)))
+    if not png:
+        return Response(status_code=204)
+    return Response(content=png, media_type="image/png")
+
+
+class ExhibitTableRequest(BaseModel):
+    """A grid and the door's encodings. `rest` is what the caption says about the rows a
+    preview leaves out — the door knows where they went ("attached as CSV")."""
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
+    max_cols: int = Field(6, ge=1, le=50)
+    max_rows: int = Field(10, ge=1, le=500)
+    preview_rows: int = Field(5, ge=1, le=500)
+    rest: str = "the full result is attached as CSV"
+    money_symbol: str = ""
+    connection_id: str = ""
+
+
+@router.post("/exhibits/table")
+def render_exhibit_table(req: ExhibitTableRequest) -> dict:
+    """The grid as a door will show it, by the one table builder (`answer.exhibit`).
+
+    `show` is false for a grid whose one number the sentence already said; `csv` carries
+    every row, values as stored, whenever the markdown does not."""
+    from aughor.answer.exhibit import reader_table, to_csv, worth_showing
+
+    rows = req.rows[:_MAX_TABLE_ROWS]
+    if not worth_showing(req.columns, rows):
+        return {"show": False, "markdown": "", "csv": None, "shown": 0, "total": len(rows)}
+    money = req.money_symbol
+    if not money and req.connection_id:
+        from aughor.routers.investigations import resolve_currency_symbol
+        money = resolve_currency_symbol(req.connection_id, None)
+    table = reader_table(req.columns, rows, max_cols=req.max_cols, max_rows=req.max_rows,
+                         preview_rows=req.preview_rows, rest=req.rest, money_symbol=money)
+    whole = table.shown == table.total
+    return {"show": True, "markdown": table.markdown,
+            "csv": None if whole else to_csv(req.columns, rows),
+            "shown": table.shown, "total": table.total}
+
+
+#: A table door is reachable by any authenticated caller; a CSV past this is a report's job.
+_MAX_TABLE_ROWS = 50_000

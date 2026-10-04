@@ -74,6 +74,7 @@ def _para(tf, text, *, size=14, bold=False, color=_BODY, bullet=False, space_bef
 
     if bullet:
         _run("•  ", False)
+    text = re.sub(r"`([^`\n]+)`", r"\1", text)    # an answer reads bold or normal, never as code
     # split on **bold** so emphasis survives into the deck (one run per segment)
     pos, segs = 0, []
     for m in _BOLD_RE.finditer(text):
@@ -89,8 +90,23 @@ def _para(tf, text, *, size=14, bold=False, color=_BODY, bullet=False, space_bef
     return p
 
 
+def _source_footer(slide, text: str, url: str) -> None:
+    """Idea 11 — where a slide's figure came from, at its foot: the receipt page, linked when
+    the install knows its web address."""
+    if not text:
+        return
+    box = slide.shapes.add_textbox(_MARGIN, _H - Inches(0.55), _W - _MARGIN * 2, Inches(0.35))
+    run = box.text_frame.paragraphs[0].add_run()
+    run.text = text
+    run.font.size = Pt(9)
+    run.font.color.rgb = _MUTED
+    if url:
+        run.hyperlink.address = url
+
+
 class _Deck:
-    def __init__(self):
+    def __init__(self, source_text: str = "", source_url: str = ""):
+        self.source_text, self.source_url = source_text, source_url
         self.prs = Presentation()
         self.prs.slide_width = _W
         self.prs.slide_height = _H
@@ -147,6 +163,7 @@ class _Deck:
             w = int(h * iw / ih)
         left = int((_W - w) / 2)
         s.shapes.add_picture(io.BytesIO(png), left, Inches(1.7), width=w, height=h)
+        _source_footer(s, self.source_text, self.source_url)
         self.section = None
 
     def table_slide(self, columns, rows, caption: str):
@@ -174,6 +191,7 @@ class _Deck:
                 if run:
                     run[0].font.size = Pt(10)
                     run[0].font.color.rgb = _BODY
+        _source_footer(s, self.source_text, self.source_url)
         self.section = None
 
     def add(self, b: Block):
@@ -218,6 +236,10 @@ class _Deck:
             tf = self._body_tf()
             parts = [f"{k.label}: {k.value}" + (f" ({k.delta})" if k.delta else "") for k in b.keynums]
             _para(tf, "    ".join(parts), size=12.5, bold=True, color=_INK, space_before=4)
+            if self.source_text:
+                src = _para(tf, self.source_text, size=9, color=_MUTED)
+                if self.source_url and src.runs:
+                    src.runs[-1].hyperlink.address = self.source_url
         elif b.kind == "chart" and b.png:
             # `b.svg` is deliberately not read here: PPTX has no vector surface, so a chart
             # reaches a deck as the raster the SSR step produced alongside it. The SVG is
@@ -249,7 +271,7 @@ class _Deck:
 
 
 def render_pptx(doc: ExportDoc) -> bytes:
-    deck = _Deck()
+    deck = _Deck(doc.source_text(), doc.source_url)
     deck.title_slide(doc)
     for b in doc.blocks:
         deck.add(b)

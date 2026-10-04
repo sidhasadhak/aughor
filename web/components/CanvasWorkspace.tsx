@@ -8,6 +8,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
 import { LifecyclePanel } from "@/components/LifecyclePanel";
 import { Button } from "@/components/ui/button";
+import { ReadFailed } from "@/components/ui/states";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
@@ -67,14 +68,17 @@ function CanvasHistory({
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
+  // A failed read used to read as "No deep analyses yet in this Data Canvas".
+  const [failed, setFailed] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     setLoading(true);
     getCanvasHistory(canvasId, 30)
-      .then(setItems)
-      .catch(() => setItems([]))
+      .then(list => { setItems(list); setFailed(null); })
+      .catch(e => { setItems([]); setFailed(e instanceof Error ? e.message : String(e)); })
       .finally(() => setLoading(false));
-  }, [canvasId]);
+  }, [canvasId, reload]);
 
   async function handleRemove(id: string) {
     setRemoving(id);
@@ -93,6 +97,14 @@ function CanvasHistory({
     return (
       <div style={{ padding: "40px 32px", color: "var(--t3)", fontSize: 12 }}>
         Loading history…
+      </div>
+    );
+  }
+
+  if (failed !== null) {
+    return (
+      <div style={{ padding: "40px 32px" }}>
+        <ReadFailed what="this canvas's history" error={failed} onRetry={() => setReload(n => n + 1)} />
       </div>
     );
   }

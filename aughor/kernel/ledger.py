@@ -346,6 +346,22 @@ def _payload_bool(value: Any) -> Optional[int]:
     return None
 
 
+#: The artifact kinds that are a run's RECEIPT — what a chat answer and a deep report file in
+#: this ledger. Defined beside the store that holds them; the ontology's context graph, the
+#: briefing and the canvas purge all read this one tuple.
+RECEIPT_KINDS = ("ada_report", "chat_answer")
+
+
+def _labelled_connection(labels: Optional[str]) -> Optional[str]:
+    """The ``connection_id`` a task trace's JSON labels name, or None — a predicate, since a
+    row whose labels are not JSON is an ordinary shape here (`_backfill_payload_facts`)."""
+    try:
+        parsed = json.loads(labels or "{}")
+    except ValueError:
+        return None
+    return parsed.get("connection_id") if isinstance(parsed, dict) else None
+
+
 #: Rows per back-fill round trip — bounded so a long log is never read in one gulp.
 _BACKFILL_BATCH = 500
 
@@ -1478,6 +1494,69 @@ class Ledger:
                              counter="obs.session_log.bad_payload")
             out.append(d)
         return out
+
+    def purge_connection(self, conn_id: str) -> dict[str, int]:
+        """Delete what the kernel kept about one connection — its jobs, their events, the
+        artifacts they produced (and those artifacts' lineage), and the task traces labelled
+        with it. Idea 1: measured 2026-10-04, two connections deleted in September still
+        held 51 events, 12 artifacts (43 lineage rows), 8 jobs and 2 task traces here.
+
+        The session log (`session_events`) is NOT purged: it is the model-spend ledger, a
+        record of what the platform did and paid, kept on purpose (`purge.KEPT_ON_DELETE`)."""
+        if not conn_id:
+            return {}
+        out: dict[str, int] = {}
+        with self._lock, self._conn:
+            ids = [r[0] for r in self._conn.execute(
+                "SELECT id FROM artifacts WHERE conn_id=?", (conn_id,)).fetchall()]
+            if ids:
+                marks = ",".join("?" * len(ids))
+                out["kernel_lineage"] = self._conn.execute(
+                    f"DELETE FROM lineage WHERE artifact_id IN ({marks})", ids).rowcount
+            out["kernel_artifacts"] = self._conn.execute(
+                "DELETE FROM artifacts WHERE conn_id=?", (conn_id,)).rowcount
+            out["kernel_events"] = self._conn.execute(
+                "DELETE FROM events WHERE conn_id=?", (conn_id,)).rowcount
+            out["kernel_jobs"] = self._conn.execute(
+                "DELETE FROM jobs WHERE conn_id=?", (conn_id,)).rowcount
+            # Labels are JSON text; matched in Python, not with json_extract, which this
+            # store cannot use on Postgres (`_backfill_payload_facts` says why).
+            spans = [span_id for span_id, labels in self._conn.execute(
+                         "SELECT span_id, labels FROM task_history WHERE labels LIKE ?",
+                         (f"%{conn_id}%",)).fetchall()
+                     if _labelled_connection(labels) == conn_id]
+            out["task_traces"] = 0
+            for i in range(0, len(spans), _BACKFILL_BATCH):
+                batch = spans[i:i + _BACKFILL_BATCH]
+                out["task_traces"] += self._conn.execute(
+                    f"DELETE FROM task_history WHERE span_id IN ({','.join('?' * len(batch))})",
+                    batch).rowcount
+        return {k: max(v, 0) for k, v in out.items()}
+
+    def purge_canvas(self, canvas_id: str, *, keep_kinds: tuple[str, ...] = ()) -> dict[str, int]:
+        """Delete what the kernel kept for one canvas — its artifacts (but ``keep_kinds``) and
+        their lineage, its jobs and its events. Found by CT-3 and measured 2026-10-04: four
+        deleted canvases still held 881 artifacts, 680 jobs and 5,478 events here."""
+        if not canvas_id:
+            return {}
+        out: dict[str, int] = {}
+        keep = list(keep_kinds)
+        not_kept = f" AND kind NOT IN ({','.join('?' * len(keep))})" if keep else ""
+        with self._lock, self._conn:
+            ids = [r[0] for r in self._conn.execute(
+                f"SELECT id FROM artifacts WHERE canvas_id=?{not_kept}", [canvas_id, *keep]).fetchall()]
+            for i in range(0, len(ids), _BACKFILL_BATCH):
+                batch = ids[i:i + _BACKFILL_BATCH]
+                marks = ",".join("?" * len(batch))
+                out["kernel_lineage"] = out.get("kernel_lineage", 0) + self._conn.execute(
+                    f"DELETE FROM lineage WHERE artifact_id IN ({marks})", batch).rowcount
+                out["kernel_artifacts"] = out.get("kernel_artifacts", 0) + self._conn.execute(
+                    f"DELETE FROM artifacts WHERE id IN ({marks})", batch).rowcount
+            out["kernel_jobs"] = self._conn.execute(
+                "DELETE FROM jobs WHERE canvas_id=?", (canvas_id,)).rowcount
+            out["kernel_events"] = self._conn.execute(
+                "DELETE FROM events WHERE canvas_id=?", (canvas_id,)).rowcount
+        return {k: max(v, 0) for k, v in out.items()}
 
     def session_events_clear(self, *, trace_id: Optional[str] = None,
                              org_id: Optional[str] = None) -> int:

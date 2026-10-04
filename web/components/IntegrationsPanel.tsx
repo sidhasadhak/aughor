@@ -1,5 +1,5 @@
 "use client";
-import { ErrorState } from "@/components/ui/states";
+import { ErrorState, Loading } from "@/components/ui/states";
 
 /**
  * VA-11 · the integrations catalog — Set up, Connect, revoke.
@@ -232,7 +232,7 @@ export function IntegrationsPanel() {
   };
 
   if (!loaded) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t3)" }}>Loading…</div>;
+    return <Loading what="integrations" style={{ padding: 24 }} />;
   }
 
   return (

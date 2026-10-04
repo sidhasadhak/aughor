@@ -35,6 +35,7 @@ import { formatTimestamp, countNoun } from "@/lib/format";
 import { Icon } from "@/components/ui/icon";
 import { VisibilityLine } from "@/components/VisibilityLine";
 import { Button } from "@/components/ui/button";
+import { Loading } from "@/components/ui/states";
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
@@ -383,7 +384,7 @@ function ProposalsDrawer({ connId, schema, onClose }: { connId: string; schema?:
         </Button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        {loading && <p className="aug-fs-xs text-zinc-500">Loading proposals…</p>}
+        {loading && <Loading what="proposals" />}
         {error && <p className="aug-fs-xs text-red-400">{error}</p>}
         {!loading && !error && pending.length === 0 && (
           <p className="aug-fs-xs text-zinc-500">
@@ -492,7 +493,7 @@ function SkillsDrawer({ connId, schema, onClose }: { connId: string; schema?: st
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        {loading && <p className="aug-fs-xs text-zinc-500">Loading skills…</p>}
+        {loading && <Loading what="skills" />}
         {error && <p className="aug-fs-xs text-red-400">{error}</p>}
         {!loading && !error && skills?.length === 0 && (
           <p className="aug-fs-xs text-zinc-500">

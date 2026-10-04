@@ -63,20 +63,20 @@ def send_reply(*, service_url: str, conversation_id: str, reply_to_id: str, text
         return False, {"error": f"could not reach the Bot Connector: {exc}"}
 
 
-def render_answer(answer: dict) -> str:
+def render_answer(answer: dict, *, money_symbol: str = "") -> str:
     """The folded answer as Teams markdown: the headline, then the rows (capped), then the
     SQL in a code block — every number the agent states, beside what it ran."""
+    from aughor.answer.exhibit import reader_table
+
     lines = [answer.get("headline") or answer.get("error") or "No answer."]
     cols = answer.get("columns") or []
     rows = answer.get("rows") or []
     if cols and rows:
-        lines.append("")
-        lines.append("| " + " | ".join(str(c) for c in cols) + " |")
-        lines.append("|" + "---|" * len(cols))
-        for r in rows[:10]:
-            cells = r if isinstance(r, (list, tuple)) else [r.get(c) for c in cols] if isinstance(r, dict) else [r]
-            lines.append("| " + " | ".join(str(c) for c in cells) + " |")
-        if len(rows) > 10 or answer.get("truncated"):
+        # CP-5 — the one table builder; Teams' encodings are its own: ten rows, eight columns.
+        table = reader_table(cols, rows, max_cols=8, max_rows=10, preview_rows=10,
+                             rest="the rest are not shown here", money_symbol=money_symbol)
+        lines += ["", table.markdown]
+        if answer.get("truncated") and table.shown == table.total:
             lines.append(f"_… {answer.get('row_count') or len(rows)} rows in all_")
     if answer.get("sql"):
         lines += ["", "```sql", str(answer["sql"])[:1500], "```"]

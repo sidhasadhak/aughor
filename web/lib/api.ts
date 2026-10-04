@@ -1011,7 +1011,7 @@ export interface ScorecardItem {
 
 export async function getHealthScorecard(connId: string): Promise<ScorecardItem[]> {
   const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/health-scorecard`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the health scorecard");
   return res.json();
 }
 
@@ -3128,9 +3128,9 @@ export interface KnowledgeStatus {
   };
 }
 
-export async function getKnowledgeStatus(): Promise<KnowledgeStatus | null> {
+export async function getKnowledgeStatus(): Promise<KnowledgeStatus> {
   const res = await fetch(`${getApiBase()}/knowledge/status`);
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Reading the search status");
   return res.json();
 }
 
@@ -3153,7 +3153,7 @@ export async function getDocumentFormats(): Promise<DocumentFormats | null> {
 
 export async function listDocuments(): Promise<DocumentEntry[]> {
   const res = await fetch(`${getApiBase()}/documents`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the documents");
   return res.json();
 }
 
@@ -3265,9 +3265,9 @@ export interface KnowledgeSource {
   error?: string;
 }
 
-export async function getKnowledgeSources(): Promise<{ types: KnowledgeSourceType[]; sources: KnowledgeSource[] } | null> {
+export async function getKnowledgeSources(): Promise<{ types: KnowledgeSourceType[]; sources: KnowledgeSource[] }> {
   const res = await fetch(`${getApiBase()}/knowledge/sources`);
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Reading the knowledge sources");
   return res.json();
 }
 
@@ -3392,6 +3392,15 @@ function fastApiError(body: unknown, fallback: string): string {
     if (msgs.length) return msgs.join("; ");
   }
   return fallback;
+}
+
+/** A write the server refused, as an Error carrying the server's own reason. Twelve admin
+ *  writes (roles, groups, grants, flags, guardrails, a revision restore, the learning export)
+ *  answered `null` or `false` instead, so a screen either said nothing or guessed a cause — "check that you
+ *  have permission" — for a refusal the server had already explained. */
+async function refused(res: Response, what: string): Promise<Error> {
+  const body = await res.json().catch(() => ({}));
+  return new Error(fastApiError(body, `${what} failed (${res.status})`));
 }
 
 export async function createCanvas(
@@ -3755,7 +3764,7 @@ export async function deleteCanvasArtifact(canvasId: string, artifactId: string)
 
 export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHistoryItem[]> {
   const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/history?limit=${limit}`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the canvas history");
   const data = await res.json();
   return (data as { investigations: CanvasHistoryItem[] }).investigations ?? [];
 }
@@ -4131,7 +4140,7 @@ export async function getQueryHistory(
     limit: String(limit), connection_id: connectionId, label,
   });
   const res = await fetch(`${getApiBase()}/security/audit?${params}`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the query history");
   const data = await res.json();
   return (data as { records?: AuditRecord[] }).records ?? [];
 }
@@ -4438,6 +4447,103 @@ export async function triggerMonitor(id: string): Promise<MonitorAlert | { fired
   const res = await fetch(`${getApiBase()}/monitors/${id}/trigger`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to trigger monitor");
   return res.json();
+}
+
+// ── Idea 6 · alerts that prove they work (`routers/monitors.py`) ──────────────────
+
+export interface MonitorBacktest {
+  monitor_id: string;
+  rule: string;
+  ok: boolean;
+  reason: string;
+  sigma: number | null;
+  days: number;
+  series_from: string;
+  series_to: string;
+  firings: { day: string; value: number; severity: string; z: number }[];
+  sentence: string;
+  quieter_sigma: number | null;
+}
+
+export interface MonitorDrill {
+  monitor_id: string;
+  at: string;
+  fired: boolean;
+  /** null when delivery was not attempted (a drill that only checks the rule). */
+  delivered: boolean | null;
+  detail: string;
+  channel: string;
+}
+
+export interface MonitorProof {
+  monitor_id: string;
+  /** "last proven working …" / "never proven — no drill, no delivered alert" — the server's sentence. */
+  sentence: string;
+  last_drill: MonitorDrill | null;
+}
+
+async function monitorProofCall<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${getApiBase()}/monitors/${path}`, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body?.detail === "string" ? body.detail : `request failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Replay the monitor over the last year of its own series — one warehouse query. */
+export function backtestMonitor(id: string): Promise<MonitorBacktest> {
+  return monitorProofCall(`${encodeURIComponent(id)}/backtest`, { method: "POST" });
+}
+
+/** Feed the rule a synthetic outlier. `deliver` sends the [DRILL] alert through the monitor's real channel. */
+export function drillMonitor(id: string, deliver: boolean): Promise<MonitorDrill> {
+  return monitorProofCall(`${encodeURIComponent(id)}/drill`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deliver }),
+  });
+}
+
+export function getMonitorProof(id: string): Promise<MonitorProof> {
+  return monitorProofCall(`${encodeURIComponent(id)}/proof`);
+}
+
+// ── Idea 7 · fact-check a document (`routers/factcheck.py`) ────────────────────────
+
+export interface FactCheckResult {
+  /** The filed answer's id (the wire's `investigation_id`) — what its export is read by. */
+  answerId: string;
+  envelope: {
+    headline: string;
+    body: string;
+    caveats: string[];
+    grid: { columns: string[]; rows: unknown[][] } | null;
+  };
+}
+
+async function factCheckCall(path: string, init: RequestInit): Promise<FactCheckResult> {
+  const res = await fetch(`${getApiBase()}${path}`, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body?.detail === "string" ? body.detail : `the check failed (${res.status})`);
+  }
+  const body = await res.json();
+  return { answerId: String(body.investigation_id ?? ""), envelope: body.envelope };
+}
+
+/** Every numeric claim in pasted text, checked against the connection — one quick answer per claim. */
+export function factCheckText(text: string, connectionId: string): Promise<FactCheckResult> {
+  return factCheckCall("/factcheck", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, connection_id: connectionId }),
+  });
+}
+
+/** The same check on a document, converted the way the Documents tab converts it. */
+export function factCheckFile(file: File, connectionId: string): Promise<FactCheckResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("connection_id", connectionId);
+  return factCheckCall("/factcheck/upload", { method: "POST", body: form });
 }
 
 export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: string): Promise<MonitorAlert[]> {
@@ -5397,6 +5503,11 @@ export type NewAutomation = {
    *  their arrows allow). An authored field: every update payload must carry it, or
    *  a rename silently re-serialises a parallel chain. */
   scheduling?: "ordered" | "parallel";
+  /** SP-13 — the IANA clock the schedule is read in ("" = UTC). Sent on create from a draft
+   *  that carries one; an update that leaves it out keeps the stored clock. */
+  timezone?: string;
+  /** SP-8 — the agent a drafted chain runs as. Honoured on create only. */
+  agent_id?: string;
 };
 
 // ── HB-6 · the hub-wide map — every automation on one screen ──────────────────
@@ -7083,7 +7194,7 @@ export async function getJobs(params?: {
   if (params?.since) q.set("since", params.since);
   if (params?.until) q.set("until", params.until);
   const res = await fetch(`${getApiBase()}/jobs${q.toString() ? `?${q}` : ""}`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the jobs");
   return res.json();
 }
 
@@ -7573,15 +7684,15 @@ export interface SystemFlag {
 
 export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
   const res = await fetch(`${getApiBase()}/system/flags`);
-  if (!res.ok) return {};
+  if (!res.ok) throw await refused(res, "Reading the feature flags");
   return res.json();
 }
 
-export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
+export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag> {
   const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Changing the flag");
   return res.json();
 }
 
@@ -7609,41 +7720,42 @@ export interface RoleAssignment {
 }
 
 /** The caller's effective identity, roles and permissions (for gating admin UI). */
-export async function getMyAccess(): Promise<MyAccess | null> {
+export async function getMyAccess(): Promise<MyAccess> {
   const res = await fetch(`${getApiBase()}/rbac/me`);
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Reading your access");
   return res.json();
 }
 
 /** The built-in role catalogue + the permissions each grants. */
 export async function getRoleCatalogue(): Promise<RoleInfo[]> {
   const res = await fetch(`${getApiBase()}/rbac/roles`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the roles");
   return res.json();
 }
 
-/** The org's role roster. Returns null when the caller can't manage roles (403). */
+/** The org's role roster. Returns null when the caller can't manage roles (403) — that is an
+ *  answer, not a failure; any other refusal throws with the server's reason. */
 export async function getRoleAssignments(): Promise<RoleAssignment[] | null> {
   const res = await fetch(`${getApiBase()}/rbac/assignments`);
   if (res.status === 403) return null;
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the role assignments");
   return res.json();
 }
 
-export async function assignRole(userId: string, role: string): Promise<RoleAssignment | null> {
+export async function assignRole(userId: string, role: string): Promise<RoleAssignment> {
   const res = await fetch(`${getApiBase()}/rbac/assignments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id: userId, role }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Assigning the role");
   return res.json();
 }
 
 export async function revokeRole(userId: string, role: string): Promise<boolean> {
   const q = `user_id=${encodeURIComponent(userId)}&role=${encodeURIComponent(role)}`;
   const res = await fetch(`${getApiBase()}/rbac/assignments?${q}`, { method: "DELETE" });
-  if (!res.ok) return false;
+  if (!res.ok) throw await refused(res, "Revoking the role");
   const data = await res.json();
   return !!data.removed;
 }
@@ -7673,23 +7785,23 @@ export interface LevelGrant {
 }
 
 /** The ladder, the built-in groups and the org's function groups. */
-export async function getGroups(): Promise<GroupsCatalogue | null> {
+export async function getGroups(): Promise<GroupsCatalogue> {
   const res = await fetch(`${getApiBase()}/groups`);
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Reading the groups");
   return res.json();
 }
 
-export async function saveGroup(g: { id: string; name?: string; description?: string; channel_trigger_id?: string }): Promise<AccessGroup | null> {
+export async function saveGroup(g: { id: string; name?: string; description?: string; channel_trigger_id?: string }): Promise<AccessGroup> {
   const res = await fetch(`${getApiBase()}/groups`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(g),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Saving the group");
   return res.json();
 }
 
 export async function deleteGroup(groupId: string): Promise<boolean> {
   const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}`, { method: "DELETE" });
-  if (!res.ok) return false;
+  if (!res.ok) throw await refused(res, "Deleting the group");
   return !!(await res.json()).removed;
 }
 
@@ -7701,11 +7813,11 @@ export async function getGroupMembers(groupId: string): Promise<string[] | null>
   return (await res.json()).members ?? [];
 }
 
-export async function addGroupMember(groupId: string, principal: string): Promise<string[] | null> {
+export async function addGroupMember(groupId: string, principal: string): Promise<string[]> {
   const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}/members`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ principal }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Adding the member");
   return (await res.json()).members ?? [];
 }
 
@@ -7713,7 +7825,7 @@ export async function removeGroupMember(groupId: string, principal: string): Pro
   const res = await fetch(
     `${getApiBase()}/groups/${encodeURIComponent(groupId)}/members?principal=${encodeURIComponent(principal)}`,
     { method: "DELETE" });
-  if (!res.ok) return false;
+  if (!res.ok) throw await refused(res, "Removing the member");
   return !!(await res.json()).removed;
 }
 
@@ -7729,19 +7841,19 @@ export async function getLevelGrants(filter?: { securable?: string; principal?: 
   return res.json();
 }
 
-export async function addLevelGrant(principal: string, securable: string, level: string): Promise<LevelGrant | null> {
+export async function addLevelGrant(principal: string, securable: string, level: string): Promise<LevelGrant> {
   const res = await fetch(`${getApiBase()}/access/grants`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ principal, securable, level }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Adding the grant");
   return res.json();
 }
 
 export async function removeLevelGrant(principal: string, securable: string, level: string): Promise<boolean> {
   const q = `principal=${encodeURIComponent(principal)}&securable=${encodeURIComponent(securable)}&level=${encodeURIComponent(level)}`;
   const res = await fetch(`${getApiBase()}/access/grants?${q}`, { method: "DELETE" });
-  if (!res.ok) return false;
+  if (!res.ok) throw await refused(res, "Removing the grant");
   return !!(await res.json()).removed;
 }
 
@@ -7899,13 +8011,13 @@ export async function getAgentGuardrails(
 export async function setAgentGuardrails(
   agentId: string,
   guardrails: AgentGuardrails,
-): Promise<{ guardrails: AgentGuardrails } | null> {
+): Promise<{ guardrails: AgentGuardrails }> {
   const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/guardrails`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(guardrails),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Saving the guardrails");
   return res.json();
 }
 
@@ -7920,18 +8032,18 @@ export async function listAgentRevisions(
 export async function restoreAgentRevision(
   agentId: string,
   version: number,
-): Promise<UserAgent | null> {
+): Promise<UserAgent> {
   const res = await fetch(
     `${getApiBase()}/agents/custom/${agentId}/revisions/${version}/restore`,
     { method: "POST" },
   );
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Restoring the revision");
   return (await res.json()).agent as UserAgent;
 }
 
 export async function listUserAgents(): Promise<UserAgent[]> {
   const res = await fetch(`${getApiBase()}/agents/custom`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the custom agents");
   return res.json();
 }
 
@@ -8388,9 +8500,9 @@ export async function getLearningDatasets(): Promise<LearningDatasets | null> {
 }
 
 /** Run every exporter once (idempotent — an unchanged corpus registers nothing new). */
-export async function runLearningExport(): Promise<{ datasets: Record<string, unknown>; golden_suite_id: string | null; gates: LearningDatasets["gates"] } | null> {
+export async function runLearningExport(): Promise<{ datasets: Record<string, unknown>; golden_suite_id: string | null; gates: LearningDatasets["gates"] }> {
   const res = await fetch(`${getApiBase()}/learning/export`, { method: "POST" });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "The export");
   return res.json();
 }
 

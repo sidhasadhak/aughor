@@ -189,6 +189,17 @@ describe("the create payload", () => {
     expect(p.fallback_effect).toBeNull();
   });
 
+  it("a drafted chain keeps its clock and its run-as agent; a blank canvas sends neither", () => {
+    // Spotlight: finishing a draft in the editor dropped both — the saved chain read its cron
+    // in UTC and ran as nobody in particular.
+    const draft = { conditions: [cond()], effects: [eff()] };
+    const kept = createPayload("warehouse", "Morning", draft,
+      { timezone: "Europe/Berlin", agent_id: "ua_revenue" });
+    expect([kept.timezone, kept.agent_id]).toEqual(["Europe/Berlin", "ua_revenue"]);
+    const blank = createPayload("warehouse", "Morning", draft);
+    expect("timezone" in blank || "agent_id" in blank).toBe(false);
+  });
+
   it("the blank canvas is the trigger node alone", () => {
     const d = blankDraft();
     expect(d.conditions).toHaveLength(1);

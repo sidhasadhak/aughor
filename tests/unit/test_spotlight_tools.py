@@ -332,6 +332,7 @@ def test_spotlight_roster_names_and_read_contract():
     tools = spot.spotlight_tools("c1")
     names = [t.name for t in tools]
     assert names == ["list_platform_connections", "platform_usage", "platform_limits",
+                     "review_missed_move",   # idea 8 — a read: it never stages
                      "platform_runs", "investigation_cadence", "answer_accuracy",
                      "table_popularity", "platform_traces", "platform_premortem",
                      "platform_audit"]

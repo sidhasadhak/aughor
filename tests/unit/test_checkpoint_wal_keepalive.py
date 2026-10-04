@@ -161,6 +161,10 @@ _SEAM_EXEMPT = {
     # read-only and writes each destination exactly once. A WAL keepalive here would be the
     # opposite of what is wanted — it would hold handles open on the very files being copied.
     "aughor/db/migrate.py",
+    # `residue_of` (idea 1): after a delete it opens every SQLite file under the data dir
+    # READ-ONLY (`mode=ro`), once, to look for the deleted id. It writes nothing and holds
+    # nothing; a keepalive would only pin files that belong to other stores.
+    "aughor/db/purge.py",
 }
 
 

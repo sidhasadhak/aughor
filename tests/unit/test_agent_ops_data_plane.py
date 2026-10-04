@@ -379,3 +379,33 @@ def test_the_catalogue_converts_per_token_rates_to_per_million():
         httpx.get = original
     assert entry["price_in"] == pytest.approx(0.5)
     assert entry["price_out"] == pytest.approx(1.5)
+
+
+def test_a_routers_minus_one_quote_leaves_the_model_unpriced(monkeypatch):
+    """OpenRouter quotes "-1" for its routers (`typesafe/jev-router`, `openrouter/auto`): the
+    price follows the routed model. Read as a rate, it billed every routed token at minus one
+    dollar — the live Usage page read −$166,759.68 for 2026-09-27..10-04. Unpriced, and said."""
+    import httpx
+
+    from aughor.llm.models import _openai_style_models
+    from aughor.obs import usage
+
+    class _Resp:
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"data": [{"id": "vendor/router", "pricing": {"prompt": "-1", "completion": "-1"}}]}
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp())
+    entry = _openai_style_models("http://x", "", timeout=1)[0]
+    assert "price_in" not in entry and "price_out" not in entry
+
+    monkeypatch.setattr("aughor.llm.models.list_models",
+                        lambda backend, refresh=False: {"models": [entry]})
+    usage.refresh_catalogue_prices(backends=("openrouter",))
+    call = {"provider": "openrouter", "model": "vendor/router",
+            "prompt_tokens": 60_000, "completion_tokens": 7_000, "total_tokens": 67_000}
+    assert usage.cost_of_call(call) == (0.0, False)

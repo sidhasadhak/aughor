@@ -93,10 +93,17 @@ export function updatePayload(a: Automation, draft: Draft): NewAutomation {
   };
 }
 
+/** What a drafted chain carries besides its steps — its schedule's clock and the agent it
+ *  runs as. Finishing the draft in the editor used to drop both (Spotlight, SP-11). */
+export interface DraftKeeps { timezone?: string; agent_id?: string }
+
 /** The payload a canvas-born automation is created with. The defaults are the model's
  *  own (enabled, ordered, one retry) — a blank canvas must not invent a policy. */
-export function createPayload(connId: string, name: string, draft: Draft): NewAutomation {
+export function createPayload(connId: string, name: string, draft: Draft,
+                              keeps: DraftKeeps = {}): NewAutomation {
   return {
+    ...(keeps.timezone ? { timezone: keeps.timezone } : {}),
+    ...(keeps.agent_id ? { agent_id: keeps.agent_id } : {}),
     conn_id: connId,
     name,
     description: "",
@@ -139,10 +146,12 @@ export function incompleteOf(draft: Draft): string[] {
  * and Dry run walks the same unsaved payload — `POST /automations/dry-run` has taken an
  * unsaved chain since B2, which is what made "try it before it exists" free here.
  */
-export function DesignControls({ automation, connId, name, draft, onDraft, onSaved, onPreview }: {
+export function DesignControls({ automation, connId, name, draft, keeps, onDraft, onSaved, onPreview }: {
   automation: Automation | null;
   /** Create mode: the connection the new automation belongs to. */
   connId: string;
+  /** Create mode: what the draft carries besides its steps (its clock, its run-as agent). */
+  keeps?: DraftKeeps;
   /** Create mode: the name the header input currently holds. */
   name: string;
   draft: Draft;
@@ -168,7 +177,7 @@ export function DesignControls({ automation, connId, name, draft, onDraft, onSav
 
   const payload = (): NewAutomation =>
     automation ? updatePayload(automation, draft)
-               : createPayload(connId, name.trim() || "Untitled automation", draft);
+               : createPayload(connId, name.trim() || "Untitled automation", draft, keeps);
 
   /** B2 — walk the DRAFT, dispatching nothing. The payload is exactly what Save would
    *  send — a second assembly here could preview a design the save does not make.

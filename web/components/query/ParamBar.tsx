@@ -25,6 +25,7 @@ import {
   type ParamDef, type ParamValue,
 } from "@/lib/query/paramDefs";
 import { listSavedQueries, runWorkbenchQuery, type SavedQuery } from "@/lib/api";
+import { Loading } from "@/components/ui/states";
 
 const WIDGETS: { v: ParamDef["widget"]; label: string }[] = [
   { v: "text", label: "Text" },
@@ -248,7 +249,7 @@ export function ParamBar({
                 <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setMulti("")} />
                 <div className="aug-fs-ui" style={{ ...menuStyle, maxHeight: 240, overflowY: "auto" }}>
                   {choices === "loading" ? (
-                    <span style={{ display: "block", padding: "3px 7px", color: "var(--t3)" }}>Loading…</span>
+                    <Loading what="values" inline style={{ display: "block", padding: "3px 7px" }} />
                   ) : choices === "error" ? (
                     <span style={{ display: "block", padding: "3px 7px", color: "var(--red4)" }}>Choices failed to load</span>
                   ) : choices.length === 0 ? (

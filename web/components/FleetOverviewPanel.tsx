@@ -30,7 +30,9 @@
  * dash that reads as "nothing happened".
  */
 import { needsYouTitle } from "@/lib/names";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { useVisiblePoll } from "@/lib/useVisiblePoll";
 
 import { ActivityChart, colorFor } from "@/components/agentops/ActivityChart";
 import { ProvenanceDrawer, type Provenance } from "@/components/agentops/ProvenanceDrawer";
@@ -48,7 +50,7 @@ import {
 import { fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
 import { compactNumber, formatCost, formatCount, pct, relTime } from "@/lib/format";
-import { ReadFailed } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { Term } from "@/components/agentops/Term";
 
 type Density = "calm" | "noc";
@@ -117,12 +119,16 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   // used to fall through to its empty state ("No agent runs in this window", "Nothing
   // needs a human"), which is the one thing a failed read must never say.
   const [chartError, setChartError] = useState<string | null>(null);
+  const [jobsError, setJobsError] = useState<string | null>(null);
   const [attentionError, setAttentionError] = useState<string | null>(null);
   const load = useCallback(() => {
     getFleetOverview({ ...params, include_runners: showRunners })
       .then(d => { setData(d); setError(null); })
       .catch(e => setError(String(e?.message || e)));
-    getJobs({ limit: 200 }).then(setJobs).catch(() => {});
+    // A failed read used to leave the list on "Nothing running right now".
+    getJobs({ limit: 200 })
+      .then(j => { setJobs(j); setJobsError(null); })
+      .catch(e => setJobsError(String(e?.message || e)));
     // `source: "jobs"` — this chart is headed "Runs by agent" and must plot the same runs
     // the Runs tile counts. Grouping model CALLS by charter draws an honest chart of a
     // different quantity, and on any history predating the attribution column every bar
@@ -135,19 +141,21 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
       .catch(e => setAttentionError(String(e?.message || e)));
   }, [params, showRunners]);
 
+  // Only while this layer is on screen: a hidden Overview reloaded four endpoints every 15 s
+  // and on every job event (useVisiblePoll's note). Shown again, it refreshes at once.
+  const active = useVisiblePoll(load, 15_000);   // slow fallback if the stream is down
+  const activeRef = useRef(active);
+  useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => {
     load();
-    const unsub = subscribeKernelEvents(() => load(), { kinds: ["job.state"] });
-    const iv = setInterval(load, 15_000);   // slow fallback if the stream is down
-    return () => { unsub(); clearInterval(iv); };
+    const unsub = subscribeKernelEvents(() => { if (activeRef.current) load(); },
+                                        { kinds: ["job.state"] });
+    return () => { unsub(); };
   }, [load]);
 
   // The waiting timers count up on their own — an age frozen at fetch time reads as a
   // stale page, and "how long has this been waiting" is the whole point of the strip.
-  useEffect(() => {
-    const iv = setInterval(() => setTick(t => t + 1000), 1000);
-    return () => clearInterval(iv);
-  }, []);
+  useVisiblePoll(useCallback(() => setTick(t => t + 1000), []), 1000);
 
   const liveByKind = useMemo(() => {
     const m: Record<string, number> = {};
@@ -189,10 +197,10 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   };
 
   if (error && !data) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--red4)" }}>{error}</div>;
+    return <ReadFailed what="the overview" error={error} onRetry={load} style={{ padding: 24 }} />;
   }
   if (!data) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t2)" }}>Loading overview…</div>;
+    return <Loading what="the overview" style={{ padding: 24 }} />;
   }
 
   const { tiles } = data;
@@ -565,7 +573,9 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
           </div>
           <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
                         borderRadius: "var(--r3)", overflow: "hidden" }}>
-            {filteredJobs.length === 0 ? (
+            {jobsError !== null ? (
+              <ReadFailed what="the jobs" error={jobsError} onRetry={load} style={{ padding: "12px 14px" }} />
+            ) : filteredJobs.length === 0 ? (
               <p className="aug-fs-sm" style={{ color: "var(--t2)", padding: "12px 14px", margin: 0 }}>
                 {jobFilter === "active" ? "Nothing running right now." : "No jobs match this filter."}
               </p>

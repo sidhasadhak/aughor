@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from aughor.licensing import Capability, gate
 
@@ -141,6 +141,26 @@ def get_monitor_route(monitor_id: str) -> dict:
     if not m:
         raise HTTPException(status_code=404, detail="Monitor not found")
     return m.model_dump()
+
+
+class MissedMoveRequest(BaseModel):
+    """Idea 8 — a move a person found that nothing flagged."""
+    connection_id: str
+    metric: str = Field(description="The metric that moved, by name or label.")
+    day: str = Field(description="The day of the move, YYYY-MM-DD.")
+    stage: bool = Field(True, description="Stage the watch that would have caught it, as a "
+                                          "proposal a person accepts — when that is the fix.")
+
+
+@router.post("/monitors/missed", dependencies=[gate(Capability.MONITORS)])
+def review_missed_move(req: MissedMoveRequest, request: Request) -> dict:
+    """Why nothing flagged it: the day scored against the metric's own history, every watch on
+    it and what its rule made of that value, a proposal still waiting, settling, held sends —
+    and, when "nothing watched it" is the answer, the watch staged for a person to accept."""
+    from aughor.monitors.missed import review_missed
+    from aughor.security.authz import check_owner, get_principal
+    check_owner("connection", req.connection_id, get_principal(request))
+    return review_missed(req.connection_id, req.metric, req.day, stage=req.stage).to_dict()
 
 
 @router.post("/monitors", status_code=201, dependencies=[gate(Capability.MONITORS)])

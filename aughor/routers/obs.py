@@ -551,6 +551,34 @@ def route_mix(scan: int = 5000, since_seq: Optional[int] = None):
     }
 
 
+@router.get("/obs/treatment-calibration")
+def treatment_calibration(limit: int = 5000):
+    """CP-2's receipt, read from the running install: how far the treatment shadow's two
+    self-labelling levers can be trusted, and the arc's falsifier beside them.
+
+    The fold (`judgment/calibration.calibrate`) had tests and no caller: nothing read the
+    shadow rows through it, so the number CP-3 waits on had never been taken on real traffic.
+    This is that reading, by the process that owns the log. No row is served, only the fold,
+    so no ask's words leave by this door.
+
+    `rows_with_an_observed_outcome` is the denominator that matters: a row whose turn's trace
+    has aged out of the log carries a prediction and no outcome, and is scored on nothing.
+    `served` says which body answered the turns the judge was asked about — the falsifier's
+    agreement is a share of those, and reads differently when one body serves most of them.
+    """
+    from aughor.judgment import calibration, treatment
+
+    rows = treatment.shadow_corpus(limit=max(1, min(int(limit), 20000)),
+                                   org_id=current_org_id() or None)
+    served: dict[str, int] = {}
+    for r in rows:
+        body = str(r.get("observed_body") or "unknown")
+        served[body] = served.get(body, 0) + 1
+    return {"measured": True, **calibration.calibrate(rows), "served": served,
+            "first_at": rows[0].get("at") if rows else None,
+            "last_at": rows[-1].get("at") if rows else None}
+
+
 @router.get("/obs/prompt-weight")
 def prompt_weight(scan: int = 5000):
     """Prompt-token spend per call site — which templates the budget goes to (PE-1).
@@ -631,7 +659,7 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
     is served from the Migration 10 column — it has been written since the failover work
     and read by nothing, so this is its first reader.
     """
-    from aughor.obs.usage import ensure_catalogue_prices, price_for, rollup
+    from aughor.obs.usage import cost_of_call, ensure_catalogue_prices, rollup
     win = resolve_window(range, since=since, until=until)
     # TJ-1 — ask the provider's catalogue for rates (at most hourly) BEFORE pricing: the
     # refresh had no caller, so every call on this instance priced at nothing.
@@ -663,12 +691,9 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
         r = by_role.setdefault(role, {"role": role, "calls": 0, "total_tokens": 0})
         r["calls"] += 1
         r["total_tokens"] += int(e.get("total_tokens") or 0)
-        price = price_for(str(e.get("provider") or ""), str(e.get("model") or ""))
-        if price is None:
-            unpriced += 1
-        else:
-            cost += (int(e.get("prompt_tokens") or 0) / 1e6) * price.input_per_1m
-            cost += (int(e.get("completion_tokens") or 0) / 1e6) * price.output_per_1m
+        usd, priced = cost_of_call(e)
+        cost += usd
+        unpriced += 0 if priced else 1
     tokens = sum(int(e.get("total_tokens") or 0) for e in rows)
     no_usage = sum(1 for e in rows if e.get("total_tokens") is None)
     return {
@@ -683,8 +708,9 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
         # were both consulted; what is still unpriced has no published rate — the
         # provider's silence, not this platform's.
         "pricing": {"catalogue_consulted": True, "catalogue_rows_loaded": catalogue_rows,
-                    "unpriced_means": ("no declared price and none published in the "
-                                       "provider's model catalogue")},
+                    "unpriced_means": ("no declared price and no fixed rate published in the "
+                                       "provider's model catalogue — a router's quote of -1 "
+                                       "means its price follows the model it routes to")},
         "calls_without_usage": no_usage,
         "usage_coverage": round(1 - no_usage / len(rows), 3) if rows else None,
         # A rate whose denominator is invisible gets read as "right now". Both halves ship.

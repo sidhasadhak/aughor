@@ -14,6 +14,7 @@ import { AugTable } from "@/components/AugTable";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
+import { Loading } from "@/components/ui/states";
 
 interface Props {
   connId?: string;
@@ -81,7 +82,7 @@ export function EvalRunPanel({ }: Props) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-        {loading && <p style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</p>}
+        {loading && <Loading what="the eval run" />}
         {error && <p style={{ color: "var(--red4, #ef4444)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
         {!loading && runs.length > 0 && (

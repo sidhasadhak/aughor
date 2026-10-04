@@ -8,6 +8,7 @@ renderer. The two never touch each other.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -49,6 +50,38 @@ class ExportDoc:
     meta: list[str] = field(default_factory=list)
     kind: str = ""
     blocks: list[Block] = field(default_factory=list)
+    #: Idea 11 — the receipt every figure in this document links back to (the answer's Trust
+    #: Receipt id), and the page that shows how its numbers were produced; "" when unknown.
+    source_id: str = ""
+    source_url: str = ""
+
+    def source_text(self) -> str:
+        """The line under each figure: where to see how it was produced. The URL when the
+        install knows its web address, the receipt's id when it does not."""
+        if not self.source_id:
+            return ""
+        return f"Source: {self.source_url}" if self.source_url else f"Source: Aughor receipt {self.source_id}"
+
+
+def receipt_link(receipt_id: str) -> str:
+    """Idea 11 — the page that shows how an answer's numbers were produced, ``<web>/receipt/<id>``,
+    or "" when the API does not know its public web origin. Opt-in via ``AUGHOR_WEB_URL``, the
+    monitors' and departures' rule: empty beats guessed — a document linking to ``localhost`` is
+    worse than one that carries the receipt's id alone."""
+    base = os.environ.get("AUGHOR_WEB_URL", "").strip().rstrip("/")
+    rid = (receipt_id or "").strip()
+    if not (base and rid):
+        return ""
+    from urllib.parse import quote
+    return f"{base}/receipt/{quote(rid, safe='')}"
+
+
+def _receipt_of(inv: dict) -> str:
+    """The answer's receipt id: CP-4's envelope carries it on every turn that has one, chat
+    and deep alike (`provenance.receipt_id`)."""
+    env = (inv.get("report") or {}).get("envelope")
+    prov = env.get("provenance") if isinstance(env, dict) else None
+    return str((prov or {}).get("receipt_id") or "") if isinstance(prov, dict) else ""
 
 
 # ── Block constructors (keep the parsers terse) ───────────────────────────────
@@ -68,25 +101,30 @@ def _date(iso: Optional[str]) -> str:
         return str(iso)[:10]
 
 
-def _round_cell(v):
-    """Trim floating-point display noise in a table cell (39.97968526236183 -> 39.98) so the
-    printed table matches the clean numbers on the chart beside it. Handles float, Decimal, and
-    pure-numeric strings — DuckDB returns DECIMAL columns as Decimal/str, which a float-only check
-    misses (the '711231.2900000175' the dimensional tables still showed). Non-numeric passes through."""
-    import re as _re
-    from decimal import Decimal
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, Decimal):
-        v = float(v)
-    if isinstance(v, float) and v == v and v not in (float("inf"), float("-inf")):
-        r = round(v, 2) if abs(v) >= 1 else round(v, 6)
-        return int(r) if r == int(r) else r
-    if isinstance(v, str) and _re.fullmatch(r'-?\d+\.\d{4,}', v.strip()):
-        f = float(v.strip())
-        r = round(f, 2) if abs(f) >= 1 else round(f, 6)
-        return int(r) if r == int(r) else r
-    return v
+def _table_block(columns, rows, *, caption: str, money_symbol: str) -> Block:
+    """CP-5 — a data table for the page, cells by the one reader formatter (`answer.exhibit`):
+    `54,496.64`, `12.3%`, `$1,820,497.55`, a year left a year — the figures the web table
+    shows for the same grid. The row cap stays the caller's: it is this door's encoding."""
+    from aughor.answer.exhibit import clean_label, format_rows
+    return Block("table", columns=[clean_label(str(c)) for c in columns],
+                 rows=format_rows(columns, rows, money_symbol=money_symbol), caption=caption)
+
+
+def _exhibit_caption(columns) -> str:
+    """A short title for a grid's chart or table: "Revenue and Items by Category".
+
+    A chat answer's chart used to be handed the answer's whole headline as its title. The
+    page already prints the headline; drawn inside an SVG 760 wide, a 150-character sentence
+    ran off the figure and squeezed the plot into a third of it, so its axis labels collided
+    (measured 2026-10-04 on theLook turn 47a130145460); and a deck's slide wrote it, `**`
+    included, as the slide's title. The grid's own columns name what it shows."""
+    from aughor.answer.exhibit import clean_label
+    labels = [clean_label(str(c)) for c in (columns or []) if str(c).strip()]
+    if len(labels) < 2:
+        return labels[0] if labels else ""
+    measures = labels[1:]
+    said = measures[0] if len(measures) == 1 else ", ".join(measures[:-1]) + f" and {measures[-1]}"
+    return f"{said} by {labels[0]}"
 
 
 def _exhibit_key(columns, rows) -> str:
@@ -136,8 +174,8 @@ def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None,
     if chart:
         out.append(chart)
     if columns and rows:
-        table_rows = [[_round_cell(v) for v in row] for row in rows[:25]]
-        out.append(Block("table", columns=columns, rows=table_rows, caption="" if chart else title))
+        out.append(_table_block(columns, rows[:25], caption="" if chart else title,
+                                money_symbol=money_symbol))
     return out
 
 
@@ -157,8 +195,7 @@ def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None
                              exhibit=exhibit, money_symbol=money_symbol, drawn_title=drawn_title)
         if chart:
             return [chart]
-    table_rows = [[_round_cell(v) for v in row] for row in rows[:8]]
-    return [Block("table", columns=columns, rows=table_rows, caption=title)]
+    return [_table_block(columns, rows[:8], caption=title, money_symbol=money_symbol)]
 
 
 _MD_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
@@ -244,7 +281,7 @@ def _same_words(text) -> str:
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
 
-def _build_chat(inv: dict) -> ExportDoc:
+def _build_chat(inv: dict, money_symbol: str = "") -> ExportDoc:
     """A single Q&A 'Insight' response → an executive one-pager."""
     rep = inv.get("report") or {}
     insight = rep.get("insight") or {}
@@ -267,7 +304,9 @@ def _build_chat(inv: dict) -> ExportDoc:
         blocks.append(_bul(list(rep["approach"])))
 
     blocks.append(_h("Evidence"))
-    blocks.extend(_chart_or_table(rep.get("columns"), rep.get("rows"), rep.get("chart_type"), headline))
+    blocks.extend(_chart_or_table(rep.get("columns"), rep.get("rows"), rep.get("chart_type"),
+                                  _exhibit_caption(rep.get("columns")) or headline,
+                                  money_symbol=money_symbol))
 
     if rep.get("sql"):
         blocks.append(_h("Query"))
@@ -284,7 +323,7 @@ def _receipt_line(receipt: dict) -> str:
     return ", ".join(f"{k}: {v}" for k, v in receipt.items() if k not in ("before", "after"))[:200]
 
 
-def _build_envelope(inv: dict) -> ExportDoc:
+def _build_envelope(inv: dict, money_symbol: str = "") -> ExportDoc:
     """CP-4 — an answer that carries its envelope: the document takes ALL of it.
 
     The Slack door takes the headline, the body, the grid once and two caveats; this door
@@ -311,7 +350,9 @@ def _build_envelope(inv: dict) -> ExportDoc:
     if grid.get("columns") and grid.get("rows"):
         blocks.append(_h("Evidence"))
         blocks.extend(_chart_or_table(grid["columns"], grid["rows"],
-                                      chart.get("chart_type") or "auto", headline))
+                                      chart.get("chart_type") or "auto",
+                                      _exhibit_caption(grid["columns"]) or headline,
+                                      money_symbol=money_symbol))
     if env.get("caveats"):
         blocks.append(_h("Caveats"))
         blocks.append(_bul([str(c) for c in env["caveats"]]))
@@ -676,9 +717,12 @@ def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = ""
     else:
         builder = _build_chat
     # `money_symbol` (caller-resolved: the connection's effective currency, matching the
-    # web's fallback) reaches only the builders that render charts — the platform-side
+    # web's fallback) reaches every builder that renders a chart or a data table — the platform-side
     # export never resolves it itself (Platform must not import Agent; the caller injects).
-    doc = builder(inv, money_symbol) if builder in (_build_ada, _build_explore) else builder(inv)
+    doc = (builder(inv, money_symbol)
+           if builder in (_build_ada, _build_explore, _build_envelope, _build_chat) else builder(inv))
+    doc.source_id = _receipt_of(inv)
+    doc.source_url = receipt_link(doc.source_id)
     if narrate:
         summary = _llm_executive_summary(inv, doc)
         if summary:

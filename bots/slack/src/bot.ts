@@ -17,7 +17,7 @@
  */
 import { Chat, StreamingPlan, type Adapter, type FileUpload, type Message, type SentMessage, type StateAdapter, type Thread } from "chat";
 
-import { csvFilename, renderGrid, worthShowing, type Grid } from "./artifacts.js";
+import { csvFilename, type Grid, type TableRenderer } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
 import type { ArrivalPoster, AskChunk, AskStream, FactChecker, TurnArtifacts, VerdictPoster } from "./aughor.js";
 import { createTurnMap } from "./turnmap.js";
@@ -63,6 +63,7 @@ export function stripMention(text: string, userName: string = BOT_USERNAME): str
 export function buildBot({
   ask,
   renderChart,
+  renderTable,
   adapters,
   state,
   postArrival,
@@ -74,6 +75,8 @@ export function buildBot({
   ask: AskStream;
   /** Absent in tests that only care about the text half. */
   renderChart?: ChartRenderer;
+  /** CP-5 — the table, formatted by the platform; absent in tests of the text half. */
+  renderTable?: TableRenderer;
   adapters: Record<string, Adapter>;
   state: StateAdapter;
   /** HB-5 — absent in tests that only exercise the ask half. */
@@ -156,7 +159,7 @@ export function buildBot({
     }
     const origin = bot.thread(rehearsal.originThreadId);
     await origin.post(rehearsal.text || rehearsal.turn?.envelope?.headline || "(the answer had no text)");
-    const exhibit = await postExhibits(origin, rehearsal.turn, renderChart);
+    const exhibit = await postExhibits(origin, rehearsal.turn, { renderChart, renderTable });
     // The promoted copy is an answer in its own right: a ✅ on it in the channel is a verdict.
     remember(origin.id, rehearsal.turn, exhibit?.id);
     const ref = parseSlackThreadRef(rehearsal.originThreadId);
@@ -202,14 +205,14 @@ export function buildBot({
     });
     const captured: string[] = [];
     await dm.post(new StreamingPlan(captureText(withoutTables(stream), captured), { groupTasks: "plan" }));
-    const exhibit = await postExhibits(dm, turn, renderChart);
+    const exhibit = await postExhibits(dm, turn, { renderChart, renderTable });
     remember(dm.id, turn, exhibit?.id, prelude?.id);
     const keys = [prelude?.id, exhibit?.id, dm.id].filter((k): k is string => Boolean(k));
     const held: Rehearsal = { originThreadId: thread.id, question, text: captured.join(""), turn, keys };
     for (const k of keys) rehearsals.set(k, held);
   };
 
-  bot.onNewMention(async (thread, message) => {
+  const onMention = async (thread: Thread, message: Message) => {
     const question = stripMention(message.text ?? "");
     if (!question) {
       await thread.post(USAGE);
@@ -261,7 +264,7 @@ export function buildBot({
         question: env.question, sessionId: thread.id,
         columns: env.grid?.columns ?? [], rows: env.grid?.rows ?? [],
         chartType: "auto", chartConfig: {}, envelope: env,
-      });
+      }, { renderTable });
       return;
     }
 
@@ -309,12 +312,55 @@ export function buildBot({
 
     // The streamed answer's post hands back the plan, not a message id, so the exhibits'
     // message is the one remembered by id and the answer itself resolves by its thread.
-    const exhibit = await postExhibits(thread, turn, renderChart);
+    const exhibit = await postExhibits(thread, turn, { renderChart, renderTable });
     remember(thread.id, turn, exhibit?.id);
+    // Follow the thread, so a reply that names no one still arrives — it is how "that's
+    // wrong" under an answer becomes a correction. Best-effort: a transport that cannot
+    // follow a thread still answered the question.
+    try { await thread.subscribe(); } catch { /* the answer stands without it */ }
+  };
+  bot.onNewMention(onMention);
+
+  // A followed thread sends every message here, mentions included (`onNewMention` fires
+  // only in a thread not yet followed), so a mention is handed straight to the mention path.
+  // Of the rest, ONE kind is acted on: a reply that opens by saying the answer is wrong. It
+  // is recorded on the thread's latest answer through the verdict door every other verdict
+  // uses — `correct` when it goes on to say what is right, `reject` when it only says wrong.
+  // Anything else said in the thread is the people's own conversation and is left alone.
+  bot.onSubscribedMessage(async (thread, message) => {
+    if (message.isMention) {
+      await onMention(thread, message);
+      return;
+    }
+    const said = (message.text ?? "").trim();
+    const opened = CORRECTION.exec(said);
+    if (!opened || !postVerdict) return;
+    const turn = byThread.get(thread.id);
+    if (!turn) {
+      await thread.post("I can't tell which answer that is about, so nothing was recorded. "
+        + "React ❌ on the answer itself, or mention me with the correction.");
+      return;
+    }
+    const lesson = said.slice(opened[0].length).replace(/^[\s,.:;!—–-]+/, "").trim();
+    const who = message.author?.userName || message.author?.userId || "someone";
+    const result = await postVerdict({
+      investigationId: turn.investigationId,
+      verdict: lesson.split(/\s+/).filter(Boolean).length >= 3 ? "correct" : "reject",
+      note: `slack reply by ${who} on "${turn.question.slice(0, 120)}": ${said.slice(0, 600)}`,
+    });
+    await thread.post(result.ok
+      ? "Recorded as a correction on this answer."
+      : `Not recorded: ${result.detail}`);
   });
 
   return bot;
 }
+
+/** A reply that OPENS by saying the answer is wrong: "that's wrong", "no, that is incorrect",
+ *  "wrong —", "correction:". Anchored at the start on purpose — "is anything wrong with
+ *  shipping?" is a question that happens to hold the word. */
+export const CORRECTION =
+  /^\s*(?:correction\s*[:—–-]|(?:no[,.!]?\s+)?(?:(?:that|this|it)(?:['’]s|\s+is)\s+)?(?:wrong|incorrect|not\s+(?:right|correct))\b)/i;
 
 /** AO-6 — a rehearsed answer waiting on the asker's click. */
 interface Rehearsal {
@@ -432,7 +478,7 @@ const MAX_CAVEATS = 2;
 async function postExhibits(
   thread: Pick<Thread, "post">,
   turn: TurnArtifacts | null,
-  renderChart?: ChartRenderer,
+  { renderChart, renderTable }: { renderChart?: ChartRenderer; renderTable?: TableRenderer },
 ): Promise<SentMessage | null> {
   if (!turn) return null;
   const env = turn.envelope ?? null;
@@ -440,13 +486,13 @@ async function postExhibits(
   const chartType = env?.chart?.chart_type || turn.chartType || "auto";
   const chartConfig = env?.chart?.chart_config ?? turn.chartConfig;
   const caveats = (env?.caveats ?? []).slice(0, MAX_CAVEATS).map((c) => `⚠️ ${c}`);
-  const showGrid = worthShowing(grid);
 
-  const { markdown: table, csv } = showGrid ? renderGrid(grid) : { markdown: "", csv: null };
-  const markdown = [table, caveats.join("\n")].filter(Boolean).join("\n\n");
+  // CP-5 — the platform formats the table and says whether it is worth showing at all.
+  const table = renderTable ? await renderTable(grid) : null;
+  const markdown = [table?.markdown ?? "", caveats.join("\n")].filter(Boolean).join("\n\n");
   const files: FileUpload[] = [];
 
-  const png = showGrid && renderChart
+  const png = table && renderChart
     ? await renderChart({
         columns: grid.columns,
         rows: grid.rows,
@@ -456,9 +502,9 @@ async function postExhibits(
       })
     : null;
   if (png) files.push({ data: png, filename: "chart.png", mimeType: "image/png" });
-  if (csv) {
+  if (table?.csv) {
     files.push({
-      data: Buffer.from(csv, "utf8"),
+      data: Buffer.from(table.csv, "utf8"),
       filename: csvFilename(turn.question),
       mimeType: "text/csv",
     });

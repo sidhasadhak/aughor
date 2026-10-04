@@ -12,7 +12,9 @@ leaves the server.
 """
 from __future__ import annotations
 
+import logging
 import os
+import threading
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -42,16 +44,60 @@ def encrypt_secret(plain: str | None) -> str | None:
     return _PREFIX + _fernet().encrypt(plain.encode()).decode()
 
 
+#: Stored secrets this process could not decrypt — the deployment's key (`AUGHOR_SECRET_KEY`, or
+#: the key file) changed since they were saved, or a value is corrupt. Counted for `/health` and
+#: said once in the log, because every caller sees only an empty credential.
+_unreadable = 0
+_unreadable_said = False
+_unreadable_lock = threading.Lock()
+
+
 def decrypt_secret(value: str | None) -> str | None:
-    """Decrypt a value. A non-prefixed (legacy plaintext) value round-trips unchanged;
-    a value that can't be decrypted (wrong key / corrupt) is returned as-is rather than
-    raising, so one bad record can't take down a read path."""
+    """Decrypt a value. A non-prefixed (legacy plaintext) value round-trips unchanged.
+
+    A value that cannot be decrypted (wrong key / corrupt) comes back EMPTY rather than
+    raising, so one bad record cannot take down a read path — and never as the ciphertext,
+    which it used to be: the `enc:…` token then travelled on as the credential itself (a Slack
+    or Teams token, a Jira header, an MCP server's key) and the far side refused a "bad
+    credential" while the stored one was fine and the deployment's key was what changed. Each
+    is counted (`unreadable_count`, on `/health`) and the first is logged with that cause;
+    `readable` asks the question without decrypting into a caller's hands."""
     if not is_encrypted(value):
         return value
     try:
         return _fernet().decrypt(value[len(_PREFIX):].encode()).decode()
     except InvalidToken:
-        return value
+        _note_unreadable()
+        return ""
+
+
+def readable(value: object) -> bool:
+    """False only for an encrypted value this deployment's key cannot decrypt — for a caller
+    that must say "unreadable" rather than "unset" (the key-state views, the model doors)."""
+    if not is_encrypted(value):
+        return True
+    try:
+        _fernet().decrypt(str(value)[len(_PREFIX):].encode())
+    except InvalidToken:
+        return False
+    return True
+
+
+def unreadable_count() -> int:
+    """How many stored secrets this process has failed to decrypt since it started."""
+    return _unreadable
+
+
+def _note_unreadable() -> None:
+    global _unreadable, _unreadable_said
+    with _unreadable_lock:
+        _unreadable += 1
+        first, _unreadable_said = not _unreadable_said, True
+    if first:
+        logging.getLogger(__name__).error(
+            "a stored secret cannot be decrypted with this deployment's key — AUGHOR_SECRET_KEY "
+            "or the key file changed since it was saved. The credential it guards reads as "
+            "empty until it is entered again; GET /health counts them.")
 
 
 def is_masked(value: object) -> bool:
