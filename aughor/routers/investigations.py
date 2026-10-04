@@ -3870,6 +3870,10 @@ async def _stream_analyst(
             # turn renders as a direct answer: what it produced, said plainly, never
             # a report-shaped shell around nothing.
             answer = result.answer or (
+                "Nothing was measured: the question could not be turned into an investigation "
+                "specification — the Question Intake step above says why — and without one the "
+                "checks on its period and window cannot run."
+                if result.stop_reason == "intake_failed" else
                 "The investigation ran out of steps before reaching a conclusion — "
                 "what each step found is above."
                 if result.stop_reason == "budget" else

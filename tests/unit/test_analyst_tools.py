@@ -681,3 +681,32 @@ def test_a_statement_that_reads_a_declared_rule_off_another_table_does_not_run(m
     assert "order_items.status" in refused["error"] and turn.state["investigation_phases"] == []
     # one that keeps to it — as a condition, or beside another filter — runs
     assert an._rule_misread(turn, kept) == "" and an._rule_misread(turn, both) == ""
+
+
+def test_a_failed_intake_stops_the_run_before_the_loop(monkeypatch, traffic_db, faux_llm):
+    """An intake that produced no spec stops the Agent path where it stops the deep path
+    (`investigate.route_after_intake`): no loop, nothing measured, and `stop_reason` says
+    why, which the door turns into its sentence. Every guard on a window lives inside the
+    spec; on 2026-09-29 an empty intake reply let this loop answer anyway, and it named a
+    month still filling as the top growth."""
+    def _failed_intake(state, conn=None):
+        return {"investigation_phases": [{
+            "phase_id": "intake", "phase_name": "Question Intake", "phase_icon": "🔍",
+            "status": "error", "summary": "Could not parse investigation specification.",
+            "findings": []}],
+            "answer_report": None,
+            "_intake_failed": "the model returned no investigation specification"}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_failed_intake)
+    faux_llm.set_responses(["September is the top growth month."])   # the loop's — never asked
+
+    frames: list[tuple] = []
+    result = an.run_analyst("conn-t", "why did traffic move?", persist=False,
+                            emit=lambda t, p: frames.append((t, p)))
+
+    assert result.stop_reason == "intake_failed"
+    assert result.answer == "" and result.report is None and result.steps == []
+    types = [t for t, _ in frames]
+    assert types.count("phase_complete") == 1                     # the intake card, said
+    assert "answer_report" not in types
+    assert len(faux_llm.calls()) == 0 and faux_llm.pending()      # the loop never ran

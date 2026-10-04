@@ -164,6 +164,20 @@ def test_no_reachable_response_means_no_accusation():
     _raise_if_tools_declaration_false(_tools_client(), "ollama", "m:1", exc)   # no raise
 
 
+def test_an_empty_reply_is_not_evidence_against_the_model():
+    """No content and no tool call is a provider hiccup (Gemini, 0.6 s, two of five runs on
+    2026-09-29), not a model answering a forced call in prose — the reply stays an empty
+    one, never a configuration fault that tells the operator to change models."""
+    from types import SimpleNamespace
+    from aughor.llm.provider import _raise_if_tools_declaration_false, _tool_call_absent
+    for content in ("", None, "  \n"):
+        exc = InstructorRetryException("validation failed")
+        exc.last_completion = SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content=content, tool_calls=None))])
+        assert _tool_call_absent(exc) is None
+        _raise_if_tools_declaration_false(_tools_client(), "gemini", "m:1", exc)  # no raise
+
+
 def test_json_mode_is_out_of_scope():
     """Only a TOOLS-mode call can disprove a tools declaration."""
     import instructor

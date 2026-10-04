@@ -929,6 +929,11 @@ def _tool_call_absent(exc: BaseException) -> Optional[bool]:
     made. A model that genuinely supports tools can still fail a schema; what it does
     NOT do is answer a forced tool call with prose. Only the absence of any tool call
     is evidence that the declaration was false, so only that is acted on.
+
+    And only with PROSE in its place: an EMPTY reply is no evidence either. Gemini
+    returned nothing in 0.6 s on two of five runs (2026-09-29) — a provider hiccup, not a
+    model that cannot call tools — and this read it as one: the operator was told to
+    choose another model, and the call skipped the fallback an empty reply is owed.
     """
     completion = (getattr(exc, "last_completion", None)
                   or getattr(exc, "raw_response", None))
@@ -939,7 +944,10 @@ def _tool_call_absent(exc: BaseException) -> Optional[bool]:
         message = getattr(choices[0], "message", None) if choices else None
         if message is None:
             return None
-        return not getattr(message, "tool_calls", None)
+        if getattr(message, "tool_calls", None):
+            return False
+        content = getattr(message, "content", None)
+        return True if isinstance(content, str) and content.strip() else None
     except Exception:  # pragma: no cover - a response shape we do not recognise
         return None
 

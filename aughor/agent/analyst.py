@@ -1603,6 +1603,24 @@ def run_analyst(
         # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
         # like any other so the user sees the spec land.
         turn.merge(ada_intake(state, conn), tool="intake")
+        if turn.state.get("_intake_failed"):
+            # Stopped here, as the deep path stops (`investigate.route_after_intake`): the
+            # guards that keep a window inside the data and a month still filling out of a
+            # comparison all live inside the spec, so a loop run without one cannot be
+            # guarded into correctness. This one ran on until 2026-10-04 — the 2026-09-29
+            # Agent run whose intake came back empty named a month still filling as the top
+            # growth. The Question Intake step above says why; the door says nothing was
+            # measured (`stop_reason`).
+            if persist and inv_id:
+                try:
+                    from aughor.db.history import fail_investigation
+                    fail_investigation(inv_id, status="failed")
+                except Exception as exc:                # noqa: BLE001 — the stop stands
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "recording an intake-stopped run as failed is best-effort",
+                             counter="analyst.intake_failed_persist")
+            return AnalystResult(answer="", report=None, steps=[], stop_reason="intake_failed",
+                                 investigation_id=inv_id)
 
         budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
         # Item 3: measure-and-state or investigate, decided by code from the question.
