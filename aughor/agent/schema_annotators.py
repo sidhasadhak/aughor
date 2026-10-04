@@ -212,9 +212,13 @@ def _intelligence(conn, base: str) -> str:
                 _st.inc("enrichment_runs")
                 _stage = "enrichment"
                 try:
+                    from aughor.agent.sql_context import dialect_line
+                    from aughor.db.dialects import writer_rules
                     from aughor.llm.provider import get_provider
                     from aughor.ontology.enricher import enrich_ontology_semantics
-                    graph = enrich_ontology_semantics(graph, get_provider("coder"), _glossary, base)
+                    _dialect = "\n\n".join(x for x in (dialect_line(conn), writer_rules(conn)) if x)
+                    graph = enrich_ontology_semantics(graph, get_provider("coder"), _glossary, base,
+                                                      sql_dialect=_dialect)
                     save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
                 except Exception as _enr_exc:
                     conn.last_build = {

@@ -65,15 +65,24 @@ def settled_day(today: str, coverage_end: str = "", settle_days: int = 1) -> str
     return min(end, last) if end else last
 
 
+def dialect_line(conn=None, *, dialect: str = "") -> str:
+    """The engine half of the block alone — for a prompt whose SQL must stay dynamic (a computed
+    property's formula reads today's date at query time, so it is told the engine, not the clock).
+    "" when the engine is not known, never guessed."""
+    d = (dialect or engine_dialect(conn) or "").strip().lower()
+    if not d:
+        return ""
+    return f"SQL DIALECT: {_ENGINE_NAMES.get(d, d)} — write every statement for this engine, in its own spelling."
+
+
 def sql_context(conn=None, *, dialect: str = "", today: str = "", coverage_end: str = "",
                 settle_days: int = 1) -> str:
     """The block: one line for the engine, one for the clock. Either half is left out
     only when nothing is known for it, never guessed."""
     lines: list[str] = []
-    d = (dialect or engine_dialect(conn) or "").strip().lower()
-    if d:
-        lines.append(f"SQL DIALECT: {_ENGINE_NAMES.get(d, d)} — write every statement for this "
-                     "engine, in its own spelling.")
+    engine = dialect_line(conn, dialect=dialect)
+    if engine:
+        lines.append(engine)
     t = (today or "")[:10] or today_utc()
     settled = settled_day(t, coverage_end, settle_days)
     clock = f"TODAY: {t} (UTC)."
