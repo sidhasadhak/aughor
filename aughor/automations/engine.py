@@ -444,14 +444,22 @@ def _stage_approval(effect: Effect, automation: Automation, *, alias: str, run_i
         # which "always allow" needs to mint the standing send-grant against.
         outbound = effect.kind == "slack_post"
         if outbound:
+            # The message is the text the unattended path would post (`_slack_message_text`:
+            # a bound envelope rendered, else the bound message), so the person approves the
+            # words that leave. Until 2026-10-04 the raw `message` was frozen here, and a send
+            # bound to an answer's envelope reached the card — and the channel — as nothing.
+            # The grid rides along for the chart the accept draws (`finish_accepted_slack_post`).
+            grid = effect.config.get(CHART_GRID_KEY) or {}
             kind, action_id, params = ("outbound_send",
                                        f"slack_post:{automation.id}",
                                        {"bot_id": str(effect.config.get("bot_id", "")),
                                         "channel": str(effect.config.get("channel", "")),
-                                        "message": effect.config.get("message", ""),
+                                        "message": _slack_message_text(effect, automation),
                                         "thread_ts": str(effect.config.get("thread_ts") or ""),
                                         "about": str(effect.config.get("about", "")),
-                                        "automation_id": automation.id})
+                                        "automation_id": automation.id,
+                                        **({CHART_GRID_KEY: {**grid, "rows": list(grid.get("rows") or [])[:_CHART_MAX_ROWS]}}
+                                           if isinstance(grid, dict) and grid.get("rows") else {})})
         elif effect.kind == "notify":
             # HB-3 — the proposed ticket/webhook send, same outbound_send kind so the one
             # inbox card serves it; `trigger_id` in the params is what routes the accept
@@ -1113,19 +1121,64 @@ def _file_departure_link(effect: Effect, automation: Automation, *, kind: str,
     """HB-3 — everything lands on the map: a send that declares what it is `about` (a
     securable string in its config) is FILED on that object after it fires. Best-effort;
     filing never fails a send that already happened. Returns the link id or ""."""
-    about = str(effect.config.get("about", "") or "")
+    return _file_on_object(str(effect.config.get("about", "") or ""), kind=kind, ref=ref,
+                           url=url, title=title, source=acting_agent_ref(effect, automation))
+
+
+def _file_on_object(about: str, *, kind: str, ref: str, url: str = "", title: str = "",
+                    source: str = "") -> str:
+    """The filing itself, shared by the unattended send and the one a person accepted."""
     if not about:
         return ""
     try:
         from aughor.hub.links import file_link
         row = file_link(object_ref=about, kind=kind, ref=ref, url=url,
-                        title=title[:200], source=acting_agent_ref(effect, automation))
+                        title=title[:200], source=source)
         return str(row.get("id", ""))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "filing the send on its object failed — the send itself stands",
                  counter="automations.engine.file_link")
         return ""
+
+
+def finish_accepted_slack_post(params: dict, outcome: dict, *, proposer: str = "") -> str:
+    """An inbox-accepted Slack send ends the way an unattended one does
+    (`_dispatch_slack_post`): its chart in the thread the post opened, and that thread
+    filed on what the send is `about`. Without the filing, a reply in an accepted send's
+    thread was refused as "not filed on any object" (`routers/arrivals.py`) and never
+    reached the object it answers.
+
+    Called by the accept ROUTE, never by the inbox, for the reason `_resume_parked_run`
+    is: the inbox may not import this engine. Reads what `_stage_approval` froze when the
+    run parked — the grid, `about`, the automation — and the post's own `ts`/`channel`
+    from the accept's outcome; files under the proposal's proposer, which is the step's
+    acting agent, as the unattended path files under. Best-effort, like both steps there:
+    the post has already happened. Returns the filed link id, or "".
+    """
+    info = {"ts": str(outcome.get("ts") or ""), "channel": str(outcome.get("channel") or "")}
+    channel = str(params.get("channel") or "")
+    if not info["ts"]:
+        return ""
+    automation = bot = None
+    try:
+        from aughor.automations.store import get_automation
+        from aughor.slackbots.store import get_bot_decrypted
+        automation = get_automation(str(params.get("automation_id") or ""))
+        bot = get_bot_decrypted(str(params.get("bot_id") or ""))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an accepted send's automation or bot could not be read — its chart is skipped",
+                 counter="automations.engine.accepted_send")
+    grid = params.get(CHART_GRID_KEY)
+    if automation is not None and bot is not None and isinstance(grid, dict) and grid:
+        _attach_chart(Effect(kind="slack_post", config={"bot_id": str(params.get("bot_id") or ""),
+                                                        "channel": channel, CHART_GRID_KEY: grid}),
+                      automation, bot, info, channel)
+    ref = f"{info['channel'] or channel}:{info['ts']}"
+    return _file_on_object(str(params.get("about") or ""), kind="thread", ref=ref,
+                           title=str(params.get("message") or ""),
+                           source=proposer or (f"automation:{automation.id}" if automation else ""))
 
 
 def route_destinations(securable: str, automation: Automation) -> list:
