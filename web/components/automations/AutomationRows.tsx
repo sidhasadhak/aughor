@@ -28,6 +28,7 @@ import {
   type UserAgent,
 } from "@/lib/api";
 import { CASTS, seedConfig, upstreamKeys } from "@/lib/automationFlow";
+import { withUniqueKeys } from "@/lib/listKeys";
 import { slackStepBotNote } from "@/lib/slackBots";
 import { ScheduleEditor } from "@/components/automations/ScheduleEditor";
 
@@ -807,8 +808,8 @@ export function McpCallRows({ e, onChange }: {
         <select style={inputStyle} value={toolName} aria-label="MCP tool"
           onChange={ev => set({ tool: ev.target.value, arguments: {} })}>
           <option value="">Which tool…</option>
-          {callable.map(t => (
-            <option key={t.name} value={t.name}>
+          {withUniqueKeys(callable, t => t.name).map(([key, t]) => (
+            <option key={key} value={t.name}>
               {t.title || t.name}{t.disposition === "callable" ? "" : " (granted)"}
             </option>
           ))}
