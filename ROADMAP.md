@@ -12957,8 +12957,9 @@ the browser** · **measure the premise before building.**
     **(g) ✅ DECIDED as recommended — the departure gate's law 5** narrowed from "a forecast never departs" to "an
     unscored forecast never departs", in phase 3 and not before.
     **(h) ✅ DECIDED as recommended — the pending ledger**: the twenty discarded items struck in `PENDING.md` with
-    their reasons the same day (twenty-two lines; TJ-5 and TJ-6 appear twice); the phase of every kept item stays in
-    the study's placement section rather than being carried line by line.
+    their reasons the same day (twenty-two lines; TJ-5 and TJ-6 appear twice), and the phase of every kept and
+    reshaped item carried onto its line the same day at the user's word (76 lines, as *2027 study: phase N*); the
+    study's placement section holds the reasons.
 
 ---
 

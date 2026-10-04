@@ -1964,7 +1964,8 @@ Six scarcities, six mechanisms, one ledger. If analysis becomes free, this is wh
 *`PENDING.md` re-read in full on 2026-10-04, as ticked on #565. Every line still open — `[ ]` or `[~]` —
 is placed against this study. The rule applied is the user's: an item that goes against the study is
 discarded. A discard is a struck line in `PENDING.md` with its reason, never a deleted one (the file's own
-rule) — done 2026-10-04 on adoption: the twenty are struck in `PENDING.md` with these reasons. Six verdicts: **discard**
+rule) — done 2026-10-04 on adoption: the twenty are struck in `PENDING.md` with these reasons, and every kept
+and reshaped line carries its phase at its end, as *2027 study: phase N* (76 lines). Six verdicts: **discard**
 (what it contradicts), **reshape** (what it becomes), **keep** (which phase), **receipt owed** (unchanged —
 the repo's rule, not the study's), **the user's** (⚑, unchanged) and **parked** (unchanged).*
 
