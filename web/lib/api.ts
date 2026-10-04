@@ -3394,6 +3394,15 @@ function fastApiError(body: unknown, fallback: string): string {
   return fallback;
 }
 
+/** A write the server refused, as an Error carrying the server's own reason. Twelve admin
+ *  writes (roles, groups, grants, flags, guardrails, a revision restore, the learning export)
+ *  answered `null` or `false` instead, so a screen either said nothing or guessed a cause — "check that you
+ *  have permission" — for a refusal the server had already explained. */
+async function refused(res: Response, what: string): Promise<Error> {
+  const body = await res.json().catch(() => ({}));
+  return new Error(fastApiError(body, `${what} failed (${res.status})`));
+}
+
 export async function createCanvas(
   name: string,
   description: string,
@@ -7679,11 +7688,11 @@ export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
   return res.json();
 }
 
-export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
+export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag> {
   const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Changing the flag");
   return res.json();
 }
 
@@ -7732,20 +7741,20 @@ export async function getRoleAssignments(): Promise<RoleAssignment[] | null> {
   return res.json();
 }
 
-export async function assignRole(userId: string, role: string): Promise<RoleAssignment | null> {
+export async function assignRole(userId: string, role: string): Promise<RoleAssignment> {
   const res = await fetch(`${getApiBase()}/rbac/assignments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id: userId, role }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Assigning the role");
   return res.json();
 }
 
 export async function revokeRole(userId: string, role: string): Promise<boolean> {
   const q = `user_id=${encodeURIComponent(userId)}&role=${encodeURIComponent(role)}`;
   const res = await fetch(`${getApiBase()}/rbac/assignments?${q}`, { method: "DELETE" });
-  if (!res.ok) return false;
+  if (!res.ok) throw await refused(res, "Revoking the role");
   const data = await res.json();
   return !!data.removed;
 }
@@ -7781,17 +7790,17 @@ export async function getGroups(): Promise<GroupsCatalogue | null> {
   return res.json();
 }
 
-export async function saveGroup(g: { id: string; name?: string; description?: string; channel_trigger_id?: string }): Promise<AccessGroup | null> {
+export async function saveGroup(g: { id: string; name?: string; description?: string; channel_trigger_id?: string }): Promise<AccessGroup> {
   const res = await fetch(`${getApiBase()}/groups`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(g),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Saving the group");
   return res.json();
 }
 
 export async function deleteGroup(groupId: string): Promise<boolean> {
   const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}`, { method: "DELETE" });
-  if (!res.ok) return false;
+  if (!res.ok) throw await refused(res, "Deleting the group");
   return !!(await res.json()).removed;
 }
 
@@ -7803,11 +7812,11 @@ export async function getGroupMembers(groupId: string): Promise<string[] | null>
   return (await res.json()).members ?? [];
 }
 
-export async function addGroupMember(groupId: string, principal: string): Promise<string[] | null> {
+export async function addGroupMember(groupId: string, principal: string): Promise<string[]> {
   const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}/members`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ principal }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Adding the member");
   return (await res.json()).members ?? [];
 }
 
@@ -7815,7 +7824,7 @@ export async function removeGroupMember(groupId: string, principal: string): Pro
   const res = await fetch(
     `${getApiBase()}/groups/${encodeURIComponent(groupId)}/members?principal=${encodeURIComponent(principal)}`,
     { method: "DELETE" });
-  if (!res.ok) return false;
+  if (!res.ok) throw await refused(res, "Removing the member");
   return !!(await res.json()).removed;
 }
 
@@ -7831,19 +7840,19 @@ export async function getLevelGrants(filter?: { securable?: string; principal?: 
   return res.json();
 }
 
-export async function addLevelGrant(principal: string, securable: string, level: string): Promise<LevelGrant | null> {
+export async function addLevelGrant(principal: string, securable: string, level: string): Promise<LevelGrant> {
   const res = await fetch(`${getApiBase()}/access/grants`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ principal, securable, level }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Adding the grant");
   return res.json();
 }
 
 export async function removeLevelGrant(principal: string, securable: string, level: string): Promise<boolean> {
   const q = `principal=${encodeURIComponent(principal)}&securable=${encodeURIComponent(securable)}&level=${encodeURIComponent(level)}`;
   const res = await fetch(`${getApiBase()}/access/grants?${q}`, { method: "DELETE" });
-  if (!res.ok) return false;
+  if (!res.ok) throw await refused(res, "Removing the grant");
   return !!(await res.json()).removed;
 }
 
@@ -8001,13 +8010,13 @@ export async function getAgentGuardrails(
 export async function setAgentGuardrails(
   agentId: string,
   guardrails: AgentGuardrails,
-): Promise<{ guardrails: AgentGuardrails } | null> {
+): Promise<{ guardrails: AgentGuardrails }> {
   const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/guardrails`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(guardrails),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Saving the guardrails");
   return res.json();
 }
 
@@ -8022,12 +8031,12 @@ export async function listAgentRevisions(
 export async function restoreAgentRevision(
   agentId: string,
   version: number,
-): Promise<UserAgent | null> {
+): Promise<UserAgent> {
   const res = await fetch(
     `${getApiBase()}/agents/custom/${agentId}/revisions/${version}/restore`,
     { method: "POST" },
   );
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Restoring the revision");
   return (await res.json()).agent as UserAgent;
 }
 
@@ -8490,9 +8499,9 @@ export async function getLearningDatasets(): Promise<LearningDatasets | null> {
 }
 
 /** Run every exporter once (idempotent — an unchanged corpus registers nothing new). */
-export async function runLearningExport(): Promise<{ datasets: Record<string, unknown>; golden_suite_id: string | null; gates: LearningDatasets["gates"] } | null> {
+export async function runLearningExport(): Promise<{ datasets: Record<string, unknown>; golden_suite_id: string | null; gates: LearningDatasets["gates"] }> {
   const res = await fetch(`${getApiBase()}/learning/export`, { method: "POST" });
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "The export");
   return res.json();
 }
 

@@ -366,10 +366,18 @@ function FeatureFlags() {
     }).catch(() => setGraduations(new Map()));
   }, []);
 
+  // A refused change used to leave the switch where it was and say nothing; the server's
+  // reason is shown under the search box until the next change.
+  const [refusedChange, setRefusedChange] = useState<string | null>(null);
   const toggle = async (name: string, value: boolean) => {
     setBusy(name);
-    const updated = await setSystemFlag(name, value);
-    if (updated) setFlags(f => ({ ...f, [name]: updated }));
+    setRefusedChange(null);
+    try {
+      const updated = await setSystemFlag(name, value);
+      setFlags(f => ({ ...f, [name]: updated }));
+    } catch (e) {
+      setRefusedChange(`${name}: ${e instanceof Error ? e.message : "the change was refused"}`);
+    }
     setBusy("");
   };
 
@@ -424,6 +432,9 @@ function FeatureFlags() {
           <Button size="xs" variant="ghost" onClick={() => setQuery("")} className="shrink-0">Clear</Button>
         )}
       </div>
+      {refusedChange && (
+        <p role="alert" className="text-xs pb-2" style={{ color: "var(--red3)" }}>{refusedChange}</p>
+      )}
       {GROUPS.filter(g => byGroup.has(g.key)).map(g => (
         <details key={g.key} open={g.open || !!q} className="mb-2 last:mb-0">
           <summary className="cursor-pointer select-none list-none flex items-baseline gap-2 pt-1 pb-1.5">

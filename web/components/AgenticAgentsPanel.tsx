@@ -1382,8 +1382,10 @@ export function AgentGuardrailsSection({ agent, onError }: {
     setSaved(false);
     onError(null);
     try {
-      if (await setAgentGuardrails(agent.id, next)) setSaved(true);
-      else onError("Could not save guardrails.");
+      await setAgentGuardrails(agent.id, next);
+      setSaved(true);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not save guardrails.");
     } finally { setSaving(false); }
   };
 
@@ -1461,8 +1463,10 @@ export function AgentConfigHistory({ agent, onChanged, onError }: {
     setBusy(version);
     onError(null);
     try {
-      if (await restoreAgentRevision(agent.id, version)) onChanged();
-      else onError("Restore failed.");
+      await restoreAgentRevision(agent.id, version);
+      onChanged();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Restore failed.");
     } finally { setBusy(null); }
   };
 
