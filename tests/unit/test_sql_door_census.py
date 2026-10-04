@@ -48,7 +48,8 @@ AUTHORS = {"platform", "model", "person", "stored", "door", "mixed"}
 
 #: The two counts that may only fall. Lower each in the same change that lowers its count — never raise it.
 #: 2026-09-29 (GM-2): measured at the census's first cut, after GM-1 and the nine sites it found.
-NONE_BASELINE = 3
+#: 2026-10-04: `none` 3 → 2 — the overview tour's probes declare their dialect.
+NONE_BASELINE = 2
 UNSTATED_BASELINE = 5
 
 # ── the walk ──────────────────────────────────────────────────────────────────────────────────────────────────────────

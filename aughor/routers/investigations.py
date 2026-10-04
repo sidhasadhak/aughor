@@ -5445,6 +5445,12 @@ async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[s
             from aughor.kernel.errors import tolerate
             tolerate(exc, "overview turn save is best-effort; the tour was already streamed",
                      counter="ask.overview_save")
+    elif rep is not None and rep.unread and not rep.tables_total:
+        # Nothing to tour because nothing here has a profile yet — said, so an empty tour
+        # does not read as an empty dataset.
+        yield _sse("headline", {"headline": (
+            f"None of the {len(rep.unread)} tables here has a profile yet, so there are no "
+            "facts to tour — ask about a specific measure instead.")})
     else:
         yield _sse("headline", {"headline": (
             "I couldn't surface overview facts for this dataset — try asking about a "

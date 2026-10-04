@@ -106,7 +106,7 @@
   "aughor/ontology/validator.py::_probe::execute::__ontology_validate__": {"dialect": "unstated", "author": "model", "note": "the ontology enricher's formula; its prompt names no dialect"},
   "aughor/ontology/validator.py::_verify_formula_rows::execute::__ontology_validate__": {"dialect": "unstated", "author": "model", "note": "the ontology enricher's formula; its prompt names no dialect"},
   "aughor/ontology/validator.py::_verify_formula_rows::execute::__ontology_validate__#2": {"dialect": "unstated", "author": "model", "note": "the ontology enricher's formula; its prompt names no dialect"},
-  "aughor/overview/build.py::_probe::execute::{_LABEL}": {"dialect": "none", "author": "platform", "note": "opens with DuckDB's own SUMMARIZE, which the validator refuses on every engine: the overview profile reads nothing anywhere"},
+  "aughor/overview/build.py::_probe::execute::{_LABEL}": {"dialect": "declared", "author": "platform", "note": "the overview tour's probes, written in DuckDB's dialect and declared; the profile is SUMMARIZE in its SELECT-wrapped form on DuckDB and the profiler's cache elsewhere (it was a bare SUMMARIZE, refused at every door)"},
   "aughor/packs/gate4.py::_scalar::execute::{label}": {"dialect": "native", "author": "platform", "note": "a DuckDB the platform builds from the pack's dataset"},
   "aughor/pipeline/builtins.py::SqlCapability.execute::execute::capability.data": {"dialect": "native", "author": "model", "note": "generate_sql(dialect=scope.dialect)"},
   "aughor/pipeline/pipeline.py::run::execute::{artifact}": {"dialect": "not-sql", "author": "platform", "note": "a pipeline capability's execute(artifact, request); the SQL it holds runs at SqlCapability.execute"},

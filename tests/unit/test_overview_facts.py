@@ -97,7 +97,7 @@ class FakeConn:
             (["segment_status AS grp"], _SEGMENT_GROUPS),
         ]
 
-    def execute(self, label, sql, internal=False):
+    def execute(self, label, sql, sql_dialect=None, internal=False):
         self.seen.append(sql)
         for needles, result in self._routes:
             if all(n in sql for n in needles):
@@ -175,7 +175,7 @@ def test_every_fact_dict_has_full_key_set_and_bounded_notability(report):
 
 def test_report_to_dict_shape(report):
     d = report.to_dict()
-    assert set(d) == {"facts", "summary", "tables_seen", "tables_total", "generated_at"}
+    assert set(d) == {"facts", "summary", "tables_seen", "tables_total", "generated_at", "unread"}
     assert d["tables_total"] == 2
     assert isinstance(d["facts"], list) and d["facts"]
 
@@ -322,3 +322,40 @@ def test_build_overview_applies_priors_to_rank(report):
     def _max_cov(facts):
         return max((f.notability for f in facts if f.lens == "coverage"), default=0.0)
     assert _max_cov(boosted.facts) > _max_cov(report.facts)
+
+
+# ── through the real door ─────────────────────────────────────────────────────
+
+def test_the_tour_reads_through_the_real_door(tmp_path):
+    """The fake above answered a bare SUMMARIZE that every real door refuses ("Only SELECT is
+    allowed"), so the featured first starter toured nothing on any engine while this file stayed
+    green. A real DuckDB, a real door: the tour has facts, and nothing it ran was refused."""
+    import duckdb
+
+    from aughor.db.connection import DuckDBConnection
+
+    path = tmp_path / "shop.duckdb"
+    raw = duckdb.connect(str(path))
+    raw.execute("CREATE SCHEMA sales")
+    raw.execute("CREATE TABLE sales.orders AS SELECT range AS order_id, "
+                "CASE WHEN range % 10 < 7 THEN 'north' ELSE 'south' END AS region, "
+                "(range % 7) * 10.0 AS amount FROM range(3000)")
+    raw.close()
+    conn = DuckDBConnection(path, connection_id="ovw")
+    refused: list = []
+    _execute = conn.execute
+
+    def _watch(label, sql, **kw):
+        r = _execute(label, sql, **kw)
+        if getattr(r, "error", None):
+            refused.append((sql, r.error))
+        return r
+
+    conn.execute = _watch
+    try:
+        rep = build_overview(conn, "ovw", ["orders"], schema="sales")
+    finally:
+        conn.close()
+    assert rep.facts, rep.summary
+    assert not refused, refused
+    assert rep.unread == []

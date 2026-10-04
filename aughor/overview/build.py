@@ -30,6 +30,7 @@ from aughor.overview import metrics as M
 _MAX_TABLES = 14          # profile/scan the largest N tables
 _MAX_DIMS_PER_TABLE = 3   # probe at most this many dimensions per table
 _MAX_PROBES = 26          # hard ceiling on live group-by probes
+_WAREHOUSE_PROBES = 8     # …where each probe is a billed scan or warehouse time
 _MIN_NOTABILITY = 0.18    # drop facts below this before selection
 _DIM_MAX_CARD = 40        # a "material" dimension: 2..40 distinct values
 _LABEL = "__overview__"   # dunder label → read-only, audit/PII-exempt internal probe
@@ -72,12 +73,13 @@ class OverviewReport:
     tables_seen: int = 0
     tables_total: int = 0
     generated_at: str = ""
+    unread: list = field(default_factory=list)   # scoped tables with no profile to read
 
     def to_dict(self) -> dict:
         return {
             "facts": [f.to_dict() for f in self.facts], "summary": self.summary,
             "tables_seen": self.tables_seen, "tables_total": self.tables_total,
-            "generated_at": self.generated_at,
+            "generated_at": self.generated_at, "unread": list(self.unread),
         }
 
 
@@ -108,25 +110,78 @@ def _clean_label(name: str) -> str:
     return (name or "").split(".")[-1].replace("_", " ").strip()
 
 
-# ── self-contained profiling (one SUMMARIZE per table) ────────────────────────
-# The shared profiler assumes bare table names resolve via search_path; on a
-# multi-schema DuckDB (the workspace connection) only schema-qualified names work,
-# so we profile ourselves: `SUMMARIZE SELECT * FROM schema.table` returns, in ONE
-# query, every stat the lenses need — row count, per-column type, approx_unique,
-# null %, min/max/avg/median/std. Robust across connection types (information_schema
-# / SUMMARIZE), qualified names throughout, and never raises.
+# ── profiles: one SUMMARIZE per table on DuckDB, the profiler's cache elsewhere ──
+# The shared profiler's cache is keyed by bare table names; on a multi-schema DuckDB
+# (the workspace connection) only schema-qualified names resolve, so on DuckDB the
+# tour profiles each table itself: `SUMMARIZE SELECT * FROM schema.table` returns, in
+# ONE query, every stat the lenses need — row count, per-column type, approx_unique,
+# null %, min/max/avg/median/std.
+#
+# GM-2's census found that statement refused at the door on every engine — a bare
+# SUMMARIZE is not a SELECT ("Only SELECT is allowed, got Summarize") — so the tour
+# read nothing anywhere, and the chat's featured first starter ("Show me interesting
+# facts about this schema") answered "I couldn't surface overview facts". It now goes
+# in the SELECT-wrapped form the profiler uses, declared. No other engine has
+# SUMMARIZE, so there the tour reads the profiles the schema-load path already cached:
+# no SQL for the profile and no warehouse spend. A table with no profile is named on
+# the report (`unread`), never guessed at.
 
 _NUMERIC_TYPES = ("INT", "BIGINT", "HUGEINT", "DOUBLE", "DECIMAL", "FLOAT", "REAL",
                   "NUMERIC", "TINYINT", "SMALLINT", "UBIGINT")
 _DATE_TYPES = ("DATE", "TIMESTAMP", "DATETIME", "TIME")
 
 
-def _profile(conn, qualified_tables: list):
+def _profile(conn, qualified_tables: list, connection_id: str = ""):
+    """``(table profiles, column profiles, unread)`` for the scoped tables, keyed by the
+    qualified names the probes read FROM."""
+    if (getattr(conn, "dialect", "") or "duckdb") != "duckdb":
+        return _cached_profiles(connection_id, qualified_tables)
+    tabs, cols = _summarize_profiles(conn, qualified_tables)
+    return tabs, cols, [qt for qt in qualified_tables if qt not in tabs]
+
+
+def _cached_profiles(connection_id: str, qualified_tables: list):
+    """The profiler's latest cached profiles, matched to each qualified table by its exact
+    name or, when exactly one cached table has it, its bare name. Reads; never builds."""
+    from aughor.tools.profile_cache import latest_profile_entry
+    from aughor.tools.profiler import ColumnProfile, TableProfile
+    from aughor.tools.table_names import bare
+
+    entry = latest_profile_entry(connection_id) if connection_id else {}
+    cached = entry.get("tables") or {}
+    by_bare: dict = {}
+    for name in cached:
+        by_bare.setdefault(bare(name), []).append(name)
+    cols_of: dict = {}
+    for d in (entry.get("columns") or {}).values():
+        if isinstance(d, dict) and d.get("table"):
+            cols_of.setdefault(str(d["table"]), []).append(d)
+
+    tabs: dict = {}
+    cols: list = []
+    unread: list = []
+    for qt in qualified_tables:
+        same = by_bare.get(bare(qt), [])
+        key = qt if qt in cached else (same[0] if len(same) == 1 else None)
+        if key is None:
+            unread.append(qt)
+            continue
+        tp = TableProfile.from_dict(dict(cached[key]))
+        tp.table = qt
+        tabs[qt] = tp
+        for d in cols_of.get(key, []):
+            cp = ColumnProfile.from_dict(dict(d))
+            cp.table = qt
+            cols.append(cp)
+    return tabs, cols, unread
+
+
+def _summarize_profiles(conn, qualified_tables: list):
     from aughor.tools.profiler import is_key_like
     tabs: dict = {}
     cols: list = []
     for qt in qualified_tables:
-        colnames, rows = _probe(conn, f"SUMMARIZE SELECT * FROM {qt}")
+        colnames, rows = _probe(conn, f"SELECT * FROM (SUMMARIZE SELECT * FROM {qt})")
         if not rows:
             continue
         idx = {str(c).lower(): i for i, c in enumerate(colnames or [])}
@@ -229,9 +284,11 @@ def _material_dims(cols) -> list:
 
 def _probe(conn, sql: str):
     """Run a bounded read-only probe. Returns (columns, rows) with rows as lists of
-    stringified cells (DuckDB/Postgres emit str cells), or (None, None) on error."""
+    stringified cells (DuckDB/Postgres emit str cells), or (None, None) on error.
+    Every probe is written in DuckDB's dialect and says so; the door translates it for
+    an engine that runs SQL as written."""
     try:
-        r = conn.execute(_LABEL, sql, internal=True)
+        r = conn.execute(_LABEL, sql, sql_dialect="duckdb", internal=True)
     except Exception:
         return None, None
     if getattr(r, "error", None):
@@ -665,9 +722,10 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
                    now: Optional[str] = None, priors: Optional[dict] = None) -> OverviewReport:
     """Profile the scoped tables and return a diverse, notability-ranked fact tour.
 
-    Deterministic and bounded: one ``SUMMARIZE`` per table (zero further SQL for the
-    scale / distribution / coverage lenses) plus at most ``_MAX_PROBES`` group-by scans
-    for concentration/outlier/composition/relationship. ``tables`` are bare names;
+    Deterministic and bounded: one ``SUMMARIZE`` per table on DuckDB, the cached profiles
+    elsewhere (zero further SQL for the scale / distribution / coverage lenses), plus at
+    most ``_probe_budget`` group-by scans for concentration/outlier/composition/
+    relationship. ``tables`` are bare names;
     ``schema`` qualifies them for SQL. Never raises — a failed probe degrades to fewer
     facts, never an error on the answer path.
 
@@ -680,9 +738,10 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
     qualified = [_qual(t) for t in tables]
 
     try:
-        tprofiles, cprofiles = _profile(conn, qualified)
+        tprofiles, cprofiles, unread = _profile(conn, qualified, connection_id)
     except Exception:
-        tprofiles, cprofiles = {}, {}
+        tprofiles, cprofiles, unread = {}, {}, list(qualified)
+    budget = _probe_budget(conn)
 
     by_table: dict = {}
     for c in cprofiles:
@@ -701,7 +760,7 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
     probes = 0
     touched: set = set()
     for table, tp in ranked:
-        if probes >= _MAX_PROBES:
+        if probes >= budget:
             break
         cols = list(by_table.get(table, {}).values())
         if not cols:
@@ -711,7 +770,7 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
             touched.add(table)
             candidates += got
         probes += min(_MAX_DIMS_PER_TABLE, len(_material_dims(cols)))
-        if probes < _MAX_PROBES:
+        if probes < budget:
             named = _lens_named_outlier(conn, table, cols, tp)
             if named:
                 touched.add(table)
@@ -722,11 +781,33 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
 
     _apply_priors(candidates, priors)     # learned per-connection nudge (no-op without a prior)
     facts = _select(candidates, limit)
+    left_out = (f" {len(unread)} table{'s' if len(unread) != 1 else ''} with no profile yet "
+                f"{'are' if len(unread) != 1 else 'is'} left out." if unread else "")
     return OverviewReport(
         facts=facts,
         summary=(f"{len(facts)} notable facts across {len(touched) or len(ranked)} of "
-                 f"{len(tprofiles)} tables — concentration, outliers, spread, coverage and more."),
+                 f"{len(tprofiles)} tables — concentration, outliers, spread, coverage and more."
+                 + left_out),
         tables_seen=len(touched) or len(ranked),
         tables_total=len(tprofiles),
         generated_at=now or "",
+        unread=unread,
     )
+
+
+def _probe_budget(conn) -> int:
+    """How many group-by probes one tour may run on this engine: the full budget where a
+    statement is local and free, `_WAREHOUSE_PROBES` where each one is a billed scan or
+    warehouse time (DE-5d's `rerun_cost`) — and the smaller one for an engine nobody
+    declared. Until the tour read cached profiles it never reached those engines at all."""
+    try:
+        from aughor.connectors.declarations import declaration
+        from aughor.db.metadata import engine_type_of
+        engine = engine_type_of(conn)
+        if engine and declaration(engine).rerun_cost == "local":
+            return _MAX_PROBES
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an undeclared engine takes the warehouse probe budget",
+                 counter="overview.probe_budget")
+    return _WAREHOUSE_PROBES
