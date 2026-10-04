@@ -60,7 +60,7 @@ export const CHART_DEEMPH: Record<ChartMode, string> = {
  *  in dark a card one step above the page (--bg-1), in light the page itself (--bg-0). */
 export const CHART_SURFACE: Record<ChartMode, string> = {
   light: "#FFFFFF",
-  dark: "#1F272D",
+  dark: "#272F35",
 };
 
 /** Sign-diverging pair (change metrics: positive/negative). Sign is a good/bad meaning,

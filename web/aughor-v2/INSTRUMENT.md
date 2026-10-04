@@ -214,7 +214,7 @@ loops stop. The ⌘K palette has no entrance at all — it is summoned from the 
 skills): the Primary alone gets a press scale, and dense controls keep the background step; the
 Briefing enters verdict → numbers → cards once a session (`components/brief/firstOpen.ts`), never on
 Reload or Regenerate; depth stays a hairline, not a shadow — a card is the page's own plane, and on
-`#11171C` (the canvas since the 2026-09-25 skin; `#181818` and `#101010` before it) a drop shadow would not show.
+`#191F24` (the canvas since the 2026-10-04 lift of the 2026-09-25 skin; `#11171C`, `#181818` and `#101010` before it) a drop shadow would not show.
 
 ## 8. Icons and density
 
