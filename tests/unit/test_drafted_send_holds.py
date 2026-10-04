@@ -153,7 +153,7 @@ def test_a_parked_send_carries_the_answer_it_was_bound_to(_slack_stub):
     assert _slack_stub[-1]["message"] == pending.params["message"]
 
 
-def test_an_accepted_send_draws_its_chart_and_files_its_thread(_slack_stub, monkeypatch):
+def test_an_accepted_send_draws_its_chart_and_files_its_thread(_slack_stub, monkeypatch, client):
     """The accept ends as the unattended send ends: the chart goes into the thread the post
     opened, and the thread is filed on what the send is about — the link a reply in that
     thread is matched to (`routers/arrivals.py` looks it up by `channel:ts`), which refused
@@ -163,7 +163,6 @@ def test_an_accepted_send_draws_its_chart_and_files_its_thread(_slack_stub, monk
     from aughor.actions.inbox import proposals_for_run
     from aughor.automations import engine
     from aughor.hub.links import list_links
-    from aughor.routers import kinetic
 
     monkeypatch.setattr("aughor.automations.engine.resume_run", lambda rid, **kw: None)
 
@@ -185,7 +184,11 @@ def test_an_accepted_send_draws_its_chart_and_files_its_thread(_slack_stub, monk
     pending = [p for p in proposals_for_run(run.id) if p.pending][0]
     assert pending.params[engine.CHART_GRID_KEY]["rows"] == grid["rows"]
 
-    reply = kinetic.accept_inbox(pending.id, kinetic.AcceptRequest(actor="person:amit"))
+    # By the route's name, not its path: the path's prefix is frozen until its rename.
+    accept = client.app.url_path_for("accept_inbox", proposal_id=pending.id)
+    response = client.post(accept, json={"actor": "person:amit"})
+    assert response.status_code == 200, response.text
+    reply = response.json()
     assert reply["status"] == "executed"
     ts = f"ts{len(_slack_stub)}"                      # the stub numbers its posts
     assert drawn == [(grid, ts)]                      # the chart, into the post's thread
