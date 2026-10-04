@@ -11064,7 +11064,8 @@ so. AO-7 must move a held-out golden set's pass rate per agent; two weeks of rea
 
 The study is the plan for 2027 and beyond: eight phases (its §W), each with capabilities, architecture, product,
 dependencies, risks, metrics and a live exit, are kept there and not copied here — it is a study kept in `docs/` like
-the Agent Ops and dbx studies, and this section is its pointer. What adoption changed in this file the same day: §0
+the Agent Ops and dbx studies, and this section is its pointer; its architecture is drawn in
+`docs/PLATFORM_2027_ARCHITECTURE_2026-10-04.md`. What adoption changed in this file the same day: §0
 restated (the moat is the warrant and the record); §1's trigger and effect counts corrected; the freeze list recorded
 as §4.9; §4.8's executing-grants refusal narrowed on a condition; and `PENDING.md`'s twenty discarded items struck
 with their reasons, every kept item placed in a phase by the study's own section on the ledger.

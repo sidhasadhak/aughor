@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 300" width="1440" height="300">
+  <title>The closed loop the ledger runs: claim, decision, action, outcome, write-back, driven by the settle tick</title>
+  <style>
+    :root { --bg:#F3F6F8; --fg:#16222D; --muted:#5B6C7B; --line:#B5C1CC; --own:#0B6B86; --own-fill:#D9EBF1; --nec-fill:#E6EBEF; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0D141B; --fg:#E3E9EF; --muted:#93A3B1; --line:#36465A; --own:#5BBBD8; --own-fill:#12303B; --nec-fill:#182230; }
+    }
+    svg { color: var(--fg); font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif; }
+    .canvas { fill: var(--bg); }
+    text { fill: currentColor; }
+    .t { font-size: 15px; font-weight: 600; }
+    .i { font-size: 12.5px; }
+    .l { font-size: 11.5px; fill: var(--muted); font-style: italic; }
+    .bx { stroke: currentColor; stroke-width: 1.2; }
+    .own .bx { fill: var(--own-fill); stroke: var(--own); stroke-width: 1.6; }
+    .nec .bx { fill: var(--nec-fill); }
+    .ar { stroke: currentColor; fill: none; stroke-width: 1.4; marker-end: url(#ah2); }
+    .own-ar { stroke: var(--own); fill: none; stroke-width: 1.8; marker-end: url(#ah2-own); }
+  </style>
+  <defs>
+    <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+    <marker id="ah2-own" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--own)"/>
+    </marker>
+  </defs>
+  <rect class="canvas" width="1440" height="300"/>
+
+  <!-- return arc -->
+  <polyline class="own-ar" points="1310,70 1310,38 130,38 130,70"/>
+  <line class="own-ar" x1="720" y1="38" x2="720" y2="70"/>
+  <text class="l" x="720" y="30" text-anchor="middle">calibration returns to the claim's class · authority returns to the action kind — granted or withdrawn on the receipt</text>
+
+  <!-- nodes -->
+  <g class="own">
+    <rect class="bx" x="20" y="70" width="220" height="110" rx="3"/>
+    <text class="t" x="34" y="94">CLAIM</text>
+    <text class="i" x="34" y="116">as_of · recorded_at</text>
+    <text class="i" x="34" y="134">warrant → the receipt</text>
+    <text class="i" x="34" y="152">confidence: hit rate, n</text>
+    <text class="l" x="34" y="172">what would overturn it</text>
+  </g>
+  <line class="ar" x1="240" y1="125" x2="315" y2="125"/>
+  <text class="l" x="277" y="118" text-anchor="middle">relied on by</text>
+
+  <g class="own">
+    <rect class="bx" x="315" y="70" width="220" height="110" rx="3"/>
+    <text class="t" x="329" y="94">DECISION</text>
+    <text class="i" x="329" y="116">options, each with a prediction</text>
+    <text class="i" x="329" y="134">relied_on: claims as recorded then</text>
+    <text class="i" x="329" y="152">expectation booked · review_on</text>
+    <text class="l" x="329" y="172">dissent kept · a person chooses</text>
+  </g>
+  <line class="ar" x1="535" y1="125" x2="610" y2="125"/>
+  <text class="l" x="572" y="118" text-anchor="middle">authorises</text>
+
+  <g class="own">
+    <rect class="bx" x="610" y="70" width="220" height="110" rx="3"/>
+    <text class="t" x="624" y="94">ACTION</text>
+    <text class="i" x="624" y="116">under a grant, L0–L5</text>
+    <text class="i" x="624" y="134">preview · execute · verification</text>
+    <text class="i" x="624" y="152">undo inside its window</text>
+    <text class="l" x="624" y="172">a person at L3 · policy at L4</text>
+  </g>
+  <line class="ar" x1="830" y1="125" x2="905" y2="125"/>
+  <text class="l" x="867" y="110" text-anchor="middle">reviewed</text>
+  <text class="l" x="867" y="146" text-anchor="middle">on the date</text>
+
+  <g class="own">
+    <rect class="bx" x="905" y="70" width="220" height="110" rx="3"/>
+    <text class="t" x="919" y="94">OUTCOME</text>
+    <text class="i" x="919" y="116">measured on review_on</text>
+    <text class="i" x="919" y="134">settled days only</text>
+    <text class="i" x="919" y="152">vs expectation · vs baseline</text>
+    <text class="l" x="919" y="172">as expected · better · worse · cannot tell</text>
+  </g>
+  <line class="ar" x1="1125" y1="125" x2="1200" y2="125"/>
+  <text class="l" x="1162" y="110" text-anchor="middle">scored</text>
+  <text class="l" x="1162" y="146" text-anchor="middle">by code</text>
+
+  <g class="own">
+    <rect class="bx" x="1200" y="70" width="220" height="110" rx="3"/>
+    <text class="t" x="1214" y="94">WRITE-BACK</text>
+    <text class="i" x="1214" y="116">the claim class's hit rate</text>
+    <text class="i" x="1214" y="134">the playbook entry · the author</text>
+    <text class="i" x="1214" y="152">the action kind's grant</text>
+    <text class="l" x="1214" y="172">never a judge</text>
+  </g>
+
+  <!-- settle tick -->
+  <line class="ar" x1="130" y1="215" x2="130" y2="180"/>
+  <text class="l" x="140" y="203">re-measure when its days settle</text>
+  <line class="ar" x1="425" y1="215" x2="425" y2="180"/>
+  <text class="l" x="435" y="203">reopen if a relied-on claim is restated</text>
+  <line class="ar" x1="1015" y1="215" x2="1015" y2="180"/>
+  <text class="l" x="1025" y="203">measure when the review date comes</text>
+  <g class="nec">
+    <rect class="bx" x="20" y="215" width="1400" height="60" rx="3"/>
+    <text class="t" x="34" y="239">THE SETTLE TICK — code, on the clock that already runs; the calendar drives the loop, not a conversation</text>
+    <text class="i" x="34" y="261">re-measures claims whose days have settled → restatements · scores predictions whose range is Final → calibration · measures outcomes whose review date has come → write-backs · marks every dependent dirty</text>
+  </g>
+</svg>

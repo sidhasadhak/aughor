@@ -313,6 +313,10 @@ something to keep.
                · the settle clock · profiles · mirrors
 ```
 
+*The band diagram above is drawn as a figure, with the flows between bands labelled, in
+[`PLATFORM_2027_ARCHITECTURE_2026-10-04.md`](PLATFORM_2027_ARCHITECTURE_2026-10-04.md) — figure 1 the platform
+as a place, figure 2 the loop of section I.*
+
 | Concern | Choice | Why |
 |---|---|---|
 | **Ledger storage** | relational and append-only, in the kernel ledger; SQLite for one person, Postgres for an organisation | the kernel already versions artifacts and keeps lineage; a second ledger would be the ninth store |
