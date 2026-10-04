@@ -8683,6 +8683,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/monitors/missed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Missed Move
+         * @description Why nothing flagged it: the day scored against the metric's own history, every watch on
+         *     it and what its rule made of that value, a proposal still waiting, settling, held sends —
+         *     and, when "nothing watched it" is the answer, the watch staged for a person to accept.
+         */
+        post: operations["review_missed_move_monitors_missed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/monitors/{monitor_id}": {
         parameters: {
             query?: never;
@@ -15359,6 +15381,30 @@ export interface components {
              * @default
              */
             source: string;
+        };
+        /**
+         * MissedMoveRequest
+         * @description Idea 8 — a move a person found that nothing flagged.
+         */
+        MissedMoveRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Day
+             * @description The day of the move, YYYY-MM-DD.
+             */
+            day: string;
+            /**
+             * Metric
+             * @description The metric that moved, by name or label.
+             */
+            metric: string;
+            /**
+             * Stage
+             * @description Stage the watch that would have caught it, as a proposal a person accepts — when that is the fix.
+             * @default true
+             */
+            stage: boolean;
         };
         /** MoveRequest */
         MoveRequest: {
@@ -32841,6 +32887,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_missed_move_monitors_missed_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MissedMoveRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

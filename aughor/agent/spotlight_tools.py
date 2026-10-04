@@ -560,6 +560,28 @@ _TOP_PARAMS = {
                            "description": "How many tables/columns to list (default 10)."}},
 }
 _EMPTY_PARAMS: dict = {"type": "object", "properties": {}}
+_MISSED_PARAMS = {
+    "type": "object",
+    "properties": {
+        "metric": {"type": "string",
+                   "description": "The metric that moved, by its name or label (e.g. revenue, "
+                                  "return_rate)."},
+        "day": {"type": "string", "description": "The day of the move, YYYY-MM-DD."},
+    },
+    "required": ["metric", "day"],
+}
+
+
+def review_missed_move(connection_id: str, args: dict) -> dict:
+    """Idea 8 — why nothing flagged a move (`monitors.missed`). A READ: it never stages; when a
+    watch would have caught the move it says so, and `draft_monitor` stages one if asked."""
+    from aughor.monitors.missed import review_missed
+    review = review_missed(connection_id, str(args.get("metric") or ""), str(args.get("day") or ""),
+                           stage=False)
+    out = review.to_dict()
+    out["summary"] = review.verdict + (
+        " Ask and a watch is drafted for a person to accept." if review.proposal.get("would_stage") else "")
+    return out
 _TRACES_PARAMS = {
     "type": "object",
     "properties": {
@@ -683,6 +705,19 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
             ),
             parameters=_EMPTY_PARAMS,
             run=lambda a: platform_limits(a),
+        ),
+        ToolSpec(
+            name="review_missed_move",
+            description=(
+                "Why nothing flagged a move someone found — 'why didn't anything alert on the "
+                "return-rate jump on 3 September?'. Scores the day against the metric's own "
+                "history, lists every watch on it and what its rule made of that value, a watch "
+                "the Watcher proposed that is still waiting, whether the day was still settling, "
+                "and any message the departure gate held. Changes nothing. Quote the summary "
+                "field verbatim — never re-derive its numbers."
+            ),
+            parameters=_MISSED_PARAMS,
+            run=lambda a: review_missed_move(connection_id, a),
         ),
         ToolSpec(
             name="platform_runs",
