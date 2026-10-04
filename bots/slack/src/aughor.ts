@@ -337,7 +337,9 @@ export type ArrivalPoster = (body: ArrivalBody) => Promise<ArrivalResult>;
  *  (`POST /verify/verdict`). The message carries no receipt and the reaction needs none. */
 export interface VerdictBody {
   investigationId: string;
-  verdict: "accept" | "reject";
+  /** `correct`: the answer was wrong and the person said what is right — a lesson the
+   *  planner and the agent's own loop read back, as they read a reject. */
+  verdict: "accept" | "reject" | "correct";
   note?: string;
   headline?: string;
 }

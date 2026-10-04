@@ -95,8 +95,13 @@ def main() -> int:
         ap.error("--connection ID (or --golden)")
     from aughor.security.audit import AuditLogger
     records = AuditLogger.recent(limit=args.limit, connection_id=args.connection)
-    rows = [(str(r.get("hypothesis_id") or ""), str(r.get("sql") or ""), not r.get("error"), str(r.get("error") or ""))
-            for r in records if r.get("sql")]
+    # The audit store's column is `sql_full` (`sql_digest` beside it). This read `sql`, which no row carries, so
+    # on the first machine with an audit log it counted 0 of 22,267 statements and reported 0 refused (2026-10-03).
+    rows = [(str(r.get("hypothesis_id") or ""), str(r.get("sql_full") or ""), not r.get("error"), str(r.get("error") or ""))
+            for r in records if r.get("sql_full")]
+    if records and not rows:
+        sys.exit(f"{len(records)} audit rows read for {args.connection!r} and none carried a statement — "
+                 "the reader is wrong, not the log; nothing was measured")
     dialect = _dialect_for(args.connection, args.dialect)
     refused = _report(f"audit log, connection {args.connection}, newest {len(rows)}", rows, dialect)
     return 1 if refused else 0

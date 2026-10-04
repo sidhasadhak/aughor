@@ -551,6 +551,34 @@ def route_mix(scan: int = 5000, since_seq: Optional[int] = None):
     }
 
 
+@router.get("/obs/treatment-calibration")
+def treatment_calibration(limit: int = 5000):
+    """CP-2's receipt, read from the running install: how far the treatment shadow's two
+    self-labelling levers can be trusted, and the arc's falsifier beside them.
+
+    The fold (`judgment/calibration.calibrate`) had tests and no caller: nothing read the
+    shadow rows through it, so the number CP-3 waits on had never been taken on real traffic.
+    This is that reading, by the process that owns the log. No row is served, only the fold,
+    so no ask's words leave by this door.
+
+    `rows_with_an_observed_outcome` is the denominator that matters: a row whose turn's trace
+    has aged out of the log carries a prediction and no outcome, and is scored on nothing.
+    `served` says which body answered the turns the judge was asked about — the falsifier's
+    agreement is a share of those, and reads differently when one body serves most of them.
+    """
+    from aughor.judgment import calibration, treatment
+
+    rows = treatment.shadow_corpus(limit=max(1, min(int(limit), 20000)),
+                                   org_id=current_org_id() or None)
+    served: dict[str, int] = {}
+    for r in rows:
+        body = str(r.get("observed_body") or "unknown")
+        served[body] = served.get(body, 0) + 1
+    return {"measured": True, **calibration.calibrate(rows), "served": served,
+            "first_at": rows[0].get("at") if rows else None,
+            "last_at": rows[-1].get("at") if rows else None}
+
+
 @router.get("/obs/prompt-weight")
 def prompt_weight(scan: int = 5000):
     """Prompt-token spend per call site — which templates the budget goes to (PE-1).

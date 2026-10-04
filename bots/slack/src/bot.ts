@@ -212,7 +212,7 @@ export function buildBot({
     for (const k of keys) rehearsals.set(k, held);
   };
 
-  bot.onNewMention(async (thread, message) => {
+  const onMention = async (thread: Thread, message: Message) => {
     const question = stripMention(message.text ?? "");
     if (!question) {
       await thread.post(USAGE);
@@ -314,10 +314,53 @@ export function buildBot({
     // message is the one remembered by id and the answer itself resolves by its thread.
     const exhibit = await postExhibits(thread, turn, { renderChart, renderTable });
     remember(thread.id, turn, exhibit?.id);
+    // Follow the thread, so a reply that names no one still arrives — it is how "that's
+    // wrong" under an answer becomes a correction. Best-effort: a transport that cannot
+    // follow a thread still answered the question.
+    try { await thread.subscribe(); } catch { /* the answer stands without it */ }
+  };
+  bot.onNewMention(onMention);
+
+  // A followed thread sends every message here, mentions included (`onNewMention` fires
+  // only in a thread not yet followed), so a mention is handed straight to the mention path.
+  // Of the rest, ONE kind is acted on: a reply that opens by saying the answer is wrong. It
+  // is recorded on the thread's latest answer through the verdict door every other verdict
+  // uses — `correct` when it goes on to say what is right, `reject` when it only says wrong.
+  // Anything else said in the thread is the people's own conversation and is left alone.
+  bot.onSubscribedMessage(async (thread, message) => {
+    if (message.isMention) {
+      await onMention(thread, message);
+      return;
+    }
+    const said = (message.text ?? "").trim();
+    const opened = CORRECTION.exec(said);
+    if (!opened || !postVerdict) return;
+    const turn = byThread.get(thread.id);
+    if (!turn) {
+      await thread.post("I can't tell which answer that is about, so nothing was recorded. "
+        + "React ❌ on the answer itself, or mention me with the correction.");
+      return;
+    }
+    const lesson = said.slice(opened[0].length).replace(/^[\s,.:;!—–-]+/, "").trim();
+    const who = message.author?.userName || message.author?.userId || "someone";
+    const result = await postVerdict({
+      investigationId: turn.investigationId,
+      verdict: lesson.split(/\s+/).filter(Boolean).length >= 3 ? "correct" : "reject",
+      note: `slack reply by ${who} on "${turn.question.slice(0, 120)}": ${said.slice(0, 600)}`,
+    });
+    await thread.post(result.ok
+      ? "Recorded as a correction on this answer."
+      : `Not recorded: ${result.detail}`);
   });
 
   return bot;
 }
+
+/** A reply that OPENS by saying the answer is wrong: "that's wrong", "no, that is incorrect",
+ *  "wrong —", "correction:". Anchored at the start on purpose — "is anything wrong with
+ *  shipping?" is a question that happens to hold the word. */
+export const CORRECTION =
+  /^\s*(?:correction\s*[:—–-]|(?:no[,.!]?\s+)?(?:(?:that|this|it)(?:['’]s|\s+is)\s+)?(?:wrong|incorrect|not\s+(?:right|correct))\b)/i;
 
 /** AO-6 — a rehearsed answer waiting on the asker's click. */
 interface Rehearsal {

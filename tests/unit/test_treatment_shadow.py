@@ -126,18 +126,39 @@ def test_OFF_by_default_writes_nothing(monkeypatch):
 
 
 def test_on_it_records_the_treatment_beside_what_ran(on):
-    row = T.shadow("why?", ran="converse", conn_id="c1", provider=_Judge())
+    row = T.shadow("why?", ran="deep", conn_id="c1", provider=_Judge(),
+                   observed={"body": "analyst"})
     kind, kw = on[0]
     assert kind == T.TREATMENT_SHADOW and kw["conn_id"] == "c1"
-    assert row["ran"] == "converse" and row["treatment"] == "multi_query"
-    assert row["agreed"] is False, "multi_query is not converse"
+    assert row["ran"] == "deep" and row["treatment"] == "multi_query"
+    assert row["agreed"] is False, "a multi-query is a light turn; the analyst is the heavy body"
 
 
 def test_agreement_is_computed_at_write_time(on):
     """The arc's falsifier is "the shadow agrees with what ran on essentially every ask", so
     it has to be one fold over one column rather than a join per read."""
-    row = T.shadow("why?", ran="multi_query", provider=_Judge(treatment="multi_query"))
+    row = T.shadow("why?", ran="quick", provider=_Judge(treatment="multi_query"),
+                   observed={"body": "converse"})
     assert row["agreed"] is True
+
+
+def test_agreement_is_taken_in_ONE_vocabulary(on):
+    """`agreed` used to be `treatment == ran`: "multi_query" against "deep". The two share no
+    word, so it read 0 of 109 on the live corpus and the arc's falsifier could not fire. It is
+    the judged treatment's TIER against the tier that served."""
+    for treatment, body, want in (("investigation", "analyst", True),
+                                  ("single_query", "analyst", False),
+                                  ("lookup", "quick", True),
+                                  ("investigation", "converse", False)):
+        row = T.shadow("why?", ran="deep", provider=_Judge(treatment=treatment),
+                       observed={"body": body})
+        assert row["agreed"] is want, (treatment, body)
+
+
+def test_agreement_is_unknown_when_the_row_does_not_say_what_served(on):
+    """No body, no verdict — never a False that reads as disagreement."""
+    row = T.shadow("why?", ran="deep", provider=_Judge(treatment="investigation"))
+    assert row["agreed"] is None
 
 
 def test_a_shadow_NEVER_costs_a_turn(on):
@@ -307,7 +328,8 @@ def test_the_stream_ends_without_waiting_for_the_shadow(monkeypatch):
     assert thread is not threading.main_thread()
     assert thread.name == "treatment-shadow" and thread.daemon is True
     assert seen == [("why did revenue fall?",
-                     {"ran": "quick", "conn_id": "c1", "observed": {"grids": 0, "ok": True}})]
+                     {"ran": "quick", "conn_id": "c1", "prior_turn": "",
+                      "observed": {"ok": True, "investigation": False}})]
 
 
 def test_the_server_goes_on_serving_while_the_shadow_waits(monkeypatch):
@@ -397,3 +419,107 @@ def test_a_shadow_that_cannot_be_scheduled_costs_the_turn_nothing(monkeypatch):
     monkeypatch.setattr(threading, "Thread", no_threads)
     took, _ = _drain(monkeypatch, shadow=lambda q, **kw: None)
     assert took < 1.0
+
+
+# ── what the turn did is read from its own trace ────────────────────────────────────────
+
+def _emit_turn(trace, *, steps=(), statements=0, marker=""):
+    """Write a turn's events the way the bodies do, under one trace."""
+    from aughor.obs import session_log
+    if marker:
+        session_log.emit(session_log.TOOL_CALL, name=marker, trace_id=trace)
+    for name, rows in steps:
+        session_log.emit(session_log.STEP, name=name, trace_id=trace, ok=True, row_count=rows,
+                         payload={"tool": name})
+    for _ in range(statements):
+        session_log.emit(session_log.TOOL_CALL, name="sql.execute", trace_id=trace)
+
+
+def test_the_queries_a_turn_ran_are_read_from_its_trace():
+    """A loop step that returned rows is a query, and so is one of the analyst's own
+    investigation tools; a schema read is not. Statements count everything that reached the
+    warehouse, guards included."""
+    _emit_turn("cp2-analyst", marker="ask.analyst", statements=7,
+               steps=(("list_tables", None), ("run_sql", 12), ("run_sql", 0),
+                      ("decompose", None), ("describe_table", None)))
+    assert T.observed_for_trace("cp2-analyst") == {"queries": 3, "statements": 7,
+                                                   "body": "analyst"}
+
+
+def test_a_turn_with_no_loop_ran_one_query_when_a_statement_ran():
+    _emit_turn("cp2-quick", statements=2)
+    assert T.observed_for_trace("cp2-quick") == {"queries": 1, "statements": 2, "body": "quick"}
+    _emit_turn("cp2-converse", marker="ask.converse", steps=(("list_tables", None),))
+    assert T.observed_for_trace("cp2-converse") == {"queries": 0, "statements": 0,
+                                                    "body": "converse"}
+
+
+def test_an_unreadable_trace_leaves_the_row_unlabelled_not_zero():
+    assert T.observed_for_trace("") == {}
+    assert T.observed_for_trace("cp2-never-written") == {}
+
+
+def test_the_row_the_door_writes_carries_what_the_turn_DID(monkeypatch):
+    """The wire, with nothing standing in for the count. The label was dead for eleven days
+    while every test here passed: each one handed `observed` to the fold, and none asked the
+    wrapper what it had counted. This drives the real wrapper and the real `shadow`, with
+    only the model replaced, over a turn that ran two queries — and reads the row back.
+    """
+    import asyncio
+
+    from aughor import telemetry
+    from aughor.kernel.ledger import Ledger
+    from aughor.obs import session_log
+    from aughor.routers import investigations as I
+
+    _flag_on(monkeypatch)
+    judge = _Judge(treatment="single_query")
+    monkeypatch.setattr(T, "classify", lambda q, **kw: judge.judge(
+        T.state_for(q, prior_turn=kw.get("prior_turn", "")), T.LEVERS))
+    seen = {}
+
+    async def _drive():
+        async def _stream():
+            seen["trace"] = telemetry.current_trace_id()
+            session_log.emit(session_log.TOOL_CALL, name="ask.analyst")
+            for rows in (5, 9):
+                session_log.emit(session_log.STEP, name="run_sql", ok=True, row_count=rows,
+                                 payload={"tool": "run_sql"})
+            yield 'data: {"type":"columns","columns":["a"]}\n\n'
+            yield 'data: {"type":"headline","headline":"two queries"}\n\n'
+        async for _ in I.stream_with_session_log(
+                _stream(), question="how many orders, by month?", conn_id="c1", door="ask",
+                depth="deep", prior_turn="what sold best?\nSocks did."):
+            pass
+
+    asyncio.run(_drive())
+    _settled()
+
+    [ev] = Ledger.default().session_events(trace_id=seen["trace"], kind=T.TREATMENT_SHADOW)
+    row = ev["payload"]
+    assert row["observed_queries"] == 2, "the two queries the turn ran, not a frame count"
+    assert row["observed_body"] == "analyst" and row["ran"] == "deep"
+    assert row["agreed"] is False, "a single query judged; the heavy body served"
+    assert "observed_grids" not in row
+    assert "PREVIOUS TURN" in judge.states[0] and "Socks did." in judge.states[0]
+
+
+def test_the_corpus_reader_labels_an_older_row_from_its_trace():
+    """A row written before the fix carries the dead count and no body. While its trace is in
+    the log it is scored on what the turn did; the fold then has a real outcome to read."""
+    from aughor.judgment.calibration import calibrate
+    from aughor.obs import session_log
+
+    _emit_turn("cp2-old", marker="ask.analyst", steps=(("run_sql", 4), ("run_sql", 4)))
+    session_log.emit(T.TREATMENT_SHADOW, name="treatment_shadow", trace_id="cp2-old",
+                     payload={"treatment": "investigation", "treatment_p": 0.9, "ran": "deep",
+                              "agreed": False, "observed_grids": 0, "observed_ok": True,
+                              "steps_implied": "two or three", "steps_implied_p": 0.9,
+                              "steps_implied_score": 2.0})
+    [row] = [r for r in T.shadow_corpus() if r.get("observed_body") == "analyst"
+             and r.get("treatment") == "investigation" and r.get("observed_grids") == 0]
+    assert row["observed_queries"] == 2
+    assert row["agreed"] is True, "investigation judged, the analyst served: retaken, not kept"
+    got = calibrate([row])
+    assert got["rows_with_an_observed_outcome"] == 1
+    assert got["levers"]["steps_implied"]["available"] is True

@@ -95,6 +95,13 @@ def _ece(pairs: Iterable[tuple[float, bool]]) -> Optional[dict]:
     return {"ece": round(ece, 4), "n": n, "bins": detail}
 
 
+#: The run's own count of the queries it ran, read from its trace
+#: (`treatment.observed_for_trace`). NOT `observed_grids`: that was counted off a stream frame
+#: the wrapper never parsed and is 0 on every row that carries it, so a row with only that key
+#: is unlabelled here rather than scored against a constant.
+OBSERVED = "observed_queries"
+
+
 def _steps_label(row: Mapping[str, Any]) -> Optional[bool]:
     """Was `steps_implied` right, judged against the queries the turn actually ran?
 
@@ -104,7 +111,7 @@ def _steps_label(row: Mapping[str, Any]) -> Optional[bool]:
     turn ran three queries is a good prediction, and scoring it wrong would make the
     calibration number a measure of the scale's granularity rather than of the judge.
     """
-    observed = row.get("observed_grids")
+    observed = row.get(OBSERVED)
     pos = row.get("steps_implied_score")
     if observed is None or pos is None:
         return None
@@ -116,7 +123,7 @@ def _steps_label(row: Mapping[str, Any]) -> Optional[bool]:
 
 def _from_last_result_label(row: Mapping[str, Any]) -> Optional[bool]:
     """Was `from_last_result` right? The turn either ran a query or it did not."""
-    observed = row.get("observed_grids")
+    observed = row.get(OBSERVED)
     predicted = row.get("from_last_result")
     if observed is None or predicted is None:
         return None
@@ -135,7 +142,10 @@ def calibrate(rows: Iterable[Mapping[str, Any]]) -> dict:
     would read as "these were fine".
     """
     rows = [r for r in rows if isinstance(r, Mapping)]
-    out: dict[str, Any] = {"rows": len(rows), "levers": {}}
+    out: dict[str, Any] = {"rows": len(rows),
+                           "rows_with_an_observed_outcome": sum(1 for r in rows
+                                                                if r.get(OBSERVED) is not None),
+                           "levers": {}}
 
     for lever, label_of in LABELLERS.items():
         pairs = []
@@ -170,4 +180,4 @@ def calibrate(rows: Iterable[Mapping[str, Any]]) -> dict:
     return out
 
 
-__all__ = ["BINS", "LABELLERS", "NO_LABEL", "calibrate"]
+__all__ = ["BINS", "LABELLERS", "NO_LABEL", "OBSERVED", "calibrate"]

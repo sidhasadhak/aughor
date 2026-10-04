@@ -9347,6 +9347,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/obs/treatment-calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Treatment Calibration
+         * @description CP-2's receipt, read from the running install: how far the treatment shadow's two
+         *     self-labelling levers can be trusted, and the arc's falsifier beside them.
+         *
+         *     The fold (`judgment/calibration.calibrate`) had tests and no caller: nothing read the
+         *     shadow rows through it, so the number CP-3 waits on had never been taken on real traffic.
+         *     This is that reading, by the process that owns the log. No row is served, only the fold,
+         *     so no ask's words leave by this door.
+         *
+         *     `rows_with_an_observed_outcome` is the denominator that matters: a row whose turn's trace
+         *     has aged out of the log carries a prediction and no outcome, and is scored on nothing.
+         *     `served` says which body answered the turns the judge was asked about — the falsifier's
+         *     agreement is a share of those, and reads differently when one body serves most of them.
+         */
+        get: operations["treatment_calibration_obs_treatment_calibration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/obs/usage-summary": {
         parameters: {
             query?: never;
@@ -34032,6 +34063,37 @@ export interface operations {
                 range?: string;
                 since?: string;
                 until?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    treatment_calibration_obs_treatment_calibration_get: {
+        parameters: {
+            query?: {
                 limit?: number;
             };
             header?: never;

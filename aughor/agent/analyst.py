@@ -1069,7 +1069,7 @@ _ANALYST_PLATFORM_TOOLS = frozenset({"propose_context_note"})
 #: data (`investigate.question_shape` → "describe") is not offered them: each one frames its
 #: finding as a change or a shortfall, and a roster the model can see is a roster it spends
 #: turns on — Q5 (2026-09-29) was answered with an unasked year-over-year comparison.
-_INVESTIGATION_TOOLS = frozenset({"baseline", "decompose", "premise_check", "cross_section"})
+INVESTIGATION_TOOLS = frozenset({"baseline", "decompose", "premise_check", "cross_section"})
 
 
 def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
@@ -1210,7 +1210,7 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
     ] + [t for t in platform_tools(cid, session_id=session_id)
          if t.name in _ANALYST_PLATFORM_TOOLS]
     if shape == "describe":
-        roster = [t for t in roster if t.name not in _INVESTIGATION_TOOLS]
+        roster = [t for t in roster if t.name not in INVESTIGATION_TOOLS]
     return roster
 
 

@@ -1,0 +1,348 @@
+{
+ "rule": {
+  "threshold": 1.0,
+  "margin": 1.0,
+  "fitted_on": "the dev split of framing_matcher_set.jsonl"
+ },
+ "tally": {
+  "stays_missed": 14,
+  "framed_right": 6,
+  "framed_WRONG": 1,
+  "exact_matcher_framed": 4,
+  "chooser_has_it": 2,
+  "control_framed_WRONG": 1,
+  "control_quiet": 14,
+  "control_to_chooser": 1
+ },
+ "items": [
+  {
+   "id": "held_lux_p01",
+   "gold": "vip_customers",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_lux_p02",
+   "gold": "controllable_returns",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_lux_p03",
+   "gold": "high_risk_payments",
+   "verdict": "framed_right",
+   "candidates": [
+    {
+     "name": "high_risk_payments",
+     "score": 4.0
+    }
+   ]
+  },
+  {
+   "id": "held_lux_p04",
+   "gold": "accessories_division",
+   "verdict": "framed_right",
+   "candidates": [
+    {
+     "name": "accessories_division",
+     "score": 3.0
+    }
+   ]
+  },
+  {
+   "id": "held_lux_p05",
+   "gold": "eu_markets",
+   "verdict": "framed_WRONG",
+   "candidates": [
+    {
+     "name": "completed_orders",
+     "score": 1.667
+    }
+   ]
+  },
+  {
+   "id": "held_lux_p06",
+   "gold": "completed_orders",
+   "verdict": "framed_right",
+   "candidates": [
+    {
+     "name": "completed_orders",
+     "score": 1.667
+    }
+   ]
+  },
+  {
+   "id": "held_lux_p07",
+   "gold": "ynap_platforms",
+   "verdict": "framed_right",
+   "candidates": [
+    {
+     "name": "ynap_platforms",
+     "score": 3.0
+    }
+   ]
+  },
+  {
+   "id": "held_lux_p08",
+   "gold": "shipping_breach_rate",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_lux_p09",
+   "gold": "refund_lag_days",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_lux_p10",
+   "gold": "refund_breach_rate",
+   "verdict": "exact_matcher_framed",
+   "candidates": []
+  },
+  {
+   "id": "held_lux_p11",
+   "gold": "shipping_lag_days",
+   "verdict": "exact_matcher_framed",
+   "candidates": []
+  },
+  {
+   "id": "held_olist_p12",
+   "gold": "fulfilled_orders",
+   "verdict": "framed_right",
+   "candidates": [
+    {
+     "name": "fulfilled_orders",
+     "score": 3.0
+    }
+   ]
+  },
+  {
+   "id": "held_olist_p13",
+   "gold": "southeast",
+   "verdict": "framed_right",
+   "candidates": [
+    {
+     "name": "southeast",
+     "score": 3.0
+    }
+   ]
+  },
+  {
+   "id": "held_olist_p14",
+   "gold": "approved_lag_days",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_olist_p15",
+   "gold": "dispatch_breach_rate",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_olist_p16",
+   "gold": "dispatch_lag_days",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_olist_p17",
+   "gold": "delivery_breach_rate",
+   "verdict": "chooser_has_it",
+   "candidates": [
+    {
+     "name": "delivery_breach_rate",
+     "score": 2.0
+    },
+    {
+     "name": "dispatch_breach_rate",
+     "score": 1.5
+    }
+   ]
+  },
+  {
+   "id": "held_olist_p18",
+   "gold": "delivery_lag_days",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_p19",
+   "gold": "completed_orders",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_p20",
+   "gold": "shipped_lag_days",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_p21",
+   "gold": "delivered_lag_days",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_p22",
+   "gold": "returned_lag_days",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_samples_p23",
+   "gold": "fulfilled_orders",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_samples_p24",
+   "gold": "north_america",
+   "verdict": "stays_missed",
+   "candidates": []
+  },
+  {
+   "id": "held_samples_p25",
+   "gold": "delivered_lag_days",
+   "verdict": "chooser_has_it",
+   "candidates": [
+    {
+     "name": "delivered_lag_days",
+     "score": 1.0
+    },
+    {
+     "name": "shipped_lag_days",
+     "score": 1.0
+    }
+   ]
+  },
+  {
+   "id": "held_lux_c01",
+   "gold": null,
+   "verdict": "control_framed_WRONG",
+   "candidates": [
+    {
+     "name": "high_risk_payments",
+     "score": 2.0
+    },
+    {
+     "name": "eu_markets",
+     "score": 1.0
+    }
+   ]
+  },
+  {
+   "id": "held_lux_c02",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_lux_c03",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_lux_c04",
+   "gold": null,
+   "verdict": "control_to_chooser",
+   "candidates": [
+    {
+     "name": "ynap_platforms",
+     "score": 2.333
+    },
+    {
+     "name": "completed_orders",
+     "score": 1.667
+    }
+   ]
+  },
+  {
+   "id": "held_lux_c05",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_olist_c06",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_olist_c07",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_olist_c08",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_olist_c09",
+   "gold": null,
+   "verdict": "exact_matcher_framed",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_c10",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_c11",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_c12",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_c13",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_thelook_c14",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_samples_c15",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_samples_c16",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_samples_c17",
+   "gold": null,
+   "verdict": "control_quiet",
+   "candidates": []
+  },
+  {
+   "id": "held_samples_c18",
+   "gold": null,
+   "verdict": "exact_matcher_framed",
+   "candidates": []
+  }
+ ]
+}
