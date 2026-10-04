@@ -4498,6 +4498,43 @@ export function getMonitorProof(id: string): Promise<MonitorProof> {
   return monitorProofCall(`${encodeURIComponent(id)}/proof`);
 }
 
+// ── Idea 7 · fact-check a document (`routers/factcheck.py`) ────────────────────────
+
+export interface FactCheckResult {
+  investigation_id: string;
+  envelope: {
+    headline: string;
+    body: string;
+    caveats: string[];
+    grid: { columns: string[]; rows: unknown[][] } | null;
+  };
+}
+
+async function factCheckCall(path: string, init: RequestInit): Promise<FactCheckResult> {
+  const res = await fetch(`${getApiBase()}${path}`, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body?.detail === "string" ? body.detail : `the check failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Every numeric claim in pasted text, checked against the connection — one quick answer per claim. */
+export function factCheckText(text: string, connectionId: string): Promise<FactCheckResult> {
+  return factCheckCall("/factcheck", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, connection_id: connectionId }),
+  });
+}
+
+/** The same check on a document, converted the way the Documents tab converts it. */
+export function factCheckFile(file: File, connectionId: string): Promise<FactCheckResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("connection_id", connectionId);
+  return factCheckCall("/factcheck/upload", { method: "POST", body: form });
+}
+
 export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: string): Promise<MonitorAlert[]> {
   const qs = new URLSearchParams();
   if (connId) qs.set("conn_id", connId);
