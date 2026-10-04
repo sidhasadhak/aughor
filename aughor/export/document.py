@@ -8,6 +8,7 @@ renderer. The two never touch each other.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -49,6 +50,38 @@ class ExportDoc:
     meta: list[str] = field(default_factory=list)
     kind: str = ""
     blocks: list[Block] = field(default_factory=list)
+    #: Idea 11 — the receipt every figure in this document links back to (the answer's Trust
+    #: Receipt id), and the page that shows how its numbers were produced; "" when unknown.
+    source_id: str = ""
+    source_url: str = ""
+
+    def source_text(self) -> str:
+        """The line under each figure: where to see how it was produced. The URL when the
+        install knows its web address, the receipt's id when it does not."""
+        if not self.source_id:
+            return ""
+        return f"Source: {self.source_url}" if self.source_url else f"Source: Aughor receipt {self.source_id}"
+
+
+def receipt_link(receipt_id: str) -> str:
+    """Idea 11 — the page that shows how an answer's numbers were produced, ``<web>/receipt/<id>``,
+    or "" when the API does not know its public web origin. Opt-in via ``AUGHOR_WEB_URL``, the
+    monitors' and departures' rule: empty beats guessed — a document linking to ``localhost`` is
+    worse than one that carries the receipt's id alone."""
+    base = os.environ.get("AUGHOR_WEB_URL", "").strip().rstrip("/")
+    rid = (receipt_id or "").strip()
+    if not (base and rid):
+        return ""
+    from urllib.parse import quote
+    return f"{base}/receipt/{quote(rid, safe='')}"
+
+
+def _receipt_of(inv: dict) -> str:
+    """The answer's receipt id: CP-4's envelope carries it on every turn that has one, chat
+    and deep alike (`provenance.receipt_id`)."""
+    env = (inv.get("report") or {}).get("envelope")
+    prov = env.get("provenance") if isinstance(env, dict) else None
+    return str((prov or {}).get("receipt_id") or "") if isinstance(prov, dict) else ""
 
 
 # ── Block constructors (keep the parsers terse) ───────────────────────────────
@@ -669,6 +702,8 @@ def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = ""
     # export never resolves it itself (Platform must not import Agent; the caller injects).
     doc = (builder(inv, money_symbol)
            if builder in (_build_ada, _build_explore, _build_envelope, _build_chat) else builder(inv))
+    doc.source_id = _receipt_of(inv)
+    doc.source_url = receipt_link(doc.source_id)
     if narrate:
         summary = _llm_executive_summary(inv, doc)
         if summary:
