@@ -150,6 +150,7 @@ const CONN_TAG: Record<string, { label: string; color: string; bg: string; borde
 
 import { getApiBase } from "@/lib/config";
 import { Icon } from "@/components/ui/icon";
+import { Loading } from "@/components/ui/states";
 const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
 const _KNOWLEDGE     = ["confluence", "notion"];
 const _FILE_UPLOAD   = ["local_upload"];
@@ -908,7 +909,7 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
           {erdLoading ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
               <Pending />
-              <span style={{ fontSize: 11, color: "var(--t3)" }}>Loading diagram…</span>
+              <Loading what="the diagram" inline />
             </div>
           ) : erdError ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
@@ -1444,7 +1445,7 @@ function SchemaDocsTab({ entry, onOpenDocuments }: {
       </p>
 
       {loading ? (
-        <p className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</p>
+        <Loading what="the schema documentation" />
       ) : docs.length === 0 ? (
         <p className="aug-fs-sm" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
           Nothing compiled yet. Schema documentation is written when intelligence runs over

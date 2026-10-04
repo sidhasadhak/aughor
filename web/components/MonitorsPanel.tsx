@@ -17,6 +17,7 @@ import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { takeMonitorDraft } from "@/lib/query/monitorDraft";
+import { Loading } from "@/components/ui/states";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -278,7 +279,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-        {loading && <p style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</p>}
+        {loading && <Loading what="monitors" />}
         {error && <p style={{ color: "var(--red3)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
         {/* ── Summary ── real counts across the workspace's monitors/alerts */}

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { StatusChip } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
-import { ReadFailed } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import {
   createTeamsBot, deleteTeamsBot, getAgentDoors, getAutomations, getSlackBots, issueAgentKey,
   revokeAgentKey, type AgentDoorsInfo, type Automation, type SlackBotSummary, type UserAgent,
@@ -86,7 +86,7 @@ export function AgentDoors({ agent, onChat, onOpenAutomation, onOpenIntegrations
     return <ReadFailed what="this agent's doors" error={error} onRetry={() => setTick(t => t + 1)} />;
   }
   if (bots === null || automations === null) {
-    return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</div>;
+    return <Loading what="this agent's doors" />;
   }
 
   return (

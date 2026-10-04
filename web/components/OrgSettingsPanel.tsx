@@ -27,6 +27,7 @@ import { AgentPolicySection } from "@/components/AgentPolicySection";
 import { OrgIndustriesSection } from "@/components/OrgIndustriesSection";
 import { OrgPlaybookSection } from "@/components/OrgPlaybookSection";
 import { OrgPrioritiesSection } from "@/components/OrgPrioritiesSection";
+import { Loading } from "@/components/ui/states";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -165,7 +166,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
     </label>
   );
 
-  if (loading) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
+  if (loading) return <Loading what="settings" />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 560 }}>

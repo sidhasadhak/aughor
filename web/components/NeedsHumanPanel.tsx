@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { relTime } from "@/lib/format";
 import { approverName } from "@/lib/auth";
+import { Loading, ReadFailed } from "@/components/ui/states";
 
 /** A duration a person reads at a glance — "2h 14m", not 8040000. */
 function humanAge(ms: number): string {
@@ -94,10 +95,10 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   };
 
   if (error && !data) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--red4)" }}>{error}</div>;
+    return <ReadFailed what="what needs a person" error={error} onRetry={load} style={{ padding: 24 }} />;
   }
   if (!data) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t2)" }}>Loading…</div>;
+    return <Loading what="what needs a person" style={{ padding: 24 }} />;
   }
 
   // Rows arrive sorted by waiting_ms desc, so the head is the oldest — but read it from

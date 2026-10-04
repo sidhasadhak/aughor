@@ -23,7 +23,7 @@ import {
 import { AnswerProse, readsAsProse } from "@/components/chat/AnswerProse";
 import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
-import { ErrorState } from "@/components/ui/states";
+import { ErrorState, Loading } from "@/components/ui/states";
 import type { ChatTurn, CompiledFrame } from "@/lib/chatTurn";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
@@ -1398,7 +1398,7 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
       >
         Hide grounding
       </Button>
-      {busy && <p className="aug-text-sm text-zinc-500">Loading grounding…</p>}
+      {busy && <Loading what="the grounding" />}
       {data === null && <p className="aug-text-sm text-zinc-500">Grounding receipt isn&rsquo;t available for this answer.</p>}
       {data && present.length === 0 && <p className="aug-text-sm text-zinc-500">No grounding blocks fired for this question.</p>}
       {present.map(b => (

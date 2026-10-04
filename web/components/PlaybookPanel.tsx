@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getApiBase } from "@/lib/config";
 import { pct, formatTimestamp } from "@/lib/format";
 import { getPlaybookVersions, type PlaybookVersion } from "@/lib/api";
+import { Loading } from "@/components/ui/states";
 
 interface PlaybookEntry {
   id: string;
@@ -393,7 +394,7 @@ function VersionHistory({ entryId, currentVersion }: { entryId: string; currentV
       </button>
       {open && (
         <div className="mt-2 space-y-1.5">
-          {versions === null && <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>Loading…</p>}
+          {versions === null && <Loading what="versions" />}
           {versions?.length === 0 && <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>No frozen versions yet.</p>}
           {versions?.slice().reverse().map(v => (
             <div key={v.version} className="flex items-center gap-3 aug-fs-xs" style={{ color: "var(--t3)" }}>

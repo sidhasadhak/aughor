@@ -9,6 +9,7 @@ import {
   type GroupsCatalogue, type LevelGrant, type ActionTrigger,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Loading } from "@/components/ui/states";
 
 const ROLE_TINT: Record<string, string> = {
   owner: "var(--blue4)",
@@ -133,7 +134,7 @@ export function RolesPanel() {
     setBusy(false);
   };
 
-  if (loading) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
+  if (loading) return <Loading what="roles" />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 620 }}>

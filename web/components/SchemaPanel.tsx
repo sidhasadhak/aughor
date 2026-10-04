@@ -2,6 +2,7 @@
 
 import { useSchema } from "@/lib/schema-context";
 import { ERDiagram } from "./ERDiagram";
+import { Loading } from "@/components/ui/states";
 
 interface Props {
   connId: string | null;
@@ -24,7 +25,7 @@ export function SchemaPanel({ connId, connName }: Props) {
       {/* Header */}
       <div className="px-4 h-10 flex items-center border-b border-zinc-600 shrink-0">
         <span className="text-xs font-medium text-zinc-400">Schema</span>
-        {loading && <span className="text-xs text-zinc-500 ml-auto">Loading…</span>}
+        {loading && <Loading what="the schema" inline className="ml-auto" />}
       </div>
 
       {/* Content */}

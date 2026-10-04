@@ -1,5 +1,5 @@
 "use client";
-import { ErrorState, ReadFailed } from "@/components/ui/states";
+import { ErrorState, Loading, ReadFailed } from "@/components/ui/states";
 
 /**
  * Agentic Ops · Agents — ONE kind-labelled roster over both agent kinds. Since 2026-09-25
@@ -175,7 +175,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
         <CharterDetail key={charter.id} charter={charter} workspaceId={workspaceId} range={range}
           onBack={back} onChanged={reload} onError={setError} />
       ) : !loaded ? (
-        <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t3)" }}>Loading the agent…</div>
+        <Loading what="the agent" style={{ padding: 24 }} />
       ) : (
         // The selection names an agent the lists no longer hold (deleted elsewhere): the index.
         <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded} range={range}
@@ -242,7 +242,7 @@ function AgentIndex({ personas, charters, workspaceName, loaded, range, onOpen, 
         <TableBody>
           <GroupRow label="Custom agents" first
             action={<Button variant="secondary" size="xs" onClick={onCreate}>+ Create agent</Button>} />
-          {!loaded && personas.length === 0 && <NoteRow>Loading agents…</NoteRow>}
+          {!loaded && personas.length === 0 && <NoteRow><Loading what="agents" inline /></NoteRow>}
           {loaded && personas.length === 0 && (
             <NoteRow>
               <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 6px" }}>
@@ -268,7 +268,7 @@ function AgentIndex({ personas, charters, workspaceName, loaded, range, onOpen, 
               onClick={() => onOpen({ kind: "persona", id: p.id })} />
           ))}
           <GroupRow label={`Built-in agents ${workspaceName ? `· ${workspaceName}` : "· Org"}`} />
-          {!loaded && charters.length === 0 && <NoteRow>Loading built-in agents…</NoteRow>}
+          {!loaded && charters.length === 0 && <NoteRow><Loading what="built-in agents" inline /></NoteRow>}
           {charters.map(c => (
             <RosterRow key={c.id} name={c.name} kind="charter"
               enabled={c.governance.enabled} role={c.role} reserved={c.reserved}
@@ -622,7 +622,7 @@ export function AgentRuns({ agent, onOpenTrace, range }: {
   agent: UserAgent; onOpenTrace?: (invId: string) => void; range?: TimeRange;
 }) {
   const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
-  if (loading) return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</div>;
+  if (loading) return <Loading what="this agent's runs" />;
   if (error) return <ReadFailed what="this agent's runs" error={error} onRetry={retry} />;
   const runs = obs?.runs ?? [];
   if (runs.length === 0) {
@@ -717,7 +717,7 @@ function BuiltInMap({ charter }: { charter: AgentRosterEntry }) {
  *  and the two counts that make a cost a floor rather than a total. */
 export function AgentSpend({ agent, range }: { agent: UserAgent; range?: TimeRange }) {
   const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
-  if (loading) return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</div>;
+  if (loading) return <Loading what="this agent's spend" />;
   if (error || !obs) return <ReadFailed what="this agent's spend" error={error} onRetry={retry} />;
   const s = obs.spend;
   const inWindow = `in ${windowLabel(range)}`;
@@ -759,7 +759,7 @@ export function CustomAgentOverview({ agent, onOpenTrace, range }: {
 }) {
   const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
 
-  if (loading) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
+  if (loading) return <Loading what="this agent's figures" />;
   if (error || !obs) {
     return <ReadFailed what="this agent's figures" error={error} onRetry={retry} />;
   }

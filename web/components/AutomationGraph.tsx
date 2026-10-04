@@ -76,6 +76,7 @@ import {
   canRedo, canUndo, initHistory, pushHistory, redoHistory, resetHistory, undoHistory,
   type History, type PushOptions,
 } from "@/lib/history";
+import { Loading } from "@/components/ui/states";
 
 export type { AutomationGraphData };
 
@@ -1901,7 +1902,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
           // reading "Loading…" underneath its own "nothing was sent" banner. Found by
           // driving it — the banner and the body were reading two different states.
           ) : !shown ? (
-            <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: 16 }}>Loading…</div>
+            <Loading what="the run" style={{ padding: 16 }} />
           ) : (
             <ReactFlow
               nodes={execution!.nodes}

@@ -26,6 +26,7 @@ import {
   listSavedQueryVersions, diffSavedQueryVersion, restoreSavedQuery,
   type SavedQueryVersion, type SavedQueryChange,
 } from "@/lib/api";
+import { Loading } from "@/components/ui/states";
 
 export function VersionRail({
   queryId,
@@ -124,7 +125,7 @@ export function VersionRail({
       </div>
 
       {loading && (
-        <div style={{ padding: "0 12px 8px", fontSize: 13, color: "var(--t3)" }}>Loading…</div>
+        <Loading what="versions" style={{ padding: "0 12px 8px" }} />
       )}
       {!loading && versions.length === 0 && (
         <div style={{ padding: "0 12px 8px", fontSize: 13, color: "var(--t3)" }}>

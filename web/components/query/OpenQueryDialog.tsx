@@ -21,6 +21,7 @@ import { isVisualQuery } from "@/components/query/SavedQueryBar";
 import { relTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Loading } from "@/components/ui/states";
 
 /** One line of SQL, however it was written. */
 function preview(sql: string): string {
@@ -117,7 +118,7 @@ export function OpenQueryDialog({
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", borderTop: "1px solid var(--b0)" }}>
           {!loaded ? (
-            <p className="aug-fs-ui" style={{ padding: 12, color: "var(--t3)" }}>Loading…</p>
+            <Loading what="saved queries" style={{ padding: 12 }} />
           ) : tab === "saved" ? (
             savedHits.length === 0 ? (
               <p className="aug-fs-ui" style={{ padding: 12, color: "var(--t3)" }}>

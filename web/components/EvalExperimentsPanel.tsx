@@ -14,6 +14,7 @@ import { AugTable } from "@/components/AugTable";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
+import { Loading } from "@/components/ui/states";
 
 interface Props {
   connId?: string;
@@ -110,7 +111,7 @@ export function EvalExperimentsPanel({ }: Props) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-        {loading && <p className="aug-fs-ui" style={{ color: "var(--t3)" }}>Loading…</p>}
+        {loading && <Loading what="experiments" />}
         {error && <p className="aug-fs-ui" style={{ color: "var(--red4, #ef4444)", marginBottom: 12 }}>{error}</p>}
 
         {!loading && experiments.length === 0 && (

@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AutomationGraph } from "@/components/AutomationGraph";
-import { ReadFailed } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import {
   Automation,
   AutomationRun,
@@ -458,7 +458,7 @@ export function AutomationsPanel({ connId, focusId }: Props) {
             </div>
           </div>
         )}
-        {showSpinner && <div style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</div>}
+        {showSpinner && <Loading what="automations" />}
 
         {view === "list" && !showSpinner && loadError && (
           <ReadFailed what="the automations" error={loadError} onRetry={() => { void load(); }} />

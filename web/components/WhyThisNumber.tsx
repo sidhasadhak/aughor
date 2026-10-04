@@ -24,6 +24,7 @@ import { WarrantChip } from "@/components/graph/WarrantChip";
 import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
+import { Loading } from "@/components/ui/states";
 
 // A guard's action → its verdict and verb. `flagged` is the only warned one; a repair is a guard
 // doing its job and the figure surviving it — passed, never red. A receipt is never a refusal.
@@ -224,7 +225,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
 
         {/* Body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
-          {state === "loading" && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Loading receipt…</div>}
+          {state === "loading" && <Loading what="the receipt" />}
           {state === "missing" && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>No receipt is available for this answer.</div>}
           {rec && (
             <>

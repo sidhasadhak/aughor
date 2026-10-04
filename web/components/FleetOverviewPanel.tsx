@@ -50,7 +50,7 @@ import {
 import { fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
 import { compactNumber, formatCost, formatCount, pct, relTime } from "@/lib/format";
-import { ReadFailed } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { Term } from "@/components/agentops/Term";
 
 type Density = "calm" | "noc";
@@ -193,10 +193,10 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   };
 
   if (error && !data) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--red4)" }}>{error}</div>;
+    return <ReadFailed what="the overview" error={error} onRetry={load} style={{ padding: 24 }} />;
   }
   if (!data) {
-    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t2)" }}>Loading overview…</div>;
+    return <Loading what="the overview" style={{ padding: 24 }} />;
   }
 
   const { tiles } = data;
