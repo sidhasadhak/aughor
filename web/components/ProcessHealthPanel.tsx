@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getHealthScorecard, getPlatformMetrics, getAuditStats, type ScorecardItem, type HealthStatus, type PlatformMetrics, type AuditStats } from "@/lib/api";
 import { compactNumber, formatVariance } from "@/lib/format";
+import { ReadFailed } from "@/components/ui/states";
 
 const STATUS_COLORS: Record<HealthStatus, { bg: string; border: string; dot: string; text: string; label: string }> = {
   green:   { bg: "var(--grn1)", border: "var(--grn2)", dot: "var(--grn4)", text: "var(--grn4)", label: "On target" },
@@ -102,15 +103,19 @@ interface ProcessHealthPanelProps {
 export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealthPanelProps) {
   const [items, setItems] = useState<ScorecardItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // A failed read used to read as "No health metrics configured" — telling a person to go and
+  // define metrics that may well exist.
+  const [failed, setFailed] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!connectionId) return;
     setLoading(true);
     getHealthScorecard(connectionId)
-      .then(setItems)
-      .catch(() => {})
+      .then(list => { setItems(list); setFailed(null); })
+      .catch(e => setFailed(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, [connectionId]);
+  }, [connectionId, reload]);
 
   if (loading) {
     return (
@@ -121,6 +126,11 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
       </div>
     );
   }
+
+  if (failed !== null) return (
+    <ReadFailed what="the health scorecard" error={failed} onRetry={() => setReload(n => n + 1)}
+      style={{ padding: "24px 16px" }} />
+  );
 
   if (items.length === 0) return (
     <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--t3)" }}>

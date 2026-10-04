@@ -1569,18 +1569,24 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
 }) {
   const [busy, setBusy] = useState(false);
   const [charterRuns, setCharterRuns] = useState<TimelineRun[]>([]);
+  const [charterRunsError, setCharterRunsError] = useState<string | null>(null);
+  const [charterRunsReload, setCharterRunsReload] = useState(0);
 
   // A charter's runs are the JOBS of the kinds it owns — one fetch per kind, because
   // /jobs filters on a single kind. A charter that owns none skips the fetch entirely
   // rather than asking for everything and rendering somebody else's work.
   useEffect(() => {
     let alive = true;
-    if (charter.job_kinds.length === 0) { setCharterRuns([]); return; }
+    if (charter.job_kinds.length === 0) { setCharterRuns([]); setCharterRunsError(null); return; }
     // AO-3 — the jobs of the window this page captions, not the newest 20 of any age.
     const window = range ? rangeParams(range) : { range: "24h" };
-    Promise.all(charter.job_kinds.map(k => getJobs({ kind: k, limit: 20, ...window }).catch(() => [])))
+    // A kind whose read failed used to count as no runs; the timeline then said "no runs".
+    let failedRead: string | null = null;
+    Promise.all(charter.job_kinds.map(k => getJobs({ kind: k, limit: 20, ...window })
+      .catch(e => { failedRead = String(e?.message || e); return []; })))
       .then(lists => {
         if (!alive) return;
+        setCharterRunsError(failedRead);
         const rows = lists.flat()
           .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
           .slice(0, 20)
@@ -1591,7 +1597,7 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
         setCharterRuns(rows);
       });
     return () => { alive = false; };
-  }, [charter.id, charter.job_kinds, range]);
+  }, [charter.id, charter.job_kinds, range, charterRunsReload]);
 
   const patch = async (body: Parameters<typeof patchAgent>[1]) => {
     setBusy(true);
@@ -1646,9 +1652,14 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
           the jobs of its own kinds — the same rows the Overview counts, at one-agent zoom. */}
       <div style={{ marginBottom: 18 }}>
         <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Run history</div>
-        <RunTimeline runs={charterRuns} emptyNote={charter.job_kinds.length === 0
-          ? "This built-in agent owns no job kind, so it can never show runs here — its work is answered inline, not submitted as a run."
-          : `No runs in ${windowLabel(range)}.`} />
+        {charterRunsError !== null ? (
+          <ReadFailed what="this agent's runs" error={charterRunsError}
+            onRetry={() => setCharterRunsReload(n => n + 1)} />
+        ) : (
+          <RunTimeline runs={charterRuns} emptyNote={charter.job_kinds.length === 0
+            ? "This built-in agent owns no job kind, so it can never show runs here — its work is answered inline, not submitted as a run."
+            : `No runs in ${windowLabel(range)}.`} />
+        )}
       </div>
 
       {/* AO-4 — the Map a built-in agent never had: where it answers, what it runs, and

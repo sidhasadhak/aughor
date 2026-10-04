@@ -1011,7 +1011,7 @@ export interface ScorecardItem {
 
 export async function getHealthScorecard(connId: string): Promise<ScorecardItem[]> {
   const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/health-scorecard`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the health scorecard");
   return res.json();
 }
 
@@ -3128,9 +3128,9 @@ export interface KnowledgeStatus {
   };
 }
 
-export async function getKnowledgeStatus(): Promise<KnowledgeStatus | null> {
+export async function getKnowledgeStatus(): Promise<KnowledgeStatus> {
   const res = await fetch(`${getApiBase()}/knowledge/status`);
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Reading the search status");
   return res.json();
 }
 
@@ -3153,7 +3153,7 @@ export async function getDocumentFormats(): Promise<DocumentFormats | null> {
 
 export async function listDocuments(): Promise<DocumentEntry[]> {
   const res = await fetch(`${getApiBase()}/documents`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the documents");
   return res.json();
 }
 
@@ -3265,9 +3265,9 @@ export interface KnowledgeSource {
   error?: string;
 }
 
-export async function getKnowledgeSources(): Promise<{ types: KnowledgeSourceType[]; sources: KnowledgeSource[] } | null> {
+export async function getKnowledgeSources(): Promise<{ types: KnowledgeSourceType[]; sources: KnowledgeSource[] }> {
   const res = await fetch(`${getApiBase()}/knowledge/sources`);
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Reading the knowledge sources");
   return res.json();
 }
 
@@ -3764,7 +3764,7 @@ export async function deleteCanvasArtifact(canvasId: string, artifactId: string)
 
 export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHistoryItem[]> {
   const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/history?limit=${limit}`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the canvas history");
   const data = await res.json();
   return (data as { investigations: CanvasHistoryItem[] }).investigations ?? [];
 }
@@ -4140,7 +4140,7 @@ export async function getQueryHistory(
     limit: String(limit), connection_id: connectionId, label,
   });
   const res = await fetch(`${getApiBase()}/security/audit?${params}`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the query history");
   const data = await res.json();
   return (data as { records?: AuditRecord[] }).records ?? [];
 }
@@ -7194,7 +7194,7 @@ export async function getJobs(params?: {
   if (params?.since) q.set("since", params.since);
   if (params?.until) q.set("until", params.until);
   const res = await fetch(`${getApiBase()}/jobs${q.toString() ? `?${q}` : ""}`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the jobs");
   return res.json();
 }
 
@@ -7684,7 +7684,7 @@ export interface SystemFlag {
 
 export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
   const res = await fetch(`${getApiBase()}/system/flags`);
-  if (!res.ok) return {};
+  if (!res.ok) throw await refused(res, "Reading the feature flags");
   return res.json();
 }
 
@@ -7720,24 +7720,25 @@ export interface RoleAssignment {
 }
 
 /** The caller's effective identity, roles and permissions (for gating admin UI). */
-export async function getMyAccess(): Promise<MyAccess | null> {
+export async function getMyAccess(): Promise<MyAccess> {
   const res = await fetch(`${getApiBase()}/rbac/me`);
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Reading your access");
   return res.json();
 }
 
 /** The built-in role catalogue + the permissions each grants. */
 export async function getRoleCatalogue(): Promise<RoleInfo[]> {
   const res = await fetch(`${getApiBase()}/rbac/roles`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the roles");
   return res.json();
 }
 
-/** The org's role roster. Returns null when the caller can't manage roles (403). */
+/** The org's role roster. Returns null when the caller can't manage roles (403) — that is an
+ *  answer, not a failure; any other refusal throws with the server's reason. */
 export async function getRoleAssignments(): Promise<RoleAssignment[] | null> {
   const res = await fetch(`${getApiBase()}/rbac/assignments`);
   if (res.status === 403) return null;
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the role assignments");
   return res.json();
 }
 
@@ -7784,9 +7785,9 @@ export interface LevelGrant {
 }
 
 /** The ladder, the built-in groups and the org's function groups. */
-export async function getGroups(): Promise<GroupsCatalogue | null> {
+export async function getGroups(): Promise<GroupsCatalogue> {
   const res = await fetch(`${getApiBase()}/groups`);
-  if (!res.ok) return null;
+  if (!res.ok) throw await refused(res, "Reading the groups");
   return res.json();
 }
 
@@ -8042,7 +8043,7 @@ export async function restoreAgentRevision(
 
 export async function listUserAgents(): Promise<UserAgent[]> {
   const res = await fetch(`${getApiBase()}/agents/custom`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the custom agents");
   return res.json();
 }
 

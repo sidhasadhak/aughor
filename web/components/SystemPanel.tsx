@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { getDevStats, resetDevStats, getEvalGraduations, getSystemFlags, setSystemFlag, type DevStats, type EvalGraduation, type SystemFlag } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ReadFailed } from "@/components/ui/states";
 import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
 import { getApiBase, getApiBaseSource, setApiBase, normalizeApiBase, API_BASE_DEFAULT } from "@/lib/config";
@@ -357,7 +358,14 @@ function FeatureFlags() {
   // reader — two halves of one gate, wired to different stores.
   const [graduations, setGraduations] = useState<Map<string, EvalGraduation>>(new Map());
 
-  useEffect(() => { getSystemFlags().then(setFlags).catch(() => setFlags({})); }, []);
+  // A failed read used to become `{}`, and with no flags the section returned null — the
+  // flags vanished from Settings with nothing saying why.
+  const [flagsFailed, setFlagsFailed] = useState<string | null>(null);
+  const readFlags = useCallback(() => {
+    setFlagsFailed(null);
+    getSystemFlags().then(setFlags).catch(e => setFlagsFailed(e instanceof Error ? e.message : String(e)));
+  }, []);
+  useEffect(() => { readFlags(); }, [readFlags]);
   useEffect(() => {
     getEvalGraduations().then(list => {
       const latest = new Map<string, EvalGraduation>();
@@ -382,6 +390,13 @@ function FeatureFlags() {
   };
 
   const entries = Object.entries(flags);
+  if (flagsFailed !== null) {
+    return (
+      <Section title="Feature flags">
+        <ReadFailed what="the feature flags" error={flagsFailed} onRetry={readFlags} />
+      </Section>
+    );
+  }
   if (entries.length === 0) return null;
 
   // The disposition ratchet (flag strategy §5.1): group by declared KIND instead of one

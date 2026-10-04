@@ -21,7 +21,7 @@ import { isVisualQuery } from "@/components/query/SavedQueryBar";
 import { relTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { Loading } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 
 /** One line of SQL, however it was written. */
 function preview(sql: string): string {
@@ -45,17 +45,26 @@ export function OpenQueryDialog({
 
   // Fetched when OPENED, not when mounted — this dialog spends most of its life
   // closed, and a stale list behind a search box misleads more than an empty one.
+  // A list whose read failed used to show its empty sentence ("Nothing has run on this
+  // connection yet"); each says it could not be read now, with a Retry.
+  const [savedFailed, setSavedFailed] = useState<string | null>(null);
+  const [recentFailed, setRecentFailed] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     if (!open || !connId) return;
     setLoaded(false);
     setSearch("");
+    const said = (e: unknown) => (e instanceof Error ? e.message : String(e));
     Promise.allSettled([listSavedQueries(connId), getQueryHistory(connId, 30)])
       .then(([s, r]) => {
         setSaved(s.status === "fulfilled" ? s.value : []);
         setRecent(r.status === "fulfilled" ? r.value : []);
+        setSavedFailed(s.status === "rejected" ? said(s.reason) : null);
+        setRecentFailed(r.status === "rejected" ? said(r.reason) : null);
         setLoaded(true);
       });
-  }, [open, connId]);
+  }, [open, connId, reload]);
+  const retry = () => setReload(n => n + 1);
 
   useEffect(() => {
     if (!open) return;
@@ -120,7 +129,9 @@ export function OpenQueryDialog({
           {!loaded ? (
             <Loading what="saved queries" style={{ padding: 12 }} />
           ) : tab === "saved" ? (
-            savedHits.length === 0 ? (
+            savedFailed !== null ? (
+              <ReadFailed what="the saved queries" error={savedFailed} onRetry={retry} style={{ padding: 12 }} />
+            ) : savedHits.length === 0 ? (
               <p className="aug-fs-ui" style={{ padding: 12, color: "var(--t3)" }}>
                 {saved.length === 0
                   ? "No saved queries for this connection yet — Save names the current tab."
@@ -145,6 +156,8 @@ export function OpenQueryDialog({
                 </span>
               </Button>
             ))
+          ) : recentFailed !== null ? (
+            <ReadFailed what="the recent runs" error={recentFailed} onRetry={retry} style={{ padding: 12 }} />
           ) : recentHits.length === 0 ? (
             <p className="aug-fs-ui" style={{ padding: 12, color: "var(--t3)" }}>
               {recent.length === 0 ? "Nothing has run on this connection yet." : "Nothing matches this search."}

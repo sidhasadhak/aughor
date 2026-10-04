@@ -9,7 +9,7 @@ import {
   type GroupsCatalogue, type LevelGrant, type ActionTrigger,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Loading } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 
 const ROLE_TINT: Record<string, string> = {
   owner: "var(--blue4)",
@@ -57,23 +57,31 @@ export function RolesPanel() {
 
   const canManage = !!me?.permissions.includes("admin.manage_roles");
 
+  // A failed read of who you are, the roles or the groups used to come back empty: the panel
+  // then drew its read-only view — as if you lacked the permission — with no roles and no groups.
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
   const load = useCallback(async () => {
-    const [m, cat, au, gc, trg] = await Promise.all([
-      getMyAccess(), getRoleCatalogue(), getAdminUsers(), getGroups(), getActionTriggers(),
-    ]);
-    setMe(m);
-    setRoles(cat);
-    setAdminUsers(au);
-    setCatalogue(gc);
-    setTriggers(trg);
-    setAssignments(m?.permissions.includes("admin.manage_roles") ? await getRoleAssignments() : null);
+    setLoadFailed(null);
+    try {
+      const [m, cat, au, gc, trg] = await Promise.all([
+        getMyAccess(), getRoleCatalogue(), getAdminUsers(), getGroups(), getActionTriggers(),
+      ]);
+      setMe(m);
+      setRoles(cat);
+      setAdminUsers(au);
+      setCatalogue(gc);
+      setTriggers(trg);
+      setAssignments(m?.permissions.includes("admin.manage_roles") ? await getRoleAssignments() : null);
+    } catch (e) {
+      setLoadFailed(refusal(e));
+    }
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const refreshGroups = useCallback(async () => {
-    setCatalogue(await getGroups());
+    try { setCatalogue(await getGroups()); } catch (e) { setErr(refusal(e)); }
   }, []);
 
   const openGroupDetails = useCallback(async (groupId: string) => {
@@ -122,7 +130,7 @@ export function RolesPanel() {
   };
 
   const refreshRoster = useCallback(async () => {
-    setAssignments(await getRoleAssignments());
+    try { setAssignments(await getRoleAssignments()); } catch (e) { setErr(refusal(e)); }
   }, []);
 
   const onAssign = async () => {
@@ -145,6 +153,7 @@ export function RolesPanel() {
   };
 
   if (loading) return <Loading what="roles" />;
+  if (loadFailed !== null) return <ReadFailed what="the roles and groups" error={loadFailed} onRetry={load} />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 620 }}>

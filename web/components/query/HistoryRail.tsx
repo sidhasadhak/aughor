@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getQueryHistory, type AuditRecord } from "@/lib/api";
 import { relTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { ReadFailed } from "@/components/ui/states";
 
 const VERDICT_COLOR: Record<string, string> = {
   safe: "var(--grn4)",
@@ -41,12 +42,14 @@ export function HistoryRail({
 }) {
   const [rows, setRows] = useState<AuditRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // A failed read used to empty the rail under "Queries you run here appear in this list".
+  const [failed, setFailed] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    if (!connId) { setRows([]); setLoaded(true); return; }
+    if (!connId) { setRows([]); setFailed(null); setLoaded(true); return; }
     getQueryHistory(connId)
-      .then(setRows)
-      .catch(() => setRows([]))
+      .then(r => { setRows(r); setFailed(null); })
+      .catch(e => { setRows([]); setFailed(e instanceof Error ? e.message : String(e)); })
       .finally(() => setLoaded(true));
   }, [connId]);
 
@@ -65,7 +68,10 @@ export function HistoryRail({
         <Button variant="ghost" size="xs" onClick={load} title="Refresh">↻</Button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 8px" }}>
-        {loaded && rows.length === 0 && (
+        {loaded && failed !== null && (
+          <ReadFailed what="the query history" error={failed} onRetry={load} style={{ padding: "6px 4px" }} />
+        )}
+        {loaded && failed === null && rows.length === 0 && (
           <div style={{ fontSize: 13, color: "var(--t3)", padding: "6px 4px", lineHeight: 1.5 }}>
             Queries you run here appear in this list.
           </div>

@@ -150,7 +150,7 @@ const CONN_TAG: Record<string, { label: string; color: string; bg: string; borde
 
 import { getApiBase } from "@/lib/config";
 import { Icon } from "@/components/ui/icon";
-import { Loading } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
 const _KNOWLEDGE     = ["confluence", "notion"];
 const _FILE_UPLOAD   = ["local_upload"];
@@ -1422,18 +1422,25 @@ function SchemaDocsTab({ entry, onOpenDocuments }: {
   const [docs, setDocs] = useState<DocumentEntry[]>([]);
   const [status, setStatus] = useState<KnowledgeStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  // A failed read of the documents used to read as "Nothing compiled yet".
+  const [failed, setFailed] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let alive = true;
-    Promise.all([listDocuments().catch(() => []), getKnowledgeStatus().catch(() => null)])
-      .then(([d, st]) => {
+    let docsFailed: string | null = null;
+    Promise.all([
+      listDocuments().catch(e => { docsFailed = String(e?.message || e); return [] as DocumentEntry[]; }),
+      getKnowledgeStatus().catch(() => null),
+    ]).then(([d, st]) => {
         if (!alive) return;
         setDocs(d.filter(x => x.doc_id.startsWith(`doctree::${entry.conn_id}::`)));
         setStatus(st);
+        setFailed(docsFailed);
         setLoading(false);
       });
     return () => { alive = false; };
-  }, [entry.conn_id]);
+  }, [entry.conn_id, reload]);
 
   return (
     <div style={{ maxWidth: 640 }}>
@@ -1446,6 +1453,8 @@ function SchemaDocsTab({ entry, onOpenDocuments }: {
 
       {loading ? (
         <Loading what="the schema documentation" />
+      ) : failed !== null ? (
+        <ReadFailed what="the schema documentation" error={failed} onRetry={() => setReload(n => n + 1)} />
       ) : docs.length === 0 ? (
         <p className="aug-fs-sm" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
           Nothing compiled yet. Schema documentation is written when intelligence runs over

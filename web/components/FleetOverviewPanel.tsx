@@ -119,12 +119,16 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   // used to fall through to its empty state ("No agent runs in this window", "Nothing
   // needs a human"), which is the one thing a failed read must never say.
   const [chartError, setChartError] = useState<string | null>(null);
+  const [jobsError, setJobsError] = useState<string | null>(null);
   const [attentionError, setAttentionError] = useState<string | null>(null);
   const load = useCallback(() => {
     getFleetOverview({ ...params, include_runners: showRunners })
       .then(d => { setData(d); setError(null); })
       .catch(e => setError(String(e?.message || e)));
-    getJobs({ limit: 200 }).then(setJobs).catch(() => {});
+    // A failed read used to leave the list on "Nothing running right now".
+    getJobs({ limit: 200 })
+      .then(j => { setJobs(j); setJobsError(null); })
+      .catch(e => setJobsError(String(e?.message || e)));
     // `source: "jobs"` — this chart is headed "Runs by agent" and must plot the same runs
     // the Runs tile counts. Grouping model CALLS by charter draws an honest chart of a
     // different quantity, and on any history predating the attribution column every bar
@@ -569,7 +573,9 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
           </div>
           <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
                         borderRadius: "var(--r3)", overflow: "hidden" }}>
-            {filteredJobs.length === 0 ? (
+            {jobsError !== null ? (
+              <ReadFailed what="the jobs" error={jobsError} onRetry={load} style={{ padding: "12px 14px" }} />
+            ) : filteredJobs.length === 0 ? (
               <p className="aug-fs-sm" style={{ color: "var(--t2)", padding: "12px 14px", margin: 0 }}>
                 {jobFilter === "active" ? "Nothing running right now." : "No jobs match this filter."}
               </p>
