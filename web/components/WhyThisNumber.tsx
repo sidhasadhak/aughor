@@ -17,6 +17,7 @@ import {
   type AnswerTrace, type PublicReceipt, type PublicReceiptGuard, type TracedNode,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { renderEmphasis } from "@/components/brief/BriefProse";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
@@ -239,7 +240,7 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
           {rec && (
             <>
               {rec.headline && (
-                <div style={{ fontSize: 13, color: "var(--t1)", fontWeight: 500, lineHeight: 1.5 }}>{rec.headline}</div>
+                <div style={{ fontSize: 13, color: "var(--t1)", fontWeight: 500, lineHeight: 1.5 }}>{renderEmphasis(rec.headline)}</div>
               )}
 
               {rec.executed_sql.length > 0 && (

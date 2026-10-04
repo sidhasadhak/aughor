@@ -110,6 +110,23 @@ def _table_block(columns, rows, *, caption: str, money_symbol: str) -> Block:
                  rows=format_rows(columns, rows, money_symbol=money_symbol), caption=caption)
 
 
+def _exhibit_caption(columns) -> str:
+    """A short title for a grid's chart or table: "Revenue and Items by Category".
+
+    A chat answer's chart used to be handed the answer's whole headline as its title. The
+    page already prints the headline; drawn inside an SVG 760 wide, a 150-character sentence
+    ran off the figure and squeezed the plot into a third of it, so its axis labels collided
+    (measured 2026-10-04 on theLook turn 47a130145460); and a deck's slide wrote it, `**`
+    included, as the slide's title. The grid's own columns name what it shows."""
+    from aughor.answer.exhibit import clean_label
+    labels = [clean_label(str(c)) for c in (columns or []) if str(c).strip()]
+    if len(labels) < 2:
+        return labels[0] if labels else ""
+    measures = labels[1:]
+    said = measures[0] if len(measures) == 1 else ", ".join(measures[:-1]) + f" and {measures[-1]}"
+    return f"{said} by {labels[0]}"
+
+
 def _exhibit_key(columns, rows) -> str:
     """A stable key for a grid, for spotting an exhibit the document already drew.
 
@@ -287,7 +304,8 @@ def _build_chat(inv: dict, money_symbol: str = "") -> ExportDoc:
         blocks.append(_bul(list(rep["approach"])))
 
     blocks.append(_h("Evidence"))
-    blocks.extend(_chart_or_table(rep.get("columns"), rep.get("rows"), rep.get("chart_type"), headline,
+    blocks.extend(_chart_or_table(rep.get("columns"), rep.get("rows"), rep.get("chart_type"),
+                                  _exhibit_caption(rep.get("columns")) or headline,
                                   money_symbol=money_symbol))
 
     if rep.get("sql"):
@@ -332,7 +350,8 @@ def _build_envelope(inv: dict, money_symbol: str = "") -> ExportDoc:
     if grid.get("columns") and grid.get("rows"):
         blocks.append(_h("Evidence"))
         blocks.extend(_chart_or_table(grid["columns"], grid["rows"],
-                                      chart.get("chart_type") or "auto", headline,
+                                      chart.get("chart_type") or "auto",
+                                      _exhibit_caption(grid["columns"]) or headline,
                                       money_symbol=money_symbol))
     if env.get("caveats"):
         blocks.append(_h("Caveats"))

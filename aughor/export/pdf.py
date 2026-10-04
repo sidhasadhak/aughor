@@ -67,10 +67,19 @@ def _esc(s) -> str:
 
 def _rich(s) -> str:
     """Escape, then convert **markdown bold** → reportlab <b> markup (the report
-    prose embeds `**…**` around key numbers)."""
+    prose embeds `**…**` around key numbers), and drop inline-code backticks — an
+    answer reads bold or normal, never as code."""
     out = _esc(s)
     out = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", out)
+    out = re.sub(r"`([^`\n]+)`", r"\1", out)
     return out
+
+
+def _unmarked(s) -> str:
+    """Text with its markdown emphasis and inline-code markers removed — for a line already set
+    in bold, where emphasis has nothing left to add."""
+    out = re.sub(r"\*\*(.+?)\*\*", r"\1", str(s or ""))
+    return re.sub(r"`([^`\n]+)`", r"\1", out)
 
 
 def _image(png: bytes, max_w: float = _CONTENT_W):
@@ -246,7 +255,11 @@ def render_pdf(doc: ExportDoc) -> bytes:
         leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
         title=doc.title, author="Aughor",
     )
-    story: list = [Paragraph(_esc(doc.title), S["title"])]
+    # The title is an answer's headline, and 9% of live headlines carry markdown (`**…**`,
+    # backticks) — printed escaped, the reader saw the asterisks (2026-10-04). The markers are
+    # dropped, not turned into <b>: the title is bold already, and a <b> inside a bold style
+    # sets the whole line in the regular weight.
+    story: list = [Paragraph(_esc(_unmarked(doc.title)), S["title"])]
     if doc.subtitle and doc.subtitle != doc.title:
         story.append(Paragraph(_esc(doc.subtitle), S["subtitle"]))
     if doc.meta:

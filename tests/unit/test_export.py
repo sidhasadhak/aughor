@@ -189,3 +189,22 @@ def test_every_figure_links_back_to_its_receipt(monkeypatch):
     deck = zipfile.ZipFile(io.BytesIO(export_report(inv, "pptx")[0]))
     assert any(b"https://aughor.example.com/receipt/r123abc" in deck.read(n)
                for n in deck.namelist() if n.startswith("ppt/slides/_rels/"))
+
+
+def test_a_chat_answers_chart_is_captioned_by_its_grid_and_its_title_reads_clean():
+    """A chat answer's chart was handed the whole headline as its title: drawn in a 760-wide
+    figure it ran off the edge and squeezed the plot until its axis labels collided, and a deck
+    wrote it, `**` included, as the slide's title. The grid's columns name what it shows, and
+    the title drops its markdown markers."""
+    from aughor.export.pdf import _unmarked
+
+    inv = {"id": "e1", "kind": "chat", "question": "top categories?", "connection_id": "demo",
+           "report": {"envelope": {
+               "headline": "Jeans led with **$54,496.64** in `August`",
+               "grid": {"columns": ["product_category", "revenue", "items"],
+                        "rows": [["Jeans", 54496.64, 573], ["Swim", 26143.13, 473]]},
+               "chart": {"chart_type": "bar"}}}}
+    doc = build_export_doc(inv)
+    captions = [b.caption for b in doc.blocks if b.kind in ("chart", "table") and b.caption]
+    assert captions == ["Revenue and Items by Product Category"]
+    assert _unmarked(doc.title) == "Jeans led with $54,496.64 in August"

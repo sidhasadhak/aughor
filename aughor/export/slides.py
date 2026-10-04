@@ -74,6 +74,7 @@ def _para(tf, text, *, size=14, bold=False, color=_BODY, bullet=False, space_bef
 
     if bullet:
         _run("•  ", False)
+    text = re.sub(r"`([^`\n]+)`", r"\1", text)    # an answer reads bold or normal, never as code
     # split on **bold** so emphasis survives into the deck (one run per segment)
     pos, segs = 0, []
     for m in _BOLD_RE.finditer(text):
