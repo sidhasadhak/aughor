@@ -19,6 +19,8 @@ DX, PX, KI, DS, VA, JD, CB), the loose ends, and the cockpit's open defects.*
 *Ticked again 2026-10-04 on #565's merge (`9fc94e4f`, byte-identical to the head CI tested): every line it
 changed names #565; a line it only measured keeps its box.*
 
+*Placed against the 2027 study on 2026-10-04 and the study ADOPTED the same day (ROADMAP §6 item 39): twenty items — twenty-two lines, TJ-5 and TJ-6 appearing twice — are struck below with the kill, class or refusal each contradicts. The phase of every kept line is in the study's own placement section ([docs/PLATFORM_2027_STUDY_2026-10-04.md](docs/PLATFORM_2027_STUDY_2026-10-04.md), "The pending ledger against this roadmap") and is not carried line by line here.*
+
 ---
 
 ## The order of work — by impact (agreed 2026-09-23; revised the same day: 10 off, 11–15 added from Arc ON; 16–31 added 2026-09-24; 32–37 added 2026-09-25 from Arc TJ, unranked against the rest; 38–45 added 2026-09-26 from Arc BR, likewise unranked; 48 added 2026-09-28 from Arc CT, likewise unranked; 49 added 2026-10-02 from Arc DE, likewise unranked; 50 added 2026-10-03 from Arc AO, likewise unranked)
@@ -85,8 +87,8 @@ because they are free, then the gym. Their rank against 1–31 is the user's; th
 33. [~] **One record per run** (TJ-2) — built 2026-09-26: the `step` event, `trajectory_of` + `GET /traces/{id}/trajectory`, one id for a rollout; open: exporters reading it, the guard table's second meaning, the explorer's step log — — a step event on the session log carrying tool, SQL, counts, errors and guard fires always, and the arguments and the model's words only under the capture window or the annex; one read that walks question → steps → SQL → guard → verdict for a chat turn, a deep run, a scheduled brief and an automation step; the exporters read it and nothing else; the guard table says which of its two meanings a row has. *About a week.* *The built part merged 2026-09-26 · #552 (`4bd6fc9f`).*
 34. [x] **A reward that takes both values** (TJ-3) — one deterministic run label (ran, rows, guards clean, re-check stable, no reject) with `unlabeled` as the default, step credit only to the statement a verdict names, confidence NULL when none was given; its live distribution published before anything reads it. ⚑ Then a person audits 50–100 bronze rows and the sheet is committed. *Two to three days plus one sitting.* *Built and **merged 2026-09-26 · #553** (`c4d058c5`) — the deterministic run label, the distribution door and the audit sheet.*
 35. [x] ⚑ **Labels where readers already are** (TJ-4) — ✅ and ❌ on a Slack answer record a verdict on its turn (needs the app's `reactions:read` scope and a `reaction_added` subscription, the owner's); a mark on the Departures screen feeds probation precision and the verdict store at once. *One to two days.* *Built and **merged 2026-09-26 · #553** (`c4d058c5`) — ✅/❌ record a verdict and the Departures marks follow. **Not yet live**: still needs the app's `reactions:read` scope and a `reaction_added` subscription, which are the owner's.*
-36. [ ] ⚑ **The gym** (TJ-5) — problems with known answers from the declared ontology's compiler, the 139 hand-written pairs, the pack templates and the paraphrase set, with no model; K rollouts per problem through the real answer path on the local warehouses, every candidate kept and scored by execution match on one comparator; correct ones to SFT, wrong-versus-right to preference pairs, repairs to repair pairs; the router's label rides along. Paid model runs under a ceiling in tokens; before any training, the corpus must lift held-out accuracy as few-shot context (paired, n ≥ 50, interval excluding zero). *Two weeks plus the batches.*
-37. [ ] ⚑ **Serving a student** (TJ-6) — a generic OpenAI-compatible binding with a base URL and a key, and the adapter artifact record; recommended deferred until MI-4 chooses rented serving, since Ollama serves a fine-tune locally today. *A day or two, when wanted.*
+36. ~~[ ] ⚑ **The gym** (TJ-5) — problems with known answers from the declared ontology's compiler, the 139 hand-written pairs, the pack templates and the paraphrase set, with no model; K rollouts per problem through the real answer path on the local warehouses, every candidate kept and scored by execution match on one comparator; correct ones to SFT, wrong-versus-right to preference pairs, repairs to repair pairs; the router's label rides along. Paid model runs under a ceiling in tokens; before any training, the corpus must lift held-out accuracy as few-shot context (paired, n ≥ 50, interval excluding zero). *Two weeks plus the batches.*~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 1, the fine-tuning destination; its first half — problems with known answers from the compiler, scored by execution — survives as the golden-suite generator (phase 1).*
+37. ~~[ ] ⚑ **Serving a student** (TJ-6) — a generic OpenAI-compatible binding with a base URL and a key, and the adapter artifact record; recommended deferred until MI-4 chooses rented serving, since Ollama serves a fine-tune locally today. *A day or two, when wanted.*~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 1.*
 
 Fifth build order (2026-09-26, the user: *"Yes.. draft it all in the roadmap.."*, after their questions on the
 Briefing's Day, Month and Year and on arbitrary date ranges): 38–45 are Arc BR's waves (ROADMAP §3.48) in the arc's own
@@ -189,7 +191,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] CT-4 the Cockpit tab — the Data Canvas's fourth tab, behind `cockpit.composed`, off by default. **BUILT 2026-09-28**, merged in #555; seen live against the demo warehouse. No model call. **⤳ Superseded by CT-10 the same day:** the tab left the canvas, which is for questions and deep analysis.
 - [x] A card read for a range showed its all-time figure under the range's label (BR-9's defect; the Briefing's cockpit too) — fixed in CT-4: a run says its own `value` and the card draws it. Not merged.
 - [ ] Nothing says a card is withheld yet — the platform has no rule for which cards a reader may not see.
-- [ ] Pinning a finding or a query from a canvas's chat keeps the card for the connection, not for the canvas.
+- ~~[ ] Pinning a finding or a query from a canvas's chat keeps the card for the connection, not for the canvas.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 7, canvases as surfaces to improve; the cockpit left the canvas with CT-10.*
 - [x] ⚑ CT-5 ask for it — one proposal, approved all or nothing; edits as patches; the receipt spends model calls (§6 item 36(f)). **BUILT 2026-09-28** on `claude/cockpit-json-render-study`, **merged 2026-09-28 · #555**: `aughor/agent/cockpit_tool.py` (one tool, three shapes of call), `aughor/cockpit/propose.py`, the inbox kind `cockpit_draft`, `aughor/dashboard/doors.py`, `web/lib/cockpit/patch.ts` and `grammar.ts`, the approval card's cockpit branch. Run live with no model: versions 5 and 6 on this branch's own servers. Its receipt by a model was run the same day; falsifier (2) fired.
 - [x] ⚑ CT-5's receipt by a model — **RUN 2026-09-28** at the user's word, ten asks on theLook with `deepseek/deepseek-v4.1-flash`. **Falsifier (2) FIRED: 4 of 10 first drafts passed.** `options` was called first in 10 of 10; all ten ended staged, in 1.7 drafts on average; no draft was refused for anything outside the catalog. 54 model calls, about 67,000 tokens in per ask.
 - [x] ⚠ **The cockpit's prompt was wrong in three places the receipt named** — repaired 2026-09-28: the cap of 12 new cards is told (in `options`, in what it says of drafting, in the tool's schema); the reasoning may name a limit the draft sets; a name the draft never declared is refused with its repair. **The ten asks again: 10 of 10 first drafts passed**, 42 calls.
@@ -246,8 +248,8 @@ Just outside the list: the next industry package (insurance has public data to t
 - [~] TJ-2 one record per run — see top item 33; the record and the read are built, three bullets open.
 - [~] TJ-3 a reward that takes both values — see top item 34. The label, its distribution door and the audit sheet built 2026-09-26; step credit, a NULL confidence and ⚑ the audit sitting remain. The built part merged 2026-09-26 · #553.
 - [x] ⚑ TJ-4 labels where readers are — see top item 35. Built 2026-09-26; ⚑ the owner grants `reactions:read` + `reaction_added` (re-install from the manifest) before a reaction reaches the bot.
-- [ ] ⚑ TJ-5 the gym — see top item 36.
-- [ ] ⚑ TJ-6 serving a student — see top item 37; recommended deferred.
+- ~~[ ] ⚑ TJ-5 the gym — see top item 36.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 1; see top item 36's line.*
+- ~~[ ] ⚑ TJ-6 serving a student — see top item 37; recommended deferred.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 1.*
 - [x] §6 item 32's six clauses — DECIDED 2026-09-26, all as recommended; the gym (d) and reactions (c) still wait on the user's word and the app owner's scope to RUN.
 - [~] The fifteen defects the census lists (its §10) — closed 2026-09-26: 1 (receipt model id), 2 (decision trace), 4 (slashless id), 9 (missing bytes now said); 3 (history trace) was already closed by #547's writer, the census counted older rows; open: 10 (collections) closed at 15:52Z with the first point; the rest close inside TJ-2; the stale docstrings and the README's two phantom files ride the next touch of their files.
 
@@ -265,13 +267,13 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] Screenshot of the owners panel still owed.
 
 ### Typed judgments — Arc JD (§3.20)
-- [ ] ⚑ JD-1's agreement receipt and JD-4's corpus receipt — both are paid model runs not yet approved.
+- ~~[ ] ⚑ JD-1's agreement receipt and JD-4's corpus receipt — both are paid model runs not yet approved.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 5, the cheap-model line — what is there is left alone, not extended.*
 - [ ] The outside cheap judge (Jev) is on in the live app; nobody has checked whether it behaves live the way it did in testing (band occupancy ~7%, fallback rate).
-- [ ] JD-6, a small local scorer — on hold behind JD-4's measurement.
+- ~~[ ] JD-6, a small local scorer — on hold behind JD-4's measurement.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 5; kill 1.*
 - [ ] A2, sending close calls to a person — blocked because nothing yet produces a real confidence number (`converse.tool` never does).
 - [ ] A3, the metric-definition report screen — built, never tried in the live app.
 - [ ] A5 — users' questions are stored word for word in the decision log with no expiry, only a row cap.
-- [ ] A6, auto-tuning metric definitions — held until ~150 human-labelled decisions exist; there are 5.
+- [ ] A6, ~~auto-tuning metric definitions~~ — held until ~150 human-labelled decisions exist; there are 5. *The auto-apply half struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): §D item 6 — a definition is declared by a person, a model may only propose. What remains is the Steward duty: a model proposes, a person confirms (phase 2).*
 
 ### The hub — Arc HB (§3.18)
 - [ ] Group permissions are recorded but not enforced — waits on real sign-in.
@@ -287,10 +289,10 @@ Just outside the list: the next industry package (insurance has public data to t
 
 ### Industry packages — Arc IP (§3.17)
 - [ ] ⚑ Banking is built but inactive (draft) until a person reviews and activates it in the UI; activation must also stop "Retail Banking" matching the retail package.
-- [ ] Payments & fintech next, then insurance, plus a risk-and-fraud function — payments has no public per-company data to test on and insurance does, which may flip the order.
+- ~~[ ] Payments & fintech next, then insurance, plus a risk-and-fraud function — payments has no public per-company data to test on and insurance does, which may flip the order.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): §P chose five verticals — commerce, B2B SaaS, banking, logistics, manufacturing; revisit after phase 6.*
 - [ ] Loan-level lending metrics are not covered: delinquency buckets, roll rates, vintages, approval rates.
-- [ ] ⚑ The paid with-and-without-package test on airline (gate 5), which the arc's proof depends on — waits on the user's go.
-- [ ] More airline metrics — load factor needs a data download the user approves; others need revenue sources or checked ranges.
+- ~~[ ] ⚑ The paid with-and-without-package test on airline (gate 5), which the arc's proof depends on — waits on the user's go.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): airline is not one of §P's five; the gate becomes a pack's measured record on connect (phase 6).*
+- ~~[ ] More airline metrics — load factor needs a data download the user approves; others need revenue sources or checked ranges.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): airline is not one of §P's five.*
 - [ ] The SQL auto-fixer ignores the packages' data-quality checks, and one wrong metric-name match still stands.
 - [ ] Old data-quality queries still name sample tables; drafting a new package is still manual.
 - [ ] The install's industry question is untested in a real Windows console; the profile prompt does not name the chosen industries.
@@ -323,7 +325,7 @@ Just outside the list: the next industry package (insurance has public data to t
 
 ### Design system — Arc UI (§3.16)
 - [~] ~30 components with hard-coded colours, ~46 bare "Loading…" lines and ~50 bare error lines to replace with proper states, plus the needs-human badge. *Merged 2026-10-04 · #565: the loading lines — 36 of the 37 measured moved onto `<Loading what>`, named and announced (the last is an `<option>` label), and `lib/listLoadingStates.test.ts` keeps new ones out; the failed reads behind the main screens say so with `ReadFailed` and a Retry, a refused admin write says the server's reason, and `lib/apiHiddenFailures.test.ts` holds the 32 helpers that still hide a refusal. Open: the hard-coded colours, the needs-human badge, a multi-line "Loading history…" the ratchet cannot see, and the bare error lines whose panel shares one state between a failed read and a failed save.*
-- [ ] The Human/Agent/Substrate switcher — held until there is a concrete use for it.
+- ~~[ ] The Human/Agent/Substrate switcher — held until there is a concrete use for it.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 11 — the three planes are architecture, not a control a person uses.*
 
 ### Spotlight, the ⌘K operator — Arc SP (§3.11)
 - [ ] The guide cannot search the text of packs and skills.
@@ -334,7 +336,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] Revise-in-place and the edit, monitor and brief drafts have not been proven live.
 - [x] Finishing a draft in the editor drops its timezone and its run-as agent. *Fixed and merged 2026-10-04 · #565 — wider than written: every canvas save of a chain also reset its clock and un-exposed it from MCP. The draft's clock and run-as agent reach the saved chain, and a save keeps what other doors set.*
 - [ ] Slack approvals are not tied to the approver's identity, and there has been no proof run from a fresh clone.
-- [ ] The weekly count of new agents and automations is not shown in Agent Ops.
+- ~~[ ] The weekly count of new agents and automations is not shown in Agent Ops.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 3 — Operations shows work by duty, not a headcount of agents.*
 - [ ] Answer buttons that open a screen or run a saved query wait on a deep-link registry.
 - [ ] Table-popularity data is collected, but the switch that would use it is off.
 - [x] **SP-15 (drafted 2026-09-25, §6 item 33) — BUILT 2026-09-26 (`claude/clean-panels-evidence-keys`, unmerged):** `explain` (departure · automation · metric) on every transport; the departure laws in `platform_help` read from the gate's own docstring, with the remedy table moved server-side (`govern/departure_remedies.py`, served on every held row); the Ask door hands `{kind, id}` structurally and the turn opens on the object. The second shelf (glossary + arc summaries) and the Ask door's uptake measure (`ask_door` on `/departures/summary`) followed the same day, and the live re-ask receipt landed after the restart: 4 tool calls and a complete answer against 8 and none (§3.11 SP-15's status). Agent and analysis followed as `explain` kinds, and SP-M's vocabulary meter got its route (`GET /spotlight/uptake`, beside the Ask door's). Nothing of SP-15 is open.
@@ -342,11 +344,11 @@ Just outside the list: the next industry package (insurance has public data to t
 ### Machine intelligence — Arc MI (§3.9)
 - [ ] ⚑ Should cap hits, guardrail events, metric enforcement and budget overruns show in the governance feed? Today they do not.
 - [ ] The chooser-confidence switch has never run — it needs a question set with two competing measures, then it is kept or deleted.
-- [ ] MI-4, the first fine-tuned text-to-SQL model — waits on 1,000 training pairs, 150 preference pairs, 150 gold examples and 30 days of guard data. *Measured 2026-09-24: the exporter that would feed it has five defects and the chat cannot record an accept — see top items 23 and 24.* *Re-measured live 2026-09-24 after #547: 0 of 1,000 · 0 of 150 · 5 of 150 · 21 of 30 days, and the two machine-graded tiers never exported; Arc TJ (§3.47, top items 32–37) is the arc that fills them.*
-- [ ] MI-5/MI-6 — a model shipped with the app, adapter releases and RL training all wait behind MI-4.
+- ~~[ ] MI-4, the first fine-tuned text-to-SQL model — waits on 1,000 training pairs, 150 preference pairs, 150 gold examples and 30 days of guard data. *Measured 2026-09-24: the exporter that would feed it has five defects and the chat cannot record an accept — see top items 23 and 24.* *Re-measured live 2026-09-24 after #547: 0 of 1,000 · 0 of 150 · 5 of 150 · 21 of 30 days, and the two machine-graded tiers never exported; Arc TJ (§3.47, top items 32–37) is the arc that fills them.*~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 1; class E — the graded ledger and the trajectory record stay, as evaluation data.*
+- ~~[ ] MI-5/MI-6 — a model shipped with the app, adapter releases and RL training all wait behind MI-4.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 1; §8, no model weights in the repo.*
 
 ### Documents — Arc DX (§3.13)
-- [ ] Re-indexing does not re-read the original files, and documents cannot be placed on the canvas.
+- [ ] Re-indexing does not re-read the original files~~, and documents cannot be placed on the canvas~~. *The canvas half struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 7.*
 - [ ] Understanding what a chart inside a PDF shows needs reading the page as an image.
 - [ ] Short Confluence and Notion pages silently disappear during indexing.
 
@@ -359,17 +361,17 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] Importing from private Google Sheets and Drive — parked until a deployment asks.
 
 ### Automations canvas — Arc DS (§3.7, §3.8)
-- [ ] ⚑ The palette's Runs side rail was claimed as shipped and never existed — rewrite its spec or drop it.
-- [ ] Ports and wires are not coloured by data type.
-- [ ] Greyed-out palette items explain how to enable them but give no link.
+- ~~[ ] ⚑ The palette's Runs side rail was claimed as shipped and never existed — rewrite its spec or drop it.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 7 — dropped, not rewritten.*
+- ~~[ ] Ports and wires are not coloured by data type.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 7.*
+- ~~[ ] Greyed-out palette items explain how to enable them but give no link.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 7.*
 - [ ] The "pause for a human" step works but is off by default, so it never fires on a normal install.
 - [~] Connectors, platform tools and our own MCP tools are listed in the palette but cannot be placed on the canvas. *Merged 2026-10-04 · #565: the "Call an MCP tool" step has a form — an allowlisted server, a tool the step may call, its arguments typed by their schema; not yet seen in a browser. Connectors and platform tools are not re-measured.*
 - [ ] The metric step returns one number rather than a breakdown, and entities have no step.
-- [ ] ⚑ Shipping bundles of steps inside packs is unbuilt, and no web-search vendor has been chosen.
+- [ ] ⚑ Shipping bundles of steps inside packs is unbuilt~~, and no web-search vendor has been chosen~~. *The web-search half struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): no mechanism in the study needs it. The bundles are phase 7 — templates are declarations.*
 - [x] An automation newly exposed as an MCP tool only appears after the client reconnects. *Fixed and merged 2026-10-04 · #565: the exposed automations are one of the three rosters the server re-reads and announces with `list_changed`.*
 - [ ] Promoting a chain's private SQL and reusing it in another chain has never been shown live.
-- [ ] ⚑ Langflow steps we lack: file read/write, a calculator, the current date, a raw LLM step — a posture call, and the roadmap leans against the last one.
-- [ ] The drag fix and the drop-a-wire gesture still need one hands-on test by a person and a React Profiler trace — no tool here can drive a drag.
+- ~~[ ] ⚑ Langflow steps we lack: file read/write, a calculator, the current date, a raw LLM step — a posture call, and the roadmap leans against the last one.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 7; and a raw LLM step contradicts §H — anything that must give the same answer twice is code.*
+- ~~[ ] The drag fix and the drop-a-wire gesture still need one hands-on test by a person and a React Profiler trace — no tool here can drive a drag.~~ *Struck 2026-10-04 on the 2027 study's adoption (ROADMAP §6 item 39): kill 7.*
 
 ### MCP, credentials and sign-in — VA-9d, VA-10, VA-11 (§3.1, §3.4, §3.5)
 - [ ] ⚑ One Composio or Arcade tool run end to end through a custom MCP server with a real API key — the user's to run.

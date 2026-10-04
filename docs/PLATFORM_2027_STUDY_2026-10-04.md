@@ -1,13 +1,14 @@
 # Aughor in 2027 — what the platform should become
 
-*A study, written 2026-10-04 at the user's request. It is not a plan of record: nothing here is in
-`ROADMAP.md`, nothing is adopted, and nothing was built. Where it contradicts a standing decision
-(§4 of the roadmap, or a rule the user has given) it says so on the line and names what would have
-to be true to reopen it.*
+*A study, written 2026-10-04 at the user's request and **adopted the same day** — `ROADMAP.md` §6 item 39,
+every call as recommended; §3.53 points here. Its phases 0 to 7 (section W) are the plan for 2027 and
+beyond; nothing of them is built. Where it contradicts a standing decision (§4 of the roadmap, or a rule
+the user has given) it says so on the line and names what would have to be true to reopen it, and the
+roadmap's §4.8 amendment and §4.9 now record what adoption changed.*
 
 ***Status: complete.** Sections A–T were written on 2026-10-04 and the session paused at the user's
 word; sections U–Z and the closing list were written in the next session the same day, from the outline
-and the decisions it recorded, with each new count re-measured against the code first.*
+and the decisions it recorded, with each new count re-measured against the code first. Adopted 2026-10-04.*
 
 *Method. The platform was reconstructed from the code and the ledgers before anything was proposed:
 `ROADMAP.md` §0–§1, §4, §7–§8; `PENDING.md` as ticked on 2026-10-04; `IDEAS.md`; `docs/GLOSSARY.md`;
@@ -1959,7 +1960,7 @@ Six scarcities, six mechanisms, one ledger. If analysis becomes free, this is wh
 *`PENDING.md` re-read in full on 2026-10-04, as ticked on #565. Every line still open — `[ ]` or `[~]` —
 is placed against this study. The rule applied is the user's: an item that goes against the study is
 discarded. A discard is a struck line in `PENDING.md` with its reason, never a deleted one (the file's own
-rule), and it happens only on the user's adoption; nothing below is struck yet. Six verdicts: **discard**
+rule) — done 2026-10-04 on adoption: the twenty are struck in `PENDING.md` with these reasons. Six verdicts: **discard**
 (what it contradicts), **reshape** (what it becomes), **keep** (which phase), **receipt owed** (unchanged —
 the repo's rule, not the study's), **the user's** (⚑, unchanged) and **parked** (unchanged).*
 
@@ -2062,8 +2063,9 @@ study disagree about where value grows, not about what is broken.
 
 ## What this study asks of the user
 
-Nothing here is adopted. In the roadmap's own manner (§6, "the user's, not the builder's"), these are
-the calls the study needs, each with the recommendation it was written under; none blocks reading it.
+**All eight decided as recommended on 2026-10-04** — `ROADMAP.md` §6 item 39. In the roadmap's own manner
+(§6, "the user's, not the builder's"), these were the calls the study needed, each with the recommendation
+it was written under; they stay as the record of what was decided.
 
 1. **The organisation's install** (section F; phase 0's exit) — identity on, Postgres, five or more
    owners. Everything measurable in this study depends on it. *Recommended: yes, as the condition of

@@ -54,6 +54,14 @@ to the groups that watch the things they are about, each with its receipt. What 
 has measured, never the data. The airport is the analogy — the map, the tower, customs, the schedule — and the
 nomenclature does not change.
 
+**Amended 2026-10-04 — the 2027 platform study (§3.53; §6 item 39) ADOPTED.** The sentence above that calls the
+ontology→agent loop the moat is restated: the moat is the **warrant and the record** — no fact without a source, no
+number before its days have settled, a restated number told to whoever was given the old one, a send held when its
+definition is not approved, a superseded fact kept with what replaced it, and, from here on, the organisation's
+decisions with their expectations and their outcomes. The ontology is the map those are drawn on; the repo's own
+ablations found the description lifts nothing and the declarations people make lift everything. The three planes stay
+as the platform's infrastructure (study §F); "three planes as the thesis" is the study's kill 11 (§4.9).
+
 ---
 
 ## 1 · What is true today (measured 2026-08-30; amended 2026-08-31 after Arc DS Phase 1)
@@ -143,7 +151,8 @@ first; §6 item 18 holds its two remaining shape questions (the first, ON-8's sc
 **The hub, measured 2026-09-15 (§3.18).** Receives: seven warehouse kinds, uploads, Sheets, PDFs and scans, Confluence
 and Notion definitions through KI's review lane, a Slack @mention, one inbound hook per automation, an allowlisted MCP
 server's tools. Exports: Slack, webhook, Jira, the MCP server, proposals. **No email either way.** Five triggers and
-twelve effects, and neither a promise nor a finding is a trigger; nothing links a thread, a ticket or an email to an
+twelve effects, and neither a promise nor a finding is a trigger *(corrected 2026-10-04 by the 2027 study, §3.53:
+seven triggers and thirteen effects, and a broken promise and a new finding are both triggers — `automations/models.py`)*; nothing links a thread, a ticket or an email to an
 object; nothing routes — a `BriefSubscription` has no subject and no reader, and the Briefing's lead is ranked by one
 profile's north stars for a reader that is always the company; `Principal` is a user and an org and there are **no
 groups**; the grant store holds one privilege on one securable kind; `owner` is free text; row policies ship empty; a
@@ -11051,6 +11060,24 @@ to spawn-and-watch. AO-2d still needs the app-level token made by hand → the w
 so. AO-7 must move a held-out golden set's pass rate per agent; two weeks of real use without movement → the
 "corrected before" block is removed, not kept.
 
+### 3.53 · The 2027 platform — the study ADOPTED 2026-10-04 (§6 item 39, every call as recommended; `docs/PLATFORM_2027_STUDY_2026-10-04.md`)
+
+The study is the plan for 2027 and beyond: eight phases (its §W), each with capabilities, architecture, product,
+dependencies, risks, metrics and a live exit, are kept there and not copied here — it is a study kept in `docs/` like
+the Agent Ops and dbx studies, and this section is its pointer. What adoption changed in this file the same day: §0
+restated (the moat is the warrant and the record); §1's trigger and effect counts corrected; the freeze list recorded
+as §4.9; §4.8's executing-grants refusal narrowed on a condition; and `PENDING.md`'s twenty discarded items struck
+with their reasons, every kept item placed in a phase by the study's own section on the ledger.
+
+**Phase 0's exits, which are the next work:** an organisation's install — identity on (`AUGHOR_REQUIRE_IDENTITY=1`),
+Postgres (the kernel ledger already runs there), at least five people who own different things; the approval gate on
+by default (`AUGHOR_ACTION_APPROVAL` becomes a kill switch, the old name kept as an alias); the baseline numbers of the
+study's §A re-measured and dated; the Day Briefing delivered seven mornings; and the first number that left the
+platform and was acted on by someone who is not the analyst, with its receipt — the flywheel's first turn. Phase 4
+is gated on phase 3 (§4.8's amendment). Nothing of phases 1–7 is built.
+
+---
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -11205,6 +11232,34 @@ rule here; §6 item 38(j) records them as refused, at the user's *"adopt all as 
   a one-way door into Slack's review process; the install must work unlisted first.
 - **Email as a door.** Arc HB decided "no email in either direction" (§3.18); AO-5 does not reopen it. Only the user
   can.
+
+**Amended 2026-10-04 (§6 item 39(c)):** the third refusal — executing grants — is narrowed, not lifted. L4 (execute
+within policy, under a standing grant bound to a target, a scope, limits and an expiry) and L5 (choose among declared
+actions toward a mission, inside its budget) may be built in the 2027 study's phase 4, and only once outcomes are being
+recorded and scored — phase 3's exit. Today none has ever been recorded, so the refusal stands as written until then,
+and authority at any level is granted on a receipt and withdrawn automatically on a miss (study §M). §4.7 is not
+reopened: the platform writes nothing to a customer's warehouse at any level. The other four refusals are unchanged.
+
+### 4.9 · What the 2027 study froze — ADOPTED (2026-10-04)
+
+"Kill" means stop investing and stop presenting it as the product; working code stays until it costs something to
+keep (study §C). Each line names what survives. Re-propose only with new facts — and for lines 1 and 5 the fact is the
+one §4.5 already names: enough training volume of our own that a factory beats renting.
+
+| # | Frozen | What survives |
+|---|---|---|
+| 1 | the fine-tuning destination — Arc MI's gates, the gym (TJ-5), serving a student (TJ-6) | the graded ledger and the trajectory record, as evaluation data; the gym's problem generator, as the golden suites' and the canary's |
+| 2 | the SQL editor's parity race — frozen at SE-8 | the editor as the place a person inspects and corrects a statement, in the same provenance system |
+| 3 | the roster as a product idea — six named agents, a growing custom-agent builder, Agent Ops as fleet management | duties (study §H); one Operations view of work; from Arc AO, "one truth per number" and "one closed loop" stay |
+| 4 | quick or deep as something a person picks | one ask; the treatment is the platform's problem (CP-3 stays held by its own falsifier) |
+| 5 | the cheap-model line — the banded cascade and the outside judge as things to extend | what is there, left alone |
+| 6 | new model-compensating scaffolding | each repair loop and prompt block re-measured against a current model; the ones that no longer fire deleted |
+| 7 | canvases as surfaces to improve — the automation canvas, the Data Canvas | the engine; the canvas as a read-only picture of what a mission does |
+| 8 | the parked object-query tool | the compiler behind object pages |
+| 9 | the Evidence panel as it is — a hardcoded confidence | the claim ledger (study §E item 1); confidence as a counted frequency or not shown |
+| 10 | thirty-odd tabs | six destinations named for questions (study §U) |
+| 11 | "three planes" as the thesis | the planes, as architecture (study §F) |
+| 12 | N bots from a factory | one door per channel, held to the departure gate |
 
 ## 5 · Sequencing
 
@@ -12066,6 +12121,10 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-10-03:** item 38 (Arc AO, the agent estate as a product, §3.52) arrived at the user's *"brutally test
 > our Agent workflow"* and was DECIDED the same day — *"adopt all as recommended and commit locally"*; all ten clauses
 > as recommended, five refusals recorded as §4.8. The register stays at zero open.
+> **Amended 2026-10-04:** item 39 (the 2027 platform study, `docs/PLATFORM_2027_STUDY_2026-10-04.md`, §3.53) arrived
+> with the study's eight asks and was DECIDED the same day — *"Adopt the study and strike the twenty lines in
+> PENDING.md"*; all eight as recommended, the freeze recorded as §4.9, §4.8 narrowed on a condition, §0 restated. The
+> register stays at zero open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -12872,6 +12931,33 @@ the browser** · **measure the premise before building.**
     **(j) ✅ DECIDED as recommended, recorded as §4.8 — record five refusals in §4**: a visual builder as the primary
     authoring surface; an LLM judge certifying a golden; executing grants; a Marketplace listing before AO-2d is
     proven; email as a door. *Recommended: yes* — each contradicts a rule already paid for.
+
+39. ✅ **DECIDED 2026-10-04 — the 2027 platform study adopted, every call as recommended** (the user: *"Adopt the
+    study and strike the twenty lines in PENDING.md"*; the study is `docs/PLATFORM_2027_STUDY_2026-10-04.md`, written
+    the same day at the user's brief from this file, `PENDING.md`, `IDEAS.md`, the glossary and two read-only sweeps
+    of the code; the pointer is §3.53). Eight calls, each with a recommendation; all eight decided together. Adopting
+    the plan is not a yes to a push, to a paid model run, or to an install stood up on the user's machine.
+    **(a) ✅ DECIDED as recommended — the organisation's install** (study §F; phase 0's exit): identity on, Postgres,
+    five or more people who own different things. Everything measurable in the study depends on it. Arc MT stays
+    dropped — this is not a hosted plane.
+    **(b) ✅ DECIDED as recommended — the freeze list** (study §C), adopted as a list and recorded as §4.9, each kill
+    with what survives.
+    **(c) ✅ DECIDED as recommended — §4.8's "an agent proposes; a person acts" reopened for L4 and L5 only**, on the
+    condition that outcomes are being recorded and scored; phase 4 is gated on phase 3. §4.7 is not reopened. Recorded
+    as the amendment under §4.8.
+    **(d) ✅ DECIDED as recommended — the navigation**: six destinations named for the question a person brings (study
+    §U); the authored layer folds into Record rather than taking a Model destination of its own — the UI/UX study's
+    §4.7 item 7 is superseded on that one point, and everything it decided about the shell stands.
+    **(e) ✅ DECIDED as recommended — the North Star**: closed loops per quarter, guarded by calibration error (study
+    §X); today's reading is zero and is published as such.
+    **(f) ✅ DECIDED as recommended — six new words** for `docs/GLOSSARY.md`: claim (widened), inquiry, prediction,
+    decision, mission, scenario — each added in the PR that first uses it, as the glossary requires; `investigation`
+    stays frozen.
+    **(g) ✅ DECIDED as recommended — the departure gate's law 5** narrowed from "a forecast never departs" to "an
+    unscored forecast never departs", in phase 3 and not before.
+    **(h) ✅ DECIDED as recommended — the pending ledger**: the twenty discarded items struck in `PENDING.md` with
+    their reasons the same day (twenty-two lines; TJ-5 and TJ-6 appear twice); the phase of every kept item stays in
+    the study's placement section rather than being carried line by line.
 
 ---
 
