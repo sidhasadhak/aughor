@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { getDevStats, resetDevStats, getEvalGraduations, getSystemFlags, setSystemFlag, type DevStats, type EvalGraduation, type SystemFlag } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { ReadFailed } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
 import { getApiBase, getApiBaseSource, setApiBase, normalizeApiBase, API_BASE_DEFAULT } from "@/lib/config";
@@ -183,13 +183,17 @@ export function SystemPanel() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [resetting, setResetting] = useState(false);
 
+  // A failed stats read used to keep the whole tab on "Loading stats…" for good — and with it
+  // the Backend section, the one place a person points this browser at a reachable API.
+  const [statsFailed, setStatsFailed] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
       const s = await getDevStats();
       setStats(s);
+      setStatsFailed(null);
       setLastRefresh(new Date());
-    } catch {
-      // API not reachable
+    } catch (e) {
+      setStatsFailed(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -209,9 +213,13 @@ export function SystemPanel() {
   };
 
   if (!stats) {
+    if (statsFailed === null) return <Loading what="stats" className="flex items-center justify-center h-40" />;
     return (
-      <div className="flex items-center justify-center h-40 text-zinc-500 text-sm">
-        Loading stats…
+      <div className="p-4 overflow-y-auto h-full">
+        <ReadFailed what="the system stats" error={statsFailed} onRetry={load} style={{ marginBottom: 16 }} />
+        <Backend />
+        <FeatureFlags />
+        <PacksManager />
       </div>
     );
   }
