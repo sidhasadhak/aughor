@@ -4501,7 +4501,8 @@ export function getMonitorProof(id: string): Promise<MonitorProof> {
 // ── Idea 7 · fact-check a document (`routers/factcheck.py`) ────────────────────────
 
 export interface FactCheckResult {
-  investigation_id: string;
+  /** The filed answer's id (the wire's `investigation_id`) — what its export is read by. */
+  answerId: string;
   envelope: {
     headline: string;
     body: string;
@@ -4516,7 +4517,8 @@ async function factCheckCall(path: string, init: RequestInit): Promise<FactCheck
     const body = await res.json().catch(() => ({}));
     throw new Error(typeof body?.detail === "string" ? body.detail : `the check failed (${res.status})`);
   }
-  return res.json();
+  const body = await res.json();
+  return { answerId: String(body.investigation_id ?? ""), envelope: body.envelope };
 }
 
 /** Every numeric claim in pasted text, checked against the connection — one quick answer per claim. */

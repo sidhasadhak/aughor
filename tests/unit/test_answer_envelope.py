@@ -413,10 +413,11 @@ def test_the_export_takes_every_field_of_the_envelope(monkeypatch):
     assert code.text.startswith("SELECT product_category")
 
     # A deep report keeps its richer builder even when it carries an envelope.
-    monkeypatch.setattr(document, "_build_ada", lambda inv, money_symbol="": "deep-builder")
+    deep_doc = document.ExportDoc(title="deep-builder")
+    monkeypatch.setattr(document, "_build_ada", lambda inv, money_symbol="": deep_doc)
     deep = {"id": "d", "kind": "investigation", "question": "why?",
             "report": {"phases": [], "headline": "h", "envelope": env}}
-    assert build_export_doc(deep) == "deep-builder"
+    assert build_export_doc(deep) is deep_doc
 
 
 def test_the_converse_prompt_records_receipts_instead_of_narrating_them():

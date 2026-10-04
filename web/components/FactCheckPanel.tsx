@@ -109,7 +109,7 @@ export function FactCheckPanel({ connectionId }: { connectionId: string }) {
             <div className="aug-fs-ui" style={{ flex: 1, color: "var(--t1)", fontWeight: 500, lineHeight: 1.5 }}>
               {env.headline}
             </div>
-            {result && <ExportButton invId={result.investigation_id} />}
+            {result && <ExportButton invId={result.answerId} />}
           </div>
           {env.grid && env.grid.rows.length > 0 && (
             <SqlResultTable columns={env.grid.columns} rows={env.grid.rows} totals={false} name="fact-check" />

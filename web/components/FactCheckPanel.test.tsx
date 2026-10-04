@@ -34,7 +34,7 @@ import { FactCheckPanel } from "./FactCheckPanel";
 describe("FactCheckPanel", () => {
   it("checks a pasted memo on a press and shows each claim's verdict", async () => {
     factCheckText.mockResolvedValue({
-      investigation_id: "fc1",
+      answerId: "fc1",
       envelope: {
         headline: "2 numeric claims: 1 match the data, 1 contradicted, 0 could not be checked.",
         body: "- CONTRADICTED — \"Revenue was $60,000 in August\": said $60,000; the data shows 54,496.64 (10% off).",
