@@ -3890,7 +3890,10 @@ async def _stream_analyst(
             payload={"body": "analyst", "stop_reason": result.stop_reason,
                      "tools": [s.tool for s in result.steps],
                      "injected_chars": result.injected_chars,
-                     "reinjection_ratio": round(result.reinjection_ratio, 2)},
+                     "reinjection_ratio": round(result.reinjection_ratio, 2),
+                     # The work before intake nothing recorded — schema, linking and
+                     # catalog, in seconds (`analyst.build_analyst_context`).
+                     "context_s": result.context_timings},
         )
         return result
 

@@ -35,6 +35,7 @@ import json
 import logging
 import math
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Callable, Optional
@@ -1469,6 +1470,8 @@ class AnalystResult:
     investigation_id: str
     injected_chars: int = 0
     reinjection_ratio: float = 0.0
+    #: How long the context took before intake — schema, linking, catalog — in seconds.
+    context_timings: dict = field(default_factory=dict)
 
 
 def _base_state(question: str, connection_id: str, investigation_id: str,
@@ -1514,7 +1517,14 @@ def build_analyst_context(connection_id: str, question: str, *,
     es = resolve_execution_scope(connection_id, canvas_id, schema_scope=schema_scope,
                                  schema_context_builder=build_canvas_schema_context)
     conn = es.open()
-    full_schema = conn.get_schema()
+    # The shared, scope-keyed schema cache the deep path reads (WCH-12) — this read went
+    # around it, so every Agent ask re-listed the warehouse before its intake: measured
+    # 2026-10-04 on theLook (BigQuery, 7 tables), 2.5 s a time, untimed and unrecorded.
+    # The three stages are timed now and ride the turn's record (`context_timings`).
+    from aughor.routers._shared import get_schema_cached
+    _t0 = time.monotonic()
+    full_schema = get_schema_cached(es.connection_id, conn)
+    timings = {"schema_s": round(time.monotonic() - _t0, 3)}
     schema = es.schema_context or full_schema
     if es.eff_schema:
         schema = (
@@ -1523,13 +1533,16 @@ def build_analyst_context(connection_id: str, question: str, *,
             f"(e.g. {es.eff_schema}.table_name). Do NOT use bare table names.\n\n"
             + schema
         )
+    _t0 = time.monotonic()
     try:
         from aughor.tools.schema_linker import link_schema
         schema = link_schema(question, schema, connection_id=es.connection_id)
     except Exception:
         logger.warning("analyst: schema-linking pre-filter failed; using full schema",
                        exc_info=True)
+    timings["link_s"] = round(time.monotonic() - _t0, 3)
     data_catalog = ""
+    _t0 = time.monotonic()
     try:
         from aughor.db.schema_render import parse_schema_tables
         from aughor.tools.data_catalog import build_data_catalog
@@ -1539,6 +1552,10 @@ def build_analyst_context(connection_id: str, question: str, *,
     except Exception:
         logger.warning("analyst: data catalog build failed; the linked schema stands",
                        exc_info=True)
+    timings["catalog_s"] = round(time.monotonic() - _t0, 3)
+    logger.info("analyst: context for %s in %.2fs (schema %.2fs, link %.2fs, catalog %.2fs)",
+                es.connection_id, sum(timings.values()), timings["schema_s"],
+                timings["link_s"], timings["catalog_s"])
     return conn, {
         "connection_id": es.connection_id,
         "schema_context": schema,
@@ -1546,6 +1563,7 @@ def build_analyst_context(connection_id: str, question: str, *,
         "canvas_id": canvas_id,
         "canvas_schema_context": es.schema_context or "",
         "data_catalog": data_catalog,
+        "context_timings": timings,
     }
 
 
@@ -1581,6 +1599,7 @@ def run_analyst(
     conn, seed = build_analyst_context(connection_id, question,
                                        canvas_id=canvas_id, schema_scope=schema_scope)
     eff_conn_id = seed.pop("connection_id")
+    context_timings = seed.pop("context_timings", None) or {}
 
     inv_id = ""
     if persist:
@@ -1620,7 +1639,7 @@ def run_analyst(
                     tolerate(exc, "recording an intake-stopped run as failed is best-effort",
                              counter="analyst.intake_failed_persist")
             return AnalystResult(answer="", report=None, steps=[], stop_reason="intake_failed",
-                                 investigation_id=inv_id)
+                                 investigation_id=inv_id, context_timings=context_timings)
 
         budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
         # Item 3: measure-and-state or investigate, decided by code from the question.
@@ -1733,6 +1752,7 @@ def run_analyst(
         investigation_id=inv_id,
         injected_chars=result.injected_chars,
         reinjection_ratio=result.reinjection_ratio,
+        context_timings=context_timings,
     )
 
 

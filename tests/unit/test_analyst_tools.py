@@ -710,3 +710,37 @@ def test_a_failed_intake_stops_the_run_before_the_loop(monkeypatch, traffic_db, 
     assert types.count("phase_complete") == 1                     # the intake card, said
     assert "answer_report" not in types
     assert len(faux_llm.calls()) == 0 and faux_llm.pending()      # the loop never ran
+
+
+def test_the_agent_path_reads_the_schema_through_the_shared_cache(monkeypatch):
+    """`build_analyst_context` read the warehouse schema around the shared cache the deep
+    path uses, so every Agent ask listed the warehouse again before its intake — 2.5 s a
+    time on theLook (BigQuery, 7 tables), measured 2026-10-04, and recorded nowhere. Two
+    asks inside the cache's window read it once, and each turn carries its stage timings."""
+    from types import SimpleNamespace
+    from aughor.routers._shared import invalidate_schema_cache
+
+    reads: list[int] = []
+
+    class _Conn:
+        _schema_name = ""
+
+        def get_schema(self):
+            reads.append(1)
+            return "TABLE: shop.orders\n  id INTEGER\n  total DOUBLE\n"
+
+    conn = _Conn()
+    scope = SimpleNamespace(connection_id="conn-schema-cache", schema_context="",
+                            eff_schema="", open=lambda: conn)
+    monkeypatch.setattr("aughor.canvas.scope.resolve_execution_scope", lambda *a, **k: scope)
+    monkeypatch.setattr("aughor.tools.data_catalog.build_data_catalog", lambda *a, **k: "")
+    invalidate_schema_cache("conn-schema-cache")
+    try:
+        _, first = an.build_analyst_context("conn-schema-cache", "how many orders?")
+        _, second = an.build_analyst_context("conn-schema-cache", "orders by day?")
+    finally:
+        invalidate_schema_cache("conn-schema-cache")
+
+    assert len(reads) == 1                                   # the second ask hit the cache
+    assert set(first["context_timings"]) == {"schema_s", "link_s", "catalog_s"}
+    assert set(second["context_timings"]) == {"schema_s", "link_s", "catalog_s"}
