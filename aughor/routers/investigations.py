@@ -5522,6 +5522,17 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             yield _ev
         return
 
+    # A request for a COCKPIT is not a question about data, and this chat drafts none — the
+    # Briefing's Cockpit tab does (CT-9). Said here, before the clarify gate read it as an
+    # under-specified question (2 of the CT receipt's 10 asks) or a model answered it as one.
+    if not req.insight_id:
+        from aughor.cockpit.intent import is_cockpit_ask, where_cockpits_are_made
+        if is_cockpit_ask(req.question):
+            from aughor.kernel.flags import flag_enabled
+            yield _sse("headline", {"headline": where_cockpits_are_made(flag_enabled("cockpit.composed"))})
+            yield _sse("done", {})
+            return
+
     if (req.depth == "auto" and not req.escalate and not req.insight_id
             and not req.skip_clarify):
         from aughor.agent.clarify import assess_clarification

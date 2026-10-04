@@ -680,6 +680,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     : undefined;
   const [starters, setStarters]     = useState<Starter[]>(FALLBACK_STARTERS);
   const [loadingStarters, setLoadingStarters] = useState(false);
+  /** Why the model's suggested questions are missing (no model key, a failed call) — said
+   *  under the starters rather than leaving a shorter list to look complete. */
+  const [suggestionsMissing, setSuggestionsMissing] = useState("");
   const [showDebug, setShowDebug]   = useState(false);
   const [feedbackDone, setFeedbackDone] = useState<Set<string>>(new Set());
   // R10 — thumbs on quick answers: turn receiptId → the verdict sent (one per turn).
@@ -751,6 +754,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     fetch(`${getApiBase()}/suggestions?connection_id=${encodeURIComponent(connectionId)}`)
       .then(r => r.json())
       .then(data => {
+        setSuggestionsMissing(typeof data.unavailable === "string" ? data.unavailable : "");
         const suggestions: Starter[] = (data.suggestions ?? []).map((s: { text: string; mode: string }) => ({
           text: s.text,
           mode: (s.mode === "investigate" ? "investigate" : "ask") as "ask" | "investigate",
@@ -1151,6 +1155,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 of questions read as a control panel. A question is a line of text. */}
             <div className="pt-1">
               <p className="text-[11px] uppercase tracking-[0.08em] mb-2" style={{ color: "var(--b3)" }}>Suggested questions</p>
+              {suggestionsMissing && !loadingStarters && (
+                <p className="aug-fs-xs mb-1" style={{ color: "var(--t3)" }}>{suggestionsMissing}</p>
+              )}
               {loadingStarters ? (
                 <div className="flex flex-col">
                   {Array.from({ length: 4 }).map((_, i) => (

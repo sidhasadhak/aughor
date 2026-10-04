@@ -320,7 +320,17 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
         suggestions = await loop.run_in_executor(
             None, lambda: compute_once(connection_id, fingerprint, _llm_work))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # No model key, or the model failed: the starters above need none, so they are still
+        # served — with the suggestions said to be missing and why, never a 500 (CT-5's
+        # scratch server, which had no key, answered the canvas chat's every open with one).
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "suggested questions need a model; the starter library does not",
+                 counter="suggestions.model", conn_id=connection_id or None)
+        out = {"suggestions": [], "cached": False,
+               "unavailable": f"Suggested questions need a working model — {str(e)[:160]}"}
+        if _starters is not None:
+            out["starters"] = _starters
+        return out
 
     try:
         cache_store(connection_id, fingerprint, suggestions)
