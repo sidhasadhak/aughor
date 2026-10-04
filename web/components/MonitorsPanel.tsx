@@ -12,6 +12,10 @@ import {
   acknowledgeAlert,
   getMetrics,
   Metric,
+  MonitorProof,
+  backtestMonitor,
+  drillMonitor,
+  getMonitorProof,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
@@ -423,6 +427,82 @@ function MonitorCard({
       {runResult && (
         <div style={{ marginTop: 8, fontSize: 11, color: "var(--t3)", paddingLeft: 42 }}>
           {runResult}
+        </div>
+      )}
+      <MonitorProofRow monitorId={monitor.id} />
+    </div>
+  );
+}
+
+// ── Proof — idea 6, alerts that prove they work ─────────────────────────────────
+// The backtest, the drill and "last proven working" were API doors only: a monitor
+// could be proven, but nobody on a screen could ask for the proof or see it.
+
+type ProofOutcome = { tone: "ok" | "warn"; text: string };
+
+export function MonitorProofRow({ monitorId }: { monitorId: string }) {
+  const [proof, setProof] = useState<MonitorProof | null>(null);
+  const [proofFailed, setProofFailed] = useState(false);
+  const [busy, setBusy] = useState<"" | "backtest" | "check" | "send">("");
+  const [outcome, setOutcome] = useState<ProofOutcome | null>(null);
+
+  const readProof = useCallback(() => {
+    getMonitorProof(monitorId)
+      .then(p => { setProof(p); setProofFailed(false); })
+      .catch(() => setProofFailed(true));
+  }, [monitorId]);
+  useEffect(() => { readProof(); }, [readProof]);
+
+  async function run(kind: "backtest" | "check" | "send") {
+    if (kind === "send" && !confirm(
+      "Send a [DRILL] alert through this monitor's real channel? The people it notifies will see it.")) return;
+    setBusy(kind);
+    setOutcome(null);
+    try {
+      if (kind === "backtest") {
+        const b = await backtestMonitor(monitorId);
+        const quieter = b.quieter_sigma != null ? ` A quieter setting: ${b.quieter_sigma}σ.` : "";
+        setOutcome({ tone: b.ok ? "ok" : "warn", text: (b.sentence || b.reason) + quieter });
+      } else {
+        const d = await drillMonitor(monitorId, kind === "send");
+        const text = !d.fired ? `The rule did not fire on a synthetic outlier: ${d.detail}`
+          : d.delivered === true ? `Delivered a [DRILL] alert through ${d.channel || "its channel"}.`
+          : d.delivered === false ? `The rule fired, but delivery failed: ${d.detail}`
+          : "The rule fired on a synthetic outlier — no message was sent.";
+        setOutcome({ tone: d.fired && d.delivered !== false ? "ok" : "warn", text });
+        readProof();
+      }
+    } catch (e) {
+      setOutcome({ tone: "warn", text: e instanceof Error ? e.message : "The request failed" });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const btn = (kind: "backtest" | "check" | "send", label: string, title: string) => (
+    <Button variant="ghost" onClick={() => run(kind)} disabled={busy !== ""} title={title}
+            className="h-auto p-0 font-normal" style={ghostBtn}>
+      {busy === kind ? `${label}…` : label}
+    </Button>
+  );
+
+  return (
+    <div style={{ marginTop: 8, paddingLeft: 42 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        {proof || proofFailed ? (
+          <span style={{ fontSize: 11, color: "var(--t3)", flex: 1, minWidth: 160 }}>
+            {proof ? proof.sentence : "Could not read whether this alert was proven."}
+          </span>
+        ) : (
+          <Loading what="its proof" inline style={{ fontSize: 11, flex: 1, minWidth: 160 }} />
+        )}
+        {btn("backtest", "Backtest", "Replay the last year of this monitor's own series under its rule — one warehouse query")}
+        {btn("check", "Check rule", "Feed the rule a synthetic outlier; nothing is sent")}
+        {btn("send", "Send test alert", "Feed the rule a synthetic outlier and deliver the [DRILL] alert through its real channel")}
+      </div>
+      {outcome && (
+        <div role="status" style={{ marginTop: 6, fontSize: 11, color: outcome.tone === "ok" ? "var(--t2)" : "var(--amb4)" }}>
+          {outcome.text}
         </div>
       )}
     </div>

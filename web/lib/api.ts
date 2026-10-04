@@ -4440,6 +4440,64 @@ export async function triggerMonitor(id: string): Promise<MonitorAlert | { fired
   return res.json();
 }
 
+// ── Idea 6 · alerts that prove they work (`routers/monitors.py`) ──────────────────
+
+export interface MonitorBacktest {
+  monitor_id: string;
+  rule: string;
+  ok: boolean;
+  reason: string;
+  sigma: number | null;
+  days: number;
+  series_from: string;
+  series_to: string;
+  firings: { day: string; value: number; severity: string; z: number }[];
+  sentence: string;
+  quieter_sigma: number | null;
+}
+
+export interface MonitorDrill {
+  monitor_id: string;
+  at: string;
+  fired: boolean;
+  /** null when delivery was not attempted (a drill that only checks the rule). */
+  delivered: boolean | null;
+  detail: string;
+  channel: string;
+}
+
+export interface MonitorProof {
+  monitor_id: string;
+  /** "last proven working …" / "never proven — no drill, no delivered alert" — the server's sentence. */
+  sentence: string;
+  last_drill: MonitorDrill | null;
+}
+
+async function monitorProofCall<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${getApiBase()}/monitors/${path}`, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body?.detail === "string" ? body.detail : `request failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Replay the monitor over the last year of its own series — one warehouse query. */
+export function backtestMonitor(id: string): Promise<MonitorBacktest> {
+  return monitorProofCall(`${encodeURIComponent(id)}/backtest`, { method: "POST" });
+}
+
+/** Feed the rule a synthetic outlier. `deliver` sends the [DRILL] alert through the monitor's real channel. */
+export function drillMonitor(id: string, deliver: boolean): Promise<MonitorDrill> {
+  return monitorProofCall(`${encodeURIComponent(id)}/drill`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deliver }),
+  });
+}
+
+export function getMonitorProof(id: string): Promise<MonitorProof> {
+  return monitorProofCall(`${encodeURIComponent(id)}/proof`);
+}
+
 export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: string): Promise<MonitorAlert[]> {
   const qs = new URLSearchParams();
   if (connId) qs.set("conn_id", connId);
