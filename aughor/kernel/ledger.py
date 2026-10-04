@@ -346,6 +346,12 @@ def _payload_bool(value: Any) -> Optional[int]:
     return None
 
 
+#: The artifact kinds that are a run's RECEIPT — what a chat answer and a deep report file in
+#: this ledger. Defined beside the store that holds them; the ontology's context graph, the
+#: briefing and the canvas purge all read this one tuple.
+RECEIPT_KINDS = ("ada_report", "chat_answer")
+
+
 def _labelled_connection(labels: Optional[str]) -> Optional[str]:
     """The ``connection_id`` a task trace's JSON labels name, or None — a predicate, since a
     row whose labels are not JSON is an ordinary shape here (`_backfill_payload_facts`)."""

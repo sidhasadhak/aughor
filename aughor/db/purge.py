@@ -228,6 +228,7 @@ def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
         if path.suffix in (".db", ".sqlite"):
             try:
                 con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+                con.execute("PRAGMA busy_timeout = 2000")   # a store mid-write waits, never fails the scan
                 try:
                     for (table,) in con.execute(
                             "SELECT name FROM sqlite_master WHERE type='table'").fetchall():
@@ -256,7 +257,7 @@ def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
 #: Kernel artifacts a canvas delete KEEPS: the receipts of runs FILED under it. A chat
 #: answer or a deep report stays in history as a deleted chat thread's runs do (FL-6, and
 #: `purge_chat_session_artifacts`), and its receipt stays with it.
-CANVAS_KEEPS = ("chat_answer", "ada_report")
+from aughor.kernel.ledger import RECEIPT_KINDS as CANVAS_KEEPS  # noqa: E402
 
 
 def purge_canvas_artifacts(canvas_id: str) -> dict[str, int]:

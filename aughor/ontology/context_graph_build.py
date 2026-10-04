@@ -66,7 +66,7 @@ def load_findings(connection_id: str) -> list[dict]:
 #: Public because a second reader arrived (`semantic.answer_divergence`): two hand-kept
 #: copies of this tuple is exactly how a new receipt kind gets read by one consumer and
 #: not the other — the same drift shape the L1 glossary bug cost a session to find.
-RECEIPT_KINDS = ("ada_report", "chat_answer")
+from aughor.kernel.ledger import RECEIPT_KINDS  # noqa: E402 — one definition, beside the store
 
 #: How many answer receipts become finding nodes, newest first. The graph is a
 #: committed, diff-readable artifact, so this is bounded on purpose — but the bound is
