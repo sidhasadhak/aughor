@@ -35,16 +35,33 @@ def _llm_readiness() -> dict:
         out["backend"], out["model"] = backend, model
         # provider._active_key is the same runtime-config→env key resolver the real
         # client builders use; reached as a module attribute (no private cross-import).
-        key_present = backend not in provider.NEEDS_KEY or bool(provider._active_key(backend))
+        # An undecryptable stored key is not a key: `bool(ciphertext)` read as present, and the
+        # readiness said ready while every model door refused the key by name.
+        unreadable = provider.key_is_undecryptable(backend)
+        key_present = backend not in provider.NEEDS_KEY or (
+            not unreadable and bool(provider._active_key(backend)))
         out["key_present"] = key_present
         # Nothing ships a default model (provider.NoModelConfigured): an empty model id
         # means every request raises, which is the opposite of ready.
         out["ready"] = bool(key_present and model)
-        out["reason"] = None if out["ready"] else ("no_key" if not key_present else "no_model")
+        out["reason"] = None if out["ready"] else (
+            "unreadable_key" if unreadable else "no_key" if not key_present else "no_model")
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "health: LLM readiness resolution failed", counter="health.llm")
     return out
+
+
+def _secrets_readable() -> dict:
+    """Stored secrets this process could not decrypt since it started. Every one reads as an
+    empty credential to its caller (`secretvault.decrypt_secret`), so this is where an operator
+    learns that the deployment's key changed rather than that ten integrations broke."""
+    from aughor.secretvault import unreadable_count
+    n = unreadable_count()
+    return {"ok": not n, "unreadable": n,
+            "detail": (f"{n} stored secret(s) could not be decrypted with this deployment's key — "
+                       "AUGHOR_SECRET_KEY or the key file changed since they were saved; enter them again"
+                       if n else "every stored secret read so far decrypts")}
 
 
 @router.get("/health")
@@ -90,6 +107,7 @@ def health():
         },
         "fixture_db": fixture_db_path().exists(),
         "llm": _llm_readiness(),
+        "secrets": _secrets_readable(),
         "object_store": {
             "configured": available(),
             "env": TOKEN_ENV,

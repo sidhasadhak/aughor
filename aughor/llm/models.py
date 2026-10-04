@@ -258,9 +258,14 @@ def fetch_live_models(backend: str, *, timeout: float = 6.0) -> tuple[list[dict]
     built-in list because the live fetch failed, here is why" instead of
     presenting a stale fallback as though it were authoritative.
     """
-    from aughor.llm.provider import active_base_url, active_key
+    from aughor.llm.provider import active_base_url, active_key, key_is_undecryptable
 
     base_url = active_base_url(backend)
+    if key_is_undecryptable(backend):
+        # The one model door that sent the stored key unasked: an undecryptable one went to
+        # the provider's model list as the credential, and its refusal was shown as the cause.
+        return [], ("the stored key cannot be decrypted — AUGHOR_SECRET_KEY is missing or does "
+                    "not match the one it was encrypted with; nothing was sent to the provider")
     key = active_key(backend)
     try:
         if backend == "ollama":

@@ -115,3 +115,25 @@ class TestConnectorMetaSecrets:
         from aughor.db.registry import _decrypt_meta
         # a pre-encryption meta (plaintext secret) must still read back unchanged
         assert _decrypt_meta({"secret_key": "sk_live_old", "x": 1}) == {"secret_key": "sk_live_old", "x": 1}
+
+
+def test_an_undecryptable_value_is_never_handed_back_and_is_counted(monkeypatch):
+    """A wrong key used to return the ciphertext, which travelled on as the credential — a
+    Slack token, a Jira header, an MCP server's key — and the far side blamed the credential.
+    It comes back empty and counted for /health; `readable` says which without decrypting;
+    and the one model door that sent the stored key unasked now refuses it by name."""
+    from cryptography.fernet import Fernet
+
+    from aughor import secretvault as V
+    from aughor.llm import models, provider
+
+    foreign = "enc:v1:" + Fernet(Fernet.generate_key()).encrypt(b"xoxb-real-token").decode()
+    before = V.unreadable_count()
+    assert V.decrypt_secret(foreign) == ""
+    assert V.unreadable_count() == before + 1
+    assert V.readable(foreign) is False
+    assert V.readable("plaintext") is True and V.readable(V.encrypt_secret("s3cret")) is True
+
+    monkeypatch.setattr(provider, "_active_key", lambda _b: foreign)
+    listed, error = models.fetch_live_models("gemini")
+    assert listed == [] and "AUGHOR_SECRET_KEY" in error and "nothing was sent" in error

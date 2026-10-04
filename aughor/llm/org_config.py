@@ -222,14 +222,13 @@ def clear_org_config(org_id: str) -> None:
 
 def _stored_key_state(stored: object) -> str:
     """`"set"` · `"unset"` · `"unreadable"` for one stored (encrypted) key."""
-    from aughor.secretvault import decrypt_secret, is_encrypted
+    from aughor.secretvault import decrypt_secret, readable
 
     if not stored:
         return "unset"
-    plain = decrypt_secret(stored if isinstance(stored, str) else None)
-    if not plain:
-        return "unset"
-    return "unreadable" if is_encrypted(plain) else "set"
+    if not readable(stored):
+        return "unreadable"
+    return "set" if decrypt_secret(stored if isinstance(stored, str) else None) else "unset"
 
 
 def describe_org_config(org_id: str) -> dict:
