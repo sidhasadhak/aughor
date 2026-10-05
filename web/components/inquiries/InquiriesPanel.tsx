@@ -11,7 +11,7 @@
 import { useMemo, useState } from "react";
 
 import type { Connection } from "@/lib/api";
-import { countNoun } from "@/lib/format";
+import { compactNumber, countNoun, formatTableNumber } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
 import {
   closeInquiry, getClaim, getInquiry, listInquiries, proposeInquiryRun, verdictWords, whoLabel,
@@ -58,7 +58,7 @@ export function InquiriesPanel({ connections, openId, onOpen, onOpenRun, onOpenD
   onAsk: () => void;
 }) {
   if (openId) {
-    return <InquiryReader id={openId} connections={connections} onBack={() => onOpen(null)}
+    return <InquiryReader id={openId} connections={connections} onBack={() => onOpen(null)} onMoved={onOpen}
       onOpenRun={onOpenRun} onOpenDecision={onOpenDecision} onOpenClaim={onOpenClaim} />;
   }
   return <InquiryLedger connections={connections} onOpen={onOpen} onAsk={onAsk} />;
@@ -120,13 +120,25 @@ function InquiryLedger({ connections, onOpen, onAsk }: {
 
 // ── the Reader ───────────────────────────────────────────────────────────────────────────
 
+/** The run an inquiry waits for, as the Record worked it out: what it would cost here and what its result could change. */
 interface ProposedRun {
-  what?: string; why?: string; cost?: { tokens?: number; calls?: number; usd?: number | null; basis?: string; note?: string };
-  could_change?: string[]; note?: string; [k: string]: unknown;
+  question?: string;
+  rule?: string;
+  cost?: {
+    from?: string; tokens?: number | null; minutes?: number | null; n?: number; usd_floor?: number | null;
+    ceiling?: { tokens?: number; seconds?: number };
+  };
+  could_change?: {
+    open_items?: { what: string }[];
+    open_hypotheses?: { claim: string; text: string }[];
+    decisions?: unknown[];
+  };
 }
 
-function InquiryReader({ id, connections, onBack, onOpenRun, onOpenDecision, onOpenClaim }: {
+function InquiryReader({ id, connections, onBack, onMoved, onOpenRun, onOpenDecision, onOpenClaim }: {
   id: string; connections: Connection[]; onBack: () => void;
+  /** A write books a new version of the inquiry; the page follows it to the id it now has. */
+  onMoved: (id: string) => void;
   onOpenRun: (runId: string) => void; onOpenDecision: (id: string) => void; onOpenClaim: (id: string) => void;
 }) {
   const load = useLoad(() => getInquiry(id), [id]);
@@ -136,15 +148,15 @@ function InquiryReader({ id, connections, onBack, onOpenRun, onOpenDecision, onO
       <BackHeader from="Inquiries" onBack={onBack} title={q?.question ?? "Inquiry"}
         chips={q && <StatusChip hue={STATE_HUE[q.state] ?? "muted"}>{inquiryState(q)}</StatusChip>} />
       <Gate load={load} what="the inquiry">
-        {detail => <InquiryBody q={detail} connections={connections} reload={load.reload}
+        {detail => <InquiryBody q={detail} connections={connections} onMoved={onMoved}
           onOpenRun={onOpenRun} onOpenDecision={onOpenDecision} onOpenClaim={onOpenClaim} />}
       </Gate>
     </div>
   );
 }
 
-function InquiryBody({ q, connections, reload, onOpenRun, onOpenDecision, onOpenClaim }: {
-  q: InquiryDetail; connections: Connection[]; reload: () => void;
+function InquiryBody({ q, connections, onMoved, onOpenRun, onOpenDecision, onOpenClaim }: {
+  q: InquiryDetail; connections: Connection[]; onMoved: (id: string) => void;
   onOpenRun: (runId: string) => void; onOpenDecision: (id: string) => void; onOpenClaim: (id: string) => void;
 }) {
   const established = useLoad<Claim[]>(
@@ -155,10 +167,10 @@ function InquiryBody({ q, connections, reload, onOpenRun, onOpenDecision, onOpen
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const act = async (fn: () => Promise<unknown>) => {
+  const act = async (fn: () => Promise<InquiryDetail>) => {
     setBusy(true);
     setError("");
-    try { await fn(); reload(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+    try { onMoved((await fn()).id); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
 
   const rail = (
@@ -177,6 +189,12 @@ function InquiryBody({ q, connections, reload, onOpenRun, onOpenDecision, onOpen
   return (
     <Page rail={rail}>
       {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "0 0 12px" }}>{error}</p>}
+      {q.superseded_by && (
+        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+          <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This is an earlier version of the inquiry. </span>
+          <Button size="xs" variant="link" onClick={() => onMoved(q.superseded_by)}>Open it as it stands now</Button>
+        </div>
+      )}
 
       <Section label="What is established" meta={countNoun(supported.length + (established.data?.length ?? 0), "statement")}>
         {supported.length === 0 && q.claims.length === 0 ? (
@@ -285,12 +303,22 @@ function hypothesisMeta(hs: Claim[]): string {
 
 function ProposedRunNote({ run }: { run: ProposedRun }) {
   const cost = run.cost ?? {};
+  const could = run.could_change ?? {};
+  const measured = cost.tokens != null
+    ? `About ${compactNumber(cost.tokens)} tokens${cost.minutes != null ? ` and ${formatTableNumber(cost.minutes)} minutes` : ""}, from ${countNoun(cost.n ?? 0, "run")} of this kind here.`
+    : `Not measured here yet${cost.ceiling?.tokens ? `: at most ${compactNumber(cost.ceiling.tokens)} tokens${cost.ceiling.seconds ? ` and ${Math.round(cost.ceiling.seconds / 60)} minutes` : ""}, its ceiling` : ""}.`;
+  const changes = [
+    could.open_items?.length ? `${countNoun(could.open_items.length, "open item")}` : "",
+    could.open_hypotheses?.length ? `the open hypothesis${could.open_hypotheses.length === 1 ? "" : "es"}: ${could.open_hypotheses.map(h => h.text).join("; ")}` : "",
+    could.decisions?.length ? countNoun(could.decisions.length, "decision") : "",
+  ].filter(Boolean);
   return (
     <div className="aug-callout aug-callout-blue" style={{ marginTop: 10 }}>
-      <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{run.what || run.why || "The next run"}</div>
-      <div className="aug-fs-sm" style={{ color: "var(--t2)", marginTop: 4 }}>
-        {cost.note || cost.basis || run.note || "Its cost on this install is not measured yet."}
-        {Array.isArray(run.could_change) && run.could_change.length > 0 && ` It could change: ${run.could_change.join("; ")}.`}
+      <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>The next run: a deep analysis of this question.</div>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)", marginTop: 4, lineHeight: 1.55 }}>
+        <div>What it would cost: {measured}</div>
+        <div>What it could change: {changes.length ? changes.join(" · ") : "nothing that is recorded as open"}.</div>
+        {run.rule && <div style={{ color: "var(--t3)" }}>{run.rule.charAt(0).toUpperCase() + run.rule.slice(1)}.</div>}
       </div>
     </div>
   );

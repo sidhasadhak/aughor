@@ -66,7 +66,7 @@ export function DecisionsPanel({ connections, selectedConn, openId, onOpen, onOp
   onOpenClaim: (id: string) => void;
 }) {
   if (openId) {
-    return <DecisionReader id={openId} connections={connections} onBack={() => onOpen(null)} onOpenClaim={onOpenClaim} />;
+    return <DecisionReader id={openId} connections={connections} onBack={() => onOpen(null)} onMoved={onOpen} onOpenClaim={onOpenClaim} />;
   }
   return <DecisionLedger connections={connections} selectedConn={selectedConn} onOpen={onOpen} />;
 }
@@ -199,8 +199,10 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
 
 // ── the Reader ───────────────────────────────────────────────────────────────────────────
 
-function DecisionReader({ id, connections, onBack, onOpenClaim }: {
+function DecisionReader({ id, connections, onBack, onMoved, onOpenClaim }: {
   id: string; connections: Connection[]; onBack: () => void; onOpenClaim: (id: string) => void;
+  /** Booking an outcome restates the decision; the page follows it to the id it now has. */
+  onMoved: (id: string) => void;
 }) {
   const load = useLoad(() => getDecision(id), [id]);
   const d = load.data;
@@ -209,7 +211,7 @@ function DecisionReader({ id, connections, onBack, onOpenClaim }: {
       <BackHeader from="Decisions" onBack={onBack} title={d?.question ?? "Decision"}
         chips={d && <StatusChip hue={REVIEW_HUE[reviewState(d)]}>{REVIEW_WORDS[reviewState(d)]}</StatusChip>} />
       <Gate load={load} what="the decision">
-        {detail => <DecisionBody d={detail} connections={connections} reload={load.reload} onOpenClaim={onOpenClaim} />}
+        {detail => <DecisionBody d={detail} connections={connections} reload={load.reload} onMoved={onMoved} onOpenClaim={onOpenClaim} />}
       </Gate>
     </div>
   );
@@ -224,8 +226,9 @@ function band(c: Claim): string {
   return `${formatTableNumber(lo)} to ${formatTableNumber(hi)}${unit}${cov}`;
 }
 
-function DecisionBody({ d, connections, reload, onOpenClaim }: {
-  d: DecisionDetail; connections: Connection[]; reload: () => void; onOpenClaim: (id: string) => void;
+function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
+  d: DecisionDetail; connections: Connection[]; reload: () => void; onMoved: (id: string) => void;
+  onOpenClaim: (id: string) => void;
 }) {
   const scenarios = useLoad(() => listScenarios(d.id), [d.id, d.version]);
   const calibration = useLoad(() => getCalibration(d.connection_id || undefined), [d.connection_id]);
@@ -244,6 +247,12 @@ function DecisionBody({ d, connections, reload, onOpenClaim }: {
   );
   return (
     <Page rail={rail}>
+      {d.superseded_by && (
+        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+          <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This is the decision as first booked; it has been restated since. </span>
+          <Button size="xs" variant="link" onClick={() => onMoved(d.superseded_by)}>Open it as it stands now</Button>
+        </div>
+      )}
       <Section label="The options" meta={countNoun(d.options.length, "option")}>
         {d.options.length === 0 ? (
           <Absent>Only the choice was recorded: {d.chosen}. The options it was chosen over were not written down.</Absent>
@@ -319,7 +328,7 @@ function DecisionBody({ d, connections, reload, onOpenClaim }: {
             </div>
           </div>
         ) : state === "due" ? (
-          <OutcomeForm decisionId={d.id} onBooked={reload} />
+          <OutcomeForm decisionId={d.id} onBooked={id => (id ? onMoved(id) : reload())} />
         ) : (
           <Absent>
             Its review date is {d.review_on ? `${day(d.review_on)} (${dayDistance(d.review_on)})` : "not set"}. On that date the outcome
@@ -510,7 +519,7 @@ function ProjectForm({ decision, onBooked, onCancel }: {
 const VERDICTS: OutcomeVerdict[] = ["as_expected", "better", "worse", "cannot_tell"];
 
 /** The review date has come: what was measured, against the expectation and the baseline. */
-function OutcomeForm({ decisionId, onBooked }: { decisionId: string; onBooked: () => void }) {
+function OutcomeForm({ decisionId, onBooked }: { decisionId: string; onBooked: (restatedId: string | null) => void }) {
   const [actual, setActual] = useState("");
   const [baseline, setBaseline] = useState("");
   const [verdict, setVerdict] = useState<OutcomeVerdict>("cannot_tell");
@@ -521,10 +530,10 @@ function OutcomeForm({ decisionId, onBooked }: { decisionId: string; onBooked: (
     setBusy(true);
     setError("");
     try {
-      await bookOutcome(decisionId, {
+      const booked = await bookOutcome(decisionId, {
         measured_on: new Date().toISOString().slice(0, 10), actual: num(actual), baseline: num(baseline), verdict, why: why.trim(),
       });
-      onBooked();
+      onBooked(booked.decision?.id ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

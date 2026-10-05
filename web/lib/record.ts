@@ -144,6 +144,8 @@ export interface Inquiry {
   opened_at: string;
   extra: Record<string, unknown>;
   recorded_at: string;
+  /** The version that replaced this one — "" on the current version. */
+  superseded_by: string;
 }
 
 export interface InquiryDetail extends Inquiry {
@@ -192,6 +194,8 @@ export interface Decision {
   connection_id: string;
   extra: Record<string, unknown>;
   recorded_at: string;
+  /** The version that replaced this one — "" on the current version. */
+  superseded_by: string;
 }
 
 export type OutcomeVerdict = "as_expected" | "better" | "worse" | "cannot_tell";
@@ -587,7 +591,7 @@ export function whoLabel(who: string | null | undefined): string {
   if (!w) return "nobody named";
   const [kind, ...rest] = w.split(":");
   const name = rest.join(":");
-  if (!name) return w === "system" ? "the platform" : w === "person" ? "a person" : w;
+  if (!name) return w === "system" ? "the platform" : w === "person" ? "a person" : w === "unidentified" ? "nobody identified" : w;
   if (kind === "user" || kind === "person") return name;
   if (kind === "monitor") return `the ${name} monitor`;
   if (kind === "agent") return `the ${name} agent`;
