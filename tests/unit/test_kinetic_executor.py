@@ -48,8 +48,11 @@ def _recorder():
 
 
 @pytest.fixture(autouse=True)
-def _approval_off_by_default(monkeypatch):
-    monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
+def _approval_off(monkeypatch):
+    # These tests exercise the executor with the gate switched OFF; the gate has been on by
+    # default since 2026-10-04 (phase 0 of the 2027 study), and `test_govern_actions` proves
+    # the default. The tests that need it on set "1" themselves.
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
 
 
 # ── the safe submission-criterion evaluator ──────────────────────────────────────
@@ -143,8 +146,8 @@ def test_invalid_params_never_dispatches():
 
 
 def test_approval_off_high_risk_auto_executes(monkeypatch):
-    # Governance disabled ⇒ guard is a no-op ⇒ byte-for-byte the pre-Wave-K posture.
-    monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
+    # Governance switched off ⇒ guard is a no-op ⇒ byte-for-byte the pre-Wave-K posture.
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
     d = _recorder()
     r = execute_kinetic_action(_action(), {"amount": 500}, scope="s", dispatch=d)
     assert r.ok and len(d.calls) == 1

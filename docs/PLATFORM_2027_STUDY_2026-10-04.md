@@ -1641,6 +1641,7 @@ exists, so the phase's movement can be read against it.
 | Risks | the install is treated as a login wall around a demo (Arc MT's refusal was right about that and stays); the freeze is read as deletion — it is not, working code stays; the kill list is argued item by item instead of adopted or refused as a list |
 | Metrics | owners resolved (today: the owners panel exists; the count on the install is not published) · people who asked a question this month (today: one) · asks a month (111 logged on 2026-10-04, lifetime) · declared actions (1) · the freeze written (no) |
 | Exit | one organisation, at least five owners, identity on, the freeze in the roadmap — and the first number that left the platform and was acted on by someone who is not the analyst, with its receipt. That last receipt is the flywheel's first turn (section S) and nothing later can be observed without it |
+| Status | *2026-10-05: the code half is built (ROADMAP §3.53 lists it and the receipt). The install half waits on an identity provider and on people — the user chose their own machine, no provider yet, one owner for now — so the organisation-scale exit is not observable and the roadmap says so.* |
 
 **Phase 1 · The intelligence kernel**
 

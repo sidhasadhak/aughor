@@ -85,7 +85,10 @@ FLAG_ENV = {
     # graduated — mirror + endpoint hardwired, flag and off-path deleted.
     # Receipt on the GRADUATION_QUEUE tombstone below.
     "ask.converse": "AUGHOR_ASK_CONVERSE",
-    "ask.query_objects": "AUGHOR_ASK_QUERY_OBJECTS",
+    # "ask.query_objects" (AUGHOR_ASK_QUERY_OBJECTS) was DELETED 2026-10-04 with its tool —
+    # kill 8 of the 2027 study (ROADMAP §4.9; §6 item 39(b)). Parked 2026-09-11 on a measured
+    # regression (1/14 and 3/12 against raw 14/14 and 12/12) and never reopened; the compiler
+    # behind the object pages and `/objects/query` stays. An operator's env var is ignored.
     # AO-2b (2026-10-03): the API spawns, watches and restarts the Slack supervisor.
     "slack.managed_supervisor": "AUGHOR_SLACK_MANAGED_SUPERVISOR",
     # AO-6 (2026-10-03): the agents' testing centre — drafted questions, the nightly run.
@@ -93,7 +96,11 @@ FLAG_ENV = {
     # AO-7 (2026-10-03): one closed learning loop per custom agent.
     "agents.learning_loop": "AUGHOR_AGENTS_LEARNING_LOOP",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
-    "framing.choice_confidence": "AUGHOR_FRAMING_CHOICE_CONFIDENCE",
+    # "framing.choice_confidence" (AUGHOR_FRAMING_CHOICE_CONFIDENCE) was DELETED 2026-10-04 —
+    # kill 6 of the 2027 study (ROADMAP §4.9): its grid was blocked on a corpus that never
+    # existed, and CP-2's receipt (a model right 61% of the time at a stated confidence of
+    # about 1.0) is the evidence its run would have produced. The second response model went
+    # with it (`agent/framing.py`). An operator's env var is ignored.
     "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
     "semops.jev_cheap_tier": "AUGHOR_SEMOPS_JEV_CHEAP_TIER",
     "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
@@ -372,10 +379,6 @@ FLAG_META = {
         "label": "Answer through a conversation, not a single compiled query",
         "description": "Add agent bodies behind /ask: a quick turn becomes a real conversation whose tools wrap the existing guarded pipelines, and a deep turn becomes the ANALYST loop (CA-3) — the phase library as tools, the model choosing each next slice after seeing the last, the narrator writing the report from the evidence. Guards are unchanged and stay INSIDE the tools; the deterministic quick body and the deep phase script survive as the fallback whenever this is off. Off by default → /ask behaves exactly as today.",
     },
-    "ask.query_objects": {
-        "label": "Offer the compiled object query to the conversation",
-        "description": "Put ON-2's query_objects tool at the head of the conversation's roster (it rides ask.converse): the model fills a typed object query — the object type, which objects, what to compute across which links, grouped how — and the SQL is COMPILED from the measured ontology, so a to-many link is pre-aggregated before the join and a sum across a to-one link is refused by construction. run_sql stays as the escape hatch under the guard battery. Offered only on a connection whose ontology is built. Off by default → the roster is exactly today's. PARKED 2026-09-11 after a measured regression (ROADMAP §6 item 15): leave it off.",
-    },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Consulted by /ask's auto route AND the chat door (/investigate — the Agent chip's path, which otherwise pins a single investigation; added 2026-08-29 when a live soak found the wave unreachable from the UI). Off by default.",
@@ -518,26 +521,9 @@ EXPERIMENT: dict = {
                              "band occupancy (~7%)? Falsifier: accuracy below the sampled "
                              "cascade's, or fallback rate so high the house tier is doing "
                              "the work anyway — then turn it off and say so in §3.20.",
-    # A1 (docs/JEV_ALIGN_STUDY_2026-09-19.md, finding A1). ON adds `confidence` to the
-    # definition chooser's response model, which CHANGES THE PROMPT — hence group D, not a
-    # free instrumentation switch. The off-arm ships the identical schema it ships today.
-    "framing.choice_confidence": "does asking the definition chooser for its own confidence "
-                          "(a) change which definition it picks, and (b) produce a number that "
-                          "separates the picks a person would overturn from the ones they would "
-                          "not? ⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-09-19): "
-                          "`choose_definition` runs only on an AMBIGUOUS frame — `chosen is None "
-                          "and len(candidates()) > 1`, where candidates() keeps only `usable` "
-                          "outcomes — and all 32 authored LuxExperience questions frame to 0 "
-                          "ambiguous (27 reach no usable candidate, 5 reach exactly one; measured "
-                          "through the read-only POST /ontology/frame, no model, no warehouse). A "
-                          "grid on those sets would buy a no-op on every case, which is the exact "
-                          "mistake `explore.route_wide` is parked for. UNBLOCK: author a set whose "
-                          "questions fit TWO executable declared measures on one connection, then "
-                          "grid the fired subset. EXIT once fired: graduate if agreement is "
-                          "unchanged within noise AND the recorded confidence is lower on "
-                          "overturned picks than on upheld ones; DELETE the flag and the second "
-                          "response model if the number is flat, because a probability that does "
-                          "not separate cannot rank a queue and A2 has no input",
+    # "framing.choice_confidence" left this set 2026-10-04: DELETED (see the FLAG_ENV
+    # tombstone) — its own exit clause was "delete if the number is flat", and CP-2 measured
+    # the flatness on the one corpus that exists.
     # Moved here from the graduation queue by batch B's premise check: queued as
     # "invocation-gated route", but `_federation_eligible` ALSO auto-federates fresh
     # /ask auto-depth turns — an LLM-bearing routing change nothing has measured.
@@ -557,14 +543,8 @@ EXPERIMENT: dict = {
     # defect ("Graduate as-is"). The flag STAYS — its off-path is not dead code but the
     # ineligible-turn fallback every converse turn still rides — so this is
     # FLAG_DEFAULT, not deletion.
-    "ask.query_objects": "PARKED 2026-09-11 by the user on a measured regression (ROADMAP §6 item 15): "
-                         "a model filling the object query scored 1/14 and 3/12 against raw 14/14 and "
-                         "12/12. The question stands — does the compiled door answer warehouse "
-                         "questions at least as well as model-written SQL? — but reopen it only with a "
-                         "set where raw FAILS and a fill that fixes the malformed shapes (object_type "
-                         "required, op an enum, metric exclusive of path); a re-run where raw is at "
-                         "ceiling can at best tie. Graduation would make query_objects the roster's "
-                         "primary door; deleting the flag and the tool is the other exit",
+    # "ask.query_objects" left this set 2026-10-04: DELETED with its tool (see the FLAG_ENV
+    # tombstone) — "deleting the flag and the tool is the other exit", and the user took it.
     "explore.route_wide": "do landscape questions answer better through the explore wave? "
                           "⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-08-07): "
                           "is_wide_question fires on 0/102 of the reference suite "

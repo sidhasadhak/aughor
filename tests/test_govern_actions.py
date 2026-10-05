@@ -19,10 +19,28 @@ def test_classify_known_and_failsafe():
     assert govern.classify("some.brand.new.mutation") is ActionRisk.HIGH
 
 
-def test_guard_is_noop_when_disabled(monkeypatch):
+def test_the_gate_is_on_by_default(monkeypatch):
+    """Phase 0 of the 2027 study (ROADMAP §6 item 39(b)): unset means ON. Until 2026-10-04 a
+    fresh install held no high-risk action at all unless the operator set the variable."""
     monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
-    # Even a high-risk action passes silently when the gate is off.
+    with pytest.raises(HTTPException) as ei:
+        govern.guard("connection.delete", "scope-default")
+    assert ei.value.status_code == 428
+
+
+def test_one_still_means_on(monkeypatch):
+    """An operator who opted in before the default flipped is unchanged."""
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    with pytest.raises(HTTPException):
+        govern.guard("connection.delete", "scope-one")
+
+
+def test_zero_is_the_kill_switch(monkeypatch):
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    # Even a high-risk action passes silently when the gate is switched off.
     assert govern.guard("connection.delete", "scope-off") is None
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "off")
+    assert govern.guard("connection.delete", "scope-off-word") is None
 
 
 def test_guard_blocks_unapproved_high_risk(monkeypatch):

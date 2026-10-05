@@ -94,8 +94,8 @@ ECE_REASONS = {
         "`delegate_task`) and a system prompt carrying the resolved spec, but the same "
         "tool-calling path that returns a function call and is never asked for a number."),
     "framing.definition": (
-        "a probability exists behind the flag `framing.choice_confidence`, whose ON arm has "
-        "never executed here; the population is empty."),
+        "no probability: the flag that asked the chooser for one (`framing.choice_confidence`) "
+        "was deleted 2026-10-04 without ever firing; the population is empty by design."),
 }
 
 #: ⚠️ Rows written before 2026-09-21 carry `converse.tool` for BOTH tool-loop callers, because

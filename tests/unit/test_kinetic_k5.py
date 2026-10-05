@@ -17,7 +17,7 @@ from aughor.routers import ontology as ONT
 @pytest.fixture(autouse=True)
 def _iso(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ov")
-    monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
 
 
 def _valid_body() -> "ONT._KineticActionBody":

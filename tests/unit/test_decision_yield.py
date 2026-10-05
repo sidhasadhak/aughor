@@ -180,17 +180,11 @@ def test_an_empty_store_is_inconclusive_not_a_pass():
     assert set(s["sites_silent"]) == set(SITES)
 
 
-def test_the_definition_chooser_is_asked_for_confidence_only_behind_its_flag():
-    """The off-arm must ship the identical response model it ships today, or the A/B
-    measures the diff around the field instead of the field."""
-    from aughor.agent.framing import DefinitionChoice, DefinitionChoiceWithConfidence
-    assert set(DefinitionChoice.model_fields) == {"definition"}
-    assert set(DefinitionChoiceWithConfidence.model_fields) == {"definition", "confidence"}
-
-
-def test_the_confidence_flag_declares_an_exit():
-    """A flag with no disposition fails CI by design; assert ours is the group that owns
-    a prompt change, and that its entry names the corpus block rather than hiding it."""
-    from aughor.kernel.flags import EXPERIMENT, flag_disposition
-    assert flag_disposition("framing.choice_confidence") == "experiment"
-    assert "GRID BLOCKED ON CORPUS" in EXPERIMENT["framing.choice_confidence"]
+def test_the_definition_chooser_ships_one_response_model():
+    """The chooser's confidence arm was deleted 2026-10-04 (kill 6 of the 2027 study): the
+    one response model is the one it always shipped, and no flag can change the prompt."""
+    from aughor.agent import framing
+    from aughor.kernel.flags import FLAG_ENV
+    assert set(framing.DefinitionChoice.model_fields) == {"definition"}
+    assert not hasattr(framing, "DefinitionChoiceWithConfidence")
+    assert "framing.choice_confidence" not in FLAG_ENV

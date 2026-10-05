@@ -178,7 +178,7 @@ def test_end_to_end_through_execute_guarded(monkeypatch):
 # ── the K2 → K3 seam: an annotate action writes an overlay edit ──────────────────
 
 def test_annotate_action_writes_an_edit(monkeypatch):
-    monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
     from aughor.actions.executor import execute_kinetic_action
     from aughor.ontology.models import ActionParameter, KineticAction
 

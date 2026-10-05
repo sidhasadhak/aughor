@@ -637,7 +637,9 @@ misattributable — worse than absent, because people would trust it.
 ⏳ **VA-10 is therefore not one band.** It is (a) an auth model — service tokens? OIDC
 against which IdP? — which is the user's decision, and (b) an admin view, which is small once
 (a) exists. **Risk is policy, not code** was written when the policy was undecided; §6.4
-decided it 2026-09-02, and what remains is the code this line assumed was already there.
+decided it 2026-09-02, and what remains is the code this line assumed was already there. *(Corrected
+2026-10-04, phase 0 of the 2027 study: sign-in shipped 2026-09-06 as OIDC — `security/oidc.py`, issuer,
+audience and an org claim — and only the live identity-provider receipt is open.)*
 ✅ **DECIDED 2026-09-02 (§6.4): visible metadata, GATED payloads.** Counts, timings, costs,
 tool names, error rates and run outcomes are admin-visible without ceremony — that is the
 whole analytics case, and it needs no prompt text. Reading a prompt or a response body is a
@@ -4917,7 +4919,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   is refused today; and its `revenue` metric, marked verified, is `SUM(num_of_item)` — an item
   count. The compiler inherits what "verified" means (the formula EXECUTES), so a metric that runs
   and is not true compiles as faithfully as one that is: ON-0a's lesson a third time, now for
-  metric formulas.
+  metric formulas. *(Corrected 2026-10-04: theLook's approved `revenue` is `SUM(sale_price)` v1 — the
+  item-count formula this sentence names was replaced before the arc closed; PENDING.md's re-measure.)*
   **The model-filled measurement — RUN 2026-09-11** (§6 item 15(a); the user: *"run both
   measurements"*). A harness arm (`evals/ablation_eval.py --arms …,objects`, commit `f2a2ad25`): the
   model sees the schema the raw arm sees plus the object catalog and returns a typed object query —
@@ -5111,7 +5114,8 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
 > **Not taken:** their data model (declared, never measured — ON-0a's law, *the data wins*, stays the
 > difference), the keyword query, the LLM ontology generator that loads unchecked output, and a catalogue
 > of ontologies never measured against data. The one interop question, exporting our measured ontology to
-> Fabric IQ, is §6 item 16: open and unscheduled.
+> Fabric IQ, is §6 item 16: ~~open and unscheduled~~ REFUSED by the user 2026-09-21 (§4.6; this line
+> corrected 2026-10-04).
 
 - **ON-3b · The entity-type map — AMENDED 2026-09-11; FIRST SLICE BUILT the same day (unpushed, on
   `claude/on-fabric-iq-amendments`).** The type-level view ON-3's instance
@@ -11075,7 +11079,35 @@ Postgres (the kernel ledger already runs there), at least five people who own di
 by default (`AUGHOR_ACTION_APPROVAL` becomes a kill switch, the old name kept as an alias); the baseline numbers of the
 study's §A re-measured and dated; the Day Briefing delivered seven mornings; and the first number that left the
 platform and was acted on by someone who is not the analyst, with its receipt — the flywheel's first turn. Phase 4
-is gated on phase 3 (§4.8's amendment). Nothing of phases 1–7 is built.
+is gated on phase 3 (§4.8's amendment).
+
+**Phase 0 — the code half BUILT 2026-10-05** (on `claude/platform-2027-study`; the user's answers of 2026-10-05:
+the install is their machine with identity on, no identity provider chosen yet, one owner for now, the
+chooser switch deleted on CP-2's evidence and the ablation scripted). What landed: the approval gate ON by default
+with `AUGHOR_ACTION_APPROVAL=0` as the kill switch and `=1` still on (`govern/actions.py`; the suite's conftest
+switches it off for every test not about the gate, and the gate's own tests prove the default); kill 8 executed —
+the conversation's `query_objects` tool, its schema and `ask.query_objects` deleted, `/objects/query` and the
+compiler kept; kill 6's first case — `framing.choice_confidence` and its second response model deleted; the
+governance feed's four held-out kinds (`govern.cap`, `budget.exceeded`, `metric.enforcement`, guardrail blocks)
+admitted under a sixth category, `enforcement`; an integration grant refused to an identified caller who is not
+its owner (`integrations/call.py`), a scheduled step unchanged; the seven "reads as pending but is not" lines
+corrected here; `scripts/phase0_baseline.py` (the §A table re-measured through each store's door, an unreadable
+store said on its row) and `scripts/phase0_prompt_block_ablation.py` (§6 item 15(d)'s measurement, three hard
+sets, the deletion rule in its docstring). Receipt: the 229 tests of the touched areas pass; the baseline script
+ran on the build checkout's stores and the ablation script dry-ran.
+
+**Phase 0 — what remains is on the user's machine, in this order, with the exit's honest state.** (1) Deploy
+the branch and read the gate's first 428 on a declare door, then "always allow" once per scope. (2) `uv run
+python scripts/phase0_baseline.py --write` — the numbers later phases move against. (3) Create theLook's Day
+subscription and turn `briefing.ranges` on; the seven mornings are BR-5's receipt. (4) Run the promise-breach
+chain live end to end — the first number that leaves and is acted on, the flywheel's first turn. (5) `uv run
+python scripts/phase0_prompt_block_ablation.py` when a model key is at hand, then the deletion PR it licenses.
+(6) `aughor migrate-state` with the API stopped. (7) Identity on — `AUGHOR_REQUIRE_IDENTITY=1` with
+`AUGHOR_OIDC_ISSUER` and `AUGHOR_OIDC_AUDIENCE` — the day an identity provider is chosen; group grants, the
+proposal approver's name and the grant-ownership refusal all take effect then with no further code. **The
+organisation-scale half of the exit — five owners, identity on — is not observable yet**, by the user's own
+answers, and this line says so rather than reading as met. Phases 1 and 2 follow back to back on the same
+branch at the user's word.
 
 ---
 
@@ -11395,7 +11427,8 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
 
 ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first target NL2SQL,
         training rented, not owned
-        MI-0 annex ✅ DECIDED (§6.7b); remaining code: the langfuse.trace.input gate
+        MI-0 annex ✅ DECIDED (§6.7b); ~~remaining code: the langfuse.trace.input gate~~ — built
+             (`aughor/telemetry.py:812`; corrected 2026-10-04, phase 0 of the 2027 study)
         MI-1 grade what already runs · MI-2 verdict pins evidence — substrate-sized,
              may ride alongside any band above
         MI-2b ✅ BUILT 2026-09-20, MERGED #532 (`d91fb9be`) — the journal
@@ -11481,7 +11514,8 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              records evidence verbatim for the approver. Open: the live
              accepted-proposal receipt (waits for a natural evidence-backed
              occasion), periodic live red-team drives
-        ⚠ cross-user Know waits on VA-10's auth decision
+        ⚠ cross-user Know waits on ~~VA-10's auth decision~~ identity being switched ON — sign-in
+             shipped 2026-09-06 (corrected 2026-10-04; the 2027 study's phase 0 places it there)
         SECOND MOVEMENT ✅ ADOPTED 2026-09-15 (§6 item 22 (a)) — authoring by sentence: the user's own
              ⌘K turn measured six breaks between a draft and an agent that runs
         SP-7 ✅ MERGED #506, widened in #511 — honest
@@ -11534,7 +11568,8 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         #534 (`06d9d296`, 2026-09-21): measured first, the agent runtime consumed none of it; now
         an active package's plays reach the playbook store and its typed metric recipes reach the
         prompt, `resolve_recipes` and `metric_vocabulary` — gate 6 held by construction, so draft
-        banking still contributes nothing. A package's questions are not covered (§3.17).
+        banking still contributes nothing. ~~A package's questions are not covered (§3.17).~~ — covered
+        by #539 (corrected 2026-10-04).
         The user, 2026-09-17: finish Arc IP before Arc IN
 ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE clauses decided the same day) —
         the authored step. ✅ ALL THREE BUILT 2026-09-19 in the user's order — DS-17b (ranking was NOT
@@ -11745,7 +11780,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
   gated payloads. **§6 now has NO open decisions**, and VA-10 no longer stalls. The MCP write
   slice's two questions were decided the same day (§6.6, §3.1) — so is Arc VA's other blocker.
 - **VA-11's live Google receipt** — needs an OAuth client only the user can create.
-- **Slack reinstall** with `assistant:write` + `files:write` — three Slack surfaces dark until then.
+- ~~**Slack reinstall** with `assistant:write` + `files:write` — three Slack surfaces dark until then.~~
+  *Corrected 2026-10-04: the permission was granted at install; nothing to reinstall (PENDING.md).*
 - **One manual drag** — P1's edge-drop gesture: no tooling here can drive a ReactFlow drag
   (4× measured); the law is pure-tested, the gesture wants one human receipt.
 - Working-tree odds: modified `customers.yaml` · untracked `data/ontology_overrides/fixture/` ·

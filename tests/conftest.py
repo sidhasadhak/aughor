@@ -22,6 +22,12 @@ os.environ.setdefault("AUGHOR_SKIP_DOTENV", "1")
 # Point at the builtin DuckDB fixture connection during tests
 os.environ.setdefault("AUGHOR_API_KEY", "")  # disable auth in tests
 os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")
+# The action approval gate is ON by default in the product since 2026-10-04 (phase 0 of the 2027
+# study, ROADMAP §3.53). The suite drives governed routes with it OFF, as every test was written
+# before the flip and a 428 on a declare door is not what those tests measure; the tests OF the
+# gate (`tests/test_govern_actions.py`, `test_govern_action_coverage.py`) unset or set the
+# variable themselves, so the default is still proven. setdefault: an operator's own value wins.
+os.environ.setdefault("AUGHOR_ACTION_APPROVAL", "0")
 # Hermetic kernel ledger — tests must never write to data/system.db.
 #
 # ⚠️ ASSIGNED, NOT `setdefault`, and every store path below follows the same rule. An

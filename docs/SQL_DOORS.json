@@ -4,7 +4,6 @@
   "aughor/agent/analyst.py::_guarded::execute_guarded::{query_id}": {"dialect": "native", "author": "mixed", "note": "the premise check's portable windows and the z-score's model SQL"},
   "aughor/agent/analyst.py::_probe::execute::{query_id}": {"dialect": "declared", "author": "platform"},
   "aughor/agent/benchmarks.py::run_benchmarks::execute::benchmark": {"dialect": "native", "author": "model", "note": "the coder under the writer rules"},
-  "aughor/agent/converse_tools.py::query_objects::execute_guarded::objects": {"dialect": "generated", "author": "mixed", "note": "GM-5: audited — compiled from the model's object request, to answer a question"},
   "aughor/agent/converse_tools.py::run_sql::execute_guarded::converse": {"dialect": "native", "author": "model", "note": "the conversation agent, told the engine, its writer rules and the clock (`_engine_and_clock`); before 2026-10-04 it was told none, and theLook's audit showed every `::` and DuckDB `date_trunc` it wrote failing on BigQuery"},
   "aughor/agent/explore.py::_execute_one_subq::execute::{subq.id + \"_triangulate\"}": {"dialect": "generated", "author": "mixed", "note": "count_distinct_variant rewrites the model's SQL in conn.dialect; GM-5: audited — a variant of the model's own sub-question SQL"},
   "aughor/agent/explore.py::_execute_one_subq::execute::{subq.id}": {"dialect": "native", "author": "model", "note": "the explore planner, told the engine, its writer rules and the clock (`_engine_block`); before 2026-10-04 its prompt named no dialect"},

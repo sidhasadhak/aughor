@@ -402,8 +402,9 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
 
 
 #: Public name for the served-graph read, for callers outside this router: the object plane
-#: (routers/objects.py) and the converse `query_objects` tool compile against exactly the graph
-#: `GET /ontology` returns, under the same scope rule — one read, never a second opinion.
+#: (routers/objects.py) compiles against exactly the graph `GET /ontology` returns, under the
+#: same scope rule — one read, never a second opinion. (The converse `query_objects` tool that
+#: also read it was deleted 2026-10-04, kill 8 of the 2027 study.)
 served_ontology_graph = _get_ontology_graph
 
 

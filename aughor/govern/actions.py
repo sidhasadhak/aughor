@@ -15,14 +15,20 @@ is that gate for Aughor's mutating endpoints:
 - ``guard`` enforces it: a high-risk action that isn't allowlisted is blocked with a
   428 the client turns into an approval prompt; everything else proceeds and is audited.
 
-Opt-in via ``AUGHOR_ACTION_APPROVAL``. When off, ``guard`` is a no-op so existing
-flows are byte-for-byte unchanged.
+ON BY DEFAULT since 2026-10-04 (the 2027 study's phase 0 — ROADMAP §6 item 39(b), §3.53):
+until then the gate was opt-in via ``AUGHOR_ACTION_APPROVAL``, so a fresh install held no
+high-risk action at all. The variable keeps its name and its meaning — ``1`` still means on,
+so an operator who had opted in is unchanged — and gains a kill switch: ``0`` turns the gate
+off, and ``guard`` is then a no-op, said once in the log at the first read.
 """
 from __future__ import annotations
 
+import logging
 import os
 from enum import Enum
 from typing import Optional
+
+_LOG = logging.getLogger("aughor.govern")
 
 from fastapi import HTTPException
 
@@ -68,8 +74,23 @@ def classify(action: str) -> ActionRisk:
     return _RISK.get(action, ActionRisk.HIGH)
 
 
+_OFF_WORDS = ("0", "false", "no", "off")
+_off_said = False
+
+
 def approval_enabled() -> bool:
-    return os.getenv("AUGHOR_ACTION_APPROVAL", "").strip().lower() in ("1", "true", "yes", "on")
+    """On unless the operator switched it off: unset or ``1``/``true``/``yes``/``on`` is on;
+    ``0``/``false``/``no``/``off`` is the kill switch. Read from the environment on every call
+    (the tests flip it per case); the one log line fires once per process."""
+    global _off_said
+    raw = os.getenv("AUGHOR_ACTION_APPROVAL", "").strip().lower()
+    if raw in _OFF_WORDS:
+        if not _off_said:
+            _off_said = True
+            _LOG.warning("the action approval gate is OFF (AUGHOR_ACTION_APPROVAL=%s): "
+                         "high-risk actions run without approval and are only audited", raw)
+        return False
+    return True
 
 
 def _key(action: str, scope: str) -> str:

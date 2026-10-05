@@ -485,7 +485,7 @@ function ActionApprovalsSection() {
       </div>
       {audit.length === 0 ? (
         <div style={{ fontSize: 12, color: "var(--t3)" }}>
-          No high-risk action attempts recorded. (Enable with AUGHOR_ACTION_APPROVAL.)
+          No high-risk action attempts recorded yet. The gate is on unless AUGHOR_ACTION_APPROVAL=0 switched it off.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 260, overflow: "auto" }}>

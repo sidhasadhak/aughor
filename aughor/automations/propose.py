@@ -313,8 +313,9 @@ def _drafted_held_kinds() -> tuple[str, ...]:
 def _hold_drafted_writes(drafted: "ProposedChain") -> list[int]:
     """SP-7 — a write or an outbound send a model drafts into a chain waits for a person.
 
-    The approval switch (``AUGHOR_ACTION_APPROVAL``) is off by default, and with it off a
-    drafted write inside an armed chain runs unattended. A chain a PERSON builds by hand is
+    The approval switch (``AUGHOR_ACTION_APPROVAL``) was opt-in until 2026-10-04 — with it
+    off, a drafted write inside an armed chain ran unattended — and is on by default since;
+    this hold never depended on it either way. A chain a PERSON builds by hand is
     that person's decision; one a model drafted from a sentence is not, so each of its held
     steps carries ``require_approval`` and the dispatcher asks a human — on the first run,
     and on every run until a person clicks "always allow" and mints a standing send-grant
