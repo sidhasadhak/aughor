@@ -343,8 +343,11 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 > - ~~**a UI**~~ — **BUILT.** `McpServersSection.tsx:298` renders `+ Custom MCP`, with tests
 >   covering it, against full CRUD + `/discover` + per-tool grant routes. It shipped with
 >   #426 and this line was never updated.
-> - **OAuth-authenticated servers** — still true as written (the `auth_header` is one opaque
->   forwarded value), **but it is NOT what unlocks Arcade/Composio, and the sentence below
+> - **OAuth-authenticated servers** — ~~still true as written (the `auth_header` is one opaque
+>   forwarded value)~~ **BUILT 2026-10-05, the 2027 study's close-out C9 (§3.53):** two OAuth
+>   modes on the server row, the SDK's provider handed to the transport, the token set
+>   encrypted on the row, begin and callback doors; the live sign-in is the install's. It was
+>   **NOT what unlocks Arcade/Composio, and the sentence below
 >   that says it is was wrong.** This repo's own Langflow study records Composio as *keyed by
 >   `COMPOSIO_API_KEY`*, with *"service provider authentication managed through the Composio
 >   platform"* — the platform absorbs the per-service OAuth, and what it wants from us is an
@@ -11305,9 +11308,10 @@ relative width for every other unit, method backtests), never a connection id, a
 `POST /aggregates/export` when `aggregates.share` is on — off by default, the user's call, the door refusing and saying
 so. Receipt: 20 phase-7 tests pass; the MCP, agent-policy, identity, RBAC, departure, pack, Record, flag, vocabulary,
 noun and exit-gate suites pass; the API registers 21 `/ledger/v1` routes. **Still open in phase 7:** the Developer
-screen and the web client's regeneration for the new routes; OAuth for MCP servers that need their own sign-in; a second
-install to receive an aggregate; and the exit — an outside vendor's agent on a real service principal scored beside the
-built-in ones, a third party's pack uploaded and measured on a connection.
+screen and the web client's regeneration for the new routes; a second install to receive an aggregate; and the exit — an
+outside vendor's agent on a real service principal scored beside the built-in ones, a third party's pack uploaded and
+measured on a connection. (OAuth for MCP servers that need their own sign-in, and the manifest written without its
+comments, were open here until the close-out's C9, §3.53 below.)
 
 **The close-out — the code still open inside the phases, taken back to back from 2026-10-05** at the user's word
 ("finish these back to back where a UI check is not required"); the screens and the install's exits stay the user's.
@@ -11451,6 +11455,30 @@ and the settling anchors reworded to the kernel's own words (parent row, line, o
 and `test_industry_noun_ratchet.BASELINE` lowered to the measured floor — order 25→0, refund 5→0, revenue 14→0,
 shipment 1→0, customer 3→1 and product 1→1, the one line in `packs/models.py` that names the function knowledge
 layers. Receipt: the package, gate-3, promotion, priors, kit, router, HB-6, noun and vocabulary suites pass.
+(C9, phase 7) Two items the pack kit and the MCP consumer left open. The manifest: `promote.set_status` and
+`kit.upload` loaded `pack.yaml`, changed a key and dumped the mapping back, dropping every comment an author wrote —
+the provenance a reviewer reads (IP-4's dating on banking, C8's reasons on B2B SaaS). `packs/manifest.rewrite_scalars`
+replaces a top-level scalar's line in place (a block value removed with it, a trailing comment kept), appends a key
+that was absent, and leaves every other byte; `yaml.safe_load` of the result is the original with those keys changed,
+and both doors go through it (PENDING 299 closed). OAuth-authenticated MCP servers, the code half: `McpServer` gains
+`auth_mode` (`header` as before · `oauth_client_credentials` for a machine identity · `oauth_authorization_code` for
+a person's sign-in), the client it presents, and the token set and registration the SDK's storage protocol writes —
+three new secret fields, encrypted at rest by the store and dropped on every read, a read saying only `signed_in` and
+when. `mcpservers/oauth.py` hands the transport the SDK's own `httpx.Auth` (`ClientCredentialsOAuthProvider`, or
+`OAuthClientProvider` with `ServerTokenStorage` over the row), so discovery, registration, PKCE, the exchange and the
+refresh are the SDK's; `session._open` takes `auth=` and builds it for an OAuth server. A sign-in: `begin` runs one
+connection attempt on a thread whose handlers park on the browser — the redirect handler records the URL the person
+is given, the callback handler waits (bounded, `SIGNIN_TIMEOUT_S`) for `complete`, which `GET
+/mcp-servers/oauth/callback?code&state` calls (exempt from the API key like the Slack install's return; the
+unguessable state is what is verified); the SDK then exchanges the code and stores the token set, and
+`mcp.oauth` is journaled (catalogued). An ordinary open of a server nobody signed in to raises `McpSignInRequired`
+naming the door, never hanging a worker on a browser nobody opened; `POST /mcp-servers/{id}/oauth/begin` and
+`/oauth/sign-out`; an update that keeps the client keeps the sign-in and one that changes the mode drops it. Said
+rather than hidden: the waiter lives in one process (a callback that lands on another worker finds no waiter and says
+so — the integrations broker's SQLite pending store is the shape for a multi-worker deployment), and the live sign-in
+against a real authorization server is the install's. Receipt: the manifest-rewrite and OAuth suites (fourteen tests,
+the flow stood in for by a fake that drives the SDK's handlers), the MCP consumer, write-grant, call-step, kit,
+promotion, catalogue, departure-exit and hermeticity suites pass.
 
 ---
 

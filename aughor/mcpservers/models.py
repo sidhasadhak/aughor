@@ -51,7 +51,14 @@ from aughor.util.time import now_iso_z
 #: Encrypted at rest, dropped (never masked) on the way out — `Connection`'s rule, for its
 #: reason: a mask still confirms a secret's length-class and invites a client to store the
 #: field, and nothing above the store has a use for even the shape of these.
-SERVER_SECRET_FIELDS = ("auth_header",)
+SERVER_SECRET_FIELDS = ("auth_header", "oauth_client_secret", "oauth_tokens", "oauth_client_info")
+
+#: How an http server is authenticated to (the 2027 study §Q; the close-out, C9). `header` is the
+#: original posture — a complete `Authorization` value the operator was given. The two OAuth modes
+#: hand the SDK's own `httpx.Auth` provider to the transport: `oauth_client_credentials` for a
+#: machine identity (client id and secret, no person), `oauth_authorization_code` for a person's
+#: sign-in through the browser, whose token set is stored encrypted on the row.
+AUTH_MODES = ("header", "oauth_client_credentials", "oauth_authorization_code")
 
 
 def _new_id() -> str:
@@ -93,6 +100,24 @@ class McpServer(BaseModel):
     #: "bearer vs basic" would be a taxonomy with no behaviour behind it.
     auth_header: str = ""
 
+    #: http only (C9). `header` forwards `auth_header`; an OAuth mode ignores it and authenticates
+    #: through the SDK's provider instead. See `AUTH_MODES`.
+    auth_mode: Literal["header", "oauth_client_credentials", "oauth_authorization_code"] = "header"
+    #: OAuth: the client this deployment presents. Required for client credentials; optional for the
+    #: authorization code — left empty, the SDK registers a client dynamically where the server
+    #: supports it and the registration is stored in `oauth_client_info`.
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""          # encrypted at rest, dropped on the way out
+    #: OAuth: the scopes asked for, space-separated; empty asks for the server's default.
+    oauth_scopes: str = ""
+    oauth_token_endpoint_auth: Literal["client_secret_basic", "client_secret_post"] = "client_secret_basic"
+    #: OAuth: the token set the SDK's storage protocol writes (`mcp.shared.auth.OAuthToken` as JSON)
+    #: and the client registration it keeps (`OAuthClientInformationFull` as JSON). Both encrypted
+    #: at rest and never returned; `to_safe_dict` says only whether a person has signed in.
+    oauth_tokens: str = ""
+    oauth_client_info: str = ""
+    oauth_token_obtained_at: str = ""
+
     #: A server present but switched off. Distinct from deleted, which forgets the roster
     #: and any step that named it; distinct from unreachable, which is a health verdict
     #: and not a human's intent.
@@ -117,13 +142,26 @@ class McpServer(BaseModel):
                 raise ValueError("an http server needs a `url`")
             if self.command:
                 raise ValueError("an http server has no `command` — it is an address, not a process")
+        if self.auth_mode != "header":
+            if self.transport != "http":
+                raise ValueError("OAuth authenticates an http server; a stdio server is a process this deployment spawns")
+            if self.auth_mode == "oauth_client_credentials" and not (self.oauth_client_id and self.oauth_client_secret):
+                raise ValueError("client credentials need an `oauth_client_id` and an `oauth_client_secret`")
         return self
+
+    @property
+    def signed_in(self) -> bool:
+        """Whether an OAuth token set is stored for this server — the only thing a read says of it."""
+        return self.auth_mode != "header" and bool(self.oauth_tokens)
 
     def to_safe_dict(self) -> dict:
         d = self.model_dump()
         for f in SERVER_SECRET_FIELDS:
             d.pop(f, None)
-        d["has_auth"] = bool(getattr(self, "auth_header", ""))
+        d["has_auth"] = bool(getattr(self, "auth_header", "")) or self.signed_in
+        d["oauth"] = {"mode": self.auth_mode, "signed_in": self.signed_in, "client_id": self.oauth_client_id,
+                      "scopes": self.oauth_scopes, "obtained_at": self.oauth_token_obtained_at,
+                      "has_client_secret": bool(self.oauth_client_secret)}
         return d
 
 

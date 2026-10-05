@@ -27,7 +27,8 @@ import logging
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from aughor.mcpservers import store
@@ -58,6 +59,14 @@ class ServerRequest(BaseModel):
     env: dict = Field(default_factory=dict)
     url: str = ""
     auth_header: str = ""
+    #: C9 — how an http server is authenticated to (`models.AUTH_MODES`) and the OAuth client this
+    #: deployment presents. The client secret follows `auth_header`'s rule on update: empty leaves
+    #: it alone, "-" clears it. The token set is never set through this request — a person signs in.
+    auth_mode: str = "header"
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
+    oauth_scopes: str = ""
+    oauth_token_endpoint_auth: str = "client_secret_basic"
     enabled: bool = True
 
 
@@ -102,8 +111,10 @@ def _view(server: McpServer, grants_by_key: Optional[dict] = None) -> dict:
             # disagree about a tool's reachability.
             "callable_now": tool.disposition == CALLABLE or state == GRANT_ACTIVE,
         })
+    from aughor.mcpservers.oauth import status as oauth_status
     return {
         **server.to_safe_dict(),
+        "oauth": oauth_status(server),
         "discovered_at": discovered_at,
         "tool_count": len(tools),
         "callable_count": sum(1 for t in tools if t.disposition == CALLABLE),
@@ -145,15 +156,73 @@ def update_server(server_id: str, body: ServerRequest) -> dict:
     """
     existing = _server_or_404(server_id)
     fields = body.model_dump()
-    if not fields.get("auth_header"):
-        fields["auth_header"] = existing.auth_header
-    elif fields["auth_header"] == "-":
-        fields["auth_header"] = ""
+    for secret in ("auth_header", "oauth_client_secret"):
+        if not fields.get(secret):
+            fields[secret] = getattr(existing, secret)
+        elif fields[secret] == "-":
+            fields[secret] = ""
+    # The token set and the registration are a person's sign-in, never a request body's: they ride
+    # through an update untouched, and are dropped only when the mode or the client they belong to changes.
+    same_client = (fields.get("auth_mode") == existing.auth_mode and fields.get("oauth_client_id") == existing.oauth_client_id
+                   and fields.get("url") == existing.url)
+    fields.update({"oauth_tokens": existing.oauth_tokens if same_client else "",
+                   "oauth_client_info": existing.oauth_client_info if same_client else "",
+                   "oauth_token_obtained_at": existing.oauth_token_obtained_at if same_client else ""})
     try:
         updated = McpServer(**fields, id=existing.id, created_at=existing.created_at)
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=_first_error(exc)) from exc
     return _view(store.save_server(updated))
+
+
+# ── OAuth: a person signs in to a server, and out (C9) ───────────────────────────
+
+def _callback_uri(request: Request) -> str:
+    """The browser's way back, as THIS deployment is reachable — the integrations broker's derivation,
+    honouring the proxy headers a fronted deployment arrives behind, because the authorization server
+    compares the redirect byte for byte with what the client registered."""
+    from aughor.mcpservers.oauth import CALLBACK_PATH
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.url.netloc
+    return f"{proto}://{host}{CALLBACK_PATH}"
+
+
+@router.post("/mcp-servers/{server_id}/oauth/begin")
+def oauth_begin(server_id: str, request: Request) -> dict:
+    """Start a person's sign-in to an OAuth server: discovery, registration and PKCE run on a thread that then
+    waits for the browser; the response carries the URL to open. A server in the header posture or in client
+    credentials has nothing to sign in to and is refused with why."""
+    from aughor.mcpservers import oauth
+    server = _server_or_404(server_id)
+    try:
+        return oauth.begin(server, redirect_uri=_callback_uri(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except McpUnreachable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/mcp-servers/oauth/callback", response_class=HTMLResponse)
+def oauth_callback(state: str = "", code: str = "", error: str = "", error_description: str = ""):
+    """Where the authorization server sends the browser back. Exempt from the API key (`api._AUTH_EXEMPT`):
+    the redirect carries none, and the unguessable `state` the SDK minted is what is verified — a state no
+    sign-in is waiting for is refused."""
+    from aughor.mcpservers import oauth
+    try:
+        out = oauth.complete(state, code, error=(error_description or error))
+    except LookupError as exc:
+        return HTMLResponse(f"<h1>Sign-in not completed</h1><p>{exc}</p>", status_code=404)
+    if out["signed_in"]:
+        return HTMLResponse("<h1>Signed in</h1><p>Aughor can reach this server now. You can close this tab.</p>")
+    return HTMLResponse(f"<h1>Sign-in failed</h1><p>{out['error'] or 'no token set was stored'}</p>", status_code=400)
+
+
+@router.post("/mcp-servers/{server_id}/oauth/sign-out")
+def oauth_sign_out(server_id: str) -> dict:
+    """Forget the token set. The registration stays; the next begin signs the person in again."""
+    from aughor.mcpservers import oauth
+    server = _server_or_404(server_id)
+    return _view(oauth.sign_out(server))
 
 
 @router.delete("/mcp-servers/{server_id}")

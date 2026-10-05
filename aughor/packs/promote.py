@@ -167,13 +167,17 @@ def set_status(pack_id: str, status: str, *, packs_dir=None, actor: str = "",
                     f"'{pack_id}' was refused by its own evals: "
                     + "; ".join(getattr(gate_decision, "reasons", []) or ["no reason given"]))
 
-    with manifest_file.open() as f:
-        raw = yaml.safe_load(f) or {}
+    text = manifest_file.read_text(encoding="utf-8")
+    raw = yaml.safe_load(text) or {}
     if not isinstance(raw, dict):
         raise PacksError(f"{manifest_file.name} must be a YAML mapping")
     before = str(raw.get("status", "draft"))
     raw["status"] = status
-    manifest_file.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    # The close-out's C9: ONE line changes. A dump of the loaded mapping dropped every comment the
+    # author wrote — the provenance a reviewer reads — so the status is rewritten in place
+    # (`packs/manifest.rewrite_scalars`) and every other byte of the file stays theirs.
+    from aughor.packs.manifest import rewrite_scalars
+    manifest_file.write_text(rewrite_scalars(text, {"status": status}), encoding="utf-8")
 
     _journal(pack_id, before, status, actor, raw)
     return load_pack(root)

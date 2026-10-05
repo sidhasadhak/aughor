@@ -52,6 +52,7 @@ CATALOGUE: dict[str, dict[str, Any]] = {
     "intake.governance": {"what": "an intake bundle was uploaded or a person resolved an item", "payload": ["action"], "emitted_by": "routers/intake"},
     "eval.graduation": {"what": "a flag's graduation decision was recorded", "payload": ["flag", "can_graduate", "pass_rate", "reasons"], "emitted_by": "routers/evals"},
     "mcp.tool_call": {"what": "an agent's call through the MCP door, allowed or refused", "payload": ["actor", "tool", "route", "allowed", "code", "required_level", "policy_level"], "emitted_by": "rbac/agent_gate"},
+    "mcp.oauth": {"what": "a person signed in to an OAuth-authenticated MCP server, failed to, or signed out", "payload": ["server_id", "action", "by", "detail"], "emitted_by": "mcpservers/oauth"},
     "chat.feedback": {"what": "a person's verdict on a chat turn", "payload": ["turn_id", "verdict", "note"], "emitted_by": "routers/query"},
     "trace.feedback": {"what": "a person's verdict on a run", "payload": ["trace_id", "verdict", "note", "by"], "emitted_by": "routers/obs"},
     "trace.payload_access": {"what": "a run's captured payload was read", "payload": ["trace_id"], "emitted_by": "routers/obs"},

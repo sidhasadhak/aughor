@@ -242,6 +242,9 @@ _AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/", "/auth
                 # AO-2d — Slack's browser redirect after an install carries no key; the
                 # route verifies a sealed state instead. Its own prefix, deliberately.
                 "/slack-bots/oauth/",
+                # C9 — the browser's return from an MCP server's authorization server carries no
+                # key; the route verifies the unguessable state the SDK minted instead.
+                "/mcp-servers/oauth/",
                 # AO-5 — the headless doors to a custom agent carry their OWN credential
                 # (the agent's key as a bearer, or the Bot Framework's signature) and the
                 # A2A card is public by definition. Each by its own prefix.

@@ -50,8 +50,12 @@ class McpUnreachable(RuntimeError):
 
 
 @asynccontextmanager
-async def _open(server: McpServer, timeout_s: float):
-    """An initialized `ClientSession` for this server, whichever transport it declares."""
+async def _open(server: McpServer, timeout_s: float, *, auth=None):
+    """An initialized `ClientSession` for this server, whichever transport it declares.
+
+    ``auth`` (C9) is the `httpx.Auth` the http transport is handed: the OAuth provider for a server in an
+    OAuth mode (`oauth.auth_for`, built here when the caller passes none), or the interactive one a
+    sign-in carries. The header posture passes the `Authorization` value as before."""
     from mcp import ClientSession
 
     if server.transport == "stdio":
@@ -71,8 +75,11 @@ async def _open(server: McpServer, timeout_s: float):
 
     from mcp.client.streamable_http import streamablehttp_client
 
-    headers = {"Authorization": server.auth_header} if server.auth_header else None
-    async with streamablehttp_client(server.url, headers=headers, timeout=timeout_s) as (
+    if auth is None and server.auth_mode != "header":
+        from aughor.mcpservers.oauth import auth_for
+        auth = auth_for(server)
+    headers = {"Authorization": server.auth_header} if (server.auth_header and server.auth_mode == "header") else None
+    async with streamablehttp_client(server.url, headers=headers, timeout=timeout_s, auth=auth) as (
             read, write, _get_session_id):
         async with ClientSession(read, write) as session:
             await session.initialize()

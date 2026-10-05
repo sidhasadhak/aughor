@@ -123,11 +123,14 @@ def upload(files: dict[str, str], *, by: str, source: str = "upload", source_url
     raw = yaml.safe_load(staged["pack.yaml"]) or {}
     if not isinstance(raw, dict):
         raise KitRefused("pack.yaml must be a YAML mapping")
-    # Provenance rides the manifest; status is forced to draft — a pack is inert on arrival.
-    raw.update({"status": "draft", "source": source or "upload", "uploaded_by": by, "uploaded_at": now_iso_z()})
+    # Provenance rides the manifest; status is forced to draft — a pack is inert on arrival. Written
+    # key by key into the author's own text (C9: `packs/manifest.rewrite_scalars`), so the comments
+    # an uploader wrote beside their declarations arrive with them.
+    from aughor.packs.manifest import rewrite_scalars
+    changes: dict[str, Any] = {"status": "draft", "source": source or "upload", "uploaded_by": by, "uploaded_at": now_iso_z()}
     if source_url:
-        raw["source_url"] = source_url
-    staged["pack.yaml"] = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
+        changes["source_url"] = source_url
+    staged["pack.yaml"] = rewrite_scalars(staged["pack.yaml"], changes)
     if root.exists():
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
