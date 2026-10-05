@@ -48,11 +48,11 @@ function useThemeMode(): "light" | "dark" {
 
 const TOKEN_FALLBACK: Record<"dark" | "light", Record<string, string>> = {
   dark: {
-    "--bg-0": "#191F24", "--bg-1": "#272F35", "--bg-2": "#272F35", "--bg-3": "#191F24",
-    "--bg-4": "#33404C", "--b0": "#2D3841", "--b1": "#37444F",
-    "--t1": "#E8ECF0", "--t2": "#9AACBB", "--t3": "#8C9EAC", "--t4": "#677A89",
+    "--bg-0": "#171717", "--bg-1": "#212121", "--bg-2": "#212121", "--bg-3": "#171717",
+    "--bg-4": "#303030", "--b0": "#2A2A2A", "--b1": "#333333",
+    "--t1": "#EDEDED", "--t2": "#ABABAB", "--t3": "#9C9C9C", "--t4": "#6E6E6E",
     "--blue3": "#4299E0", "--blue4": "#8ACAFF",
-    "--bg-hover": "#2E3942", "--bg-sel": "#1C364D",
+    "--bg-hover": "#2A2A2A", "--bg-sel": "#1C364D",
   },
   light: {
     "--bg-0": "#FFFFFF", "--bg-1": "#F3F3F3", "--bg-2": "#FFFFFF", "--bg-3": "#FFFFFF",

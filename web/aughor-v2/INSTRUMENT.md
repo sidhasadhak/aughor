@@ -64,7 +64,10 @@ spring, no overshoot. Every animation's reduced-motion fallback is its **finishe
 An alias is a real `var()`, never a duplicated hex. Values live in `tokens-v2.css` — read it,
 not a copy.
 
-**Two skins (2026-09-25).** Dark follows the Du Bois greys and blues (the study §9's dark reference); light follows
+**Two skins (2026-09-25).** Dark follows the Du Bois blues (the study §9's dark reference) on charcoal: on
+2026-10-05 its greys — every surface, line and text token — left Du Bois's navy for neutrals (page `#171717`, chrome
+`#212121`, text `#EDEDED`) at the user's word, on a side-by-side of real pages; the blue, the selection tint, the
+intent ramps and the chart palette did not move. Light follows
 Excel — grey chrome, a white grid, Excel green for the app's own state and blue for links,
 Excel's Good / Bad / Neutral fills for state on a value. The values and their measured
 contrast are in `docs/UI_UX_STUDY_2026-09-25.md` §9.2; the rules that differ between the
@@ -214,7 +217,7 @@ loops stop. The ⌘K palette has no entrance at all — it is summoned from the 
 skills): the Primary alone gets a press scale, and dense controls keep the background step; the
 Briefing enters verdict → numbers → cards once a session (`components/brief/firstOpen.ts`), never on
 Reload or Regenerate; depth stays a hairline, not a shadow — a card is the page's own plane, and on
-`#191F24` (the canvas since the 2026-10-04 lift of the 2026-09-25 skin; `#11171C`, `#181818` and `#101010` before it) a drop shadow would not show.
+`#171717` (the canvas since the dark skin's neutrals moved to charcoal on 2026-10-05; `#191F24`, `#11171C`, `#181818` and `#101010` before it) a drop shadow would not show.
 
 ## 8. Icons and density
 
