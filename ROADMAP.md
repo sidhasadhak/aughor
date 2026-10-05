@@ -13592,7 +13592,19 @@ the browser** · **measure the premise before building.**
     whether the version sent is still the one on the page, and "Open what was sent" reads that version by its id,
     never the latest. A send the gate held or a channel refused books nothing; the standing Briefing, which keeps no
     version, books nothing. The entry is in the ledger's export. Not seen on a real send yet: the scratch install has
-    no channel, so the first scheduled send is its receipt. *The action and the prediction on an item: not yet built.*
+    no channel, so the first scheduled send is its receipt.
+    *Built — a prediction on each measured item:* for every approved metric, the band its own past puts on the
+    range AFTER the one on the page — the mean of the six ranges before it, each stepped back the way the range's own
+    comparison is and all read at one age, with an interval at 80% stated coverage and the backtest on those ranges
+    (`aughor/briefing/expected.py`). The method is the Record's "history"; the measurement is the Briefing's own, so
+    the prediction is of the figure the next Briefing will print. It is booked as a prediction claim under a stable
+    key (asking twice books nothing and measures nothing), shown as an "Expected next" column and in the metric's
+    drawer, listed with the predictions in play at the Briefing's head, and scored by the hourly tick by measuring
+    that range the same way once it has settled. Said, not guessed: fewer than three readable ranges states no band
+    and why; a range to date is not predicted. Two traps found and closed, each with a test: a metric in percent was
+    going to be judged as a band relative to a before-figure (always "cannot tell"), and a count over a window with
+    no rows read as a zero — found on the scratch install, where it put "0 to 961" on a metric that had read 800
+    every month it existed. *The action on an item: not yet built.*
     (d) **Filings get one list on Agent Ops ▸ By duty** — what is open, what it is about, its age, and "close with an
     outcome". Measured before asking: probation already has two screens (the Hub map's column and Departures), so only
     the filings were without one; By duty gets a probation count that opens the Hub map. *Built:* "Filed and open"

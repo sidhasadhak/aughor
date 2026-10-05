@@ -20,7 +20,7 @@ const api = vi.hoisted(() => ({
   listCockpits: vi.fn(), getCockpit: vi.fn(), runDashboardCard: vi.fn(), keepCockpit: vi.fn(),
   startMyCockpit: vi.fn(), draftCockpit: vi.fn(), getProposalById: vi.fn(), acceptProposal: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
-  getSystemFlags: vi.fn(), measureRange: vi.fn(),
+  getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const composer = vi.hoisted(() => ({ onCreated: null as null | (() => void) }));
@@ -90,6 +90,8 @@ beforeEach(() => {
   api.runDashboardCard.mockResolvedValue({ columns: ["_v"], rows: [["10.03"]], row_count: 1 });
   api.keepCockpit.mockResolvedValue({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] });
   api.measureRange.mockResolvedValue({ period: MEASURED, from_briefing: false, measured_at: "2026-10-05T09:00:00Z", scope_key: "thelook:thelook" });
+  api.readExpectedNext.mockResolvedValue({ why: "", target: { start: "2026-09-01", last_day: "2026-09-30", label: "2026-09-01 to 2026-09-30", settles_on: "2026-10-01" },
+    items: [{ metric: "revenue", name: "Revenue", why: "", expected: { claim_id: "p1", low: 100, mid: 108, high: 116, text: "$100 to $116", state: "open", scored_against: null, must_say: ["6 earlier ranges"], n: 6 } }] });
 });
 
 describe("with the flag off", () => {
@@ -320,6 +322,9 @@ describe("the metrics, the cockpit a person opens on", () => {
     await waitFor(() => expect(api.measureRange).toHaveBeenCalledWith("thelook", { preset: "last_month" }, "thelook"));
     expect(await screen.findByText("Measured for August 2026 · against July 2026")).toBeInTheDocument();
     expect(screen.getByText("$110")).toBeInTheDocument();
+    // and what the metric's own past expects of the range after it
+    expect(await screen.findByText("$100 to $116")).toBeInTheDocument();
+    expect(api.readExpectedNext).toHaveBeenCalledWith("thelook", { preset: "last_month" }, "thelook", undefined);
     expect(screen.getByTestId("cockpit-range")).toHaveTextContent("August 2026 · final");
     expect(api.getCockpit).not.toHaveBeenCalled();
     // the person's own cockpits are still there, one click away, and that choice is remembered

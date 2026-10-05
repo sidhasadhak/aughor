@@ -12,10 +12,13 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { STATUS_LABEL, changeOf, useOpenMetric, useShownMetric } from "@/components/brief/MetricDetail";
+import { STATUS_LABEL, changeOf, rangeOf, useOpenMetric, useShownMetric } from "@/components/brief/MetricDetail";
 import { StatTile, type StatDelta } from "@/components/brief/StatTile";
-import { Ledger, StatusMark, type LedgerColumn } from "@/components/record/kit";
-import type { BriefingRange, BriefingRangeBlock, BriefingRangeMeasure, RangePreset } from "@/lib/api";
+import { Ledger, StatusMark, useLoad, type LedgerColumn } from "@/components/record/kit";
+import {
+  readExpectedNext,
+  type BriefingRange, type BriefingRangeBlock, type BriefingRangeMeasure, type ExpectedNext, type RangePreset,
+} from "@/lib/api";
 
 /** The control's value: the standing view, or a range. */
 export type RangeChoice = { preset: "standing" } | BriefingRange;
@@ -138,12 +141,26 @@ export function rangeStats(block: BriefingRangeBlock): string {
   return `${measured} measured${missing ? ` · ${missing} not measured` : ""} · as of ${block.as_of}`;
 }
 
+/** The measured table with what each metric is expected to read next (ROADMAP §6 item 42c). The
+ *  bands are asked for once the table is on the page — the first ask for a range books them as
+ *  predictions, later asks read them back. Until they arrive, and where they cannot be read, the
+ *  table stands without the column. */
+export function RangeMeasuresExpected({ connectionId, schema, workspaceId, block }: {
+  connectionId: string; schema?: string; workspaceId?: string; block: BriefingRangeBlock;
+}) {
+  const load = useLoad(() => readExpectedNext(connectionId, rangeOf(block), schema, workspaceId),
+    [connectionId, schema, workspaceId, block.key]);
+  return <RangeMeasures block={block} expected={load.data} />;
+}
+
 /** The range's measured metrics. Under a page that offers the metric drawer (`MetricDetailHost`),
- *  a metric's name opens it: the trend, what moved inside it, how it is defined. */
-export function RangeMeasures({ block }: { block: BriefingRangeBlock }) {
+ *  a metric's name opens it: the trend, what moved inside it, how it is defined. With `expected`,
+ *  each metric also says the band its own past puts on the next range, or that none is stated. */
+export function RangeMeasures({ block, expected }: { block: BriefingRangeBlock; expected?: ExpectedNext | null }) {
   const hasYear = block.measured.some(m => m.last_year !== null) && !!block.last_year_label;
   const open = useOpenMetric();
   const shown = useShownMetric(block.key);
+  const bands = new Map((expected?.items ?? []).map(i => [i.metric, i]));
   const columns: LedgerColumn<BriefingRangeMeasure>[] = [
     { head: "Metric", cell: m => <span title={m.time_source ?? undefined}>{m.name}</span> },
     { head: "This range", cell: m => m.current_text ?? "", num: true, width: 130 },
@@ -156,6 +173,15 @@ export function RangeMeasures({ block }: { block: BriefingRangeBlock }) {
       cell: (m: BriefingRangeMeasure) => {
         const change = m.last_year !== null ? changeOf(m, "last_year") : "";
         return `${m.last_year_text ?? ""}${change ? ` (${change})` : ""}`;
+      },
+    }] : []),
+    ...(expected?.target ? [{
+      head: "Expected next", width: 210,
+      cell: (m: BriefingRangeMeasure) => {
+        const e = bands.get(m.metric);
+        return e?.expected
+          ? <span title={e.expected.must_say.join(" · ")}>{e.expected.text}</span>
+          : <span title={e?.why || "no band was stated for it"} style={{ color: "var(--t3)" }}>not predicted</span>;
       },
     }] : []),
     { head: "Status", cell: m => <StatusMark status={STATUS_LABEL[m.status]} />, width: 120 },
@@ -176,8 +202,19 @@ export function RangeMeasures({ block }: { block: BriefingRangeBlock }) {
       )}
       {block.measured.length > 0 && (
         <Ledger name="measured-metrics" columns={columns} rows={block.measured} rowKey={m => m.metric}
-          onOpen={open ? m => open({ measure: m, block }) : undefined} selected={shown}
-          empty="No metric was measured for this range." />
+          onOpen={open ? m => open({ measure: m, block, expected: expected?.target ? { target: expected.target, item: bands.get(m.metric) } : undefined }) : undefined}
+          selected={shown} empty="No metric was measured for this range." />
+      )}
+      {block.measured.length > 0 && expected?.target && (
+        <div data-testid="range-expected-note" style={{ color: "var(--t3)", marginTop: 4 }}>
+          Expected next is for {expected.target.label}: the band each metric&apos;s own earlier ranges put on it,
+          checked on {expected.target.settles_on}, when that range has settled.
+        </div>
+      )}
+      {block.measured.length > 0 && expected && !expected.target && expected.why && (
+        <div data-testid="range-expected-note" style={{ color: "var(--t3)", marginTop: 4 }}>
+          Nothing is predicted from this range: {expected.why}.
+        </div>
       )}
       {block.unmeasured.length > 0 && (
         <ul style={{ margin: "8px 0 0", paddingLeft: 16, color: "var(--t3)" }}>

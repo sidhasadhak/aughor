@@ -476,6 +476,38 @@ def earlier_ranges(spec: RangeSpec, n: int) -> list[tuple[date, date]]:
     return out[::-1]
 
 
+def later_spec(spec: RangeSpec) -> Optional[RangeSpec]:
+    """The range after this one, of the same kind — the next day, week, month or year; a custom range
+    moved on by its own length — read at the same age as this one. None for a range to date: its next
+    reading is the same range, longer, not a new one. Its comparison is this range's own step back, so
+    ``earlier_ranges`` walks from it exactly as it walks from this one."""
+    from dataclasses import replace
+    if spec.preset in ("month_to_date", "year_to_date"):
+        return None
+    start = spec.end
+    if spec.period == "year":
+        try:
+            end = start.replace(year=start.year + 1)
+        except ValueError:           # 29 February
+            end = start.replace(year=start.year + 1, day=28)
+    elif spec.period == "month":
+        end = (start + timedelta(days=32)).replace(day=1)
+    else:
+        end = start + (spec.end - spec.start)
+    step = spec.start - spec.previous_start
+    return replace(spec, start=start, end=end, previous_start=start - step, previous_end=end - step,
+                   last_year_start=None, last_year_end=None, as_of=end + (spec.as_of - spec.end))
+
+
+def read_value(row: Optional[dict]) -> Optional[float]:
+    """A window's value, or None when it is not a reading: no row came back for it, or the rows it was
+    cut from number none. A count over an empty window answers 0 where a sum answers nothing; neither
+    is a figure anybody measured, and a trend or a band that took the 0 would be drawn from it."""
+    if not row or row.get("value") is None or not int(row.get("n") or 0):
+        return None
+    return row["value"]
+
+
 def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: Any = None,
                  workspace_id: Optional[str] = None, runner: Optional[Callable[[], Any]] = None) -> dict:
     """One approved metric read for the range and the ranges before it, with how it is defined and
@@ -522,7 +554,7 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
     if why:
         return {**about, "why": why}
     got = {r["window"]: r for r in rows}
-    values = [(got.get(w.label) or {}).get("value") for w in windows]
+    values = [read_value(got.get(w.label)) for w in windows]
     unit = _read_unit(m.time_kind, m.unit or "", values)
     currency, slack = _currency(profile, workspace_id), _slack(spec.days)
     series = []

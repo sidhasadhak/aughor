@@ -9,7 +9,7 @@
  * It belongs to the connection, not to the person, so it is not in "Your cockpits" and cannot be
  * arranged or retired. A person's own cockpits sit beside it, as before.
  */
-import { RangeMeasures, type RangeChoice } from "@/components/brief/BriefRange";
+import { RangeMeasuresExpected, type RangeChoice } from "@/components/brief/BriefRange";
 import { PeriodPicker } from "@/components/cockpit/PeriodPicker";
 import { Absent, Gate, useLoad } from "@/components/record/kit";
 import { measureRange, type BriefingRange, type BriefingRangeBlock, type CockpitRange } from "@/lib/api";
@@ -65,7 +65,7 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
       ) : rangesOn === null ? null : (
         <Gate load={load} what="the metrics for this period">
           {d => (d && (d.period.measured.length > 0 || d.period.unmeasured.length > 0)
-            ? <RangeMeasures block={d.period} />
+            ? <RangeMeasuresExpected connectionId={connectionId} schema={schema} block={d.period} />
             : <Absent>No approved metric is on this connection yet. Approve one in the Semantic Layer and it is measured here.</Absent>)}
         </Gate>
       )}

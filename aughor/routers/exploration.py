@@ -838,6 +838,21 @@ def read_metric_trend(conn_id: str, metric: str, schema: str | None = None, work
     return {**seen, "period": ranges.range_block(spec)}
 
 
+@router.post("/exploration/{conn_id}/briefing/expected")
+def read_expected_next(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
+                       preset: str | None = None, start: str | None = None, end: str | None = None):
+    """What each approved metric is expected to read for the range after this one: a band from its own
+    past, booked as a prediction the first time it is asked for and read back after that. One warehouse
+    statement per metric not yet predicted, no model call. Each is scored once its range has settled."""
+    from aughor.briefing import expected
+
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
+    if spec is None:
+        raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
+    return expected.expected_next(conn_id, spec, profile=_load_business_profile(conn_id, schema),
+                                  workspace_id=workspace_id)
+
+
 def _period_briefing(conn_id: str, period: str, *, schema: str | None,
                      requested_schema: str | None, refresh: bool,
                      workspace_id: str | None, by_domain: dict) -> dict:

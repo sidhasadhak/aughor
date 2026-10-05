@@ -4,10 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { BriefingRangeBlock } from "@/lib/api";
 
-import { RangeControl, RangeMeasures, RangeSections, rangeStats, rangeTop } from "./BriefRange";
+import { RangeControl, RangeMeasures, RangeMeasuresExpected, RangeSections, rangeStats, rangeTop } from "./BriefRange";
 import { MetricDetailHost, whyQuestion } from "./MetricDetail";
 
-const api = vi.hoisted(() => ({ readMetricTrend: vi.fn() }));
+const api = vi.hoisted(() => ({ readMetricTrend: vi.fn(), readExpectedNext: vi.fn() }));
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
 
 // theLook, 17–26 August 2026 as built live on 2026-09-25 (Arc BR-3)
@@ -153,5 +153,50 @@ describe("a metric opens beside the page", () => {
     expect(screen.queryByRole("button", { name: "Ask why it moved" })).toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByTestId("metric-detail")).toBeNull();
+  });
+});
+
+
+describe("what each metric is expected to read next", () => {
+  const EXPECTED = {
+    why: "", target: { start: "2026-08-27", last_day: "2026-09-05", label: "2026-08-27 to 2026-09-05", settles_on: "2026-09-18" },
+    items: [
+      { metric: "revenue", name: "Revenue", why: "", expected: { claim_id: "p1", low: 120000, mid: 131000, high: 142000,
+        text: "$120,000 to $142,000", state: "open", scored_against: null, n: 6,
+        must_say: ["6 earlier ranges, each read at the same age: $120,000 to $142,000 at 80% stated coverage", "on this metric the interval held 3 of 4 times"] } },
+      { metric: "return_rate", name: "Return rate", expected: null, why: "only 2 earlier ranges held a reading; 3 are the least a band is drawn from" },
+    ],
+  };
+
+  beforeEach(() => { api.readExpectedNext.mockReset(); api.readMetricTrend.mockReset(); api.readMetricTrend.mockResolvedValue(new Promise(() => undefined)); });
+
+  it("states the band beside the figure, says which is not predicted and why, and when it is checked", () => {
+    render(<RangeMeasures block={BLOCK} expected={EXPECTED} />);
+    expect(screen.getByText("Expected next")).toBeTruthy();
+    expect(screen.getByText("$120,000 to $142,000").getAttribute("title")).toContain("the interval held 3 of 4 times");
+    expect(screen.getByText("not predicted").getAttribute("title")).toBe("only 2 earlier ranges held a reading; 3 are the least a band is drawn from");
+    expect(screen.getByTestId("range-expected-note").textContent).toContain("for 2026-08-27 to 2026-09-05");
+    expect(screen.getByTestId("range-expected-note").textContent).toContain("checked on 2026-09-18");
+  });
+
+  it("has no such column for a range to date, and says why", () => {
+    render(<RangeMeasures block={BLOCK} expected={{ target: null, items: [], why: "a range to date is not predicted: its next reading is the same range, longer" }} />);
+    expect(screen.queryByText("Expected next")).toBeNull();
+    expect(screen.getByTestId("range-expected-note").textContent).toContain("Nothing is predicted from this range: a range to date");
+  });
+
+  it("asks for the bands of the range on the page, and carries one into the metric's drawer", async () => {
+    api.readExpectedNext.mockResolvedValue(EXPECTED);
+    render(
+      <MetricDetailHost connectionId="thelook" schema="thelook" pageKey="briefing">
+        <RangeMeasuresExpected connectionId="thelook" schema="thelook" block={BLOCK} />
+      </MetricDetailHost>);
+    expect(screen.queryByText("Expected next")).toBeNull();                     // the table stands while the bands are read
+    expect(await screen.findByText("$120,000 to $142,000")).toBeTruthy();
+    expect(api.readExpectedNext).toHaveBeenCalledWith("thelook", { preset: "custom", start: "2026-08-17", end: "2026-08-26" }, "thelook", undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Revenue" }));
+    const drawer = await screen.findByTestId("metric-detail");
+    expect(drawer.textContent).toContain("Expected next — 2026-08-27 to 2026-09-05");
+    expect(drawer.textContent).toContain("Checked on 2026-09-18.");
   });
 });

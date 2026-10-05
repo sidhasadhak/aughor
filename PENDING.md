@@ -429,7 +429,8 @@ sits inside it — the place is named on its line.**
   - [x] Dismiss an item with a reason. *Decided and built 2026-10-05 (ROADMAP §6 item 40(a)–(c), `claude/platform-2027-doors`): a snooze — "Not now" until a day, with why; back on that day, or sooner when the record behind it changes; listed on Now as "Set aside" with Restore. Nothing is written on the item itself.*
 - [x] 3 · The Briefing — the mission line, the inquiries waiting to speak, the predictions in play.
   - [x] A Briefing signed and dated as a delivery. *Decided and built 2026-10-05 (§6 item 42c, `claude/platform-2027-doors`): each send that leaves names the version it delivered; "Open what was sent" reads that version. Receipt owed: the first real scheduled send.*
-  - [ ] An action and a prediction on each item. *Decided 2026-10-05 (§6 item 42c): both. Not yet built.*
+  - [x] A prediction on each measured item. *Decided and built 2026-10-05 (§6 item 42c, `claude/platform-2027-doors`): the band the metric's own past puts on the next range, booked once, shown beside the figure and scored when that range has settled.*
+  - [ ] An action on each item. *Decided 2026-10-05 (§6 item 42c). Not yet built.*
   - [ ] The same range a year ago, at the same age.
 - [x] 4 · Inquiry (Record ▸ Inquiries) — ledger and reader; propose the next run with its cost; close with a lesson.
   - [x] Add a person's hypothesis · hand it to an owner · set or clear the next check · mark a claim wrong. *Built 2026-10-05 (`claude/platform-2027-doors`): four doors under `/record/inquiries/{id}/…` and `/record/claims/{id}/wrong`. A person's hypothesis is a claim at tier said under their name, and one the Record already holds as refuted is said beside it, never refused. Handing over sends nothing. A claim marked wrong is restated — the wrong version kept — as the person's statement; a hypothesis as refuted.*

@@ -5418,6 +5418,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/briefing/expected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Expected Next
+         * @description What each approved metric is expected to read for the range after this one: a band from its own
+         *     past, booked as a prediction the first time it is asked for and read back after that. One warehouse
+         *     statement per metric not yet predicted, no model call. Each is scored once its range has settled.
+         */
+        post: operations["read_expected_next_exploration__conn_id__briefing_expected_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/briefing/ground": {
         parameters: {
             query?: never;
@@ -30129,6 +30151,43 @@ export interface operations {
                 schema?: string | null;
                 workspace_id?: string | null;
                 period?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_expected_next_exploration__conn_id__briefing_expected_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
                 preset?: string | null;
                 start?: string | null;
                 end?: string | null;

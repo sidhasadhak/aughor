@@ -6910,6 +6910,42 @@ export async function getBriefingDelivery(id: string): Promise<BriefingDeliveryO
   return res.json();
 }
 
+/** What one metric is expected to read for the range after this one: a band from its own past,
+ *  booked as a prediction (`claim_id`) and scored once that range has settled. */
+export interface ExpectedBand {
+  claim_id: string;
+  low: number | null;
+  mid: number | null;
+  high: number | null;
+  text: string;
+  state: "open" | "scored" | string;
+  scored_against: "inside" | "above" | "below" | "cannot_tell" | null;
+  must_say: string[];
+  n: number;
+}
+
+/** `target` is null — with `why` — for a range that has no next one to predict (a range to date).
+ *  An item with no `expected` says in `why` what stopped a band being stated. */
+export interface ExpectedNext {
+  target: { start: string; last_day: string; label: string; settles_on: string } | null;
+  why: string;
+  items: { metric: string; name: string; expected: ExpectedBand | null; why: string }[];
+}
+
+/** The band each approved metric is expected to fall in next. The first ask for a range measures
+ *  and books; later asks read the booked predictions back. No model call. */
+export async function readExpectedNext(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<ExpectedNext> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/expected?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "What is expected next could not be read");
+  }
+  return res.json();
+}
+
 /** Build (or return the fresh cached) Briefing for a range — runs its queries and one narrator call. */
 export async function buildRangeBriefing(
   connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string, refresh = false,

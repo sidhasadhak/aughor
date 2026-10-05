@@ -18,11 +18,17 @@ import { Absent, Gate, Ledger, StatusMark, useLoad, type LedgerColumn } from "@/
 import { Button } from "@/components/ui/button";
 import {
   readMetricTrend,
-  type BriefingRange, type BriefingRangeBlock, type BriefingRangeMeasure, type MetricTrend, type MetricTrendPoint,
+  type BriefingRange, type BriefingRangeBlock, type BriefingRangeMeasure, type ExpectedNext, type MetricTrend,
+  type MetricTrendPoint,
 } from "@/lib/api";
 import { countNoun, formatPoints, formatVariance } from "@/lib/format";
 
-export interface MetricOpened { measure: BriefingRangeMeasure; block: BriefingRangeBlock }
+export interface MetricOpened {
+  measure: BriefingRangeMeasure;
+  block: BriefingRangeBlock;
+  /** What it is expected to read next, when the table it was opened from carries that. */
+  expected?: { target: NonNullable<ExpectedNext["target"]>; item?: ExpectedNext["items"][number] };
+}
 type OpenMetric = (what: MetricOpened) => void;
 
 const Opener = createContext<{ open: OpenMetric; shown: MetricOpened | null } | null>(null);
@@ -100,7 +106,7 @@ function MetricDetail({ what, connectionId, schema, workspaceId, top, onClose, o
   what: MetricOpened; connectionId: string; schema?: string; workspaceId?: string; top: number;
   onClose: () => void; onAskWhy?: (question: string) => void;
 }) {
-  const { measure: m, block } = what;
+  const { measure: m, block, expected } = what;
   const load = useLoad(() => readMetricTrend(connectionId, m.metric, rangeOf(block), schema, workspaceId),
     [connectionId, m.metric, block.key, schema, workspaceId]);
   const change = changeOf(m, "previous");
@@ -138,6 +144,18 @@ function MetricDetail({ what, connectionId, schema, workspaceId, top, onClose, o
           {t => <Trend trend={t} />}
         </Gate>
       </Part>
+
+      {expected && (
+        <Part label={`Expected next — ${expected.target.label}`}>
+          {expected.item?.expected ? (
+            <Box foot={`${expected.item.expected.must_say.join(". ")}. Checked on ${expected.target.settles_on}.`}>
+              {expected.item.expected.text}
+            </Box>
+          ) : (
+            <Absent>No band is stated for it: {expected.item?.why || "it was not read"}.</Absent>
+          )}
+        </Part>
+      )}
 
       {moves.length > 0 && (
         <Part label="What moved inside it">

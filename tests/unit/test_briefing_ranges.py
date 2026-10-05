@@ -331,3 +331,128 @@ def test_the_measures_route_hands_back_a_young_briefings_figures_and_measures_ot
 
     other_scope = exploration.measure_range_metrics("c1", schema="shop", preset="last_week")
     assert other_scope["from_briefing"] is False and other_scope["scope_key"] == "c1:shop"
+
+
+# ── what each measured item is expected to read next (ROADMAP §6 item 42c) ───────────────────
+
+def test_the_range_after_this_one_keeps_its_kind_and_its_step_back():
+    day, _ = ranges.resolve_range("yesterday", today=SEP26, lag_days=13)
+    nxt = ranges.later_spec(day)
+    assert (nxt.start, nxt.end) == (date(2026, 9, 14), date(2026, 9, 15))
+    assert nxt.start - nxt.previous_start == day.start - day.previous_start          # still the same weekday back
+    month, _ = ranges.resolve_range("last_month", today=SEP26, lag_days=13)
+    assert (ranges.later_spec(month).start, ranges.later_spec(month).end) == (date(2026, 9, 1), date(2026, 10, 1))
+    custom, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    assert (ranges.later_spec(custom).start, ranges.later_spec(custom).end) == (date(2026, 8, 27), date(2026, 9, 6))
+    for preset in ("month_to_date", "year_to_date"):
+        to_date, _ = ranges.resolve_range(preset, today=SEP26, lag_days=13)
+        assert ranges.later_spec(to_date) is None
+
+
+def _share_metric():
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+    save_metric(MetricDefinition(name="done_share", connection="c1", label="Done share", unit="%",
+                                 sql="100.0 * SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) / COUNT(*)",
+                                 tables=["orders"], status="approved", approved_by="test"))
+
+
+def test_each_metric_is_expected_once_from_its_own_past_and_read_back_without_measuring(con, approved):
+    from aughor.briefing import expected
+    from aughor.record import claims as C
+    _share_metric()
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    seen = expected.expected_next("c1", spec, profile=_profile(), runner=_runner(con), today=SEP26)
+    assert seen["target"] == {"start": "2026-08-27", "last_day": "2026-09-05", "label": "2026-08-27 to 2026-09-05",
+                              "settles_on": "2026-09-18"}                 # its last day and the lag, not a month on
+    by = {i["metric"]: i for i in seen["items"]}
+    assert set(by) == {"revenue", "done_share"}                           # the draft metric is not predicted
+    rev = by["revenue"]["expected"]
+    assert rev["low"] < rev["mid"] < rev["high"] and rev["n"] == 6 and rev["state"] == "open"
+    assert " to " in rev["text"] and "6 earlier ranges" in rev["must_say"][0]
+    claim = C.get(rev["claim_id"])
+    assert claim.kind == "prediction" and claim.extra["settles_on"] == "2026-09-18" and claim.next_check == "2026-09-18"
+    assert claim.extra["briefing"] == {"metric": "revenue", "start": "2026-08-27", "end": "2026-09-06",
+                                       "as_of": "2026-09-18", "preset": "custom"}
+    # a share that never moved is one figure, not a band, and its unit is kept beside the claim
+    share = C.get(by["done_share"]["expected"]["claim_id"])
+    assert by["done_share"]["expected"]["low"] == by["done_share"]["expected"]["high"] == 50.0
+    assert share.statement.unit == "" and share.extra["metric_unit"] == "%"
+
+    @contextlib.contextmanager
+    def never():
+        raise AssertionError("a prediction already on record is read back, never measured again")
+        yield  # pragma: no cover
+
+    again = expected.expected_next("c1", spec, profile=_profile(), runner=never, today=SEP26)
+    assert {i["metric"]: i["expected"]["claim_id"] for i in again["items"]} == {
+        "revenue": rev["claim_id"], "done_share": by["done_share"]["expected"]["claim_id"]}
+    mine = [c for c in C.list_claims(kind="prediction", conn_id="c1", limit=200) if c.statement.range_end == "2026-09-05"]
+    assert len(mine) == 2                                                 # booked once each, not once per read
+
+
+def test_a_metric_that_cannot_be_read_is_not_predicted_and_says_why_and_a_range_to_date_is_never(con, approved):
+    from aughor.briefing import expected
+    from aughor.record import claims as C
+
+    @contextlib.contextmanager
+    def broken():
+        def run_sql(sql):
+            return [], [], "Binder Error: no such column"
+        yield run_sql, "duckdb"
+
+    spec, _ = ranges.resolve_range("last_week", today=SEP26, lag_days=13)
+    before = len(C.list_claims(kind="prediction", conn_id="c1", limit=500))
+    seen = expected.expected_next("c1", spec, runner=broken, today=SEP26)
+    [item] = seen["items"]
+    assert item["expected"] is None and item["why"].startswith("its query failed: Binder Error")
+    assert len(C.list_claims(kind="prediction", conn_id="c1", limit=500)) == before        # nothing booked
+
+    to_date, _ = ranges.resolve_range("month_to_date", today=SEP26, lag_days=13)
+    nothing = expected.expected_next("c1", to_date, runner=_runner(con), today=SEP26)
+    assert nothing["target"] is None and nothing["items"] == [] and "to date is not predicted" in nothing["why"]
+
+
+def test_a_briefings_prediction_is_scored_by_measuring_its_range_once_it_has_settled(con, approved):
+    from datetime import datetime, timezone
+
+    from aughor.briefing import expected
+    from aughor.record import claims as C
+    _share_metric()
+    # its own range, so nothing another test booked is in the way: 10..19 August, then 20..29
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 10), end=date(2026, 8, 19), today=SEP26, lag_days=13)
+    seen = expected.expected_next("c1", spec, profile=_profile(), runner=_runner(con), today=SEP26)
+    assert seen["target"]["settles_on"] == "2026-09-11"
+    ids = {i["metric"]: i["expected"]["claim_id"] for i in seen["items"]}
+    runner_for = lambda conn: _runner(con)()                                              # noqa: E731
+    mine = lambda out: [c for c in out if c in {C.latest(C.get(i).key).id for i in ids.values()}]   # noqa: E731
+
+    expected.score_due(runner_for=runner_for, now=datetime(2026, 9, 10, tzinfo=timezone.utc))
+    assert C.latest(C.get(ids["revenue"]).key).state == "open"                            # not settled yet
+
+    scored = expected.score_due(runner_for=runner_for, now=datetime(2026, 9, 11, 6, tzinfo=timezone.utc))
+    assert len(mine(scored)) == 2
+    revenue = C.latest(C.get(ids["revenue"]).key)
+    assert revenue.state == "scored" and revenue.extra["actual"] == 245000.0              # 20..29, 1,000 a day of the month
+    assert revenue.extra["scored_against"] in ("inside", "above", "below")
+    assert revenue.extra["score_note"] == "measured for 2026-08-20 to 2026-08-29"
+    share = C.latest(C.get(ids["done_share"]).key)
+    assert share.extra["actual"] == 50.0 and share.extra["scored_against"] == "inside"     # never "cannot_tell"
+    again = expected.score_due(runner_for=runner_for, now=datetime(2026, 9, 12, tzinfo=timezone.utc))
+    assert mine(again) == []                                                              # scored once
+
+
+def test_a_count_over_a_window_with_no_rows_is_not_a_reading(con, approved):
+    """Found on the scratch install, 2026-10-05: COUNT answers 0 for the months before the data began,
+    and three such zeros put "0 to 961" on a metric that had read 800 every month it existed."""
+    from aughor.briefing import expected
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+    save_metric(MetricDefinition(name="orders_placed", connection="c1", label="Orders placed", sql="COUNT(*)",
+                                 tables=["orders"], status="approved", approved_by="test"))
+    # the data begins 2025-01-01: of the eight weeks ending 14 January 2025, six hold no row at all
+    spec, _ = ranges.resolve_range(start=date(2025, 1, 8), end=date(2025, 1, 14), today=SEP26, lag_days=13)
+    seen = ranges.metric_trend("c1", spec, "orders_placed", runner=_runner(con))
+    assert [p["value"] for p in seen["series"]] == [None] * 6 + [14.0, 14.0]
+    assert [p["value_text"] for p in seen["series"]][:6] == [None] * 6
+    band = {i["metric"]: i for i in expected.expected_next("c1", spec, runner=_runner(con), today=SEP26)["items"]}
+    assert band["orders_placed"]["expected"] is None
+    assert band["orders_placed"]["why"].startswith("only 2 earlier ranges held a reading")
