@@ -45,11 +45,24 @@ export const aughorEditorTheme = EditorView.theme({
     border: "none",
     borderRight: "1px solid var(--b0)",
   },
-  ".cm-activeLine": { backgroundColor: "var(--bg-1)" },
+  // See-through, and it has to be: the selection is drawn in a layer UNDER the lines, so
+  // an opaque band on the cursor's line hides whatever is selected on it — which, for a
+  // word or part of a line, is all of it. 5% of the text colour over the page is `--bg-1`
+  // to within a step in both skins.
+  ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--t1) 5%, transparent)" },
   ".cm-activeLineGutter": { backgroundColor: "var(--bg-1)", color: "var(--t2)" },
-  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
-    backgroundColor: "var(--bg-3)",
+  // The selection. Away from the keyboard it is a neutral step off the page; with the
+  // keyboard it is the app's selection blue as a tint. The focused selector is spelled as
+  // CM6's own stylesheet spells it — a shorter one loses to that on specificity and the
+  // editor shows CM6's stock lavender instead (it did, from SE-1 until 2026-10-06).
+  ".cm-selectionBackground": { backgroundColor: "var(--bg-4)" },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "color-mix(in srgb, var(--blue-solid) 35%, transparent)",
   },
+  // Selected text keeps its own colour. The app's `::selection` turns text white for its
+  // solid blue; here the blue is a tint drawn by CM6, and white on it — or on a white
+  // page, once the keyboard is elsewhere — is text that vanishes.
+  ".cm-line::selection, .cm-line ::selection": { color: "currentcolor" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--t1)" },
   ".cm-placeholder": { color: "var(--t3)" },
   // The statement the cursor sits in — the one ⌘↵ will run. Making "what will run"
