@@ -1189,9 +1189,10 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 [data-theme="light"] .aug-dt tbody td { border-right: 1px solid var(--b0); }
 [data-theme="light"] .aug-dt thead th:last-child,
 [data-theme="light"] .aug-dt tbody td:last-child { border-right: none; }
-/* 2 · Light's selection is its own green: the active segment is the green tint with green
-       text (dark keeps the pressed fill), and the rail's active item reads in green over the
-       same tint. The active tab's underline and the rail's bar read --accent in both skins. */
+/* 2 · Light's selection is a tint of the accent (Excel green until 2026-10-06; the accent a
+       person chose since): the active segment is the tint with accent text (dark keeps the
+       pressed fill), and the rail's active item reads in the accent over the same tint. The
+       active tab's underline and the rail's bar read --accent in both skins. */
 [data-theme="light"] .aug-seg-item[aria-selected="true"],
 [data-theme="light"] .aug-seg-item[aria-pressed="true"],
 [data-theme="light"] .aug-seg-item.active { background: var(--bg-sel); color: var(--accent-text); }
