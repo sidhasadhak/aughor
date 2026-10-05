@@ -5592,7 +5592,9 @@ export async function getHubMap(connId?: string): Promise<HubMapResponse | null>
 
 // ── HB-2 · the departures ledger — what left, what was held, what a person owes ──
 
-export type DepartureState = "departed" | "held" | "held_probation" | "held_owner";
+/** `held_budget` (phase 2 of the 2027 study): a clean departure the attention budget held — the
+ *  addressee's week of slots was spent; nothing is wrong with the number. */
+export type DepartureState = "departed" | "held" | "held_probation" | "held_owner" | "held_budget";
 export type DepartureGuardOutcome =
   "passed" | "held" | "asked" | "not_applicable" | "unavailable" | "exempt";
 

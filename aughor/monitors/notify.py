@@ -100,6 +100,14 @@ def alert_context(alert: "MonitorAlert") -> dict:
     }
 
 
+def _alert_size(alert: "MonitorAlert") -> float:
+    try:
+        from aughor.govern.attention import size_for_alert
+        return size_for_alert(alert.current_value, alert.threshold)
+    except Exception:  # noqa: BLE001 — a size that cannot be read is 0, said by the terms
+        return 0.0
+
+
 def _open_inquiry_for_alert(alert: "MonitorAlert", monitor: "Monitor") -> None:
     try:
         from aughor.record.inquiry import open_inquiry, subject_of
@@ -170,7 +178,10 @@ def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -
             source_id=alert.monitor_id, source_name=name,
             about=f"metric:{alert.metric_name}" if alert.metric_name else "",
             measurement=measurement_for_monitor_alert(alert, monitor),
-            declared_definition=f"monitor '{name}' (declared)")
+            declared_definition=f"monitor '{name}' (declared)",
+            # phase 2 of the 2027 study — the attention budget's size term: how far the reading
+            # sits outside the threshold the monitor declared
+            triage={"size": _alert_size(alert)})
         if verdict.held:
             logger.info("monitor alert %s held at departure (departure %s): %s",
                         alert.id, verdict.record_id, verdict.reason_sentence())

@@ -153,6 +153,40 @@ def list_departures(state: Optional[str] = None, automation_id: Optional[str] = 
             conn.close()
 
 
+def count_departed_to(addressee: str, *, since: str) -> int:
+    """Phase 2 of the 2027 study — the attention budget's count: unattended departures that
+    DEPARTED to this addressee (its target, or the person it was addressed to) since ``since``."""
+    if not addressee:
+        return 0
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM departures WHERE state = 'departed' AND origin = 'unattended' "
+                "AND ts >= ? AND (target = ? OR addressed_to = ?)", (since, addressee, addressee)).fetchone()
+            return int(row["n"] if row else 0)
+        finally:
+            conn.close()
+
+
+def held_by_budget(*, addressee: Optional[str] = None, since: str = "", limit: int = 100) -> list[dict]:
+    """The departures the attention budget held since ``since``, newest first."""
+    clauses, params = ["state = 'held_budget'"], []
+    if since:
+        clauses.append("ts >= ?"); params.append(since)
+    if addressee:
+        clauses.append("(target = ? OR addressed_to = ?)"); params.extend([addressee, addressee])
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                f"SELECT * FROM departures WHERE {' AND '.join(clauses)} ORDER BY ts DESC LIMIT ?",
+                [*params, max(1, min(int(limit), 500))]).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
 def departures_for(*, investigation_id: str = "", limit: int = 50) -> list[dict]:
     """Phase 1 of the 2027 study — "who else was told": every gate decision on a message that
     cited this analysis, newest first (departed and held alike; the state says which)."""

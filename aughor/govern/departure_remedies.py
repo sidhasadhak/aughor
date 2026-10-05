@@ -97,6 +97,13 @@ REMEDIES: dict[str, dict] = {
         "action": "Mark its departures on the departures screen; it graduates at the measured precision.",
         "doors": [],
     },
+    "attention": {
+        "meaning": ("This place has had its week's slots of unattended messages. The platform held "
+                    "this one rather than add to the pile; nothing is wrong with the number."),
+        "action": ("Read the held list on the departures screen and raise the slots for this place if "
+                   "the holds were worth reading — or lower what sends there. The slots reset on Monday."),
+        "doors": [DOOR_AUTOMATION],
+    },
 }
 
 #: The gate docstring names two guards by a spelling that is not their key.

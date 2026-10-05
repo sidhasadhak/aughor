@@ -330,7 +330,7 @@ Just outside the list: the next industry package (insurance has public data to t
 ### Spotlight, the ⌘K operator — Arc SP (§3.11)
 - [ ] The guide cannot search the text of packs and skills. *2027 study: phase 7 — the Developer screen.*
 - [x] Tools exposed over MCP do not describe their arguments properly, and clients must reconnect to see new ones. *Fixed and merged 2026-10-04 · #565: every Spotlight tool carries the roster's JSON Schema; the server declares `tools.listChanged`, re-reads its three dynamic rosters at most every 30 s, removes what went, and tells the session what changed.*
-- [ ] A person has never accepted, live, a suggestion the platform raised on its own; recurring live attack (red-team) drives are owed too. *2027 study: phase 2 — the first half is the phase's own exit metric.*
+- [ ] A person has never accepted, live, a suggestion the platform raised on its own; recurring live attack (red-team) drives are owed too. *2027 study: phase 2 — the first half is the phase's own exit metric; since 2026-10-05 a fired alert opens an inquiry (`opened_by: monitor:…`), so the count is readable from the record.*
 - [ ] Cross-user questions ("who changed this?") are unbuilt until sign-in is on. *2027 study: phase 0 — identity on.*
 - [ ] Approval cards cannot show a real cost per run. *2027 study: phase 2 — a run is proposed with what it costs (§H).*
 - [ ] Revise-in-place and the edit, monitor and brief drafts have not been proven live.
@@ -401,7 +401,7 @@ Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23
 - [x] 6 · **Alerts that prove they work** — top item 6; merged 2026-09-23 · #545.
 - [x] 7 · **Fact-check a document** — top item 5; merged 2026-09-23 · #545.
 - [x] 8 · **Reviews of what was missed** — when someone finds a big move nothing flagged, the platform works out why (no alert? window too short? triage held it?) and proposes the fix. *Built and **merged 2026-10-04 · #565**: `POST /monitors/missed` and Spotlight's `review_missed_move`.*
-- [ ] 9 · **An attention budget per person** — a weekly cap on interruptions, with alerts, briefings and inbox items competing for the slots on expected value. *2027 study: phase 2.*
+- [~] 9 · **An attention budget per person** — a weekly cap on interruptions, with alerts, briefings and inbox items competing for the slots on expected value. *2027 study: phase 2.* *Built 2026-10-05 as the departure gate's last guard (`govern/attention.py`): slots a week per addressee, the held list and the four terms published; per PERSON waits on identity resolving a channel's members, so the budget is per place until then and says so.*
 - [ ] 10 · **A data shopping list** — show which usual industry questions the connected data cannot answer, and what to connect to answer them. *2027 study: phase 6 — the day-one screen.*
 - [x] 11 · **Numbers that link back to their source** — every figure in a PDF or slide carries a short link to the page showing how it was produced. *Built and **merged 2026-10-04 · #565**: every figure in an exported PDF or deck carries a source line — a link to `/receipt/<id>` where `AUGHOR_WEB_URL` is set, the receipt id where it is not (the install does not set it yet).*
 - [ ] 12 · **Guess before you look** — people guess a key number before it is revealed, so the platform learns where the organisation's picture of itself is most wrong. *2027 study: phase 3, reshaped — a person's guess is a Claim of kind prediction with their name on it, scored like any other; optional.*

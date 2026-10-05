@@ -71,6 +71,7 @@ export function stateLabel(d: Departure): string {
     case "departed": return "departed";
     case "held_probation": return d.verdict ? `marked ${d.verdict}` : "awaiting its declarer";
     case "held_owner": return d.answer ? "answered" : "asking its owner";
+    case "held_budget": return "held — the week's slots were spent";
     default: return "held";
   }
 }
@@ -79,6 +80,7 @@ export function stateHue(d: Departure): ChipHue {
   if (d.state === "departed") return "positive";
   if (d.state === "held") return "negative";
   if (d.state === "held_probation") return d.verdict ? "muted" : "caution";
+  if (d.state === "held_budget") return "muted";          // nothing wrong with the number; the slots were spent
   return d.answer ? "muted" : "info";
 }
 

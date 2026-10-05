@@ -56,6 +56,11 @@ receipt the message carries:
 - **probation** — a NEW automation's departures go only to the person who declared it until
   its measured precision graduates it. With identity off there is no declarer to address,
   so probation is inert exactly as HB-1's enforcement is.
+- **attention** — an addressee has a fixed number of unattended interruptions a week
+  (`govern/attention.py`, phase 2 of the 2027 study); once they are spent, a clean departure
+  is HELD under ``held_budget`` with its triage score, listed rather than silenced. A person
+  who chose to send is exempt, like the repeat law. The four ranking terms and their weights
+  are published, because triage set by hand must be readable to be corrected.
 
 **The receipt travels** (law 8): every verdict carries ``receipt`` — the source, the
 definition, the as-of, each guard's outcome and the ledger row — and each transport attaches
@@ -123,6 +128,7 @@ DEPARTED = "departed"
 HELD = "held"
 HELD_PROBATION = "held_probation"
 HELD_OWNER = "held_owner"
+HELD_BUDGET = "held_budget"           # phase 2 of the 2027 study — the attention budget's hold
 
 #: Who started the send. A person pressing Share chose the moment and the words, so
 #: probation and the repeat law do not apply to them; the accuracy laws do, because a
@@ -132,7 +138,7 @@ PERSON = "person"
 
 #: Every guard, in the order it runs; a receipt lists outcomes in this order.
 GUARDS: tuple[str, ...] = ("trust", "caveat", "tie_out", "definition", "remeasure", "freshness",
-                           "claims", "disagreement", "repeat", "probation")
+                           "claims", "disagreement", "repeat", "probation", "attention")
 
 #: What a guard concluded.
 PASSED = "passed"
@@ -146,6 +152,7 @@ GUARD_LABELS: dict[str, str] = {
     "trust": "trust", "caveat": "caveat", "tie_out": "tie-out", "definition": "definition",
     "remeasure": "re-measure", "freshness": "freshness", "claims": "claim type",
     "disagreement": "disagreement", "repeat": "repeat", "probation": "probation",
+    "attention": "attention budget",
 }
 
 #: Departure kinds that carry their own re-notification policy. Law 7 records the
@@ -257,7 +264,8 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
                    declared_definition: str = "",
                    disagreement: Optional[dict] = None,
                    dated_records: bool = False,
-                   held_lines: Optional[list[str]] = None) -> DepartureVerdict:
+                   held_lines: Optional[list[str]] = None,
+                   triage: Optional[dict] = None) -> DepartureVerdict:
     """Judge one outbound message. Returns the verdict; the caller decides how a hold reads
     in its own vocabulary (the engine maps it to a step outcome, a door to a response).
 
@@ -268,7 +276,9 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
     are records each stated with the moment it happened (a briefing's alert list) — there is
     nothing to re-measure in "fired at 08:00 with 12.4". ``held_lines`` are the reasons lines
     of an assembled message (a briefing) were held by `line_holds` before this call — the
-    message departs without them, and its record says what was cut and why."""
+    message departs without them, and its record says what was cut and why. ``triage`` is what
+    the caller knows for the attention budget's ranking terms — ``{"size": 0..1}`` (how far the
+    number sits outside its declared range); a message that brings none reads 0."""
     text = text or ""
     found: dict[str, _Check] = {}
     conn = _LazyConnection(conn_id)
@@ -309,6 +319,14 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
         state = HELD_PROBATION
         addressed_to = declared_by
 
+    # Phase 2 of the 2027 study — the attention budget, last: it decides only whether a CLEAN
+    # unattended departure has a slot this week; every hold above outranks it, and a held
+    # departure is listed with its score, never silenced.
+    found["attention"] = _guarded(
+        "attention", lambda: _attention(state, origin, kind, target, addressed_to, found["repeat"], triage))
+    if found["attention"].outcome == HOLDS:
+        state = HELD_BUDGET
+
     reasons = [found[g].reason for g in GUARDS
                if g in found and found[g].outcome in (HOLDS, ASKED) and found[g].reason]
     checks = {g: found[g].summary for g in GUARDS}
@@ -317,6 +335,8 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
     missing = list(found["definition"].detail.get("missing") or [])
     if missing:
         checks["definition_missing"] = " · ".join(missing)     # CB-5: what would clear the hold
+    if found["attention"].detail.get("triage"):
+        checks["triage"] = found["attention"].detail["triage"]  # the four terms and the score, on every row
     guards = {g: found[g].outcome for g in GUARDS}
     as_of = str(found["freshness"].detail.get("as_of") or "")
     cited = list(found["definition"].detail.get("cited") or [])
@@ -877,6 +897,30 @@ def _probation(state: str, probation: bool, declared_by: str) -> _Check:
                   f"on probation: this departure goes to {declared_by}'s review queue, not the "
                   f"channel — it graduates at measured precision "
                   f"(≥{GRADUATION_PRECISION:.0%} over ≥{GRADUATION_MIN_MARKED} marked)")
+
+
+def _attention(state: str, origin: str, kind: str, target: str, addressed_to: str,
+               repeat: _Check, triage: Optional[dict]) -> _Check:
+    """The attention budget — phase 2 of the 2027 study (`govern/attention.py`). Judged only on
+    a clean unattended departure; the score rides every row it judges."""
+    if origin == PERSON:
+        return _Check(EXEMPT, "a person chose to send it")
+    if state != DEPARTED:
+        return _Check(NOT_APPLICABLE, f"not judged — the departure is already {state.replace('_', ' ')}")
+    addressee = addressed_to or target
+    if not addressee:
+        return _Check(NOT_APPLICABLE, "no addressee to budget")
+    from aughor.govern import attention
+    summary = (repeat.summary or "").lower()
+    novelty = 0.5 if "moved" in summary and "since" in summary else 1.0
+    size = float((triage or {}).get("size") or 0.0)
+    verdict = attention.charge(addressee=addressee, kind=kind, size=size, novelty=novelty)
+    triage_line = (" · ".join(f"{k} {v:.2f}" for k, v in verdict["terms"].items())
+                   + f" → score {verdict['score']:.2f}")
+    detail = {"triage": triage_line, "used": verdict["used"], "slots": verdict["slots"], "addressee": addressee}
+    if verdict["allowed"]:
+        return _Check(PASSED, verdict["why"], detail=detail)
+    return _Check(HOLDS, verdict["why"], verdict["why"], detail=detail)
 
 
 # ── text helpers (pure) ───────────────────────────────────────────────────────────

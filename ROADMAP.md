@@ -11137,6 +11137,31 @@ the Explorer's, a pack's and the hub's claim shapes as writers; organisation sco
 Briefing; the graph as a projection; and the two exit parts only the install can show (a restatement delivered
 on the organisation's warehouse; ten decisions booked by people).
 
+**Phase 2 — the code half BUILT 2026-10-05**, three slices. (P2-1) `aughor/record/inquiry.py` — the inquiry as a
+kernel artifact that outlives its runs: the question, who opened it (a person's ask, a monitor's alert, a restated
+claim), its runs with their verdicts, its hypotheses as claims with their state (a refuted one warranted by the run
+that refuted it, with the evidence), what it established, what stays open and what would settle each item, its state
+(open · waiting · closed) and the date it wakes without being asked. Booked from the two places every run passes
+(`complete_investigation`, `fail_investigation`); an ask opens it in the router and a second ask on the same subject
+within a fortnight wakes it; a fired monitor alert opens one without spending a run; the heartbeat wakes waiting
+inquiries on their date and a restated claim wakes the inquiries that established it; `/record/inquiries` lists,
+reads and closes them with lessons. Refuted hypotheses are memory: the planner is told what earlier runs on the
+connection found false, a hypothesis it proposes anyway is refused by code and recorded, the report's ruled-out list
+says what was not re-tested, and a deep analysis that reaches a refuted cause again says so among its data gaps.
+(P2-3) Every run books a typed verdict — answered · contradicted · out of budget · withheld · no definition · no
+data · tool failed — classified by code over the recorded reason, never an empty result; the skeptic challenges
+from a second model binding where the install has two and the `causal_checks` record says which. (P2-2)
+`aughor/govern/attention.py` — the attention budget as the departure gate's last guard: slots a week per addressee
+(the target today, a person where the gate knows one; a person's own send exempt), a clean unattended departure
+held under `held_budget` once they are spent, every hold a ledger row with its score, the held list and each
+addressee's budget served by `/attention/*`, the four ranking terms published with their weights and how each is
+read today (mission 0 until phase 5; size from a monitor's threshold; cost of waiting by kind; novelty from the
+repeat guard). Receipt: 26 phase-2 tests pass; the gate, laws, remedies, exit-ratchet, monitor, lifecycle and
+vocabulary suites (210) pass. **Still open in phase 2:** the Now page and the Inquiry page; a run proposed with its
+cost; the settling lag and a process's early stages as signals; triage's mission term; kill 4 (quick-or-deep as a
+choice); and the exit's live halves — a refusal on a real object, the held list read by a real person, a measured
+share of inquiries the platform opened (the record's `opened_by` counts it; 0 until alerts fire on the install).
+
 ---
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
