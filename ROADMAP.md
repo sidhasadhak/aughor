@@ -11591,14 +11591,35 @@ person's act now carries a "Recorded as" name, kept as `person:<name>` and never
 reopening gave it a new version, because they were read by the version's id; an inquiry read each hypothesis as it
 was recorded, so one since refuted still read as open and was still named in the run it proposed; an edited mission
 restarted its report clock; and `POST /authority/{id}/widen`, cited by the autonomy agent's own message, did not
-exist. **Not built, each for a decision and not for want of time:** dismissing an item on Now (nothing says what a
+exist. **Not built, each for a decision and not for want of time:** ~~dismissing an item on Now (nothing says what a
 dismissal is); the inspector drawer (a change to how every page opens another, to be shown before it is built on,
-§4.10); a clearance (no such thing exists apart from the access grants); when a statement door last fired (nothing
+§4.10)~~ *(both decided and built the same day — the next paragraph)*; a clearance (no such thing exists apart from the access grants); when a statement door last fired (nothing
 counts it per site); an action, a prediction and a signature on a Briefing's items; the hub's links and probation
 queues on By duty; a link followed across connections from a claim.
 
-**Still open on screen, as written 2026-10-05 before the paragraph above (kept as written; what it lists is now
-built or decided there):** an inquiry cannot take a
+**Set aside and the inspector — BUILT 2026-10-05** on the two decisions of §6 item 40, same branch. **Set aside**
+(`record/set_aside.py`, `/record/set-aside`): "Not now" on any row of Waiting on you takes a day and a reason; the row
+leaves the list and the rail's badge the same moment; "Set aside: n items" lists each with its reason, who and until
+when, with Restore. It is one ledger entry per item, keyed by the item's stable name so every version of a decision is
+the same item, and whether it still hides its row is computed on read — its day came, or the version current today is
+not the one that was set aside — never written by looking. Only what still waits is listed: an item dealt with on its
+own page has left both lists. **The inspector** (`components/record/Inspector.tsx`): a decision's claim, a claim's
+decision, an inquiry's claims and hypotheses, a mission's inquiries and decisions, and a correction's record open in
+a drawer over the page's own right-hand column, under the tabs; a citation inside the drawer opens in the drawer;
+"Open full page" is the only thing that leaves. On Now, a row's sentence opens its record there to be read, and its
+button still leaves for the page it is dealt with on. Receipt: both driven on the scratch pair — a review set aside
+from the page (the list fell from two to one, the badge cleared), restored, set aside again; a decision set aside and
+brought back early by correcting the claim it stood on; the drawer opened from a decision, followed to the decision
+that cites the claim, closed by Esc with the page untouched, and left by "Open full page". Figures 17 (the
+inspector beside a decision) and 18 (Now, with one item set aside), taken from the running pages by a headless
+browser. 2 more tests over the door. **Found on
+the way:** the drawer's first class name was already a panel's — three screens use `.aug-inspector` — and would have
+restyled them; it is `.aug-beside`. And the scratch API's launcher handed its state folder to every temp-dir request,
+so the pack check's own clean-up deleted the scratch state (the launcher's defect, fixed there; no product code and
+no real data involved). **Not included:** a `?inspect=` address for an open drawer — a reload closes it.
+
+**Still open on screen, as written 2026-10-05 before the two paragraphs above (kept as written; what it lists is
+now built or decided there):** an inquiry cannot take a
 person's hypothesis, be handed to an owner, have its next check set, or have a claim marked wrong from its page; a
 decision cannot gain an option or dissent after it is booked, and does not reopen on a restated claim; a mission is
 written but not edited in place, its past reports are listed by headline only, and "report now" is not a button (it
@@ -13516,6 +13537,25 @@ the browser** · **measure the premise before building.**
     their reasons the same day (twenty-two lines; TJ-5 and TJ-6 appear twice), and the phase of every kept and
     reshaped item carried onto its line the same day at the user's word (76 lines, as *2027 study: phase N*); the
     study's placement section holds the reasons.
+    *(d) was refused on screen the next day — §4.10: the 2026 rail stands and the pages sit inside it.*
+
+40. ✅ **DECIDED 2026-10-05 — two things the 2027 pages had left open for a decision** (§3.53, "Set aside and the
+    inspector"), each asked with its options and a worked example, the second on a mock-up.
+    **(a) ✅ Dismissing an item on Now is a SNOOZE, not a verdict** (the user chose it over closing the item with a
+    reason, setting it aside with no date, and having no dismissal). A person says until when and why; the row leaves
+    the list until that day and returns. Nothing is written on the thing itself — a review set aside is still due on
+    its own page, and no outcome, closing or rejection is booked in its name.
+    **(b) ✅ It comes back early when its ground moves** (over "only on its date" and "only when restored"): a
+    decision whose relied-on claim is restated, an inquiry that wakes.
+    **(c) ✅ It is visible as a line on Now** — "Set aside: n items", opening to each with its reason, who, until
+    when, and Restore (over also noting it on the item's page, and over the audit trail alone).
+    **(d) ✅ The inspector is built as the mock-up showed it**: a cited record opens beside the page that cites it,
+    on Now and the Record's pages only, read-only, closed by Esc or its button, with "Open full page" to leave. Shown
+    as a mock-up BEFORE it was built (§4.10's lesson). The user, on the mock-up: *"I actually liked the colour and
+    structure here.. the actual colour, contrast and rounded boxes with clear text.. I think its great for the dark
+    theme that we have."* The structure is in the drawer (a labelled part, each cited record a box of its own);
+    the colour was the mock-up tool's own neutral charcoal, not the Du Bois skin — **whether the dark skin moves
+    toward it is NOT decided** and nothing in the tokens changed.
 
 ---
 

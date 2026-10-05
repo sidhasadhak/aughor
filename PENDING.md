@@ -419,11 +419,11 @@ six-destination rail was built, shown and refused the same day (ROADMAP §4.10):
 sits inside it — the place is named on its line.**
 
 - [x] 1 · Navigation — ~~six destinations replacing the rail~~ refused (§4.10). The 2026 rail as it was, plus two rows: Now beside Home and the Inbox, and Record under Intelligence. ⌘K gains an entry per new page.
-  - [ ] The inspector drawer: a citation opening beside the page it was cited on. Today it opens its page.
+  - [x] The inspector drawer: a citation opening beside the page it was cited on. *Decided on a mock-up and built 2026-10-05 (ROADMAP §6 item 40(d), `claude/platform-2027-doors`): on Now and the Record's pages, read-only, Esc closes it, "Open full page" leaves. An open drawer has no address yet — a reload closes it.*
   - [ ] Now's badge as slots used of a person's budget — waits on identity; the budget is per place today.
 - [x] 2 · Now (a rail row) — the week's slots, what waits on a person, restated since the last visit, the held list, the Briefing line.
   - [x] Resolve an approval in place. *Built 2026-10-05 (`claude/platform-2027-doors`): a proposed action opens the same approval card Attention shows, on the row, and the list re-reads once it is decided. A paused run, an automation's approval, an agent alert and a failing automation still link to Agent Ops ▸ Attention.*
-  - [ ] Dismiss an item with a reason — nothing in the record says what a dismissal is (a snooze, a verdict, or a withdrawal); a decision before a door.
+  - [x] Dismiss an item with a reason. *Decided and built 2026-10-05 (ROADMAP §6 item 40(a)–(c), `claude/platform-2027-doors`): a snooze — "Not now" until a day, with why; back on that day, or sooner when the record behind it changes; listed on Now as "Set aside" with Restore. Nothing is written on the item itself.*
 - [x] 3 · The Briefing — the mission line, the inquiries waiting to speak, the predictions in play.
   - [ ] An action and a prediction on each item; a Briefing signed and dated as a delivery; the same range a year ago.
 - [x] 4 · Inquiry (Record ▸ Inquiries) — ledger and reader; propose the next run with its cost; close with a lesson.
