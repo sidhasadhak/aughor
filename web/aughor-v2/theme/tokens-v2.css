@@ -224,3 +224,40 @@
   --shadow-sm: 0 1px 2px rgba(31, 31, 31, .10);
   --shadow-md: 0 1px 2px rgba(31, 31, 31, .10), 0 6px 16px rgba(31, 31, 31, .08);
 }
+
+
+/* ── Radix Themes underneath (trial, 2026-10-05) ────────────────────────────────────────────
+   Every Instrument token is now a NAME for a Radix step, chosen by the role Radix gives that
+   step: 1 page, 2 chrome and cards, 4 hover, 5 pressed, 5-8 lines, 9 solid, 11 and 12 text.
+   <html> carries .dark or .light, so the scales resolve at the root (portals, the body).
+   Inside the Theme the same names follow its knobs — accentColor, grayColor, radius — which is
+   the point: one panel moves the whole product. Both skins: the scales switch with the class. */
+:root, .radix-themes {
+  --bg-0: var(--gray-1); --bg-1: var(--gray-2); --bg-3: var(--gray-1); --bg-4: var(--gray-5); --bg-hover: var(--gray-4);
+  --code-bg: var(--gray-3);
+  --b0: var(--gray-5); --b1: var(--gray-6); --b2: var(--gray-7); --b3: var(--gray-8);
+  --t1: var(--gray-12); --t2: var(--gray-11); --t3: var(--gray-11); --t4: var(--gray-9);
+  --grn1: var(--green-3); --grn2: var(--green-7); --grn3: var(--green-9); --grn4: var(--green-11);
+  --vio1: var(--violet-3); --vio2: var(--violet-7); --vio3: var(--violet-9); --vio4: var(--violet-11);
+  --amb1: var(--amber-3); --amb2: var(--amber-7); --amb3: var(--amber-9); --amb4: var(--amber-11);
+  --red1: var(--red-3); --red2: var(--red-7); --red3: var(--red-9); --red4: var(--red-11);
+  --cyn3: var(--cyan-9); --cyn4: var(--cyan-11);
+}
+:root {
+  --blue1: var(--blue-3); --blue2: var(--blue-7); --blue3: var(--blue-9); --blue4: var(--blue-11);
+  --bg-sel: var(--blue-4); --blue-solid: var(--blue-9); --blue-solid-hover: var(--blue-10);
+}
+.radix-themes {
+  --blue1: var(--accent-3); --blue2: var(--accent-7); --blue3: var(--accent-9); --blue4: var(--accent-11);
+  --bg-sel: var(--accent-4); --blue-solid: var(--accent-9); --blue-solid-hover: var(--accent-10);
+  --r1: var(--radius-1); --r2: var(--radius-2); --r3: var(--radius-4);
+}
+/* The chart palette is held where it was: a chart's colours are data, checked by their own gate. */
+:root:not([data-theme="light"]), :root:not([data-theme="light"]) .radix-themes {
+  --chart-1: #4299E0; --chart-2: #3CAA60; --chart-3: #9C7BDD; --chart-4: #D57420; --chart-5: #32A6B2; --chart-6: #E65B77;
+  --chart-threshold-warn: #D57420; --chart-threshold-crit: #E65B77;
+}
+[data-theme="light"], [data-theme="light"] .radix-themes {
+  --chart-1: #0F6CBD; --chart-2: #1E7B45; --chart-3: #6B3FA0; --chart-4: #B25E00; --chart-5: #00819C; --chart-6: #C50F1F;
+  --chart-threshold-warn: #B25E00; --chart-threshold-crit: #C50F1F;
+}

@@ -63,7 +63,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
       // NAV_COLLAPSE_BOOT sets data-nav on <html> before React hydrates (an attribute React does not
       // render), so a collapsed rail is drawn collapsed from the first paint, with no hydration warning.
       suppressHydrationWarning

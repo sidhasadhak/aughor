@@ -13661,6 +13661,30 @@ the browser** · **measure the premise before building.**
     Kept as it was: the table also stays on the Briefing — the ask was to make it the Cockpit's default, and the
     Briefing's narrative cites its figures.
 
+44. ⏳ **DIRECTION 2026-10-05 — the web moves onto Radix Themes; the trial is built, the migration is not adopted yet**
+    (the user, after a side by side of Radix Colors alone: *"with their components the overall UI would look much
+    more effortless and easy to manipulate in the future… their other colour schemes… look much more standard than
+    what we currently have… I'll let you figure out how"*). This reverses an earlier position — the web was Base UI
+    and one Radix-based package was refused for it (§3.50) — and it is the user's to reverse. My first answer argued
+    for taking only the grey scale; that was overruled.
+    **How, proved on `claude/radix-themes` (a trial, not for merge as it stands):** (a) one `<Theme>` at the app's
+    root, following `<html data-theme>`; its stylesheet in a cascade layer of its own, after Tailwind's reset and
+    under its utilities. (b) Every Instrument token becomes a NAME for a Radix step, by the role Radix gives the
+    step — so the 222 files that read tokens and the 426 `aug-` rules follow the Theme's accent, grey and radius
+    without being touched, in both skins. (c) The shared components keep their call sites and are rebuilt on Themes
+    components: Button, Badge, the text field and the record table so far (4 of 20). Measured on the trial: it
+    type-checks; 1,600 of 1,601 web tests pass (the one failure asserts the old button's classes); `lint:vars` and
+    `lint:palette` fail, as they must until the gates learn Radix's variables and the chart palette is re-pinned.
+    One page was captured under three settings of the Theme's panel with no other change — that is the point of it.
+    **The phases, none started beyond the trial:** 1 · the other sixteen shared components, the two gates, the
+    four hand-kept colour mirrors, and a settings panel for accent, grey, radius and scaling kept per person like
+    the theme is; Base UI leaves as each wrapper stops using it. 2 · page vocabulary: the bespoke chips, segmented
+    controls, callouts and cards, and the 25 hand-rolled tables, onto Themes' own. 3 · retire what that replaces.
+    **Open, the user's:** the default accent, grey, radius and scaling; density (Themes' controls are 24px and
+    its table rows 36px against our 26 and 32); whether the antd grid stays; and the primary button, whose white
+    label on Radix's solid blue is 3.26:1 — said by the user to be a later matter.
+    **Order:** after #569 merges, from main; never inside it.
+
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)

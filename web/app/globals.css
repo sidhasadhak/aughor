@@ -1,4 +1,6 @@
+@layer theme, base, radix, components, utilities;
 @import "tailwindcss";
+@import "@radix-ui/themes/styles.css" layer(radix);
 @import "tw-animate-css";
 @import "../styles/tokens.css";
 @import "../aughor-v2/theme/tokens-v2.css";
@@ -1376,3 +1378,27 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-beside-box[data-chosen] { border-color: var(--accent); background: var(--bg-sel); }
 .aug-beside-link { height: auto; white-space: normal; justify-content: stretch; justify-items: start; font-weight: 400; cursor: pointer; }
 .aug-beside-link:hover { border-color: var(--b3); background: var(--bg-hover); }
+
+
+/* ── Radix Themes underneath (trial, 2026-10-05) ────────────────────────────────────────────
+   The Theme element keeps OUR typography: Inter at 13px, the figure face for code. Its
+   components size themselves from its own scale, so nothing else is said here about type. */
+.radix-themes {
+  --default-font-family: var(--font-sans);
+  --code-font-family: var(--font-mono);
+  --cursor-button: pointer;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+/* A Themes ghost button bleeds into its neighbours by design (negative margins, to line its
+   label up with text). In a toolbar or a table cell that eats the gap, so ours sit still. */
+.rt-BaseButton:where(.rt-variant-ghost) { margin: 0; }
+/* A ledger row: Themes draws the table, the page says which row is hovered and which is open. */
+[data-ledger] .rt-TableRow:where(:hover) { background-color: var(--gray-a3); }
+[data-ledger] .rt-TableRow[aria-selected="true"] { background-color: var(--accent-a4); }
+[data-ledger] .rt-TableCell.num, [data-ledger] .rt-TableColumnHeaderCell.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Our ledgers are dense and their columns are sized: the page's 13px, and only the first column —
+   the statement — wraps. A date or a chip broken over two lines doubles the row for nothing. */
+[data-ledger] .rt-TableRootTable { font-size: 13px; line-height: 1.45; }
+[data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell { white-space: nowrap; }
