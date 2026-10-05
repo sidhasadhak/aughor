@@ -324,6 +324,27 @@ def book_record_scenario(decision_id: str, req: ScenarioRequest, principal=Depen
             "prediction": (C.get(pid).model_dump() if C.get(pid) else None)}
 
 
+@router.get("/record/decisions/{decision_id}/scenarios")
+def list_record_scenarios(decision_id: str) -> dict:
+    """The scenarios booked FOR a decision, oldest first, with the predictions made under them as
+    they stand now — so a scored prediction reads as scored. A read: nothing is projected here."""
+    from aughor.record import scenario as S
+    d = D.get_decision(decision_id)
+    if d is None or not _visible(d.connection_id):
+        raise HTTPException(status_code=404, detail="No such decision")
+    scenarios = sorted(S.scenarios_for(decision_id), key=lambda s: s.recorded_at)
+    wanted = [pid for s in scenarios for pid in s.predictions]
+    if d.expectation_claim:
+        wanted.append(d.expectation_claim)
+    predictions: list[dict] = []
+    for pid in dict.fromkeys(wanted):
+        first = C.get(pid)
+        current = (C.latest(first.key) or first) if first is not None else None
+        if current is not None:
+            predictions.append({**_claim_view(current), "booked_as": pid})
+    return {"scenarios": [s.model_dump() for s in scenarios], "predictions": predictions}
+
+
 @router.get("/record/calibration")
 def record_calibration(connection_id: Optional[str] = None) -> list[dict]:
     """Interval coverage by method, metric and author over scored predictions — counted."""
@@ -331,6 +352,19 @@ def record_calibration(connection_id: Optional[str] = None) -> list[dict]:
     if connection_id and not _visible(connection_id):
         raise HTTPException(status_code=404, detail="No such connection")
     return calibration(conn_id=connection_id)
+
+
+# ── the week by duty (Operations) ──────────────────────────────────────────────────────────
+
+@router.get("/record/duties")
+def record_duties(connection_id: Optional[str] = None, since: str = "") -> dict:
+    """What each of the seven duties booked since a moment (default: this week's Monday), how much
+    of it is warranted, how its runs ended by type and what a warranted entry cost — a fold over
+    the ledger, with what is not attributed said."""
+    from aughor.record.duties import week_by_duty
+    if connection_id and not _visible(connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    return week_by_duty(since=since, conn_id=connection_id)
 
 
 # ── corrections (phase 5) ──────────────────────────────────────────────────────────────────

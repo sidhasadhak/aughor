@@ -107,6 +107,8 @@
   "aughor/ontology/validator.py::_verify_formula_rows::execute::__ontology_validate__#2": {"dialect": "native", "author": "model", "note": "the ontology enricher's formula, written under the engine line and its writer rules (`sql_dialect`); before 2026-10-04 its prompt named no dialect"},
   "aughor/overview/build.py::_probe::execute::{_LABEL}": {"dialect": "declared", "author": "platform", "note": "the overview tour's probes, written in DuckDB's dialect and declared; the profile is SUMMARIZE in its SELECT-wrapped form on DuckDB and the profiler's cache elsewhere (it was a bare SUMMARIZE, refused at every door)"},
   "aughor/packs/gate4.py::_scalar::execute::{label}": {"dialect": "native", "author": "platform", "note": "a DuckDB the platform builds from the pack's dataset"},
+  "aughor/packs/manifest.py::rewrite_scalars::scalar::__adapter__": {"dialect": "not-sql", "author": "platform", "note": "the manifest writer's own scalar(): it renders a YAML value, and shares the door's name only"},
+  "aughor/packs/manifest.py::rewrite_scalars::scalar::__adapter__#2": {"dialect": "not-sql", "author": "platform", "note": "the same YAML scalar(), for a key the manifest did not hold yet"},
   "aughor/pipeline/builtins.py::SqlCapability.execute::execute::capability.data": {"dialect": "native", "author": "model", "note": "generate_sql(dialect=scope.dialect)"},
   "aughor/pipeline/pipeline.py::run::execute::{artifact}": {"dialect": "not-sql", "author": "platform", "note": "a pipeline capability's execute(artifact, request); the SQL it holds runs at SqlCapability.execute"},
   "aughor/routers/_shared.py::schemas_of_connection::execute::__schemas__": {"dialect": "portable", "author": "platform", "note": "INFORMATION_SCHEMA"},

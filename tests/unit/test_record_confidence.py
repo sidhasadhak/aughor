@@ -150,6 +150,7 @@ def test_the_receipt_carries_the_counted_confidence_and_who_else_was_told(client
     assert rec["confidence"]["reference_class"] == K.RECHECKED and rec["confidence"]["hit_rate"] == 1.0
     assert [(t["state"], t["target"]) for t in rec["told"]] == [("held_owner", "sb:#finance"), ("departed", "sb:#ops")]
     assert rec["told_note"] == "" and verify(body)                          # inside the signed body
+    assert rec["answer"] == inv_id                                          # what Re-perform re-runs, named on the receipt
     # an answer that booked no claim says so, and a receipt nothing cited says so
     plain = inv.write_answer_receipt(kind="chat_answer", natural_key=f"chat:{conn}:none", question="how many?",
                                      sqls=["SELECT 1"], headline="how many?", schema="", connection_id=conn)

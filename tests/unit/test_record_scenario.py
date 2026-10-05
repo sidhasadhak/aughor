@@ -158,6 +158,13 @@ def test_a_scenario_is_booked_for_a_decision_through_the_door():
         R.book_record_scenario(did, R.ScenarioRequest(method="learned", metric="x"), principal=None)
     assert exc.value.status_code == 422 and "no method named" in exc.value.detail
     assert R.record_calibration(connection_id=conn) == []
+    # the read side: a decision's scenarios with their predictions as they stand, scored ones included
+    listed = R.list_record_scenarios(did)
+    assert [s["tier"] for s in listed["scenarios"]] == ["identity", "declared"]
+    assert {p["booked_as"] for p in listed["predictions"]} == {out["prediction"]["id"], declared["prediction"]["id"]}
+    S.score_prediction(C.get(out["prediction"]["id"]), actual=12000.0, measured_on="2026-10-02")
+    scored = next(p for p in R.list_record_scenarios(did)["predictions"] if p["booked_as"] == out["prediction"]["id"])
+    assert scored["state"] == "scored" and scored["id"] != out["prediction"]["id"]
 
 
 # ── law 5, narrowed ────────────────────────────────────────────────────────────────────────

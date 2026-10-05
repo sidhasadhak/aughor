@@ -31,19 +31,10 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 CENSUS = REPO / "docs" / "SQL_DOORS.json"
 
-#: How a site's statement meets the engine's dialect. The first two are read from the call itself.
-DIALECTS = {
-    "declared": "the call declares sql_dialect='duckdb'; the door translates for an engine that runs SQL as written",
-    "forwards": "the call passes on a declaration its caller made",
-    "door": "the door's own delegation; the statement was rendered for the engine before it",
-    "native": "written for the engine that runs it — a person, the model under the writer rules or a fix prompt that "
-              "names the dialect, SQL stored from a run on that engine, a platform branch dispatched on the dialect",
-    "generated": "rendered in the engine's dialect, by sqlglot or the dialect-aware quoting helpers",
-    "portable": "platform-built with no engine-specific spelling, possibly around a model's or a person's fragment",
-    "unstated": "written by a model that was not told the dialect",
-    "none": "DuckDB's spelling, or a statement only DuckDB has, sent undeclared: the bug class",
-    "not-sql": "a method that shares a door's name and runs no SQL",
-}
+#: How a site's statement meets the engine's dialect — one definition, shared with the gate map a
+#: person reads (`aughor/govern/gate_map.py`, `GET /governance/gate-map`).
+from aughor.govern.gate_map import DIALECTS  # noqa: E402
+
 AUTHORS = {"platform", "model", "person", "stored", "door", "mixed"}
 
 #: The two counts that may only fall. Lower each in the same change that lowers its count — never raise it.
@@ -298,3 +289,20 @@ def test_an_exception_is_a_reason(census):
                     f"{key}: `{field}` is a reviewer's sentence saying why, not a flag")
         assert not ("internal" in row and "audited" in row), f"{key}: a row is an exception one way, not both"
 
+
+
+def test_the_gate_map_a_person_reads_is_the_same_census(tmp_path, census):
+    """`GET /governance/gate-map` serves this file grouped, names the unguarded sites, counts each
+    departure law's holds — and says so when the census is not on the install."""
+    from aughor.govern import gate_map as G
+    seen = G.statement_doors()
+    assert seen["present"] and seen["sites"] == len(census)
+    assert sum(r["sites"] for r in seen["by_dialect"]) == seen["sites"] == sum(r["sites"] for r in seen["by_door"])
+    assert len([s for s in seen["unguarded"] if s["dialect"] == "none"]) == NONE_BASELINE
+    assert all(s["note"] for s in seen["unguarded"])                       # an unguarded site carries its reason
+    assert all(r["means"] for r in seen["by_dialect"])
+    absent = G.statement_doors(tmp_path / "nowhere.json")
+    assert absent["present"] is False and "not on this install" in absent["note"] and absent["sites"] == 0
+    laws = G.departure_laws()["laws"]
+    from aughor.govern.departure import GUARDS
+    assert [row["guard"] for row in laws] == list(GUARDS) and all(row["label"] for row in laws)

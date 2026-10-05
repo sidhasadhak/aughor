@@ -84,6 +84,16 @@ def get_audit_feed(
             "count": len(events), "events": [e.to_dict() for e in events]}
 
 
+@router.get("/governance/gate-map")
+def get_gate_map():
+    """Every door in and out, as a person reads it: where a statement reaches a warehouse and how
+    its dialect is handled (the census the build is held to), and each law of the departure gate
+    with what it held. A read; an install without the census says so."""
+    from aughor.govern.gate_map import gate_map
+
+    return gate_map()
+
+
 # ── usage caps (G4's missing door, 2026-09-06) ────────────────────────────────
 
 

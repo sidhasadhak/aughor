@@ -27,7 +27,7 @@ def _told(investigation_id: str) -> list[dict]:
 
 
 def record_lines(raw: dict) -> Optional[dict]:
-    """``{"claim", "confidence", "confidence_note", "told", "told_note"}`` for a raw ledger receipt
+    """``{"answer", "claim", "confidence", "confidence_note", "told", "told_note"}`` for a raw ledger receipt
     (`{artifact, lineage, …}`), or None when the artifact is not an answer's receipt."""
     art = (raw or {}).get("artifact") or {}
     if not art:
@@ -36,7 +36,9 @@ def record_lines(raw: dict) -> Optional[dict]:
     natural_key = str(art.get("natural_key") or "")
     payload = art.get("payload") if isinstance(art.get("payload"), dict) else {}
     inv_id = str(payload.get("investigation_id") or (natural_key.rsplit(":", 1)[-1] if natural_key else ""))
-    out: dict[str, Any] = {"claim": None, "confidence": None, "confidence_note": "", "told": [], "told_note": ""}
+    # `answer` is the run this receipt is for — what "Re-perform" re-runs (screen 10 of the study).
+    out: dict[str, Any] = {"answer": inv_id, "claim": None, "confidence": None, "confidence_note": "",
+                           "told": [], "told_note": ""}
     try:
         claim = _claims.latest(observation_key(conn_id, inv_id)) if (conn_id and inv_id) else None
         if claim is None:
