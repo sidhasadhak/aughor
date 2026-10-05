@@ -1,0 +1,83 @@
+# The sources behind B2B SaaS's sane ranges, watches and plays. EVERY source below is marked `unread`: where this
+# package was drafted (2026-10-05) the network egress proxy blocked each publisher's domain, so no document was read
+# in the publisher's own words. What the bands and watches say of these sources is what a web search index reported
+# of them that day — a report of a report. For that reason no source carries `figures` (a figure's quote is the words
+# it was published in), the bands' `basis` names each figure as indexed, and the package cannot be promoted to
+# active until a person has read each document, carried its figures with their quotes, and dropped `unread`
+# (`aughor/packs/promote.py` refuses it; the static gate refuses figures on an unread source).
+# `published` is given to the precision the publisher's page or upload path gives: a month, or the report's year.
+sources:
+  - id: saas-capital-retention-2025
+    title: "2025 B2B SaaS Retention Benchmarks"
+    publisher: SaaS Capital
+    url: https://www.saas-capital.com/wp-content/uploads/2025/09/RB32WS1-2025-B2B-SaaS-Retention-Benchmarks.pdf
+    published: 2025-09
+    retrieved: 2026-10-05
+    unread: true
+    notes: >
+      NOT READ HERE (www.saas-capital.com blocked by the drafting environment's egress proxy, 2026-10-05). As
+      indexed: SaaS Capital's 14th annual survey of private B2B SaaS companies, more than 1,000 respondents; median
+      net revenue retention and gross revenue retention by annual contract value band — under $12k 98% / 90%,
+      $12k–$25k 103% / 91%, $25k–$50k 102% / 91%, $50k–$100k 104% / 90%, $100k–$250k 102% / 91%, over $250k
+      106% / 95%. The month is the upload path's; the day was not read.
+  - id: chartmogul-retention-2025
+    title: "The SaaS Retention Report: The AI churn wave"
+    publisher: ChartMogul
+    url: https://chartmogul.com/reports/saas-retention-the-ai-churn-wave/
+    published: 2025-12
+    retrieved: 2026-10-05
+    unread: true
+    notes: >
+      NOT READ HERE (chartmogul.com blocked, 2026-10-05). As indexed: an analysis of about 3,500 software companies
+      on ChartMogul's platform; median net revenue retention for B2B SaaS 82% with the top quartile at 97%; by
+      segment, SMB-focused SaaS near 97%, mid-market 102–108%, enterprise-focused 118% with a top quartile above
+      130%. The population is every B2B business on one billing platform, many of them very small — the reason its
+      median sits far below the surveys of funded private companies.
+  - id: benchmarkit-2025
+    title: "2025 SaaS Performance Metrics Benchmarks"
+    publisher: Benchmarkit
+    url: https://www.benchmarkit.ai/2025benchmarks
+    published: "2025"
+    retrieved: 2026-10-05
+    unread: true
+    notes: >
+      NOT READ HERE (www.benchmarkit.ai blocked, 2026-10-05). As indexed: more than 1,600 private B2B SaaS
+      companies; median net revenue retention 101%; median gross revenue retention 84% (88% the year before);
+      median CAC payback period 20 months in the 2025 report, 25 months in the 2022 report; median gross margin
+      80%, top quartile 86% or better (the latter from the 2026 edition's summary).
+  - id: kbcm-sapphire-saas-survey-2025
+    title: "2025 KeyBanc Capital Markets / Sapphire Ventures SaaS Survey"
+    publisher: KeyBanc Capital Markets and Sapphire Ventures
+    url: https://info.sapphireventures.com/2025-keybanc-capital-markets-sapphire-ventures-saas-survey
+    published: "2025"
+    retrieved: 2026-10-05
+    unread: true
+    notes: >
+      NOT READ HERE (info.sapphireventures.com and the press release's host blocked, 2026-10-05). As indexed:
+      median net dollar retention 101% in 2024, down from a 2021 peak of 109%; gross retention near 90%; account
+      executive payback periods expected to shorten to 18 months by 2026; median ARR growth 15% in 2024, 20%
+      projected for 2025.
+  - id: ebsta-pavilion-gtm-2025
+    title: "2025 GTM Benchmarks"
+    publisher: Ebsta and Pavilion
+    url: https://benchmarks.ebsta.com/2025-gtm-benchmarks
+    published: "2025"
+    retrieved: 2026-10-05
+    unread: true
+    notes: >
+      NOT READ HERE (benchmarks.ebsta.com blocked, 2026-10-05). As indexed: 655,000 opportunities and $48 billion
+      of deal value; a 21% median win rate for B2B SaaS (the same median the 2024 report gave); new business
+      closing in 91 days on average and expansion in 52; the median sales cycle by segment 38 days (SMB), 78
+      (mid-market) and 142 (enterprise); cycles 8% longer year over year.
+  - id: userpilot-activation-2024
+    title: "User Activation Rate Benchmark Report 2024"
+    publisher: Userpilot
+    url: https://userpilot.com/blog/?p=196703
+    published: "2024"
+    retrieved: 2026-10-05
+    unread: true
+    notes: >
+      NOT READ HERE (userpilot.com blocked, 2026-10-05). As indexed: 62 SaaS companies on Userpilot's platform;
+      an average activation rate of 37.5%; by industry from 5% (fintech and insurance) to 54.8% (HR); sales-led
+      companies 41.6% against product-led 34.6%. Activation is defined by each product's own milestone, so the
+      figures compare loosely.

@@ -731,7 +731,15 @@ def measure_override_processes(connection_id: str, schema_name: Optional[str], d
             except NotMeasurable as exc:
                 measured = process_from_fields(ov.target_id, ov.fields)
                 measured.note = f"not measurable on this pass: {exc}"[:500]
+        prior_entry = ov.binding.get("process")
         ov.binding["process"] = process_entry(ov.fields, measured)
+        # The close-out (C4): a process's early stages are a signal — a stage that slowed or a promise
+        # breaking more against the measurement this one overwrites opens an inquiry. Never raises.
+        try:
+            from aughor.record.signals import on_process_measured
+            on_process_measured(connection_id, ov.target_id, prior_entry, ov.binding["process"])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("process signal check skipped for %s: %s", ov.target_id, exc)
         try:
             save(connection_id, schema_name or "default", ov)
         except Exception as exc:  # noqa: BLE001

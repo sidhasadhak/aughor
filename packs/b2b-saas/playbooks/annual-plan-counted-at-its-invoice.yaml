@@ -1,0 +1,15 @@
+id: annual-plan-counted-at-its-invoice
+kind: data_quality
+trigger_metric: monthly_recurring_revenue
+trigger_condition: an annual subscription's monthly price is not below its price per billing period
+recommendation: >
+  An annual plan's monthly price is its yearly price divided by twelve; a row whose monthly price equals or exceeds
+  its plan price was normalised wrongly or not at all, and it books a year's revenue into every month's MRR. Fix
+  the normalisation at the source or in the binding before reading MRR, ARR or any retention figure built on them.
+expected_impact: Every subscription contributes one month's price to MRR, whatever it bills by.
+owner_role: Data Engineer
+tags: [MRR, normalisation, data quality]
+sources: [benchmarkit-2025]
+detection: >
+  SUM(CASE WHEN {{role.subscription.billing_period}} = 'annual'
+  AND {{role.subscription.monthly_price}} >= {{role.subscription.plan_price}} THEN 1 ELSE 0 END)

@@ -141,6 +141,21 @@ def call_operation(connection_id: str, operation_id: str, params: Optional[dict]
                           f"{conn.provider} refused this grant's refresh — the user must "
                           f"reconnect it under Integrations")
 
+    # Phase 0 of the 2027 study (ROADMAP §3.53), closing the limit stated above where it can be
+    # closed: with identity on, a grant is its owner's. A call made AS an identified user may
+    # spend only that user's grant. A scheduled step has no identified user (cron) and keeps
+    # the posture above — discovery scoped, the owner on every audit line — because refusing
+    # it would refuse every scheduled step on a multi-user install.
+    from aughor.org.context import current_user_id
+    from aughor.security.authz import require_identity_enabled
+    caller = current_user_id() if require_identity_enabled() else ""
+    if caller and conn.user_id and conn.user_id != caller:
+        _audit(op.gov_action, connection_id, "refused", actor, conn.user_id,
+               "another user's grant", op.writes)
+        return CallResult("refused",
+                          f"this {conn.provider or 'integration'} grant belongs to another "
+                          f"user — connect your own account under Integrations")
+
     lacking = missing_scopes(op, conn.scopes)
     if lacking:
         return CallResult("refused",
@@ -182,6 +197,11 @@ def call_operation(connection_id: str, operation_id: str, params: Optional[dict]
     _audit(gov_action, connection_id,
            "executed" if result.ok else result.status, actor, conn.user_id,
            result.message or op.id, op.writes)
+    if op.writes:
+        # The close-out (C5): a write this gateway performed is an Action entry beside the declared
+        # actions' (the study §M — the gateway stays the one write path, so what passes it is on
+        # the one record). Best-effort: the call happened whether or not its entry could be booked.
+        _book_write(op, connection_id, conn, actor, result, params, approved)
     if result.ok:
         try:
             result.data = extract(op, result.data)
@@ -282,6 +302,19 @@ def _provider_error(payload: dict, status: int) -> str:
         err = payload.get("error_description") or payload.get("message") or ""
     text = str(err or "").strip() or json.dumps(payload)[:200]
     return f"HTTP {status}: {text[:300]}" if status >= 400 else text[:300]
+
+
+def _book_write(op, connection_id: str, conn, actor: str, result: "CallResult", params: Optional[dict],
+                approved: bool) -> None:
+    try:
+        from aughor.actions.authority import book_write
+        book_write(door="integration", action_id=f"integration.{op.provider}.{op.id}", scope=f"grant:{connection_id}",
+                   actor=actor, status=("executed" if result.ok else result.status), params=dict(params or {}),
+                   outcome={"http_status": result.http_status, **({"keys": sorted(result.data)} if result.ok and isinstance(result.data, dict) else {})},
+                   under=("human accept" if approved else f"grant of {conn.user_id or '(single-user install)'}"),
+                   message=result.message)
+    except Exception:
+        logger.debug("integration write entry skipped", exc_info=True)
 
 
 def _audit(action: str, scope: str, decision: str, actor: str, owner: str, detail: str,

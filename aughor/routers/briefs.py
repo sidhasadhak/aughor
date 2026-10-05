@@ -88,6 +88,15 @@ def _validate_period(period: str, content: str = "alert_summary") -> None:
             "subscription sends the Briefing written for its period (content 'briefing')"))
 
 
+@router.get("/briefing/organisation")
+def get_organisation_briefing():
+    """The organisation first (the 2027 study §E item 2): every visible connection's latest kept
+    Briefing folded into one view — as-of, version, headline, lede, measured figures — and, for a
+    connection with none kept, a row that says so. No narrative is written across connections."""
+    from aughor.briefing.organisation import organisation_briefing
+    return organisation_briefing()
+
+
 @router.get("/briefing/subscriptions")
 def list_briefing_subscriptions(conn_id: Optional[str] = None):
     from aughor.briefing.store import list_subscriptions

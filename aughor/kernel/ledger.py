@@ -350,6 +350,9 @@ def _payload_bool(value: Any) -> Optional[int]:
 #: this ledger. Defined beside the store that holds them; the ontology's context graph, the
 #: briefing and the canvas purge all read this one tuple.
 RECEIPT_KINDS = ("ada_report", "chat_answer")
+#: The two by name, so a reader can ask "is this receipt a deep report's?" without spelling the
+#: wire kind (the vocabulary ratchet holds the acronym's count).
+DEEP_REPORT_KIND, CHAT_ANSWER_KIND = RECEIPT_KINDS
 
 
 def _labelled_connection(labels: Optional[str]) -> Optional[str]:

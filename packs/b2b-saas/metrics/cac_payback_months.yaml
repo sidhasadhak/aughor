@@ -1,0 +1,30 @@
+name: cac_payback_months
+title: CAC payback period
+aliases: [CAC payback, CAC payback period, payback period, months to recover CAC]
+unit: number
+definition: >
+  The months of gross-margin-adjusted new recurring revenue it takes to repay the sales and marketing spent to
+  win it: a period's sales and marketing expense over the new MRR won in the same period times the gross margin
+  that MRR earns. Stated in months.
+formula: >
+  SUM({{role.acquisition_period.sales_and_marketing_spend}})
+    / NULLIF(SUM({{role.acquisition_period.new_mrr}} * {{role.acquisition_period.gross_margin}}), 0)
+grain: >
+  One period's spend against the same period's new MRR, summed over the periods asked for, then divided; by
+  channel or segment only where the spend is attributed the same way the new MRR is.
+binds:
+  required: [acquisition_period]
+anti_patterns:
+  - "Dividing this period's spend by all MRR, or by cumulative accounts: the denominator is the NEW MRR the spend won."
+  - "Leaving gross margin out: a dollar of MRR repays spend only by the margin it earns."
+  - "Counting trials and free signups as acquisitions: the denominator is paid new revenue."
+  - "Mismatched windows — a quarter's spend over a month's new MRR — produce a number with no meaning."
+sane_range:
+  min: 18
+  max: 25
+  basis: >
+    Medians of private B2B SaaS companies in the cited surveys, AS INDEXED on 2026-10-05 and not read in the
+    documents: KeyBanc/Sapphire's account executive payback expected at 18 months by 2026 (the low end);
+    Benchmarkit's median 20 months in the 2025 report and 25 months in the 2022 report (the high end). The median
+    moves with the year and with ACV; a single company sits where its motion puts it.
+  sources: [kbcm-sapphire-saas-survey-2025, benchmarkit-2025]

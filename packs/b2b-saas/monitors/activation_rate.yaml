@@ -1,0 +1,8 @@
+# A watch B2B SaaS keeps, with NO prior band: activation is defined by each product's own milestone, and the one
+# published spread (5% to 54.8% by industry, Userpilot 2024, as indexed) is too wide to watch anything by. Said as
+# unmeasured; the band is learned on the connection or shown nowhere.
+id: activation_rate
+metric: activation_rate
+unit: ratio
+unmeasured: true
+description: The share of signups reaching the declared activation milestone, by signup week.

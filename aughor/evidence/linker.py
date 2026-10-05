@@ -1,12 +1,14 @@
 """Evidence Linker — extract EvidenceClaims from a completed investigation.
 
-Parses the agent's output (AnalysisReport + query_history + ADA phases) and
+Parses the agent's output (AnalysisReport + query_history + deep-analysis phases) and
 produces a list of EvidenceClaim objects ready for the ledger.
 
 Design rules:
   - Every key_finding in AnalysisReport becomes one claim.
   - SQL is linked by matching hypothesis_id → query_history.
-  - Confidence comes directly from the Finding model (set by the scoring node).
+  - No confidence is written. The linker used to copy the Finding model's number, or stamp 0.8
+    / 0.5 by ``is_significant``; both were a model's or a constant's say-so printed as a figure.
+    Phase 1 of the 2027 study removed them — confidence is counted or absent.
   - data_freshness is set to the investigation's completion timestamp (proxy for
     "how fresh the data was when the claim was made").
   - metric_used is left None unless the claim_text references a known metric
@@ -78,11 +80,9 @@ def extract_claims_from_report(
         # Finding can be a pydantic model or a dict
         if isinstance(finding, dict):
             claim_text   = finding.get("claim") or finding.get("claim_text") or ""
-            confidence   = float(finding.get("confidence") or 0.5)
             hypothesis_id = finding.get("hypothesis_id")
         else:
             claim_text   = getattr(finding, "claim", "") or getattr(finding, "claim_text", "")
-            confidence   = float(getattr(finding, "confidence", 0.5))
             hypothesis_id = getattr(finding, "hypothesis_id", None)
 
         if not claim_text.strip():
@@ -95,7 +95,6 @@ def extract_claims_from_report(
             sql_source=_find_sql_for_hypothesis(hypothesis_id, qh),
             metric_used=_guess_metric(claim_text),
             data_freshness=completed_at,
-            confidence=min(max(confidence, 0.0), 1.0),
         ))
 
     return claims
@@ -106,7 +105,7 @@ def extract_claims_from_ada_phases(
     phases: list[dict],
     completed_at: Optional[str] = None,
 ) -> list[EvidenceClaim]:
-    """Extract claims directly from ADA investigation_phases (richer provenance).
+    """Extract claims directly from deep-analysis phases (richer provenance).
 
     Each phase finding with an interpretation becomes a claim.  The SQL is
     taken directly from the finding dict (not inferred from hypothesis_id).
@@ -120,7 +119,6 @@ def extract_claims_from_ada_phases(
                 continue
 
             sql = finding.get("sql") or None
-            confidence = 0.8 if finding.get("is_significant") else 0.5
 
             # Build a concise claim text from the title + first sentence of interpretation
             title = finding.get("title") or ""
@@ -134,7 +132,6 @@ def extract_claims_from_ada_phases(
                 sql_source=sql,
                 metric_used=_guess_metric(claim_text),
                 data_freshness=completed_at,
-                confidence=confidence,
             ))
 
     return claims

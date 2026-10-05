@@ -1,0 +1,15 @@
+# Method 1 — runway is an identity over declared inputs: the months the cash lasts at the current net burn. The
+# burn a plan assumes is a person's declared assumption (method 2), never this formula's.
+id: runway
+name: Months of runway at the current burn
+for_kind: decision
+method: identity
+metric: runway_months
+unit: number
+formula: cash / net_burn_monthly
+inputs: [cash, net_burn_monthly]
+varied: [net_burn_monthly]
+limits:
+  - "the monthly net burn is the latest period's, or a declared plan's, stated with its author"
+  - "an identity: it says what the arithmetic says and nothing about whether the burn will hold"
+description: How many months the cash lasts if the burn stays where it is.

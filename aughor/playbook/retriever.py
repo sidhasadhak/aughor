@@ -146,7 +146,16 @@ def build_playbook_prompt_section(entries: list[PlaybookEntry]) -> str:
         "but append \"[unproven — consider adding to playbook]\" so the user can review it.)",
     ]
     for e in entries:
-        sr = f"  [{e.historical_success_rate * 100:.0f}% historical success rate]" if e.historical_success_rate > 0 else "  [no outcome data yet]"
+        # Phase 5: the rate is said with its count — "held in 3 of 4 reviewed outcomes" — never as a
+        # bare percentage; a play with no reviewed outcome says so.
+        n = int(getattr(e, "outcome_n", 0) or 0)
+        if n > 0:
+            held = round(e.historical_success_rate * n)
+            sr = f"  [held in {held} of {n} reviewed outcome{'s' if n != 1 else ''}]"
+        elif e.historical_success_rate > 0:
+            sr = f"  [{e.historical_success_rate * 100:.0f}% historical success rate; count not recorded]"
+        else:
+            sr = "  [no outcome data yet]"
         impact = f" | expected: {e.expected_impact}" if e.expected_impact else ""
         timeline = f" | timeline: {e.typical_timeline}" if e.typical_timeline else ""
         lines.append(f"  • {e.recommendation}{impact}{timeline}{sr}")

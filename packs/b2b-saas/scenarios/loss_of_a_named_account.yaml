@@ -1,0 +1,15 @@
+# Method 1 — the ARR left after a named account leaves is an identity: the book less that account's ARR. Which
+# account, and whether it leaves, is the decision's declared assumption (method 2).
+id: loss_of_a_named_account
+name: ARR after a named account leaves
+for_kind: decision
+method: identity
+metric: annual_recurring_revenue
+unit: currency
+formula: arr - lost_account_arr
+inputs: [arr, lost_account_arr]
+varied: [lost_account_arr]
+limits:
+  - "the account's ARR is read from the subscription book on the as-of date, never typed in"
+  - "an identity: it says what the book would carry, not what the loss does to the accounts that stay"
+description: What the book carries if one account leaves.

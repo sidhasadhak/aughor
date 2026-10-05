@@ -1,0 +1,32 @@
+name: net_revenue_retention
+title: Net revenue retention
+aliases: [NRR, NDR, net revenue retention, net dollar retention, net MRR retention]
+unit: ratio
+definition: >
+  The recurring revenue a cohort of accounts carries at a period's end, as a share of what the same accounts
+  carried at its start — expansion and contraction included, churn included, accounts that joined inside the period
+  excluded. Above 1 means the surviving accounts' growth outweighed what left.
+formula: >
+  SUM(CASE WHEN {{role.account_period.starting_mrr}} > 0 THEN {{role.account_period.ending_mrr}} ELSE 0 END)
+    / NULLIF(SUM({{role.account_period.starting_mrr}}), 0)
+grain: >
+  One account over one retention period, summed over the cohort of accounts with revenue at the period's start,
+  then divided; by segment or ACV band by filtering the same rows, never by averaging the accounts' own ratios.
+binds:
+  required: [account_period]
+anti_patterns:
+  - "Counting accounts that joined inside the period: their revenue is new business, not retention, and inflates the ratio."
+  - "Adding an expansion term on top of the cohort's ending revenue: the ending revenue already carries it — one method, never both."
+  - "Dividing period revenue by period revenue: retention is point-in-time MRR at two dates on one cohort, not billing over a window."
+  - "Reading a ratio above 1 as a bug: expansion above churn is the normal shape of a healthy B2B book."
+sane_range:
+  min: 0.82
+  max: 1.30
+  basis: >
+    Medians and quartiles of private B2B SaaS companies in the cited surveys, AS INDEXED on 2026-10-05 and not read
+    in the documents: ChartMogul's B2B median 82% over about 3,500 companies (the low end — every B2B business on one
+    billing platform) up to its enterprise-focused top quartile above 130% (the high end); between them SaaS
+    Capital's medians by ACV band 98%–106%, KeyBanc/Sapphire's median 101% and Benchmarkit's median 101%. A single
+    company sits where its segment and its year put it; the band is the spread of the published medians and
+    quartiles, not a norm.
+  sources: [chartmogul-retention-2025, saas-capital-retention-2025, kbcm-sapphire-saas-survey-2025, benchmarkit-2025]

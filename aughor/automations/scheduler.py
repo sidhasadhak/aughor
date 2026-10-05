@@ -99,6 +99,26 @@ def tick_once() -> dict[str, int]:
     except Exception as exc:
         logger.warning("automation heartbeat could not run due reviews: %s", exc)
         counts["reviews"] = 0
+    # Phase 3 of the 2027 study — predictions whose range is Final are scored by code, hourly.
+    try:
+        counts["predictions_scored"] = score_due_predictions_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not score due predictions: %s", exc)
+        counts["predictions_scored"] = 0
+    # Phase 2 of the 2027 study — the inquiries whose check date has come wake (state open, the
+    # reason recorded); the settle tick is the loop's heartbeat. Hourly, like the reviews.
+    try:
+        counts["inquiries_woken"] = wake_due_inquiries_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not wake due inquiries: %s", exc)
+        counts["inquiries_woken"] = 0
+    # Phase 5 of the 2027 study — every active mission whose report date has come is reported:
+    # composed from fields, booked, delivered to its owner through the gate. Hourly.
+    try:
+        counts["mission_reports"] = report_due_missions_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not report due missions: %s", exc)
+        counts["mission_reports"] = 0
     # Idea 4 — the daily reading of every table's recent days, so the platform LEARNS when a
     # source's numbers stop changing instead of being told a lag by hand. Once a UTC day; a
     # count per table, no model.
@@ -158,6 +178,66 @@ def run_due_reviews_hourly(*, now: Optional[float] = None, force: bool = False) 
         logger.info("review due on %s asked %s: %s", o.id, o.review_asked_to or "(nobody linked)",
                     o.review_question[:120])
     return len(reviewed)
+
+
+_last_prediction_check: float = 0.0
+
+
+def score_due_predictions_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Score every open prediction whose settle date has passed and whose spec is measurable, at
+    most once per `REVIEW_CHECK_SECONDS`. Returns how many were scored."""
+    global _last_prediction_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_prediction_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_prediction_check = t
+    from aughor.db.measure import run_sql_for
+    from aughor.record.scenario import score_due_predictions
+    scored = score_due_predictions(run_sql_for=run_sql_for)
+    for cid in scored:
+        logger.info("prediction %s scored", cid)
+    return len(scored)
+
+
+_last_inquiry_check: float = 0.0
+
+
+def wake_due_inquiries_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Wake every waiting inquiry whose check date has come, at most once per
+    `REVIEW_CHECK_SECONDS`. Returns how many woke."""
+    global _last_inquiry_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_inquiry_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_inquiry_check = t
+    from aughor.record.inquiry import wake_due
+    woken = wake_due()
+    for q in woken:
+        logger.info("inquiry %s woke: %s", q.key, q.question[:120])
+    return len(woken)
+
+
+_last_mission_check: float = 0.0
+
+
+def report_due_missions_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Report every active mission whose report date has come, at most once per
+    `REVIEW_CHECK_SECONDS`. Returns how many reports were booked."""
+    global _last_mission_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_mission_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_mission_check = t
+    from aughor.db.measure import run_sql_for
+    from aughor.record.mission import report_due_missions
+    reported = report_due_missions(run_sql_for=run_sql_for)
+    for r in reported:
+        logger.info("mission %s reported (%s): %s", r["report"]["name"], r["delivery"].get("status"),
+                    r["report"]["headline"][:160])
+    return len(reported)
 
 
 def _run_one(automation) -> None:

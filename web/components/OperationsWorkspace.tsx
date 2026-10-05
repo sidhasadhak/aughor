@@ -60,7 +60,7 @@ const LAYERS: WorkspaceLayer<OpsLayer>[] = [
   { id: "security",    icon: "shield",   label: "Security & Audit", blurb: "Access, PII & the audit trail" },
 ];
 
-type SecLens = "security" | "activity" | "approvals";
+type SecLens = "security" | "activity" | "approvals" | "gates" | "policies";
 
 type Props = {
   connId?: string;

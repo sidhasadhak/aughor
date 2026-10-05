@@ -1,0 +1,8 @@
+# A watch B2B SaaS keeps, with NO prior band and NO declared formula: pipeline coverage (open pipeline over the
+# period's bookings target) is quoted as a rule of thumb — three times — that no cited survey publishes as a
+# measured figure. The install declares the metric against its own targets. Said as unmeasured.
+id: pipeline_coverage
+metric: pipeline_coverage
+unit: ratio
+unmeasured: true
+description: Open pipeline expected to close in the period over the period's bookings target.

@@ -1,0 +1,30 @@
+name: gross_revenue_retention
+title: Gross revenue retention
+aliases: [GRR, GDR, gross revenue retention, gross dollar retention, gross MRR retention]
+unit: ratio
+definition: >
+  The share of a cohort's starting recurring revenue still carried at the period's end, counting each account at
+  no more than its starting revenue — churn and contraction reduce it, expansion cannot raise it. Bounded 0 to 1 by
+  construction.
+formula: >
+  SUM(CASE WHEN {{role.account_period.starting_mrr}} > 0
+           THEN LEAST({{role.account_period.ending_mrr}}, {{role.account_period.starting_mrr}}) ELSE 0 END)
+    / NULLIF(SUM({{role.account_period.starting_mrr}}), 0)
+grain: >
+  One account over one retention period, capped at its starting revenue, summed over the cohort with revenue at
+  the start, then divided; by segment or ACV band by filtering the same rows.
+binds:
+  required: [account_period]
+anti_patterns:
+  - "Letting expansion net out contraction: that is net retention; gross retention caps each account at its start."
+  - "Using the whole book's ending revenue (new accounts included) as the numerator: it reads above 1, which gross retention cannot."
+  - "Counting churned subscription rows instead of churned revenue: a multi-subscription account counts several times."
+sane_range:
+  min: 0.84
+  max: 0.95
+  basis: >
+    Medians of private B2B SaaS companies in the cited surveys, AS INDEXED on 2026-10-05 and not read in the
+    documents: Benchmarkit's 2025 median 84% (down from 88%) at the low end; SaaS Capital's medians by ACV band 90%
+    to 95% (over $250k ACV) at the high end; KeyBanc/Sapphire near 90% between them. A single company sits where
+    its segment puts it; the band is the spread of the published medians.
+  sources: [benchmarkit-2025, saas-capital-retention-2025, kbcm-sapphire-saas-survey-2025]

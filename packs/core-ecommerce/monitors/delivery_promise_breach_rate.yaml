@@ -1,0 +1,14 @@
+# Phase 6 of the 2027 study — a watch commerce usually keeps, with the PRIOR range it was measured in. The band is
+# the two public datasets' own readings of the order-to-delivery promise (ROADMAP §3.15 ON-9; the study §P): the
+# share of orders delivered after their promised date, 9.35% on Olist and 8.11% on theLook (2026-09-24). Two
+# readings are a prior, not a norm — proposed for a person to confirm on connect, never armed, and replaced by the
+# connection's own learned band (the Watcher's) as soon as one exists.
+id: delivery_promise_breach_rate
+metric: delivery_promise_breach_rate
+unit: ratio
+low: 0.0811
+high: 0.0935
+measured_on: [olist-2026-09-24, thelook-2026-09-24]
+description: The share of orders delivered after the date promised to the customer, by delivery day.
+note: >
+  Two public datasets, one reading each; widen before trusting. A business with a stricter promise sits higher.

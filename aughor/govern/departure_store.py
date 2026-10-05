@@ -153,6 +153,91 @@ def list_departures(state: Optional[str] = None, automation_id: Optional[str] = 
             conn.close()
 
 
+def count_departed_to(addressee: str, *, since: str) -> int:
+    """Phase 2 of the 2027 study — the attention budget's count: unattended departures that
+    DEPARTED to this addressee (its target, or the person it was addressed to) since ``since``."""
+    if not addressee:
+        return 0
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM departures WHERE state = 'departed' AND origin = 'unattended' "
+                "AND ts >= ? AND (target = ? OR addressed_to = ?)", (since, addressee, addressee)).fetchone()
+            return int(row["n"] if row else 0)
+        finally:
+            conn.close()
+
+
+def _bearing_rows(mission_id: str, *, state: str, since: str, limit: int) -> list[dict]:
+    """Rows whose checks name this mission (``checks["mission"]``, the ids joined by " · ")."""
+    if not mission_id:
+        return []
+    import json
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM departures WHERE state = ? AND origin = 'unattended' AND ts >= ? AND checks LIKE ? "
+                "ORDER BY ts DESC LIMIT ?", (state, since or "", f"%{mission_id}%", max(1, min(int(limit), 2000)))).fetchall()
+        finally:
+            conn.close()
+    out = []
+    for r in rows:
+        try:
+            checks = json.loads(r["checks"] or "{}") or {}
+        except ValueError:
+            checks = {}
+        if mission_id in [x.strip() for x in str(checks.get("mission") or "").split(" · ")]:
+            out.append(dict(r))
+    return out
+
+
+def count_departed_bearing(mission_id: str, *, since: str) -> int:
+    """Phase 5 of the 2027 study — a mission's charge: unattended departures that DEPARTED since
+    ``since`` bearing on it (the gate wrote the mission on the row)."""
+    return len(_bearing_rows(mission_id, state="departed", since=since, limit=2000))
+
+
+def held_bearing(mission_id: str, *, since: str = "", limit: int = 100) -> list[dict]:
+    """The departures the budget held that bore on this mission, newest first."""
+    return _bearing_rows(mission_id, state="held_budget", since=since, limit=limit)
+
+
+def held_by_budget(*, addressee: Optional[str] = None, since: str = "", limit: int = 100) -> list[dict]:
+    """The departures the attention budget held since ``since``, newest first."""
+    clauses, params = ["state = 'held_budget'"], []
+    if since:
+        clauses.append("ts >= ?"); params.append(since)
+    if addressee:
+        clauses.append("(target = ? OR addressed_to = ?)"); params.extend([addressee, addressee])
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                f"SELECT * FROM departures WHERE {' AND '.join(clauses)} ORDER BY ts DESC LIMIT ?",
+                [*params, max(1, min(int(limit), 500))]).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def departures_for(*, investigation_id: str = "", limit: int = 50) -> list[dict]:
+    """Phase 1 of the 2027 study — "who else was told": every gate decision on a message that
+    cited this analysis, newest first (departed and held alike; the state says which)."""
+    if not investigation_id:
+        return []
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM departures WHERE investigation_id = ? ORDER BY ts DESC LIMIT ?",
+                (investigation_id, max(1, min(int(limit), 500)))).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
 def get_departure(departure_id: str) -> Optional[dict]:
     with _LOCK:
         conn = _connect()

@@ -1,0 +1,25 @@
+name: annual_recurring_revenue
+title: Annual recurring revenue
+aliases: [ARR, annual recurring revenue, annualised recurring revenue, annualized recurring revenue]
+unit: currency
+definition: >
+  Twelve times monthly recurring revenue on an as-of date: the subscription book's annual run-rate. Exactly
+  twelve times MRR by construction — a figure that is not is counting something else.
+formula: >
+  12 * SUM(CASE WHEN {{role.subscription.status}} = 'active' THEN {{role.subscription.monthly_price}} ELSE 0 END)
+grain: >
+  The subscription book on one as-of date, as monthly recurring revenue is; read by segment or plan by filtering
+  the same rows.
+binds:
+  required: [subscription]
+anti_patterns:
+  - "Reading booked contract value as ARR: a three-year contract signed this quarter adds one year's worth to ARR, not three."
+  - "Reading recognised revenue over the trailing twelve months as ARR: it lags the book by up to a year."
+  - "Adding one-time implementation fees: they are not recurring and are not in ARR."
+sane_range:
+  min: 0
+  basis: >
+    Non-negative by construction — twelve times a sum of recurring prices; no industry publishes a band for an
+    absolute amount, so the range has one side. The definition is the cited surveys' — as indexed, not read (see
+    sources.yaml).
+  sources: [benchmarkit-2025, kbcm-sapphire-saas-survey-2025]

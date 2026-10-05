@@ -242,6 +242,9 @@ _AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/", "/auth
                 # AO-2d — Slack's browser redirect after an install carries no key; the
                 # route verifies a sealed state instead. Its own prefix, deliberately.
                 "/slack-bots/oauth/",
+                # C9 — the browser's return from an MCP server's authorization server carries no
+                # key; the route verifies the unguessable state the SDK minted instead.
+                "/mcp-servers/oauth/",
                 # AO-5 — the headless doors to a custom agent carry their OWN credential
                 # (the agent's key as a bearer, or the Bot Framework's signature) and the
                 # A2A card is public by definition. Each by its own prefix.
@@ -1101,6 +1104,16 @@ app.include_router(arrivals_router.router)  # HB-5 — arrivals: a Slack sentenc
 app.include_router(hub_router.router)  # HB-6 — the hub-wide map: every automation on one screen
 app.include_router(brain_router.router)  # PENDING item 9 — the company-brain map
 app.include_router(receipt_router.router)
+from aughor.routers import record as record_router  # noqa: E402 — phase 1 of the 2027 study, beside the receipt
+app.include_router(record_router.router)  # the Record: claims as recorded, decisions declared and listed, outcomes booked
+from aughor.routers import attention as attention_router  # noqa: E402 — phase 2 of the 2027 study
+app.include_router(attention_router.router)  # the attention budget: terms published, slots, the held list
+from aughor.routers import authority as authority_router  # noqa: E402 — phase 4 of the 2027 study
+from aughor.routers import onboarding as onboarding_router  # noqa: E402 — phase 6 of the 2027 study
+app.include_router(onboarding_router.router)  # the day-one screen: onboarding hours, the shopping list, coverage
+from aughor.routers import ledger as ledger_router  # noqa: E402 — phase 7 of the 2027 study
+app.include_router(ledger_router.router)  # the published ledger API: contract, claims, restatements, subscriptions, export
+app.include_router(authority_router.router)  # earned authority: the L0–L5 table, graduation and demotion receipts
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
 app.include_router(cockpit_router.router)  # Arc CT-4 — a Data Canvas's cockpit (self-gates on cockpit.composed)

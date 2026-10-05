@@ -1,0 +1,12 @@
+# Phase 6 of the 2027 study — a mission template (§J, §P vertical 2). A PERSON writes the mission from it, names
+# its owner, its target and its budget, and activates it; a template never becomes a mission on its own.
+id: hold_net_retention_above_a_floor
+name: Hold net revenue retention above a floor without buying it
+cadence: monthly
+objective: {metric: net_revenue_retention, direction: up, unit: ratio, text: "net revenue retention of the starting cohort at or above the floor, read each month"}
+constraints:
+  - {metric: cac_payback_months, bound: at_most, unit: number, text: "without lengthening CAC payback past the limit"}
+  - {metric: gross_revenue_retention, bound: at_least, unit: ratio, text: "and without gross retention falling below its floor — expansion must not hide churn"}
+watches:
+  - {metric: sales_cycle_days}
+description: Keep the book growing from inside without paying for it twice.

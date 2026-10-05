@@ -42,6 +42,12 @@ CATEGORIES: tuple[str, ...] = (
                            # because none of the four above fits: a thumbs is not a call,
                            # not a definition change, and not the approval gate. It is the
                            # scarce signal the platform collects and could not surface.
+    "enforcement",         # a governed limit or rule was applied: a usage cap set or hit, a
+                           # guardrail BLOCK, a job cancelled for its budget, a governed
+                           # metric's formula enforced or drifted from. Admitted 2026-10-04
+                           # (phase 0 of the 2027 study, ROADMAP §3.53: one audit sink) —
+                           # the four kinds below sat in GOVERNANCE_SHAPED_UNCATEGORIZED
+                           # as a product decision nobody had taken.
 )
 
 #: Ledger event kind → category. The one place that mapping lives.
@@ -83,6 +89,29 @@ KIND_CATEGORY: dict[str, str] = {
     # turn_id, `trace.feedback` on trace_id) and stay two kinds under one category.
     "chat.feedback": "human_verdict",
     "trace.feedback": "human_verdict",
+    # Phase 0 (2026-10-04) — the enforcement trail. `govern.cap` is a cap set, cleared or hit;
+    # `budget.exceeded` is the kernel cancelling a job for a governed cap; `metric.enforcement`
+    # is the governed-formula check on every metric-bearing answer; `guardrail` is the
+    # allow-AND-block trail, of which the feed carries the BLOCKS only (the reader says why).
+    "govern.cap": "enforcement",
+    "budget.exceeded": "enforcement",
+    "metric.enforcement": "enforcement",
+    "guardrail": "enforcement",
+    # The 2027 study's phases 4 and 5 — what an action did on its own authority. The L5 agent
+    # choosing and running a declared action (or being held), and a declared undo fired: both are
+    # the gate's decision on an action, which is what an auditor asking "what ran, and under what"
+    # filters by.
+    "action.autonomous": "action_decision",
+    "action.undone": "action_decision",
+    # Phases 4 and 7 — reach changed. A graduation or a demotion moves what an action may do; a
+    # service principal minted or revoked, a sign-in to an outside tool server and a foreign
+    # method registered each change who or what may act or be believed — the same sense in which
+    # `pack.installed` is governance and a status flip is not.
+    "authority.graduated": "governance_change",
+    "authority.demoted": "governance_change",
+    "service_principal.minted": "governance_change",
+    "mcp.oauth": "governance_change",
+    "method.registered": "governance_change",
 }
 
 #: The non-Ledger sink: the append-only `audit_log` table is entirely data access.
@@ -114,29 +143,25 @@ NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
     # ON-7b: an explorer's run — one model call and the counts of what it proposed, wrote and was refused. Each write
     # goes through ON-7's gated doors, which RBAC journals like any person's edit; this is the run's telemetry.
     "ontology.explore",
+    # The 2027 study's Record at work: an inquiry woken or opened by a weak signal, a mission's report
+    # composed, a decision's outcome measured, a prediction scored. Readings of the ledger about the
+    # business — each is its own entry in the Record, where a person reads it; none grants, changes or
+    # decides what anyone may see or do.
+    "inquiry.signal", "inquiry.woke", "mission.reported", "outcome.booked", "prediction.scored",
+    # Phase 7: a pack written as a draft, and a pack demoted on its measured record. Like
+    # `pack.status_changed` above: neither grants anybody anything — installing is what does.
+    "pack.uploaded", "pack.demoted",
 })
 
-#: MI-1 — reviewed and judged governance-shaped, deliberately NOT yet in the feed.
-#:
-#: Found by making the ratchet discover its own population: these four are as
-#: governance-relevant as the kinds already mapped — `govern.cap` is named for it,
-#: `metric.enforcement` is the enforcement twin of the categorized `metric.governance`,
-#: and `guardrail` is the allow-AND-block trail `govern/guardrails.py` deliberately writes
-#: both halves of so a block RATE can be computed. They are held out of KIND_CATEGORY
-#: because admitting them changes what a user-facing surface RETURNS, and one of them
-#: would dominate it: `guardrail` is 1,074 of the local ledger's rows, every one a PII
-#: allow, against 500-per-sink. Which of them the feed should carry — and whether a
-#: high-volume allow trail belongs in a reader-facing feed at all — is a product decision,
-#: not a builder's. Recorded here rather than buried in the exclusion set above, because
-#: writing "not governance" about these would be recording a judgment known to be false.
-#:
-#: `budget.exceeded` was added by the new ratchet itself, on its first run: the kernel
-#: cancels a job for breaching a governed cap and says so on the ledger, and no reader of
-#: the governance feed could see it. It is here rather than in the list above for the same
-#: reason as the other three — it is enforcement, and calling it telemetry would be false.
-GOVERNANCE_SHAPED_UNCATEGORIZED: frozenset[str] = frozenset({
-    "govern.cap", "guardrail", "metric.enforcement", "budget.exceeded",
-})
+#: MI-1 held four governance-shaped kinds out of the feed — `govern.cap`, `guardrail`,
+#: `metric.enforcement`, `budget.exceeded` — because admitting them was a product decision
+#: (one of them, the guardrail ALLOW trail, was 1,074 of the local ledger's rows against
+#: 500 per sink). The decision was taken 2026-10-04 (phase 0 of the 2027 study, ROADMAP
+#: §3.53): all four are in the feed under `enforcement`, and the guardrail reader carries
+#: blocks only, so the allow trail stays where a block RATE is computed from it and never
+#: swamps a reader. The set stays declared, empty, so the ratchet below keeps its shape
+#: and the next kind someone wants to hold out has a named place to be held.
+GOVERNANCE_SHAPED_UNCATEGORIZED: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -236,6 +261,29 @@ def _summarize(kind: str, p: dict) -> str:
         return (f"{p.get('action', '?')} trusted query "
                 f"{str(p.get('trusted_query') or '?')[:16]}"
                 f" ({p.get('from') or '—'} → {p.get('to') or '—'})")
+    if kind == "action.autonomous":
+        ran = "ran" if p.get("acted") else "held"
+        return (f"the autonomous agent {ran} {p.get('action_id') or 'no action'} toward mission "
+                f"{str(p.get('mission') or '?')[:12]}" + (f" — {p.get('decision')}" if p.get("decision") else ""))
+    if kind == "action.undone":
+        done = "undone" if p.get("undone") else f"not undone ({p.get('status') or '?'})"
+        return f"{p.get('action_id', '?')} on {p.get('scope') or '*'}: {done}"
+    if kind == "authority.graduated":
+        return (f"{p.get('action_id', '?')} on {p.get('scope') or '*'} graduated to L{p.get('level', '?')}"
+                + (f" inside mission {str(p.get('mission'))[:12]}" if p.get("mission") else ""))
+    if kind == "authority.demoted":
+        revoked = p.get("grants_revoked") or 0
+        return (f"{p.get('action_id', '?')} on {p.get('scope') or '*'} demoted: {str(p.get('why') or '?')[:120]}"
+                + (f" ({revoked} standing grant{'s' if revoked != 1 else ''} withdrawn)" if revoked else ""))
+    if kind == "service_principal.minted":
+        what = ("minted" if not p.get("rotated") else "rotated") if p.get("active") else "revoked"
+        return f"service principal {p.get('name', '?')} {what}"
+    if kind == "mcp.oauth":
+        return (f"{p.get('action', '?')} on tool server {str(p.get('server_id') or '?')[:16]}"
+                + (f" — {str(p.get('detail'))[:80]}" if p.get("detail") else ""))
+    if kind == "method.registered":
+        state = "withdrawn" if p.get("active") is False else "registered"
+        return f"{p.get('kind') or 'method'} {p.get('method', '?')} {state}"
     if kind == "intake.governance":
         act = p.get("action", "?")
         if act == "resolve":
@@ -258,6 +306,25 @@ def _summarize(kind: str, p: dict) -> str:
         content = p.get("content_events") or 0
         return (f"{who} read trace {str(p.get('trace_id') or '?')[:12]} ({whose})"
                 + (f" — {content} events with prompt content" if content else ""))
+    if kind == "govern.cap":
+        limit = p.get("limit")
+        return (f"{p.get('action', '?')} cap on {p.get('metric') or '?'} for "
+                f"{p.get('subject') or p.get('scope') or '?'}"
+                + (f" at {limit}" if limit is not None else ""))
+    if kind == "budget.exceeded":
+        return (f"job cancelled for {p.get('agent') or 'an agent'}: "
+                f"{p.get('reason') or 'a governed cap was exceeded'}")
+    if kind == "metric.enforcement":
+        drift = [str(d) for d in (p.get("drift") or [])]
+        used = p.get("enforced")
+        head = ("governed formula used" if used else
+                "governed formula improvised" if used is not None else "governed metric checked")
+        return head + (f" — drift on {', '.join(drift)[:80]}" if drift else "")
+    if kind == "guardrail":
+        detail = str(p.get("detail") or "").strip()
+        return (f"guardrail {p.get('guardrail') or '?'} blocked"
+                + (f" {p.get('agent_id')}" if p.get("agent_id") else "")
+                + (f" — {detail[:60]}" if detail else ""))
     return kind
 
 
@@ -342,6 +409,48 @@ def _from_session_replays(limit: int) -> list[AuditEvent]:
     return out
 
 
+def _from_session_guardrails(limit: int) -> list[AuditEvent]:
+    """Guardrail BLOCKS — a session-event kind, like model calls, and read the same way.
+
+    Both halves of a guardrail verdict are written (`govern/guardrails.py`: a rate needs its
+    denominator), so the raw trail is mostly allows — 1,074 of 1,074 rows on the local
+    ledger when MI-1 measured it. The feed carries the blocks: what a reader asking "what
+    was stopped, and why" wants, and nothing an allow would drown. The allow count stays
+    where the block rate is computed from it. Over-read by a margin so a window of allows
+    still yields the blocks inside it; the merged feed re-sorts and caps.
+    """
+    from aughor.kernel.ledger import Ledger
+    from aughor.obs.session_log import GUARDRAIL
+    from aughor.security.authz import tenant_scope
+
+    try:
+        rows = Ledger.default().session_events(kind=GUARDRAIL, limit=max(limit, 1) * 4,
+                                               org_id=tenant_scope()) or []
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+
+        tolerate(exc, "one audit sink being unreadable must not blank the whole feed",
+                 counter="govern.audit_feed_sink")
+        return []
+    out: list[AuditEvent] = []
+    for e in rows:
+        p = e.get("payload") or {}
+        blocked = bool(p.get("blocked")) or e.get("ok") is False
+        if not blocked:
+            continue
+        out.append(AuditEvent(
+            category="enforcement", kind="guardrail",
+            at=str(e.get("at") or e.get("created_at") or ""),
+            actor=str(p.get("agent_id") or e.get("user_id") or ""),
+            org_id=str(e.get("org_id") or ""), conn_id=str(e.get("conn_id") or ""),
+            summary=_summarize("guardrail", p),
+            detail={"guardrail": p.get("guardrail"), "detail": p.get("detail"),
+                    "agent_id": p.get("agent_id")}))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _from_audit_table(limit: int) -> list[AuditEvent]:
     """The append-only query-execution log — the one non-Ledger sink.
 
@@ -380,7 +489,7 @@ def _from_audit_table(limit: int) -> list[AuditEvent]:
 #: expectation is the shape that cannot fail; `tests/unit/test_govern_audit_feed.py` now also
 #: proves each of these readers actually returns an event, since exempting a kind from the
 #: string check is only safe if something else shows its reader works.
-SESSION_EVENT_KINDS: frozenset[str] = frozenset({"llm_call", "decision_replay"})
+SESSION_EVENT_KINDS: frozenset[str] = frozenset({"llm_call", "decision_replay", "guardrail"})
 
 
 _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
@@ -388,11 +497,18 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("data_access", lambda n: _from_ledger("trace.payload_access", n)),
     ("data_access", lambda n: _from_ledger("mcp.tool_call", n)),
     ("action_decision", lambda n: _from_ledger("action.approval", n)),
+    ("action_decision", lambda n: _from_ledger("action.autonomous", n)),
+    ("action_decision", lambda n: _from_ledger("action.undone", n)),
     ("governance_change", lambda n: _from_ledger("govern.tag", n)),
     ("governance_change", lambda n: _from_ledger("metric.governance", n)),
     ("governance_change", lambda n: _from_ledger("trusted_query.governance", n)),
     ("governance_change", lambda n: _from_ledger("intake.governance", n)),
     ("governance_change", lambda n: _from_ledger("pack.installed", n)),
+    ("governance_change", lambda n: _from_ledger("authority.graduated", n)),
+    ("governance_change", lambda n: _from_ledger("authority.demoted", n)),
+    ("governance_change", lambda n: _from_ledger("service_principal.minted", n)),
+    ("governance_change", lambda n: _from_ledger("mcp.oauth", n)),
+    ("governance_change", lambda n: _from_ledger("method.registered", n)),
     ("model_call", _from_session_log),
     ("data_access", _from_session_replays),
     # A mapping entry alone renders NOTHING: `feed` walks this list, not KIND_CATEGORY.
@@ -400,6 +516,11 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     # asserts they agree rather than trusting that whoever edited one edited the other.
     ("human_verdict", lambda n: _from_ledger("chat.feedback", n)),
     ("human_verdict", lambda n: _from_ledger("trace.feedback", n)),
+    # Phase 0 (2026-10-04) — the enforcement trail, one sink per kind.
+    ("enforcement", lambda n: _from_ledger("govern.cap", n)),
+    ("enforcement", lambda n: _from_ledger("budget.exceeded", n)),
+    ("enforcement", lambda n: _from_ledger("metric.enforcement", n)),
+    ("enforcement", _from_session_guardrails),
 ]
 
 

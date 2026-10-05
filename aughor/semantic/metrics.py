@@ -82,7 +82,7 @@ def _seed_path() -> Path:
 
 
 #: A metric that applies to every connection. Wave O2: the store was keyed by NAME
-#: alone, so two connections could not hold different definitions of `revenue` — the
+#: alone, so two connections could not hold different definitions of one metric name — the
 #: #198 shape (a store keyed without the dimension distinguishing its owners), for the
 #: third time in this codebase.
 #:
@@ -98,7 +98,7 @@ class MetricDefinition(BaseModel):
     connection: str = Field(
         default=GLOBAL_CONNECTION,
         description="Connection this definition applies to; '*' is the default for all")
-    label: str = Field(description="Human-readable display name, e.g. 'Monthly Recurring Revenue'")
+    label: str = Field(description="Human-readable display name, e.g. 'Active accounts'")
     sql: str = Field(description="Approved SQL expression, e.g. \"SUM(amount) FILTER (WHERE status='active')\"")
     tables: list[str] = Field(default_factory=list, description="Tables this metric draws from")
     dimensions: list[str] = Field(default_factory=list, description="Columns the metric can be sliced by")
@@ -118,7 +118,7 @@ class MetricDefinition(BaseModel):
     target_period: Optional[str] = Field(default=None, description="'monthly', 'quarterly', 'ytd'")
     benchmark_source: Optional[str] = Field(default=None, description="e.g. 'internal: FY2025 plan'")
     # Governance fields (M21)
-    owner: Optional[str] = Field(default=None, description="Team or person responsible, e.g. 'Revenue team'")
+    owner: Optional[str] = Field(default=None, description="Team or person responsible, e.g. 'Finance team'")
     freshness_sla: Optional[str] = Field(default=None, description="Human description of SLA, e.g. 'daily by 6am UTC'")
     freshness_check_sql: Optional[str] = Field(default=None, description="SQL returning the latest data timestamp for this metric")
     quality_tests: list[str] = Field(default_factory=list, description="SQL assertions that must be true; failure = metric flagged unreliable")
@@ -456,13 +456,60 @@ def _conn_of(raw: dict) -> str:
     return str(raw.get("connection") or GLOBAL_CONNECTION)
 
 
+# ── the organisation layer (the 2027 study §E item 2: the organisation first, the connection second) ──
+
+#: A metric scoped to an ORGANISATION, not one connection: ``connection = "org:<org id>"``. Every
+#: connection of that organisation reads it between its own definitions and the install's global
+#: ones — the layer that was missing when glossary, metrics and the Briefing read one connection.
+ORG_SCOPE_PREFIX = "org:"
+
+
+def org_scope(org_id: str) -> str:
+    return f"{ORG_SCOPE_PREFIX}{org_id}"
+
+
+def is_org_scope(connection: str | None) -> bool:
+    return bool(connection) and str(connection).startswith(ORG_SCOPE_PREFIX)
+
+
+def organisation_of(connection_id: str) -> str:
+    """The organisation a connection belongs to: the registry's word (`connections.org_id`), else
+    the current context's — the shared builtins carry none and read the caller's organisation."""
+    try:
+        from aughor.db.registry import get_connection_org
+        org = get_connection_org(connection_id)
+    except Exception as exc:  # noqa: BLE001 — a registry that cannot answer reads the caller's organisation
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the connection's organisation could not be read; the caller's is used", counter="metrics.org_of")
+        org = None
+    if org:
+        return str(org)
+    from aughor.org.context import current_org_id
+    return current_org_id()
+
+
+def organisation_visible(metrics: list["MetricDefinition"]) -> list["MetricDefinition"]:
+    """The unscoped list as ONE organisation may read it, when identity is on: the install's global
+    definitions, its own organisation's, and those of the connections it can see — never another
+    organisation's. Identity off (one tenant owns every row) → unchanged, byte for byte."""
+    from aughor.security.authz import org_visible_conn_ids, tenant_scope
+    org = tenant_scope()
+    if org is None:
+        return metrics
+    visible = org_visible_conn_ids() or set()
+    mine = org_scope(org)
+    return [m for m in metrics
+            if m.connection == GLOBAL_CONNECTION or m.connection == mine
+            or (not is_org_scope(m.connection) and m.connection in visible)]
+
+
 def _folded_scopes(connection_id: str) -> list[str]:
     """Connection ids whose scoped metrics ``connection_id`` also reads, in order.
 
     One case today: the Workspace folds the samples warehouse's tables in read-only
     (`registry.get_meta(WORKSPACE_ID)["seed_duckdb"]`), and the metrics the repo ships are
     scoped to ``samples`` — an id the registry never lists. Measured 2026-10-03 on a fresh
-    install: `revenue` and `aov` applied to NO listed connection, so the agent drafter had
+    install: the shipped `samples` metrics applied to NO listed connection, so the agent drafter had
     no governed metric to draw from. The tables and their metrics travel together.
     """
     try:
@@ -478,13 +525,20 @@ def _folded_scopes(connection_id: str) -> list[str]:
 
 
 def _scoped_rows(rows: list[dict], connection_id: str) -> list[dict]:
-    """The connection's own entries, then the folded scopes' entries it does not shadow,
-    then the global entries no scoped name shadows — override-wins at every step."""
+    """The connection's own entries, then the folded scopes' entries it does not shadow, then its
+    ORGANISATION's (`org:<id>`), then the global entries no scoped name shadows — override-wins at
+    every step: the specific answer beats the general one, and the organisation's beats the install's."""
     out = [m for m in rows if _conn_of(m) == connection_id]
     names = {m.get("name") for m in out}
     for scope in _folded_scopes(connection_id):
         for m in rows:
             if _conn_of(m) == scope and m.get("name") not in names:
+                out.append(m)
+                names.add(m.get("name"))
+    if not is_org_scope(connection_id):
+        org = org_scope(organisation_of(connection_id))
+        for m in rows:
+            if _conn_of(m) == org and m.get("name") not in names:
                 out.append(m)
                 names.add(m.get("name"))
     out += [m for m in rows if _conn_of(m) == GLOBAL_CONNECTION and m.get("name") not in names]
@@ -530,7 +584,7 @@ def get_metric(name: str, path: Path | None = None,
 def save_metric(metric: MetricDefinition, path: Path | None = None) -> None:
     """Upsert a metric by (connection, name).
 
-    The identity is the PAIR. Upserting by name alone would mean scoping `revenue` to one
+    The identity is the PAIR. Upserting by name alone would mean scoping one name to one
     connection silently overwrote the global definition every other connection reads —
     which is the exact failure this wave exists to make impossible.
     """
@@ -564,7 +618,7 @@ def delete_metric(name: str, sql: str | None = None, path: Path | None = None,
     """Remove a metric by name. Returns True if anything was deleted.
 
     Grain-aware: a name can carry several governed grains, each with a distinct
-    formula (e.g. ``revenue`` over ``orders`` vs ``order_items``). When ``sql`` is
+    formula (e.g. one name over the parent table vs its line table). When ``sql`` is
     given, only the entry whose formula matches is removed — so deleting one grain
     from the UI doesn't wipe the others. Without ``sql`` every entry sharing the
     name is removed (legacy behaviour, used by bulk cleanup paths).
@@ -637,7 +691,7 @@ def value_query(metric: "MetricDefinition") -> str:
     A metric whose ``sql`` is already a full SELECT is run verbatim — it has stated its
     own shape. Otherwise the aggregate expression is wrapped over the metric's first
     table with its declared filters applied, because those filters ARE the definition:
-    revenue that includes cancelled orders is a different metric from the one Finance
+    a total that includes cancelled rows is a different metric from the one Finance
     approved, and computing it without them would answer the wrong question precisely.
     """
     from aughor.semantic.metric_statement import as_statement
@@ -857,8 +911,8 @@ def _metric_matches_schema(metric, tables: set[str], cols: set[str]) -> bool:
     `final_price_usd`) leaks a wrong, column-mismatched formula into every other
     connection's prompt — a real NL2SQL-corrupting bug surfaced by the golden-SQL
     eval. The formula-column check closes the half the table/dimension checks
-    miss: a metric like `revenue = SUM(total_amount)` must NOT inject into a
-    connection whose orders has `o_totalprice`/`final_price_usd` and no
+    miss: a metric like `total = SUM(total_amount)` must NOT inject into a
+    connection whose table has `o_totalprice`/`final_price_usd` and no
     `total_amount` (observed leaking AVG(total_amount) into beautycommerce, which
     has neither). Conservative: only drops when a declared name is genuinely absent."""
     for tbl in (metric.tables or []):
@@ -914,7 +968,7 @@ def _apply_ontology_overlay(
             # case); otherwise the curated, Finance-approved catalog is highest
             # authority and wins. (Without this, a connection whose ontology carries a
             # wrong templated SUM(total_amount) — e.g. beautycommerce — silently strips
-            # the correct catalog revenue/AOV from the LLM prompt.)
+            # the correct catalog metrics from the LLM prompt.)
             om_sql = (getattr(om, "formula_sql", "") or "").strip()
             if om_sql and om_sql == (m.sql or "").strip():
                 continue  # validator tested THIS exact formula and it failed → drop
@@ -961,7 +1015,7 @@ def _dedupe_by_name(metrics: list) -> list:
 
     A metric name is its identity — ``save_metric`` upserts by name — so two
     entries sharing a name is an invariant violation. It only surfaces once a
-    schema keeps both grains of the same KPI (e.g. ``orders`` AND ``order_items``
+    schema keeps both grains of the same KPI (e.g. a parent table AND its line table
     both present), and the damage is real: the catalog gets injected into the
     prompt twice with CONFLICTING formulas, enforcement double-counts, and the
     Trust Receipt collides React keys. We restore the invariant at the
@@ -996,8 +1050,8 @@ def filter_metrics_to_schema(metrics: list, schema_text: str, dedupe: bool = Tru
 
     ``dedupe=False`` keeps EVERY surviving grain of a duplicated name. Two
     same-named metrics can be genuinely different formulas at different grains
-    (e.g. ``revenue`` over ``orders`` = ``SUM(total_amount)`` vs over
-    ``order_items`` = ``SUM(final_price_usd * quantity)``). A query can only match
+    (e.g. one name over the parent table = ``SUM(total_amount)`` vs over
+    its line table = ``SUM(final_price_usd * quantity)``). A query can only match
     one grain, so collapsing here would drop the matching grain and mislabel a
     correct answer as drift — the enforcement path passes ``dedupe=False`` and
     lets ``check_metric_enforcement`` collapse its own verdicts (used > drift)
@@ -1073,7 +1127,7 @@ def build_metrics_block(
         metrics = _apply_ontology_overlay(metrics, connection_id)
         # Re-filter AFTER the overlay: it can INJECT a verified ontology metric that has no
         # catalog counterpart, and that injection is NOT schema-checked — so a stale ontology
-        # formula (e.g. revenue = SUM(total_amount) on a connection whose orders has
+        # formula (e.g. total = SUM(total_amount) on a connection whose table has
         # order_value, not total_amount) would leak a missing-column formula into the prompt.
         if _tables:
             metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]

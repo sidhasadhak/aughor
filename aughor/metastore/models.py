@@ -71,7 +71,8 @@ def principal_kind(principal: str) -> str:
     ``workspace``), or ``""`` when it is not one — the principal-side sibling of
     :func:`securable_kind`, so routing can branch without a chain of prefix tests."""
     head, sep, _ = str(principal or "").partition(":")
-    return head if sep and head in ("user", "group", "agent", "workspace") else ""
+    # `service` — an outside vendor's agent under a service principal (the 2027 study's phase 7).
+    return head if sep and head in ("user", "group", "agent", "workspace", "service") else ""
 
 
 def catalog_securable(catalog_id: str) -> str:

@@ -249,6 +249,10 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
         po = resolve_ontology(pack_id)
         if po is not None:
             claims = apply_core_claims(graph, po, pack_id, db)
+            # Phase 6 — a pack measured against this connection for review is booked too: what it expected
+            # of us and what the data said is the Record's to answer, whether or not the pack is bound.
+            from aughor.packs.ontology_map import record_claims
+            record_claims(claims, graph, connection_id, schema_name)
     _store.put(key, {"graph": graph.model_dump()})
     # ON-9 — declared processes and rules are counted against the SERVED graph (every declaration overlaid, with the
     # counts this pass just recorded on the override files); what they count is written back on their own files. The

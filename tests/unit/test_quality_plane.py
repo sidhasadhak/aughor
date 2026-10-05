@@ -399,9 +399,13 @@ class TestCaveatsReachTheReceipt:
         fn = tree.body[0]
         if ast.get_docstring(fn):
             fn.body = fn.body[1:]                     # drop the docstring node
-        body = ast.dump(ast.Module(body=fn.body, type_ignores=[]))
-        for io_call in ("caveats_for_answer", "latest_for_tables", "record"):
-            assert io_call not in body, f"the pure projection must not call {io_call}"
+        # INVOCATIONS, by name. The Record's two lines arrive as the `record` argument (phase 1 of the
+        # 2027 study) and leave under the `record` key — data, like the caveats — so a substring
+        # search for the word flagged the argument as if it were the store read it replaced.
+        called = {getattr(n.func, "id", None) or getattr(n.func, "attr", None)
+                  for n in ast.walk(ast.Module(body=fn.body, type_ignores=[])) if isinstance(n, ast.Call)}
+        for io_call in ("caveats_for_answer", "latest_for_tables", "record", "record_lines"):
+            assert io_call not in called, f"the pure projection must not call {io_call}"
 
     def test_health_caveats_land_on_the_receipt(self):
         from aughor.trust.receipt import build_public_receipt

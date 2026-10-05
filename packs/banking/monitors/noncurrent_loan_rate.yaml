@@ -1,0 +1,10 @@
+id: noncurrent_loan_rate
+metric: noncurrent_loan_rate
+unit: ratio
+low: 0.0
+high: 0.0214
+measured_on: [fdic-financials-2025-q2]
+sources: [fdic-qbp-2025-q2]
+description: Loans 90 days or more past due or in nonaccrual, over total loans.
+note: >
+  The upper bound is the FDIC's published peer-group high; all institutions read 0.96% on the package's dataset.

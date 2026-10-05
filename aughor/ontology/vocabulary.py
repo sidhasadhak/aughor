@@ -9,11 +9,18 @@ rule is that the linker must READ this store rather than keep its own parallel d
 or the platform ends up with two synonym dialects and Wave V's thirteen-spellings lesson
 repeats on a smaller scale.
 
-**Source rank is the whole governance story.** ``human > mined > llm_candidate``. A mined
-or model-proposed synonym is a *candidate*: recorded, retrievable, and ranked below any
-human entry for the same subject. J4 is not weakened — a synonym does not create or weight
-an edge, it only widens what a question can match — but the rank is what keeps "the model
-suggested it" from ever reading as "the business decided it".
+**Source rank is the whole governance story.** ``human > mined > pack > llm_candidate``. A
+mined, pack-declared or model-proposed synonym is a *candidate*: recorded, retrievable, and
+ranked below any human entry for the same subject. J4 is not weakened — a synonym does not
+create or weight an edge, it only widens what a question can match — but the rank is what
+keeps "the model suggested it" from ever reading as "the business decided it". ``pack`` (the
+2027 study's close-out, C7) is the industry's word for a thing, written into a connection's
+vocabulary when a pack is bound to it: below ``mined`` because this install's own titles and
+tags are evidence about this install and an industry map is not, above a model's guess
+because a pack author wrote it down and said where it was measured. A pack's term widens
+retrieval the day the connection is made and reaches a prompt only once a person confirms it
+(`add_synonym(..., source="human")` promotes it in place). A person's decline is a tombstone
+(`decline_synonym`), so the next bind cannot resurrect what they already refused.
 
 **Value dictionaries carry a hazard the program did not name.** A dictionary of a column's
 low-cardinality values is built FROM table data, so publishing one for a
@@ -38,8 +45,12 @@ from typing import Iterable, Optional
 from aughor.db.sqlite_util import resolve_db_path
 
 #: Where a synonym came from, strongest first. The ORDER is the policy: a human entry
-#: always outranks a mined one, and a mined one always outranks a model's proposal.
-SOURCE_RANKS: tuple[str, ...] = ("human", "mined", "llm_candidate")
+#: always outranks a mined one, a mined one outranks a pack's declared term, and a pack's
+#: term outranks a model's proposal.
+SOURCE_RANKS: tuple[str, ...] = ("human", "mined", "pack", "llm_candidate")
+#: The source a pack's declared terms are written at on connect (C7); a person confirms one
+#: by re-adding it as ``human``.
+PACK_SOURCE = "pack"
 
 #: What a synonym can be attached to.
 SUBJECT_KINDS: tuple[str, ...] = ("table", "column", "metric", "term")
@@ -268,6 +279,41 @@ def remove_synonym(connection_id: str, subject_kind: str, subject_id: str,
     data["synonyms"] = kept
     _write(connection_id, data)
     return True
+
+
+def decline_synonym(connection_id: str, subject_kind: str, subject_id: str, synonym: str, *,
+                    by: str = "", note: str = "") -> dict:
+    """A person refuses a proposed synonym: the row goes, and a TOMBSTONE stays in the same
+    document, so a later proposal of the same term (the next bind of the pack, the next mined
+    scan) finds the refusal and does not resurrect it. The tombstone, not the row's absence, is
+    the authority — `connectors/file/local_upload.py` paid for the other order. Returns the
+    tombstone written."""
+    term = " ".join(str(synonym or "").lower().split())
+    if not term:
+        raise ValueError("a declined synonym needs a term")
+    data = _read(connection_id)
+    rows = list(data.get("synonyms") or [])
+    gone = [r for r in rows if (r.get("subject_kind") == subject_kind and r.get("subject_id") == subject_id
+                                and r.get("synonym") == term)]
+    data["synonyms"] = [r for r in rows if r not in gone]
+    declined = [d for d in (data.get("declined") or [])
+                if not (d.get("subject_kind") == subject_kind and d.get("subject_id") == subject_id
+                        and d.get("synonym") == term)]
+    from datetime import datetime, timezone
+    stone = {"subject_kind": subject_kind, "subject_id": subject_id, "synonym": term,
+             "source": str((gone[0].get("source") if gone else "") or ""), "by": by, "note": note,
+             "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    declined.append(stone)
+    data["declined"] = declined
+    _write(connection_id, data)
+    return stone
+
+
+def declined_synonyms(connection_id: str) -> set[tuple[str, str, str]]:
+    """``{(subject_kind, subject_id, term)}`` a person refused on this connection — what a
+    proposer checks before writing a candidate."""
+    return {(str(d.get("subject_kind") or ""), str(d.get("subject_id") or ""), str(d.get("synonym") or ""))
+            for d in (_read(connection_id).get("declined") or []) if d.get("synonym")}
 
 
 # ── format specs (O1c) ──────────────────────────────────────────────────────────────

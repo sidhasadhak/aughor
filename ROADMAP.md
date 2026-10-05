@@ -54,6 +54,14 @@ to the groups that watch the things they are about, each with its receipt. What 
 has measured, never the data. The airport is the analogy — the map, the tower, customs, the schedule — and the
 nomenclature does not change.
 
+**Amended 2026-10-04 — the 2027 platform study (§3.53; §6 item 39) ADOPTED.** The sentence above that calls the
+ontology→agent loop the moat is restated: the moat is the **warrant and the record** — no fact without a source, no
+number before its days have settled, a restated number told to whoever was given the old one, a send held when its
+definition is not approved, a superseded fact kept with what replaced it, and, from here on, the organisation's
+decisions with their expectations and their outcomes. The ontology is the map those are drawn on; the repo's own
+ablations found the description lifts nothing and the declarations people make lift everything. The three planes stay
+as the platform's infrastructure (study §F); "three planes as the thesis" is the study's kill 11 (§4.9).
+
 ---
 
 ## 1 · What is true today (measured 2026-08-30; amended 2026-08-31 after Arc DS Phase 1)
@@ -143,7 +151,8 @@ first; §6 item 18 holds its two remaining shape questions (the first, ON-8's sc
 **The hub, measured 2026-09-15 (§3.18).** Receives: seven warehouse kinds, uploads, Sheets, PDFs and scans, Confluence
 and Notion definitions through KI's review lane, a Slack @mention, one inbound hook per automation, an allowlisted MCP
 server's tools. Exports: Slack, webhook, Jira, the MCP server, proposals. **No email either way.** Five triggers and
-twelve effects, and neither a promise nor a finding is a trigger; nothing links a thread, a ticket or an email to an
+twelve effects, and neither a promise nor a finding is a trigger *(corrected 2026-10-04 by the 2027 study, §3.53:
+seven triggers and thirteen effects, and a broken promise and a new finding are both triggers — `automations/models.py`)*; nothing links a thread, a ticket or an email to an
 object; nothing routes — a `BriefSubscription` has no subject and no reader, and the Briefing's lead is ranked by one
 profile's north stars for a reader that is always the company; `Principal` is a user and an org and there are **no
 groups**; the grant store holds one privilege on one securable kind; `owner` is free text; row policies ship empty; a
@@ -334,8 +343,11 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 > - ~~**a UI**~~ — **BUILT.** `McpServersSection.tsx:298` renders `+ Custom MCP`, with tests
 >   covering it, against full CRUD + `/discover` + per-tool grant routes. It shipped with
 >   #426 and this line was never updated.
-> - **OAuth-authenticated servers** — still true as written (the `auth_header` is one opaque
->   forwarded value), **but it is NOT what unlocks Arcade/Composio, and the sentence below
+> - **OAuth-authenticated servers** — ~~still true as written (the `auth_header` is one opaque
+>   forwarded value)~~ **BUILT 2026-10-05, the 2027 study's close-out C9 (§3.53):** two OAuth
+>   modes on the server row, the SDK's provider handed to the transport, the token set
+>   encrypted on the row, begin and callback doors; the live sign-in is the install's. It was
+>   **NOT what unlocks Arcade/Composio, and the sentence below
 >   that says it is was wrong.** This repo's own Langflow study records Composio as *keyed by
 >   `COMPOSIO_API_KEY`*, with *"service provider authentication managed through the Composio
 >   platform"* — the platform absorbs the per-service OAuth, and what it wants from us is an
@@ -628,7 +640,9 @@ misattributable — worse than absent, because people would trust it.
 ⏳ **VA-10 is therefore not one band.** It is (a) an auth model — service tokens? OIDC
 against which IdP? — which is the user's decision, and (b) an admin view, which is small once
 (a) exists. **Risk is policy, not code** was written when the policy was undecided; §6.4
-decided it 2026-09-02, and what remains is the code this line assumed was already there.
+decided it 2026-09-02, and what remains is the code this line assumed was already there. *(Corrected
+2026-10-04, phase 0 of the 2027 study: sign-in shipped 2026-09-06 as OIDC — `security/oidc.py`, issuer,
+audience and an org claim — and only the live identity-provider receipt is open.)*
 ✅ **DECIDED 2026-09-02 (§6.4): visible metadata, GATED payloads.** Counts, timings, costs,
 tool names, error rates and run outcomes are admin-visible without ceremony — that is the
 whole analytics case, and it needs no prompt text. Reading a prompt or a response body is a
@@ -4908,7 +4922,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   is refused today; and its `revenue` metric, marked verified, is `SUM(num_of_item)` — an item
   count. The compiler inherits what "verified" means (the formula EXECUTES), so a metric that runs
   and is not true compiles as faithfully as one that is: ON-0a's lesson a third time, now for
-  metric formulas.
+  metric formulas. *(Corrected 2026-10-04: theLook's approved `revenue` is `SUM(sale_price)` v1 — the
+  item-count formula this sentence names was replaced before the arc closed; PENDING.md's re-measure.)*
   **The model-filled measurement — RUN 2026-09-11** (§6 item 15(a); the user: *"run both
   measurements"*). A harness arm (`evals/ablation_eval.py --arms …,objects`, commit `f2a2ad25`): the
   model sees the schema the raw arm sees plus the object catalog and returns a typed object query —
@@ -5102,7 +5117,8 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
 > **Not taken:** their data model (declared, never measured — ON-0a's law, *the data wins*, stays the
 > difference), the keyword query, the LLM ontology generator that loads unchecked output, and a catalogue
 > of ontologies never measured against data. The one interop question, exporting our measured ontology to
-> Fabric IQ, is §6 item 16: open and unscheduled.
+> Fabric IQ, is §6 item 16: ~~open and unscheduled~~ REFUSED by the user 2026-09-21 (§4.6; this line
+> corrected 2026-10-04).
 
 - **ON-3b · The entity-type map — AMENDED 2026-09-11; FIRST SLICE BUILT the same day (unpushed, on
   `claude/on-fabric-iq-amendments`).** The type-level view ON-3's instance
@@ -11051,6 +11067,513 @@ to spawn-and-watch. AO-2d still needs the app-level token made by hand → the w
 so. AO-7 must move a held-out golden set's pass rate per agent; two weeks of real use without movement → the
 "corrected before" block is removed, not kept.
 
+### 3.53 · The 2027 platform — the study ADOPTED 2026-10-04 (§6 item 39, every call as recommended; `docs/PLATFORM_2027_STUDY_2026-10-04.md`)
+
+The study is the plan for 2027 and beyond: eight phases (its §W), each with capabilities, architecture, product,
+dependencies, risks, metrics and a live exit, are kept there and not copied here — it is a study kept in `docs/` like
+the Agent Ops and dbx studies, and this section is its pointer; its architecture is drawn in
+`docs/PLATFORM_2027_ARCHITECTURE_2026-10-04.md`. What adoption changed in this file the same day: §0
+restated (the moat is the warrant and the record); §1's trigger and effect counts corrected; the freeze list recorded
+as §4.9; §4.8's executing-grants refusal narrowed on a condition; and `PENDING.md`'s twenty discarded items struck
+with their reasons, every kept item placed in a phase by the study's own section on the ledger.
+
+**Phase 0's exits, which are the next work:** an organisation's install — identity on (`AUGHOR_REQUIRE_IDENTITY=1`),
+Postgres (the kernel ledger already runs there), at least five people who own different things; the approval gate on
+by default (`AUGHOR_ACTION_APPROVAL` becomes a kill switch, the old name kept as an alias); the baseline numbers of the
+study's §A re-measured and dated; the Day Briefing delivered seven mornings; and the first number that left the
+platform and was acted on by someone who is not the analyst, with its receipt — the flywheel's first turn. Phase 4
+is gated on phase 3 (§4.8's amendment).
+
+**Phase 0 — the code half BUILT 2026-10-05** (on `claude/platform-2027-study`; the user's answers of 2026-10-05:
+the install is their machine with identity on, no identity provider chosen yet, one owner for now, the
+chooser switch deleted on CP-2's evidence and the ablation scripted). What landed: the approval gate ON by default
+with `AUGHOR_ACTION_APPROVAL=0` as the kill switch and `=1` still on (`govern/actions.py`; the suite's conftest
+switches it off for every test not about the gate, and the gate's own tests prove the default); kill 8 executed —
+the conversation's `query_objects` tool, its schema and `ask.query_objects` deleted, `/objects/query` and the
+compiler kept; kill 6's first case — `framing.choice_confidence` and its second response model deleted; the
+governance feed's four held-out kinds (`govern.cap`, `budget.exceeded`, `metric.enforcement`, guardrail blocks)
+admitted under a sixth category, `enforcement`; an integration grant refused to an identified caller who is not
+its owner (`integrations/call.py`), a scheduled step unchanged; the seven "reads as pending but is not" lines
+corrected here; `scripts/phase0_baseline.py` (the §A table re-measured through each store's door, an unreadable
+store said on its row) and `scripts/phase0_prompt_block_ablation.py` (§6 item 15(d)'s measurement, three hard
+sets, the deletion rule in its docstring). Receipt: the 229 tests of the touched areas pass; the baseline script
+ran on the build checkout's stores and the ablation script dry-ran.
+
+**Phase 0 — what remains is on the user's machine, in this order, with the exit's honest state.** (1) Deploy
+the branch and read the gate's first 428 on a declare door, then "always allow" once per scope. (2) `uv run
+python scripts/phase0_baseline.py --write` — the numbers later phases move against. (3) Create theLook's Day
+subscription and turn `briefing.ranges` on; the seven mornings are BR-5's receipt. (4) Run the promise-breach
+chain live end to end — the first number that leaves and is acted on, the flywheel's first turn. (5) `uv run
+python scripts/phase0_prompt_block_ablation.py` when a model key is at hand, then the deletion PR it licenses.
+(6) `aughor migrate-state` with the API stopped. (7) Identity on — `AUGHOR_REQUIRE_IDENTITY=1` with
+`AUGHOR_OIDC_ISSUER` and `AUGHOR_OIDC_AUDIENCE` — the day an identity provider is chosen; group grants, the
+proposal approver's name and the grant-ownership refusal all take effect then with no further code. **The
+organisation-scale half of the exit — five owners, identity on — is not observable yet**, by the user's own
+answers, and this line says so rather than reading as met. Phases 1 to 7 followed back to back on the same
+branch at the user's word (2026-10-05, below): each phase's CODE half is built and receipted by its tests; each
+phase's exit is the install's to show, and every "Still open" line names what the install, not the code, still owes.
+
+**Phase 1 — the code half BUILT 2026-10-05**, five slices on the same branch. (P1-1) `aughor/record/` — the one
+claim ledger as kernel artifacts (`claim` · `decision` · `outcome`; no new store): a Claim with the hub's envelope
+and two clocks, restated by supersession with the old text kept, the three laws enforced at the door (a measured
+claim names its run warrant; a model's inference is a hypothesis at tier `said`, never a claim; confidence is
+counted or absent — no writer sets it), belief as a view (`as_recorded` on a date); a Decision with the claims it
+relied on as recorded and its expectation booked as a prediction claim at the moment of deciding, the review date
+proposed from the connection's learned settling lag and saying which rule set it; an Outcome that stamps the
+decision and scores the prediction. (P1-2) `aughor/record/writers.py` — every receipted answer that concluded
+something with a query behind it books an observation warranted by its receipt, from the one receipt writer; a
+deep analysis books its findings beside it (measured on the report's receipt when a finding has its own SQL; a
+hypothesis at tier `said` when it does not); the daily re-check restates the observation when the numbers moved,
+warranted by a receipt of the re-check run. `EvidenceClaim.confidence` is None from now on — the 0.8 / 0.5 the
+linker stamped by `is_significant` are gone, the store rebuilds a NOT NULL file with every row kept, and the
+Evidence panel says "not counted" instead of drawing a bar. (P1-3) `aughor/record/byproducts.py` — accepting a
+recommendation, approving or rejecting a staged proposal and declaring a decision each book a Decision in passing,
+with what each door already knows; the answer at review books the Outcome against the expectation and says the
+comparison against the metric's own history is phase 3's; `/record/*` reads claims as recorded on a date and
+decisions due. (P1-4) `aughor/record/confidence.py` — two reference classes counted from what the platform already
+measures (answers re-checked; stated causes challenged) plus predictions scored: the hit rate with its *n* from 30
+cases up, the count alone below, counted across every connection when one has too few and saying so; exports and
+the CLI print a model's stated confidence as a word, never a percentage. (P1-5) the public receipt's line two —
+`record.confidence` and `record.told` (the departures that cited the analysis), rebuilt live on each read inside
+the signed body; the web receipt shows both. Receipt: 180 tests across the Record, the receipt, the re-check, the
+inbox, the recommendation review, the departures gate and the vocabulary ratchet pass. **Still open in phase 1:**
+the two exit parts only the install can show (a restatement delivered on the organisation's warehouse; ten decisions
+booked by people). The Explorer's, a pack's and the hub's claim shapes landed as writers since (phase 6; the close-out
+below), organisation scope on glossary, metrics and the Briefing with the close-out's C2, and the graph as a projection
+of the ledger with its C3.
+
+**Phase 2 — the code half BUILT 2026-10-05**, three slices. (P2-1) `aughor/record/inquiry.py` — the inquiry as a
+kernel artifact that outlives its runs: the question, who opened it (a person's ask, a monitor's alert, a restated
+claim), its runs with their verdicts, its hypotheses as claims with their state (a refuted one warranted by the run
+that refuted it, with the evidence), what it established, what stays open and what would settle each item, its state
+(open · waiting · closed) and the date it wakes without being asked. Booked from the two places every run passes
+(`complete_investigation`, `fail_investigation`); an ask opens it in the router and a second ask on the same subject
+within a fortnight wakes it; a fired monitor alert opens one without spending a run; the heartbeat wakes waiting
+inquiries on their date and a restated claim wakes the inquiries that established it; `/record/inquiries` lists,
+reads and closes them with lessons. Refuted hypotheses are memory: the planner is told what earlier runs on the
+connection found false, a hypothesis it proposes anyway is refused by code and recorded, the report's ruled-out list
+says what was not re-tested, and a deep analysis that reaches a refuted cause again says so among its data gaps.
+(P2-3) Every run books a typed verdict — answered · contradicted · out of budget · withheld · no definition · no
+data · tool failed — classified by code over the recorded reason, never an empty result; the skeptic challenges
+from a second model binding where the install has two and the `causal_checks` record says which. (P2-2)
+`aughor/govern/attention.py` — the attention budget as the departure gate's last guard: slots a week per addressee
+(the target today, a person where the gate knows one; a person's own send exempt), a clean unattended departure
+held under `held_budget` once they are spent, every hold a ledger row with its score, the held list and each
+addressee's budget served by `/attention/*`, the four ranking terms published with their weights and how each is
+read today (mission 0 until phase 5; size from a monitor's threshold; cost of waiting by kind; novelty from the
+repeat guard). Receipt: 26 phase-2 tests pass; the gate, laws, remedies, exit-ratchet, monitor, lifecycle and
+vocabulary suites (210) pass. **Still open in phase 2:** ~~the Now page and the Inquiry page~~ *(built 2026-10-05 — the product half, below)*; kill 4 (quick-or-deep as a
+choice, held by CP-2's falsifier); and the exit's live halves — a refusal on a real object, the held list read by a
+real person, a measured share of inquiries the platform opened (the record's `opened_by` counts it; 0 until alerts
+fire on the install). Triage's mission term landed with phase 5; a run proposed with its cost and the settling lag and
+a process's early stages as signals with the close-out's C4.
+
+**Phase 3 — the code half BUILT 2026-10-05**, three slices. (P3-1) The review (`playbook/outcomes.run_due_reviews`)
+measures the metric's OWN HISTORY beside the "before" — the prior same-length windows, their mean and band, and the
+method's backtest on this metric (`record/scenario.history`) — and books the Record's Outcome with both verdicts by
+code (`record/byproducts.outcome_from_review`): against the expectation (inside · above · below · cannot tell) and
+against history (better · as expected · worse · cannot tell, each with why: inside the baseline's own noise, the
+wrong way, no expectation named the wanted direction, no history could be measured). The prediction is scored at the
+same moment; a person's later answer is laid beside the measured verdict as a restatement, never over it. The review
+question is DELIVERED (`playbook/review_delivery.py`) to the resolved owner's channel through the departure gate,
+where before it was written to a log; a person with no channel bound is said on the record, and the question waits on
+the departures screen. (P3-2) `aughor/record/scenario.py` — the ladder's first three methods behind one interface:
+identity (exact arithmetic over named inputs, refusing anything else, saying what it held fixed), declared (a
+person's assumption as a claim at tier `declared` in their name, refused without one), history (mean and band of the
+prior windows with the backtest: MAE, MAPE, how often the band held); an unknown method refused by name. A
+prediction carries its method, band, what it assumed and how to score it; the settle tick scores every open
+prediction whose range is Final from its own spec; `/record/calibration` counts interval coverage by method, metric
+and author; `POST /record/decisions/{id}/scenario` books a Scenario inside a decision. (P3-3) The gate's law 5
+narrowed: an UNSCORED forecast never departs — a forecast citing a prediction whose method carries a backtest on
+this metric, or whose class has scored predictions, departs and the receipt says on what. Receipt: 25 phase-3 tests
+pass; the review, Record, gate, remedies, exit-ratchet, attention, scheduler and vocabulary suites pass. **Still
+open in phase 3:** ~~the Decision page and the Scenario inside it~~ *(built 2026-10-05 — the product half, below)*;
+~~the Inbox retired into Decisions~~ *(refused with the six-destination rail, §4.10: the Inbox stays)*; a prediction on each of the Briefing's items (the Briefing now lists the predictions in play
+at its head; an item does not carry its own yet); a bought forecaster behind method 3 (today the platform's own mean-and-band, its backtest
+said); and the exit, which is the install's: decisions reconciled on real review dates, coverage published on a real
+metric, a departed forecast scored.
+
+**Phase 4 — the code half BUILT 2026-10-05**, three slices. (P4-1) `ontology/models.KineticAction` gains its
+reversibility class, a `Verification` (the read that proves the change, over the declared parameters) and an `Undo`
+(the compensating action and its window); optional on the model so an ontology declared before phase 4 still loads,
+REQUIRED at the declare door for a side-effect action (`actions/authority.declaration_problem`: no verification → no
+declaration; no undo → declared irreversible by name or refused). The executor runs the verification read through the
+ordinary query door after dispatch — passed · failed · unavailable (a read that cannot run is recorded, never a failed
+change) — and books every execution as an Action ledger entry citing what it ran under (a person's accept, a standing
+grant by id, the gate). (P4-2) `actions/authority.py` — the ladder keyed by (action, scope) and computed from that
+record: L1 declared · L2 complete · L3 execute with approval · L4 only on a graduation receipt · L5 unreachable until
+missions exist; the lower of the ceiling a person set and what the record earned; an irreversible action never passes
+L3. A graduation is a receipt a person books and the record decides: `GRADUATION_N` approved executions whose
+verification passed, no failed verification, and an outcome inside expectation on a decision that ran the action —
+phase 3's exit, the condition §4.8's amendment set, held by construction (nothing graduates on an install with no
+outcome). `actions/grants.py` grows the policy grant: bound to a target and a scope, capped and expiring, citing its
+receipt, minted only at L4 (`authority.widen`), allowing nothing once spent. (P4-3) A failed verification demotes the
+(action, scope) automatically — a ledger entry naming the evidence — and withdraws its standing grants; a person can
+book the same entry in a drill; `/authority` serves the L0–L5 table with each row's record, receipt, demotion and what
+L4 would still need. Receipt: 7 authority tests pass; the executor, grants, inbox, declared-action, propose, MCP-grant,
+autonomy-ladder and vocabulary suites pass. **Still open in phase 4:** ~~the Action centre; the Operate duty in the duty rows~~ *(built 2026-10-05 — the product
+half, below)*; ~~the approval queue folded into it~~ *(refused with the six-destination rail, §4.10: the Approvals lens
+stays where it was and the Action centre links to it)*; and the exit on the install (a graduation on the
+organisation's install, a demotion in a drill). The undo fired from the entry and the gateway writes booked as
+Action entries landed with the close-out's C5.
+
+**Phase 5 — the code half BUILT 2026-10-05**, two slices. (P5-1, P5-2) `aughor/record/mission.py` — the mission as a
+kernel artifact (kind `mission`) written by people: objective (metric, direction, target, by when, its measurable spec
+resolved from the governed metric), constraints, scope, owner, budget (interruptions a week, spend a month, an
+authority ceiling per action kind), watches, cadence, state proposed · active · paused · met · retired. Three laws at
+the door: a mission written by an agent or the system is refused; a mission without an owner does not run (it stays
+proposed, and the loop reads only active, owned missions); every interruption is charged. The loop reads it in three
+places — triage's first term (`bearing`: 1.0 on the objective's metric, 0.7 a constraint's, 0.5 a watch) at the
+departure gate, which writes the mission on the row and holds a spent mission's next departure under `held_budget`,
+named; the ladder's ceiling (`authority.level_for` caps at the lowest ceiling an active mission on the scope set); the
+inquiry and decision doors (an alert's inquiry and an acceptance's decision carry the mission their metric bears on).
+The report is composed from fields by code: the objective against the baseline the metric's own history predicts
+(method 3) FIRST — moved · unmoved · against · cannot tell, each with why — then constraints held or not, watches,
+inquiries by state, decisions and what became of each, cost (interruptions used of the budget, actions by level,
+demotions, spend said as not counted), lessons; "0 inquiries, 0 decisions, no measurable effect yet" is a valid
+headline. Booked as `mission_report`, the mission's review advanced, delivered to the owner's channel through the gate
+on the heartbeat (`report_due_missions_hourly`) or on demand; `/record/missions*` serves it. (P5-3)
+`aughor/record/corrections.py` — Corrections as one view over five ledger records, each with what was believed and what
+replaced it: restatements, refuted hypotheses, missed moves (the review of a miss now books a `missed_move` entry when
+and only when it found one), predictions outside their band, decisions worse than expected; `/record/corrections`
+counts by kind. (P5-4) `record/scenario.intervention` — method 4 reads Outcome entries and nothing else: the measured
+effects of past decisions that ran the same action or asked the same question, their mean, band and count, nothing
+below three cases; `lifecycle/causal.promote_on_record_outcome` — the review's measured verdict confirms or weakens
+the investigation's proposed causes, so the confirmed-cause graph grows from reviewed decisions (both its files now
+env-resolved and hermetic); a play's rate is learned from the Record's verdicts first and a person's answer only where
+the Record has none, stored with its count and said as "held in 1 of 2 reviewed outcomes", never a bare percentage.
+Receipt: 23 phase-5 tests pass; the attention, authority, inquiry, gate, laws, remedies, exit-ratchet, review,
+byproducts, scenario, writers, playbook, missed-move, causal, scheduler and vocabulary suites pass. **Still open in
+phase 5:** ~~the Mission page; the Corrections view on screen; the Briefing's mission line~~ *(built 2026-10-05 — the
+product half, below)*; ~~Missions as a destination~~ *(refused, §4.10: Missions is a tab of Record)*; and the exit, which is the install's and a quarter's. (L5 and spend attributed to a mission were open here until the
+close-out's C6, §3.53 below.)
+
+**Phase 6 — the code half BUILT 2026-10-05**, two slices. (P6-1) `record/writers.book_pack_claims` — the pack writer,
+the fourth of the study's five claim shapes: a pack's map measured against a connection (`packs/ontology_map.
+apply_core_claims`) is booked into the Record as the pack's hypotheses, `open` while the data cannot speak (tier
+`said`), `supported` or `refuted` once it has (tier `mined`, warranted by the build), `supported` at tier `declared`
+when a person's declaration settled it; one claim per pack · connection · schema · subject, restated on every build,
+from `apply_bound_pack_claims` and the review path in `ontology/store.py`. `packs/models.py` and the loader grow the
+priors a pack ships — `monitors/*.yaml` with prior normal ranges, `scenarios/*.yaml` and `missions/*.yaml` as templates,
+a play's `base_rate` with its count — and `packs/priors.py` holds the rule the static gate (`validate_loaded`) enforces
+on every pack: a prior carries the installs or datasets it was measured on, or says none; a template names a method
+the ladder has and a cadence the report keeps. The two verticals carry them with provenance: commerce's promise-breach
+band from the two public datasets' readings and a return rate said as unmeasured, three mission templates and two
+scenario templates; banking's margin and noncurrent-loan bands measured on the FDIC dataset gate 4 measured the
+package on, approval rate said as unmeasured, a cost-of-risk mission whose constraint the shopping list names, a
+liquidity identity. `GET /record/missions/templates` reads them as bodies a person writes from. (P6-2)
+`packs/onboarding.py` and `GET /onboarding` — the day-one door: hours from the connection's first build to the first
+claim a decision relied on against a 24-hour gate ("not yet", never a number, before any decision); the data shopping
+list (a bound pack's expected objects no table matched with what each unlocks, pack metrics whose roles the binding
+leaves unresolved with the plays and goldens that wait, mission templates whose metric nothing measures); coverage
+from the visibility module; the bound packs' priors and templates. (P6-3) `tests/unit/test_industry_noun_ratchet.py`
+— the kernel's industry-noun count at its measured baseline, English and SQL senses stripped first, a baseline that may
+fall and never rise; and the kernel's doors answering with no pack installed. Receipt: 15 phase-6 tests pass; the pack
+loader, static gate, pack-claims, banking package, release gate, demo pack, roster, rebuild, package-parity, prompt-reach
+and vocabulary suites pass. **Still open in phase 6:** the exit — the hours measured on a new customer's install in
+each vertical, with the receipt. (Terms proposed for confirmation on connect and alerts from a prior's band with a
+backtest were open here until the close-out's C7; B2B SaaS as the second deep vertical and the kernel's docstring
+nouns until its C8 — §3.53 below.)
+
+**Phase 7 — the code half BUILT 2026-10-05**, one slice, five parts. (P7-1) `routers/ledger.py` — the ledger API under
+`/ledger/v1`: `POST /claims` books a claim with its warrant under the three laws (no fact without a warrant, no model-
+authored fact above `said`, no stated confidence), refused with why; the author is the principal at the door, never a
+field, and a claim's key carries its author, so one author's restatement is a new version under its key and another's
+same natural key is their own claim; `GET /claims?as_of=` reads as recorded on a date; `GET /restatements?since=` reads
+what was restated from a cursor with what each replaced; `GET /export` streams the ledger as JSON lines so adopting is
+not a trap. `security/service_principals.py` — a principal a person mints (`POST /principals/service`), presented as
+`X-Aughor-Service` and `X-Aughor-Service-Key`, keyed by a hash in the kernel's kv store (no new store), revocable, held
+to the organisation's agent policy by `rbac/agent_gate` like the MCP server, its record read at `GET /principals/{id}/
+record` beside the built-in agents'. (P7-2) `kernel/contract.py` — the agent contract rendered from the code that
+enforces it (the seven duties and what each books, the typed verdicts, what an entry carries, the principals and levels,
+the doors, how an author is scored, what is refused) into `docs/AGENT_CONTRACT.md`, which `tests/unit/
+test_agent_contract.py` holds equal to the module; `read_contract`, `read_claims`, `read_restatements` and `post_claim`
+as MCP tools under the same policy levels. `kernel/events.py` — the event catalogue: every kind the source journals, with
+what its payload carries and the governance feed's category, held by a ratchet (`tests/unit/test_event_catalogue.py`)
+that walks the source for literal kinds; `GET /events/catalogue`, `GET /events`. `record/subscriptions.py` — events out:
+a subscription (a kernel artifact) names a URL and the subscribable kinds, and each delivery goes through the one
+departure gate as kind `ledger_event` — the entry's own numbers its measurement, its tier and warrant its declared
+definition, the subscriber's host the place the repeat law remembers, the attention budget exempt by the gate's written
+policy (`ATTENTION_POLICY`: a machine asked) — then through the notifications executor; a held delivery is said on the
+`ledger.delivered` event with why. (P7-3) `packs/kit.py` — the kit: the guide read from the models, `POST /packs/check`
+(the static gate without writing), `POST /packs/upload` (a passing pack written as a DRAFT under the imported root with
+who, when and from where; code refused; an authored pack cannot be shadowed); `packs/record.py` — a pack's measured
+record from its claims across installs, `GET /packs/listing` as the record, and `POST /packs/{id}/demote` refused
+unless the record calls for it (ten measured, half refuted) or a person forces it with a reason. (P7-4)
+`record/methods.py` — the method interface: a forecaster, estimator or simulator registered with its declared backtest
+(n, error, where measured) and an MCP adapter — nothing runs inside the process — refused without one or under a
+built-in name; `scenario.project` falls through to a registered method, which answers in the ladder's shape through
+`mcpservers.call`, and a prediction under it carries the method and its tier. (P7-5) `packs/aggregates.py` — the
+install's aggregate priors (pack records, base rates with n, normal ranges as the band for share metrics and the
+relative width for every other unit, method backtests), never a connection id, a claim's text or an absolute level
+(`assert_no_identifiers`, run on every compute); readable locally at `GET /aggregates`; leaves only through
+`POST /aggregates/export` when `aggregates.share` is on — off by default, the user's call, the door refusing and saying
+so. Receipt: 20 phase-7 tests pass; the MCP, agent-policy, identity, RBAC, departure, pack, Record, flag, vocabulary,
+noun and exit-gate suites pass; the API registers 21 `/ledger/v1` routes. **Still open in phase 7:** ~~the Developer
+screen and the web client's regeneration for the new routes~~ *(built 2026-10-05 — the product half, below)*; a second install to receive an aggregate; and the exit — an
+outside vendor's agent on a real service principal scored beside the built-in ones, a third party's pack uploaded and
+measured on a connection. (OAuth for MCP servers that need their own sign-in, and the manifest written without its
+comments, were open here until the close-out's C9, §3.53 below.)
+
+**The close-out — the code still open inside the phases, taken back to back from 2026-10-05** at the user's word
+("finish these back to back where a UI check is not required"); the screens and the install's exits stay the user's.
+(C1, phase 1) The last two of §E's five claim shapes are writers into the Record (`record/writers.py`): the
+Explorer's finding is booked at the explorer's own emission tail as a FINDING at tier `measured`, warranted by the
+`finding` artifact it had just written (its SQL, its tables, the grounding guard that passed it), keyed by connection ·
+schema · finding id so per-schema runs that reuse ids never restate each other, left alone when a run reads it back
+unchanged (an unchanged finding is not a Correction), and WITHDRAWN — `state="withdrawn"`, `valid_until`, the reason,
+the measured version kept beneath — when the live re-validation drops it before a Briefing or a person dismisses it
+(`explorer/revalidate_live.py`, `explorer/store._dismiss`); the explorer's own `confidence` and `novelty` numbers are
+not copied (law 3), and a hand-written `unverified` fix books nothing. The hub's `ClaimCheck` is a SAID claim at tier
+`said` about the object the thread was filed on, author the person, the check's verdict as its state (supported ·
+refuted · open) and the filing's measures as a document warrant — never a run, so never `measured` — one claim per
+REPLY (`SlackArrival.reply_ts` when the bot sends it, else who-said-what), so a second reply is counted beside the
+first, never over it; the staged note still shows the latest check. Receipt: the writers, hub-claims, re-validation,
+dismissal, corrections, confidence and vocabulary suites pass.
+(C2, phase 1) The organisation first, the connection second (§E item 2). Metrics: a definition scoped `org:<org id>`
+(`semantic/metrics.org_scope`) is read by every connection of that organisation between its own definitions and the
+install's global ones (`_scoped_rows`: own · folded · the organisation's · global), written by that organisation only
+(`ORGANISATION_SCOPE_DENIED` for another's when identity is on), bind-checked against no one connection and said so;
+the unscoped `GET /metrics` is one organisation's when identity is on — the global rows, its `org:` rows, its visible
+connections' — and byte-identical when it is off (`organisation_visible`). Glossary: an `organisations: {<id>: {tables}}`
+section (`semantic/glossary.ORGANISATIONS_KEY`) sits between the global entries and a connection's overlay in
+`load_glossary`, `_connection_layers` and so every merged read; `PUT /glossary/{table}?organisation=true` writes the
+caller's section; `GET /glossary` shows one organisation its own section and its visible connections' overlays when
+identity is on. The Briefing: `briefing/versions.history` reads a key's versions by the reader's organisation, and
+`GET /briefing/organisation` (`briefing/organisation.py`) folds every visible connection's latest kept Briefing — as-of,
+version, headline theme, lede, measured figures — a connection with none kept said so, no narrative written across
+connections. Receipt: the organisation-scope, O2 re-key, glossary, metric, Briefing-versions and ratchet suites pass
+(`test_glossary_scope_gaps::test_retrieval_passes_the_scope_filter_to_qdrant` fails on the base commit too, before
+any close-out change — the vector store's filter wiring, not this slice's).
+(C3, phase 1) The context graph as a projection of the ledger, rebuilt on demand (§F: "a way of reading claims, not a
+place they live"). `context_graph_build.load_record_findings` projects the Record's measured findings and observations
+(not a hypothesis, a said statement or a withdrawn finding) into the graph's finding nodes with `source="record"`, each
+node naming the claim it reads — id, key, tier, kind, author — and `graph_warrant` reading the claim's TIER as the
+node's warrant class (measured and mined → derived; approved and declared → human; said → inferred); the explorer store
+and the answer receipts fill in only the findings no claim covers (`merge_finding_sources`: the same investigation or
+explorer finding id is dropped, what predates the Record is kept). `context_graph_store.graphs_for_connection` rebuilds
+a missing graph from the ontology and the Record and keeps it for the next reader; read-back, the MCP knowledge tools,
+lineage and the answer trace go through it, so a missing file is never a missing fact. `data/context_graph/` is
+generated state now: untracked (`git rm --cached`, the five committed graphs left on disk), ignored whole in
+`.gitignore`, out of `db/home.AUTHORED_ENTRIES` so it moves with a migrated home — a home that never received a copy
+rebuilds it. Also closed here: the live-drive isolation helper (`scripts/dump_openapi._isolate_stores`) now pins the
+two causal files phase 5 registered in the conftest, which the hermeticity ratchet had been reporting. Receipt: the
+projection, context-graph, warrant, read-back, lineage, answer-trace, brain-map, data-home, hermeticity and vocabulary
+suites pass.
+(C4, phase 2) A run proposed with its cost (§H "Cost") and the two weak signals §K named as missing. `record/inquiry.
+propose_run` — on every inquiry a signal opens and every inquiry that wakes — says what the run it waits for costs on
+THIS install: the median tokens and minutes of the install's own finished runs of that kind on the connection
+(`jobs_where`, the 0-token outer twin left out), with the count they were read from; a dollar floor from the priced
+model calls of the session log's fortnight with the unpriced calls counted beside it, never added as zero; the
+charter's ceiling (`effective_governance`); and what the run could change — the open items (those naming what would
+settle them first: the cheapest test), the open hypotheses, the mission, the decisions. With no metered run the
+ceiling is the only number, said; with nothing open no run is proposed, said; `POST /record/inquiries/{id}/propose`
+recomputes it. `record/signals.py` — the settling lag itself (`run_settling_samples_daily` reads `connection_lag`
+before and after the day's reading: a move of two days and half of itself, or a table that stopped settling inside the
+horizon, opens an inquiry on the connection) and a declared process's early stages (`measure_override_processes`
+compares each measurement with the one it overwrites: a stage before the last whose p90 transition lag rose by a
+quarter and half a day, or a promise whose breach rate rose five points, opens an inquiry on the process; the last
+stage's lag is the KPI, not the early signal; a first measurement is a baseline). Both go through `open_inquiry`, so a
+drift is one question a fortnight, not one a day; every signal is an `inquiry.signal` event, catalogued. Receipt: the
+signals-and-proposed-runs, inquiry, settling, process, mission, corrections, catalogue and ratchet suites pass.
+(C5, phase 4) The undo FIRED (§M: "the undo is a declared compensating action with a window"). `actions/authority.undo`
+reads an execution's current entry, refuses with why when it is not an execution, is already undone, declared no undo,
+its window closed (`undo_window`: `window_hours` 0 is no limit) or names an action the connection does not declare,
+and otherwise fills the undo action's parameters from the execution's by the declared templates and runs it through the
+SAME governed pipeline as any execution — criteria, approval, dispatch, verification, its own Action entry, which names
+the entry it `compensates` (a new field and lineage edge on `book_action`); the original entry is restated as undone
+(`undone_by`, `undone_at`, counted by `record()` as `undone`); an undo that could not run or failed its verification
+DEMOTES the original (action, scope) — the reversibility declaration found false — as a failed verification does;
+`action.undone` is journaled and catalogued; `POST /authority/{action}/executions/{entry}/undo` (409 with the reason on
+a refusal). The gateway writes: `integrations/call.call_operation` books every write operation it performs and
+`mcpservers/call._send` every granted write, as Action entries of `kind="write"` (`book_write`) naming the door, the
+operation (`integration.<provider>.<operation>`, `mcp.<server>.<tool>`), the actor, what it ran under (a human accept,
+the grant), the status (`executed` · `failed` · `uncertain` · `blocked`) and, said rather than left blank, that a
+gateway write declares no verification read and no undo; they ride with no warehouse connection, so they count on the
+record (`GET /authority/writes`) and never graduate. Receipt: the undo-and-writes, authority, executor, inbox,
+integration-call, MCP write-grant, automation-step and catalogue suites pass; the vocabulary ratchet exempts the new
+suite and `actions/authority.py` for the one executor identifier they spell.
+(C6, phase 5) Spend attributed to a mission, and L5. `record/mission.mission_spend` reads the receipts of the runs the
+mission's inquiries spent in the report window (`led.receipt`, the same receipt the receipt page shows) and the session
+log's priced calls for those runs, and the report's `cost.spend` now carries the amount in its unit, the tokens, calls
+and queries behind it, how many runs had a receipt, how many calls were unpriced, and the budget it is read against —
+"said as not counted" only when nothing prices it, never silently zero. L5 (§M: "autonomous within a mission's
+budget"): `actions/authority.grant_l5` books an `authority_l5` receipt only when the record earns it — L4 held, `L5_N`
+(20) verified executions, no failed verification, a reversible action, an undo declared, and an ACTIVE mission on the
+scope whose ceiling sets this action (or `*`) at L5; `level_for` reads the receipt as earned 5 and a later demotion
+takes it; `evaluate_l5` names every blocker (`GET /authority/{action}/l5-check`, `POST /authority/{action}/grant-l5`).
+The agent that chooses (`actions/autonomy.py`): on the mission's cadence, after each report, it reads the declared
+actions the ceiling sets at L5, the parameters the owner wrote on the mission (`extra.autonomy.params`), and method 4's
+measured effect of each on the objective's metric (Outcome entries only, with its count); it chooses the one with the
+largest effect toward the objective, books a Decision with source `autonomy` and an expectation from the projection,
+and runs it through the SAME governed pipeline as any execution — with no standing grant covering the written
+parameters it is HELD at the approval gate and the report says so; one action per review period; `action.autonomous`
+journaled and catalogued; the report's `autonomy` block lists what it ran and what became of each, or that it ran
+nothing. `POST /record/missions/{id}/act` runs one period by hand. The agent contract's authority rule says all of
+it; `docs/AGENT_CONTRACT.md` regenerated. Receipt: the spend-and-L5, authority, mission, method-4, undo, executor,
+catalogue, contract, departure-exit, hermeticity, noun and vocabulary suites pass; the vocabulary ratchet exempts
+`actions/autonomy.py` and the new suite on the C5 ground.
+(C7, phase 6) What a pack proposes the day it is bound (`packs/connect.py`; §W phase 6 "it arrives ready"). Terms:
+a metric's title and aliases on the metric, an object's name and aliases on the table the map matched it to, written
+into the connection's vocabulary at a new source rung `pack` (`ontology/vocabulary.SOURCE_RANKS`: human > mined >
+pack > llm_candidate — below this install's own evidence, above a model's guess) — a pack term widens retrieval the day
+the pack is bound (`synonym_expansion`) and reaches no prompt until a person confirms it (`build_synonyms_block` renders
+`human` only; a confirm is `add_synonym(source="human")`, which promotes in place); a decline is a tombstone in the same
+document (`decline_synonym`, `declined_synonyms`), so the next bind cannot resurrect it. The objects' terms need the
+graph, so they are proposed on the build that matches the map (`ontology_map.propose_terms_on_build`, from
+`apply_bound_pack_claims`) and the bind says they wait. Alerts: a MEASURED prior's band becomes one `monitor_bundle`
+proposal per bounded side — a threshold monitor on the metric below its low or above its high, with the chain its
+breach fires (`sentinel.watch_chain`, factored out of the Watcher so both stage one shape) — carrying the prior's
+provenance (band, unit, `measured_on`, sources) and a BACKTEST of that band on this connection (`monitors/backtest.
+backtest_monitor`: "would have fired 3 times in the last 365 days", or why it could not be replayed); an unmeasured
+prior and a metric the connection has not registered stage nothing and say why; idempotent by (pack, connection,
+prior, side), armed only by the inbox's accept. Doors: the bind (`POST /packs/{id}/bind`) proposes both halves and
+carries them as `arrival`, `POST /packs/{id}/propose` proposes again, `GET /packs/{id}/terms` counts confirmed against
+proposed, `POST /packs/{id}/terms/confirm` confirms or declines; the day-one screen (`packs/onboarding.onboarding`)
+carries `arrival` with the terms' counts and the alerts by status. Receipt: the connect suite (six tests, on the real
+banking package), the vocabulary, ranking, synonyms-block, framing, prose-mapper, interchange, sentinel, packs-router,
+priors, HB-6, promotion, uptake, onboarding and claims-reach suites pass, and the six ratchets.
+(C8, phase 6) B2B SaaS drafted as the second deep vertical (`packs/b2b-saas/`, §P's row: Account · Contact ·
+Opportunity · Subscription · Invoice · Plan · Seat · Ticket): six roles with attributes (`subscription`,
+`account_period`, `opportunity`, `acquisition_period`, `signup`, `company_period`); eight metrics as formulas over
+them — MRR, ARR, net and gross revenue retention, CAC payback, the sales cycle, activation, ARR growth — each with a
+unit, a sourced sane range and anti-patterns; nine plays (six diagnostic, three data-quality with detections); six
+watches (NRR, GRR and CAC payback with prior bands from the surveys' medians, activation, win rate and pipeline
+coverage said as unmeasured); three mission templates (hold net retention above a floor · find churn risk early ·
+improve forecast accuracy, whose metric is the install's own) and four scenario identities (runway, capacity to
+bookings, loss of a named account, the conversion assumption); questions; goldens without a dataset. Two things the
+package says rather than hides. First, `anatomy: 0`, because the anatomy's one part it cannot carry is a named public
+dataset for gate 4 — no public subscription ledger with published figures exists (what is public is GAAP filings,
+which measure revenue and gross margin and none of ARR, retention or churn) — and `test_b2b_saas_package` runs gate 3
+with the anatomy forced and expects the dataset finding alone. Second, every source is marked `unread` (a new
+`PackSource` field): where the package was drafted the network egress proxy blocked every publisher's domain (SaaS
+Capital, ChartMogul, Benchmarkit, KeyBanc/Sapphire, Ebsta/Pavilion, Userpilot), so each band's figures are as a web
+search index reported them on 2026-10-05, each `basis` and each source's `notes` say so, no source carries `figures`
+(the static gate now refuses figures on an unread source: a quote nobody read cannot be verbatim), and
+`promote.set_status` refuses `active` while any cited source is unread — the review IS reading them. `published` may
+now be as coarse as the publisher gives (YYYY-MM or YYYY), never a day nobody stated. The kernel's industry nouns:
+the docstring examples in the executor, the overlay, the gate's live anchors, the metric store, the row-policy example
+and the settling anchors reworded to the kernel's own words (parent row, line, object, total, money-back promise),
+and `test_industry_noun_ratchet.BASELINE` lowered to the measured floor — order 25→0, refund 5→0, revenue 14→0,
+shipment 1→0, customer 3→1 and product 1→1, the one line in `packs/models.py` that names the function knowledge
+layers. Receipt: the package, gate-3, promotion, priors, kit, router, HB-6, noun and vocabulary suites pass.
+(C9, phase 7) Two items the pack kit and the MCP consumer left open. The manifest: `promote.set_status` and
+`kit.upload` loaded `pack.yaml`, changed a key and dumped the mapping back, dropping every comment an author wrote —
+the provenance a reviewer reads (IP-4's dating on banking, C8's reasons on B2B SaaS). `packs/manifest.rewrite_scalars`
+replaces a top-level scalar's line in place (a block value removed with it, a trailing comment kept), appends a key
+that was absent, and leaves every other byte; `yaml.safe_load` of the result is the original with those keys changed,
+and both doors go through it (PENDING 299 closed). OAuth-authenticated MCP servers, the code half: `McpServer` gains
+`auth_mode` (`header` as before · `oauth_client_credentials` for a machine identity · `oauth_authorization_code` for
+a person's sign-in), the client it presents, and the token set and registration the SDK's storage protocol writes —
+three new secret fields, encrypted at rest by the store and dropped on every read, a read saying only `signed_in` and
+when. `mcpservers/oauth.py` hands the transport the SDK's own `httpx.Auth` (`ClientCredentialsOAuthProvider`, or
+`OAuthClientProvider` with `ServerTokenStorage` over the row), so discovery, registration, PKCE, the exchange and the
+refresh are the SDK's; `session._open` takes `auth=` and builds it for an OAuth server. A sign-in: `begin` runs one
+connection attempt on a thread whose handlers park on the browser — the redirect handler records the URL the person
+is given, the callback handler waits (bounded, `SIGNIN_TIMEOUT_S`) for `complete`, which `GET
+/mcp-servers/oauth/callback?code&state` calls (exempt from the API key like the Slack install's return; the
+unguessable state is what is verified); the SDK then exchanges the code and stores the token set, and
+`mcp.oauth` is journaled (catalogued). An ordinary open of a server nobody signed in to raises `McpSignInRequired`
+naming the door, never hanging a worker on a browser nobody opened; `POST /mcp-servers/{id}/oauth/begin` and
+`/oauth/sign-out`; an update that keeps the client keeps the sign-in and one that changes the mode drops it. Said
+rather than hidden: the waiter lives in one process (a callback that lands on another worker finds no waiter and says
+so — the integrations broker's SQLite pending store is the shape for a multi-worker deployment), and the live sign-in
+against a real authorization server is the install's. Receipt: the manifest-rewrite and OAuth suites (fourteen tests,
+the flow stood in for by a fake that drives the SDK's handlers), the MCP consumer, write-grant, call-step, kit,
+promotion, catalogue, departure-exit and hermeticity suites pass.
+
+**The product half — the thirteen screens of the study's §V, BUILT 2026-10-05** at the user's word ("continue with the
+remaining part of the arc"), on `claude/platform-2027-screens`, with main's #567 merged in first so every screen stands
+on the current tokens. The code half above left each phase's page to be drawn; this draws them over the doors that
+exist, and adds three reads where a page had nothing to read.
+(Screen 1, navigation) **The six-destination rail of the study's §U was built, shown, and REFUSED the same day**
+(§4.10). The user, on the first screenshot of it: *"If this is going to be the new user interface, we will have a
+problem"*; then: *"restore the old rail and put the new pages inside it"*. So the 2026 rail, Home and the Settings
+footer are exactly as they were — `web/app/page.tsx` is the original with additions only — and the new pages sit
+inside that structure. **Now** is a rail row beside Home and the Inbox. **Record** is one row under Intelligence whose
+five tabs are Inquiries · Decisions · Missions · Claims · Corrections (`components/record/RecordWorkspace.tsx`, an
+instance of the same `<Workspace>` shell Agent Ops and Evals are). **By duty**, **Action centre** and **Developer**
+are Agent Ops layers, after the seven that were there. The **gate map** and **Policies** are lenses of Security &
+Audit, after Security · Activity · Approvals. One row for the Record's five views, not five, on a measurement: at
+1440×900 eight new rows pushed six below the fold, four of them rows that were already there; with two new rows the
+rail fits exactly. A Reader is addressed as `?tab=record&layer=decisions&id=…`, `?tab=decisions&id=…` resolves to it,
+and Back leaves it. ⌘K keeps every 2026 entry and gains one per new page. Now's badge counts what waits on a person
+(reviews due, inquiries due, sends owed a mark or an answer); the rail's two older badges are as they were. Nothing
+that existed moved: the Inbox, the Approvals lens and Intelligence ▸ Actions are where they were, and the Action
+centre links to the last two rather than showing either a second time.
+(2, Now) `components/now/NowPanel.tsx` — the week's slots by place with what used each and what it was ranked on, the
+slots a person sets, what waits on a person, what was restated since they were last here, the held list with its
+scores, the Briefing in one line; on a first run it says what it will hold and points to Home, where a first run starts.
+(4, Inquiry) ledger and reader: state, what is established, every hypothesis with the evidence that decided it and the
+refuted ones kept, what is open and what would settle it, runs by typed verdict, the next run proposed with its cost,
+and the close a person writes with its lesson. (5 and 6, Decision and Scenario) the options side by side, the scenario
+inside the decision — assumptions with whose they are, each prediction with its method, what the method must say and
+how often that method has held here (`/record/calibration`) — what it relied on, dissent, the expectation booked, and
+the outcome against expectation and baseline; a decision taken elsewhere is recorded in a sentence, a projection is
+added under arithmetic or a named assumption, and an outcome is booked when the review date has come.
+(7, Mission) ledger, the five-line form (from a pack's template where one is bound), and the reader that opens on the
+objective against its baseline, then constraints, watches, what it opened and decided, what it cost and its lessons —
+composed now, with the booked reports beneath. (9, Record ▸ Claims and Corrections) claims as of any date with tier,
+status and counted confidence, a claim's own page (warrant, what would change it, who relies on it, every version),
+coverage and the shopping list; Corrections by kind. (8, Agent Ops ▸ By duty) the week by duty — runs, booked,
+warranted, failed, tokens per warranted entry — failures by type, departures, and every principal with what became of
+its entries. (11, Agent Ops ▸ Action centre) the authority table for the workspace's connection, an action's record
+with each execution's verification and its undo inside the window, graduation when the record earns it, demotion
+with a reason. (12, Security & Audit ▸ Gate map and Policies) the statement-door census by how the dialect is handled,
+the sites nothing guards with their reasons, every law of the departure gate with what it held; and the agent policy,
+the spend caps, the groups and identity read back as sentences, with the ledger's export. (13, Agent Ops ▸ Developer)
+packs with their measured record, the ledger API and tool-server doors, the event catalogue, service principals minted
+and revoked with the key shown once, the kits, and the agent contract rendered from `/ledger/v1/contract`.
+(3, the Briefing) the Record's lines at its head: each active mission's objective against its baseline over the
+mission's own period, the inquiries waiting on days to settle with the date each speaks, and the predictions in play.
+(10, the receipt page) Re-perform: the statement run now and both figures shown, with whether the difference is late
+rows or a restatement — the re-check that already existed, offered as a button.
+Three reads were added, no store: `GET /record/duties` (`record/duties.py` — a fold over claims by kind, run verdicts,
+Action entries and the departure ledger, with what is not metered said), `GET /record/decisions/{id}/scenarios`, and
+`GET /governance/gate-map` (`govern/gate_map.py`; the dialect classes have one definition now, which the census test
+imports); the receipt's record block names its answer. The typed client is regenerated for every route since phase 1.
+**Found on the way: the code half had never met the full suite.** Its receipts were targeted runs, and eight tests
+were red on the branch as the close-out left it — measured on a clean checkout of `d06baaa3`, not inferred. Each is
+fixed at its cause, no baseline moved: (1) two door calls C9 added (`packs/manifest.rewrite_scalars`'s YAML
+`scalar()`) were missing from `docs/SQL_DOORS.json` — classified `not-sql`; (2) thirteen Record and ledger doors named
+a connection and never asked whose it is (DATA-06) — both routers carry `connection_owner_guard` now, router-level;
+(3) fourteen new event kinds were neither categorised nor declared operational — the L5 agent's act and a fired undo
+are `action_decision`; a graduation, a demotion, a service principal minted or revoked, a sign-in to a tool server and a
+method registered are `governance_change`, each with a sink and a one-line summary; an inquiry's signal and wake, a
+mission's report, an outcome booked, a prediction scored and a pack uploaded or demoted are operational readings, said
+so; (4) fourteen swallowed failures (225 against a baseline of 211) — twelve go through `tolerate` with a reason and a
+counter, two were filters and are written as filters; (5) five cross-module private imports (27 against 22) — the
+executor's template fill, the MCP session's open and its sync bridge are public names now, and the inquiry keeps its
+own proposed run (`keep_proposed_run`) so the door no longer writes an inquiry itself; (6) three tests the arc's own
+deliberate changes left stale — the object query's inline schema phase 0 removed, law 5's narrowed sentence, and a
+purity guard that searched for the word `record` and so flagged the argument that carries the Record's lines (it
+checks invocations now, and was mutation-checked).
+Receipt: every page rendered from a scratch install's own ledger (a scratch API and web on their own ports and state;
+three inquiries, three decisions with a scenario and an outcome, two missions, the authority record of four executions
+and a demotion, held sends, a signed answer); Re-perform driven live there ("APAC was 2.53M, now 2.72M", and the
+restatement it booked then read back in Record); an inquiry's next run proposed and a decision's outcome booked through
+their pages, each reader following its record to the version the write booked (a first cut re-read the id it was
+opened on and showed the version before the write — found by driving it, fixed, and an earlier version now says so);
+after the rail was restored, every new page reached from it and by its link (`?tab=decisions&id=…` opening Record ▸
+Decisions on that decision; Now's corrections door landing on Record ▸ Corrections; the Action centre's approval-trail
+door landing on Security & Audit ▸ Approvals), with Home, Settings and Intelligence ▸ Actions where they were. Figures 1
+to 10 in `docs/assets/platform-2027-screens-2026-10-05/` are of the pages under the refused rail — the pages are the
+same, the rail around them is not; figures 11 and 12 are Now and a Decision inside the rail as restored. `tsc`, the six lint gates (one ratchet lowered as it asked: raw font sizes 890 → 877) and the web suite pass (132
+files, 1,578 tests). The full Python suite, run as CI runs it: 13,821 passed and 7 failed on the first run —
+the seven named above beside the census one, each failing identically on the base commit — and 13,828 passed, none failed, after them.
+**Still open on screen, each for want of a door or a decision, none drawn as if it worked:** an inquiry cannot take a
+person's hypothesis, be handed to an owner, have its next check set, or have a claim marked wrong from its page; a
+decision cannot gain an option or dissent after it is booked, and does not reopen on a restated claim; a mission is
+written but not edited in place, its past reports are listed by headline only, and "report now" is not a button (it
+sends); Now links to Agent Ops ▸ Attention to resolve an approval rather than resolving it in place, and has no
+dismiss-with-a-reason; the Action centre does not set a ceiling, sign or withdraw a standing grant, or run a drill;
+Security & Audit writes no policy, adds nobody to a group and sets no clearance, and the gate map has no "last fired"
+for a statement door (nothing records it per site); Developer manages packs through Settings ▸ System and does not
+declare an action or register a method; the hub's links and probation queues still have no screen; the Briefing's
+items carry no action or prediction of their own, and a Briefing is not signed as a delivery.
+
+---
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -11206,6 +11729,54 @@ rule here; §6 item 38(j) records them as refused, at the user's *"adopt all as 
 - **Email as a door.** Arc HB decided "no email in either direction" (§3.18); AO-5 does not reopen it. Only the user
   can.
 
+**Amended 2026-10-04 (§6 item 39(c)):** the third refusal — executing grants — is narrowed, not lifted. L4 (execute
+within policy, under a standing grant bound to a target, a scope, limits and an expiry) and L5 (choose among declared
+actions toward a mission, inside its budget) may be built in the 2027 study's phase 4, and only once outcomes are being
+recorded and scored — phase 3's exit. Today none has ever been recorded, so the refusal stands as written until then,
+and authority at any level is granted on a receipt and withdrawn automatically on a miss (study §M). §4.7 is not
+reopened: the platform writes nothing to a customer's warehouse at any level. The other four refusals are unchanged.
+
+### 4.9 · What the 2027 study froze — ADOPTED (2026-10-04)
+
+"Kill" means stop investing and stop presenting it as the product; working code stays until it costs something to
+keep (study §C). Each line names what survives. Re-propose only with new facts — and for lines 1 and 5 the fact is the
+one §4.5 already names: enough training volume of our own that a factory beats renting.
+
+| # | Frozen | What survives |
+|---|---|---|
+| 1 | the fine-tuning destination — Arc MI's gates, the gym (TJ-5), serving a student (TJ-6) | the graded ledger and the trajectory record, as evaluation data; the gym's problem generator, as the golden suites' and the canary's |
+| 2 | the SQL editor's parity race — frozen at SE-8 | the editor as the place a person inspects and corrects a statement, in the same provenance system |
+| 3 | the roster as a product idea — six named agents, a growing custom-agent builder, Agent Ops as fleet management | duties (study §H); one Operations view of work; from Arc AO, "one truth per number" and "one closed loop" stay |
+| 4 | quick or deep as something a person picks | one ask; the treatment is the platform's problem (CP-3 stays held by its own falsifier) |
+| 5 | the cheap-model line — the banded cascade and the outside judge as things to extend | what is there, left alone |
+| 6 | new model-compensating scaffolding | each repair loop and prompt block re-measured against a current model; the ones that no longer fire deleted |
+| 7 | canvases as surfaces to improve — the automation canvas, the Data Canvas | the engine; the canvas as a read-only picture of what a mission does |
+| 8 | the parked object-query tool | the compiler behind object pages |
+| 9 | the Evidence panel as it is — a hardcoded confidence | the claim ledger (study §E item 1); confidence as a counted frequency or not shown |
+| 10 | thirty-odd tabs | six destinations named for questions (study §U) |
+| 11 | "three planes" as the thesis | the planes, as architecture (study §F) |
+| 12 | N bots from a factory | one door per channel, held to the departure gate |
+
+### 4.10 · Six destinations replacing the rail — REFUSED on screen (2026-10-05)
+
+The 2027 study's §U proposed a rail of six destinations named for questions — Now · Inquiries · Decisions · Missions ·
+Record · Operations — absorbing every 2026 rail item as a page inside one, with Home deleted and Settings folded into
+Operations. It was adopted on paper with the study (§6 item 39), built (§3.53, the product half) and shown. The user,
+on the first screenshot: *"If this is going to be the new user interface, we will have a problem."* Then: *"restore
+the old rail and put the new pages inside it."*
+
+What stands: the 2026 rail, Home and the Settings footer, unchanged; the study's new pages placed INSIDE that
+structure (§3.53 says where). What is refused: replacing the rail, deleting Home, moving an existing screen under a
+new parent, and retiring the Inbox, the Approvals lens or Intelligence ▸ Actions into a new page. A new page is added
+where the existing structure has a place for it, and a rail row is added only when the rail still fits — measured, not
+judged: at 1440×900 the rail held two more rows and no more.
+
+Two things this cost that a later proposal should not repeat: the navigation was built and twelve pages placed on it
+before the user saw one screen of it; and "adopted, every call as recommended" on a study was read as a decision about
+a screen nobody had looked at. A change to the rail is shown before anything is built on it.
+
+Re-propose only on the user's word.
+
 ## 5 · Sequencing
 
 ```
@@ -11339,7 +11910,8 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
 
 ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first target NL2SQL,
         training rented, not owned
-        MI-0 annex ✅ DECIDED (§6.7b); remaining code: the langfuse.trace.input gate
+        MI-0 annex ✅ DECIDED (§6.7b); ~~remaining code: the langfuse.trace.input gate~~ — built
+             (`aughor/telemetry.py:812`; corrected 2026-10-04, phase 0 of the 2027 study)
         MI-1 grade what already runs · MI-2 verdict pins evidence — substrate-sized,
              may ride alongside any band above
         MI-2b ✅ BUILT 2026-09-20, MERGED #532 (`d91fb9be`) — the journal
@@ -11425,7 +11997,8 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              records evidence verbatim for the approver. Open: the live
              accepted-proposal receipt (waits for a natural evidence-backed
              occasion), periodic live red-team drives
-        ⚠ cross-user Know waits on VA-10's auth decision
+        ⚠ cross-user Know waits on ~~VA-10's auth decision~~ identity being switched ON — sign-in
+             shipped 2026-09-06 (corrected 2026-10-04; the 2027 study's phase 0 places it there)
         SECOND MOVEMENT ✅ ADOPTED 2026-09-15 (§6 item 22 (a)) — authoring by sentence: the user's own
              ⌘K turn measured six breaks between a draft and an agent that runs
         SP-7 ✅ MERGED #506, widened in #511 — honest
@@ -11478,7 +12051,8 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         #534 (`06d9d296`, 2026-09-21): measured first, the agent runtime consumed none of it; now
         an active package's plays reach the playbook store and its typed metric recipes reach the
         prompt, `resolve_recipes` and `metric_vocabulary` — gate 6 held by construction, so draft
-        banking still contributes nothing. A package's questions are not covered (§3.17).
+        banking still contributes nothing. ~~A package's questions are not covered (§3.17).~~ — covered
+        by #539 (corrected 2026-10-04).
         The user, 2026-09-17: finish Arc IP before Arc IN
 ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE clauses decided the same day) —
         the authored step. ✅ ALL THREE BUILT 2026-09-19 in the user's order — DS-17b (ranking was NOT
@@ -11689,7 +12263,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
   gated payloads. **§6 now has NO open decisions**, and VA-10 no longer stalls. The MCP write
   slice's two questions were decided the same day (§6.6, §3.1) — so is Arc VA's other blocker.
 - **VA-11's live Google receipt** — needs an OAuth client only the user can create.
-- **Slack reinstall** with `assistant:write` + `files:write` — three Slack surfaces dark until then.
+- ~~**Slack reinstall** with `assistant:write` + `files:write` — three Slack surfaces dark until then.~~
+  *Corrected 2026-10-04: the permission was granted at install; nothing to reinstall (PENDING.md).*
 - **One manual drag** — P1's edge-drop gesture: no tooling here can drive a ReactFlow drag
   (4× measured); the law is pure-tested, the gesture wants one human receipt.
 - Working-tree odds: modified `customers.yaml` · untracked `data/ontology_overrides/fixture/` ·
@@ -12066,6 +12641,10 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-10-03:** item 38 (Arc AO, the agent estate as a product, §3.52) arrived at the user's *"brutally test
 > our Agent workflow"* and was DECIDED the same day — *"adopt all as recommended and commit locally"*; all ten clauses
 > as recommended, five refusals recorded as §4.8. The register stays at zero open.
+> **Amended 2026-10-04:** item 39 (the 2027 platform study, `docs/PLATFORM_2027_STUDY_2026-10-04.md`, §3.53) arrived
+> with the study's eight asks and was DECIDED the same day — *"Adopt the study and strike the twenty lines in
+> PENDING.md"*; all eight as recommended, the freeze recorded as §4.9, §4.8 narrowed on a condition, §0 restated. The
+> register stays at zero open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -12872,6 +13451,34 @@ the browser** · **measure the premise before building.**
     **(j) ✅ DECIDED as recommended, recorded as §4.8 — record five refusals in §4**: a visual builder as the primary
     authoring surface; an LLM judge certifying a golden; executing grants; a Marketplace listing before AO-2d is
     proven; email as a door. *Recommended: yes* — each contradicts a rule already paid for.
+
+39. ✅ **DECIDED 2026-10-04 — the 2027 platform study adopted, every call as recommended** (the user: *"Adopt the
+    study and strike the twenty lines in PENDING.md"*; the study is `docs/PLATFORM_2027_STUDY_2026-10-04.md`, written
+    the same day at the user's brief from this file, `PENDING.md`, `IDEAS.md`, the glossary and two read-only sweeps
+    of the code; the pointer is §3.53). Eight calls, each with a recommendation; all eight decided together. Adopting
+    the plan is not a yes to a push, to a paid model run, or to an install stood up on the user's machine.
+    **(a) ✅ DECIDED as recommended — the organisation's install** (study §F; phase 0's exit): identity on, Postgres,
+    five or more people who own different things. Everything measurable in the study depends on it. Arc MT stays
+    dropped — this is not a hosted plane.
+    **(b) ✅ DECIDED as recommended — the freeze list** (study §C), adopted as a list and recorded as §4.9, each kill
+    with what survives.
+    **(c) ✅ DECIDED as recommended — §4.8's "an agent proposes; a person acts" reopened for L4 and L5 only**, on the
+    condition that outcomes are being recorded and scored; phase 4 is gated on phase 3. §4.7 is not reopened. Recorded
+    as the amendment under §4.8.
+    **(d) ✅ DECIDED as recommended — the navigation**: six destinations named for the question a person brings (study
+    §U); the authored layer folds into Record rather than taking a Model destination of its own — the UI/UX study's
+    §4.7 item 7 is superseded on that one point, and everything it decided about the shell stands.
+    **(e) ✅ DECIDED as recommended — the North Star**: closed loops per quarter, guarded by calibration error (study
+    §X); today's reading is zero and is published as such.
+    **(f) ✅ DECIDED as recommended — six new words** for `docs/GLOSSARY.md`: claim (widened), inquiry, prediction,
+    decision, mission, scenario — each added in the PR that first uses it, as the glossary requires; `investigation`
+    stays frozen.
+    **(g) ✅ DECIDED as recommended — the departure gate's law 5** narrowed from "a forecast never departs" to "an
+    unscored forecast never departs", in phase 3 and not before.
+    **(h) ✅ DECIDED as recommended — the pending ledger**: the twenty discarded items struck in `PENDING.md` with
+    their reasons the same day (twenty-two lines; TJ-5 and TJ-6 appear twice), and the phase of every kept and
+    reshaped item carried onto its line the same day at the user's word (76 lines, as *2027 study: phase N*); the
+    study's placement section holds the reasons.
 
 ---
 

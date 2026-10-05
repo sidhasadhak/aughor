@@ -309,6 +309,15 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     { id: "nav-security",    label: "Security & Audit",     sublabel: "Query audit, approvals, guardrail activity", type: "action", icon: "shield", accent: "var(--red3)" },
     { id: "nav-evals",       label: "Evals",                sublabel: "Suites, runs and experiments",       type: "action", icon: "flask",    accent: "var(--cyn3)" },
     { id: "nav-settings",    label: "Settings",             sublabel: "Theme, model, system configuration", type: "action", icon: "settings", accent: "var(--t3)" },
+    // The Record's pages and the two Operations layers the 2027 study added — under the rail's words.
+    { id: "nav-now",         label: "Now",                  sublabel: "What used a slot this week, what waits on you, what was held", type: "action", icon: "bell", accent: "var(--amb3)" },
+    { id: "nav-inquiries",   label: "Inquiries",            sublabel: "What is established, what is open and what would settle it", type: "action", icon: "idea", accent: "var(--blue3)" },
+    { id: "nav-decisions",   label: "Decisions",            sublabel: "What was chosen, what was expected and what became of it", type: "action", icon: "bookmark", accent: "var(--blue3)" },
+    { id: "nav-missions",    label: "Missions",             sublabel: "Each objective against its baseline, and what it cost", type: "action", icon: "target", accent: "var(--grn3)" },
+    { id: "nav-claims",      label: "Claims",               sublabel: "What is held true about a thing, as of any date", type: "action", icon: "list", accent: "var(--t2)" },
+    { id: "nav-corrections", label: "Corrections",          sublabel: "What the platform was wrong about, and what replaced it", type: "action", icon: "history", accent: "var(--amb3)" },
+    { id: "nav-action-centre", label: "Action centre",      sublabel: "Every declared action, the level it may run at, and its record", type: "action", icon: "key", accent: "var(--vio3)" },
+    { id: "nav-developer",   label: "Developer",            sublabel: "Packs, doors, service principals, kits and the agent contract", type: "action", icon: "terminal", accent: "var(--t2)" },
   ];
 
   const NAV_DISPATCH: Record<string, () => void> = {
@@ -348,6 +357,14 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     "nav-security":    () => onNavigate("security"),
     "nav-evals":       () => onNavigate("evals"),
     "nav-settings":    () => onNavigate("settings"),
+    "nav-now":         () => onNavigate("now"),
+    "nav-inquiries":   () => onNavigate("inquiries"),
+    "nav-decisions":   () => onNavigate("decisions"),
+    "nav-missions":    () => onNavigate("missions"),
+    "nav-claims":      () => onNavigate("claims"),
+    "nav-corrections": () => onNavigate("corrections"),
+    "nav-action-centre": () => onNavigate("action-centre"),
+    "nav-developer":   () => onNavigate("developer"),
   };
 
   // ── Build full item list ──────────────────────────────────────────────────

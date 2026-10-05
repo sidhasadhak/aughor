@@ -25,27 +25,12 @@ class DefinitionChoice(BaseModel):
         "when none of them is what the question asks about."))
 
 
-class DefinitionChoiceWithConfidence(DefinitionChoice):
-    """The same choice, asked to say how sure it is (flag ``framing.choice_confidence``).
-
-    A separate model rather than a defaulted field on the one above, because adding a
-    field to a response model CHANGES THE PROMPT: the schema the provider ships is part of
-    what the model reads. Keeping them apart is what makes the flag's off-arm byte-identical
-    to today, which is the only way the A/B measures the field and not the diff around it.
-    """
-
-    confidence: float = Field(default=0.0, description=(
-        "How sure you are, from 0.0 to 1.0, that this is the definition the question means. Use the "
-        "middle of the range when the listed definitions genuinely both fit — a low number here is a "
-        "useful answer, not a failure."))
-
-
-def _choice_confidence(choice: Any) -> float:
-    """The model's own number, clamped — 0.0 when it was never asked for one."""
-    try:
-        return min(1.0, max(0.0, float(getattr(choice, "confidence", 0.0) or 0.0)))
-    except (TypeError, ValueError):
-        return 0.0
+# `DefinitionChoiceWithConfidence` — the same choice asked to rate its own certainty, behind
+# `framing.choice_confidence` — was DELETED 2026-10-04 (phase 0 of the 2027 study, ROADMAP §6
+# item 39; kill 6). Its grid never fired (no authored question frames to two usable definitions),
+# and the one calibration the platform has taken of a model's stated confidence (CP-2,
+# 2026-10-04) found it right 61% of the time at a stated confidence of about 1.0: a number that
+# does not separate cannot rank a queue, which is the exit the flag's own entry named.
 
 
 _CHOOSE_SYSTEM = (
@@ -112,14 +97,11 @@ def choose_definition(frame: Frame, graph: Any, *, provider: Any = None, synonym
         if provider is None:
             from aughor.llm.provider import get_provider
             provider = get_provider("fast")
-        from aughor.kernel.flags import flag_enabled
-        _model = (DefinitionChoiceWithConfidence if flag_enabled("framing.choice_confidence")
-                  else DefinitionChoice)
         choice = provider.complete(
             system=_CHOOSE_SYSTEM,
             user=f"QUESTION: {frame.question}\n\nDECLARED DEFINITIONS THE WORDS FIT:\n{listing}\n\n"
                  "Which one does the question mean?",
-            response_model=_model, temperature=0.0)
+            response_model=DefinitionChoice, temperature=0.0)
     except Exception as exc:  # noqa: BLE001 — an unchosen frame still lists every candidate
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the model could not choose among the declared definitions; the frame keeps all of them",
@@ -135,7 +117,6 @@ def choose_definition(frame: Frame, graph: Any, *, provider: Any = None, synonym
     record_decision("framing.definition", frame.question, _menu,
                     label=_names.index(name) if name in _names else -1,
                     chosen=name if name in _names else "", source="llm",
-                    confidence=_choice_confidence(choice),
                     conn_id=conn_id, trace_id=trace_id, inv_id=inv_id)
     if not name:
         frame.notes.append("a model read none of the declared definitions as what the question means")

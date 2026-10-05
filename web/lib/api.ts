@@ -4300,7 +4300,8 @@ export interface EvidenceClaim {
   sql_source: string | null;
   metric_used: string | null;
   data_freshness: string | null;
-  confidence: number;
+  /** null on every row since phase 1 of the 2027 study: not counted, so not shown as a figure. */
+  confidence: number | null;
   created_at: string;
   owner_feedback: "validated" | "disputed" | "needs_context" | null;
   feedback_note: string | null;
@@ -5591,7 +5592,9 @@ export async function getHubMap(connId?: string): Promise<HubMapResponse | null>
 
 // ── HB-2 · the departures ledger — what left, what was held, what a person owes ──
 
-export type DepartureState = "departed" | "held" | "held_probation" | "held_owner";
+/** `held_budget` (phase 2 of the 2027 study): a clean departure the attention budget held — the
+ *  addressee's week of slots was spent; nothing is wrong with the number. */
+export type DepartureState = "departed" | "held" | "held_probation" | "held_owner" | "held_budget";
 export type DepartureGuardOutcome =
   "passed" | "held" | "asked" | "not_applicable" | "unavailable" | "exempt";
 
@@ -6543,6 +6546,17 @@ export interface AnswerRecheck {
   told?: { door?: string; status?: string; note?: string };
 }
 
+/** Re-run an answer's own statement now and compare it with what was said (idea 5). The server
+ *  refuses with its reason — re-checking is behind a flag — and that reason is what is thrown. */
+export async function recheckAnswer(investigationId: string): Promise<AnswerRecheck & { text?: string }> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(investigationId)}/recheck`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(typeof body?.detail === "string" ? body.detail : `The re-check failed (${res.status})`);
+  }
+  return res.json();
+}
+
 /** "history" is the standing Briefing; the rest are written for one complete period. */
 export type BriefingPeriod = "history" | "day" | "week" | "month" | "year";
 
@@ -7393,6 +7407,20 @@ export interface PublicReceipt {
    *  Ids only, and signed: the labels/warrants resolve live via `getAnswerTrace`. */
   grounded_in_graph: string[];
   cost: Record<string, number | string> | null;
+  /** Phase 1 of the 2027 study — line two of the receipt, live as of this read: how often
+   *  answers of this kind have held, COUNTED with n (the `confidence` above is the model's own
+   *  word about itself), and who else was told. null on a receipt that is not an answer's. */
+  record: {
+    /** The run this receipt is for — what Re-perform re-runs. Absent on an API older than the screen. */
+    answer?: string;
+    claim: { id: string; key: string; version: number; tier: string; kind: string; as_of: string;
+             recorded_at: string; restated: boolean; warrants_this_receipt: boolean } | null;
+    confidence: { reference_class: string; hit_rate: number | null; n: number; scope: string; note: string } | null;
+    confidence_note: string;
+    told: { at: string; state: string; kind: string; target: string; addressed_to: string; by: string;
+            verdict: string; departure_id: string }[];
+    told_note: string;
+  } | null;
   signature: string;                     // HMAC — server-issued proof
 }
 

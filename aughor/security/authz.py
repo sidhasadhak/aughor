@@ -67,7 +67,13 @@ def resolve_principal(request: Request) -> Optional[Principal]:
        which is the exact hole VA-10 exists to close.
     3. The transitional ``X-Aughor-*`` headers (self-host / dev, unchanged).
     """
-    from aughor.security import oidc
+    from aughor.security import oidc, service_principals
+
+    # 0. Phase 7 of the 2027 study — a service principal (an outside vendor's agent) presents its name
+    #    and key; a presented credential that does not match resolves to NOTHING and never falls
+    #    through to a weaker seam.
+    if service_principals.headers_present(request):
+        return service_principals.resolve(request)
 
     if oidc.configured():
         try:

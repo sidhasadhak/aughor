@@ -959,6 +959,30 @@ class ObjectEdit(BaseModel):
     note: str = ""
 
 
+class Verification(BaseModel):
+    """Phase 4 of the 2027 study (§M) — the READ that proves a declared action's change took effect:
+    a statement over the action's declared parameters (``{order_id}``), run through the ordinary
+    query door after dispatch. ``expects`` says how its result is read: ``rows`` (the read returns
+    at least one row), ``no_rows`` (it returns none), or ``value`` (its first cell equals ``value``,
+    compared as text). A side-effect action with no verification cannot be declared."""
+    sql: str = Field(min_length=1)
+    expects: Literal["rows", "no_rows", "value"] = "rows"
+    value: str = ""
+    note: str = ""
+
+
+class Undo(BaseModel):
+    """Phase 4 (§M) — the compensating action and its window: ``action_id`` names another declared
+    action that reverses or compensates this one, ``window_hours`` how long the undo stays open
+    (0 = no limit), ``params`` how this action's parameters map onto the undo's (templates over
+    the declared parameters). An action declared without an undo is declared ``irreversible`` by
+    name, and an irreversible action never passes L3."""
+    action_id: str = Field(min_length=1)
+    window_hours: float = 0.0
+    params: dict = Field(default_factory=dict)
+    note: str = ""
+
+
 class KineticAction(BaseModel):
     """A declared, governed action — the Wave K write-surface unit (see the block comment above)."""
     id: str
@@ -986,6 +1010,14 @@ class KineticAction(BaseModel):
     #: action sets on the objects it takes (see ObjectEdit).
     object_type: str = ""
     edits: list[ObjectEdit] = Field(default_factory=list)
+    #: Phase 4 of the 2027 study (§M) — every declared action carries its reversibility class, the
+    #: read that verifies it and the undo that compensates it. Optional on the MODEL so an ontology
+    #: declared before phase 4 still loads; REQUIRED at the declare door for a side-effect action
+    #: (`actions/authority.declaration_problem`): "an action with no verification statement cannot
+    #: be declared", and one with no undo is declared irreversible by name or refused.
+    reversibility: Literal["", "undoable", "compensable", "irreversible"] = ""
+    verification: Optional[Verification] = None
+    undo: Optional[Undo] = None
 
     @model_validator(mode="after")
     def _objects_hold_together(self):

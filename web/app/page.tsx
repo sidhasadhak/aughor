@@ -32,7 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
 import { ActivityStrip } from "@/components/shell/ActivityStrip";
-import { useNavCounts, type NavCounts } from "@/components/shell/useNavCounts";
+import { useNavCounts, waitingOnAPerson, type NavCounts } from "@/components/shell/useNavCounts";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
@@ -42,6 +42,7 @@ import type { AgenticOpsLayer as AgentsLayer } from "@/components/AgenticOpsWork
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NAVIGATE_EVENT, type NavigateRequest } from "@/lib/navigate";
+import type { RecordLayer } from "@/components/record/RecordWorkspace";
 
 function LoadingPanel() {
   // A lazy panel's first paint: skeleton rows the height of the lists and tables most
@@ -81,6 +82,13 @@ const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").t
 const QueryWorkbench    = dynamic(() => import("@/components/query/QueryWorkbench").then(m => ({ default: m.QueryWorkbench })), { ssr: false, loading });
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
+// The 2027 study's screens (docs/PLATFORM_2027_STUDY_2026-10-04.md §V), each inside the rail that
+// was already here: Now beside Home and the Inbox, and Record under Intelligence — one rail item
+// whose five views (Inquiries · Decisions · Missions · Claims · Corrections) are its tabs. "By
+// duty", the Action centre and Developer are Agent Ops layers, loaded by that workspace; the gate
+// map and the policies are lenses of Security & Audit.
+const NowPanel          = dynamic(() => import("@/components/now/NowPanel").then(m => ({ default: m.NowPanel })),                   { ssr: false, loading });
+const RecordWorkspace   = dynamic(() => import("@/components/record/RecordWorkspace").then(m => ({ default: m.RecordWorkspace })), { ssr: false, loading });
 const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspace").then(m => ({ default: m.AgenticOpsWorkspace })), { ssr: false, loading });
 import { getApiBase, DEMO_PACK } from "@/lib/config";
 
@@ -128,6 +136,15 @@ import { subscribeKernelEvents } from "@/lib/events";
 
 type NavTab =
   | "home"              // overview dashboard — stats, health, recents, quick input
+  | "now"               // what needs me this week — slots used, what waits on a person, what was held
+  | "record"            // the Record workspace: Inquiries · Decisions · Missions · Claims · Corrections
+  | "inquiries"         // link → record/inquiries
+  | "decisions"         // link → record/decisions
+  | "missions"          // link → record/missions
+  | "claims"            // link → record/claims
+  | "corrections"       // link → record/corrections
+  | "action-centre"     // link → agentic-ops/action-centre (the authority table)
+  | "developer"         // link → agentic-ops/developer
   | "spend"             // PX-2 — Operations ▸ Spend (caps, usage, model health, audit feed)
   | "chat"              // active investigation / chat (hidden from nav)
   | "canvases"
@@ -299,6 +316,7 @@ function Topbar({
 const NAV_PRIMARY = [
   { id: "home",         icon: "home",   label: "Home" },
   { id: "inbox",        icon: "inbox",  label: "Inbox" },
+  { id: "now",          icon: "bell",   label: "Now" },
   { id: "canvases",     icon: "canvas", label: "Data Canvas" },
 ] as const;
 
@@ -323,6 +341,10 @@ const NAV_SECTIONS = [
       // have. Named Documents, not Knowledge, because Knowledge already means the
       // Semantic Layer's connection store.
       { id: "documents",    icon: "folder",   label: "Documents" },
+      // The Record (the 2027 study §V) — ONE row for its five views, after the four that were
+      // here. Measured at 1440×900: eight new rows pushed six below the fold, four of them rows
+      // that were already here, so the five views are tabs of one workspace instead.
+      { id: "record",       icon: "bookmark", label: "Record" },
     ],
   },
   {
@@ -377,6 +399,7 @@ function Sidebar({
   const badgeFor = (id: string): { value: number; waiting: boolean; noun: string } | null => {
     if (id === "monitors" && counts?.unackedAlerts) return { value: counts.unackedAlerts, waiting: true, noun: "unacknowledged" };
     if (id === "recents" && counts?.runningRuns) return { value: counts.runningRuns, waiting: false, noun: "running" };
+    if (id === "now" && counts && waitingOnAPerson(counts)) return { value: waitingOnAPerson(counts), waiting: true, noun: "waiting on a person" };
     return null;
   };
   // Collapsed (the toggle at the head, or ⌘\), the rail is a column of icons: every row keeps its
@@ -1236,6 +1259,7 @@ const DENSITY_KEY = "aughor_density";
  *  than next/navigation: the shell is one client page, and a query-param sync
  *  has no server-render surface to disagree with. */
 const VALID_TABS = new Set<NavTab>([
+  "now", "record", "inquiries", "decisions", "missions", "claims", "corrections", "action-centre", "developer",
   "home", "spend", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
   "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
@@ -1293,10 +1317,20 @@ const INTEL_LAYER_FOR_TAB: Partial<Record<NavTab, IntelLayer>> = {
   intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
   "org-intel":  "org",
 };
+/** The Record's views by the id a link names them with — `?tab=decisions&id=…` opens that view. */
+const RECORD_LAYER_FOR_TAB: Partial<Record<NavTab, RecordLayer>> = {
+  inquiries: "inquiries",
+  decisions: "decisions",
+  missions: "missions",
+  claims: "claims",
+  corrections: "corrections",
+};
 const AGENTIC_LAYER_FOR_TAB: Partial<Record<NavTab, AgentsLayer>> = {
   fleet: "fleet",
   agents: "agents",
   "control-room": "fleet",
+  "action-centre": "action-centre",
+  developer: "developer",
 };
 
 type ResolvedTab = {
@@ -1305,12 +1339,13 @@ type ResolvedTab = {
   opsLayer: OpsLayer | null;
   intelLayer: IntelLayer | null;
   agentsLayer: AgentsLayer | null;
+  recordLayer: RecordLayer | null;
   /** `?tab=activity` is the Security & Audit layer on its activity lens. */
   secLens: "activity" | null;
 };
 
 function resolveDeepLinkTab(t: NavTab): ResolvedTab {
-  const none: ResolvedTab = { tab: t, dataLayer: null, opsLayer: null, intelLayer: null, agentsLayer: null, secLens: null };
+  const none: ResolvedTab = { tab: t, dataLayer: null, opsLayer: null, intelLayer: null, agentsLayer: null, recordLayer: null, secLens: null };
   const data = DATA_LAYER_FOR_TAB[t];
   if (data) return { ...none, tab: "data", dataLayer: data };
   if (t === "activity") return { ...none, tab: "operations", opsLayer: "security", secLens: "activity" };
@@ -1321,6 +1356,8 @@ function resolveDeepLinkTab(t: NavTab): ResolvedTab {
   if (intel) return { ...none, tab: "intelligence", intelLayer: intel };
   const agentic = AGENTIC_LAYER_FOR_TAB[t];
   if (agentic) return { ...none, tab: "agentic-ops", agentsLayer: agentic };
+  const record = RECORD_LAYER_FOR_TAB[t];
+  if (record) return { ...none, tab: "record", recordLayer: record };
   return none;
 }
 
@@ -1342,7 +1379,10 @@ const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "integrations", "sp
 const EVALS_LAYERS = new Set<EvalsLayer>(["suites", "runs", "experiments"]);
 const AGENTIC_LAYERS = new Set<AgentsLayer>([
   "fleet", "agents", "attention", "activity", "automations", "hub", "departures",
+  "duties", "action-centre", "developer",
 ]);
+
+const RECORD_LAYERS = new Set<RecordLayer>(["inquiries", "decisions", "missions", "claims", "corrections"]);
 
 function layerFromUrl(): string | null {
   if (typeof window === "undefined") return null;
@@ -1363,6 +1403,9 @@ export default function Home() {
   // The deep link is applied just below instead, after mount. Same for intelLayer and
   // the `?table=` entity link.
   const [tab, setTab] = useState<NavTab>("home");
+  // The record a Ledger row opened in the Record workspace — an inquiry, a decision, a mission, a
+  // claim — addressed as `?id=`, so a Reader is a link like any other screen.
+  const [openId, setOpenId] = useState<string | null>(null);
   const [theme, setThemeState] = useState<Theme>("dark");
   const [density, setDensityState] = useState<Density>("comfortable");
   const [rawSelectedConn, setSelectedConn] = useState("");
@@ -1389,8 +1432,9 @@ export default function Home() {
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
   const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
   const [agentsLayer, setAgentsLayer] = useState<AgentsLayer>("fleet");
+  const [recordLayer, setRecordLayer] = useState<RecordLayer>("inquiries");
   const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
-  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
+  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals" | "gates" | "policies">("security");
   // S1 — the entity deep link (`?table=`), consumed once by the graph layer.
   const [initialGraphTable, setInitialGraphTable] = useState<string | undefined>(undefined);
 
@@ -1402,6 +1446,7 @@ export default function Home() {
     if (target === "operations" && OPS_LAYERS.has(l as OpsLayer)) { setOpsLayer(l as OpsLayer); return true; }
     if (target === "evals" && EVALS_LAYERS.has(l as EvalsLayer)) { setEvalsLayer(l as EvalsLayer); return true; }
     if (target === "agentic-ops" && AGENTIC_LAYERS.has(l as AgentsLayer)) { setAgentsLayer(l as AgentsLayer); return true; }
+    if (target === "record" && RECORD_LAYERS.has(l as RecordLayer)) { setRecordLayer(l as RecordLayer); return true; }
     return false;
   };
 
@@ -1426,6 +1471,7 @@ export default function Home() {
       if (resolved.opsLayer) setOpsLayer(resolved.opsLayer);
       if (resolved.intelLayer) setIntelLayer(resolved.intelLayer);
       if (resolved.agentsLayer) setAgentsLayer(resolved.agentsLayer);
+      if (resolved.recordLayer) setRecordLayer(resolved.recordLayer);
       if (resolved.secLens) setSecLens(resolved.secLens);
       // `?tab=builder` MEANT the visual builder. The workbench now defaults to SQL,
       // so the intent has to be carried explicitly — the resolver rewrites the query
@@ -1436,6 +1482,8 @@ export default function Home() {
     const layerApplied = rawLayer && resolved
       ? applyLayerFor(resolved.tab, rawLayer) : false;
     if (table) setInitialGraphTable(table);
+    const linkedId = params.get("id");
+    if (linkedId) setOpenId(linkedId);
     if (t || rawLayer || canvasId) {
       pendingDeepLink.current = {
         tab: resolved?.tab ?? t,
@@ -1492,7 +1540,9 @@ export default function Home() {
       if (r.opsLayer) setOpsLayer(r.opsLayer);
       if (r.intelLayer) setIntelLayer(r.intelLayer);
       if (r.agentsLayer) setAgentsLayer(r.agentsLayer);
+      if (r.recordLayer) setRecordLayer(r.recordLayer);
       if (r.secLens) setSecLens(r.secLens);
+      setOpenId(detail.params?.id ?? null);
       setTab(r.tab);
     };
     window.addEventListener(NAVIGATE_EVENT, onNavigate);
@@ -1517,6 +1567,7 @@ export default function Home() {
         : pending.tab === "operations" ? opsLayer
         : pending.tab === "evals" ? evalsLayer
         : pending.tab === "agentic-ops" ? agentsLayer
+        : pending.tab === "record" ? recordLayer
         : null;
       if ((pending.tab && tab !== pending.tab)
           || (pending.layer && pendingLayerCurrent !== pending.layer)
@@ -1528,6 +1579,7 @@ export default function Home() {
     const urlConn = params.get("conn");
     const urlLayer = params.get("layer");
     const urlCanvas = params.get("canvas");
+    const urlId = params.get("id");
     // PX-0 — every workspace writes its layer, so what the screen shows survives a
     // reload. The Data workspace writes its layer AS the tab (`catalog` / `query` /
     // `semantic` are aliases the deep-link resolver already reads back) — `builder`
@@ -1539,24 +1591,30 @@ export default function Home() {
       : tab === "operations" ? opsLayer
       : tab === "evals" ? evalsLayer
       : tab === "agentic-ops" ? agentsLayer
+      : tab === "record" ? recordLayer
       : null;
     // Only the workspace is addressed by a canvas; elsewhere the id is noise that would
     // survive into screens it means nothing on.
     const wantCanvas = tab === "canvas-workspace" ? (activeCanvas?.id ?? null) : null;
+    // A Reader is addressed by the id its Ledger row opened; elsewhere the id means nothing.
+    const wantId = tab === "record" ? openId : null;
     if (urlTab === writeTab && (urlConn ?? "") === rawSelectedConn
-        && (urlLayer ?? null) === wantLayer && (urlCanvas ?? null) === wantCanvas) return;
+        && (urlLayer ?? null) === wantLayer && (urlCanvas ?? null) === wantCanvas
+        && (urlId ?? null) === wantId) return;
     params.set("tab", writeTab);
+    if (wantId) params.set("id", wantId); else params.delete("id");
     if (rawSelectedConn) params.set("conn", rawSelectedConn); else params.delete("conn");
     if (wantLayer) params.set("layer", wantLayer); else params.delete("layer");
     if (wantCanvas) params.set("canvas", wantCanvas); else params.delete("canvas");
     const next = `${window.location.pathname}?${params.toString()}`;
-    if (!urlSyncReady.current || urlTab === writeTab) {
+    // Opening or leaving a Reader is a step Back should undo, like a change of screen.
+    if (!urlSyncReady.current || (urlTab === writeTab && (urlId ?? null) === wantId && (tab !== "record" || (urlLayer ?? null) === wantLayer))) {
       window.history.replaceState(null, "", next);
       urlSyncReady.current = true;
     } else {
       window.history.pushState(null, "", next);
     }
-  }, [tab, rawSelectedConn, intelLayer, opsLayer, evalsLayer, agentsLayer, dataLayer, activeCanvas]);
+  }, [tab, rawSelectedConn, intelLayer, opsLayer, evalsLayer, agentsLayer, recordLayer, dataLayer, activeCanvas, openId]);
   useEffect(() => {
     const onPop = () => {
       const t = tabFromUrl();
@@ -1569,9 +1627,11 @@ export default function Home() {
         if (r.opsLayer) setOpsLayer(r.opsLayer);
         if (r.intelLayer) setIntelLayer(r.intelLayer);
         if (r.agentsLayer) setAgentsLayer(r.agentsLayer);
+        if (r.recordLayer) setRecordLayer(r.recordLayer);
         if (r.secLens) setSecLens(r.secLens);
         const l = layerFromUrl();
         if (l) applyLayerFor(r.tab, l);
+        setOpenId(new URLSearchParams(window.location.search).get("id"));
       }
     };
     window.addEventListener("popstate", onPop);
@@ -1933,6 +1993,7 @@ export default function Home() {
     // if left open while switching tabs — this is the most common cause of
     // "can't open other tabs while a query is running".
     setShowHistory(false);
+    setOpenId(null);
 
     // The "Briefing" rail item opens the unified Intelligence workspace at its
     // default Briefing lens.
@@ -1975,6 +2036,13 @@ export default function Home() {
       setTab("data");
       return;
     }
+    // A Record view named by its own id (⌘K's "Decisions", a link) opens the workspace on it.
+    const record = RECORD_LAYER_FOR_TAB[t];
+    if (record) {
+      setRecordLayer(record);
+      setTab("record");
+      return;
+    }
     // Fleet / Agents / Control Room deep-links open Agentic Ops at the matching layer.
     const agentic = LEGACY_AGENTIC_LAYER[t];
     if (agentic) {
@@ -1983,6 +2051,31 @@ export default function Home() {
       return;
     }
     setTab(t);
+  };
+
+  /** Open one run's report — the door the Inbox already uses for the analysis behind a recommendation. */
+  const openRun = (runId: string) => {
+    setShowHistory(false);
+    setSelectedChatSessionId(null);
+    setSelectedHistoryInvId(runId);
+    setTab("chat");
+  };
+  /** Open one record's Reader on its view of the Record — a Ledger row, or a citation anywhere. */
+  const openRecord = (view: RecordLayer, id: string | null) => {
+    setShowHistory(false);
+    setRecordLayer(view);
+    setTab("record");
+    setOpenId(id);
+  };
+  /** Departures names one row by `?departure=`, read when its panel mounts. */
+  const openDepartures = (departureId?: string) => {
+    if (departureId && typeof window !== "undefined") {
+      const u = new URL(window.location.href);
+      u.searchParams.set("departure", departureId);
+      window.history.replaceState(null, "", u);
+    }
+    setAgentsLayer("departures");
+    setTab("agentic-ops");
   };
 
   const handleCanvasSelect = (canvas: Canvas) => {
@@ -2119,6 +2212,49 @@ export default function Home() {
                 onTryDemo={tryDemo}
                 demoLoading={demoLoading}
               />
+            )}
+
+            {/* ── NOW ── what needs me, this week */}
+            {tab === "now" && (
+              <ErrorBoundary label="The Now page hit an error.">
+                <NowPanel
+                  connections={wsConnections}
+                  contextReady={contextReady}
+                  doors={{
+                    onOpenDecision: id => openRecord("decisions", id),
+                    onOpenInquiry: id => openRecord("inquiries", id),
+                    onOpenDepartures: openDepartures,
+                    onOpenAttention: () => { setAgentsLayer("attention"); setTab("agentic-ops"); },
+                    onOpenBriefing: connId => {
+                      if (connId) setSelectedConn(connId);
+                      handleNavigate("intelligence");
+                    },
+                    onOpenCorrections: () => handleNavigate("corrections"),
+                    onOpenMissions: () => handleNavigate("missions"),
+                    onOpenHome: () => handleNavigate("home"),
+                  }}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* ── RECORD ── Inquiries · Decisions · Missions · Claims · Corrections */}
+            {tab === "record" && (
+              <ErrorBoundary label="The Record hit an error.">
+                <RecordWorkspace
+                  layer={recordLayer}
+                  onLayerChange={l => { setOpenId(null); setRecordLayer(l); }}
+                  openId={openId}
+                  onOpenRecord={openRecord}
+                  connections={wsConnections}
+                  selectedConn={selectedConn}
+                  onOpenRun={openRun}
+                  onAsk={() => goToChat()}
+                  onOpenReceipt={ref => { window.open(`/receipt/${encodeURIComponent(ref)}`, "_blank", "noopener"); }}
+                  onOpenDefinitions={() => handleNavigate("semantic")}
+                  onOpenMap={() => handleNavigate("ontology")}
+                  onOpenMonitors={() => handleNavigate("monitors")}
+                />
+              </ErrorBoundary>
             )}
 
             {/* ── CANVASES ── */}
@@ -2347,6 +2483,10 @@ export default function Home() {
                   }}
                   // PX-5 — the agent surface's Chat door: arrive already talking to it.
                   onChatWithAgent={goToAgentChat}
+                  onOpenRuns={() => handleNavigate("recents")}
+                  onOpenDeclaredActions={() => { setIntelLayer("kinetic"); setTab("intelligence"); }}
+                  onOpenApprovals={() => { setSecLens("approvals"); setOpsLayer("security"); setTab("operations"); }}
+                  onOpenSettings={() => handleNavigate("settings")}
                 />
               </ErrorBoundary>
             )}

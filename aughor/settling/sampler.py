@@ -35,7 +35,7 @@ RunSql = Callable[[str], tuple[list, list, Optional[str]]]
 def _ident(name: str) -> str:
     """One identifier, double-quoted in DuckDB's dialect — the door translates the quoting
     for engines that write their own (BigQuery's backticks). Found by the first
-    live tick: an unquoted "Order Date" is two tokens, and the reading failed on every
+    live tick: an unquoted "Event Date" is two tokens, and the reading failed on every
     upload whose columns carry spaces."""
     return '"' + name.replace('"', '""') + '"'
 
@@ -166,10 +166,13 @@ def run_settling_samples_daily(*, now: Optional[datetime] = None, force: bool = 
         return 0
     from aughor.db.measure import run_sql_for
     total = 0
+    from aughor.record.signals import on_settling_sampled
+    from aughor.settling.store import connection_lag
     for conn in connections:
         cid = str((conn or {}).get("id") or "")
         if not cid or not time_tables(cid):
             continue
+        before = connection_lag(cid)
         try:
             result = sample_connection(cid, run_sql_for(cid, internal=True), today=today)
         except Exception as exc:
@@ -178,4 +181,6 @@ def run_settling_samples_daily(*, now: Optional[datetime] = None, force: bool = 
         total += len(result["sampled"])
         if result["errors"]:
             logger.info("settling sample on %s skipped %s", cid, result["errors"])
+        # the close-out (C4): the settling lag itself is a signal — a lag that moved opens an inquiry
+        on_settling_sampled(cid, before, connection_lag(cid))
     return total

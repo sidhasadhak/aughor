@@ -22,6 +22,12 @@ os.environ.setdefault("AUGHOR_SKIP_DOTENV", "1")
 # Point at the builtin DuckDB fixture connection during tests
 os.environ.setdefault("AUGHOR_API_KEY", "")  # disable auth in tests
 os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")
+# The action approval gate is ON by default in the product since 2026-10-04 (phase 0 of the 2027
+# study, ROADMAP §3.53). The suite drives governed routes with it OFF, as every test was written
+# before the flip and a 428 on a declare door is not what those tests measure; the tests OF the
+# gate (`tests/test_govern_actions.py`, `test_govern_action_coverage.py`) unset or set the
+# variable themselves, so the default is still proven. setdefault: an operator's own value wins.
+os.environ.setdefault("AUGHOR_ACTION_APPROVAL", "0")
 # Hermetic kernel ledger — tests must never write to data/system.db.
 #
 # ⚠️ ASSIGNED, NOT `setdefault`, and every store path below follows the same rule. An
@@ -167,6 +173,10 @@ for _env, _file in (
     # always lacked), but nothing pointed that var anywhere in tests, so a fresh checkout
     # got a seeded playbook written into its `data/`.
     ("AUGHOR_PLAYBOOK_PATH", "playbook.json"),
+    # Phase 5 of the 2027 study — the review now writes the confirmed-cause graph
+    # (`lifecycle/causal.py`), so both of its files join the hermetic set in the same commit.
+    ("AUGHOR_CAUSAL_PROPOSALS_FILE", "causal_proposals.json"),
+    ("AUGHOR_CAUSAL_GRAPH_FILE", "causal_graph.json"),
     # IP-2 — the industries chosen at install. Unpinned, a test that writes a choice would narrow the
     # developer's live deployment to it; registered in the same commit as aughor/packs/industry_choice.py.
     ("AUGHOR_INDUSTRIES_FILE", "industries.json"),

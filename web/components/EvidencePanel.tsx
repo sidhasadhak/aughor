@@ -3,10 +3,14 @@
 /**
  * EvidencePanel — the claim ledger (Aughor Intelligence · 05 Evidence).
  *
- * A claim is a row, not a card: the sentence with the query beneath it, its confidence, the
- * owner's feedback and when it was recorded — so a reader sweeps a column instead of reading
- * cards. The selected claim opens in the inspector beside the ledger, with its whole query and
- * the feedback doors. Backed by /investigations/evidence/recent.
+ * A claim is a row, not a card: the sentence with the query beneath it, its confidence where one
+ * was counted, the owner's feedback and when it was recorded — so a reader sweeps a column instead
+ * of reading cards. The selected claim opens in the inspector beside the ledger, with its whole
+ * query and the feedback doors. Backed by /investigations/evidence/recent.
+ *
+ * Confidence is COUNTED or absent (the 2027 study, phase 1): a row written since then carries
+ * null, and the column says "not counted" rather than drawing a bar for a number nobody measured.
+ * The 0.8 / 0.5 that older rows carry were set by whether a phase called itself significant.
  *
  * Drawn only from what the ledger records (aughor/evidence). What the design shows and the ledger
  * does not carry is left out rather than invented:
@@ -162,7 +166,9 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
                       <span className="aug-ledger-text">{c.claim_text}</span>
                       <span className="aug-ledger-query">{query ?? "no query recorded"}</span>
                     </td>
-                    <td><Confidence value={c.confidence ?? 0} /></td>
+                    <td>{c.confidence == null
+                      ? <span className="aug-ledger-none" title="no counted confidence for this claim yet">not counted</span>
+                      : <Confidence value={c.confidence} />}</td>
                     <td>
                       {c.owner_feedback
                         ? <span className={FEEDBACK[c.owner_feedback].cls}>{FEEDBACK[c.owner_feedback].label}</span>
@@ -192,7 +198,9 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
           <div className="aug-inspector-head">
             <span className="aug-brief-eyebrow">Claim</span>
             <span className="aug-inspector-id">{shortId(selected.id)}</span>
-            <span className="aug-inspector-end"><Confidence value={selected.confidence ?? 0} title="confidence" /></span>
+            <span className="aug-inspector-end">{selected.confidence == null
+              ? <span className="aug-ledger-none" title="confidence">not counted</span>
+              : <Confidence value={selected.confidence} title="confidence" />}</span>
           </div>
 
           <div className="aug-inspector-sec">

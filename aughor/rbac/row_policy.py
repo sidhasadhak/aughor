@@ -9,8 +9,8 @@ Ships EMPTY: the mechanism is inert until a deployment declares policies here (o
 populates them). The most common policy is tenant isolation, e.g.::
 
     ROW_POLICIES = {
-        "viewer":  {"orders": "org_id = '{org_id}'"},
-        "analyst": {"orders": "org_id = '{org_id}'"},
+        "viewer":  {"events": "org_id = '{org_id}'"},
+        "analyst": {"events": "org_id = '{org_id}'"},
     }
 
 Owner is never filtered (sees everything). A caller holding several roles resolves to the MOST-permissive

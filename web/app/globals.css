@@ -1314,3 +1314,29 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
   .aug-metric-editor { grid-template-columns: minmax(0, 1fr); }
   .aug-metric-governance { order: -1; position: static; }
 }
+
+/* ── The 2027 screens (docs/PLATFORM_2027_STUDY_2026-10-04.md §V) — a destination's page at
+   reading width, its numbered sections, and a claim cited as one line. Sizes come from the
+   type classes in the markup; nothing here sets one. */
+.aug-page { max-width: 920px; margin: 0 auto; padding: 20px 28px 48px; }
+.aug-page-wide { max-width: 1240px; }
+.aug-section { padding: 0 0 24px; }
+.aug-section + .aug-section { border-top: 1px solid var(--b0); padding-top: 20px; }
+.aug-section-head { display: flex; align-items: baseline; gap: 10px; min-height: 28px; margin-bottom: 8px; }
+.aug-absent { margin: 0; padding: 6px 0; color: var(--t3); line-height: 1.55; max-width: 68ch; }
+.aug-claim-line { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--b0); }
+.aug-claim-line:last-child { border-bottom: none; }
+.aug-ledger-open { height: auto; padding: 0; white-space: normal; text-align: left; justify-content: flex-start; line-height: 1.45; }
+.aug-lede { margin: 0 0 4px; color: var(--t1); line-height: 1.4; max-width: 60ch; text-wrap: balance; }
+.aug-item { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--b0); }
+.aug-item:last-child { border-bottom: none; }
+.aug-item-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--t3); }
+.aug-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.aug-option { border: 1px solid var(--b1); border-radius: var(--r2); padding: 12px 14px; background: var(--bg-1); display: grid; gap: 6px; align-content: start; }
+.aug-option[data-chosen="true"] { border-color: var(--accent); background: var(--bg-sel); }
+.aug-form-grid { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px 16px; align-items: center; max-width: 720px; }
+.aug-form-grid > label { color: var(--t2); }
+.aug-brief-lines { display: grid; gap: 6px; padding: 10px 0 12px; border-bottom: 1px solid var(--b0); margin-bottom: 12px; }
+.aug-brief-line { display: flex; gap: 14px; align-items: baseline; }
+.aug-brief-line > .aug-label { flex: 0 0 132px; }
+.aug-brief-line-item { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 2px 0; }

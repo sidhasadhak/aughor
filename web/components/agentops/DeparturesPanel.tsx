@@ -110,7 +110,7 @@ export function DeparturesPanel({ onOpenAutomation, onOpenTrace }: Doors = {}) {
   }
 
   const by = summary?.by_state ?? {};
-  const held = (by.held ?? 0) + (by.held_probation ?? 0) + (by.held_owner ?? 0);
+  const held = (by.held ?? 0) + (by.held_probation ?? 0) + (by.held_owner ?? 0) + (by.held_budget ?? 0);
 
   return (
     <div style={{ flex: 1, background: "var(--bg-0)", display: "flex", flexDirection: "column", minHeight: 0 }}>

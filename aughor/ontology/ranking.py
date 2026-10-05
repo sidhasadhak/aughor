@@ -17,7 +17,7 @@ than quietly returning the same list.
 
 **What ranks, in order of authority:**
 
-1. **Declared source rank** (O1's synonym store: human > mined > llm_candidate). A human
+1. **Declared source rank** (O1's synonym store: human > mined > pack > llm_candidate). A human
    statement outranks every popularity signal — the governance property a popularity-only
    ranker cannot provide.
 2. **Usage** — ledger hits, drill records, trusted-query usage. Popularity, honestly

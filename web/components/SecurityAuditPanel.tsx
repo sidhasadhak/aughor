@@ -1,4 +1,6 @@
 "use client";
+import { GateMapView, PoliciesView } from "@/components/operations/GateMapPanel";
+import { requestTab } from "@/lib/navigate";
 import { ErrorState, Loading } from "@/components/ui/states";
 import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 
@@ -380,13 +382,17 @@ function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
 
 // ── Lens toggle ───────────────────────────────────────────────────────────────
 
-type Lens = "security" | "activity" | "approvals";
+// The gate map and the policies read back as sentences (the 2027 study §V, screen 12) are two more
+// views of this page, after the three it had.
+type Lens = "security" | "activity" | "approvals" | "gates" | "policies";
 
 function LensToggle({ value, onChange }: { value: Lens; onChange: (v: Lens) => void }) {
   const opts: { v: Lens; label: string }[] = [
     { v: "security", label: "Security" },
     { v: "activity", label: "Activity" },
     { v: "approvals", label: "Approvals" },
+    { v: "gates", label: "Gate map" },
+    { v: "policies", label: "Policies" },
   ];
   return (
     <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-1)", borderRadius: 6, border: "0.5px solid var(--b1)" }}>
@@ -485,7 +491,7 @@ function ActionApprovalsSection() {
       </div>
       {audit.length === 0 ? (
         <div style={{ fontSize: 12, color: "var(--t3)" }}>
-          No high-risk action attempts recorded. (Enable with AUGHOR_ACTION_APPROVAL.)
+          No high-risk action attempts recorded yet. The gate is on unless AUGHOR_ACTION_APPROVAL=0 switched it off.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 260, overflow: "auto" }}>
@@ -634,6 +640,11 @@ export function SecurityAuditPanel({
         <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
           <ActionApprovalsSection />
         </div>
+      )}
+
+      {lens === "gates" && <GateMapView />}
+      {lens === "policies" && (
+        <PoliciesView onOpenSettings={() => requestTab("settings")} onOpenSpend={() => requestTab("spend")} />
       )}
 
       {lens === "security" && (

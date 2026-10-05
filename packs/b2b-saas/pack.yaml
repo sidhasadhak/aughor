@@ -1,0 +1,32 @@
+id: b2b-saas
+name: B2B SaaS
+version: 1
+description: >
+  The B2B SaaS vertical package: the subscription book (MRR, ARR) and what it retains (net and gross revenue
+  retention), the cost of growing it (CAC payback), the sales motion (the sales cycle, with win rate and pipeline
+  coverage as watches), activation, and ARR growth — as formulas over declared roles, with plays, watches, mission
+  and scenario templates, measured the way the private-company surveys measure them.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - saas
+  - subscription
+  - b2b software
+  - recurring revenue
+extends: []
+scope:
+  connections: ["*"]
+# The 2027 study's close-out, C8 (2026-10-05): the second deep vertical of §P, drafted. A DRAFT is read by no agent
+# and steers no connection; a person's review makes it active (§3.17 gate 6) — and this one cannot be promoted
+# before that review, because every source it cites is marked `unread`: the publishers' pages were blocked by the
+# drafting environment's network egress, so each band's figures are as a web search index reported them on
+# 2026-10-05, not as read in the document. The reviewer reads each source, carries its figures in the words they
+# were published in, drops `unread`, and promotes.
+# `anatomy: 0`, deliberately: the anatomy's one part this package cannot carry is a named public dataset for gate 4
+# — no public subscription ledger with published figures exists (what is public is GAAP filings, which measure
+# revenue and gross margin and none of ARR, retention or churn). Every other rule of the static gate is held on it
+# by `tests/unit/test_b2b_saas_package.py`, which runs gate 3 with the anatomy forced and expects the dataset
+# finding alone. The industry's reference knowledge (the KB the agents read) stays in the `saas` package.
+anatomy: 0
+status: draft
+source: aughor

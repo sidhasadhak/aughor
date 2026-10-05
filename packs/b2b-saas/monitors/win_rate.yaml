@@ -1,0 +1,8 @@
+# A watch B2B SaaS keeps, with NO prior band and NO declared formula: the surveys publish one median (21%, Ebsta and
+# Pavilion 2024 and 2025, as indexed) and no spread, and a median is not a band. The install declares the metric —
+# opportunities won over opportunities closed in the period — and learns its own band. Said as unmeasured.
+id: win_rate
+metric: win_rate
+unit: ratio
+unmeasured: true
+description: Opportunities won over opportunities closed (won or lost) in the period, by close month.

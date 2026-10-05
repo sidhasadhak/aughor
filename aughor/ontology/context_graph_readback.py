@@ -94,10 +94,10 @@ def build_graph_prior(
 def _build(question: str, connection_id: str, org_id: str, top_k: int,
            max_chars: int = _SECTION_CAP) -> GraphPrior:
     from aughor.ontology.context_graph_search import merge_graphs, one_hop, search_graph
-    from aughor.ontology.context_graph_store import load_graphs_for_connection
+    from aughor.ontology.context_graph_store import graphs_for_connection
     from aughor.ontology.graph_warrant import warrant_of_edge, warrant_of_node
 
-    cg = merge_graphs(load_graphs_for_connection(org_id, connection_id))
+    cg = merge_graphs(graphs_for_connection(org_id, connection_id))   # rebuilt on demand (C3)
     if cg is None or not cg.nodes:
         return GraphPrior()
 

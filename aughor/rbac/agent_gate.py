@@ -39,7 +39,13 @@ _ARGS_CAP = 1200        # per call
 
 
 def is_agent_request(request: Request) -> bool:
-    return (request.headers.get(AGENT_HEADER) or "").strip().lower() == AGENT_MARK
+    """The MCP client's mark — or, since phase 7 of the 2027 study, a request a service principal
+    made: an outside vendor's agent is held to the organisation's agent policy whether or not it
+    marked itself."""
+    if (request.headers.get(AGENT_HEADER) or "").strip().lower() == AGENT_MARK:
+        return True
+    from aughor.security.service_principals import is_service
+    return is_service(getattr(request.state, "principal", None))
 
 
 def _bounded(value: Any) -> Any:

@@ -272,25 +272,20 @@ def supersede_older_methods(connection_id: str) -> list[str]:
     return superseded
 
 
-def stage_alert(connection_id: str, cand: Candidate, dist: Distribution, *,
-                settle_days: int = 1):
-    """One `monitor_bundle` proposal, the shape Spotlight's `draft_monitor` stages: the
-    anomaly monitor on the series plus the chain its breach fires, destination open.
-    Returns ``(proposal, created)``; created is False when the inbox already held it."""
-    from aughor.actions.inbox import StagedProposal, stage_proposal
+def watch_chain(connection_id: str, name: str, label: str) -> tuple[dict, list, list]:
+    """The chain a watch's breach fires — the deep analysis, then a post whose destination is
+    the approver's (SP-7's law) — validated as an `Automation` the way the accept will build
+    it. Returns ``(chain, holes to fill, open choices)``. One builder, so the Watcher's
+    anomaly watches and a pack prior's band watches (`packs/connect.py`) stage the same shape."""
     from aughor.agent.spotlight_act import open_choice_fields
     from aughor.automations.models import Automation, fill_required_holes
-    from aughor.org.context import current_org_id
 
-    name = f"{cand.label} anomaly watch"
-    monitor = {"conn_id": connection_id, "name": name, "custom_sql": cand.series_sql,
-               "alert_on": "anomaly", "sigma_threshold": dist.sigma, "check_cron": CHECK_CRON}
     chain = {
         "conn_id": connection_id, "name": name,
         "description": f"Fired by the '{name}' monitor; runs the deep analysis and posts it.",
         "conditions": [{"kind": "metric", "config": {"monitor_id": ""}}],
         "effects": [
-            {"kind": "investigate", "config": {"question": f"What moved {cand.label}, and where?"}},
+            {"kind": "investigate", "config": {"question": f"What moved {label}, and where?"}},
             {"kind": "slack_post", "config": {"channel": "", "bot_id": "",
                                               "message": {"$from": "step1.answer"}}},
         ],
@@ -298,11 +293,26 @@ def stage_alert(connection_id: str, cand: Candidate, dist: Distribution, *,
     filled_effects, holes = fill_required_holes(chain["effects"])
     Automation(**{**chain, "effects": filled_effects,
                   "conditions": [{"kind": "metric", "config": {"monitor_id": "…"}}]})
+    return chain, holes, open_choice_fields(chain)
+
+
+def stage_alert(connection_id: str, cand: Candidate, dist: Distribution, *,
+                settle_days: int = 1):
+    """One `monitor_bundle` proposal, the shape Spotlight's `draft_monitor` stages: the
+    anomaly monitor on the series plus the chain its breach fires, destination open.
+    Returns ``(proposal, created)``; created is False when the inbox already held it."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.org.context import current_org_id
+
+    name = f"{cand.label} anomaly watch"
+    monitor = {"conn_id": connection_id, "name": name, "custom_sql": cand.series_sql,
+               "alert_on": "anomaly", "sigma_threshold": dist.sigma, "check_cron": CHECK_CRON}
+    chain, holes, open_choices = watch_chain(connection_id, name, cand.label)
     proposal = StagedProposal(
         kind="monitor_bundle", org_id=current_org_id() or "", connection_id=connection_id,
         action_id=f"monitor:{name}+automation:{name}",
         params={"monitor": monitor, "automation": chain},
-        detail={"to_fill": holes, "open_choices": open_choice_fields(chain),
+        detail={"to_fill": holes, "open_choices": open_choices,
                 "watches": cand.name, "sigma": dist.sigma, "check_cadence": "daily",
                 "source": cand.source,
                 "distribution": {"n": dist.n, "mean": dist.mean, "std": dist.std,

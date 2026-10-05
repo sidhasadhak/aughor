@@ -345,12 +345,53 @@ def bound_end_state_names(connection_id: str, schema_name: Optional[str]) -> Opt
     return frozenset(n.lower() for n in names) if names else None
 
 
+def record_claims(report: Optional[ClaimsReport], graph: OntologyGraph, connection_id: str,
+                  schema_name: Optional[str]) -> dict:
+    """Phase 6 of the 2027 study — the pack's claims, measured against this connection, booked into
+    the Record (`record/writers.book_pack_claims`): the pack writer, best-effort by contract."""
+    if report is None or not connection_id:
+        return {"booked": 0}
+    try:
+        from aughor.record.writers import book_pack_claims
+        return book_pack_claims(report, connection_id=connection_id, schema_name=schema_name or "",
+                                fingerprint=str(getattr(graph, "schema_fingerprint", "") or ""))
+    except Exception as exc:  # noqa: BLE001 — the measurement stands on the graph; the Record's copy is said
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the pack's claims could not be booked into the Record", counter="packs.record_claims",
+                 conn_id=connection_id)
+        return {"booked": 0, "note": str(exc)[:160]}
+
+
+def propose_terms_on_build(graph: OntologyGraph, connection_id: str, schema_name: Optional[str]) -> dict:
+    """The close-out's C7 — a bound pack's object terms are proposed on the tables this build matched
+    its map to (`packs/connect.propose_terms`): the half of "terms proposed for confirmation" that
+    needs a graph. Idempotent; best-effort by contract."""
+    out: dict = {}
+    if not connection_id:
+        return out
+    for pid in bound_pack_ids(connection_id, schema_name):
+        try:
+            from aughor.packs.connect import propose_terms
+            pack = load_pack_by_id(pid)
+            if pack is not None:
+                out[pid] = propose_terms(pack, connection_id, schema_name=schema_name or "", graph=graph)
+        except Exception as exc:  # noqa: BLE001 — the build stands; the terms are proposed on the next one
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a bound pack's terms could not be proposed on the build", counter="packs.terms_on_build",
+                     conn_id=connection_id)
+    return out
+
+
 def apply_bound_pack_claims(graph: OntologyGraph, connection_id: str, schema_name: Optional[str],
                             db: Any = None) -> Optional[ClaimsReport]:
-    """Evaluate the maps of every pack deployed on the connection; the last report is returned."""
+    """Evaluate the maps of every pack deployed on the connection — and book each pack's claims into the
+    Record (phase 6); the last report is returned. Each bound pack's terms are proposed on the tables
+    the build matched (C7)."""
     report = None
     for pid in bound_pack_ids(connection_id, schema_name):
         po = resolve_ontology(pid)
         if po is not None:
             report = apply_core_claims(graph, po, pid, db)
+            record_claims(report, graph, connection_id, schema_name)
+    propose_terms_on_build(graph, connection_id, schema_name)
     return report

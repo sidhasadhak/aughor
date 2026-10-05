@@ -9,7 +9,7 @@ that may not does.
 
 That gap is a growth problem, and the K-plane is the thing growing. A declared action can
 POST a webhook, write an annotation, mutate an external system. Fan two of those out and
-the failure is not a crash — it is two refunds, or a webhook delivered twice, with no
+the failure is not a crash — it is two payouts, or a webhook delivered twice, with no
 error anywhere. The SQL gate cannot see it because no SQL is involved.
 
 **The checkpoint is on the dangerous side, not the fan-out side.** A helper every fan-out

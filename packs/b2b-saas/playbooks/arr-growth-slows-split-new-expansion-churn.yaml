@@ -1,0 +1,14 @@
+id: arr-growth-slows-split-new-expansion-churn
+kind: diagnostic
+trigger_metric: arr_growth_rate
+trigger_condition: ARR growth slows period over period
+trigger_operator: lt
+recommendation: >
+  ARR moves by four flows — new, expansion, contraction, churn — so split the change into them before reading
+  growth as a sales problem: a book can add the same new ARR as last year and grow slower because churn rose, or
+  because the base it grows from is larger. Read growth against the base's size and against the surveys' medians
+  for the company's ARR band, and read the quarter's growth as a quarter's, never annualised by four.
+expected_impact: The slowing is attributed to one of the four flows, with its owner.
+owner_role: Finance
+tags: [ARR growth, new ARR, expansion, churn]
+sources: [kbcm-sapphire-saas-survey-2025, benchmarkit-2025]

@@ -67,8 +67,9 @@ def as_moved():
     metric_kb._metric_vocabulary.cache_clear()
 
 
-#: PlaybookEntry fields added after the fixture was measured (IP-1's rule-outs).
-_ADDED_AFTER_THE_MOVE = ("cause", "fix")
+#: PlaybookEntry fields added after the fixture was measured: IP-1's rule-outs (`cause`, `fix`) and phase 5 of the
+#: 2027 study's learned-rate bookkeeping (`outcome_n`, `rate_source`) — neither is part of the move.
+_ADDED_AFTER_THE_MOVE = ("cause", "fix", "outcome_n", "rate_source")
 
 
 def _sha(lines) -> str:

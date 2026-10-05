@@ -72,6 +72,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { useOpenInQuery } from "@/lib/openInQuery";
 import { Pending } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
+import { BriefingRecordLines } from "@/components/brief/BriefingRecordLines";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodMeasures, PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, RangeMeasures, RangeSections, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
@@ -3130,6 +3131,11 @@ export function BriefingPanel({
       )}
 
       {showSchedule && <BriefSchedule connId={connectionId} />}
+
+      {/* The Record's lines, read first (the 2027 study §V, screen 3): each active mission's
+          objective against its baseline, the inquiries waiting on days to settle, and the
+          predictions in play. A canvas is a set of tables, not the connection a mission is on. */}
+      {!canvasId && connectionId && <BriefingRecordLines connectionId={connectionId} />}
 
       {isEmpty ? (
         <BriefingEmpty

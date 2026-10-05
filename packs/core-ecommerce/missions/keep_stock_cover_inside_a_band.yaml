@@ -1,0 +1,7 @@
+id: keep_stock_cover_inside_a_band
+name: Keep stock cover inside a band
+cadence: weekly
+objective: {metric: stock_cover_days, direction: hold, unit: days, text: "days of cover between the floor and the ceiling the business sets"}
+constraints:
+  - {metric: stock_out_rate, bound: at_most, unit: ratio}
+description: Enough stock to sell, not so much that it costs.

@@ -85,7 +85,10 @@ FLAG_ENV = {
     # graduated — mirror + endpoint hardwired, flag and off-path deleted.
     # Receipt on the GRADUATION_QUEUE tombstone below.
     "ask.converse": "AUGHOR_ASK_CONVERSE",
-    "ask.query_objects": "AUGHOR_ASK_QUERY_OBJECTS",
+    # "ask.query_objects" (AUGHOR_ASK_QUERY_OBJECTS) was DELETED 2026-10-04 with its tool —
+    # kill 8 of the 2027 study (ROADMAP §4.9; §6 item 39(b)). Parked 2026-09-11 on a measured
+    # regression (1/14 and 3/12 against raw 14/14 and 12/12) and never reopened; the compiler
+    # behind the object pages and `/objects/query` stays. An operator's env var is ignored.
     # AO-2b (2026-10-03): the API spawns, watches and restarts the Slack supervisor.
     "slack.managed_supervisor": "AUGHOR_SLACK_MANAGED_SUPERVISOR",
     # AO-6 (2026-10-03): the agents' testing centre — drafted questions, the nightly run.
@@ -93,7 +96,11 @@ FLAG_ENV = {
     # AO-7 (2026-10-03): one closed learning loop per custom agent.
     "agents.learning_loop": "AUGHOR_AGENTS_LEARNING_LOOP",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
-    "framing.choice_confidence": "AUGHOR_FRAMING_CHOICE_CONFIDENCE",
+    # "framing.choice_confidence" (AUGHOR_FRAMING_CHOICE_CONFIDENCE) was DELETED 2026-10-04 —
+    # kill 6 of the 2027 study (ROADMAP §4.9): its grid was blocked on a corpus that never
+    # existed, and CP-2's receipt (a model right 61% of the time at a stated confidence of
+    # about 1.0) is the evidence its run would have produced. The second response model went
+    # with it (`agent/framing.py`). An operator's env var is ignored.
     "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
     "semops.jev_cheap_tier": "AUGHOR_SEMOPS_JEV_CHEAP_TIER",
     "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
@@ -107,6 +114,11 @@ FLAG_ENV = {
     "cockpit.composed": "AUGHOR_COCKPIT_COMPOSED",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
+    # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
+    # rates, normal ranges for share metrics, method backtests, never a connection id or a claim's text —
+    # may LEAVE the install through POST /ledger/v1/aggregates/export. OFF (the default; the user's
+    # call): the export door refuses and says so; GET /ledger/v1/aggregates still reads it locally.
+    "aggregates.share": "AUGHOR_AGGREGATES_SHARE",
     "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
     "chat.buttons_reach_agent": "AUGHOR_CHAT_BUTTONS_REACH_AGENT",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
@@ -328,6 +340,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "aggregates.share": {
+        "label": "Let this install's aggregate priors leave it",
+        "description": "Allows POST /ledger/v1/aggregates/export to hand out this install's aggregate: how often each pack's claims held here, each play's learned success rate with its count, the normal band of metrics stated as a share, and registered methods' backtests. Never a connection id, a claim's text, a name or an absolute value of a metric that is not a share — a check refuses any document that carries one. Off by default: nothing leaves, the export door refuses and says so, and the aggregate can still be read locally at GET /ledger/v1/aggregates.",
+    },
     "agents.testing_centre": {
         "label": "A testing centre for custom agents",
         "description": "On an agent's Quality tab, 'Draft questions' asks the model for up to six golden QUESTIONS drawn from the connection's governed metrics and the agent's purpose — one model call per batch; the model never writes the answer, a person certifies each with SQL before it counts. Every night each enabled agent with certified goldens is re-measured on the production path and the result says which goldens newly fail or pass. Costs one model call per certified golden per agent per night. Off by default → the tab is exactly as today: goldens by hand, evaluation on a click.",
@@ -371,10 +387,6 @@ FLAG_META = {
     "ask.converse": {
         "label": "Answer through a conversation, not a single compiled query",
         "description": "Add agent bodies behind /ask: a quick turn becomes a real conversation whose tools wrap the existing guarded pipelines, and a deep turn becomes the ANALYST loop (CA-3) — the phase library as tools, the model choosing each next slice after seeing the last, the narrator writing the report from the evidence. Guards are unchanged and stay INSIDE the tools; the deterministic quick body and the deep phase script survive as the fallback whenever this is off. Off by default → /ask behaves exactly as today.",
-    },
-    "ask.query_objects": {
-        "label": "Offer the compiled object query to the conversation",
-        "description": "Put ON-2's query_objects tool at the head of the conversation's roster (it rides ask.converse): the model fills a typed object query — the object type, which objects, what to compute across which links, grouped how — and the SQL is COMPILED from the measured ontology, so a to-many link is pre-aggregated before the join and a sum across a to-one link is refused by construction. run_sql stays as the escape hatch under the guard battery. Offered only on a connection whose ontology is built. Off by default → the roster is exactly today's. PARKED 2026-09-11 after a measured regression (ROADMAP §6 item 15): leave it off.",
     },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
@@ -459,6 +471,12 @@ EXPERIMENT: dict = {
     # fields (set automatically, corrected by a person), says whether each figure is final,
     # provisional or to date, and writes each horizon as its own recipe. OFF → the Briefing,
     # its period versions and their subscriptions are exactly §3.27's.
+    "aggregates.share": "does an aggregate that leaves — base rates, normal ranges for share metrics, pack records, "
+                        "method backtests, never one install's claim — make a second install's priors better than the "
+                        "pack's own? Exit: a receiving install's pack claims held more often, or its first Briefing "
+                        "arrived sooner, with the aggregate than without; the user decides what may leave before "
+                        "any install sends one (the 2027 study §W, phase 7). Falsifier: no receiver measures a gain "
+                        "within two installs → the door is removed and aggregates stay local.",
     "briefing.ranges": "does a dated Briefing carry what the standing one cannot? Falsifier "
                        "(§3.48 BR-4): a person given the Day and the Month Briefing for theLook "
                        "beside the standing one cannot name a move only the dated one carries — "
@@ -491,7 +509,7 @@ EXPERIMENT: dict = {
     # question was answered by measurement — fewer champion calls AND, after the seam slim,
     # fewer total tokens, at higher accuracy. Receipt on the FLAG_DEFAULT entry.
     # JD-5 (ROADMAP §3.20; docs/JEV_LIVE_RECEIPT_2026-09-21.md). ON puts TypeSafe's Jev
-    # behind JD-1's seam as the banded cascade's CHEAP tier — customer row text leaves the
+    # behind JD-1's seam as the banded cascade's CHEAP tier — a tenant's row text leaves the
     # box, so every bundle rides govern.outbound (cap + EXTERNAL_CALL event), a PII-bearing
     # bundle is withheld whole, and any bundle Jev cannot answer falls back to the house
     # tier (aughor/judgment/jev.py). Needs TYPESAFE_API_KEY and AUGHOR_JEV_MODEL — no model
@@ -518,26 +536,9 @@ EXPERIMENT: dict = {
                              "band occupancy (~7%)? Falsifier: accuracy below the sampled "
                              "cascade's, or fallback rate so high the house tier is doing "
                              "the work anyway — then turn it off and say so in §3.20.",
-    # A1 (docs/JEV_ALIGN_STUDY_2026-09-19.md, finding A1). ON adds `confidence` to the
-    # definition chooser's response model, which CHANGES THE PROMPT — hence group D, not a
-    # free instrumentation switch. The off-arm ships the identical schema it ships today.
-    "framing.choice_confidence": "does asking the definition chooser for its own confidence "
-                          "(a) change which definition it picks, and (b) produce a number that "
-                          "separates the picks a person would overturn from the ones they would "
-                          "not? ⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-09-19): "
-                          "`choose_definition` runs only on an AMBIGUOUS frame — `chosen is None "
-                          "and len(candidates()) > 1`, where candidates() keeps only `usable` "
-                          "outcomes — and all 32 authored LuxExperience questions frame to 0 "
-                          "ambiguous (27 reach no usable candidate, 5 reach exactly one; measured "
-                          "through the read-only POST /ontology/frame, no model, no warehouse). A "
-                          "grid on those sets would buy a no-op on every case, which is the exact "
-                          "mistake `explore.route_wide` is parked for. UNBLOCK: author a set whose "
-                          "questions fit TWO executable declared measures on one connection, then "
-                          "grid the fired subset. EXIT once fired: graduate if agreement is "
-                          "unchanged within noise AND the recorded confidence is lower on "
-                          "overturned picks than on upheld ones; DELETE the flag and the second "
-                          "response model if the number is flat, because a probability that does "
-                          "not separate cannot rank a queue and A2 has no input",
+    # "framing.choice_confidence" left this set 2026-10-04: DELETED (see the FLAG_ENV
+    # tombstone) — its own exit clause was "delete if the number is flat", and CP-2 measured
+    # the flatness on the one corpus that exists.
     # Moved here from the graduation queue by batch B's premise check: queued as
     # "invocation-gated route", but `_federation_eligible` ALSO auto-federates fresh
     # /ask auto-depth turns — an LLM-bearing routing change nothing has measured.
@@ -557,14 +558,8 @@ EXPERIMENT: dict = {
     # defect ("Graduate as-is"). The flag STAYS — its off-path is not dead code but the
     # ineligible-turn fallback every converse turn still rides — so this is
     # FLAG_DEFAULT, not deletion.
-    "ask.query_objects": "PARKED 2026-09-11 by the user on a measured regression (ROADMAP §6 item 15): "
-                         "a model filling the object query scored 1/14 and 3/12 against raw 14/14 and "
-                         "12/12. The question stands — does the compiled door answer warehouse "
-                         "questions at least as well as model-written SQL? — but reopen it only with a "
-                         "set where raw FAILS and a fill that fixes the malformed shapes (object_type "
-                         "required, op an enum, metric exclusive of path); a re-run where raw is at "
-                         "ceiling can at best tie. Graduation would make query_objects the roster's "
-                         "primary door; deleting the flag and the tool is the other exit",
+    # "ask.query_objects" left this set 2026-10-04: DELETED with its tool (see the FLAG_ENV
+    # tombstone) — "deleting the flag and the tool is the other exit", and the user took it.
     "explore.route_wide": "do landscape questions answer better through the explore wave? "
                           "⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-08-07): "
                           "is_wide_question fires on 0/102 of the reference suite "

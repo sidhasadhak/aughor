@@ -219,8 +219,10 @@ class _Deck:
             if b.tag:
                 _para(tf, b.tag, size=10, color=_MUTED)
             if b.confidence is not None:
-                pct = int(round(b.confidence * 100))
-                _para(tf, f"confidence: {pct}%", size=10, color=_MUTED)
+                # a word, never a percentage: the number is the model's estimate of itself, and a
+                # figure on a slide reads as a counted frequency it is not (the 2027 study §B)
+                label = "High" if b.confidence >= 0.75 else "Medium" if b.confidence >= 0.5 else "Low"
+                _para(tf, f"stated confidence: {label}", size=10, color=_MUTED)
         elif b.kind == "recs":
             tf = self._body_tf()
             for i, r in enumerate(b.recs, 1):

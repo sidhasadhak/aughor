@@ -121,7 +121,8 @@ class TestApprovalActuallyBlocks:
         assert seen and seen[0][0] == action and seen[0][2] == "auto"
 
     def test_approval_off_is_a_no_op_for_every_action(self, monkeypatch):
-        """The default posture: governance is opt-in, so a fresh clone is unchanged by G1."""
+        """The kill switch: with AUGHOR_ACTION_APPROVAL=0 the gate is a no-op for every tier.
+        (On by default since 2026-10-04 — `test_govern_actions` proves the default.)"""
         monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
         from aughor import govern
 

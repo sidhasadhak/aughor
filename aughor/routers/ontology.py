@@ -230,6 +230,10 @@ class _KineticActionBody(BaseModel):
     origin: Optional[str] = None
     object_type: Optional[str] = None                # ON-4 — the object type the action is about
     edits: Optional[list] = None                     # ON-4 — each {object, property, value, note}
+    # phase 4 of the 2027 study — reversibility, the verification read and the undo
+    reversibility: Optional[str] = None              # undoable | compensable | irreversible
+    verification: Optional[dict] = None              # {sql, expects, value, note}
+    undo: Optional[dict] = None                      # {action_id, window_hours, params, note}
 
 
 class _MergeEntitiesRequest(BaseModel):
@@ -402,8 +406,9 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
 
 
 #: Public name for the served-graph read, for callers outside this router: the object plane
-#: (routers/objects.py) and the converse `query_objects` tool compile against exactly the graph
-#: `GET /ontology` returns, under the same scope rule — one read, never a second opinion.
+#: (routers/objects.py) compiles against exactly the graph `GET /ontology` returns, under the
+#: same scope rule — one read, never a second opinion. (The converse `query_objects` tool that
+#: also read it was deleted 2026-10-04, kill 8 of the 2027 study.)
 served_ontology_graph = _get_ontology_graph
 
 
@@ -2812,6 +2817,13 @@ def author_kinetic_action(
     problem = _object_types_problem(declared, _get_ontology_graph(connection_id, effective))
     if problem:
         raise HTTPException(status_code=422, detail=f"invalid action spec: {problem}")
+    # Phase 4 of the 2027 study (§M): a side-effect action is declared with the read that verifies
+    # it and the undo that compensates it, or declared irreversible by name — refused here, at the
+    # declaration, never discovered at execute.
+    from aughor.actions.authority import declaration_problem
+    incomplete = declaration_problem(declared)
+    if incomplete:
+        raise HTTPException(status_code=422, detail=f"incomplete declaration: {incomplete}")
     ov = OntologyOverride(target_kind="action", target_id=action_id, fields=fields)
     ov, _ = _bind_and_persist(connection_id, effective, ov)
     return _override_result(ov)

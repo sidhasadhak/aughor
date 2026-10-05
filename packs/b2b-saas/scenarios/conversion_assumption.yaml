@@ -1,0 +1,16 @@
+# Method 1 — new MRR from the signup funnel is an identity over declared inputs: signups, the share that activate,
+# the share of those that convert, and the average revenue per account. A plan that assumes a higher conversion
+# varies `conversion_rate`; the assumption is a person's (method 2), never this formula's.
+id: conversion_assumption
+name: New MRR from the signup funnel
+for_kind: decision
+method: identity
+metric: new_mrr
+unit: currency
+formula: signups * activation_rate * conversion_rate * arpa
+inputs: [signups, activation_rate, conversion_rate, arpa]
+varied: [conversion_rate]
+limits:
+  - "activation and conversion rates are the latest measured cohort's or a declared plan's, stated with its author"
+  - "an identity over averages: the mix of plans behind `arpa` is held fixed"
+description: What a change in conversion does to new MRR, the funnel held fixed.

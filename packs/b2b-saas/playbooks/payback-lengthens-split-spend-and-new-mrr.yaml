@@ -1,0 +1,15 @@
+id: payback-lengthens-split-spend-and-new-mrr
+kind: diagnostic
+trigger_metric: cac_payback_months
+trigger_condition: CAC payback lengthens period over period
+trigger_operator: gt
+recommendation: >
+  Read the numerator and the denominator apart: payback lengthens when sales and marketing spend grows faster
+  than the new MRR it wins, when new MRR falls at flat spend, and when gross margin falls under unchanged spend
+  and bookings. Then split new MRR by segment and channel — a quarter that won smaller accounts at the same cost
+  reads longer — and look for spend booked in a period whose deals close in the next, which is the shape a
+  lengthening sales cycle gives this metric before anything is wrong.
+expected_impact: The lengthening is attributed to spend, to new revenue or to margin, with the segment named.
+owner_role: Finance
+tags: [CAC payback, sales efficiency, new MRR]
+sources: [benchmarkit-2025, kbcm-sapphire-saas-survey-2025]

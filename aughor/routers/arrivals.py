@@ -33,6 +33,7 @@ class SlackArrival(BaseModel):
     text: str
     author: str = ""        # display name, best-effort ("Ana")
     author_ref: str = ""    # principal-ish ref when known ("slack:U123")
+    reply_ts: str = ""      # the REPLY's own ts when the bot sends it — one claim per reply in the Record
 
 
 @router.post("/arrivals/slack")
@@ -109,10 +110,25 @@ def slack_arrival(body: SlackArrival):
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the claim check is best-effort; the note is staged unchecked", counter="claims.check")
+    # The hub writer (the 2027 study §E, the last of the five shapes): what was said is a SAID claim
+    # in the Record, one per reply — a second reply on the same object is counted beside the first,
+    # never over it (the staged note above still shows the latest check). Best-effort.
+    claim_id = None
+    try:
+        from aughor.record.writers import book_said_claim, reply_id_for
+        claim_id = book_said_claim(
+            text=text, object_ref=str(link["object_ref"]), connection_id=conn_id,
+            reply_id=reply_id_for(reply_ts=body.reply_ts.strip(), author_ref=body.author_ref, author=body.author, text=text),
+            check=check.to_dict() if check is not None else {"verification": "unchecked", "note": "the check did not run"},
+            author=provenance["author"], author_ref=body.author_ref, thread_ref=ref, observed_at=provenance["observed_at"])
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the said claim could not be booked into the Record; the staged note stands", counter="record.said_claim")
     return {"action": outcome.action, "object_ref": link["object_ref"],
             "recommendation_id": outcome.recommendation_id,
             "note": text, "provenance": provenance,
             "check": check.to_dict() if check is not None else None,
+            "claim": claim_id,
             "why": outcome.reason}
 
 

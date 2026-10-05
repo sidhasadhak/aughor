@@ -145,7 +145,12 @@ def history(conn_id: str, *, scope_key: str, range_key: str, recipe: str = "",
     key = natural_key(conn_id, scope_key=scope_key, range_key=range_key, recipe=recipe)
     try:
         from aughor.kernel.ledger import Ledger
-        return Ledger.default().artifact_versions(key, limit=limit)
+        from aughor.security.authz import tenant_scope
+        rows = Ledger.default().artifact_versions(key, limit=limit)
+        # The organisation first (the 2027 study §E item 2): a key is read by its text alone, so with
+        # identity on the rows another organisation wrote under it are not this reader's.
+        org = tenant_scope()
+        return rows if org is None else [r for r in rows if not r.get("org_id") or r.get("org_id") == org]
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a Briefing's history is additive; the page stands without it",

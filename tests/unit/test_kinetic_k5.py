@@ -17,15 +17,20 @@ from aughor.routers import ontology as ONT
 @pytest.fixture(autouse=True)
 def _iso(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ov")
-    monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
 
 
 def _valid_body() -> "ONT._KineticActionBody":
+    # Phase 4 of the 2027 study: a side-effect action is declared with the read that verifies it
+    # and the undo that compensates it — the door refuses one without (test_action_authority).
     return ONT._KineticActionBody(
         kind="side_effect", display_name="Refund order",
         params=[{"name": "amount", "data_type": "NUMERIC", "required": True}],
         submission_criteria=[{"expr": "amount <= 100", "message": "cap is EUR 100"}],
-        side_effects=[{"kind": "webhook", "config": {"url": "https://x"}}], risk="high")
+        side_effects=[{"kind": "webhook", "config": {"url": "https://x"}}], risk="high",
+        reversibility="compensable",
+        verification={"sql": "SELECT 1 FROM refunds WHERE amount = {amount}", "expects": "rows"},
+        undo={"action_id": "reverse_refund", "window_hours": 72})
 
 
 # ── author a declared action ──────────────────────────────────────────────────────

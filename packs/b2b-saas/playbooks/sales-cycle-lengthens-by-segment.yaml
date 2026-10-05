@@ -1,0 +1,15 @@
+id: sales-cycle-lengthens-by-segment
+kind: diagnostic
+trigger_metric: sales_cycle_days
+trigger_condition: the sales cycle lengthens period over period
+trigger_operator: gt
+recommendation: >
+  Read the cycle by segment and by new business against expansion before calling it a sales problem: enterprise
+  deals close in near four times the days of SMB deals and expansion in half the days of new business, so a
+  quarter with more enterprise or more new business in it reads longer at unchanged selling. Then read the stage
+  the days accrue in — a cycle lengthening in negotiation points at pricing and procurement, in qualification at
+  pipeline quality.
+expected_impact: The lengthening is attributed to the deal mix or to one stage, each with an owner.
+owner_role: Sales Operations
+tags: [sales cycle, pipeline, segment]
+sources: [ebsta-pavilion-gtm-2025]

@@ -494,7 +494,7 @@ function EvidenceClaimCard({
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
         <div style={{
           width: 6, height: 6, borderRadius: "50%", flexShrink: 0, marginTop: 5,
-          background: TIER_COLOR[confidenceTier(claim.confidence)],
+          background: claim.confidence == null ? "var(--t3)" : TIER_COLOR[confidenceTier(claim.confidence)],
         }} />
         <p style={{ flex: 1, fontSize: 12, color: "var(--t1)", lineHeight: 1.5 }}>
           {claim.claim_text}
@@ -506,8 +506,11 @@ function EvidenceClaimCard({
         )}
       </div>
 
-      {/* Confidence bar */}
-      <Confidence value={claim.confidence} />
+      {/* Confidence bar — only for a counted number; a null (every row since the 2027 study's
+          phase 1) says so instead of drawing a bar for a figure nobody measured */}
+      {claim.confidence == null
+        ? <span style={{ fontSize: 11, color: "var(--t3)" }}>confidence not counted</span>
+        : <Confidence value={claim.confidence} />}
 
       {/* Meta row */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>

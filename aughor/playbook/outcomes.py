@@ -49,6 +49,17 @@ class RecOutcome(BaseModel):
     review_asked_to: str = ""            # principal the question went to
     review_asked_at: str = ""
     review_note: str = ""                # why a baseline or review could not be measured
+    # Phase 3 of the 2027 study — the review measures the metric's OWN HISTORY beside the "before":
+    # what the prior windows predicted for the review window (method 3, `record/scenario.py`),
+    # with its band, so the outcome is judged against what would have happened anyway. The Record's
+    # outcome id and how the question was delivered ride here too. Additive: older rows carry none.
+    history_value: Optional[float] = None
+    history_low: Optional[float] = None
+    history_high: Optional[float] = None
+    history_n: int = 0
+    history_note: str = ""
+    record_outcome_id: str = ""
+    review_delivery: dict = Field(default_factory=dict)
 
 
 from aughor.util.time import now_iso_z as _now
@@ -104,12 +115,15 @@ def log_outcome(
             # before/after the answer is judged on default to the measured baseline and review.
             kept = {k: o.get(k) for k in _REVIEW_FIELDS if k in o}
             merged = {**outcome.model_dump(), **kept, "created_at": o.get("created_at", _now())}
+            # The numbers an earlier request gave are kept too: an answer that names no "before"
+            # does not erase the one the acceptance recorded (measured 2026-10-05 — the review
+            # answer dropped it, and the Record's outcome then had nothing to take a change against).
             if merged.get("metric_before") is None:
-                merged["metric_before"] = kept.get("baseline_value")
+                merged["metric_before"] = o.get("metric_before") if o.get("metric_before") is not None else kept.get("baseline_value")
             if merged.get("metric_after") is None:
-                merged["metric_after"] = kept.get("review_value")
+                merged["metric_after"] = o.get("metric_after") if o.get("metric_after") is not None else kept.get("review_value")
             if not merged.get("metric_name"):
-                merged["metric_name"] = (kept.get("spec") or {}).get("metric_label") or None
+                merged["metric_name"] = o.get("metric_name") or (kept.get("spec") or {}).get("metric_label") or None
             outcome = RecOutcome(**merged)
             raw[i] = outcome.model_dump()
             _save_raw(raw, path)
@@ -130,7 +144,9 @@ def log_outcome(
 
 _REVIEW_FIELDS = ("connection_id", "accepted_by", "spec", "baseline_value", "baseline_at", "baseline_window",
                   "review_days", "review_at", "review_value", "reviewed_at", "review_window", "review_question",
-                  "review_asked_to", "review_asked_at", "review_note")
+                  "review_asked_to", "review_asked_at", "review_note",
+                  "history_value", "history_low", "history_high", "history_n", "history_note",
+                  "record_outcome_id", "review_delivery")
 DEFAULT_REVIEW_DAYS = 30
 _QUALIFIED_REF = re.compile(r"\b([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)(?:\.([A-Za-z_][\w]*))?\b")
 
@@ -289,10 +305,12 @@ def run_due_reviews(now: Optional[datetime] = None, *, run_sql_for, path: Path |
     reviewed = []
     for o in due_reviews(now, path):
         value, label, note = None, "", ""
+        hist: dict = {}
         if o.spec:
             try:
                 run_sql = run_sql_for(o.connection_id, internal=True)
                 value, label, note = measure_spec(o.spec, run_sql, end_day=now.date() - timedelta(days=1))
+                hist = _history_fields(o.spec, run_sql, end_day=now.date() - timedelta(days=1))
             except Exception as exc:  # noqa: BLE001 — recorded on the row
                 note = f"review measurement failed: {str(exc)[:160]}"
         else:
@@ -301,11 +319,45 @@ def run_due_reviews(now: Optional[datetime] = None, *, run_sql_for, path: Path |
         notes = "; ".join(x for x in (note or o.review_note, owner_note) if x)
         fields = {"review_value": value, "reviewed_at": now.isoformat(), "review_window": label,
                   "review_question": review_question(o, value, label), "review_asked_to": asked_to,
-                  "review_asked_at": now.isoformat(), "review_note": notes}
+                  "review_asked_at": now.isoformat(), "review_note": notes, **hist}
         if value is not None and o.metric_after is None:
             fields["metric_after"] = value
-        reviewed.append(_update(o.id, fields, path))
+        updated = _update(o.id, fields, path)
+        # Phase 3 of the 2027 study — the review BOOKS the outcome in the Record with both verdicts
+        # (against the expectation, against the metric's own history), scores the prediction, and
+        # DELIVERS the question to the resolved owner through the departure gate. Each best-effort,
+        # each recorded on the row: a review that could not be delivered says so, never nothing.
+        extra_fields: dict = {}
+        try:
+            from aughor.record.byproducts import outcome_from_review
+            oid = outcome_from_review(updated)
+            if oid:
+                extra_fields["record_outcome_id"] = oid
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the review ran; its outcome could not be booked in the Record", counter="review.outcome")
+        try:
+            from aughor.playbook.review_delivery import deliver_review_question
+            extra_fields["review_delivery"] = deliver_review_question(updated, now=now)
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the review ran; its question could not be delivered", counter="review.deliver")
+            extra_fields["review_delivery"] = {"status": "failed", "note": f"delivery failed: {str(exc)[:160]}"}
+        reviewed.append(_update(o.id, extra_fields, path) if extra_fields else updated)
     return reviewed
+
+
+def _history_fields(spec: dict, run_sql, *, end_day: "date") -> dict:
+    """Method 3 on the review window: the metric's own prior windows, as fields on the record."""
+    try:
+        from aughor.record.scenario import history
+        p = history(spec, run_sql, end_day=end_day)
+    except Exception as exc:  # noqa: BLE001 — a baseline that cannot be read is a note, never a number
+        return {"history_note": f"history baseline failed: {str(exc)[:160]}"}
+    if p.value is None:
+        return {"history_note": p.note or "no history baseline", "history_n": int((p.backtest or {}).get("n") or 0)}
+    return {"history_value": p.value, "history_low": p.low, "history_high": p.high,
+            "history_n": int((p.backtest or {}).get("n") or 0), "history_note": " · ".join(p.must_say)}
 
 
 def _update(outcome_id: str, fields: dict, path: Path | None = None) -> RecOutcome:
@@ -328,34 +380,60 @@ def load_all_outcomes(path: Path | None = None) -> list[RecOutcome]:
     return [RecOutcome(**o) for o in _load_raw(path)]
 
 
+def _record_verdicts(path: Path | None = None) -> dict[str, tuple[str, str]]:
+    """Phase 5 — the Record's measured verdict per recommendation record (``{rec outcome id: (verdict,
+    inv_id)}``): the review's own comparison against the metric's history, which outranks a person's
+    answer for the same record. A verdict of ``cannot_tell`` is not a case."""
+    try:
+        from aughor.record import decisions as D
+    except Exception:  # noqa: BLE001 — no Record, no measured verdicts
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    for d in D.list_decisions(limit=2000):
+        if d.source.kind != "recommendation" or not d.outcome:
+            continue
+        o = D.outcome_by_id(d.outcome)
+        if o is None or o.verdict == "cannot_tell":
+            continue
+        out[d.source.ref] = (o.verdict, str(d.extra.get("investigation_id") or ""))
+    return out
+
+
 def update_playbook_success_rates(path: Path | None = None) -> int:
-    """
-    Recompute historical_success_rate for all playbook entries that have outcomes.
-    Returns the number of entries updated.
-    """
+    """Recompute each matched play's success rate FROM OUTCOMES, not from use (phase 5): the Record's
+    measured verdict on a decision's review date counts first (as expected or better is a hit, worse
+    a miss); a person's answer (verified · rejected) counts for a record the Record has not measured.
+    The rate is stored with its count (``outcome_n``) and its source, so a reader sees "held in 3 of
+    4" and never a bare percentage. Returns the number of entries updated."""
     from aughor.playbook.retriever import retrieve_for_metric_and_phases
     from aughor.playbook.store import get_entry, save_entry
 
+    measured = _record_verdicts(path)
     outcomes = load_all_outcomes(path)
-    terminal = [o for o in outcomes if o.status in ("verified", "rejected")]
-    if not terminal:
+    cases: list[tuple[RecOutcome, bool, str]] = []          # (record, hit, source)
+    for o in outcomes:
+        if o.id in measured:
+            verdict, _inv = measured[o.id]
+            cases.append((o, verdict in ("as_expected", "better"), "record"))
+        elif o.status in ("verified", "rejected"):
+            cases.append((o, o.status == "verified", "answers"))
+    if not cases:
         return 0
 
     # Group outcomes by matched playbook entry
-    entry_stats: dict[str, dict] = {}  # entry_id -> {wins, total}
-    for outcome in terminal:
+    entry_stats: dict[str, dict] = {}  # entry_id -> {wins, total, sources, from}
+    for outcome, hit, source in cases:
         # Match the recommendation text to playbook entries
         matches = retrieve_for_metric_and_phases([outcome.rec_text], limit=1)
         if not matches:
             continue
         entry = matches[0]
-        if entry.id not in entry_stats:
-            entry_stats[entry.id] = {"wins": 0, "total": 0, "sources": []}
-        entry_stats[entry.id]["total"] += 1
-        if outcome.status == "verified":
-            entry_stats[entry.id]["wins"] += 1
-        if outcome.inv_id not in entry_stats[entry.id]["sources"]:
-            entry_stats[entry.id]["sources"].append(outcome.inv_id)
+        stats = entry_stats.setdefault(entry.id, {"wins": 0, "total": 0, "sources": [], "from": set()})
+        stats["total"] += 1
+        stats["wins"] += hit
+        stats["from"].add(source)
+        if outcome.inv_id not in stats["sources"]:
+            stats["sources"].append(outcome.inv_id)
 
     updated = 0
     for entry_id, stats in entry_stats.items():
@@ -363,6 +441,8 @@ def update_playbook_success_rates(path: Path | None = None) -> int:
         if not entry:
             continue
         entry.historical_success_rate = stats["wins"] / stats["total"] if stats["total"] else 0.0
+        entry.outcome_n = int(stats["total"])
+        entry.rate_source = "record" if stats["from"] == {"record"} else "answers" if stats["from"] == {"answers"} else "record+answers"
         entry.evidence_sources = stats["sources"]
         # Auto-promote to active if success rate >= 50% with at least 2 outcomes
         if entry.status == "draft" and stats["total"] >= 2 and entry.historical_success_rate >= 0.5:

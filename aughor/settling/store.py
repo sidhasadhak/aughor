@@ -91,8 +91,8 @@ def connection_lag(connection_id: str) -> dict:
     table has earned a verdict yet, ``days`` is None).
 
     Before 2026-09-25 a table still moving at the horizon was simply left out of the max:
-    theLook read "13 days, learned" while ``order_items`` — the table revenue and returns
-    come from — had not settled at 14 (Arc BR's survey, ROADMAP §3.48)."""
+    theLook read "13 days, learned" while ``order_items`` — the table the headline amounts
+    and returns come from — had not settled at 14 (Arc BR's survey, ROADMAP §3.48)."""
     out: dict = {"days": None, "source": None, "still_moving": [], "horizon": 0}
     if not connection_id:
         return out

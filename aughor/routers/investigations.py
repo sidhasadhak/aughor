@@ -260,6 +260,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         except Exception:
             logger.debug("column lineage skipped", exc_info=True)
         enf = None
+        _metrics_used: list[str] = []
         try:
             from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
             from aughor.semantic.enforcement import (
@@ -279,6 +280,8 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             for v in verdicts:
                 rel = "metric_used" if v["status"] == "used" else "metric_drift"
                 lineage.append((rel, f"metric:{v['metric']}", v["detail"]))
+                if v["status"] == "used":
+                    _metrics_used.append(str(v["metric"]))
             enf = enforcement_summary(verdicts)
             # B-7 propose-to-define: KPI concepts the question names that nothing
             # governs yet — surfaced so the user can define them (then they're enforced).
@@ -407,12 +410,29 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             headline=headline if _concluded else "", sql=sqls[0] if sqls else "",
             tables=sorted(seen),
         )
+        # Phase 1 of the 2027 study (ROADMAP §3.53): the answer becomes a CLAIM in the Record,
+        # warranted by this receipt — an observation when it concluded something with a query
+        # behind it, and for a deep analysis its findings beside it. One writer, every caller,
+        # for the same reason the graph note lives here. Best-effort; the receipt stands without it.
+        _claims: dict = {"observation": None, "findings": []}
+        try:
+            from aughor.record.writers import book_from_receipt
+            _claims = book_from_receipt(
+                kind=kind, natural_key=natural_key, receipt_id=_receipt_id, connection_id=connection_id,
+                question=question, headline=headline if _concluded else "", sql=sqls[0] if sqls else "",
+                metrics_used=_metrics_used, agent=_agent, canvas_id=canvas_id or "",
+                payload_extra=payload_extra or {})
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the Record's claim is best-effort; the Trust Receipt stands without it",
+                     counter="chat.receipt_claim", conn_id=connection_id)
         # `receipt_id` is the stable artifact id → the unified GET /receipt/{id} (WP-10); a
         # streaming caller emits it so the UI's "Why this number" opens the public receipt.
-        return {"learning": _learning, "activations": _activations, "receipt_id": _receipt_id}
+        return {"learning": _learning, "activations": _activations, "receipt_id": _receipt_id,
+                "claim_id": _claims.get("observation"), "finding_claims": _claims.get("findings") or []}
     except Exception:
         logger.debug("%s receipt write failed", kind, exc_info=True)
-    return {"learning": None, "activations": None, "receipt_id": None}
+    return {"learning": None, "activations": None, "receipt_id": None, "claim_id": None, "finding_claims": []}
 
 
 #: Public name for the Trust-Receipt writer. The converse tool loop's `run_sql`
@@ -956,13 +976,28 @@ class AskRequest(BaseModel):
     skip_cache: bool = False
 
 
+class ExpectationRequest(BaseModel):
+    """The expectation line an acceptance may carry (the 2027 study §K): a metric, a direction, a
+    band at a stated coverage. Booked as a prediction claim with the decision; nothing is guessed
+    from the recommendation's wording when it is absent."""
+    metric: str = ""                     # defaults to the answer's own metric (report.spec) when ""
+    direction: str = ""                  # up | down | hold
+    low: Optional[float] = None
+    mid: Optional[float] = None
+    high: Optional[float] = None
+    unit: str = ""                       # "%" for a relative change, else the metric's own
+    coverage: float = 0.8
+    text: str = ""
+
+
 class OutcomeRequest(BaseModel):
     rec_text: str
     status: str
     metric_name: Optional[str] = None
     metric_before: Optional[float] = None
     metric_after: Optional[float] = None
-    review_days: Optional[int] = None    # CB-2: when to measure again and ask (default 30)
+    review_days: Optional[int] = None    # CB-2: when to measure again and ask (default 30 + the settling lag)
+    expectation: Optional[ExpectationRequest] = None   # phase 1 of the 2027 study: the decision's expectation line
 
 
 _ID_COL_RE = re.compile(r"(^|_)(id|key|sk|pk|code)$", re.IGNORECASE)
@@ -4125,6 +4160,20 @@ async def _stream_investigation(
     inv_id = create_investigation(question, connection_id, canvas_id=canvas_id,
                                   agent_id=_current_agent_id(), purpose=purpose,
                                   session_id=session_id or "")
+    # Phase 2 of the 2027 study — the run is opened INSIDE an inquiry: a person's ask opens one
+    # (or wakes the one on the same subject opened in the last fortnight), so what the run
+    # establishes, leaves open and refutes outlives the run. Best-effort, off the loop.
+    try:
+        from aughor.org.context import current_user_id
+        from aughor.record.inquiry import open_inquiry
+        _uid = current_user_id()
+        await asyncio.to_thread(lambda: open_inquiry(
+            question=question, connection_id=connection_id, run_id=inv_id,
+            opened_by=f"person:{_uid}" if _uid else "person"))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the inquiry could not be opened; the run proceeds and lands on one when it completes",
+                 counter="inquiry.open", conn_id=connection_id)
     from aughor import telemetry as _telemetry
     trace_id = _telemetry.new_trace(inv_id, question, connection_id)
     yield _sse("start", {"question": question, "connection_id": connection_id, "investigation_id": inv_id, "trace_id": trace_id})
@@ -6774,8 +6823,49 @@ def _record_acceptance(inv_id: str, outcome, req: "OutcomeRequest", principal):
                  counter="outcomes.baseline_connection", conn_id=connection_id or None)
         why = f"connection unavailable: {str(exc)[:120]}"
         run_sql = lambda sql: ([], [], why)  # noqa: E731
-    return record_acceptance(outcome, spec=spec, connection_id=connection_id, accepted_by=accepted_by,
-                             run_sql=run_sql, review_days=req.review_days)
+    # Phase 1 of the 2027 study: the review date is PROPOSED from the connection's learned settling
+    # lag when the person named none, so the review reads settled days; the decision below records
+    # which rule set it. One date — the outcome record's and the decision's are the same day.
+    from datetime import datetime as _datetime, timezone as _timezone
+    now = _datetime.now(_timezone.utc)
+    review_days, review_on_why = req.review_days, ""
+    if review_days and int(review_days) > 0:
+        review_on_why = f"{int(review_days)} days, as the person asked"
+    else:
+        from aughor.record.decisions import propose_review_on
+        review_on, review_on_why = propose_review_on(connection_id, now)
+        review_days = max((_datetime.fromisoformat(review_on).date() - now.date()).days, 1)
+    outcome = record_acceptance(outcome, spec=spec, connection_id=connection_id, accepted_by=accepted_by,
+                                run_sql=run_sql, review_days=review_days, now=now)
+    _book_recommendation_decision(outcome, chosen="accept", decided_by=accepted_by, connection_id=connection_id,
+                                  req=req, spec=spec, review_on_why=review_on_why)
+    return outcome
+
+
+def _book_recommendation_decision(outcome, *, chosen: str, decided_by: str, connection_id: str,
+                                  req: "OutcomeRequest", spec: Optional[dict], review_on_why: str = "") -> None:
+    """The acceptance (or decline) IS a decision; book it as a by-product (the 2027 study §K,
+    `aughor/record/byproducts.py`). Best-effort: the outcome record stands when the booking fails."""
+    try:
+        from aughor.record.byproducts import decision_from_recommendation, expectation_from
+        exp_fields = req.expectation.model_dump() if req.expectation is not None else None
+        default_metric = (spec or {}).get("metric_label") or req.metric_name or ""
+        expectation = expectation_from(exp_fields, default_metric=default_metric) if exp_fields is not None else None
+        decision_from_recommendation(outcome, chosen=chosen, decided_by=decided_by or "unidentified",
+                                     connection_id=connection_id, expectation=expectation,
+                                     review_on=(outcome.review_at or "")[:10], review_on_why=review_on_why)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "booking the decision in the Record is best-effort; the acceptance itself is logged",
+                 counter="record.decision_from_recommendation", conn_id=connection_id or None)
+
+
+def _who_decided(principal) -> str:
+    for attr in ("user_id", "email", "id", "sub", "name"):
+        v = getattr(principal, attr, "") if principal is not None else ""
+        if v:
+            return str(v)
+    return ""
 
 
 @router.post("/investigations/{inv_id}/recommendations/{rec_index}/outcome", status_code=201)
@@ -6790,6 +6880,24 @@ def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest,
             tolerate(exc, "recording the acceptance baseline is best-effort; the acceptance itself is logged",
                      counter="outcomes.baseline")
     if req.status in ("verified", "implemented", "rejected"):
+        # Phase 1 of the 2027 study: a decline before any acceptance is itself a decision (chosen:
+        # decline); an answer after one is the decision's OUTCOME against its expectation.
+        try:
+            from aughor.record import decisions as _decisions
+            from aughor.record.byproducts import outcome_from_review_answer
+            _src = _decisions.Source(kind="recommendation", ref=outcome.id)
+            if _decisions.latest_decision(_src) is None and req.status == "rejected":
+                _inv = get_investigation(inv_id) or {}
+                _report = _inv.get("report") if isinstance(_inv.get("report"), dict) else {}
+                _book_recommendation_decision(outcome, chosen="decline", decided_by=_who_decided(principal),
+                                              connection_id=str(_inv.get("connection_id") or ""), req=req,
+                                              spec=_report.get("spec") if isinstance(_report, dict) else None)
+            else:
+                outcome_from_review_answer(outcome, status=req.status, answered_by=_who_decided(principal))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "booking the outcome in the Record is best-effort; the answer itself is logged",
+                     counter="record.outcome_from_review")
         update_playbook_success_rates()
         try:
             from aughor.lifecycle.causal import promote_on_outcome
@@ -6868,7 +6976,8 @@ def get_recent_evidence(connection_id: str, canvas_id: Optional[str] = None, lim
 
 @router.get("/investigations/{inv_id}/evidence")
 def get_investigation_evidence(inv_id: str):
-    """Return all evidence claims for an investigation, ordered by confidence."""
+    """Return all evidence claims for an investigation, in the order recorded. ``confidence`` is
+    null on every row written since phase 1 of the 2027 study: not counted, so not shown."""
     from aughor.evidence import store as _ev_store
     claims = _ev_store.get_claims_for_investigation(inv_id)
     return [c.model_dump() for c in claims]

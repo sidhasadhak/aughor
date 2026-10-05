@@ -1,5 +1,6 @@
-"""ON-2 — the object plane's doors, driven: the catalog and the compiled query over HTTP, and the
-`query_objects` tool the conversation is offered behind `ask.query_objects`.
+"""ON-2 — the object plane's doors, driven: the catalog and the compiled query over HTTP. (The
+conversation's `query_objects` tool was deleted 2026-10-04 — kill 8 of the 2027 study, ROADMAP §4.9;
+the compiler these doors read is what survives, and the roster test below holds it deleted.)
 
 The graph is the measured samples ontology seeded into a hermetic ontology store; the warehouse is
 the bundled samples SQL seeded into a temp DuckDB file; every answer is compared with a
@@ -91,59 +92,16 @@ def test_a_refusal_is_an_answer_and_execute_false_returns_the_plan_without_rows(
 
 # ── the conversation's tool ─────────────────────────────────────────────────────────────
 
-def test_query_objects_is_offered_first_only_behind_its_flag_and_only_where_an_ontology_exists(warehouse):
+def test_the_conversation_no_longer_carries_the_object_query_tool(warehouse):
+    """Kill 8 (2026-10-04): the roster is the same with or without a built ontology, nothing in it
+    is named `query_objects`, and the flag that offered it is gone from the registry."""
     from aughor.agent import converse_tools as ct
-    from aughor.kernel.flags import flag_overrides
+    from aughor.kernel.flags import FLAG_ENV
 
-    assert "query_objects" not in [t.name for t in ct.converse_tools(CONN)]      # flag off: today's roster
-    with flag_overrides({"ask.query_objects": True}):
-        assert [t.name for t in ct.converse_tools(CONN)][0] == "query_objects"
-        assert "query_objects" not in [t.name for t in ct.converse_tools("nothing-built-t")]
-
-
-def test_the_tool_names_a_part_under_its_parent_and_not_as_a_peer_type(warehouse, client):
-    from aughor.agent import converse_tools as ct
-    from aughor.kernel.flags import flag_overrides
-
-    bound = client.put("/ontology/entities/Customer/bindings/reviews", params=PARAMS, json={
-        "kind": "detail", "table": "reviews", "key": "customer_id",
-        "rollups": {"review_count": {"column": "review_id", "agg": "count"}}, "absorb": True})
-    assert bound.status_code == 200 and bound.json()["absorbed"] == "Review", bound.text
-    with flag_overrides({"ask.query_objects": True}):
-        [tool] = [t for t in ct.converse_tools(CONN) if t.name == "query_objects"]
-    assert "Object types here: customer (parts: review), order, order_item, product." in tool.description
-
-
-def test_the_tool_compiles_runs_discloses_and_refuses(warehouse, monkeypatch):
-    from aughor.agent import converse_tools as ct
-
-    monkeypatch.setattr(ct, "_connection", lambda cid: warehouse())
-    out = ct.query_objects(CONN, {"object_type": "order", "segment": "delivered_orders",
-                                  "measures": [{"agg": "count"}]})
-    assert out["path"] == "compiled" and out["row_count"] == 1
-    assert out["rows"][0][0] == _reference(warehouse, "SELECT COUNT(*) FROM orders WHERE status = 'delivered'")[0][0]
-    entry = ct.query_objects(CONN, {"object_type": "order"})
-    assert entry["path"] == "catalog" and "delivered_orders" in entry["object_type"]["segments"]
-    refused = ct.query_objects(CONN, {"object_type": "order", "measures": [{"agg": "sum", "path": "status"}]})
-    assert refused["path"] == "refused" and "run_sql" in refused["instruction"]
-
-
-def test_a_streamed_compiled_answer_carries_a_receipt_that_names_the_compiled_path(warehouse, monkeypatch):
-    from aughor.agent import converse_tools as ct
-    import aughor.routers.investigations as inv
-
-    monkeypatch.setattr(ct, "_connection", lambda cid: warehouse())
-    written: dict = {}
-    monkeypatch.setattr(inv, "write_answer_receipt", lambda **kw: written.update(kw) or {"receipt_id": "r-1"})
-    frames: list = []
-    ct.query_objects(CONN, {"object_type": "order", "by": ["customer.country"], "measures": [{"metric": "revenue"}]},
-                     emit=lambda kind, payload: frames.append((kind, payload)), user_question="revenue by country")
-    kinds = [kind for kind, _ in frames]
-    assert kinds[:2] == ["sql", "compiled"] and "receipt_id" in kinds and kinds[-1] == "done"
-    assert dict(frames)["compiled"] == {"intent_type": "object_query", "entity": "order",
-                                        "measure": "revenue", "dimension": "country"}
-    assert written["guard_edges"][0][:2] == ("validated_by", "guard:object_compiler")
-    assert written["payload_extra"]["path"] == "compiled" and written["payload_extra"]["body"] == "converse.query_objects"
+    assert "query_objects" not in [t.name for t in ct.converse_tools(CONN)]
+    assert "query_objects" not in [t.name for t in ct.converse_tools("nothing-built-t")]
+    assert not hasattr(ct, "query_objects") and not hasattr(ct, "_query_objects_tools")
+    assert "ask.query_objects" not in FLAG_ENV
 
 
 # ── ON-3: the object page's doors ───────────────────────────────────────────────────────

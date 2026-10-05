@@ -581,9 +581,10 @@ the trigger, so a flag in front of it decided nothing).
   object (typed table set + live token budget + rescope endpoint); the ContextRibbon in the answer surface.
 - **Editable plan gate** (`AUGHOR_PLAN_GATE`) — deep/explore runs pause after decomposition so the user can
   review/trim the sub-question plan before the expensive fan-out (reuses the LangGraph HITL interrupt/resume).
-- **Graduated approval + audit** (`AUGHOR_ACTION_APPROVAL`) — risk-graded per-action gate under the user's
-  identity: high-risk mutations require approval, every action is audited to the ledger; per-scope allowlist +
-  the "Action approvals" audit view in Security & Audit.
+- **Graduated approval + audit** — risk-graded per-action gate under the user's identity: high-risk mutations
+  require approval, every action is audited to the ledger; per-scope allowlist + the "Action approvals" audit
+  view in Security & Audit. **On by default since 2026-10-04** (phase 0 of the 2027 study, ROADMAP §3.53);
+  `AUGHOR_ACTION_APPROVAL=0` is the kill switch, and `=1` still means on.
 - **Declarative modes** (`AUGHOR_DECLARATIVE_MODES`) — a mode's routing/context-scope is editable YAML with a
   hardcoded fallback (`aughor/agent/modes/`).
 - **Deployment budget ceiling** (`AUGHOR_MAX_TOKEN_BUDGET`) — one hard cap floors every agent's token budget.

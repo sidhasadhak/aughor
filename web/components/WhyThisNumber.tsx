@@ -15,7 +15,9 @@ import { useEffect, useState } from "react";
 import {
   getAnswerTrace, getPublicReceipt,
   type AnswerTrace, type PublicReceipt, type PublicReceiptGuard, type TracedNode,
+  recheckAnswer, type AnswerRecheck as AnswerRecheckResult,
 } from "@/lib/api";
+import { AnswerRecheck } from "@/components/AnswerRecheck";
 import { Button } from "@/components/ui/button";
 import { renderEmphasis } from "@/components/brief/BriefProse";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
@@ -423,8 +425,54 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
                 </Section>
               )}
 
+              {/* Phase 1 of the 2027 study — line two. The hit rate is shown only with its n, and
+                  only when n reached the counter's threshold; below it the count alone is shown,
+                  with why. A bar for a figure nobody counted is what this section refuses. */}
+              {rec.record && (
+                <Section title="How often this kind of answer has held">
+                  {rec.record.confidence ? (
+                    <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }} data-testid="receipt-counted">
+                      {rec.record.confidence.hit_rate != null
+                        ? <><span style={{ color: "var(--t1)", fontWeight: 600 }}>{Math.round(rec.record.confidence.hit_rate * 100)}%</span>
+                            {" "}of {rec.record.confidence.n} {rec.record.confidence.reference_class}
+                            {rec.record.confidence.scope === "all connections" ? ", across every connection" : ""} held.</>
+                        : <>Not enough to count yet: {rec.record.confidence.note} ({rec.record.confidence.reference_class}).</>}
+                    </div>
+                  ) : (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{rec.record.confidence_note}</div>
+                  )}
+                  {rec.record.claim?.restated && (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
+                      This answer was restated since it was given (version {rec.record.claim.version} in the Record).
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {rec.record && (
+                <Section title="Who else was told">
+                  {rec.record.told.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }} data-testid="receipt-told">
+                      {rec.record.told.map(t => (
+                        <div key={t.departure_id || `${t.at}:${t.target}`} className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                          {t.state === "departed" ? "sent to" : `held (${t.state.replace(/_/g, " ")}) for`} {t.target || t.addressed_to || "—"}
+                          {t.by ? ` by ${t.by}` : ""}{t.at ? ` · ${t.at.slice(0, 10)}` : ""}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{rec.record.told_note}</div>
+                  )}
+                </Section>
+              )}
+
+              {/* Screen 10 of the 2027 study — the re-check that already runs is offered as a button:
+                  the statement run now, both figures, and whether the difference is late rows or a
+                  restatement. A person asks; nothing is sent anywhere. */}
+              {rec.record?.answer && <Reperform answerId={rec.record.answer} />}
+
               {(rec.confidence.level || rec.confidence.capped_by) && (
-                <Section title="Confidence">
+                <Section title="Stated confidence">
                   <div className="aug-fs-xs" style={{ color: "var(--t2)" }}>
                     {rec.confidence.level ?? "—"}
                     {rec.confidence.capped_by && <span style={{ color: "var(--t3)" }}> · capped by {rec.confidence.capped_by}</span>}
@@ -462,6 +510,47 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
 
 /** Idea 11 — `/receipt/<id>`: the page every exported figure links back to. The drawer's
  *  own body, so a reader of a PDF or a deck sees exactly what "Why this number" shows. */
+function Reperform({ answerId }: { answerId: string }) {
+  const [state, setState] = useState<"idle" | "running" | "done" | "refused">("idle");
+  const [result, setResult] = useState<AnswerRecheckResult | null>(null);
+  const [why, setWhy] = useState("");
+  const run = async () => {
+    setState("running");
+    try {
+      setResult(await recheckAnswer(answerId));
+      setState("done");
+    } catch (e) {
+      setWhy(e instanceof Error ? e.message : String(e));
+      setState("refused");
+    }
+  };
+  return (
+    <Section title="Re-perform">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Button size="xs" variant="outline" onClick={() => void run()} disabled={state === "running"} data-testid="receipt-reperform">
+          {state === "running" ? "Running the statement…" : state === "idle" ? "Run the statement now" : "Run it again"}
+        </Button>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+          Runs this answer&apos;s own statement again and compares it with what was said.
+        </span>
+      </div>
+      {state === "refused" && (
+        <div className="aug-fs-xs" role="alert" style={{ color: "var(--t2)", marginTop: 6, lineHeight: 1.5 }}>Not re-performed: {why}.</div>
+      )}
+      {state === "done" && result && (
+        result.status === "changed" ? <AnswerRecheck recheck={result} />
+        : (
+          <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 6, lineHeight: 1.5 }} data-testid="receipt-reperform-result">
+            {result.status === "unchanged"
+              ? `The statement returned the same figures just now (${formatTimestamp(result.checked_at, "short")}).`
+              : `It could not be compared: ${result.reason || "the answer keeps no statement to run again"}.`}
+          </div>
+        )
+      )}
+    </Section>
+  );
+}
+
 export function TrustReceiptPage({ receiptId }: { receiptId: string }) {
   return <Drawer receiptId={receiptId} asPage onClose={() => { window.location.href = "/"; }} />;
 }

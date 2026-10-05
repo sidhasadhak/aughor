@@ -79,6 +79,13 @@ class TestTheArrivalIsChecked:
         assert notes and notes[-1]["check"]["verification"] == "contradicted"
         claims = client.get("/arrivals/claims", params={"connection_id": "olist"}).json()
         assert claims["counts"]["contradicted"] >= 1 and claims["contradictions"][0]["question_to"] == "user:ops@corp"
+        # the Record keeps one SAID claim per reply (the 2027 study §E, the hub writer): the second
+        # reply is counted beside the first, never over it
+        from aughor.record import claims as RC
+        assert body["claim"] and r2.json()["claim"] and body["claim"] != r2.json()["claim"]
+        first, second = RC.get(body["claim"]), RC.get(r2.json()["claim"])
+        assert first.kind == "said" and first.state == "supported" and first.about.key == PROMISE and first.author == "person:Ana"
+        assert second.state == "refuted" and second.extra["question_to"] == "user:ops@corp" and second.version == 1
 
 
 class TestOnlyACheckedNoteReachesAPrompt:

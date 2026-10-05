@@ -13,8 +13,8 @@ import yaml
 from pydantic import ValidationError
 
 from aughor.packs.models import (
-    Pack, PackDataset, PackFunction, PackManifest, PackMetric, PackOntology, PackQuestions, PackPlaybook,
-    PackSource, PackSurface, PackEval, RoleSpec,
+    Pack, PackDataset, PackFunction, PackManifest, PackMetric, PackMissionTemplate, PackMonitorPrior, PackOntology,
+    PackQuestions, PackPlaybook, PackScenarioTemplate, PackSource, PackSurface, PackEval, RoleSpec,
 )
 
 
@@ -140,10 +140,16 @@ def _load_pack(root: Path) -> Pack:
         for f in sorted(ds_dir.glob("*.yaml")):
             datasets.append(PackDataset(**_read_yaml(f)))
 
+    # Phase 6 of the 2027 study — the priors and templates a pack ships, each file one declaration.
+    monitors = [PackMonitorPrior(**_read_yaml(f)) for f in sorted((root / "monitors").glob("*.yaml"))] if (root / "monitors").is_dir() else []
+    scenarios = [PackScenarioTemplate(**_read_yaml(f)) for f in sorted((root / "scenarios").glob("*.yaml"))] if (root / "scenarios").is_dir() else []
+    missions = [PackMissionTemplate(**_read_yaml(f)) for f in sorted((root / "missions").glob("*.yaml"))] if (root / "missions").is_dir() else []
+
     return Pack(
         manifest=manifest, expertise=expertise, metrics=metrics, entities=entities,
         questions=questions, playbooks=playbooks, surface=surface, evals=evals,
-        ontology=ontology, function=function, sources=sources, datasets=datasets, path=str(root),
+        ontology=ontology, function=function, sources=sources, datasets=datasets,
+        monitors=monitors, scenarios=scenarios, missions=missions, path=str(root),
     )
 
 

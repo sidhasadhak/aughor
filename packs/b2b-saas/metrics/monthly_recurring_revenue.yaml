@@ -1,0 +1,27 @@
+name: monthly_recurring_revenue
+title: Monthly recurring revenue
+aliases: [MRR, monthly recurring revenue, recurring revenue run-rate, monthly run-rate]
+unit: currency
+definition: >
+  The recurring prices of every active subscription on an as-of date, each normalised to one month: an annual
+  price divided by twelve, a quarterly by three. A snapshot of the subscription book, not cash collected and not
+  revenue recognised; one-time charges, overages and trials are not in it.
+formula: >
+  SUM(CASE WHEN {{role.subscription.status}} = 'active' THEN {{role.subscription.monthly_price}} ELSE 0 END)
+grain: >
+  The subscription book on one as-of date — the rows active that day, summed; a trend is this snapshot taken on
+  each month's last day, never a sum of invoices over the month.
+binds:
+  required: [subscription]
+anti_patterns:
+  - "Summing invoice or payment amounts over a month: it mixes one-time charges in and books an annual prepayment twelve times over."
+  - "Adding an annual plan's yearly price without dividing by twelve: the book reads twelve times its size."
+  - "Counting every subscription row an account ever had: cancelled and superseded subscriptions are not active on the as-of date."
+  - "Forgetting the as-of date: a sum over all rows with status active today is not the book as it stood last quarter."
+sane_range:
+  min: 0
+  basis: >
+    Non-negative by construction — a sum of recurring prices; no industry publishes a band for an absolute amount,
+    so the range has one side. The definition (an annual price divided by twelve; one-time charges left out) is the
+    one the cited surveys measure MRR and ARR by — as indexed, not read (see sources.yaml).
+  sources: [benchmarkit-2025, chartmogul-retention-2025]

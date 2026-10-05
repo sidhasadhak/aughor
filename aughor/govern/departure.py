@@ -21,7 +21,7 @@ receipt the message carries:
 - **caveat** — a measurement that REFUTES its own number does not leave. A promise's flags
   mostly qualify a figure and ride the receipt, but one class says the figure is
   arithmetically wrong: objects whose lag is impossible, counted as kept, so the rate is
-  lower than the truth. Live anchor: 2026-09-20, LuxExperience's refund promise measured
+  lower than the truth. Live anchor: 2026-09-20, LuxExperience's money-back promise measured
   23.27% breached over a population including 4,199 Returns refunded BEFORE they arrived —
   25.41% without them. Which caveats block is `departure_basis._blocking`'s call, not this
   module's.
@@ -37,15 +37,17 @@ receipt the message carries:
   departs on, and that measurement must be one taken AT departure: older than
   ``REMEASURE_WITHIN_SECONDS`` it is re-executed first. A magnitude with no measurement
   behind it holds — what leaves is information the platform measured. Live anchor:
-  2026-09-16, the dispatch-promise watch departed "10,423 of 99,441 order lines"; the
-  promise it was about counted 111,456 lines — 99,441 is the ORDER count, and no
+  2026-09-16, the dispatch-promise watch departed "10,423 of 99,441 lines"; the
+  promise it was about counted 111,456 lines — 99,441 is the PARENT-row count, and no
   measurement of that promise ever said it.
 - **freshness** (law 4) — a governed metric whose data breaches its declared SLA holds, and
   every departure states the data's as-of wherever one is known.
 - **claims** (law 5) — a descriptive fact departs; an associational or causal sentence only
   on the licence its analysis recorded (`agent/claim_type.py`: causal needs an intervention
-  in the data or a human-owned assumption, and a recorded refutation withdraws it); a
-  forecast never — the platform has no forecaster.
+  in the data or a human-owned assumption, and a recorded refutation withdraws it); an
+  UNSCORED forecast never — a forecast departs only citing a prediction claim whose method
+  carries a backtest on this metric or whose class has been scored (the 2027 study's
+  narrowing, phase 3: before it the platform had no forecaster, so no forecast departed).
 - **disagreement** (law 6) — divergent readings the source analysis paused on have no asker
   at departure, so the OWNER is asked (``held_owner``) and nothing is sent until answered.
   The answer lands in the ambiguity ledger, so the next run binds it: asked once.
@@ -56,6 +58,11 @@ receipt the message carries:
 - **probation** — a NEW automation's departures go only to the person who declared it until
   its measured precision graduates it. With identity off there is no declarer to address,
   so probation is inert exactly as HB-1's enforcement is.
+- **attention** — an addressee has a fixed number of unattended interruptions a week
+  (`govern/attention.py`, phase 2 of the 2027 study); once they are spent, a clean departure
+  is HELD under ``held_budget`` with its triage score, listed rather than silenced. A person
+  who chose to send is exempt, like the repeat law. The four ranking terms and their weights
+  are published, because triage set by hand must be readable to be corrected.
 
 **The receipt travels** (law 8): every verdict carries ``receipt`` — the source, the
 definition, the as-of, each guard's outcome and the ledger row — and each transport attaches
@@ -123,6 +130,7 @@ DEPARTED = "departed"
 HELD = "held"
 HELD_PROBATION = "held_probation"
 HELD_OWNER = "held_owner"
+HELD_BUDGET = "held_budget"           # phase 2 of the 2027 study — the attention budget's hold
 
 #: Who started the send. A person pressing Share chose the moment and the words, so
 #: probation and the repeat law do not apply to them; the accuracy laws do, because a
@@ -132,7 +140,7 @@ PERSON = "person"
 
 #: Every guard, in the order it runs; a receipt lists outcomes in this order.
 GUARDS: tuple[str, ...] = ("trust", "caveat", "tie_out", "definition", "remeasure", "freshness",
-                           "claims", "disagreement", "repeat", "probation")
+                           "claims", "disagreement", "repeat", "probation", "attention")
 
 #: What a guard concluded.
 PASSED = "passed"
@@ -146,6 +154,7 @@ GUARD_LABELS: dict[str, str] = {
     "trust": "trust", "caveat": "caveat", "tie_out": "tie-out", "definition": "definition",
     "remeasure": "re-measure", "freshness": "freshness", "claims": "claim type",
     "disagreement": "disagreement", "repeat": "repeat", "probation": "probation",
+    "attention": "attention budget",
 }
 
 #: Departure kinds that carry their own re-notification policy. Law 7 records the
@@ -155,6 +164,15 @@ REPEAT_POLICY: dict[str, str] = {
     "monitor_alert": "re-notification is the monitor's own anti-flap policy (its grace window)",
     "agent_alert": "re-notification is the alert rule's own policy (its debounce)",
     "briefing": "a scheduled briefing speaks by its schedule",
+}
+
+#: Departure kinds the attention budget does not judge, each with its reason. The budget is a
+#: PERSON's interruptions a week (`govern/attention.py`); a ledger subscription (phase 7 of the
+#: 2027 study, `record/subscriptions.py`) delivers Record entries to a machine that asked for
+#: exactly these kinds, so there is no attention to spend — every accuracy law and the repeat
+#: law still run, and a hold is said on the delivery record.
+ATTENTION_POLICY: dict[str, str] = {
+    "ledger_event": "a subscription delivers to a machine that asked for these entries; the attention budget is a person's",
 }
 
 #: Transport call sites that deliberately do NOT ask this gate, each with its reason. The
@@ -202,7 +220,7 @@ class Measurement:
     #: What the measurement itself found worth a reader's eye — a promise's `flags`. These do
     #: NOT hold a departure: they qualify a number rather than refute it, and a gate that
     #: blocked on every caveat would teach senders to stop writing them. They ride the receipt
-    #: instead, because the alternative is what shipped on LuxExperience: a refund promise
+    #: instead, because the alternative is what shipped on LuxExperience: a money-back promise
     #: departing as "23.27% breached" when 4,199 of the 50,048 objects were refunded BEFORE
     #: they arrived and were counted as kept — 25.41% without them, with nothing on the
     #: message to say so.
@@ -257,7 +275,9 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
                    declared_definition: str = "",
                    disagreement: Optional[dict] = None,
                    dated_records: bool = False,
-                   held_lines: Optional[list[str]] = None) -> DepartureVerdict:
+                   held_lines: Optional[list[str]] = None,
+                   triage: Optional[dict] = None,
+                   predictions: Optional[list[str]] = None) -> DepartureVerdict:
     """Judge one outbound message. Returns the verdict; the caller decides how a hold reads
     in its own vocabulary (the engine maps it to a step outcome, a door to a response).
 
@@ -268,7 +288,11 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
     are records each stated with the moment it happened (a briefing's alert list) — there is
     nothing to re-measure in "fired at 08:00 with 12.4". ``held_lines`` are the reasons lines
     of an assembled message (a briefing) were held by `line_holds` before this call — the
-    message departs without them, and its record says what was cut and why."""
+    message departs without them, and its record says what was cut and why. ``triage`` is what
+    the caller knows for the attention budget's ranking terms — ``{"size": 0..1}`` (how far the
+    number sits outside its declared range); a message that brings none reads 0. ``predictions``
+    are the prediction claim ids a forecast sentence cites (law 5): a forecast departs only on a
+    scored method, and a message that cites none is held as it always was."""
     text = text or ""
     found: dict[str, _Check] = {}
     conn = _LazyConnection(conn_id)
@@ -282,7 +306,7 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
             "remeasure", lambda: _remeasure(text, measurement, dated_records))
         found["freshness"] = _guarded(
             "freshness", lambda: _freshness(text, conn_id, conn, measurement))
-        found["claims"] = _guarded("claims", lambda: _claims(text, investigation_id))
+        found["claims"] = _guarded("claims", lambda: _claims(text, investigation_id, predictions))
     finally:
         conn.close()
 
@@ -309,6 +333,15 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
         state = HELD_PROBATION
         addressed_to = declared_by
 
+    # Phase 2 of the 2027 study — the attention budget, last: it decides only whether a CLEAN
+    # unattended departure has a slot this week; every hold above outranks it, and a held
+    # departure is listed with its score, never silenced.
+    found["attention"] = _guarded(
+        "attention", lambda: _attention(state, origin, kind, target, addressed_to, found["repeat"], triage,
+                                        conn_id=conn_id, text=text, about=about))
+    if found["attention"].outcome == HOLDS:
+        state = HELD_BUDGET
+
     reasons = [found[g].reason for g in GUARDS
                if g in found and found[g].outcome in (HOLDS, ASKED) and found[g].reason]
     checks = {g: found[g].summary for g in GUARDS}
@@ -317,6 +350,11 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
     missing = list(found["definition"].detail.get("missing") or [])
     if missing:
         checks["definition_missing"] = " · ".join(missing)     # CB-5: what would clear the hold
+    if found["attention"].detail.get("triage"):
+        checks["triage"] = found["attention"].detail["triage"]  # the four terms and the score, on every row
+    if found["attention"].detail.get("mission"):
+        checks["mission"] = found["attention"].detail["mission"]   # phase 5: the missions this bore on — the charge
+        checks["mission_names"] = found["attention"].detail.get("mission_names", "")
     guards = {g: found[g].outcome for g in GUARDS}
     as_of = str(found["freshness"].detail.get("as_of") or "")
     cited = list(found["definition"].detail.get("cited") or [])
@@ -484,7 +522,7 @@ def _caveat(measurement: Optional[Measurement]) -> _Check:
     The flags a measurement carries mostly QUALIFY it — "never broken" is a surprising shape,
     not a wrong figure — and those ride the receipt. A blocking caveat is different in kind:
     the number is arithmetically wrong, and the measurement itself says so. Live anchor,
-    2026-09-20: LuxExperience's refund promise measured 23.27% breached over a population
+    2026-09-20: LuxExperience's money-back promise measured 23.27% breached over a population
     that included 4,199 Returns refunded BEFORE they were received, every one counted as
     kept; the true rate is 25.41%. On the screen the flag is shown beside the number, which
     is honesty. In a channel it would be a wrong number with a footnote, so it holds — the
@@ -619,7 +657,7 @@ def _definition(text: str, conn_id: str, about: str, declared: str) -> _Check:
             problems.extend(f"'{p}' is stated with a number and no approved metric defines it "
                             f"on this connection" for p in inferred)
     if problems:
-        # CB-5: the definitions that would clear this hold, structurally — so "approve `revenue` and
+        # CB-5: the definitions that would clear this hold, structurally — so "approve `<metric>` and
         # N sends unblock" is counted from the record, never parsed out of the sentence.
         missing = sorted(unapproved) + [p for p in inferred if p not in unapproved]
         return _Check(HOLDS, "; ".join(problems),
@@ -766,9 +804,10 @@ def _freshness(text: str, conn_id: str, conn: "_LazyConnection",
     return _Check(UNAVAILABLE if unavailable and not stated else PASSED, summary, detail=detail)
 
 
-def _claims(text: str, investigation_id: str) -> _Check:
+def _claims(text: str, investigation_id: str, predictions: Optional[list[str]] = None) -> _Check:
     """Law 5 — descriptive departs; associational and causal on the analysis's recorded
-    licence; a forecast never."""
+    licence; an UNSCORED forecast never (phase 3 of the 2027 study narrowed "a forecast
+    never": one that cites a prediction claim whose method is scored on this metric departs)."""
     from aughor.agent.claim_type import is_at_least, sentence_claims
     found = sentence_claims(text)
     if not found:
@@ -780,11 +819,16 @@ def _claims(text: str, investigation_id: str) -> _Check:
     why = (" — no analysis is linked" if not investigation_id
            else " — its analysis recorded no licence" if not licence
            else f" — its analysis is licensed {licence}")
+    scored_forecast = ""
+    if any(t == "predictive" for _s, t, _v in found):
+        scored_forecast = _scored_prediction_note(predictions)
     problems: list[str] = []
     for sentence, claim, verb in found:
         quoted = _clip(sentence, 120)
-        if claim == "predictive":
-            problems.append(f"a forecast never departs — the platform has no forecaster "
+        if claim == "predictive" and not scored_forecast:
+            problems.append(f"an unscored forecast never departs — a forecast departs only citing a "
+                            f"prediction whose method carries a backtest on this metric"
+                            f"{' (no prediction cited)' if not predictions else ' (the cited predictions are unscored)'} "
                             f"(\"{verb}\" in: {quoted})")
         elif claim == "causal" and not is_at_least(licence, "causal"):
             problems.append(f"a causal claim departs only on its analysis's causal licence"
@@ -804,7 +848,35 @@ def _claims(text: str, investigation_id: str) -> _Check:
         challenged = (" — the cause survived the analysis's refutation check" if status == "survived"
                       else " — the cause was never put to a refutation check" if status == "not_run"
                       else "")
+    if scored_forecast:
+        challenged += f" — {scored_forecast}"
     return _Check(PASSED, f"claims within the analysis's {licence} licence{challenged}")
+
+
+def _scored_prediction_note(predictions: Optional[list[str]]) -> str:
+    """The sentence that licenses a forecast, or "" when none of the cited predictions is scored:
+    a prediction whose method carries a backtest on its metric, or whose (method, metric) class
+    has scored predictions behind it (`record/scenario.calibration`)."""
+    if not predictions:
+        return ""
+    from aughor.record import claims as record_claims
+    from aughor.record.scenario import METHODS, calibration
+    for cid in predictions:
+        c = record_claims.get(cid)
+        if c is None or c.kind != "prediction":
+            continue
+        method = str(c.extra.get("method") or "")
+        if method not in METHODS:
+            continue
+        bt = c.extra.get("backtest") or {}
+        if bt.get("cases"):
+            return (f"the forecast cites prediction {cid} ({method}; backtest on {c.statement.metric}: the band held "
+                    f"{bt.get('held', 0)} of {bt['cases']} times, mean absolute error {bt.get('mae')})")
+        for g in calibration(conn_id=c.about.key if c.about.kind == "connection" else None):
+            if g["method"] == method and g["metric"] == c.statement.metric and g["n"] >= 1:
+                return (f"the forecast cites prediction {cid} ({method}; {g['n']} scored prediction"
+                        f"{'s' if g['n'] != 1 else ''} of {c.statement.metric}, observed coverage {g['coverage_observed']})")
+    return ""
 
 
 def _disagreement(disagreement: Optional[dict], conn_id: str, declared_by: str) -> _Check:
@@ -877,6 +949,67 @@ def _probation(state: str, probation: bool, declared_by: str) -> _Check:
                   f"on probation: this departure goes to {declared_by}'s review queue, not the "
                   f"channel — it graduates at measured precision "
                   f"(≥{GRADUATION_PRECISION:.0%} over ≥{GRADUATION_MIN_MARKED} marked)")
+
+
+def _bearing(conn_id: str, text: str, about: str, triage: Optional[dict]) -> dict:
+    """Triage's first term, read from the missions people wrote (phase 5, `record/mission.py`);
+    a caller that already read it passes ``triage["mission"]`` and is believed."""
+    given = (triage or {}).get("mission")
+    if isinstance(given, dict) and "score" in given:
+        return given
+    try:
+        from aughor.record.mission import bearing
+        return bearing(conn_id, text=text, about=about)
+    except Exception as exc:  # noqa: BLE001 — an unreadable mission ledger reads 0, and says so
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the missions could not be read for triage; the term reads 0", counter="departure.bearing")
+        return {"score": 0.0, "missions": [], "why": "the missions could not be read"}
+
+
+def _attention(state: str, origin: str, kind: str, target: str, addressed_to: str,
+               repeat: _Check, triage: Optional[dict], *, conn_id: str = "", text: str = "", about: str = "") -> _Check:
+    """The attention budget — phase 2 of the 2027 study (`govern/attention.py`). Judged only on
+    a clean unattended departure; the score rides every row it judges. Phase 5 feeds its first
+    term: a message that bears on an active mission scores the mission term, carries the mission
+    on its row (``detail["mission"]``), and is charged against that mission's own interruptions a
+    week on top of the addressee's slots — a mission with none left is silent, and the hold says
+    which mission spent them."""
+    if origin == PERSON:
+        return _Check(EXEMPT, "a person chose to send it")
+    if kind in ATTENTION_POLICY:
+        return _Check(EXEMPT, ATTENTION_POLICY[kind])
+    if state != DEPARTED:
+        return _Check(NOT_APPLICABLE, f"not judged — the departure is already {state.replace('_', ' ')}")
+    addressee = addressed_to or target
+    if not addressee:
+        return _Check(NOT_APPLICABLE, "no addressee to budget")
+    from aughor.govern import attention
+    summary = (repeat.summary or "").lower()
+    novelty = 0.5 if "moved" in summary and "since" in summary else 1.0
+    size = float((triage or {}).get("size") or 0.0)
+    bearing = _bearing(conn_id, text, about, triage)
+    verdict = attention.charge(addressee=addressee, kind=kind, size=size, novelty=novelty,
+                               mission=float(bearing.get("score") or 0.0))
+    triage_line = (" · ".join(f"{k} {v:.2f}" for k, v in verdict["terms"].items())
+                   + f" → score {verdict['score']:.2f}")
+    detail = {"triage": triage_line, "used": verdict["used"], "slots": verdict["slots"], "addressee": addressee}
+    hits = list(bearing.get("missions") or [])
+    if hits:
+        detail["mission"] = " · ".join(str(h.get("mission") or "") for h in hits if h.get("mission"))
+        detail["mission_names"] = " · ".join(str(h.get("name") or "") for h in hits)
+    if not verdict["allowed"]:
+        return _Check(HOLDS, verdict["why"], verdict["why"], detail=detail)
+    if hits:
+        from aughor.record.mission import charge as mission_charge
+        spent = mission_charge(hits)
+        if not spent["allowed"]:
+            m = spent["spent"][0]
+            why = (f"mission budget: {m['name']} has used its {m['interruptions_per_week']} interruptions a week "
+                   f"({spent['used'].get(m['mission'], 0)} departed bearing on it); held with score "
+                   f"{verdict['score']:.2f} — listed on the departures screen and the mission's report")
+            return _Check(HOLDS, why, why, detail=detail)
+        verdict["why"] += f"; {bearing.get('why', '')}"
+    return _Check(PASSED, verdict["why"], detail=detail)
 
 
 # ── text helpers (pure) ───────────────────────────────────────────────────────────

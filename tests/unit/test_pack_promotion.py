@@ -67,6 +67,26 @@ def test_activation_runs_the_import_gate_over_the_prose(tmp_path):
     assert load_pack(tmp_path / "pinned-model").manifest.status == "draft"
 
 
+def test_a_pack_citing_an_unread_source_stays_a_draft(tmp_path):
+    """The close-out's C8: a source nobody read where the pack was drafted (`unread: true`) keeps the
+    pack from activating until a person reads it and drops the flag — the review is the reading."""
+    d = _write_pack(tmp_path, "indexed-only")
+    (d / "sources.yaml").write_text(yaml.safe_dump({"sources": [
+        {"id": "survey-2025", "title": "A survey", "publisher": "Someone", "url": "https://example.org/s",
+         "published": "2025", "retrieved": "2026-10-05", "unread": True, "notes": "NOT READ HERE"}]}, sort_keys=False))
+
+    with pytest.raises(PromotionRefused) as exc:
+        set_status("indexed-only", "active", packs_dir=tmp_path)
+
+    assert "marked unread" in str(exc.value) and "survey-2025" in str(exc.value)
+    assert load_pack(tmp_path / "indexed-only").manifest.status == "draft"
+    # read, carried, flag dropped: the same pack promotes
+    (d / "sources.yaml").write_text(yaml.safe_dump({"sources": [
+        {"id": "survey-2025", "title": "A survey", "publisher": "Someone", "url": "https://example.org/s",
+         "published": "2025", "retrieved": "2026-10-05"}]}, sort_keys=False))
+    assert set_status("indexed-only", "active", packs_dir=tmp_path).manifest.status == "active"
+
+
 def test_demotion_is_never_gated(tmp_path):
     """Taking something out of service must not require passing a test."""
     _write_pack(tmp_path, "bad-prose", status="active",

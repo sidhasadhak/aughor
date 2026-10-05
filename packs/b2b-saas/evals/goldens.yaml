@@ -1,0 +1,20 @@
+# Goldens WITHOUT a dataset: each names the metric a question must compute, nothing more. A golden on a named public
+# dataset — the figure a source published, reproduced by the recipe — needs a public subscription ledger with
+# published figures, which does not exist (pack.yaml); these goldens hold the routing and the recipe choice, and
+# gate 4 waits on a dataset a design partner's install or a declared synthetic ledger would supply.
+- question: "What is our MRR as of today?"
+  expect: {metric: monthly_recurring_revenue}
+- question: "What is our ARR?"
+  expect: {metric: annual_recurring_revenue}
+- question: "What was net revenue retention for the cohort active at the start of last quarter?"
+  expect: {metric: net_revenue_retention}
+- question: "What was gross revenue retention last quarter?"
+  expect: {metric: gross_revenue_retention}
+- question: "How many months of new MRR does it take to pay back last quarter's sales and marketing spend?"
+  expect: {metric: cac_payback_months}
+- question: "How many days did deals won last quarter take to close?"
+  expect: {metric: sales_cycle_days}
+- question: "What share of signups in the last four weeks activated?"
+  expect: {metric: activation_rate}
+- question: "How much did ARR grow over the last year?"
+  expect: {metric: arr_growth_rate}

@@ -18,7 +18,10 @@ from aughor.semantic.metrics import (
     compute_value,
     delete_metric,
     get_metric,
+    is_org_scope,
     list_metrics,
+    org_scope,
+    organisation_visible,
     save_metric,
     validate_metric,
     check_freshness,
@@ -89,11 +92,15 @@ class MetricRequest(BaseModel):
 def get_metrics(connection_id: Optional[str] = None):
     """The registry, optionally narrowed to one connection.
 
-    `connection_id` applies `list_metrics`' own connection-shadows-global rule. It stays
-    OPTIONAL so every existing caller is byte-identical: making it required would turn a
-    re-key into a caller migration, and each unconverted site becomes a silent global read
-    that looks correct (the same reasoning `list_metrics` records for its own default)."""
-    return [m.model_dump() for m in list_metrics(connection_id=connection_id)]
+    `connection_id` applies `list_metrics`' own connection-shadows-global rule (own · folded ·
+    the connection's ORGANISATION · global). It stays OPTIONAL so every existing caller is
+    byte-identical: making it required would turn a re-key into a caller migration, and each
+    unconverted site becomes a silent global read that looks correct (the same reasoning
+    `list_metrics` records for its own default). Unscoped, with identity on, the list is the
+    caller's organisation's: the global rows, its `org:` rows and its visible connections' —
+    never another organisation's (the 2027 study §E item 2)."""
+    rows = list_metrics(connection_id=connection_id)
+    return [m.model_dump() for m in (rows if connection_id else organisation_visible(rows))]
 
 
 # The path parameter is `conn_id`, not `connection_id`: `require_capability` (the `gate`
@@ -225,6 +232,9 @@ def _require_binds(sql: str, connection: str, name: str, tables, filters, existi
     if not connection or connection == GLOBAL_CONNECTION:
         _unchecked("global definition — no connection to ask")
         return
+    if is_org_scope(connection):
+        _unchecked("organisation definition — no one connection to ask")
+        return
     from aughor.db.connection import open_connection_for
     try:
         db = open_connection_for(connection)
@@ -265,7 +275,9 @@ def _restate_briefings(connection: str) -> None:
     Best-effort and silent about nothing: an invalidation that fails is counted, because the
     next reader would otherwise be told yesterday's answer with today's confidence.
     """
-    if not connection or connection == GLOBAL_CONNECTION:
+    if not connection or connection == GLOBAL_CONNECTION or is_org_scope(connection):
+        # An organisation's definition reaches every connection of the organisation; the cache is per
+        # connection and expires on its own TTL — said here, not pretended invalidated.
         return
     try:
         from aughor.knowledge import briefing as _briefing
@@ -390,8 +402,22 @@ async def generate_metric_sql(req: GenerateSqlRequest):
             "model": out["model"], "trace_id": trace_id}
 
 
+def _require_own_organisation(connection: str) -> None:
+    """An organisation-scoped definition (`org:<id>`) is written only by that organisation when identity
+    is on (the 2027 study §E item 2); identity off is one tenant, and every scope is its own."""
+    if not is_org_scope(connection):
+        return
+    from aughor.security.authz import tenant_scope
+    org = tenant_scope()
+    if org is not None and connection != org_scope(org):
+        raise HTTPException(status_code=403, detail={
+            "code": "ORGANISATION_SCOPE_DENIED",
+            "why": f"{connection!r} is another organisation's scope; this organisation writes {org_scope(org)!r}"})
+
+
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def create_metric(req: MetricRequest):
+    _require_own_organisation(req.connection)
     _require_statement(req.sql, None)
     _require_binds(req.sql, req.connection, req.name, req.tables, req.filters, None)
     # G1: declared LOW — auto-allowed and AUDITED, so defining a governed metric leaves a
@@ -419,6 +445,7 @@ def create_metric(req: MetricRequest):
 
 @router.put("/metrics/{name}", dependencies=[gate(Capability.METRICS_DEFINE)])
 def update_metric(name: str, req: MetricRequest):
+    _require_own_organisation(req.connection)
     from aughor import govern
     govern.guard("metric.define", name)   # G1: same declared action, the edit door
     # Resolve the metric being edited WITHIN its connection, and keep it there. Before

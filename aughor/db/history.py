@@ -283,6 +283,18 @@ def complete_investigation(
                     conn_id=connection_id or _conn_scope, canvas_id=_canvas_scope,
                     headline=(headline or "")[:200],
                     query_count=len(queries_list))
+    # Phase 2 of the 2027 study — the run lands on its INQUIRY: hypotheses as claims with their
+    # state, the open items with what would settle each, the typed verdict (answered ·
+    # contradicted), the inquiry's own state. This is the one place every clean completion
+    # passes, so booking here covers every caller. Best-effort: the row is the record of the run.
+    try:
+        from aughor.record.inquiry import attach_run_result
+        attach_run_result(run_id=inv_id, connection_id=connection_id or _conn_scope or "", question=question,
+                          report=report_dict if isinstance(report_dict, dict) else {}, hypotheses=hypotheses_list)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the run completed; its inquiry could not be updated", counter="inquiry.attach",
+                 conn_id=connection_id or _conn_scope or None)
 
     # Index in the agent's RAG — the run as a past investigation (not a direct query's:
     # `cache` False) and its clean SQL as few-shot examples (every run's, PENDING item 24).
@@ -334,6 +346,16 @@ def fail_investigation(inv_id: str, status: InvStatus = "timed_out",
     c.close()
     _emit_lifecycle(inv_id, "investigation.failed", conn_id=_conn_scope,
                     canvas_id=_canvas_scope, status=status)
+    # Phase 2 of the 2027 study — every run books a TYPED verdict, never an empty result: the
+    # reason is classified by code (out of budget · withheld · no definition · no data · tool
+    # failed) and the inquiry, when the run has one, records it and stays open. Best-effort.
+    try:
+        from aughor.record.inquiry import attach_run_failure
+        attach_run_failure(run_id=inv_id, connection_id=_conn_scope or "", status=status, reason=str(reason or ""))
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the run failed and was recorded; its typed verdict could not be booked",
+                 counter="inquiry.verdict", conn_id=_conn_scope or None)
 
 
 def save_chat_turn(
@@ -526,6 +548,71 @@ def recent_chat_answers(since_iso: str, *, limit: int = 200) -> list[dict]:
                                               "session_id", "agent_id", "org_id", "trace_id")},
                         "report": report})
     return out
+
+
+def recheck_tallies(*, connection_id: Optional[str] = None, limit: int = 5000) -> tuple[int, int]:
+    """Phase 1 of the 2027 study — the reference class "answers re-checked": ``(n, hits)`` over the
+    chat answers that carry at least one MEASURED re-check (status changed or unchanged; an
+    unchecked entry measured nothing). A hit is an answer none of whose re-checks found a change
+    past the noise band. Newest ``limit`` such answers; a connection narrows it."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    clause, params = "", []
+    if connection_id:
+        clause, params = " AND connection_id = ?", [connection_id]
+    rows = c.execute(
+        f"""SELECT report_json FROM investigations
+            WHERE kind = 'chat' AND report_json LIKE '%"rechecks"%'{clause}
+            ORDER BY completed_at DESC LIMIT ?""", (*params, int(limit)),
+    ).fetchall()
+    c.close()
+    n = hits = 0
+    for r in rows:
+        try:
+            statuses = [str(e.get("status")) for e in (json.loads(r["report_json"] or "{}").get("rechecks") or [])
+                        if isinstance(e, dict) and e.get("status") in ("changed", "unchanged")]
+        except (TypeError, ValueError) as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a stored answer's report did not parse; it is left out of the re-check count",
+                     counter="record.confidence_report_unreadable")
+            continue
+        if not statuses:
+            continue
+        n += 1
+        hits += "changed" not in statuses
+    return n, hits
+
+
+def challenge_tallies(*, connection_id: Optional[str] = None, limit: int = 5000) -> tuple[int, int]:
+    """Phase 1 of the 2027 study — the reference class "stated causes challenged": ``(n, hits)``
+    over the deep analyses whose ``causal_checks.refutation`` records a check that RAN (survived or
+    refuted; not run is not a case). A hit is a cause that survived."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    clause, params = "", []
+    if connection_id:
+        clause, params = " AND connection_id = ?", [connection_id]
+    rows = c.execute(
+        f"""SELECT report_json FROM investigations
+            WHERE kind != 'chat' AND report_json LIKE '%"causal_checks"%'{clause}
+            ORDER BY completed_at DESC LIMIT ?""", (*params, int(limit)),
+    ).fetchall()
+    c.close()
+    n = hits = 0
+    for r in rows:
+        try:
+            checks = json.loads(r["report_json"] or "{}").get("causal_checks") or {}
+        except (TypeError, ValueError) as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a stored report did not parse; it is left out of the challenged-cause count",
+                     counter="record.confidence_report_unreadable")
+            continue
+        status = str((checks.get("refutation") or {}).get("status") or "") if isinstance(checks, dict) else ""
+        if status not in ("survived", "refuted"):
+            continue
+        n += 1
+        hits += status == "survived"
+    return n, hits
 
 
 def recent_runs(since_iso: str, *, limit: int = 200) -> list[dict]:

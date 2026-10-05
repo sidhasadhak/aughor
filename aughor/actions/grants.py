@@ -49,7 +49,18 @@ _DB_PATH = resolve_db_path(
     Path(__file__).parent.parent.parent / "data" / "kinetic_grants.db",
 )
 
-_MIGRATIONS: list = []
+def _m2_phase4(c: sqlite3.Connection) -> None:
+    """Phase 4 of the 2027 study — a grant is bound to a target, a scope, limits and an expiry, and a
+    grant the ladder widened cites its graduation receipt. Additive."""
+    from aughor.db.migrations import add_column_if_missing
+    add_column_if_missing(c, "standing_grants", "graduation_receipt", "TEXT NOT NULL DEFAULT ''")
+    add_column_if_missing(c, "standing_grants", "expires_at", "TEXT")
+    add_column_if_missing(c, "standing_grants", "max_uses", "INTEGER NOT NULL DEFAULT 0")
+
+
+from aughor.db.migrations import Migration as _Migration  # noqa: E402
+
+_MIGRATIONS: list = [_Migration(2, "phase 4: graduation receipt, expiry and use cap on a grant", _m2_phase4)]
 
 
 def _new_id() -> str:
@@ -70,6 +81,21 @@ class StandingGrant(BaseModel):
     created_at: str = Field(default_factory=now_iso_z)
     last_used_at: Optional[str] = None
     use_count: int = 0
+    #: Phase 4 — a grant the ladder widened cites the graduation receipt that licensed it; a grant
+    #: bound by policy carries its expiry and a cap on uses (0 = no cap). A person's own accept-time
+    #: grant carries none of these, as before.
+    graduation_receipt: str = ""
+    expires_at: Optional[str] = None
+    max_uses: int = 0
+
+    def spent(self, now: Optional[str] = None) -> str:
+        """Why this grant no longer allows anything, or "" while it does."""
+        now = now or now_iso_z()
+        if self.expires_at and str(self.expires_at) <= now:
+            return f"expired {str(self.expires_at)[:10]}"
+        if self.max_uses and self.use_count >= self.max_uses:
+            return f"its {self.max_uses} uses are spent"
+        return ""
 
 
 # ── schema ─────────────────────────────────────────────────────────────────────
@@ -154,11 +180,13 @@ def mint_grant(grant: StandingGrant) -> StandingGrant:
             c.execute("""
                 INSERT INTO standing_grants (
                     id, org_id, connection_id, action_id, target_arg, target_value,
-                    owner_kind, owner_id, created_by, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    owner_kind, owner_id, created_by, created_at,
+                    graduation_receipt, expires_at, max_uses
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (grant.id, grant.org_id, grant.connection_id, grant.action_id,
                   grant.target_arg, grant.target_value, grant.owner_kind, grant.owner_id,
-                  grant.created_by, grant.created_at))
+                  grant.created_by, grant.created_at,
+                  grant.graduation_receipt or "", grant.expires_at, int(grant.max_uses or 0)))
             c.commit()
             return grant
         finally:
@@ -184,8 +212,24 @@ def matching_grant(action_id: str, coerced_params: dict, *, connection_id: str) 
     for r in rows:
         g = _row(r)
         if g.target_arg in coerced_params and str(coerced_params[g.target_arg]) == g.target_value:
+            if g.spent():                       # phase 4: an expired or exhausted grant allows nothing
+                continue
             return g
     return None
+
+
+def revoke_for_action(action_id: str, connection_id: str) -> int:
+    """Phase 4 — a demotion WITHDRAWS every standing grant of (action, scope). Returns how many."""
+    org = current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            n = c.execute("DELETE FROM standing_grants WHERE org_id=? AND connection_id=? AND action_id=?",
+                          (org, connection_id, action_id)).rowcount
+            c.commit()
+            return int(n or 0)
+        finally:
+            c.close()
 
 
 def bump_use(grant_id: str) -> None:

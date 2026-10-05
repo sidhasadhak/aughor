@@ -118,7 +118,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "aughor/ontology/prompt_reach.py",
          # CB-7 (2026-09-23): its fixtures are BriefingCitation rows, and the type requires the wire
          # field `insight_id` — the same ground as api.ts; renaming it in a fixture stops testing the wire.
-         "web/components/brief/BriefActions.test.tsx",),
+         "web/components/brief/BriefActions.test.tsx",
+         # Phase 7 of the 2027 study (2026-10-05): the event catalogue names every kind the journal is
+         # written with VERBATIM, and `exploration.first_insight` / `exploration.insight` are frozen wire
+         # kinds the explorer already emits and the UI subscribes to; a catalogue that respelled them
+         # would publish kinds the journal does not carry. Its prose says 'finding'.
+         "aughor/kernel/events.py",),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),
@@ -138,6 +143,23 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         r"(?i)kinetic", CODE_ROOTS,
         ("web/components/FleetOverviewPanel.tsx",
          "tests/unit/test_kinetic_inbox_expiry.py",
+         # Phase 4 of the 2027 study (2026-10-05), the same ground as RC-3's expiry suite: every
+         # hit in the authority suite is an identifier from the existing API — the `KineticAction`
+         # class its fixtures build and `execute_kinetic_action`, the one executor it drives. Its
+         # own prose, and `aughor/actions/authority.py`, say "declared action" throughout.
+         "tests/unit/test_action_authority.py",
+         # The close-out's C5 (2026-10-05), the same ground: the undo-and-gateway-writes suite builds
+         # `KineticAction` fixtures and drives `execute_kinetic_action`, the one executor; and
+         # `actions/authority.py` now IMPORTS that executor to fire a declared undo through the same
+         # governed pipeline — one identifier from the existing API, no prose. Both say "action".
+         "tests/unit/test_action_undo_and_gateway_writes.py",
+         "aughor/actions/authority.py",
+         # The close-out's C6 (2026-10-05), the same ground: the L5 agent (`actions/autonomy.py`) imports
+         # the one executor, `execute_kinetic_action`, to run the action it chose through the governed
+         # pipeline, and its suite builds `KineticAction` fixtures and drives that executor. Both say
+         # "declared action" in every line a reader sees.
+         "aughor/actions/autonomy.py",
+         "tests/unit/test_mission_spend_and_l5.py",
          # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
          # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
          # the server ships (`kinetic_action`) at the priority the server gives it. The

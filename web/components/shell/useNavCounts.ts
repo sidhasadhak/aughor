@@ -5,6 +5,12 @@
  *
  *   unackedAlerts   unacknowledged monitor alerts (GET /alerts) — amber: each one waits on a human
  *   runningRuns     agent runs in flight (GET /investigations, status "running") — neutral: a count
+ *   decisionsDue    decisions whose review date has come with no outcome booked (GET /record/decisions?due)
+ *   inquiriesDue    waiting inquiries whose check date has come (GET /record/inquiries?due)
+ *   departuresOwed  sends held for a person's mark or answer (GET /departures/summary)
+ *
+ * The last three are what the Now page lists under "Waiting on you"; their sum is its badge, amber
+ * like the alerts: each one waits on a human.
  *
  * Agent Ops' needs-human count is deliberately absent. Its route (GET …/needs-human) runs the
  * expiry and parked-run sweeps on every call, so polling it from the shell would run those sweeps
@@ -15,17 +21,28 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { getAllAlerts } from "@/lib/api";
+import { getAllAlerts, getDepartureSummary } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
+import { listDecisions, listInquiries } from "@/lib/record";
 
 export interface NavCounts {
   unackedAlerts: number;
   runningRuns: number;
+  decisionsDue: number;
+  inquiriesDue: number;
+  departuresOwed: number;
+}
+
+const NONE: NavCounts = { unackedAlerts: 0, runningRuns: 0, decisionsDue: 0, inquiriesDue: 0, departuresOwed: 0 };
+
+/** What the Now page holds for a person — its badge. */
+export function waitingOnAPerson(c: NavCounts): number {
+  return c.decisionsDue + c.inquiriesDue + c.departuresOwed;
 }
 
 export function useNavCounts(workspaceId?: string): NavCounts {
-  const [counts, setCounts] = useState<NavCounts>({ unackedAlerts: 0, runningRuns: 0 });
+  const [counts, setCounts] = useState<NavCounts>(NONE);
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -44,13 +61,22 @@ export function useNavCounts(workspaceId?: string): NavCounts {
           setCounts(c => ({ ...c, runningRuns: running }));
         })
         .catch(() => {});
+      listDecisions({ due: true })
+        .then(rows => { if (alive) setCounts(c => ({ ...c, decisionsDue: rows.length })); })
+        .catch(() => {});
+      listInquiries({ due: true })
+        .then(rows => { if (alive) setCounts(c => ({ ...c, inquiriesDue: rows.length })); })
+        .catch(() => {});
+      getDepartureSummary()
+        .then(sum => { if (alive) setCounts(c => ({ ...c, departuresOwed: sum?.awaiting ?? 0 })); })
+        .catch(() => {});
     };
     load();
     const throttled = () => {
       if (pending.current) return;
       pending.current = setTimeout(() => { pending.current = null; load(); }, 5_000);
     };
-    const unsub = subscribeKernelEvents(throttled, { kinds: ["monitor.alert", "investigation."] });
+    const unsub = subscribeKernelEvents(throttled, { kinds: ["monitor.alert", "investigation.", "inquiry.", "outcome."] });
     const iv = setInterval(load, 60_000);
     return () => {
       alive = false;

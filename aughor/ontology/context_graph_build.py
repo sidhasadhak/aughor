@@ -1,13 +1,20 @@
-"""Build orchestration for the connection knowledge graph — Wave C1.
+"""Build orchestration for the connection knowledge graph — Wave C1; a projection of the
+ledger since the 2027 study's close-out (C3).
 
 Gathers the deterministic sources (the built ontology, the merged glossary, the
-crystallized ambiguity resolutions, the discovered findings) and hands them to the
-pure projection in :mod:`aughor.ontology.context_graph`, then persists the committed
-artifact. Every source read is best-effort: one empty or unavailable store degrades
-that slice of the graph, never the whole build.
+crystallized ambiguity resolutions, the Record's claims and — for what predates the
+Record — the discovered findings and the answer receipts) and hands them to the pure
+projection in :mod:`aughor.ontology.context_graph`, then persists the generated
+artifact under the state directory. Every source read is best-effort: one empty or
+unavailable store degrades that slice of the graph, never the whole build.
 
-Gated behind ``graph.build`` (default off) so ``main`` is byte-identical until the
-flag flips — C1 writes the artifact but nothing reads it back until C2.
+**The graph is a way of reading claims, not a place they live** (the study §F): its
+finding nodes are projected from the Record (`load_record_findings`) first; the
+explorer store and the answer receipts fill in only the findings that have no claim —
+those booked before the writers existed — never a second copy of one that has
+(`merge_finding_sources`). The artifact is GENERATED state, rebuilt on demand
+(`context_graph_store.graphs_for_connection`) and not tracked in git: a stale or
+missing file is rebuilt from the ledger, which holds every fact the graph shows.
 """
 from __future__ import annotations
 
@@ -157,6 +164,58 @@ def load_investigation_findings(
             "investigation_id": _investigation_of(art),
         })
     return out
+
+
+#: The Record kinds a finding node is projected from: what the platform measured or found. A
+#: hypothesis, a prediction, a definition or a said statement is a different reading and not a
+#: finding node; a withdrawn finding is kept in the Record and left out of the graph.
+RECORD_FINDING_KINDS: tuple[str, ...] = ("finding", "observation")
+MAX_RECORD_FINDINGS = 400
+
+
+def load_record_findings(connection_id: str, org_id: Optional[str] = None, *,
+                         limit: int = MAX_RECORD_FINDINGS) -> list[dict]:
+    """The Record's measured findings and observations about a connection → the projection's
+    finding shape, ``source="record"``. One per claim key (the latest version), warranted by its
+    run; the SQL is the run warrant's detail, the tables are read from it. The claim's id, key,
+    tier, kind and author ride along so the node names the claim it reads."""
+    from aughor.explorer.scope import tables_in_sql
+    from aughor.record import claims as record_claims
+    out: list[dict] = []
+    for kind in RECORD_FINDING_KINDS:
+        for c in record_claims.list_claims(kind=kind, conn_id=connection_id, limit=limit):
+            if c.state == "withdrawn" or c.tier not in ("measured", "mined"):
+                continue
+            text = (c.statement.text or "").strip()
+            if not text:
+                continue
+            run = next((w for w in c.warrants if w.kind == "run"), None)
+            sql = str(run.detail or "") if run else ""
+            out.append({
+                "id": c.id, "text": text, "sql": sql,
+                "tables": sorted(tables_in_sql(sql)) if sql else [],
+                "source": "record", "generated_at": c.as_of or c.recorded_at or "",
+                "claim_id": c.id, "claim_key": c.key, "tier": c.tier, "claim_kind": c.kind, "author": c.author,
+                **({"investigation_id": str(c.extra["investigation_id"])} if c.extra.get("investigation_id") else {}),
+                **({"finding_id": str(c.extra["finding_id"])} if c.extra.get("finding_id") else {}),
+            })
+    return out
+
+
+def merge_finding_sources(record: list[dict], legacy: list[dict]) -> list[dict]:
+    """The Record first: a legacy finding (the explorer store, an answer receipt) that a claim
+    already covers — the same investigation, or the same explorer finding id — is dropped, so the
+    graph never holds a fact twice; one that predates the Record is kept, said as its source."""
+    covered_inv = {str(f.get("investigation_id")) for f in record if f.get("investigation_id")}
+    covered_fid = {str(f.get("finding_id")) for f in record if f.get("finding_id")}
+    kept = list(record)
+    for f in legacy:
+        if str(f.get("investigation_id") or "") in covered_inv:
+            continue
+        if str(f.get("id") or "") in covered_fid:
+            continue
+        kept.append(f)
+    return kept
 
 
 def _investigation_of(art: dict) -> str:
@@ -339,12 +398,14 @@ def build_context_graph(
     merged_glossary = _safe(lambda: _load_glossary(connection_id), "glossary", {})
     resolutions = _safe(
         lambda: _list_resolutions(connection_id, resolved_org), "ambiguity_ledger", [])
-    findings = _safe(lambda: load_findings(connection_id), "findings", [])
-    # Two independent sources, each best-effort: the explorer's insights and the
-    # answer receipts. Ids cannot collide (insight id vs artifact id) and either
-    # store being empty just thins that slice.
-    findings += _consolidated_investigation_findings(
+    # The Record first (the close-out, C3): its findings and observations are the graph's finding
+    # nodes; the explorer store and the answer receipts — two independent, best-effort sources —
+    # fill in only what has no claim yet. Ids cannot collide across the three.
+    record = _safe(lambda: load_record_findings(connection_id, resolved_org), "record", [])
+    legacy = _safe(lambda: load_findings(connection_id), "findings", [])
+    legacy += _consolidated_investigation_findings(
         connection_id, resolved_org, schema_name)
+    findings = merge_finding_sources(record, legacy)
 
     briefs = _safe(lambda: load_briefs(connection_id), "briefs", [])
 

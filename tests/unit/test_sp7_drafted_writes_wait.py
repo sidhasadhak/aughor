@@ -1,7 +1,8 @@
 """SP-7 (§3.11, the second movement) — a write drafted from a sentence waits for a person.
 
-The approval switch (`AUGHOR_ACTION_APPROVAL`) is off by default, and with it off a declared
-write inside an armed chain runs unattended: the one kind of step a model could draft that
+The approval switch (`AUGHOR_ACTION_APPROVAL`) was off by default until 2026-10-04 (it is on by
+default since, with `0` as the kill switch), and with it off a declared write inside an armed
+chain runs unattended: the one kind of step a model could draft that
 changes the world with nobody looking. A chain a person builds by hand stays that person's
 decision; a chain a model drafts marks each declared write, and the executor asks a person on
 every run whatever the switch says. A human accept, or a standing grant — a person's prior
@@ -46,8 +47,9 @@ def _recorder():
 
 @pytest.fixture(autouse=True)
 def _switch_off(monkeypatch):
-    """The deployment default — exactly when a drafted write used to run unattended."""
-    monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
+    """The gate switched OFF — the deployment default until 2026-10-04, and exactly when a
+    drafted write used to run unattended. The hold under test must not depend on it."""
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
 
 
 # ── the executor ──────────────────────────────────────────────────────────────────────

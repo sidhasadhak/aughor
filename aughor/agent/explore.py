@@ -1575,19 +1575,43 @@ class _RefutationVerdict(BaseModel):
     refuted: bool = Field(description="True if the headline finding does NOT hold up to scrutiny.")
     reason: str = Field(default="", description="One-sentence strongest objection.")
     alternative: Optional[str] = Field(default=None, description="Plausible alternative explanation, or null.")
+    #: Filled by the caller, never by the model: which binding challenged (phase 2 of the 2027
+    #: study — a second binding where the install has two, said either way).
+    binding: dict = Field(default_factory=dict)
+
+
+def skeptic_binding():
+    """``(provider, binding record)`` — the challenger. A SECOND binding where the install has two
+    (the narrator's model differs from the coder's), else the coder's own, and the record says
+    which: a challenge from the same model is weaker evidence than one from another, and the
+    two must never read alike on the `causal_checks` record."""
+    coder = get_provider("coder")
+    try:
+        other = get_provider("narrator")
+    except Exception:  # noqa: BLE001 — an unbound narrator means one binding
+        other = None
+    if other is not None and other.model and other.model != coder.model:
+        return other, {"role": "narrator", "model": other.model, "second_binding": True}
+    return coder, {"role": "coder", "model": coder.model, "second_binding": False,
+                   "why": "the install binds one model for both roles" if other is not None
+                   else "no second role is bound"}
 
 
 def _run_refutation(question: str, conclusion: str, chain_summary: str) -> Optional[_RefutationVerdict]:
     """Adversarial self-verification (Bet 0, 0-IV): an independent skeptic pass that TRIES to
-    refute the headline. Best-effort — returns None on any provider/parse failure so synthesis
-    is never blocked. Gated by the caller to load-bearing (non-no-signal) conclusions only."""
+    refute the headline — from a second model binding where one is configured. Best-effort —
+    returns None on any provider/parse failure so synthesis is never blocked. Gated by the
+    caller to load-bearing (non-no-signal) conclusions only."""
     try:
-        return get_provider("coder").complete(
+        provider, binding = skeptic_binding()
+        verdict: _RefutationVerdict = provider.complete(
             system="You are a skeptical analyst whose only job is to refute a finding.",
             user=REFUTE_FINDING_PROMPT.format(
                 question=question, conclusion=conclusion, chain_summary=chain_summary[:6000]),
             response_model=_RefutationVerdict,
         )
+        verdict.binding = binding
+        return verdict
     except Exception:
         return None
 

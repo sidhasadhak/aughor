@@ -1,0 +1,27 @@
+name: arr_growth_rate
+title: ARR growth rate
+aliases: [ARR growth, ARR growth rate, recurring revenue growth, year-over-year ARR growth]
+unit: ratio
+definition: >
+  ARR at a period's end less ARR at its start, as a share of the starting ARR. The period the industry
+  publishes is a year; a quarter's growth is a different number and is said so.
+formula: >
+  (SUM({{role.company_period.ending_arr}}) - SUM({{role.company_period.starting_arr}}))
+    / NULLIF(SUM({{role.company_period.starting_arr}}), 0)
+grain: >
+  The company's own figures for one period; summed over business lines or entities when there are several, then
+  divided — never an average of their rates.
+binds:
+  required: [company_period]
+anti_patterns:
+  - "Reading a quarter's growth as the annual rate, or annualising it by four: compounding and seasonality make them differ."
+  - "Growing from booked contract value: ARR grows by what the book carries, not by what was signed."
+  - "Averaging business lines' growth rates: a small line weighs as much as the largest. Sum the ARR, then divide."
+sane_range:
+  min: 0.15
+  max: 0.20
+  basis: >
+    The median ARR growth of private SaaS companies in the KeyBanc/Sapphire 2025 survey, AS INDEXED on 2026-10-05
+    and not read in the document: 15% in 2024 and 20% projected for 2025. A band of two medians a year apart, one
+    of them a projection; a single company at any stage sits far outside it.
+  sources: [kbcm-sapphire-saas-survey-2025]

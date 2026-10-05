@@ -1,0 +1,13 @@
+# A watch B2B SaaS keeps, with the PRIOR range of the surveys' medians, 18 to 25 months, AS INDEXED (sources.yaml).
+# Proposed for confirmation with its backtest; never armed by itself.
+id: cac_payback_months
+metric: cac_payback_months
+unit: number
+low: 18
+high: 25
+measured_on: [kbcm-sapphire-saas-survey-2025, benchmarkit-2025]
+sources: [kbcm-sapphire-saas-survey-2025, benchmarkit-2025]
+description: Months of gross-margin-adjusted new MRR to repay a period's sales and marketing spend.
+note: >
+  `measured_on` names two surveys (as indexed), not an install: KeyBanc/Sapphire's 18 months expected by 2026 and
+  Benchmarkit's medians of 20 (2025) and 25 (2022). The median moves with the year and with ACV.

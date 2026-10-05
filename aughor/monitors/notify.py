@@ -100,6 +100,28 @@ def alert_context(alert: "MonitorAlert") -> dict:
     }
 
 
+def _alert_size(alert: "MonitorAlert") -> float:
+    try:
+        from aughor.govern.attention import size_for_alert
+        return size_for_alert(alert.current_value, alert.threshold)
+    except Exception:  # noqa: BLE001 — a size that cannot be read is 0, said by the terms
+        return 0.0
+
+
+def _open_inquiry_for_alert(alert: "MonitorAlert", monitor: "Monitor") -> None:
+    try:
+        from aughor.record.inquiry import mission_for, open_inquiry, subject_of
+        metric = alert.metric_name or getattr(monitor, "metric_name", None) or getattr(monitor, "name", "") or "the metric"
+        question = f"Why did {metric} {_threshold_phrase(alert)}?".replace("??", "?")
+        conn = alert.conn_id or getattr(monitor, "conn_id", "") or ""
+        open_inquiry(question=question[:500], connection_id=conn, opened_by=f"monitor:{alert.monitor_id}",
+                     subject=subject_of("", metric), mission=mission_for(conn, metric))
+    except Exception as exc:  # noqa: BLE001 — a signal that cannot open an inquiry still alerts
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the alert fired; its inquiry could not be opened", counter="inquiry.from_alert",
+                 conn_id=alert.conn_id or None)
+
+
 def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -> Optional["ActionLog"]:
     """Deliver a fired alert through its monitor's configured channel.
 
@@ -114,6 +136,12 @@ def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -
             monitor = get_monitor(alert.monitor_id)
         if monitor is None:
             return None
+
+        # Phase 2 of the 2027 study — a fired alert is a SIGNAL, and a signal opens an inquiry
+        # (or wakes the one on the same metric): the platform opening inquiries from signals,
+        # not only from asks. Opened whether or not the message departs — the data moved either
+        # way. No run is spent here; the inquiry waits for one. Best-effort.
+        _open_inquiry_for_alert(alert, monitor)
 
         channel = (monitor.notification_channel or IN_APP).strip()
         if not channel or channel == IN_APP:
@@ -151,7 +179,10 @@ def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -
             source_id=alert.monitor_id, source_name=name,
             about=f"metric:{alert.metric_name}" if alert.metric_name else "",
             measurement=measurement_for_monitor_alert(alert, monitor),
-            declared_definition=f"monitor '{name}' (declared)")
+            declared_definition=f"monitor '{name}' (declared)",
+            # phase 2 of the 2027 study — the attention budget's size term: how far the reading
+            # sits outside the threshold the monitor declared
+            triage={"size": _alert_size(alert)})
         if verdict.held:
             logger.info("monitor alert %s held at departure (departure %s): %s",
                         alert.id, verdict.record_id, verdict.reason_sentence())

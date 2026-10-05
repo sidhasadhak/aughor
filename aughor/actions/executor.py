@@ -48,6 +48,10 @@ class KineticResult:
     outcome: dict = field(default_factory=dict)   # dispatch result, when executed
     detail: dict = field(default_factory=dict)    # structured extras (e.g. the 428 body)
     granted_by: str = ""                    # A4: the standing-grant id that auto-allowed this run ('' otherwise)
+    #: Phase 4 of the 2027 study — what the declared verification read found after dispatch
+    #: ({"status": passed|failed|unavailable|not_declared, "why", …}) and the Action ledger entry.
+    verification: dict = field(default_factory=dict)
+    action_entry: str = ""
 
     def http_status(self) -> int:
         return {
@@ -120,7 +124,7 @@ def _eval(node: ast.AST, params: dict, objects: Optional[dict] = None):
             left = right
         return True
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in objects:
-        # ON-4 — `order.status`: a property of an object parameter's object, read live. Only a name
+        # ON-4 — `entity.status`: a property of an object parameter's object, read live. Only a name
         # bound to a resolved object may be dotted, and only into that object's property values.
         target = objects[node.value.id]
         props = target.get("properties") or {}
@@ -195,7 +199,7 @@ def _type_word(name: str) -> str:
 
 def object_ref(value, param) -> str:
     """ON-4 — the canonical ``"<type>:<key>"`` for a value passed to an object parameter:
-    ``"Order:123"``, ``{"object_type": "Order", "pk": "123"}``, or a bare key the parameter's own type
+    ``"Thing:123"``, ``{"object_type": "Thing", "pk": "123"}``, or a bare key the parameter's own type
     names. A reference to another object type is invalid, however plausible its key."""
     want = param.object_type
     if isinstance(value, dict):
@@ -303,7 +307,7 @@ MAX_RESPONSE_CHARS = 4000
 _HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 
 
-def _fill(value, params: dict, *, quote_for_url: bool = False):
+def fill_template(value, params: dict, *, quote_for_url: bool = False):
     """Substitute declared params into a template — strings, dicts and lists alike.
 
     TOTAL and deterministic, the same rule `_fill_question` states one function down: only
@@ -327,9 +331,9 @@ def _fill(value, params: dict, *, quote_for_url: bool = False):
                 f"http side effect references something the action does not declare: {e}"
             ) from e
     if isinstance(value, dict):
-        return {k: _fill(v, params, quote_for_url=quote_for_url) for k, v in value.items()}
+        return {k: fill_template(v, params, quote_for_url=quote_for_url) for k, v in value.items()}
     if isinstance(value, list):
-        return [_fill(v, params, quote_for_url=quote_for_url) for v in value]
+        return [fill_template(v, params, quote_for_url=quote_for_url) for v in value]
     return value
 
 
@@ -354,11 +358,11 @@ def _dispatch_http(se: SideEffect, action: KineticAction, params: dict) -> dict:
         raise KineticDispatchError(
             f"http side effect method '{method}' is not one of {', '.join(_HTTP_METHODS)}")
 
-    url = _fill(str(cfg.get("url", "")), params, quote_for_url=True)
+    url = fill_template(str(cfg.get("url", "")), params, quote_for_url=True)
     if not url or not is_safe_webhook_url(url):
         raise KineticDispatchError("http url missing or blocked by the SSRF guard")
 
-    headers = {str(k): str(v) for k, v in (_fill(cfg.get("headers") or {}, params)).items()}
+    headers = {str(k): str(v) for k, v in (fill_template(cfg.get("headers") or {}, params)).items()}
     # The credential is decrypted HERE and nowhere else — it is never returned, never
     # logged, and never part of the result this function publishes. At rest it is Fernet
     # under AUGHOR_SECRET_KEY like every other secret this platform holds, which is what
@@ -372,7 +376,7 @@ def _dispatch_http(se: SideEffect, action: KineticAction, params: dict) -> dict:
                 f"it — re-enter the credential")
         headers[auth_header] = secret
 
-    body = _fill(cfg.get("body"), params) if cfg.get("body") is not None else None
+    body = fill_template(cfg.get("body"), params) if cfg.get("body") is not None else None
 
     import httpx
     with external_call("http_component", action.id,
@@ -451,8 +455,8 @@ def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, param
         agent_id=str(cfg.get("agent_id") or "") or None,
     )
     # Two runs of one action are the same work only when they ask the same question as the same
-    # persona — the parameters are already baked into `question`, so a refund investigation for
-    # order A must not deduplicate onto order B's.
+    # persona — the parameters are already baked into `question`, so an investigation for
+    # object A must not deduplicate onto object B's.
     import hashlib
     digest = hashlib.sha256(f"{question}\x00{req.agent_id or ''}".encode()).hexdigest()[:12]
     run = run_investigation(req, idempotency_key=f"kinetic:{action.id}:{digest}",
@@ -504,7 +508,7 @@ def _dispatch_annotate(action: KineticAction, params: dict, scope: str, *, actor
     """Write a human overlay edit to the K3 ledger — an annotation/correction merged onto reads,
     never a source mutation. The action's parameters carry the target + body. The row is named by
     ``row_key`` or, when that is absent, by the parameter its ``key_column`` names — an action taking
-    ``order_id`` with ``key_column="order_id"`` annotates that order's row, which is how an object
+    ``row_id`` with ``key_column="row_id"`` annotates that object's row, which is how an object
     page pre-fills the object's key."""
     if action.edits:
         return _dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {})
@@ -578,6 +582,7 @@ def execute_kinetic_action(
     schema_name: str = "",
     resolver: Optional[ObjectResolver] = None,
     require_approval: bool = False,
+    compensates: str = "",
 ) -> KineticResult:
     """Run one declared action through the full governed pipeline. ``scope`` is the connection
     id (the grain the approval allowlist is keyed on). Returns a :class:`KineticResult`; never
@@ -693,6 +698,32 @@ def execute_kinetic_action(
         govern.audit(gov_action, scope, "dispatch_error", actor=actor, detail=str(e), risk=risk)
         return KineticResult("dispatch_error", False, action.id, message=str(e))
 
-    # 5 — audit the completed run
-    govern.audit(gov_action, scope, "executed", actor=actor, detail=action.kind, risk=risk)
-    return KineticResult("executed", True, action.id, outcome=outcome, granted_by=grant_id)
+    # 4b — the verification read (phase 4 of the 2027 study, §M): the statement the declaration
+    #      names, run through the ordinary query door AFTER the change. A read that cannot run is
+    #      `unavailable`, never `failed` — the tie-out's rule — and a failed one DEMOTES the
+    #      (action, scope) and withdraws its standing grants, as a ledger entry nobody has to notice.
+    from aughor.actions import authority
+    verification: dict = {"status": "not_declared", "why": "the action declares no verification statement"}
+    try:
+        verification = authority.verify(action, coerced, scope)
+    except Exception as exc:  # noqa: BLE001 — the change happened; a verifier that crashed is said
+        verification = {"status": "unavailable", "why": f"the verifier failed: {str(exc)[:160]}"}
+
+    # 5 — audit the completed run, and book it as an Action in the ledger with what it ran under
+    govern.audit(gov_action, scope, "executed", actor=actor,
+                 detail=f"{action.kind}; verification {verification.get('status')}", risk=risk)
+    entry = ""
+    try:
+        entry = authority.book_action(action=action, params=coerced, scope=scope, actor=actor, status="executed",
+                                      outcome=outcome if isinstance(outcome, dict) else {"result": outcome},
+                                      grant_id=grant_id, approved_by=("human accept" if approved else ""),
+                                      verification=verification, compensates=compensates)
+        if verification.get("status") == "failed":
+            authority.demote(action.id, scope, why=f"verification failed after execution: {verification.get('why', '')}",
+                             evidence={"action_entry": entry, "verification": verification})
+    except Exception as exc:  # noqa: BLE001 — the execution stands; its record is best-effort and said
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the action ran; its ledger entry could not be booked", counter="actions.book_entry",
+                 conn_id=scope or None)
+    return KineticResult("executed", True, action.id, outcome=outcome, granted_by=grant_id,
+                         verification=verification, action_entry=entry)

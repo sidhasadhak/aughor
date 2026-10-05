@@ -43,6 +43,12 @@ TOOL_LEVELS: dict[str, Level] = {
     "list_runs": "read",
     "inspect_run": "read",
     "read_run_span": "read",
+    # Phase 7 of the 2027 study — the ledger API through the same door: the contract, claims as
+    # recorded, what was restated (reads); posting a claim with its warrant (a run: it books an entry).
+    "read_contract": "read",
+    "read_claims": "read",
+    "read_restatements": "read",
+    "post_claim": "run",
 }
 
 #: API routes an agent reaches whose method alone does not say what they need (a POST that
@@ -56,6 +62,11 @@ ROUTE_LEVELS: dict[tuple[str, str], Level] = {
     ("POST", "/exploration/{conn_id}/briefing"): "run",
     ("POST", "/jobs/{job_id}/cancel"): "act",
     ("POST", "/automations/{automation_id}/run"): "act",
+    # Phase 7 of the 2027 study — the ledger API: booking an entry with its warrant and subscribing to
+    # events out are `run` (they change nothing outside the ledger); minting a principal, registering a
+    # method and exporting an aggregate are acts, by the conservative default for a POST.
+    ("POST", "/ledger/v1/claims"): "run",
+    ("POST", "/ledger/v1/subscriptions"): "run",
 }
 
 #: Spotlight's roster: the Act limb's tools stage changes for a person; everything else on the

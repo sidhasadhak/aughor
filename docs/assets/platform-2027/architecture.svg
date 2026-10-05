@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 990" width="1440" height="990">
+  <title>Aughor in 2027 — where everything sits, what is owned, and what crosses each boundary</title>
+  <style>
+    :root { --bg:#F3F6F8; --fg:#16222D; --muted:#5B6C7B; --line:#B5C1CC; --own:#0B6B86; --own-fill:#D9EBF1; --nec-fill:#E6EBEF; --out-fill:#F3F6F8; --chip:#FFFFFF; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0D141B; --fg:#E3E9EF; --muted:#93A3B1; --line:#36465A; --own:#5BBBD8; --own-fill:#12303B; --nec-fill:#182230; --out-fill:#0D141B; --chip:#1E2A36; }
+    }
+    svg { color: var(--fg); font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif; }
+    .canvas { fill: var(--bg); }
+    text { fill: currentColor; }
+    .t { font-size: 15px; font-weight: 600; }
+    .i { font-size: 12.5px; }
+    .l { font-size: 11.5px; fill: var(--muted); font-style: italic; }
+    .m { font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+    .bx { stroke: currentColor; stroke-width: 1.2; }
+    .own .bx { fill: var(--own-fill); stroke: var(--own); stroke-width: 1.6; }
+    .nec .bx { fill: var(--nec-fill); }
+    .out .bx { fill: var(--out-fill); stroke-dasharray: 5 4; }
+    .chip { fill: var(--chip); stroke: var(--line); stroke-width: 1; }
+    .ar { stroke: currentColor; fill: none; stroke-width: 1.4; marker-end: url(#ah); }
+    .own-ar { stroke: var(--own); stroke-width: 1.8; marker-end: url(#ah-own); }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+    <marker id="ah-own" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--own)"/>
+    </marker>
+  </defs>
+  <rect class="canvas" width="1440" height="990"/>
+
+  <!-- EXPERIENCE -->
+  <g class="nec">
+    <rect class="bx" x="270" y="16" width="500" height="100" rx="3"/>
+    <text class="t" x="284" y="40">PEOPLE</text>
+    <text class="i" x="284" y="62">Now · Inquiries · Decisions · Missions · Record · Operations — and Ask as a bar everywhere</text>
+    <text class="i" x="284" y="80">Slack and Teams threads · receipts that travel by link</text>
+    <text class="l" x="284" y="100">people alone write goals, meanings, novel decisions, dissent and grants</text>
+  </g>
+  <g class="out">
+    <rect class="bx" x="830" y="16" width="320" height="100" rx="3"/>
+    <text class="t" x="844" y="40">OUTSIDE AGENTS — any vendor's</text>
+    <text class="i" x="844" y="62">the MCP server: asks questions, never raw SQL</text>
+    <text class="i" x="844" y="80">the ledger API · the same duty contract</text>
+    <text class="l" x="844" y="100">a service principal, scored like every other</text>
+  </g>
+
+  <!-- experience ↔ governance -->
+  <line class="ar" x1="380" y1="116" x2="380" y2="146"/>
+  <text class="l" x="390" y="135">asks · decides · confirms · grants</text>
+  <line class="ar own-ar" x1="660" y1="146" x2="660" y2="116"/>
+  <text class="l" x="670" y="135">delivered once, with its receipt, inside the budget</text>
+  <line class="ar" x1="990" y1="116" x2="990" y2="146"/>
+  <text class="l" x="1000" y="135">the same doors, under a service principal</text>
+
+  <!-- GOVERNANCE -->
+  <g class="own">
+    <rect class="bx" x="270" y="146" width="880" height="80" rx="3"/>
+    <text class="t" x="284" y="170">GOVERNANCE — every arrow passes here</text>
+    <text class="i" x="284" y="192">the gate map: every door in and out declared · policy as structural clauses, read back as sentences · groups and clearances, enforced</text>
+    <text class="i" x="284" y="210">the departure gate: ten laws, each said on the receipt · the attention budget (new) · audit, exportable to the customer's own log</text>
+  </g>
+
+  <!-- governance → engines -->
+  <line class="ar" x1="330" y1="226" x2="330" y2="256"/>
+  <line class="ar" x1="630" y1="226" x2="630" y2="256"/>
+  <line class="ar" x1="1100" y1="226" x2="1100" y2="256"/>
+  <!-- evaluation → action receipts -->
+  <polyline class="ar own-ar" points="760,256 760,246 940,246 940,256"/>
+  <text class="l" x="850" y="240" text-anchor="middle">graduation · demotion receipts</text>
+
+  <!-- ENGINES -->
+  <g class="nec">
+    <rect class="bx" x="270" y="256" width="280" height="200" rx="3"/>
+    <text class="t" x="284" y="280">AGENT — seven duties</text>
+    <text class="i" x="284" y="302">Observe · Inquire · Challenge · Steward</text>
+    <text class="i" x="284" y="320">Forecast (new) · Operate (new) · Deliver</text>
+    <text class="i" x="284" y="342">the job kernel: heartbeats, retries, resume</text>
+    <text class="i" x="284" y="360">model routing by role · a budget per principal</text>
+    <text class="i" x="284" y="378">no memory of its own: what is worth keeping</text>
+    <text class="i" x="284" y="396">is booked to the ledger, dated and visible</text>
+    <text class="l" x="284" y="420">runtime delegated to the vendors' kits</text>
+    <text class="l" x="284" y="438">an agent is licensed by what it may book</text>
+  </g>
+  <g class="own">
+    <rect class="bx" x="570" y="256" width="280" height="200" rx="3"/>
+    <text class="t" x="584" y="280">EVALUATION — code, never a judge</text>
+    <text class="i" x="584" y="302">scoring at settle: predictions, outcomes</text>
+    <text class="i" x="584" y="320">calibration by class, method, author (new)</text>
+    <text class="i" x="584" y="338">golden suites by result set · the canary</text>
+    <text class="i" x="584" y="356">graduation and demotion receipts</text>
+    <text class="i" x="584" y="374">cost per warranted claim</text>
+    <text class="l" x="584" y="420">a model may sort what a person reads first;</text>
+    <text class="l" x="584" y="438">it never issues a pass</text>
+  </g>
+  <g class="own">
+    <rect class="bx" x="870" y="256" width="280" height="200" rx="3"/>
+    <text class="t" x="884" y="280">ACTION — one write path</text>
+    <text class="i" x="884" y="302">a declared action is a reference to an</text>
+    <text class="i" x="884" y="320">integration call or an allowlisted MCP tool</text>
+    <text class="i" x="884" y="338">typed parameters · risk tier · reversibility</text>
+    <text class="i" x="884" y="356">preview → execute → verify → undo (window)</text>
+    <text class="i" x="884" y="374">authority L0–L5, earned on receipts (new)</text>
+    <text class="i" x="884" y="392">standing grants: target, scope, limits, expiry</text>
+    <text class="l" x="884" y="420">withdrawn automatically on a miss;</text>
+    <text class="l" x="884" y="438">irreversible never above L3</text>
+  </g>
+
+  <!-- engines ↔ intelligence -->
+  <line class="ar" x1="460" y1="456" x2="460" y2="486"/>
+  <text class="l" x="470" y="475">duties run the engines</text>
+  <line class="ar" x1="900" y1="486" x2="900" y2="456"/>
+  <text class="l" x="910" y="475">typed results, never an empty one</text>
+
+  <!-- INTELLIGENCE -->
+  <g class="own">
+    <rect class="bx" x="270" y="486" width="880" height="120" rx="3"/>
+    <text class="t" x="284" y="510">INTELLIGENCE — declared by people, compiled by code</text>
+    <text class="i" x="284" y="532">types, links, processes, promises, rules · definitions with grain, version and approval · the object door: a compiler, so no model fills a query</text>
+    <text class="i" x="284" y="550">the inquiry engine: hypotheses as claims, cheapest test first, a second binding challenges the survivor, refuted ones read back</text>
+    <text class="i" x="284" y="568">the scenario ladder: identity › declared › history › intervention › simulation › learned — an answer carries its weakest method</text>
+    <text class="i" x="284" y="586">triage: bears on a mission · size against its normal · cost of waiting · new against lessons — ranks, holds, and records every hold</text>
+  </g>
+
+  <!-- intelligence ↔ memory -->
+  <line class="ar own-ar" x1="700" y1="606" x2="700" y2="636"/>
+  <text class="l" x="710" y="625">books every entry with its warrant</text>
+  <line class="ar" x1="1060" y1="636" x2="1060" y2="606"/>
+  <text class="l" x="1070" y="625">reads as recorded on a date</text>
+
+  <!-- MEMORY -->
+  <g class="nec">
+    <rect class="bx" x="270" y="636" width="230" height="160" rx="3"/>
+    <text class="t" x="284" y="660">INDEXES — projections</text>
+    <text class="i" x="284" y="682">the graph, rebuilt on demand</text>
+    <text class="i" x="284" y="700">lessons · preferences</text>
+    <text class="i" x="284" y="718">procedures, with a success</text>
+    <text class="i" x="284" y="736">rate learned from outcomes</text>
+    <text class="i" x="284" y="754">embeddings — an index,</text>
+    <text class="i" x="284" y="772">never a source of truth</text>
+  </g>
+  <line class="ar" x1="520" y1="716" x2="500" y2="716"/>
+  <g class="own">
+    <rect class="bx" x="520" y="636" width="630" height="160" rx="3"/>
+    <text class="t" x="534" y="660">THE LEDGER — append-only, two clocks: as_of · recorded_at</text>
+    <rect class="chip" x="534" y="672" width="57" height="20" rx="3"/><text class="m" x="562" y="686" text-anchor="middle">Claim</text>
+    <rect class="chip" x="595" y="672" width="57" height="20" rx="3"/><text class="m" x="623" y="686" text-anchor="middle">Evidence</text>
+    <rect class="chip" x="656" y="672" width="57" height="20" rx="3"/><text class="m" x="684" y="686" text-anchor="middle">Inquiry</text>
+    <rect class="chip" x="717" y="672" width="57" height="20" rx="3"/><text class="m" x="745" y="686" text-anchor="middle">Decision</text>
+    <rect class="chip" x="778" y="672" width="57" height="20" rx="3"/><text class="m" x="806" y="686" text-anchor="middle">Action</text>
+    <rect class="chip" x="839" y="672" width="57" height="20" rx="3"/><text class="m" x="867" y="686" text-anchor="middle">Outcome</text>
+    <rect class="chip" x="900" y="672" width="57" height="20" rx="3"/><text class="m" x="928" y="686" text-anchor="middle">Mission</text>
+    <rect class="chip" x="961" y="672" width="57" height="20" rx="3"/><text class="m" x="989" y="686" text-anchor="middle">Policy</text>
+    <rect class="chip" x="1022" y="672" width="57" height="20" rx="3"/><text class="m" x="1050" y="686" text-anchor="middle">Scenario</text>
+    <rect class="chip" x="1083" y="672" width="57" height="20" rx="3"/><text class="m" x="1111" y="686" text-anchor="middle">Principal</text>
+    <text class="i" x="534" y="716">one envelope on everything that asserts: tier · scope · owner · author · supersedes, kept with its text</text>
+    <text class="i" x="534" y="734">confidence = { reference class, hit rate, n } — counted at settle, or empty; never a model's own estimate</text>
+    <text class="i" x="534" y="752">belief is a view: the unsuperseded claims as recorded on a date — not a second store</text>
+    <text class="l" x="534" y="776">the only state that matters; everything else is rebuilt from it and the sources</text>
+  </g>
+
+  <!-- memory ↔ data -->
+  <line class="ar own-ar" x1="540" y1="826" x2="540" y2="796"/>
+  <text class="l" x="550" y="815">the settle tick: re-measure · score · mark dirty</text>
+  <line class="ar" x1="800" y1="796" x2="800" y2="826"/>
+  <text class="l" x="810" y="815">statements run where the data lives</text>
+  <line class="ar" x1="1040" y1="826" x2="1040" y2="796"/>
+  <text class="l" x="1050" y="815">measured information returns — never rows</text>
+
+  <!-- DATA -->
+  <g class="nec">
+    <rect class="bx" x="270" y="826" width="880" height="80" rx="3"/>
+    <text class="t" x="284" y="850">DATA — queried in place</text>
+    <text class="i" x="284" y="872">warehouses · business systems · files · documents — through the dialect seam, each engine one declaration · profiles · mirrors</text>
+    <text class="i" x="284" y="890">the settle clock, learned per table: a figure is Final · Provisional · To date, and is not said before its days have settled</text>
+  </g>
+
+  <!-- OUTSIDE, LEFT -->
+  <g class="out">
+    <rect class="bx" x="24" y="256" width="156" height="200" rx="3"/>
+    <text class="t" x="38" y="280">MODEL VENDORS</text>
+    <text class="i" x="38" y="302">any backend</text>
+    <text class="i" x="38" y="320">bring your own key</text>
+    <text class="i" x="38" y="338">runtime kits</text>
+    <text class="l" x="38" y="364">a commodity,</text>
+    <text class="l" x="38" y="382">rented by role,</text>
+    <text class="l" x="38" y="400">swapped with</text>
+    <text class="l" x="38" y="418">nothing lost</text>
+  </g>
+  <line class="ar" x1="180" y1="356" x2="270" y2="356"/>
+  <text class="l" x="225" y="348" text-anchor="middle">routed by role,</text>
+  <text class="l" x="225" y="372" text-anchor="middle">no id in source</text>
+
+  <g class="out">
+    <rect class="bx" x="24" y="826" width="156" height="80" rx="3"/>
+    <text class="t" x="38" y="850">SOURCES</text>
+    <text class="i" x="38" y="868">warehouses · ERP</text>
+    <text class="i" x="38" y="884">CRM · commerce</text>
+    <text class="i" x="38" y="900">carriers · docs</text>
+  </g>
+  <line class="ar" x1="180" y1="866" x2="270" y2="866"/>
+  <text class="l" x="225" y="858" text-anchor="middle">queried in place</text>
+  <text class="l" x="225" y="882" text-anchor="middle">rows never move</text>
+
+  <!-- OUTSIDE, RIGHT -->
+  <g class="out">
+    <rect class="bx" x="1240" y="256" width="176" height="200" rx="3"/>
+    <text class="t" x="1254" y="280">SYSTEMS OF ACTION</text>
+    <text class="i" x="1254" y="302">commerce · ERP</text>
+    <text class="i" x="1254" y="320">ticketing · carriers</text>
+    <text class="i" x="1254" y="344">the actor —</text>
+    <text class="i" x="1254" y="362">never the scorer</text>
+    <text class="l" x="1254" y="390">their agents take the</text>
+    <text class="l" x="1254" y="408">Operate duty here and</text>
+    <text class="l" x="1254" y="426">are scored like the rest</text>
+  </g>
+  <line class="ar own-ar" x1="1150" y1="356" x2="1240" y2="356"/>
+  <text class="l" x="1195" y="348" text-anchor="middle">one write path</text>
+  <text class="l" x="1195" y="372" text-anchor="middle">verify · undo</text>
+
+  <g class="out">
+    <rect class="bx" x="1240" y="636" width="176" height="160" rx="3"/>
+    <text class="t" x="1254" y="660">PACKS · INSTALLS</text>
+    <text class="i" x="1254" y="682">declarations with priors,</text>
+    <text class="i" x="1254" y="700">measured on connect:</text>
+    <text class="i" x="1254" y="718">what fits is proposed,</text>
+    <text class="i" x="1254" y="736">a person confirms</text>
+    <text class="l" x="1254" y="762">other installs: aggregates</text>
+    <text class="l" x="1254" y="780">only, never a claim</text>
+  </g>
+  <line class="ar" x1="1240" y1="700" x2="1150" y2="700"/>
+  <text class="l" x="1195" y="692" text-anchor="middle">priors in</text>
+  <line class="ar" x1="1150" y1="748" x2="1240" y2="748"/>
+  <text class="l" x="1195" y="740" text-anchor="middle">aggregates out</text>
+
+  <!-- LEGEND -->
+  <g class="own"><rect class="bx" x="270" y="934" width="20" height="14" rx="2"/></g>
+  <text class="i" x="298" y="946">owned — the product; one per organisation</text>
+  <g class="nec"><rect class="bx" x="600" y="934" width="20" height="14" rx="2"/></g>
+  <text class="i" x="628" y="946">necessary — kept working, not where value grows</text>
+  <g class="out"><rect class="bx" x="930" y="934" width="20" height="14" rx="2"/></g>
+  <text class="i" x="958" y="946">outside the install — many and replaceable</text>
+  <text class="l" x="270" y="972">(new) = not on the 2026 build · a coloured arrow is a flow the study calls strategic</text>
+</svg>

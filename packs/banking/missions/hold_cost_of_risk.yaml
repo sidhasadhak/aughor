@@ -1,0 +1,10 @@
+# Phase 6 of the 2027 study — a mission template (§J, §P vertical 3): hold the cost of risk under a limit without
+# cutting approvals below a floor. The constraint names a metric the package cannot measure from Call Report data,
+# so on connect it is the shopping list's line: connect origination to run this mission whole.
+id: hold_cost_of_risk
+name: Hold cost of risk under a limit without cutting approvals
+cadence: quarterly
+objective: {metric: net_charge_off_rate, direction: down, unit: ratio, text: "net charge-offs over average loans, annualised, at or below the limit"}
+constraints:
+  - {metric: approval_rate, bound: at_least, unit: ratio, text: "approvals must not fall below the floor"}
+description: Lose less to credit without turning good borrowers away.

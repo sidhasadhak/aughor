@@ -24,7 +24,7 @@ const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then
 const ProfileLayer     = dynamic(() => import("@/components/ProfileLayer").then(m => ({ default: m.ProfileLayer })),       { ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
 const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
-const KineticPanel     = dynamic(() => import("@/components/KineticPanel").then(m => ({ default: m.KineticPanel })),       { ssr: false, loading });
+const DeclaredActionsPanel = dynamic(() => import("@/components/DeclaredActionsPanel").then(m => ({ default: m.DeclaredActionsPanel })), { ssr: false, loading });
 const ConnectionGraphPanel = dynamic(() => import("@/components/ConnectionGraphPanel").then(m => ({ default: m.ConnectionGraphPanel })), { ssr: false, loading });
 // Relocated from the former Agents workspace (Agentic Ops merge): the closed
 // loop's accumulation is org-wide learning — "what Aughor knows", which is this
@@ -279,7 +279,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         if (id === "hub")      return <ProfileLayer connectionId={connectionId} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "memory")   return <MemoryPanel />;
-        if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;
+        if (id === "kinetic")  return <DeclaredActionsPanel connectionId={connectionId} />;
         if (id === "brain")    return <BrainMapPanel connectionId={connectionId} workspaceId={workspaceId} contextReady={contextReady} />;
         return <OrgIntelPanel />; // "org"
       }}

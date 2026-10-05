@@ -468,6 +468,10 @@ def _mutated(value: Any, ann: Any) -> Any:
         out = dict(value or {})
         out[MUT] = MUT
         return out
+    if isinstance(value, BaseModel):
+        # A nested declaration (phase 4's Verification and Undo on an action): mutate its first field.
+        name, field = next(iter(type(value).model_fields.items()))
+        return value.model_copy(update={name: _mutated(getattr(value, name), field.annotation)})
     raise TypeError(f"no mutation rule for {ann!r} (value {value!r})")
 
 
@@ -488,6 +492,9 @@ def _fresh(t: Any) -> Any:
         return [MUT]
     if origin is dict or t is dict:
         return {MUT: MUT}
+    if isinstance(t, type) and issubclass(t, BaseModel):
+        # A nested declaration left None in the fixture: built from its required fields' fresh values.
+        return t(**{name: _fresh(field.annotation) for name, field in t.model_fields.items() if field.is_required()})
     raise TypeError(f"no fresh value for {t!r}")
 
 

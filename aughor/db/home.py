@@ -48,9 +48,12 @@ STATE_SUBDIR = "state"
 
 #: Top-level entries under `data/` that are AUTHORED, not generated — versioned content that
 #: stays in the checkout when state leaves. Measured, not guessed: `git ls-files data/` lists
-#: exactly these 13, and `.gitignore` is a per-file denylist whose own comments say
-#: `ontology_overrides/` and `context_graph/` stay tracked because they are the reviewable
-#: governed artifacts.
+#: exactly these, and `.gitignore` is a per-file denylist whose own comments say
+#: `ontology_overrides/` stays tracked because it is a reviewable governed artifact.
+#: `context_graph/` left this list with the 2027 study's close-out (C3): the graph is a projection
+#: of the ledger, rebuilt on demand, so it is generated state that moves with the home — and a
+#: migrated install that never received a copy loses nothing, because a missing graph is rebuilt
+#: from the Record and the ontology, which did move.
 #:
 #: `metrics.json` and `ontology_overrides/` were BOTH tracked and written at runtime — shipped
 #: seed content and live instance data in one path. The overlay splits them: the seed ships
@@ -66,7 +69,6 @@ STATE_SUBDIR = "state"
 #: Every declaration would read as gone. Moving it needs a verified top-up step first.
 AUTHORED_ENTRIES = frozenset({
     "answer_sweep.jsonl",
-    "context_graph",
     "demo_packs",
     "events.yaml",
     "global_rules.md",

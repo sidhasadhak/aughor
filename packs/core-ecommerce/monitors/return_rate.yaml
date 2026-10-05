@@ -1,0 +1,8 @@
+# A watch commerce usually keeps, with NO prior band: the return rate differs by category and market more than it
+# agrees across businesses, and the two public datasets here carry returns too sparsely to measure one. Said as
+# unmeasured; the band is learned on the connection or shown nowhere.
+id: return_rate
+metric: return_rate
+unit: ratio
+unmeasured: true
+description: Returned order lines over shipped order lines, by the day the line was returned.
