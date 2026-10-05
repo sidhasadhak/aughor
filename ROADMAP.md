@@ -11208,10 +11208,9 @@ receipt, minted only at L4 (`authority.widen`), allowing nothing once spent. (P4
 book the same entry in a drill; `/authority` serves the L0–L5 table with each row's record, receipt, demotion and what
 L4 would still need. Receipt: 7 authority tests pass; the executor, grants, inbox, declared-action, propose, MCP-grant,
 autonomy-ladder and vocabulary suites pass. **Still open in phase 4:** the Action centre and the approval queue folded
-into it; the Operate duty row; firing the declared undo from an Action entry; the integration and MCP write paths
-booking Action entries; and the exit's live halves — a graduation on the organisation's install (which needs phase 3's
-first reconciled outcomes) and a demotion in a drill there. §4.8's refusal stands as amended: the mechanism exists,
-and L4 stays unreachable until an outcome is recorded and scored.
+into it; the Operate duty in Operations' duty rows; and the exit on the install (a graduation on the
+organisation's install, a demotion in a drill). The undo fired from the entry and the gateway writes booked as
+Action entries landed with the close-out's C5.
 
 **Phase 5 — the code half BUILT 2026-10-05**, two slices. (P5-1, P5-2) `aughor/record/mission.py` — the mission as a
 kernel artifact (kind `mission`) written by people: objective (metric, direction, target, by when, its measurable spec
@@ -11371,6 +11370,23 @@ quarter and half a day, or a promise whose breach rate rose five points, opens a
 stage's lag is the KPI, not the early signal; a first measurement is a baseline). Both go through `open_inquiry`, so a
 drift is one question a fortnight, not one a day; every signal is an `inquiry.signal` event, catalogued. Receipt: the
 signals-and-proposed-runs, inquiry, settling, process, mission, corrections, catalogue and ratchet suites pass.
+(C5, phase 4) The undo FIRED (§M: "the undo is a declared compensating action with a window"). `actions/authority.undo`
+reads an execution's current entry, refuses with why when it is not an execution, is already undone, declared no undo,
+its window closed (`undo_window`: `window_hours` 0 is no limit) or names an action the connection does not declare,
+and otherwise fills the undo action's parameters from the execution's by the declared templates and runs it through the
+SAME governed pipeline as any execution — criteria, approval, dispatch, verification, its own Action entry, which names
+the entry it `compensates` (a new field and lineage edge on `book_action`); the original entry is restated as undone
+(`undone_by`, `undone_at`, counted by `record()` as `undone`); an undo that could not run or failed its verification
+DEMOTES the original (action, scope) — the reversibility declaration found false — as a failed verification does;
+`action.undone` is journaled and catalogued; `POST /authority/{action}/executions/{entry}/undo` (409 with the reason on
+a refusal). The gateway writes: `integrations/call.call_operation` books every write operation it performs and
+`mcpservers/call._send` every granted write, as Action entries of `kind="write"` (`book_write`) naming the door, the
+operation (`integration.<provider>.<operation>`, `mcp.<server>.<tool>`), the actor, what it ran under (a human accept,
+the grant), the status (`executed` · `failed` · `uncertain` · `blocked`) and, said rather than left blank, that a
+gateway write declares no verification read and no undo; they ride with no warehouse connection, so they count on the
+record (`GET /authority/writes`) and never graduate. Receipt: the undo-and-writes, authority, executor, inbox,
+integration-call, MCP write-grant, automation-step and catalogue suites pass; the vocabulary ratchet exempts the new
+suite and `actions/authority.py` for the one executor identifier they spell.
 
 ---
 

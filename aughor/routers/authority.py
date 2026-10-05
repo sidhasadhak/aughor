@@ -73,6 +73,37 @@ def authority_graduate(action_id: str, body: GraduateBody, principal=Depends(get
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+class UndoBody(BaseModel):
+    connection_id: str = BUILTIN_ID
+    schema_name: Optional[str] = None
+
+
+@router.post("/{action_id}/executions/{entry_id}/undo", status_code=201)
+def authority_undo(action_id: str, entry_id: str, body: UndoBody, principal=Depends(get_principal)) -> dict:
+    """Fire the declared undo of one execution (the close-out, C5): the compensating action runs
+    through the same governed pipeline, books its own entry naming the one it compensates, and the
+    original is restated as undone; an undo that could not run or failed its verification demotes
+    the action. Refused with why outside the window, twice, or when the undo is not declared."""
+    actions = _actions(body.connection_id, body.schema_name)
+    if action_id not in actions:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    out = A.undo(entry_id, by=_who(principal) or "unidentified", actions=actions, scope=body.connection_id,
+                 schema_name=body.schema_name or "")
+    if out.get("status") == "refused":
+        raise HTTPException(status_code=409, detail=out)
+    return out
+
+
+@router.get("/writes")
+def authority_writes(door: Optional[str] = Query(default=None), limit: int = 100) -> dict:
+    """Every write the integration gateway and the MCP door performed, on the record beside the
+    declared actions' entries (the close-out, C5): operation, status, who, under what; no
+    verification read and no undo, said."""
+    rows = A.writes(door=door or "", limit=max(1, min(int(limit), 500)))
+    return {"writes": rows, "count": len(rows),
+            "note": "a gateway write declares no verification read and no undo; it is on the record so it can be counted, not graduated"}
+
+
 class DemoteBody(BaseModel):
     connection_id: str = BUILTIN_ID
     why: str

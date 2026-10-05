@@ -116,9 +116,10 @@ def verify(action, params: dict, scope: str, *, run_sql=None) -> dict:
 
 def book_action(*, action, params: dict, scope: str, actor: str, status: str, outcome: Optional[dict],
                 grant_id: str = "", approved_by: str = "", verification: Optional[dict] = None,
-                decision_id: str = "") -> str:
+                decision_id: str = "", compensates: str = "") -> str:
     """One execution as a kernel artifact: what ran, under what, what it returned, what the
-    verification found. Returns the entry id."""
+    verification found. ``compensates`` (the close-out, C5) names the Action entry this execution
+    is the declared UNDO of. Returns the entry id."""
     under = (f"grant:{grant_id}" if grant_id else approved_by or "gate")
     payload = {"action_id": action.id, "kind": getattr(action, "kind", ""), "scope": scope, "actor": actor or "",
                "status": status, "params": {k: str(v) for k, v in (params or {}).items()},
@@ -127,14 +128,142 @@ def book_action(*, action, params: dict, scope: str, actor: str, status: str, ou
                "verification": dict(verification or {"status": "not_declared"}),
                "reversibility": getattr(action, "reversibility", "") or "",
                "undo": (action.undo.model_dump() if getattr(action, "undo", None) is not None else None),
-               "decision": decision_id, "at": _now()}
+               "decision": decision_id, "at": _now(), **({"compensates": compensates} if compensates else {})}
     edges = [("verification", payload["verification"].get("status", ""), (payload["verification"].get("why") or "")[:400])]
     if grant_id:
         edges.append(("under_grant", grant_id, "the standing grant that allowed it"))
     if decision_id:
         edges.append(("under_decision", decision_id, ""))
+    if compensates:
+        edges.append(("compensates", compensates, "the declared undo of this execution"))
     return _ledger().artifact_write(ACTION_KIND, f"action:{scope}:{action.id}:{uuid.uuid4().hex[:12]}", payload,
                                     conn_id=scope or None, lineage=edges)
+
+
+# ── the gateway writes (the close-out, C5) ─────────────────────────────────────────────────
+
+def book_write(*, door: str, action_id: str, scope: str, actor: str, status: str, params: Optional[dict],
+               outcome: Optional[dict], under: str, message: str = "") -> str:
+    """A write the integration gateway or the MCP call door performed, booked beside the declared
+    actions' entries (§M's architecture: the two stay the one write path, so what passes them is
+    on the same record). ``door`` is ``integration`` or ``mcp``; ``action_id`` names the operation
+    (``integration.<provider>.<operation>``, ``mcp.<server>.<tool>``); ``scope`` is the grant or the
+    server — these writes know no warehouse connection, so they ride with no ``conn_id`` and are
+    said as such. A gateway write declares no verification read and no undo, and the entry says so
+    rather than leaving the fields to read as passed."""
+    payload = {"action_id": action_id, "kind": "write", "door": door, "scope": scope, "actor": actor or "",
+               "status": status, "params": {k: str(v)[:200] for k, v in (params or {}).items()},
+               "outcome": dict(outcome or {}) if isinstance(outcome, dict) else {},
+               "under": under, "grant_id": "", "approved_by": "", "message": (message or "")[:400],
+               "verification": {"status": "not_declared", "why": f"a write through the {door} door declares no verification read"},
+               "reversibility": "undeclared", "undo": None, "decision": "", "at": _now()}
+    return _ledger().artifact_write(ACTION_KIND, f"action:{scope}:{action_id}:{uuid.uuid4().hex[:12]}", payload,
+                                    conn_id=None, lineage=[("through", door, under)])
+
+
+def writes(*, door: str = "", limit: int = 200) -> list[dict]:
+    """The gateway writes on the record, newest first — every write the integration gateway and
+    the MCP door performed, with its status, beside the declared actions' entries."""
+    out = []
+    for art in _ledger().artifacts_of_kind(ACTION_KIND, limit=limit * 4):
+        p = dict(art.get("payload") or {})
+        if p.get("kind") != "write" or (door and p.get("door") != door):
+            continue
+        p["id"], p["recorded_at"] = str(art.get("id") or ""), str(art.get("created_at") or "")
+        out.append(p)
+        if len(out) >= limit:
+            break
+    return out
+
+
+# ── the undo, fired (the close-out, C5) ────────────────────────────────────────────────────
+
+def undo_window(payload: dict, *, now: Optional[_dt.datetime] = None) -> dict:
+    """Whether an execution's declared undo window is still open: ``{open, why, closes_at}``.
+    ``window_hours`` 0 is no limit."""
+    undo = payload.get("undo") or {}
+    if not undo:
+        return {"open": False, "why": "the action declared no undo", "closes_at": ""}
+    hours = float(undo.get("window_hours") or 0)
+    if hours <= 0:
+        return {"open": True, "why": "the undo window has no limit", "closes_at": ""}
+    try:
+        at = _dt.datetime.fromisoformat(str(payload.get("at") or ""))
+    except ValueError:
+        return {"open": False, "why": "the execution's time is not recorded; the window cannot be read", "closes_at": ""}
+    closes = at + _dt.timedelta(hours=hours)
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    if now <= closes:
+        return {"open": True, "why": f"open until {closes.isoformat()}", "closes_at": closes.isoformat()}
+    return {"open": False, "why": f"the {hours:g}-hour undo window closed at {closes.isoformat()}", "closes_at": closes.isoformat()}
+
+
+def undo(entry_id: str, *, by: str, actions: dict, scope: str, schema_name: str = "", dispatch=None,
+         approved: bool = True, now: Optional[_dt.datetime] = None) -> dict:
+    """FIRE the declared compensating action of one execution (§M: "the undo is a declared
+    compensating action with a window"). Until the close-out the undo was declared and copied onto
+    every Action entry and nothing read it back; this runs it: the undo action is loaded by the name
+    the declaration gave, its parameters filled from the execution's by the declared templates, and
+    it goes through the SAME governed pipeline as any execution (the executor's: criteria,
+    approval, dispatch, verification, its own Action entry — naming the entry it compensates). The
+    original entry is restated with ``undone_by``; a compensating action that could not run or whose
+    verification failed DEMOTES the original (action, scope), as a failed verification does — an undo
+    that does not work is the reversibility declaration found false. Refused, with why, when the
+    entry is not an execution, is already undone, declared no undo, the window closed, or the undo
+    names an action this connection does not declare. Returns the verdict; never raises for a
+    refusal."""
+    art = _ledger().artifact_by_id(entry_id)
+    if not art or art.get("kind") != ACTION_KIND:
+        return {"undone": False, "status": "refused", "why": f"no action entry {entry_id!r}", "entry": entry_id}
+    # the entry's CURRENT version: an undo restates the entry under its key, and the id names the first
+    current = _ledger().artifact_latest(str(art.get("natural_key") or "")) or art
+    p = dict(current.get("payload") or {})
+    if scope and p.get("scope") != scope:
+        return {"undone": False, "status": "refused", "why": "the entry belongs to another scope", "entry": entry_id}
+    if p.get("status") != "executed":
+        return {"undone": False, "status": "refused", "why": f"only an executed action is undone; this entry is {p.get('status')!r}",
+                "entry": entry_id}
+    if p.get("undone_by"):
+        return {"undone": False, "status": "refused", "why": f"already undone by {p['undone_by']}", "entry": entry_id,
+                "undo_entry": p["undone_by"]}
+    window = undo_window(p, now=now)
+    if not window["open"]:
+        return {"undone": False, "status": "refused", "why": window["why"], "entry": entry_id, "window": window}
+    undo_decl = p.get("undo") or {}
+    undo_action = (actions or {}).get(str(undo_decl.get("action_id") or ""))
+    if undo_action is None:
+        return {"undone": False, "status": "refused", "entry": entry_id, "window": window,
+                "why": f"the undo names {undo_decl.get('action_id')!r}, which this connection does not declare"}
+    from aughor.actions.executor import _fill, execute_kinetic_action
+    try:
+        filled = _fill(dict(undo_decl.get("params") or {}), dict(p.get("params") or {}))
+    except Exception as exc:  # noqa: BLE001 — a template over undeclared parameters is the declaration's fault, said
+        filled, fill_error = {}, str(exc)[:200]
+    else:
+        fill_error = ""
+    if fill_error:
+        result_status, verification, undo_entry, message = "invalid_params", {}, "", fill_error
+    else:
+        result = execute_kinetic_action(undo_action, filled, actor=by or "", scope=scope, dispatch=dispatch, approved=approved,
+                                        schema_name=schema_name, compensates=entry_id)
+        result_status, verification, undo_entry, message = result.status, dict(result.verification or {}), result.action_entry, result.message
+    undone = result_status == "executed" and verification.get("status") != "failed"
+    # the original entry says what became of it
+    new = {**p, "undone_by": undo_entry or f"attempt:{result_status}", "undone_at": _now(), "undone_status": result_status,
+           "undo_verification": verification, "undo_by": by or "unidentified", "undone": undone}
+    restated = _ledger().artifact_write(ACTION_KIND, str(art.get("natural_key") or ""), new, conn_id=scope or None,
+                                        lineage=[("undone_by", undo_entry or result_status, (message or "")[:300])])
+    if not undone:
+        why = (f"the declared undo {undo_decl.get('action_id')!r} did not undo it: {result_status}"
+               + (f" — {message}" if message else "")
+               + (f"; its verification {verification.get('status')}: {verification.get('why', '')}" if verification else ""))
+        demote(str(p.get("action_id") or ""), scope, why=why, by=by or "system",
+               evidence={"action_entry": entry_id, "undo_entry": undo_entry, "undo_status": result_status, "verification": verification})
+    _ledger().emit("action.undone", {"action_id": p.get("action_id"), "scope": scope, "entry": entry_id, "undo_entry": undo_entry,
+                                     "status": result_status, "undone": undone, "by": by or "unidentified"}, conn_id=scope or None)
+    return {"undone": undone, "status": result_status, "entry": entry_id, "restated": restated, "undo_entry": undo_entry,
+            "undo_action": undo_decl.get("action_id"), "params": filled, "verification": verification, "window": window,
+            "message": message, **({"demoted": True} if not undone else {})}
 
 
 def executions(action_id: str, scope: str, *, limit: int = 500) -> list[dict]:
@@ -174,6 +303,7 @@ def record(action_id: str, scope: str) -> dict:
             "unverified": v.count("unavailable") + v.count("not_declared"),
             "approved_by_person": sum(1 for r in executed if r.get("approved_by") and not r.get("grant_id")),
             "under_grant": sum(1 for r in executed if r.get("grant_id")),
+            "undone": sum(1 for r in executed if r.get("undone")),
             "decisions_with_outcome": with_outcome, "outcomes_inside_expectation": inside,
             "last_run": executed[0].get("at") if executed else ""}
 

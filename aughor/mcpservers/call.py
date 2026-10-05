@@ -154,8 +154,25 @@ def _send(server, tool_name: str, arguments: dict, *, writes: bool) -> McpCallRe
     # is not a chain: a route, a script, or the agent when that slice lands. A call to a
     # third party that leaves no record is the one thing this door exists to prevent.
     with bind_trace(current_trace_id() or f"mcpcall_{uuid.uuid4().hex[:16]}"):
-        return _through_the_seam(server, tool_name, arguments, external_call, OutboundBlocked,
-                                 writes=writes)
+        result = _through_the_seam(server, tool_name, arguments, external_call, OutboundBlocked,
+                                   writes=writes)
+    if writes:
+        # The close-out (C5): a write this door performed under a person's grant is an Action entry
+        # beside the declared actions' (the study §M). Best-effort — the call is what it is.
+        _book_write(server, tool_name, arguments, result)
+    return result
+
+
+def _book_write(server, tool_name: str, arguments: dict, result: "McpCallResult") -> None:
+    try:
+        from aughor.actions.authority import book_write
+        from aughor.org.context import current_user_id
+        book_write(door="mcp", action_id=f"mcp.{server.id}.{tool_name}", scope=f"server:{server.id}",
+                   actor=(f"user:{current_user_id()}" if current_user_id() else ""), status=result.status,
+                   params=dict(arguments or {}), outcome={"truncated": result.truncated, **({"omitted": dict(result.omitted)} if result.omitted else {})},
+                   under=f"grant:{server.id}::{tool_name}", message=result.message)
+    except Exception:
+        logging.getLogger(__name__).debug("mcp write entry skipped", exc_info=True)
 
 
 def _through_the_seam(server, tool_name: str, arguments: dict,

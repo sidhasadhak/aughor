@@ -28,6 +28,7 @@ CATALOGUE: dict[str, dict[str, Any]] = {
     "mission.reported": {"what": "a mission's report was composed, booked and delivered", "payload": ["mission", "report", "verdict", "delivery"], "emitted_by": "record/mission.report_now"},
     "authority.graduated": {"what": "an action graduated to L4 on a receipt", "payload": ["action_id", "scope", "receipt", "by"], "emitted_by": "actions/authority.graduate"},
     "authority.demoted": {"what": "an action was demoted and its grants withdrawn", "payload": ["action_id", "scope", "why", "grants_revoked", "entry"], "emitted_by": "actions/authority.demote"},
+    "action.undone": {"what": "an execution's declared undo was fired: whether it undid it, and the compensating entry", "payload": ["action_id", "scope", "entry", "undo_entry", "status", "undone", "by"], "emitted_by": "actions/authority.undo"},
     "answer.rechecked": {"what": "a past answer was re-run and compared", "payload": ["investigation_id", "status", "changed", "cause"], "emitted_by": "answer/recheck"},
     "ledger.delivered": {"what": "a subscription's delivery of an event: sent, failed, or held at the departure gate with why", "payload": ["subscription", "event", "status", "http_status", "why", "departure", "url_host"], "emitted_by": "record/subscriptions.notify"},
     "ledger.subscribed": {"what": "a subscription to events out was created or withdrawn", "payload": ["subscription", "kinds", "active", "by"], "emitted_by": "record/subscriptions"},

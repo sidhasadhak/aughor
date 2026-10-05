@@ -582,6 +582,7 @@ def execute_kinetic_action(
     schema_name: str = "",
     resolver: Optional[ObjectResolver] = None,
     require_approval: bool = False,
+    compensates: str = "",
 ) -> KineticResult:
     """Run one declared action through the full governed pipeline. ``scope`` is the connection
     id (the grain the approval allowlist is keyed on). Returns a :class:`KineticResult`; never
@@ -716,7 +717,7 @@ def execute_kinetic_action(
         entry = authority.book_action(action=action, params=coerced, scope=scope, actor=actor, status="executed",
                                       outcome=outcome if isinstance(outcome, dict) else {"result": outcome},
                                       grant_id=grant_id, approved_by=("human accept" if approved else ""),
-                                      verification=verification)
+                                      verification=verification, compensates=compensates)
         if verification.get("status") == "failed":
             authority.demote(action.id, scope, why=f"verification failed after execution: {verification.get('why', '')}",
                              evidence={"action_entry": entry, "verification": verification})
