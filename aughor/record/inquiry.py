@@ -335,6 +335,13 @@ def propose_run(q: Inquiry, *, now: Optional[_dt.datetime] = None) -> dict:
     return proposal
 
 
+def keep_proposed_run(q: Inquiry, *, now: Optional[_dt.datetime] = None) -> Inquiry:
+    """Work out the run this inquiry waits for, with its cost, and keep it on the inquiry — the
+    door's whole job, done here so nothing outside this module writes an inquiry. Spends no model."""
+    q.extra["proposed_run"] = propose_run(q, now=now)
+    return _book(q)
+
+
 def mission_for(connection_id: str, metric: str) -> str:
     """The active mission a metric bears on most (its id), or "" — what a door passes as
     ``mission`` when it opens an inquiry from a signal about that metric."""

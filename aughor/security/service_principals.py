@@ -83,8 +83,10 @@ def mint(name: str, *, org_id: str, by: str, note: str = "", connections: Option
     _put(row)
     try:
         _ledger().emit("service_principal.minted", {"name": name, "by": by, "active": True, "rotated": bool(prior)})
-    except Exception:  # noqa: BLE001 — the row is the authority; the event is the trail
-        pass
+    except Exception as exc:  # noqa: BLE001 — the row is the authority; the event is the trail
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a service principal's minting could not be journaled; its row is written",
+                 counter="service_principal.minted_event")
     return public(row), key
 
 
@@ -96,8 +98,10 @@ def revoke(name: str, *, by: str, why: str = "") -> dict:
     _put(row)
     try:
         _ledger().emit("service_principal.minted", {"name": name, "by": by, "active": False})
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — the row is the authority; the event is the trail
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a service principal's revocation could not be journaled; its row is written",
+                 counter="service_principal.minted_event")
     return public(row)
 
 

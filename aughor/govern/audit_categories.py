@@ -97,6 +97,21 @@ KIND_CATEGORY: dict[str, str] = {
     "budget.exceeded": "enforcement",
     "metric.enforcement": "enforcement",
     "guardrail": "enforcement",
+    # The 2027 study's phases 4 and 5 — what an action did on its own authority. The L5 agent
+    # choosing and running a declared action (or being held), and a declared undo fired: both are
+    # the gate's decision on an action, which is what an auditor asking "what ran, and under what"
+    # filters by.
+    "action.autonomous": "action_decision",
+    "action.undone": "action_decision",
+    # Phases 4 and 7 — reach changed. A graduation or a demotion moves what an action may do; a
+    # service principal minted or revoked, a sign-in to an outside tool server and a foreign
+    # method registered each change who or what may act or be believed — the same sense in which
+    # `pack.installed` is governance and a status flip is not.
+    "authority.graduated": "governance_change",
+    "authority.demoted": "governance_change",
+    "service_principal.minted": "governance_change",
+    "mcp.oauth": "governance_change",
+    "method.registered": "governance_change",
 }
 
 #: The non-Ledger sink: the append-only `audit_log` table is entirely data access.
@@ -128,6 +143,14 @@ NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
     # ON-7b: an explorer's run — one model call and the counts of what it proposed, wrote and was refused. Each write
     # goes through ON-7's gated doors, which RBAC journals like any person's edit; this is the run's telemetry.
     "ontology.explore",
+    # The 2027 study's Record at work: an inquiry woken or opened by a weak signal, a mission's report
+    # composed, a decision's outcome measured, a prediction scored. Readings of the ledger about the
+    # business — each is its own entry in the Record, where a person reads it; none grants, changes or
+    # decides what anyone may see or do.
+    "inquiry.signal", "inquiry.woke", "mission.reported", "outcome.booked", "prediction.scored",
+    # Phase 7: a pack written as a draft, and a pack demoted on its measured record. Like
+    # `pack.status_changed` above: neither grants anybody anything — installing is what does.
+    "pack.uploaded", "pack.demoted",
 })
 
 #: MI-1 held four governance-shaped kinds out of the feed — `govern.cap`, `guardrail`,
@@ -238,6 +261,29 @@ def _summarize(kind: str, p: dict) -> str:
         return (f"{p.get('action', '?')} trusted query "
                 f"{str(p.get('trusted_query') or '?')[:16]}"
                 f" ({p.get('from') or '—'} → {p.get('to') or '—'})")
+    if kind == "action.autonomous":
+        ran = "ran" if p.get("acted") else "held"
+        return (f"the autonomous agent {ran} {p.get('action_id') or 'no action'} toward mission "
+                f"{str(p.get('mission') or '?')[:12]}" + (f" — {p.get('decision')}" if p.get("decision") else ""))
+    if kind == "action.undone":
+        done = "undone" if p.get("undone") else f"not undone ({p.get('status') or '?'})"
+        return f"{p.get('action_id', '?')} on {p.get('scope') or '*'}: {done}"
+    if kind == "authority.graduated":
+        return (f"{p.get('action_id', '?')} on {p.get('scope') or '*'} graduated to L{p.get('level', '?')}"
+                + (f" inside mission {str(p.get('mission'))[:12]}" if p.get("mission") else ""))
+    if kind == "authority.demoted":
+        revoked = p.get("grants_revoked") or 0
+        return (f"{p.get('action_id', '?')} on {p.get('scope') or '*'} demoted: {str(p.get('why') or '?')[:120]}"
+                + (f" ({revoked} standing grant{'s' if revoked != 1 else ''} withdrawn)" if revoked else ""))
+    if kind == "service_principal.minted":
+        what = ("minted" if not p.get("rotated") else "rotated") if p.get("active") else "revoked"
+        return f"service principal {p.get('name', '?')} {what}"
+    if kind == "mcp.oauth":
+        return (f"{p.get('action', '?')} on tool server {str(p.get('server_id') or '?')[:16]}"
+                + (f" — {str(p.get('detail'))[:80]}" if p.get("detail") else ""))
+    if kind == "method.registered":
+        state = "withdrawn" if p.get("active") is False else "registered"
+        return f"{p.get('kind') or 'method'} {p.get('method', '?')} {state}"
     if kind == "intake.governance":
         act = p.get("action", "?")
         if act == "resolve":
@@ -451,11 +497,18 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("data_access", lambda n: _from_ledger("trace.payload_access", n)),
     ("data_access", lambda n: _from_ledger("mcp.tool_call", n)),
     ("action_decision", lambda n: _from_ledger("action.approval", n)),
+    ("action_decision", lambda n: _from_ledger("action.autonomous", n)),
+    ("action_decision", lambda n: _from_ledger("action.undone", n)),
     ("governance_change", lambda n: _from_ledger("govern.tag", n)),
     ("governance_change", lambda n: _from_ledger("metric.governance", n)),
     ("governance_change", lambda n: _from_ledger("trusted_query.governance", n)),
     ("governance_change", lambda n: _from_ledger("intake.governance", n)),
     ("governance_change", lambda n: _from_ledger("pack.installed", n)),
+    ("governance_change", lambda n: _from_ledger("authority.graduated", n)),
+    ("governance_change", lambda n: _from_ledger("authority.demoted", n)),
+    ("governance_change", lambda n: _from_ledger("service_principal.minted", n)),
+    ("governance_change", lambda n: _from_ledger("mcp.oauth", n)),
+    ("governance_change", lambda n: _from_ledger("method.registered", n)),
     ("model_call", _from_session_log),
     ("data_access", _from_session_replays),
     # A mapping entry alone renders NOTHING: `feed` walks this list, not KIND_CATEGORY.

@@ -90,8 +90,9 @@ def book_answer_observation(*, kind: str, natural_key: str, receipt_id: str, con
             elif recheck.enabled():
                 falsifier = ("not re-checked: the query reads the clock, so re-running it measures "
                              "another window")
-        except Exception:  # noqa: BLE001 — the falsifier is a note; the claim books without it
-            pass
+        except Exception as exc:  # noqa: BLE001 — the falsifier is a note; the claim books without it
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the claim's falsifier could not be read; the claim books without it", counter="record.falsifier")
     claim = _claims.Claim(
         kind="observation", tier="measured",
         about=_claims.About(kind="connection", key=connection_id),

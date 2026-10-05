@@ -63,8 +63,9 @@ def slots_for(addressee: str) -> int:
         raw = _ledger().kv_get(KV_STORE, addressee or "", None)
         if raw is not None and int(raw) >= 0:
             return int(raw)
-    except Exception:  # noqa: BLE001 — an unreadable override is the default, said by the view
-        pass
+    except Exception as exc:  # noqa: BLE001 — an unreadable override is the default, said by the view
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an addressee's slots could not be read; the default applies", counter="attention.slots")
     return DEFAULT_SLOTS_PER_WEEK
 
 

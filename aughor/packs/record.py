@@ -122,8 +122,9 @@ def demote(pack_id: str, *, by: str, why: str = "", force: bool = False) -> dict
         from aughor.kernel.ledger import Ledger
         Ledger.default().emit("pack.demoted", {"pack_id": pack_id, "by": by, "record": record["claims"], "why": (why or verdict["why"])[:400],
                                                "forced": force and not verdict["due"]})
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — the status is the authority; the event is the trail
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a pack demotion could not be journaled; its status is changed", counter="pack.demoted_event")
     return {**measured_record(pack_id), "status": pack.manifest.status, "demoted": True, "why": why or verdict["why"]}
 
 

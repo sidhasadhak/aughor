@@ -50,7 +50,7 @@ class McpUnreachable(RuntimeError):
 
 
 @asynccontextmanager
-async def _open(server: McpServer, timeout_s: float, *, auth=None):
+async def open_session(server: McpServer, timeout_s: float, *, auth=None):
     """An initialized `ClientSession` for this server, whichever transport it declares.
 
     ``auth`` (C9) is the `httpx.Auth` the http transport is handed: the OAuth provider for a server in an
@@ -86,7 +86,7 @@ async def _open(server: McpServer, timeout_s: float, *, auth=None):
             yield session
 
 
-def _run(coro_factory, timeout_s: float) -> Any:
+def run_blocking(coro_factory, timeout_s: float) -> Any:
     """Run one coroutine on a private loop in its own thread, bounded by ``timeout_s``.
 
     A private loop rather than `asyncio.run`, and a thread rather than the caller's:
@@ -134,7 +134,7 @@ def list_tools(server: McpServer, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> li
     returns exactly what was said.
     """
     async def _go():
-        async with _open(server, timeout_s) as session:
+        async with open_session(server, timeout_s) as session:
             return list((await session.list_tools()).tools)
 
     return _guarded(_go, timeout_s, server)
@@ -150,7 +150,7 @@ def call_tool(server: McpServer, name: str, arguments: Optional[dict] = None, *,
     from the door, not a second door.
     """
     async def _go():
-        async with _open(server, timeout_s) as session:
+        async with open_session(server, timeout_s) as session:
             return await session.call_tool(name, arguments or {})
 
     return _guarded(_go, timeout_s, server)
@@ -158,7 +158,7 @@ def call_tool(server: McpServer, name: str, arguments: Optional[dict] = None, *,
 
 def _guarded(coro_factory, timeout_s: float, server: McpServer):
     try:
-        return _run(coro_factory, timeout_s)
+        return run_blocking(coro_factory, timeout_s)
     except McpUnreachable:
         raise
     except asyncio.TimeoutError as exc:

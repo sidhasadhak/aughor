@@ -14,7 +14,7 @@ token set it refreshes. The MCP SDK ships exactly that client as an `httpx.Auth`
   thread whose handlers park on that exchange: the redirect handler records the URL and returns it to the person,
   the callback handler waits (bounded) for `complete`, which the callback door calls when the browser lands on
   `/mcp-servers/oauth/callback?code&state`. Then the SDK exchanges the code, stores the tokens, and the session
-  initialises; later calls through `session._open` carry the Bearer and refresh it silently.
+  initialises; later calls through `session.open_session` carry the Bearer and refresh it silently.
 
 What is deliberately said rather than hidden: a server in an OAuth mode with no token set does not hang or guess —
 every ordinary open raises `McpSignInRequired`, naming the door; a sign-in waiter lives in THIS process and expires
@@ -181,13 +181,13 @@ def _signin_flow(server: McpServer, provider, timeout_s: float) -> None:
     """One connection attempt with the interactive provider: the first request's 401 starts the SDK's flow —
     discovery, registration, PKCE, the browser through the handlers, the token exchange — and an initialised
     session means the token set is stored. Factored out so the suite can stand a flow in for a live server."""
-    from aughor.mcpservers.session import _open, _run
+    from aughor.mcpservers.session import open_session, run_blocking
 
     async def _go():
-        async with _open(server, timeout_s, auth=provider):
+        async with open_session(server, timeout_s, auth=provider):
             return True
 
-    _run(_go, timeout_s)
+    run_blocking(_go, timeout_s)
 
 
 def begin(server: McpServer, *, redirect_uri: str, timeout_s: float = SIGNIN_TIMEOUT_S) -> dict[str, Any]:

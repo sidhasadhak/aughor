@@ -204,7 +204,8 @@ def test_a_forecast_recommendation_does_not_leave(client, sent, monkeypatch):
     resp = client.post("/investigations/inv1/recommendations/0/execute", json={"trigger_id": tid})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["status"] == "held" and "a forecast never departs" in body["error"]
+    # Law 5 as phase 3 of the 2027 study narrowed it: a forecast departs only citing a scored prediction.
+    assert body["status"] == "held" and "an unscored forecast never departs" in body["error"]
     assert sent == []
 
 

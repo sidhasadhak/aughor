@@ -142,8 +142,9 @@ def upload(files: dict[str, str], *, by: str, source: str = "upload", source_url
         from aughor.kernel.ledger import Ledger
         Ledger.default().emit("pack.uploaded", {"pack_id": pack_id, "by": by, "files": len(staged), "warnings": verdict["warnings"][:20],
                                                 "source": source or "upload"})
-    except Exception:  # noqa: BLE001 — the files are the authority; the event is the trail
-        pass
+    except Exception as exc:  # noqa: BLE001 — the files are the authority; the event is the trail
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a pack upload could not be journaled; its files are written", counter="pack.uploaded_event")
     return {**verdict, "written_to": str(root), "status": "draft",
             "next": f"a person activates it: POST /packs/{pack_id}/status {{status: active}} — a grounded pack through its evals on a connection"}
 

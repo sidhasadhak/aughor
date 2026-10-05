@@ -234,10 +234,13 @@ def history(spec: dict, run_sql: RunSql, *, end_day: Optional[_dt.date] = None, 
         if error or not rows or rows[0] is None or rows[0][0] is None:
             continue
         try:
-            values.append(float(rows[0][0]))
-            labels.append(label)
+            value = float(rows[0][0])
         except (TypeError, ValueError):
+            value = None       # a window whose cell is not a number is not a reading
+        if value is None:
             continue
+        values.append(value)
+        labels.append(label)
     if len(values) < 3:
         return Projection(method="history", note=f"only {len(values)} prior window{'s' if len(values) != 1 else ''} "
                                                  f"held a reading; three are the least a baseline is drawn from",

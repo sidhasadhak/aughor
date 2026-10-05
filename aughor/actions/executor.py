@@ -307,7 +307,7 @@ MAX_RESPONSE_CHARS = 4000
 _HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 
 
-def _fill(value, params: dict, *, quote_for_url: bool = False):
+def fill_template(value, params: dict, *, quote_for_url: bool = False):
     """Substitute declared params into a template — strings, dicts and lists alike.
 
     TOTAL and deterministic, the same rule `_fill_question` states one function down: only
@@ -331,9 +331,9 @@ def _fill(value, params: dict, *, quote_for_url: bool = False):
                 f"http side effect references something the action does not declare: {e}"
             ) from e
     if isinstance(value, dict):
-        return {k: _fill(v, params, quote_for_url=quote_for_url) for k, v in value.items()}
+        return {k: fill_template(v, params, quote_for_url=quote_for_url) for k, v in value.items()}
     if isinstance(value, list):
-        return [_fill(v, params, quote_for_url=quote_for_url) for v in value]
+        return [fill_template(v, params, quote_for_url=quote_for_url) for v in value]
     return value
 
 
@@ -358,11 +358,11 @@ def _dispatch_http(se: SideEffect, action: KineticAction, params: dict) -> dict:
         raise KineticDispatchError(
             f"http side effect method '{method}' is not one of {', '.join(_HTTP_METHODS)}")
 
-    url = _fill(str(cfg.get("url", "")), params, quote_for_url=True)
+    url = fill_template(str(cfg.get("url", "")), params, quote_for_url=True)
     if not url or not is_safe_webhook_url(url):
         raise KineticDispatchError("http url missing or blocked by the SSRF guard")
 
-    headers = {str(k): str(v) for k, v in (_fill(cfg.get("headers") or {}, params)).items()}
+    headers = {str(k): str(v) for k, v in (fill_template(cfg.get("headers") or {}, params)).items()}
     # The credential is decrypted HERE and nowhere else — it is never returned, never
     # logged, and never part of the result this function publishes. At rest it is Fernet
     # under AUGHOR_SECRET_KEY like every other secret this platform holds, which is what
@@ -376,7 +376,7 @@ def _dispatch_http(se: SideEffect, action: KineticAction, params: dict) -> dict:
                 f"it — re-enter the credential")
         headers[auth_header] = secret
 
-    body = _fill(cfg.get("body"), params) if cfg.get("body") is not None else None
+    body = fill_template(cfg.get("body"), params) if cfg.get("body") is not None else None
 
     import httpx
     with external_call("http_component", action.id,

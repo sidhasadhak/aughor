@@ -131,8 +131,9 @@ def register(m: Method, *, by: str) -> Method:
     booked = _book(m)
     try:
         _ledger().emit("method.registered", {"method": name, "kind": m.kind, "by": by, "backtest": bt.model_dump()})
-    except Exception:  # noqa: BLE001 — the artifact is the authority
-        pass
+    except Exception as exc:  # noqa: BLE001 — the artifact is the authority
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a method's registration could not be journaled; it is booked", counter="method.registered_event")
     return booked
 
 
@@ -144,8 +145,9 @@ def withdraw(name: str, *, by: str) -> Method:
     booked = _book(m)
     try:
         _ledger().emit("method.registered", {"method": name, "kind": m.kind, "by": by, "backtest": m.backtest.model_dump(), "active": False})
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — the artifact is the authority
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a method's withdrawal could not be journaled; it is booked", counter="method.registered_event")
     return booked
 
 
@@ -162,16 +164,22 @@ def list_methods(*, active_only: bool = True) -> list[Method]:
     return [m for m in out if m.active] if active_only else out
 
 
+def _jsonable(value) -> bool:
+    """Whether a value can ride a JSON body to a foreign method — one that cannot is left out."""
+    try:
+        json.dumps(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def _json_safe(kw: dict) -> dict:
     out = {}
     for k, v in (kw or {}).items():
         if k in ("run_sql", "run_sql_for"):
             continue
-        try:
-            json.dumps(v)
-        except (TypeError, ValueError):
-            continue
-        out[k] = v
+        if _jsonable(v):
+            out[k] = v
     return out
 
 

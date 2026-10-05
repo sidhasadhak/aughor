@@ -25,9 +25,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from aughor.record import claims as C
-from aughor.security.authz import get_principal
+from aughor.security.authz import connection_owner_guard, get_principal
 
-router = APIRouter(prefix="/ledger/v1", tags=["ledger"])
+# Router-level (DATA-06): a connection a request names must be the caller's, on every door here.
+router = APIRouter(prefix="/ledger/v1", tags=["ledger"], dependencies=[Depends(connection_owner_guard)])
 
 #: What the export carries by default — every kind the Record writes.
 EXPORT_KINDS: tuple[str, ...] = ("claim", "decision", "outcome", "inquiry", "run_verdict", "scenario", "action",

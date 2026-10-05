@@ -571,7 +571,10 @@ def recheck_tallies(*, connection_id: Optional[str] = None, limit: int = 5000) -
         try:
             statuses = [str(e.get("status")) for e in (json.loads(r["report_json"] or "{}").get("rechecks") or [])
                         if isinstance(e, dict) and e.get("status") in ("changed", "unchanged")]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a stored answer's report did not parse; it is left out of the re-check count",
+                     counter="record.confidence_report_unreadable")
             continue
         if not statuses:
             continue
@@ -599,7 +602,10 @@ def challenge_tallies(*, connection_id: Optional[str] = None, limit: int = 5000)
     for r in rows:
         try:
             checks = json.loads(r["report_json"] or "{}").get("causal_checks") or {}
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a stored report did not parse; it is left out of the challenged-cause count",
+                     counter="record.confidence_report_unreadable")
             continue
         status = str((checks.get("refutation") or {}).get("status") or "") if isinstance(checks, dict) else ""
         if status not in ("survived", "refuted"):

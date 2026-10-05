@@ -88,9 +88,9 @@ def verify(action, params: dict, scope: str, *, run_sql=None) -> dict:
     verification = getattr(action, "verification", None)
     if verification is None or not str(getattr(verification, "sql", "") or "").strip():
         return {"status": "not_declared", "why": "the action declares no verification statement"}
-    from aughor.actions.executor import _fill
+    from aughor.actions.executor import fill_template
     try:
-        sql = _fill(verification.sql, params)
+        sql = fill_template(verification.sql, params)
     except Exception as exc:  # noqa: BLE001 — a template that cannot fill is the declaration's fault, said
         return {"status": "unavailable", "why": f"the verification statement could not be filled: {str(exc)[:160]}"}
     try:
@@ -236,9 +236,9 @@ def undo(entry_id: str, *, by: str, actions: dict, scope: str, schema_name: str 
     if undo_action is None:
         return {"undone": False, "status": "refused", "entry": entry_id, "window": window,
                 "why": f"the undo names {undo_decl.get('action_id')!r}, which this connection does not declare"}
-    from aughor.actions.executor import _fill, execute_kinetic_action
+    from aughor.actions.executor import execute_kinetic_action, fill_template
     try:
-        filled = _fill(dict(undo_decl.get("params") or {}), dict(p.get("params") or {}))
+        filled = fill_template(dict(undo_decl.get("params") or {}), dict(p.get("params") or {}))
     except Exception as exc:  # noqa: BLE001 — a template over undeclared parameters is the declaration's fault, said
         filled, fill_error = {}, str(exc)[:200]
     else:

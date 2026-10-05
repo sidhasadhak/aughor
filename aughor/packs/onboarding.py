@@ -56,15 +56,19 @@ def connected_at(connection_id: str, schema_name: Optional[str], graph=None) -> 
         stamps = [s for s in stamps if s]
         if stamps:
             return {"at": min(stamps), "basis": "the earliest pack binding"}
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — the clock falls back to the Record's earliest claim
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the pack bindings could not be read for the connected-at clock", counter="onboarding.connected_at",
+                 conn_id=connection_id or None)
     try:
         from aughor.record import claims as C
         rows = C.list_claims(conn_id=connection_id, limit=2000)
         if rows:
             return {"at": min(c.recorded_at for c in rows if c.recorded_at), "basis": "the earliest claim in the Record"}
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — the clock then says it is unknown
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the Record could not be read for the connected-at clock", counter="onboarding.connected_at",
+                 conn_id=connection_id or None)
     return {"at": "", "basis": "unknown: nothing built, bound or booked on this connection yet"}
 
 
