@@ -93,6 +93,7 @@ export function RecordWorkspace({
         if (id === "claims") return (
           <RecordPanel connections={connections} selectedConn={selectedConn} openId={idFor("claims")}
             onOpen={x => onOpenRecord("claims", x)} onOpenDecision={x => inspect("decisions", x)}
+            onInspectClaim={x => inspect("claims", x)}
             onOpenRun={onOpenRun} onOpenReceipt={onOpenReceipt}
             onOpenDefinitions={onOpenDefinitions} onOpenMap={onOpenMap} />
         );

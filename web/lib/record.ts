@@ -71,6 +71,22 @@ export interface ClaimConfidence {
   note: string;
 }
 
+/** One link across connections, cited on a claim's page: the two types, the far connection, and
+ *  the newest claims about the far type. `withheld`: the reader may not see the far connection, so
+ *  nothing of it is named. Read from declarations and the Record — no statement runs anywhere. */
+export interface ClaimCrossLink {
+  domain: string;
+  relationship: string;
+  name: string;
+  near_type: string;
+  far_type: string;
+  far_connection: string;
+  cardinality: string;
+  withheld: boolean;
+  far_claims_total: number;
+  far_claims: { id: string; text: string; kind: string; tier: string; status: string; as_of: string }[];
+}
+
 export interface Claim {
   id: string;
   key: string;
@@ -107,6 +123,10 @@ export interface Claim {
    *  behind this claim — and, when there is nothing to read, why. */
   told?: ToldRow[];
   told_note?: string;
+  /** Declared links from a type this claim is about into a type read from another connection. */
+  cross_links?: ClaimCrossLink[];
+  /** Said instead of the links when the organisation's ontology could not be read. */
+  cross_links_note?: string;
 }
 
 /** One message that left (or was held) citing an answer. */

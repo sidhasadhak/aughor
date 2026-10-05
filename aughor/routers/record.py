@@ -89,6 +89,13 @@ def get_record_claim(claim_id: str) -> dict:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the departures citing a claim's answer could not be read", counter="record.claim_told")
         view["told"], view["told_note"] = [], "the departures ledger could not be read just now"
+    try:
+        from aughor.record.cross_links import cross_links
+        view["cross_links"] = cross_links(c, visible=_visible)
+    except Exception as exc:  # noqa: BLE001 — the claim reads without its links, and says they are missing
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a claim's links into other connections could not be read", counter="record.claim_cross_links")
+        view["cross_links"], view["cross_links_note"] = [], "the organisation's ontology could not be read just now"
     return view
 
 

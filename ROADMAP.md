@@ -13594,7 +13594,15 @@ the browser** · **measure the premise before building.**
     what happened and what it recovered; the close is recorded under the person's name where no sign-in gives one
     (`person:<name>`, never a `user:`). "On probation" is one count and the door to the Hub map. Figure 22.
     (e) **A claim's page cites links into other connections, read-only** — the link is named and the claims on the
-    other side open in the drawer; no query runs on the second connection. *Decided; not yet built.*
+    other side open in the drawer; no query runs on the second connection. *Built:* a claim is tied to a type of
+    the organisation's ontology by the entities its writer recorded, else by the tables its runs read — on its own
+    connection only, and two tables are the same only where every segment both names spell agrees (`shop.orders` is
+    not `crm.orders`). For each declared link from such a type into a type read from another connection, the claim's
+    page names the two types and the far connection and lists the newest five claims about the far type, which open
+    beside the page (`aughor/record/cross_links.py`). A far connection the reader may not see is said to be withheld
+    and nothing of it is read. A claim tied to no link has no such section. **Not shown on a real ontology yet:** the
+    scratch install declares no type, so this is held by its tests (both guards mutation-tested) and by the route
+    serving an empty list on real claims; the first install with a link across two connections is its first receipt.
 
 43. ✅ **ASKED 2026-10-05 — the measured metrics are the Cockpit a person opens on** (the user, on a screenshot of the
     Briefing's measured table: *"Let this metrics section to default cockpit for the user.. make each of these metrics
