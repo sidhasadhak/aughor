@@ -6759,6 +6759,74 @@ export async function readRangeBriefing(
   return res.json();
 }
 
+/** The range's approved metrics, measured — the Cockpit's default view. No narrative is written
+ *  and no model is called; a Briefing built for the same window inside its cache age hands back
+ *  its own figures (`from_briefing`), so the two pages cannot disagree about one. */
+export interface RangeMeasuresResponse {
+  period: BriefingRangeBlock;
+  from_briefing: boolean;
+  measured_at: string | null;
+  scope_key: string;
+}
+
+export async function measureRange(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<RangeMeasuresResponse> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/measures?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "The metrics for this range could not be measured");
+  }
+  return res.json();
+}
+
+/** One range of a metric's trend. `partial` says which days its rows cover when they cover less
+ *  than the range; the last point is the range itself. */
+export interface MetricTrendPoint {
+  start: string;
+  last_day: string;
+  label: string;
+  value: number | null;
+  value_text: string | null;
+  partial: string | null;
+  current: boolean;
+}
+
+/** What a measured figure opens to: the metric over the range and the ranges before it, each
+ *  read at the same age, with how it is defined and dated. `why` says what stopped a read. */
+export interface MetricTrend {
+  metric: string;
+  found: boolean;
+  name: string;
+  unit: string;
+  definition: string;
+  tables: string[];
+  filters: string[];
+  caveats: string;
+  owner: string;
+  approved_by: string;
+  version: number;
+  time_kind: "flow" | "stock" | "cohort" | null;
+  time_source: string;
+  confirmed: boolean;
+  series: MetricTrendPoint[];
+  why: string;
+  period: BriefingRangeBlock;
+}
+
+export async function readMetricTrend(
+  connectionId: string, metric: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<MetricTrend> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/metric/${encodeURIComponent(metric)}?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "This metric could not be read");
+  }
+  return res.json();
+}
+
 /** Build (or return the fresh cached) Briefing for a range — runs its queries and one narrator call. */
 export async function buildRangeBriefing(
   connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string, refresh = false,

@@ -13,7 +13,7 @@
  * It is offered on Now and the Record's pages and nowhere else, and it changes no link that
  * existed before those pages did.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { Connection } from "@/lib/api";
 import { countNoun, formatTableNumber } from "@/lib/format";
@@ -25,12 +25,12 @@ import {
 import {
   Absent, Counted, Gate, StatusMark, TierMark, day, dayDistance, useLoad,
 } from "@/components/record/kit";
+import { Beside, Box, Part, Title, useEscape } from "@/components/record/beside";
 import { reviewState } from "@/components/decisions/DecisionsPanel";
 import { inquiryState } from "@/components/inquiries/InquiriesPanel";
 import { objectiveLine } from "@/components/missions/MissionsPanel";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
 
 export type InspectLayer = "claims" | "decisions" | "inquiries" | "missions";
 export interface InspectTarget { layer: InspectLayer; id: string }
@@ -58,12 +58,7 @@ export function InspectorHost({ connections, pageKey, onOpenFull, top = 0, child
   const inspect = useCallback<Inspect>((layer, id) => setOpen({ target: { layer, id }, on: pageKey }), [pageKey]);
   const close = useCallback(() => setOpen(null), []);
 
-  useEffect(() => {
-    if (!target) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [target, close]);
+  useEscape(!!target, close);
 
   return (
     <div style={{ position: "relative", flex: 1, display: "flex", minHeight: 0, minWidth: 0 }}>
@@ -79,67 +74,20 @@ export function InspectorHost({ connections, pageKey, onOpenFull, top = 0, child
 function Inspector({ target, connections, top, onClose, onInspect, onOpenFull }: {
   target: InspectTarget; connections: Connection[]; top: number; onClose: () => void; onInspect: Inspect; onOpenFull: Inspect;
 }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  // The drawer takes the keyboard as it opens, and again when what it shows changes.
-  useEffect(() => { closeRef.current?.focus(); }, [target.layer, target.id]);
   return (
-    <aside className="aug-beside" role="complementary" aria-label={`${KIND_WORD[target.layer]}, opened beside the page`}
-      data-testid="inspector" style={{ top }}>
-      <div className="aug-beside-head">
-        <span className="aug-label">{KIND_WORD[target.layer]}</span>
-        <span style={{ flex: 1 }} />
-        <Button ref={closeRef} size="xs" variant="ghost" onClick={onClose} aria-label="Close" title="Close (Esc)">
-          <Icon name="close" size={14} />
-        </Button>
-      </div>
-      <div className="aug-beside-body">
-        {target.layer === "claims" && <ClaimView id={target.id} connections={connections} onInspect={onInspect} />}
-        {target.layer === "decisions" && <DecisionView id={target.id} onInspect={onInspect} />}
-        {target.layer === "inquiries" && <InquiryView id={target.id} onInspect={onInspect} />}
-        {target.layer === "missions" && <MissionView id={target.id} />}
-      </div>
-      <div className="aug-beside-foot">
+    <Beside kind={KIND_WORD[target.layer]} top={top} onClose={onClose} testId="inspector"
+      focusKey={`${target.layer}:${target.id}`}
+      foot={<>
         <Button size="xs" variant="outline" style={{ width: "100%" }} onClick={() => onOpenFull(target.layer, target.id)}>
           Open full page
         </Button>
         <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Esc closes it. To change anything, open the full page.</span>
-      </div>
-    </aside>
-  );
-}
-
-// ── the pieces ───────────────────────────────────────────────────────────────────────────
-
-function Part({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="aug-beside-part">
-      <div className="aug-label">{label}</div>
-      {children}
-    </div>
-  );
-}
-
-/** A cited record as a box of its own; with `onOpen`, the whole box opens it in the drawer. */
-function Box({ children, foot, onOpen, chosen }: {
-  children: React.ReactNode; foot?: React.ReactNode; onOpen?: () => void; chosen?: boolean;
-}) {
-  const body = (
-    <>
-      <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>{children}</span>
-      {foot && <span className="aug-item-foot aug-fs-sm">{foot}</span>}
-    </>
-  );
-  return onOpen
-    ? <Button variant="ghost" className="aug-beside-box aug-beside-link" onClick={onOpen}>{body}</Button>
-    : <div className="aug-beside-box" data-chosen={chosen || undefined}>{body}</div>;
-}
-
-function Title({ children, marks }: { children: React.ReactNode; marks?: React.ReactNode }) {
-  return (
-    <div style={{ display: "grid", gap: 8 }}>
-      <p className="aug-beside-title">{children}</p>
-      {marks && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{marks}</div>}
-    </div>
+      </>}>
+      {target.layer === "claims" && <ClaimView id={target.id} connections={connections} onInspect={onInspect} />}
+      {target.layer === "decisions" && <DecisionView id={target.id} onInspect={onInspect} />}
+      {target.layer === "inquiries" && <InquiryView id={target.id} onInspect={onInspect} />}
+      {target.layer === "missions" && <MissionView id={target.id} />}
+    </Beside>
   );
 }
 

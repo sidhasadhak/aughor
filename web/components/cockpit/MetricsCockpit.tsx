@@ -1,0 +1,74 @@
+"use client";
+
+/**
+ * The cockpit a person opens on (ROADMAP §6 item 43; asked 2026-10-05): the connection's approved
+ * metrics, measured for a period — this range, its comparison, the change, a year earlier and
+ * whether each figure has settled. It is the Briefing's own measured table, read without writing
+ * a Briefing: no narrative, no model call. A metric's name opens it beside the page.
+ *
+ * It belongs to the connection, not to the person, so it is not in "Your cockpits" and cannot be
+ * arranged or retired. A person's own cockpits sit beside it, as before.
+ */
+import { RangeMeasures, type RangeChoice } from "@/components/brief/BriefRange";
+import { PeriodPicker } from "@/components/cockpit/PeriodPicker";
+import { Absent, Gate, useLoad } from "@/components/record/kit";
+import { measureRange, type BriefingRange, type BriefingRangeBlock, type CockpitRange } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
+
+/** The strip's id for it. No cockpit a person keeps can carry it. */
+export const METRICS_COCKPIT = "::metrics";
+
+/** The period as the picker says it: its words, and whether every figure in it has settled. */
+function showing(block: BriefingRangeBlock): CockpitRange {
+  const statuses = new Set(block.measured.map(m => m.status));
+  const status = statuses.has("to_date") ? "to_date" : statuses.has("provisional") ? "provisional" : "final";
+  return {
+    status, preset: block.preset, start: block.start, last_day: block.last_day, covers: block.covers,
+    as_of: block.as_of, lag_days: block.lag_days, still_moving: block.still_moving,
+  };
+}
+
+export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange }: {
+  connectionId: string;
+  schema?: string;
+  /** Whether this install reads a period at all (`briefing.ranges`); null while that is unknown. */
+  rangesOn: boolean | null;
+  value: RangeChoice;
+  onChange: (c: RangeChoice) => void;
+}) {
+  const range: BriefingRange | null = value.preset === "standing" ? null : value;
+  const rangeKey = JSON.stringify(range);
+  const load = useLoad(
+    () => (rangesOn && range ? measureRange(connectionId, range, schema) : Promise.resolve(null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
+    [connectionId, schema, rangeKey, rangesOn]);
+
+  if (rangesOn === false) {
+    return (
+      <div data-testid="metrics-cockpit">
+        <Absent>A metric is measured for a period, and periods are off on this install — they need the Briefing ranges flag.</Absent>
+      </div>
+    );
+  }
+  return (
+    <div data-testid="metrics-cockpit">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <PeriodPicker value={value} onChange={onChange} showing={load.data ? showing(load.data.period) : null} />
+        {load.data && (
+          <span className="aug-fs-sm" data-testid="metrics-measured-at" style={{ marginLeft: "auto", color: "var(--t3)" }}>
+            {load.data.from_briefing ? "As the Briefing measured it" : "Measured"} {formatDateTime(load.data.measured_at)}
+          </span>
+        )}
+      </div>
+      {!range ? (
+        <Absent>“As written” is for cards. A metric is measured for a period — pick one above.</Absent>
+      ) : rangesOn === null ? null : (
+        <Gate load={load} what="the metrics for this period">
+          {d => (d && (d.period.measured.length > 0 || d.period.unmeasured.length > 0)
+            ? <RangeMeasures block={d.period} />
+            : <Absent>No approved metric is on this connection yet. Approve one in the Semantic Layer and it is measured here.</Absent>)}
+        </Gate>
+      )}
+    </div>
+  );
+}

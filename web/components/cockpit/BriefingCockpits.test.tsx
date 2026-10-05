@@ -14,13 +14,13 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BriefingCockpits } from "@/components/cockpit/BriefingCockpits";
-import type { CockpitList, PersonCockpit } from "@/lib/api";
+import type { BriefingRangeBlock, CockpitList, PersonCockpit } from "@/lib/api";
 
 const api = vi.hoisted(() => ({
   listCockpits: vi.fn(), getCockpit: vi.fn(), runDashboardCard: vi.fn(), keepCockpit: vi.fn(),
   startMyCockpit: vi.fn(), draftCockpit: vi.fn(), getProposalById: vi.fn(), acceptProposal: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
-  getSystemFlags: vi.fn(),
+  getSystemFlags: vi.fn(), measureRange: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const composer = vi.hoisted(() => ({ onCreated: null as null | (() => void) }));
@@ -62,6 +62,17 @@ const READ: PersonCockpit = {
   history: [version(3), { ...version(2), current: false }, { ...version(1), current: false }],
 };
 
+const MEASURED = {
+  period: "month", key: "range:last_month:2026-08-01..2026-08-31", preset: "last_month", label: "Monthly",
+  start: "2026-08-01", end: "2026-09-01", last_day: "2026-08-31", previous_start: "2026-07-01", previous_end: "2026-08-01",
+  last_year_start: null, last_year_end: null, as_of: "2026-10-05", lag_days: 1, lag_source: "default", still_moving: [],
+  covers: "August 2026", compared_with: "July 2026", last_year_label: null, unmeasured: [],
+  measured: [{
+    name: "Revenue", metric: "revenue", unit: "USD", time_kind: "flow", confirmed: true, current: 110, previous: 100,
+    last_year: null, rel: 0.1, rel_last_year: null, status: "final", current_text: "$110", previous_text: "$100",
+  }],
+} as unknown as BriefingRangeBlock;
+
 const show = () => render(<BriefingCockpits connectionId="thelook" schema="thelook" />);
 
 beforeEach(() => {
@@ -69,12 +80,16 @@ beforeEach(() => {
   drawn.props.length = 0;
   composer.onCreated = null;
   try { localStorage.clear(); } catch { /* jsdom */ }
+  // A person who left off on a cockpit of their own. Nothing remembered opens the metrics —
+  // the last block below.
+  localStorage.setItem("aughor:cockpit:thelook", "returns-1");
   // Ranges off unless a test turns them on: the cockpit then reads as written.
   api.getSystemFlags.mockResolvedValue({});
   api.listCockpits.mockResolvedValue(LIST);
   api.getCockpit.mockResolvedValue(READ);
   api.runDashboardCard.mockResolvedValue({ columns: ["_v"], rows: [["10.03"]], row_count: 1 });
   api.keepCockpit.mockResolvedValue({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] });
+  api.measureRange.mockResolvedValue({ period: MEASURED, from_briefing: false, measured_at: "2026-10-05T09:00:00Z", scope_key: "thelook:thelook" });
 });
 
 describe("with the flag off", () => {
@@ -88,7 +103,7 @@ describe("with the flag off", () => {
 });
 
 describe("a person's cockpits", () => {
-  it("lists them in a strip and draws the first, each card it places run as written", async () => {
+  it("lists them in a strip and draws the one the person left off on, each card it places run as written", async () => {
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     expect(screen.getAllByTestId("cockpit-strip-item").map(b => b.textContent)).toEqual(["Returns", "Pricing"]);
@@ -290,5 +305,39 @@ describe("a new cockpit from an area", () => {
     fireEvent.click(within(await screen.findByTestId("cockpit-draft")).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(api.rejectProposal).toHaveBeenCalledWith("p1", "briefing"));
     expect(api.acceptProposal).not.toHaveBeenCalled();
+  });
+});
+
+describe("the metrics, the cockpit a person opens on", () => {
+  beforeEach(() => { localStorage.clear(); });
+
+  it("is first in the strip and open when nothing was chosen; no cockpit of the person's is read", async () => {
+    api.getSystemFlags.mockResolvedValue({ "briefing.ranges": { value: true } });
+    show();
+    const metrics = await screen.findByTestId("cockpit-strip-metrics");
+    expect(metrics).toHaveAttribute("aria-selected", "true");
+    // measured for the latest month, as a cockpit is read — and the Briefing's own table shows it
+    await waitFor(() => expect(api.measureRange).toHaveBeenCalledWith("thelook", { preset: "last_month" }, "thelook"));
+    expect(await screen.findByText("Measured for August 2026 · against July 2026")).toBeInTheDocument();
+    expect(screen.getByText("$110")).toBeInTheDocument();
+    expect(screen.getByTestId("cockpit-range")).toHaveTextContent("August 2026 · final");
+    expect(api.getCockpit).not.toHaveBeenCalled();
+    // the person's own cockpits are still there, one click away, and that choice is remembered
+    fireEvent.click(screen.getByText("Returns"));
+    await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "last_month" }));
+    expect(localStorage.getItem("aughor:cockpit:thelook")).toBe("returns-1");
+  });
+
+  it("says a metric needs a period where periods are off, and measures nothing", async () => {
+    show();
+    expect(await screen.findByText(/periods are off on this install/)).toBeInTheDocument();
+    expect(api.measureRange).not.toHaveBeenCalled();
+  });
+
+  it("still explains what a cockpit of your own is when you have none", async () => {
+    api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [] });
+    show();
+    expect(await screen.findByTestId("metrics-cockpit")).toBeInTheDocument();
+    expect(screen.getByText(/You have no cockpits yet/)).toBeInTheDocument();
   });
 });

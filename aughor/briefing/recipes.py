@@ -13,9 +13,12 @@ days old. A range Briefing is now written by a RECIPE, one per horizon, from the
 * **early read** (Day) — the days still settling, measured and labelled early;
 * **alerts** — fired in the range, or for the Day since yesterday;
 * **the norm** (Week) — the four weeks before, so a move can be called unusual or not;
-* **target** (Month) — a metric's declared target, when it has one;
-* **data health** — what was not measured, what is provisional, which tables have not settled
-  (said, not implied — the block carries all three; the page renders them).
+* **target** (Month) — a metric's declared target, when it has one.
+
+What was not measured, what is provisional and which tables have not settled are said where the
+figures are — the measured table's Status column, its "not measured" lines and its lag note. They
+were also a section of their own, "data health", until 2026-10-05 (ROADMAP §6 item 43c): it
+repeated the Status column line by line.
 
 Each recipe tells the narrator which job it is doing; one narrator call per Briefing, under the
 Briefer's charter and its budget.
@@ -30,11 +33,11 @@ RECIPE_OF_PRESET = {"yesterday": "day", "last_week": "week", "last_month": "mont
                     "custom": "custom"}
 
 SECTIONS = {
-    "day": ("alerts", "what_moved", "early_read", "actions", "data_health"),
-    "week": ("what_moved", "norm", "why", "actions", "data_health"),
-    "month": ("measured", "target", "why", "data_health"),
-    "year": ("measured", "what_moved", "data_health"),
-    "custom": ("measured", "what_moved", "why", "data_health"),
+    "day": ("alerts", "what_moved", "early_read", "actions"),
+    "week": ("what_moved", "norm", "why", "actions"),
+    "month": ("measured", "target", "why"),
+    "year": ("measured", "what_moved"),
+    "custom": ("measured", "what_moved", "why"),
 }
 
 GUIDANCE = {

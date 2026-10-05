@@ -790,6 +790,54 @@ def read_briefing(conn_id: str, schema: str | None = None, workspace_id: str | N
     return {**entry, "available": bool(entry.get("narrative")), "built": True, "scope_key": scope_key}
 
 
+@router.post("/exploration/{conn_id}/briefing/measures")
+def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
+                          preset: str | None = None, start: str | None = None, end: str | None = None):
+    """The range's approved metrics, measured — the Cockpit's default view (ROADMAP §6 item 43). No
+    narrative is written and no model is called. When the range's Briefing was built for the same window
+    within its cache age, its figures are returned as they stand, so the two pages cannot disagree about
+    one; otherwise the metrics are measured now, the result cache first."""
+    from datetime import datetime, timezone
+
+    from aughor.briefing import ranges
+    from aughor.knowledge import briefing as built
+
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
+    if spec is None:
+        raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
+    scope_key = f"{conn_id}:{schema}" if schema else conn_id
+    block = ranges.range_block(spec)
+    entry = built.peek_entry(f"{scope_key}#{spec.key}")
+    kept = entry.get("period") if isinstance(entry, dict) else None
+    if isinstance(kept, dict) and all(kept.get(k) == block.get(k) for k in ("start", "end", "lag_days")) \
+            and (kept.get("measured") or kept.get("unmeasured")) \
+            and built._age_hours(str(entry.get("generated_at") or "")) < built._CACHE_TTL_HOURS:
+        return {"period": kept, "from_briefing": True, "measured_at": entry.get("generated_at"),
+                "scope_key": scope_key}
+    measured = ranges.measured_block(conn_id, spec, profile=_load_business_profile(conn_id, schema),
+                                     workspace_id=workspace_id)
+    return {"period": measured, "from_briefing": False,
+            "measured_at": datetime.now(timezone.utc).isoformat(), "scope_key": scope_key}
+
+
+@router.post("/exploration/{conn_id}/briefing/metric/{metric}")
+def read_metric_trend(conn_id: str, metric: str, schema: str | None = None, workspace_id: str | None = None,
+                      preset: str | None = None, start: str | None = None, end: str | None = None):
+    """What a measured figure opens to: the metric over the range and the ranges before it, each read at
+    the same age, with how it is defined and dated. One warehouse statement, no model call; a metric
+    that cannot be read says why."""
+    from aughor.briefing import ranges
+
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
+    if spec is None:
+        raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
+    seen = ranges.metric_trend(conn_id, spec, metric, profile=_load_business_profile(conn_id, schema),
+                               workspace_id=workspace_id)
+    if not seen.get("found"):
+        raise HTTPException(status_code=404, detail=seen.get("why") or "no such metric")
+    return {**seen, "period": ranges.range_block(spec)}
+
+
 def _period_briefing(conn_id: str, period: str, *, schema: str | None,
                      requested_schema: str | None, refresh: bool,
                      workspace_id: str | None, by_domain: dict) -> dict:

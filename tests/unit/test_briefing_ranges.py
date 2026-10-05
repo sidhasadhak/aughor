@@ -219,3 +219,115 @@ def test_a_share_moves_in_points_not_percent_of_a_percent():
     line = ranges.metric_line(m, block, "USD")
     assert line.startswith("Return rate moved from 15.1% to 14.3% (-0.8 pts)")
     assert "16.1% a year earlier, 2025-08-18 to 2025-08-27 (-1.9 pts)" in line
+
+
+# ── the Cockpit's default view and what a figure opens to (ROADMAP §6 item 43) ────────────────
+
+def test_the_measures_alone_are_the_briefings_own_figures_with_no_narrator(con, narrator, approved):
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    block = ranges.measured_block("c1", spec, profile=_profile(), runner=_runner(con))
+    brief = ranges.build_range_briefing("c1", spec, scope_key="c1", domain_data={}, profile=_profile(),
+                                        runner=_runner(con))
+    calls_for_the_briefing = len(narrator.calls)
+    [alone], [built] = block["measured"], brief["period"]["measured"]
+    same = ("name", "current", "previous", "last_year", "rel", "status", "unit",
+            "current_text", "previous_text", "last_year_text")
+    assert {k: alone[k] for k in same} == {k: built[k] for k in same}
+    assert alone["current_text"] and block["covers"] == brief["period"]["covers"]
+    assert {u["name"] for u in block["unmeasured"]} == {"Gross margin"}
+    ranges.measured_block("c1", spec, profile=_profile(), runner=_runner(con))
+    assert len(narrator.calls) == calls_for_the_briefing == 1          # measuring alone never writes
+
+
+def test_measures_that_cannot_open_the_connection_say_so():
+    @contextlib.contextmanager
+    def closed():
+        raise ConnectionError("the warehouse is away")
+        yield  # pragma: no cover
+
+    spec, _ = ranges.resolve_range("last_week", today=SEP26, lag_days=13)
+    block = ranges.measured_block("c1", spec, runner=closed)
+    assert block["measured"] == [] and "could not be opened (ConnectionError)" in block["unmeasured"][0]["reason"]
+
+
+@pytest.mark.parametrize("kw, n, expected", [
+    # a day is read against the same weekday: seven days back each time
+    ({"preset": "yesterday"}, 3, [(date(2026, 8, 30), date(2026, 8, 31)), (date(2026, 9, 6), date(2026, 9, 7)),
+                                  (date(2026, 9, 13), date(2026, 9, 14))]),
+    # whole calendar months, whatever their length
+    ({"preset": "last_month"}, 3, [(date(2026, 6, 1), date(2026, 7, 1)), (date(2026, 7, 1), date(2026, 8, 1)),
+                                   (date(2026, 8, 1), date(2026, 9, 1))]),
+    # a month to date reads the same days of each earlier month
+    ({"preset": "month_to_date"}, 3, [(date(2026, 7, 1), date(2026, 7, 14)), (date(2026, 8, 1), date(2026, 8, 14)),
+                                      (date(2026, 9, 1), date(2026, 9, 14))]),
+    ({"preset": "last_year"}, 2, [(date(2024, 1, 1), date(2025, 1, 1)), (date(2025, 1, 1), date(2026, 1, 1))]),
+    # a custom range steps by the whole weeks that clear it, as its comparison does
+    ({"start": date(2026, 8, 17), "end": date(2026, 8, 26)}, 3,
+     [(date(2026, 7, 20), date(2026, 7, 30)), (date(2026, 8, 3), date(2026, 8, 13)),
+      (date(2026, 8, 17), date(2026, 8, 27))]),
+])
+def test_earlier_ranges_step_back_the_way_the_ranges_own_comparison_does(kw, n, expected):
+    preset = kw.pop("preset", None)
+    spec, why = ranges.resolve_range(preset, today=SEP26, lag_days=13, **kw)
+    assert why == ""
+    got = ranges.earlier_ranges(spec, n)
+    assert got == expected
+    assert got[-1] == (spec.start, spec.end) and got[-2] == (spec.previous_start, spec.previous_end)
+
+
+def test_a_metric_opens_to_its_trend_oldest_first_with_how_it_is_defined(con, approved):
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    seen = ranges.metric_trend("c1", spec, "revenue", profile=_profile(), runner=_runner(con))
+    assert seen["found"] and seen["why"] == "" and seen["name"] == "Revenue"
+    assert seen["definition"] == "SUM(amount)" and seen["filters"] == ["status <> 'cancelled'"]
+    assert seen["time_source"].startswith("set automatically")
+    series = seen["series"]
+    assert len(series) == ranges.TREND_RANGES and [p["current"] for p in series] == [False] * 7 + [True]
+    assert [p["start"] for p in series] == sorted(p["start"] for p in series)
+    # the last two points are the Briefing's own "this range" and "comparison"
+    assert (series[-1]["value"], series[-2]["value"]) == (215000.0, 75000.0)
+    assert series[-1]["label"] == "2026-08-17 to 2026-08-26" and series[-1]["value_text"]
+    assert all(p["value_text"] for p in series if p["value"] is not None)
+
+
+def test_a_metric_that_cannot_be_read_says_why_and_carries_no_series(con, approved):
+    spec, _ = ranges.resolve_range("last_week", today=SEP26, lag_days=13)
+    draft = ranges.metric_trend("c1", spec, "aov", runner=_runner(con))            # a draft is not measured
+    assert draft == {"metric": "aov", "found": False, "series": [],
+                     "why": "no approved metric by that name is on this connection"}
+
+    @contextlib.contextmanager
+    def broken():
+        def run_sql(sql):
+            return [], [], "Binder Error: no such column"
+        yield run_sql, "duckdb"
+
+    failed = ranges.metric_trend("c1", spec, "revenue", runner=broken)
+    assert failed["found"] and failed["series"] == [] and failed["why"].startswith("its query failed: Binder Error")
+
+
+def test_the_measures_route_hands_back_a_young_briefings_figures_and_measures_otherwise(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from aughor.routers import exploration
+    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
+    monkeypatch.setattr(exploration, "_load_business_profile", lambda cid, schema: None)
+    monkeypatch.setattr(ranges, "resolve_for", lambda cid, preset, **kw: ranges.resolve_range(
+        preset, today=SEP26, lag_days=13, start=kw.get("start"), end=kw.get("end")))
+    spec, _ = ranges.resolve_range("last_week", today=SEP26, lag_days=13)
+    measured_now = {**ranges.range_block(spec), "measured": [{"name": "Revenue", "current": 2.0}]}
+    monkeypatch.setattr(ranges, "measured_block", lambda *a, **kw: measured_now)
+    kept = {**ranges.range_block(spec), "measured": [{"name": "Revenue", "current": 1.0}]}
+    entry = {"period": kept, "narrative": "…"}
+    monkeypatch.setattr(briefing_mod, "peek_entry", lambda key: entry if key == f"c1#{spec.key}" else None)
+
+    entry["generated_at"] = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    young = exploration.measure_range_metrics("c1", preset="last_week")
+    assert young["from_briefing"] is True and young["period"]["measured"][0]["current"] == 1.0
+
+    entry["generated_at"] = (datetime.now(timezone.utc) - timedelta(hours=9)).isoformat()
+    old = exploration.measure_range_metrics("c1", preset="last_week")
+    assert old["from_briefing"] is False and old["period"]["measured"][0]["current"] == 2.0
+
+    other_scope = exploration.measure_range_metrics("c1", schema="shop", preset="last_week")
+    assert other_scope["from_briefing"] is False and other_scope["scope_key"] == "c1:shop"

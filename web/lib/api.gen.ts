@@ -5403,6 +5403,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/briefing/measures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Measure Range Metrics
+         * @description The range's approved metrics, measured — the Cockpit's default view (ROADMAP §6 item 43). No
+         *     narrative is written and no model is called. When the range's Briefing was built for the same window
+         *     within its cache age, its figures are returned as they stand, so the two pages cannot disagree about
+         *     one; otherwise the metrics are measured now, the result cache first.
+         */
+        post: operations["measure_range_metrics_exploration__conn_id__briefing_measures_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/briefing/metric/{metric}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Metric Trend
+         * @description What a measured figure opens to: the metric over the range and the ranges before it, each read at
+         *     the same age, with how it is defined and dated. One warehouse statement, no model call; a metric
+         *     that cannot be read says why.
+         */
+        post: operations["read_metric_trend_exploration__conn_id__briefing_metric__metric__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/domains": {
         parameters: {
             query?: never;
@@ -30015,6 +30060,81 @@ export interface operations {
                 "application/json": components["schemas"]["GroundRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    measure_range_metrics_exploration__conn_id__briefing_measures_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_metric_trend_exploration__conn_id__briefing_metric__metric__post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+                metric: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

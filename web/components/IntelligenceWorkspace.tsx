@@ -9,6 +9,7 @@ import { listOntologySchemas, withSchemas } from "@/lib/objectTypes";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
+import { MetricDetailHost } from "@/components/brief/MetricDetail";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
@@ -170,6 +171,8 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     return () => { alive = false; };
   }, [connectionId, canvasId, metaSchema]);
   const schema = selectedSchema ?? undefined;
+  // A question handed to the Agent as a deep analysis — the Evidence layer's door and the metric drawer's.
+  const askAgent = (q: string) => onInvestigate(q, "investigate");
 
   // Arc CT-7 — read once. Until it answers, and when it cannot, the flag is off.
   const [cockpitsOn, setCockpitsOn] = useState<boolean | null>(null);
@@ -254,7 +257,13 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // fetch wave 2 repaints — the visible ~1s "briefing flicker", plus every
         // request issued twice under two scope keys. One settled mount, one wave.
         if (id === "briefing") return (canvasId || schemaResolved)
-          ? <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />
+          ? (
+            // The metric drawer: a measured figure on the Briefing opens beside it (§6 item 43).
+            <MetricDetailHost connectionId={connectionId} schema={schema} workspaceId={workspaceId}
+              pageKey={`briefing:${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} onAskWhy={askAgent}>
+              <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />
+            </MetricDetailHost>
+          )
           // PX-0 (§3.14) — never a SILENT pane while the schema resolves. This gate was
           // a bare grey div, and with no connection selected it held forever: the app's
           // default landing was a black void with no words on it. An empty state says
@@ -273,11 +282,16 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
                 : "Briefings are per connection. Add one from the Catalog, then come back here."}
             </SharedEmptyState>
           );
-        if (id === "cockpit")  return <BriefingCockpits connectionId={connectionId} schema={schema} />;
+        if (id === "cockpit")  return (
+          <MetricDetailHost connectionId={connectionId} schema={schema} workspaceId={workspaceId}
+            pageKey={`cockpit:${connectionId}:${schema ?? ""}`} onAskWhy={askAgent}>
+            <BriefingCockpits connectionId={connectionId} schema={schema} />
+          </MetricDetailHost>
+        );
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} initialTableId={initialGraphTable} />;
         if (id === "hub")      return <ProfileLayer connectionId={connectionId} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;
-        if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
+        if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={askAgent} />;
         if (id === "memory")   return <MemoryPanel />;
         if (id === "kinetic")  return <DeclaredActionsPanel connectionId={connectionId} />;
         if (id === "brain")    return <BrainMapPanel connectionId={connectionId} workspaceId={workspaceId} contextReady={contextReady} />;
