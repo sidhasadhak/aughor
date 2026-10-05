@@ -5590,6 +5590,46 @@ export async function getHubMap(connId?: string): Promise<HubMapResponse | null>
   return res.json();
 }
 
+// ── HB-3 · filings — a ticket, thread, webhook or doc filed against an object ──
+
+/** One filing: what was filed, against what, and — once closed — what came of it. `object_ref`
+ *  is a securable string (`promise:…`, `process:…`, `finding:…`, `entity:…`). */
+export interface Filing {
+  id: string;
+  ts: string;
+  object_ref: string;
+  kind: "ticket" | "thread" | "webhook" | "doc";
+  ref: string;
+  url: string;
+  title: string;
+  source: string;
+  status: "open" | "closed";
+  outcome: string;
+  number_recovered: string;
+  closed_at: string | null;
+  closed_by: string;
+}
+
+/** Every filing in one state, newest first, whatever it was filed against. */
+export async function listFilings(status: "open" | "closed", limit = 200): Promise<Filing[]> {
+  const res = await fetch(`${getApiBase()}/links?status=${status}&limit=${limit}`);
+  if (!res.ok) throw new Error(`The filings could not be read (${res.status})`);
+  return (await res.json()).links ?? [];
+}
+
+/** Close a filing with what happened. `by` names the closer where no sign-in does. */
+export async function closeFiling(id: string, outcome: string, numberRecovered = "", by?: string): Promise<Filing> {
+  const res = await fetch(`${getApiBase()}/links/${encodeURIComponent(id)}/close`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outcome, number_recovered: numberRecovered, by: by ?? "" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The filing could not be closed");
+  }
+  return res.json();
+}
+
 // ── HB-2 · the departures ledger — what left, what was held, what a person owes ──
 
 /** `held_budget` (phase 2 of the 2027 study): a clean departure the attention budget held — the

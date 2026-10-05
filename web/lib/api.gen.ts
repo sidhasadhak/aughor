@@ -15957,6 +15957,11 @@ export interface components {
         /** CloseBody */
         CloseBody: {
             /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
              * Number Recovered
              * @default
              */

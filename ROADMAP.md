@@ -13589,7 +13589,10 @@ the browser** · **measure the premise before building.**
     item. *Decided; not yet built.*
     (d) **Filings get one list on Agent Ops ▸ By duty** — what is open, what it is about, its age, and "close with an
     outcome". Measured before asking: probation already has two screens (the Hub map's column and Departures), so only
-    the filings were without one; By duty gets a probation count that opens the Hub map. *Decided; not yet built.*
+    the filings were without one; By duty gets a probation count that opens the Hub map. *Built:* "Filed and open"
+    lists every open filing with what it is about, who filed it and how long it has been open, and closes one with
+    what happened and what it recovered; the close is recorded under the person's name where no sign-in gives one
+    (`person:<name>`, never a `user:`). "On probation" is one count and the door to the Hub map. Figure 22.
     (e) **A claim's page cites links into other connections, read-only** — the link is named and the claims on the
     other side open in the drawer; no query runs on the second connection. *Decided; not yet built.*
 

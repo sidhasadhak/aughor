@@ -273,7 +273,8 @@ export function AgenticOpsWorkspace({
             onOpenActivity={() => onLayerChange("activity")}
             onOpenAgents={() => onLayerChange("agents")}
             onOpenActionCentre={() => onLayerChange("action-centre")}
-            onOpenDeveloper={() => onLayerChange("developer")} />
+            onOpenDeveloper={() => onLayerChange("developer")}
+            onOpenHub={() => onLayerChange("hub")} />
         );
         if (id === "action-centre") return (
           <ActionCentrePanel connections={connections ?? []} selectedConn={connId ?? ""}
