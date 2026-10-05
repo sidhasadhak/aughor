@@ -6,6 +6,14 @@ light, type, components, the shell dark and light, the four universal states, th
 system, motion, icons and density). This file is that spec in **this codebase's names**,
 plus what adopting it decided. Where it says MUST, a reviewer rejects the diff.
 
+> **Since 2026-10-06 the product is on Radix Themes** (ROADMAP §6 item 44). The token NAMES below
+> stand; their VALUES are steps of Radix's scales now (`theme/tokens-v2.css`), chosen by one
+> panel — accent, grey, corners, scaling — which a person sets in Settings ▸ Appearance. Where
+> this file gives a hex, a radius in pixels or a control height, read it as history: the
+> defaults are indigo, gray, large corners, Radix's own sizes (24px controls, 36px rows). The
+> shared components in `components/ui/` are Themes' own underneath. The thesis, the trust
+> system, the states and the rules marked MUST that are not about a value still hold.
+
 ## 0. The thesis
 
 Aughor's product is a claim about a number, and the interface's whole job is to make that
