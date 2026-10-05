@@ -6,9 +6,12 @@ that a type read from that connection is linked to a type read from another one.
 links for a claim, and the claims on the far side that are about the far type. It reads the
 declarations and the Record only: no statement runs on either connection.
 
-How a claim is tied to a type, in order: the entities its writer recorded (`extra.entities`), then
-the tables its run warrants read. A claim tied to no type cites no link — the page then shows no
-section, rather than an empty one.
+The organisation's ontology is opened by the door that serves this (`GET /ontology/claim-links/
+{claim_id}`, one of the doors that take `?domain=`) and handed in; this module never opens it.
+
+How a claim is tied to a type: by the entities its writer recorded (`extra.entities`), and failing
+that by the tables its run warrants read. A claim tied to no type cites no link — the page then
+shows no section, rather than an empty one.
 
 A far connection the reader may not see is said, never listed: the link is named with the type on
 this side, and the far side reads as withheld.
@@ -35,7 +38,7 @@ def _segments(table: str) -> list[str]:
 
 def same_table(a: str, b: str) -> bool:
     """Whether two table names can be the same table: every segment both spell agrees, read from the
-    right. `shop.orders` is `orders`; `shop.orders` is not `crm.orders`."""
+    right. `east.sales` is `sales`; `east.sales` is not `west.sales`."""
     x, y = _segments(a), _segments(b)
     n = min(len(x), len(y))
     return n > 0 and x[-n:] == y[-n:]
@@ -76,25 +79,18 @@ def types_of(claim: Any, graph: Any) -> set[str]:
     return found
 
 
-def _domain_graphs() -> Iterable[tuple[str, Any]]:
-    from aughor.ontology.domains import domain_graph, domain_names, resolve_domain
-    for name in domain_names():
-        yield name, domain_graph(resolve_domain(name))
-
-
 def _claims_on(conn_id: str) -> list:
     from aughor.record import claims as C
     return C.list_claims(conn_id=conn_id, limit=FAR_READ)
 
 
-def cross_links(claim: Any, *, visible: Optional[Callable[[str], bool]] = None,
-                graphs: Optional[Iterable[tuple[str, Any]]] = None,
+def cross_links(claim: Any, graphs: Iterable[tuple[str, Any]], *, visible: Optional[Callable[[str], bool]] = None,
                 claims_on: Optional[Callable[[str], list]] = None) -> list[dict]:
     """Every declared link from a type this claim is about into a type read from another connection.
     One row per link: the two types, the far connection, how many current claims there are about the
-    far type and the newest few. ``visible`` says whether the reader may see a connection; a far
-    side they may not is ``withheld`` and carries no claim. ``graphs`` and ``claims_on`` are the two
-    reads, given so a test can stand in for the declaration files and the ledger."""
+    far type and the newest few. ``graphs`` is each domain's name with its ontology, opened by the
+    door. ``visible`` says whether the reader may see a connection; a far side they may not is
+    ``withheld`` and carries no claim. ``claims_on`` reads a connection's claims from the Record."""
     from aughor.ontology.sources import entity_source
 
     conn = connection_of(claim)
@@ -104,7 +100,7 @@ def cross_links(claim: Any, *, visible: Optional[Callable[[str], bool]] = None,
     claims_on = claims_on or _claims_on
     far_cache: dict[str, list] = {}
     out: list[dict] = []
-    for domain, graph in (graphs if graphs is not None else _domain_graphs()):
+    for domain, graph in graphs:
         mine = types_of(claim, graph)
         if not mine:
             continue

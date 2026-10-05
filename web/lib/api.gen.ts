@@ -10358,6 +10358,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/claim-links/{claim_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Claim Links
+         * @description The declared links from the types a claim is about into types read from another connection, each with the
+         *     newest claims about its far type (ROADMAP §6 item 42e). A read of the declaration files and the Record: no
+         *     warehouse query, no model call. A far connection the reader may not see is said to be withheld and not read.
+         */
+        get: operations["list_claim_links_ontology_claim_links__claim_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/column-config": {
         parameters: {
             query?: never;
@@ -38507,6 +38529,40 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_claim_links_ontology_claim_links__claim_id__get: {
+        parameters: {
+            query?: {
+                /** @description One of the organisation's ontologies; every domain it has declared anything in when absent */
+                domain?: string | null;
+            };
+            header?: never;
+            path: {
+                claim_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

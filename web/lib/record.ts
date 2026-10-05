@@ -73,7 +73,9 @@ export interface ClaimConfidence {
 
 /** One link across connections, cited on a claim's page: the two types, the far connection, and
  *  the newest claims about the far type. `withheld`: the reader may not see the far connection, so
- *  nothing of it is named. Read from declarations and the Record — no statement runs anywhere. */
+ *  nothing of it is named. Read from declarations and the Record — no statement runs anywhere.
+ *  Served by the ontology's own door (`getClaimCrossLinks`), which alone opens an organisation's
+ *  ontology; a claim's own read does not carry it. */
 export interface ClaimCrossLink {
   domain: string;
   relationship: string;
@@ -123,10 +125,6 @@ export interface Claim {
    *  behind this claim — and, when there is nothing to read, why. */
   told?: ToldRow[];
   told_note?: string;
-  /** Declared links from a type this claim is about into a type read from another connection. */
-  cross_links?: ClaimCrossLink[];
-  /** Said instead of the links when the organisation's ontology could not be read. */
-  cross_links_note?: string;
 }
 
 /** One message that left (or was held) citing an answer. */
@@ -150,6 +148,10 @@ export interface ClaimFilter {
 export const listClaims = (f: ClaimFilter = {}) => read<Claim[]>(`/record/claims${qs({ ...f })}`);
 export const getClaim = (id: string) => read<Claim>(`/record/claims/${encodeURIComponent(id)}`);
 export const getClaimVersions = (id: string) => read<Claim[]>(`/record/claims/${encodeURIComponent(id)}/versions`);
+/** The declared links from a claim's types into other connections, across every domain the
+ *  organisation has declared anything in. */
+export const getClaimCrossLinks = (id: string) =>
+  read<{ links: ClaimCrossLink[] }>(`/ontology/claim-links/${encodeURIComponent(id)}`).then(r => r.links ?? []);
 export const markClaimWrong = (id: string, body: { corrected?: string; why?: string; by?: string }) =>
   send<MarkedWrong>(`/record/claims/${encodeURIComponent(id)}/wrong`, body);
 

@@ -13627,7 +13627,10 @@ the browser** · **measure the premise before building.**
     connection only, and two tables are the same only where every segment both names spell agrees (`shop.orders` is
     not `crm.orders`). For each declared link from such a type into a type read from another connection, the claim's
     page names the two types and the far connection and lists the newest five claims about the far type, which open
-    beside the page (`aughor/record/cross_links.py`). A far connection the reader may not see is said to be withheld
+    beside the page (`aughor/record/cross_links.py`). The organisation's ontology is opened by its own door —
+    `GET /ontology/claim-links/{claim_id}`, one of the doors that take `?domain=` — and handed to that module; the
+    first build read it from the claim's route, and the boundary that keeps an organisation's ontology behind its
+    doors refused that in the full suite. A far connection the reader may not see is said to be withheld
     and nothing of it is read. A claim tied to no link has no such section. **Not shown on a real ontology yet:** the
     scratch install declares no type, so this is held by its tests (both guards mutation-tested) and by the route
     serving an empty list on real claims; the first install with a link across two connections is its first receipt.

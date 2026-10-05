@@ -14,7 +14,7 @@ import type { Connection } from "@/lib/api";
 import { countNoun, formatTableNumber } from "@/lib/format";
 import { connectionLabel, keyToWords } from "@/lib/names";
 import {
-  getClaim, getClaimVersions, getOnboarding, listClaims, whoLabel,
+  getClaim, getClaimCrossLinks, getClaimVersions, getOnboarding, listClaims, whoLabel,
   type Claim, type ClaimCrossLink, type Onboarding,
 } from "@/lib/record";
 import {
@@ -230,6 +230,8 @@ function ClaimReader({ id, connections, onBack, onOpen, onInspectClaim, onOpenDe
 }) {
   const load = useLoad(() => getClaim(id), [id]);
   const versions = useLoad(() => getClaimVersions(id), [id]);
+  // Asked of the ontology's own door, which alone opens an organisation's ontology.
+  const links = useLoad(() => getClaimCrossLinks(id), [id]);
   const actor = useActor();
   const [said, setSaid] = useState("");
   const c = load.data;
@@ -314,10 +316,10 @@ function ClaimReader({ id, connections, onBack, onOpen, onInspectClaim, onOpenDe
               ))}
             </Section>
 
-            {((claim.cross_links?.length ?? 0) > 0 || claim.cross_links_note) && (
-              <Section label="Linked in other connections" meta={claim.cross_links?.length ? countNoun(claim.cross_links.length, "link") : undefined}>
-                {claim.cross_links_note && <Absent>{sentence(claim.cross_links_note)}</Absent>}
-                {(claim.cross_links ?? []).map(l => <CrossLink key={`${l.domain}:${l.relationship}`} link={l} connections={connections} onInspectClaim={onInspectClaim} />)}
+            {((links.data?.length ?? 0) > 0 || links.error) && (
+              <Section label="Linked in other connections" meta={links.data?.length ? countNoun(links.data.length, "link") : undefined}>
+                {links.error && <Absent>The organisation&apos;s ontology could not be read just now, so no link is listed.</Absent>}
+                {(links.data ?? []).map(l => <CrossLink key={`${l.domain}:${l.relationship}`} link={l} connections={connections} onInspectClaim={onInspectClaim} />)}
               </Section>
             )}
 

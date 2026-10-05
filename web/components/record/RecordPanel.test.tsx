@@ -7,7 +7,7 @@ import type { Claim, ClaimCrossLink } from "@/lib/record";
 
 import { RecordPanel } from "./RecordPanel";
 
-const record = vi.hoisted(() => ({ getClaim: vi.fn(), getClaimVersions: vi.fn() }));
+const record = vi.hoisted(() => ({ getClaim: vi.fn(), getClaimVersions: vi.fn(), getClaimCrossLinks: vi.fn() }));
 vi.mock("@/lib/record", async (original) => ({ ...(await original<typeof import("@/lib/record")>()), ...record }));
 
 const CONNECTIONS = [{ id: "shop", name: "The shop" }, { id: "crm", name: "The CRM" }] as unknown as Connection[];
@@ -33,13 +33,14 @@ const show = (onInspectClaim = vi.fn()) => {
 };
 
 beforeEach(() => {
-  record.getClaim.mockReset(); record.getClaimVersions.mockReset();
+  for (const f of Object.values(record)) f.mockReset();
   record.getClaimVersions.mockResolvedValue([]);
+  record.getClaim.mockResolvedValue(claim());
 });
 
 describe("a claim's page cites links into other connections", () => {
   it("names the link, the far connection and its newest claims, which open beside the page", async () => {
-    record.getClaim.mockResolvedValue(claim({ cross_links: [LINK] }));
+    record.getClaimCrossLinks.mockResolvedValue([LINK]);
     const inspect = show();
     expect(await screen.findByText("Linked in other connections")).toBeInTheDocument();
     expect(screen.getByText("Order is linked to Account, in The CRM")).toBeInTheDocument();
@@ -49,22 +50,23 @@ describe("a claim's page cites links into other connections", () => {
   });
 
   it("says a far connection the reader may not see is withheld, and names nothing of it", async () => {
-    record.getClaim.mockResolvedValue(claim({ cross_links: [{ ...LINK, withheld: true, far_type: "", far_connection: "", far_claims: [], far_claims_total: 0 }] }));
+    record.getClaimCrossLinks.mockResolvedValue([{ ...LINK, withheld: true, far_type: "", far_connection: "", far_claims: [], far_claims_total: 0 }]);
     show();
     expect(await screen.findByText("Order is linked to a type in a connection you may not see.")).toBeInTheDocument();
     expect(screen.queryByText(/Account/)).toBeNull();
   });
 
   it("has no such section for a claim tied to no link, and says so when the ontology could not be read", async () => {
-    record.getClaim.mockResolvedValue(claim({ cross_links: [] }));
+    record.getClaimCrossLinks.mockResolvedValue([]);
     const first = render(<RecordPanel connections={CONNECTIONS} selectedConn="shop" openId="c1" onOpen={() => undefined}
       onOpenDecision={() => undefined} onOpenRun={() => undefined} onOpenReceipt={() => undefined}
       onOpenDefinitions={() => undefined} onOpenMap={() => undefined} />);
     expect(await screen.findByText("Who else was told")).toBeInTheDocument();
     expect(screen.queryByText("Linked in other connections")).toBeNull();
     first.unmount();
-    record.getClaim.mockResolvedValue(claim({ cross_links: [], cross_links_note: "the organisation's ontology could not be read just now" }));
+    expect(record.getClaimCrossLinks).toHaveBeenCalledWith("c1");            // asked of the ontology's own door
+    record.getClaimCrossLinks.mockRejectedValue(new Error("The organisation's ontology could not be read (500)"));
     show();
-    expect(await screen.findByText("The organisation's ontology could not be read just now.")).toBeInTheDocument();
+    expect(await screen.findByText(/could not be read just now, so no link is listed/)).toBeInTheDocument();
   });
 });

@@ -75,14 +75,14 @@ def test_a_claim_cites_the_link_across_and_the_far_sides_claims_about_the_far_ty
         return far
 
     claim = _claim("shop", "Orders fell 4%", sql="SELECT COUNT(*) FROM shop.orders")
-    [link] = X.cross_links(claim, graphs=[("default", graph)], claims_on=claims_on)
+    [link] = X.cross_links(claim, [("default", graph)], claims_on=claims_on)
     assert (link["near_type"], link["far_type"], link["far_connection"]) == ("Order", "Account", "crm")
     assert link["name"] == "order placed by account" and link["withheld"] is False and link["domain"] == "default"
     assert [c["id"] for c in link["far_claims"]] == ["far-1"] and link["far_claims_total"] == 1
     assert read == ["crm"]                                    # the Record is read; no connection is
 
     # read from the far side, the same link points back
-    [back] = X.cross_links(far[0], graphs=[("default", graph)], claims_on=lambda conn: [claim])
+    [back] = X.cross_links(far[0], [("default", graph)], claims_on=lambda conn: [claim])
     assert (back["near_type"], back["far_type"], back["far_connection"]) == ("Account", "Order", "shop")
     assert [c["text"] for c in back["far_claims"]] == ["Orders fell 4%"]
 
@@ -91,9 +91,9 @@ def test_a_link_inside_one_connection_and_a_claim_tied_to_no_type_cite_nothing()
     graph = _graph()
     lines = _claim("shop", "Lines per order rose", sql="SELECT COUNT(*) FROM shop.order_items")
     assert X.types_of(lines, graph) == {"Line"}
-    assert X.cross_links(lines, graphs=[("default", graph)], claims_on=lambda conn: []) == []       # Line→Order is a join
+    assert X.cross_links(lines, [("default", graph)], claims_on=lambda conn: []) == []       # Line→Order is a join
     untied = _claim("shop", "Stock is flat", sql="SELECT 1 FROM shop.inventory")
-    assert X.cross_links(untied, graphs=[("default", graph)], claims_on=lambda conn: []) == []
+    assert X.cross_links(untied, [("default", graph)], claims_on=lambda conn: []) == []
 
 
 def test_a_far_connection_the_reader_may_not_see_is_said_and_nothing_of_it_is_listed():
@@ -105,7 +105,46 @@ def test_a_far_connection_the_reader_may_not_see_is_said_and_nothing_of_it_is_li
         return [_claim("crm", "Enterprise accounts renew at 91%", entities=["Account"])]
 
     claim = _claim("shop", "Orders fell 4%", entities=["Order"])
-    [link] = X.cross_links(claim, visible=lambda conn: conn != "crm", graphs=[("default", graph)], claims_on=claims_on)
+    [link] = X.cross_links(claim, [("default", graph)], visible=lambda conn: conn != "crm", claims_on=claims_on)
     assert link["withheld"] is True and link["near_type"] == "Order"
     assert link["far_type"] == "" and link["far_connection"] == "" and link["far_claims"] == []
     assert asked == []                                        # not even read
+
+
+def test_the_door_opens_the_ontology_and_this_module_never_does(monkeypatch):
+    """Only the doors that take ?domain= read an organisation's ontology (`test_organisation_ontology_boundary`).
+    The door hands the graphs in; a claim that is not there, or not the reader's to see, is a 404."""
+    import inspect
+
+    from fastapi import HTTPException
+
+    from aughor.routers import ontology as door
+    assert "aughor.ontology.domains" not in inspect.getsource(X)
+    monkeypatch.setattr("aughor.ontology.domains.domain_names", lambda org=None: ["retail"])
+    opened: list[str] = []
+
+    def graph_of(scope):
+        opened.append(scope.name)
+        return _graph()
+
+    monkeypatch.setattr("aughor.ontology.domains.domain_graph", graph_of)
+    claim = _claim("shop", "Orders fell 4%", entities=["Order"], cid="near-1")
+    monkeypatch.setattr("aughor.record.claims.get", lambda cid: claim if cid == "near-1" else None)
+    monkeypatch.setattr(X, "_claims_on", lambda conn: [_claim("crm", "Enterprise accounts renew at 91%", entities=["Account"], cid="far-1")])
+    monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: None)
+
+    out = door.list_claim_links("near-1", domain=None)
+    assert opened == ["default", "retail"]                                # every domain the organisation declared in
+    assert {(l["domain"], l["far_type"], l["far_connection"]) for l in out["links"]} == {
+        ("default", "Account", "crm"), ("retail", "Account", "crm")}
+    opened.clear()
+    assert len(door.list_claim_links("near-1", domain="retail")["links"]) == 1 and opened == ["retail"]
+
+    for hidden in (lambda: {"crm"}, None):
+        if hidden is not None:
+            monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", hidden)
+        try:
+            door.list_claim_links("near-1" if hidden else "nobody", domain=None)
+            raise AssertionError("expected a 404")
+        except HTTPException as refused:
+            assert refused.status_code == 404
