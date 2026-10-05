@@ -229,6 +229,18 @@ def get_record_inquiry(inquiry_id: str) -> dict:
     return _inquiry_view(q)
 
 
+@router.post("/record/inquiries/{inquiry_id}/propose")
+def propose_record_inquiry_run(inquiry_id: str) -> dict:
+    """The run this inquiry waits for, proposed with what it costs on this install and what its
+    result could change (the study §H); recomputed now and kept on the inquiry. Spends no model."""
+    from aughor.record.inquiry import get_inquiry, propose_run, _book
+    q = get_inquiry(inquiry_id)
+    if q is None or not _visible(q.connection_id):
+        raise HTTPException(status_code=404, detail="No such inquiry")
+    q.extra["proposed_run"] = propose_run(q)
+    return _inquiry_view(_book(q))
+
+
 @router.post("/record/inquiries/{inquiry_id}/close")
 def close_record_inquiry(inquiry_id: str, req: CloseInquiryRequest, principal=Depends(get_principal)) -> dict:
     """A person closes an inquiry — answered, overtaken or abandoned — with what was believed at

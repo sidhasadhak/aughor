@@ -215,7 +215,124 @@ def open_inquiry(*, question: str, connection_id: str, opened_by: str, run_id: s
                 opened_by=opened_by or "unidentified", state="open", opened_at=now.isoformat(),
                 extra={**({"first_run": run_id} if run_id else {}), **({"mission": mission} if mission else {})})
     q.key = inquiry_key(connection_id or "-", subject, (run_id or now.strftime("%Y%m%dT%H%M%S%f")))
+    if not run_id:
+        # opened by a signal, not an ask: no run is running, so the run it waits for is PROPOSED with its cost
+        q.extra["proposed_run"] = propose_run(q, now=now)
     return _book(q)
+
+
+# ── a run proposed with its cost (the study §H "Cost"; the close-out, C4) ──────────────────
+
+#: The run kind an inquiry proposes — the deep analysis, metered as a kernel job of this kind.
+RUN_KIND = "investigation"
+#: How many of the install's own metered runs the estimate reads, newest first.
+COST_SAMPLE = 200
+
+
+def _median(values: list[float]) -> Optional[float]:
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return None
+    mid = len(vals) // 2
+    return float(vals[mid]) if len(vals) % 2 else float((vals[mid - 1] + vals[mid]) / 2)
+
+
+def _metered_runs(connection_id: str, kind: str = RUN_KIND, *, limit: int = COST_SAMPLE) -> list[dict]:
+    """The install's own finished runs of ``kind`` on this connection, with the tokens they spent — the
+    outer twin of a nested run reports 0 tokens and is left out (`runners/investigation.py`)."""
+    rows = _ledger().jobs_where(kinds=[kind], conn_id=connection_id or None, states=["SUCCEEDED"], limit=limit)
+    return [r for r in rows if int(((r.get("metrics") or {}).get("total_tokens")) or 0) > 0]
+
+
+def _minutes(row: dict) -> Optional[float]:
+    a, b = _as_dt(str(row.get("started_at") or "")), _as_dt(str(row.get("finished_at") or ""))
+    return round((b - a).total_seconds() / 60.0, 2) if a and b and b >= a else None
+
+
+def _as_dt(value: str) -> Optional[_dt.datetime]:
+    try:
+        return _dt.datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
+    except ValueError:
+        return None
+
+
+def run_cost_estimate(connection_id: str, *, kind: str = RUN_KIND) -> dict:
+    """What a run of ``kind`` costs on THIS install, from its own metered runs — never a guess: the
+    median tokens and minutes with the count they were read from; a dollar floor from the priced
+    model calls of the last fortnight (the session log's retention) with the unpriced calls counted
+    beside it, never added as zero; and the ceiling the run's charter sets. With no metered run yet,
+    the ceiling is the only number and the estimate says so."""
+    out: dict[str, Any] = {"kind": kind, "from": "", "tokens": None, "minutes": None, "n": 0,
+                           "usd_floor": None, "usd_n": 0, "unpriced_calls": 0, "ceiling": {}}
+    try:
+        runs = _metered_runs(connection_id, kind)
+    except Exception as exc:  # noqa: BLE001 — an unreadable job table leaves the estimate at the ceiling, said
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the metered runs could not be read for a run's cost", counter="inquiry.cost")
+        runs = []
+    out["n"] = len(runs)
+    out["tokens"] = _median([float((r.get("metrics") or {}).get("total_tokens") or 0) for r in runs])
+    out["minutes"] = _median([m for m in (_minutes(r) for r in runs) if m is not None])
+    try:
+        from aughor.obs.session_log import recent_sessions
+        priced = [r for r in recent_sessions(limit=COST_SAMPLE, scan=4000)
+                  if r.get("conn_id") == connection_id and r.get("investigation_id")]
+        costs = [float(r.get("cost_usd") or 0.0) for r in priced if int(r.get("unpriced_calls") or 0) == 0 and r.get("llm_calls")]
+        out["usd_floor"] = round(_median(costs), 4) if costs else None
+        out["usd_n"] = len(costs)
+        out["unpriced_calls"] = sum(int(r.get("unpriced_calls") or 0) for r in priced)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the session log could not be read for a run's price", counter="inquiry.cost")
+    try:
+        from aughor.kernel.agents import charter_for_kind, effective_governance
+        g = effective_governance(charter_for_kind(kind).id)
+        out["ceiling"] = {"tokens": g.token_budget, "seconds": g.time_budget_s, "charter": charter_for_kind(kind).id}
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the charter's ceiling could not be read for a run's cost", counter="inquiry.cost")
+    if out["n"]:
+        out["from"] = (f"the install's own {out['n']} metered run{'s' if out['n'] != 1 else ''} of this kind on this "
+                       f"connection (median); the dollar figure is a floor from {out['usd_n']} priced run"
+                       f"{'s' if out['usd_n'] != 1 else ''} of the last fortnight"
+                       + (f", {out['unpriced_calls']} model calls unpriced" if out["unpriced_calls"] else ""))
+    else:
+        out["from"] = "no metered run of this kind on this connection yet; the charter's ceiling is the only number"
+    return out
+
+
+def propose_run(q: Inquiry, *, now: Optional[_dt.datetime] = None) -> dict:
+    """The run an inquiry waits for, proposed with what it costs and what its result could change
+    (the study §H: "a run is proposed with what it costs and what its result could change; the
+    cheapest test goes first; work stops when no open hypothesis could change the decision").
+    Nothing here spends a model: the proposal is read from the inquiry and the install's own
+    metering. When nothing is open — no open item, no open hypothesis — no run is proposed, and
+    the proposal says why."""
+    now = now or _now()
+    open_hyps = []
+    for cid in q.hypotheses:
+        c = _claims.get(cid)
+        if c is not None and c.state == "open":
+            open_hyps.append({"claim": c.id, "text": c.statement.text[:200]})
+    items = [{"what": o.what, "settled_by": o.settled_by} for o in q.open]
+    # the cheapest test first: an open item that names what would settle it is the one a run can
+    # close with the least work; the ones with nothing named come after, said as unstated
+    items.sort(key=lambda o: (not bool(o["settled_by"]) or o["settled_by"].startswith("unstated"), o["what"]))
+    could_change = {"open_items": items, "open_hypotheses": open_hyps,
+                    **({"mission": q.extra["mission"]} if q.extra.get("mission") else {}),
+                    "decisions": list(q.decisions)}
+    proposal: dict[str, Any] = {"kind": RUN_KIND, "question": q.question, "proposed_at": now.isoformat(),
+                                "could_change": could_change,
+                                "rule": "the cheapest test goes first; work stops when no open hypothesis could change the decision"}
+    if q.state == "closed":
+        proposal.update({"proposed": False, "why": "the inquiry is closed"})
+        return proposal
+    if not items and not open_hyps and q.runs:
+        proposal.update({"proposed": False,
+                         "why": "nothing is open that a run could change — no open item, no open hypothesis; the question stands answered"})
+        return proposal
+    proposal.update({"proposed": True, "cost": run_cost_estimate(q.connection_id)})
+    return proposal
 
 
 def mission_for(connection_id: str, metric: str) -> str:
@@ -236,6 +353,8 @@ def wake(q: Inquiry, *, why: str, now: Optional[_dt.datetime] = None) -> Inquiry
     q.state = "open"
     q.woke.append({"at": now.isoformat(), "why": why})
     q.next_check = ""
+    # the close-out (C4): a woken inquiry is a run waiting to be proposed — proposed WITH what it costs
+    q.extra["proposed_run"] = propose_run(q, now=now)
     booked = _book(q)
     try:
         _ledger().emit("inquiry.woke", {"inquiry_id": booked.id, "key": booked.key, "why": why,

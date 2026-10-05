@@ -11159,10 +11159,11 @@ held under `held_budget` once they are spent, every hold a ledger row with its s
 addressee's budget served by `/attention/*`, the four ranking terms published with their weights and how each is
 read today (mission 0 until phase 5; size from a monitor's threshold; cost of waiting by kind; novelty from the
 repeat guard). Receipt: 26 phase-2 tests pass; the gate, laws, remedies, exit-ratchet, monitor, lifecycle and
-vocabulary suites (210) pass. **Still open in phase 2:** the Now page and the Inquiry page; a run proposed with its
-cost; the settling lag and a process's early stages as signals; triage's mission term; kill 4 (quick-or-deep as a
-choice); and the exit's live halves — a refusal on a real object, the held list read by a real person, a measured
-share of inquiries the platform opened (the record's `opened_by` counts it; 0 until alerts fire on the install).
+vocabulary suites (210) pass. **Still open in phase 2:** the Now page and the Inquiry page; kill 4 (quick-or-deep as a
+choice, held by CP-2's falsifier); and the exit's live halves — a refusal on a real object, the held list read by a
+real person, a measured share of inquiries the platform opened (the record's `opened_by` counts it; 0 until alerts
+fire on the install). Triage's mission term landed with phase 5; a run proposed with its cost and the settling lag and
+a process's early stages as signals with the close-out's C4.
 
 **Phase 3 — the code half BUILT 2026-10-05**, three slices. (P3-1) The review (`playbook/outcomes.run_due_reviews`)
 measures the metric's OWN HISTORY beside the "before" — the prior same-length windows, their mean and band, and the
@@ -11354,6 +11355,22 @@ rebuilds it. Also closed here: the live-drive isolation helper (`scripts/dump_op
 two causal files phase 5 registered in the conftest, which the hermeticity ratchet had been reporting. Receipt: the
 projection, context-graph, warrant, read-back, lineage, answer-trace, brain-map, data-home, hermeticity and vocabulary
 suites pass.
+(C4, phase 2) A run proposed with its cost (§H "Cost") and the two weak signals §K named as missing. `record/inquiry.
+propose_run` — on every inquiry a signal opens and every inquiry that wakes — says what the run it waits for costs on
+THIS install: the median tokens and minutes of the install's own finished runs of that kind on the connection
+(`jobs_where`, the 0-token outer twin left out), with the count they were read from; a dollar floor from the priced
+model calls of the session log's fortnight with the unpriced calls counted beside it, never added as zero; the
+charter's ceiling (`effective_governance`); and what the run could change — the open items (those naming what would
+settle them first: the cheapest test), the open hypotheses, the mission, the decisions. With no metered run the
+ceiling is the only number, said; with nothing open no run is proposed, said; `POST /record/inquiries/{id}/propose`
+recomputes it. `record/signals.py` — the settling lag itself (`run_settling_samples_daily` reads `connection_lag`
+before and after the day's reading: a move of two days and half of itself, or a table that stopped settling inside the
+horizon, opens an inquiry on the connection) and a declared process's early stages (`measure_override_processes`
+compares each measurement with the one it overwrites: a stage before the last whose p90 transition lag rose by a
+quarter and half a day, or a promise whose breach rate rose five points, opens an inquiry on the process; the last
+stage's lag is the KPI, not the early signal; a first measurement is a baseline). Both go through `open_inquiry`, so a
+drift is one question a fortnight, not one a day; every signal is an `inquiry.signal` event, catalogued. Receipt: the
+signals-and-proposed-runs, inquiry, settling, process, mission, corrections, catalogue and ratchet suites pass.
 
 ---
 

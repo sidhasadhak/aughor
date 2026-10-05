@@ -24,6 +24,7 @@ CATALOGUE: dict[str, dict[str, Any]] = {
     "outcome.booked": {"what": "a decision's outcome was measured", "payload": ["outcome_id", "decision", "verdict", "against_expectation", "actual", "baseline"], "emitted_by": "record/decisions.book_outcome"},
     "prediction.scored": {"what": "a prediction's range was Final and it was scored", "payload": ["claim_id", "key", "metric", "method", "scored_against", "actual", "low", "high", "tier"], "emitted_by": "record/scenario.score_prediction"},
     "inquiry.woke": {"what": "a waiting inquiry woke", "payload": ["inquiry_id", "key", "why", "question"], "emitted_by": "record/inquiry.wake"},
+    "inquiry.signal": {"what": "a weak signal opened or woke an inquiry: the settling lag moved, a process's early stage slowed or a promise is breaking more", "payload": ["signal", "connection_id", "inquiry", "text", "before", "after"], "emitted_by": "record/signals"},
     "mission.reported": {"what": "a mission's report was composed, booked and delivered", "payload": ["mission", "report", "verdict", "delivery"], "emitted_by": "record/mission.report_now"},
     "authority.graduated": {"what": "an action graduated to L4 on a receipt", "payload": ["action_id", "scope", "receipt", "by"], "emitted_by": "actions/authority.graduate"},
     "authority.demoted": {"what": "an action was demoted and its grants withdrawn", "payload": ["action_id", "scope", "why", "grants_revoked", "entry"], "emitted_by": "actions/authority.demote"},
