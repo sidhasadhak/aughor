@@ -37,6 +37,8 @@ GRADUATION_KIND = "authority_graduation"
 DEMOTION_KIND = "authority_demotion"
 #: The L5 receipt (the close-out, C6): a person books it on a long L4 record, inside a mission.
 L5_KIND = "authority_l5"
+#: The ceiling a person sets on (action, scope) outside any mission — a cap, never a grant.
+CEILING_KIND = "authority_ceiling"
 
 LEVELS: dict[int, str] = {0: "observe", 1: "recommend", 2: "prepare", 3: "execute with approval",
                           4: "execute within policy", 5: "autonomous"}
@@ -431,6 +433,33 @@ def demote(action_id: str, scope: str, *, why: str, by: str = "system", evidence
     return did
 
 
+# ── the ceiling a person set ───────────────────────────────────────────────────────────────
+
+def person_ceiling(action_id: str, scope: str) -> Optional[dict]:
+    """The ceiling a person set on (action, scope) outside any mission, or None when none stands
+    (never set, or cleared)."""
+    current = _latest(CEILING_KIND, action_id, scope)
+    return current if current and current.get("level") is not None else None
+
+
+def set_ceiling(action_id: str, scope: str, *, level: Optional[int], by: str, why: str = "") -> dict:
+    """A person caps (action, scope) at a level — or, with ``level=None``, lifts the cap. A ceiling
+    only ever LOWERS what the record earned: setting it above the earned level grants nothing, and
+    L5 stays reachable only inside a mission whose own ceiling sets it. A new version under one
+    key, the earlier ones kept."""
+    if level is not None and (not isinstance(level, int) or isinstance(level, bool) or level < 0 or level > 5):
+        raise ValueError("a ceiling is a level L0–L5")
+    if level is None and person_ceiling(action_id, scope) is None:
+        raise ValueError("no ceiling is set on this action here; there is nothing to lift")
+    payload = {"action_id": action_id, "scope": scope, "level": level, "by": by or "unidentified",
+               "why": (why or "")[:1000], "at": _now()}
+    cid = _ledger().artifact_write(CEILING_KIND, f"ceiling:{scope}:{action_id}", payload, conn_id=scope or None,
+                                   lineage=[("caps", action_id, "lifted" if level is None else f"at L{level}")])
+    _ledger().emit("authority.ceiling", {"action_id": action_id, "scope": scope, "level": level, "by": payload["by"],
+                                         "why": payload["why"][:300], "entry": cid}, conn_id=scope or None)
+    return {**payload, "id": cid}
+
+
 # ── the level ──────────────────────────────────────────────────────────────────────────────
 
 def level_for(action, scope: str, *, ceiling: Optional[int] = None) -> dict:
@@ -475,6 +504,12 @@ def level_for(action, scope: str, *, ceiling: Optional[int] = None) -> dict:
     # L5 is reachable only inside a mission whose ceiling sets it (the close-out, C6): without one the
     # hard ceiling stays L4, however long the record; an irreversible action never passes L3.
     hard_ceiling = 3 if irreversible else (5 if ceiling is not None and int(ceiling) >= 5 else 4)
+    # the ceiling a person set here, outside any mission: a cap beside the mission's, the lower one binding
+    person = person_ceiling(action.id, scope)
+    if person is not None:
+        notes.append(f"{person['by']} capped it at L{int(person['level'])} on {str(person['recorded_at'])[:10]}"
+                     + (f": {person['why'][:160]}" if person.get("why") else ""))
+        ceiling = int(person["level"]) if ceiling is None else min(int(ceiling), int(person["level"]))
     level = min(earned, hard_ceiling, ceiling if ceiling is not None else 5)
     if irreversible:
         notes.append("irreversible: never above L3")
@@ -484,7 +519,9 @@ def level_for(action, scope: str, *, ceiling: Optional[int] = None) -> dict:
     return {"action_id": action.id, "scope": scope, "level": level, "label": LEVELS[level], "earned": earned,
             "ceiling": min(hard_ceiling, ceiling if ceiling is not None else 5), "why": why, "notes": notes,
             "record": rec, "graduation": graduation["id"] if graduation else "", "demotion": demotion["id"] if demotion else "",
-            "l5": l5["id"] if l5 else ""}
+            "l5": l5["id"] if l5 else "",
+            "person_ceiling": ({"level": int(person["level"]), "by": person["by"], "why": person.get("why", ""),
+                                "at": person["recorded_at"]} if person is not None else None)}
 
 
 def table(actions: list, scope: str) -> list[dict]:

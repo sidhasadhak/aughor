@@ -44,6 +44,22 @@ def _site(key: str, row: dict) -> dict[str, str]:
             "note": str(row.get("note") or "")}
 
 
+def door_uses() -> dict[str, Any]:
+    """How often each door method was the way a caller came in, and when it last was — for this organisation, from
+    the audit store's own count. Counting began the day the count shipped; a door with no row was not used since."""
+    try:
+        from aughor.org.context import current_org_id
+        from aughor.security.audit import DoorCounter
+        seen = DoorCounter.totals(org_id=current_org_id() or "default")
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the door-use count could not be read; the map says so", counter="gate_map.door_uses")
+        return {"since": None, "doors": {}, "note": "The count of door uses could not be read"}
+    since = seen.get("since")
+    return {"since": since, "doors": seen.get("doors") or {},
+            "note": (f"Uses are counted from {since}; nothing earlier was recorded" if since
+                     else "No use has been counted yet; counting began when this map gained the column")}
+
 def statement_doors(path: Path | None = None) -> dict[str, Any]:
     """The census, grouped the two ways a reader asks: by how the dialect is handled, and by which
     door method the call goes through — with the unguarded sites listed by name and reason."""
@@ -59,11 +75,15 @@ def statement_doors(path: Path | None = None) -> dict[str, Any]:
     for s in sites:
         by_dialect[s["dialect"]] = by_dialect.get(s["dialect"], 0) + 1
         by_door[s["door"]] = by_door.get(s["door"], 0) + 1
+    used = door_uses()
     return {
         "present": True, "sites": len(sites),
         "by_dialect": [{"dialect": d, "sites": n, "means": DIALECTS.get(d, "")}
                        for d, n in sorted(by_dialect.items(), key=lambda kv: -kv[1])],
-        "by_door": [{"door": d, "sites": n} for d, n in sorted(by_door.items(), key=lambda kv: -kv[1])],
+        "by_door": [{"door": d, "sites": n, "uses": int((used["doors"].get(d) or {}).get("uses") or 0),
+                     "last_used": str((used["doors"].get(d) or {}).get("last_used") or "")}
+                    for d, n in sorted(by_door.items(), key=lambda kv: -kv[1])],
+        "counted_since": used["since"], "uses_note": used["note"],
         "unguarded": [s for s in sites if s["dialect"] in UNGUARDED],
         "note": ("every place a statement reaches a warehouse, from the code itself; a call the census does not "
                  "list fails the build"),

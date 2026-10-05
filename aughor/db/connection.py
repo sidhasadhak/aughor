@@ -778,6 +778,12 @@ class DatabaseConnection(ABC):
     engine_read_only: bool | None = None
     _ontology = None  # Optional[OntologyGraph] — set by get_schema()
 
+    def __init_subclass__(cls, **kwargs) -> None:
+        # Every engine's and connector's door methods are counted as it is defined (the gate map's "last used").
+        super().__init_subclass__(**kwargs)
+        from aughor.db.door_count import count_the_doors
+        count_the_doors(cls)
+
     @abstractmethod
     def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None,
                 internal: bool = False) -> QueryResult:
@@ -1150,6 +1156,14 @@ def _run_connect_hooks(duck_conn, md_db) -> None:
     No-op if nothing is registered; fail-open — never breaks a connect."""
     from aughor.kernel.registries.execution_hooks import run_on_connect_hooks
     run_on_connect_hooks(duck_conn, is_motherduck=bool(md_db))
+
+
+def _count_the_base_doors() -> None:
+    from aughor.db.door_count import count_the_doors
+    count_the_doors(DatabaseConnection)
+
+
+_count_the_base_doors()
 
 
 class DuckDBConnection(DatabaseConnection):

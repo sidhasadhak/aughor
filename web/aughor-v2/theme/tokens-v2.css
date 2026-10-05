@@ -14,7 +14,8 @@
    honest weight of type. Colour is a data type. What changed is the ground each skin
    stands on:
 
-     DARK follows Du Bois (the study §9's dark reference): cool navy greys — 900 #11171C for the page, 800
+     DARK follows Du Bois (the study §9's dark reference) for its colour, on charcoal since 2026-10-05 (the
+     note at the end of this block). As first drawn: cool navy greys — 900 #11171C for the page, 800
      #1F272D for every surface that sits on it (chrome, the rail, a card), 500 #92A4B3
      for secondary text; borders you can see (#3F5162); ONE blue for everything
      interactive — 400 #8ACAFF links and link text, 500 #4299E0 marks and the active
@@ -48,35 +49,46 @@
    ("Lift Du Bois one step"): every dark surface and line +8 RGB from the Du Bois values
    named above (page #191F24, chrome #272F35), t2 and t3 +8 so every text pair that
    cleared 4.5:1 still does (t3 on a card 4.92:1), t4 with b3. No hue moved.
+
+   On 2026-10-05 the dark skin's NEUTRALS left Du Bois's navy greys for charcoal, at the
+   user's word on a side-by-side of real pages ("go with charcoal"): every surface, line
+   and text grey is now a neutral — page #171717, chrome and cards #212121, text #EDEDED
+   — and nothing else moved. The one blue, the navy selection tint, the six intent ramps
+   and the chart palette are Du Bois's still, and stand out more for having no blue under
+   them. Text is clearer on every surface than it was (t3 on a card 5.87:1, was 4.92:1;
+   on a pressed control 4.81:1, was 3.84:1); t3 is one step above the value shown in the
+   comparison (#9C9C9C, not #9A9A9A) so a caption on a selected row still clears 4.5:1.
+   What is fainter, and was chosen so: the row rule on the page (1.25:1, was 1.39:1) and
+   the step from page to chrome (1.11:1, was 1.22:1).
    ════════════════════════════════════════════════════════════════════════════ */
 
 /* ── DARK · the default, rendered before the theme attribute is stamped ─────── */
 :root {
   /* surfaces */
-  --bg-0: #191F24;          /* the page — Du Bois 900, lifted one step */
-  --bg-1: #272F35;          /* chrome: topbar, rail, content header, a table's header row — 800, lifted */
+  --bg-0: #171717;          /* the page — charcoal */
+  --bg-1: #212121;          /* chrome: topbar, rail, content header, a table's header row */
   --bg-2: var(--bg-1);      /* a card: one step lighter than the page */
-  --bg-3: #191F24;          /* inset, input, code well: the page colour, boxed by --b2 */
-  --bg-4: #33404C;          /* pressed, the active segment */
-  --bg-hover: #2E3942;      /* row and nav hover */
+  --bg-3: #171717;          /* inset, input, code well: the page colour, boxed by --b2 */
+  --bg-4: #303030;          /* pressed, the active segment */
+  --bg-hover: #2A2A2A;      /* row and nav hover */
   --bg-nav: var(--bg-1);    /* the rail sits on chrome */
-  --bg-sel: #1C364D;        /* selected row, active nav: a navy tint */
+  --bg-sel: #1C364D;        /* selected row, active nav: a navy tint — the skin's blue, kept */
   --bg-canvas: var(--bg-0); /* the Data Canvas ground: no tinted ground on chrome */
-  --scrim: rgba(6, 10, 14, .72);
-  --code-bg: #13191E;       /* SQL, logs, pre — one step under the page */
+  --scrim: rgba(8, 8, 8, .72);
+  --code-bg: #111111;       /* SQL, logs, pre — one step under the page */
 
   /* lines — b0 is the row rule and carries most of the structure; b2 is a border you can see */
-  --b0: #2D3841;
-  --b1: #37444F;
-  --b2: #47596A;
-  --b3: #677A89;
+  --b0: #2A2A2A;
+  --b1: #333333;
+  --b2: #454545;
+  --b3: #6E6E6E;
   --bfocus: var(--blue3);
 
-  /* text — t3 is captions and meta (4.96:1 on chrome); t4 is never text */
-  --t1: #E8ECF0;
-  --t2: #9AACBB;
-  --t3: #8C9EAC;
-  --t4: #677A89;
+  /* text — t3 is captions and meta (5.87:1 on chrome); t4 is never text */
+  --t1: #EDEDED;
+  --t2: #ABABAB;
+  --t3: #9C9C9C;
+  --t4: #6E6E6E;
 
   /* intent — 1 tint · 2 border · 3 the colour · 4 text · 5 aliases 4
      blue interactive · green guard passed, healthy, live · violet deep analysis ·

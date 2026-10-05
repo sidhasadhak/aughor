@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from aughor.actions import authority as A
 from aughor.db.registry import BUILTIN_ID
-from aughor.security.authz import connection_owner_guard, get_principal
+from aughor.security.authz import acting_person, connection_owner_guard, get_principal
 
 router = APIRouter(prefix="/authority", tags=["authority"], dependencies=[Depends(connection_owner_guard)])
 
@@ -135,9 +135,61 @@ def authority_writes(door: Optional[str] = Query(default=None), limit: int = 100
             "note": "a gateway write declares no verification read and no undo; it is on the record so it can be counted, not graduated"}
 
 
+class CeilingBody(BaseModel):
+    connection_id: str = BUILTIN_ID
+    level: Optional[int] = None    # L0–L5; None lifts the cap
+    why: str = ""
+    by: str = ""                   # the person, when no sign-in names them
+
+
+@router.post("/{action_id}/ceiling", status_code=201)
+def authority_ceiling(action_id: str, body: CeilingBody, principal=Depends(get_principal)) -> dict:
+    """A person caps an action on a connection at a level, outside any mission — or lifts the cap.
+    A ceiling only lowers what the record earned; it grants nothing."""
+    try:
+        entry = A.set_ceiling(action_id, body.connection_id, level=body.level,
+                              by=acting_person(principal, body.by) or "unidentified", why=body.why)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"entry": entry, "action_id": action_id, "scope": body.connection_id}
+
+
+class WidenBody(BaseModel):
+    connection_id: str = BUILTIN_ID
+    schema_name: Optional[str] = None
+    target_value: str
+    expires_days: int = 30
+    max_uses: int = 0              # 0 = no cap on uses
+    by: str = ""
+
+
+@router.post("/{action_id}/widen", status_code=201)
+def authority_widen(action_id: str, body: WidenBody, principal=Depends(get_principal)) -> dict:
+    """A person signs a standing grant for an action at L4 — bound to one target value on this
+    connection, expiring, capped — citing the graduation receipt that licenses it. Refused below
+    L4 and for an action that does not declare exactly one target parameter, with why."""
+    actions = _actions(body.connection_id, body.schema_name)
+    action = actions.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    if not (body.target_value or "").strip():
+        raise HTTPException(status_code=422, detail="a standing grant is bound to one target value")
+    if body.expires_days < 0 or body.max_uses < 0:
+        raise HTTPException(status_code=422, detail="an expiry and a cap on uses are counts")
+    try:
+        grant = A.widen(action, body.connection_id, target_value=body.target_value.strip(),
+                        by=acting_person(principal, body.by) or "unidentified", expires_days=body.expires_days,
+                        max_uses=body.max_uses)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"grant": grant.model_dump() if hasattr(grant, "model_dump") else grant}
+
+
 class DemoteBody(BaseModel):
     connection_id: str = BUILTIN_ID
     why: str
+    drill: bool = False            # a person rehearsing the demotion: the same entry, marked as a drill
+    by: str = ""
 
 
 @router.post("/{action_id}/demote", status_code=201)
@@ -146,5 +198,6 @@ def authority_demote(action_id: str, body: DemoteBody, principal=Depends(get_pri
     standing grants of (action, scope) are withdrawn with it."""
     if not (body.why or "").strip():
         raise HTTPException(status_code=422, detail="a demotion says why")
-    entry = A.demote(action_id, body.connection_id, why=body.why, by=_who(principal) or "unidentified")
-    return {"entry": entry, "action_id": action_id, "scope": body.connection_id, "to_level": 3}
+    entry = A.demote(action_id, body.connection_id, why=body.why, by=acting_person(principal, body.by) or "unidentified",
+                     evidence={"drill": True} if body.drill else None)
+    return {"entry": entry, "action_id": action_id, "scope": body.connection_id, "to_level": 3, "drill": body.drill}

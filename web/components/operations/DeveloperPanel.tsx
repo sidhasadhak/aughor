@@ -7,6 +7,10 @@
  * Packs with their measured record; the doors an outside agent uses, with the events it can
  * subscribe to; service principals and their keys; the kits; and the agent contract as a
  * document, rendered from what the code enforces. Nothing here runs inside the process.
+ *
+ * A pack is checked here before it is uploaded — the check writes nothing — and arrives as a
+ * draft that steers nothing until a person activates it. A projection method is registered with
+ * the backtest it carries, and runs as a tool on a server already connected.
  */
 import { useState } from "react";
 
@@ -15,8 +19,9 @@ import { countNoun, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { keyToWords } from "@/lib/names";
 import {
-  getContract, getEventCatalogue, getMethods, getServicePrincipals, mintServicePrincipal, revokeServicePrincipal,
-  type AgentContract, type ContractDuty, type EventKind, type ServicePrincipal,
+  checkPack, getContract, getEventCatalogue, getMethods, getServicePrincipals, mintServicePrincipal,
+  registerMethod, revokeServicePrincipal, uploadPack, withdrawMethod,
+  type AgentContract, type ContractDuty, type EventKind, type PackVerdict, type RegisteredMethod, type ServicePrincipal,
 } from "@/lib/record";
 import { Absent, Gate, Ledger, Page, Section, day, useLoad, type LedgerColumn } from "@/components/record/kit";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
@@ -45,9 +50,11 @@ async function get<T>(path: string): Promise<T> {
 
 const STATUS_HUE: Record<string, ChipHue> = { active: "positive", draft: "info", demoted: "negative", deprecated: "muted" };
 
-export function DeveloperPanel({ onOpenPacks, onOpenIntegrations }: {
+export function DeveloperPanel({ onOpenPacks, onOpenIntegrations, onOpenDeclared }: {
   onOpenPacks: () => void;
   onOpenIntegrations: () => void;
+  /** Intelligence ▸ Actions, where an action is declared with its verification and its undo. */
+  onOpenDeclared: () => void;
 }) {
   const packs = useLoad(() => get<{ packs: PackListing[]; rule: string }>("/packs/listing"), []);
   const contract = useLoad(() => getContract(), []);
@@ -84,7 +91,7 @@ export function DeveloperPanel({ onOpenPacks, onOpenIntegrations }: {
   return (
     <Page wide>
       <Section label="Packs" meta={packs.data ? countNoun(packs.data.packs.length, "pack") : undefined}
-        action={<Button size="xs" variant="ghost" onClick={onOpenPacks} title="Upload a pack, run its checks, activate or demote one">Manage packs</Button>}>
+        action={<Button size="xs" variant="ghost" onClick={onOpenPacks} title="Bind a pack to a connection, measure it, activate or demote it">Manage packs</Button>}>
         <Gate load={packs} what="the packs">
           {p => (
             <>
@@ -93,6 +100,7 @@ export function DeveloperPanel({ onOpenPacks, onOpenIntegrations }: {
             </>
           )}
         </Gate>
+        <PackUpload onUploaded={packs.reload} />
       </Section>
 
       <Section label="Doors" action={<Button size="xs" variant="ghost" onClick={onOpenIntegrations}>Integrations</Button>}>
@@ -129,16 +137,19 @@ export function DeveloperPanel({ onOpenPacks, onOpenIntegrations }: {
             </>
           )}
         </Gate>
+      </Section>
+
+      <Section label="Projection methods" meta={methods.data ? `${countNoun(methods.data.builtin.length, "built-in method")} · ${methods.data.registered.length} registered` : undefined}>
         <Gate load={methods} what="the methods">
-          {m => (
-            <div className="aug-item">
-              <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
-                Projection methods: {m.builtin.join(", ")}{m.registered.length ? `, and ${countNoun(m.registered.length, "registered method")}` : "; none registered from outside"}.
-              </div>
-              <div className="aug-item-foot aug-fs-sm"><span>{m.rule}</span></div>
-            </div>
-          )}
+          {m => <Methods builtin={m.builtin} registered={m.registered} rule={m.rule} onChanged={methods.reload} />}
         </Gate>
+      </Section>
+
+      <Section label="Declared actions">
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <Absent>An action is declared on a connection&apos;s object model, with the read that verifies it and how it is undone.</Absent>
+          <Button size="xs" variant="outline" onClick={onOpenDeclared}>Declare an action</Button>
+        </div>
       </Section>
 
       <Section label="The agent contract" meta={contract.data ? `version ${contract.data.version}` : undefined}>
@@ -152,6 +163,193 @@ export function DeveloperPanel({ onOpenPacks, onOpenIntegrations }: {
         </Gate>
       </Section>
     </Page>
+  );
+}
+
+// ── a pack, checked and uploaded ─────────────────────────────────────────────────────────
+
+/** Files a pack is made of are text; anything else in the folder is left behind, and said. */
+const PACK_TEXT = /\.(ya?ml|md|json|sql|txt|csv)$/i;
+const PACK_FILE_LIMIT = 512 * 1024;
+
+function PackUpload({ onUploaded }: { onUploaded: () => void }) {
+  const [files, setFiles] = useState<Record<string, string> | null>(null);
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const [verdict, setVerdict] = useState<PackVerdict | null>(null);
+  const [said, setSaid] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const choose = async (list: FileList | null) => {
+    setVerdict(null); setSaid(""); setError("");
+    const chosen = Array.from(list ?? []);
+    if (chosen.length === 0) { setFiles(null); setSkipped([]); return; }
+    // A chosen folder prefixes every path with its own name; the pack's paths start inside it.
+    const paths = chosen.map(f => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name);
+    const root = paths.every(p => p.includes("/")) && new Set(paths.map(p => p.split("/")[0])).size === 1 ? paths[0].split("/")[0] + "/" : "";
+    const read: Record<string, string> = {};
+    const left: string[] = [];
+    setBusy(true);
+    try {
+      for (let i = 0; i < chosen.length; i++) {
+        const path = paths[i].slice(root.length);
+        if (!PACK_TEXT.test(path) || chosen[i].size > PACK_FILE_LIMIT) { left.push(path); continue; }
+        read[path] = await chosen[i].text();
+      }
+      setFiles(read); setSkipped(left);
+      setVerdict(await checkPack(read));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const upload = async (overwrite: boolean) => {
+    if (!files) return;
+    setBusy(true); setError("");
+    try {
+      await uploadPack(files, overwrite);
+      setSaid(`${verdict?.pack_id || "The pack"} is uploaded as a draft. It steers nothing until a person activates it.`);
+      setFiles(null); setVerdict(null); setSkipped([]);
+      onUploaded();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const declares = Object.entries(verdict?.declares ?? {}).filter(([, v]) => v !== 0 && v !== false)
+    .map(([k, v]) => (typeof v === "boolean" ? keyToWords(k) : `${v} ${keyToWords(k)}`));
+  const exists = /already exists/.test(error);
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Check a pack, then upload it:</span>
+        <Input type="file" multiple aria-label="A pack's folder" disabled={busy} onChange={e => void choose(e.target.files)}
+          {...({ webkitdirectory: "" } as Record<string, string>)} style={{ width: 300 }} />
+        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>choose the pack&apos;s folder; checking writes nothing</span>
+      </div>
+      {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "8px 0 0" }}>{error}</p>}
+      {said && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "8px 0 0" }}>{said}</p>}
+      {verdict && (
+        <div className={`aug-callout ${verdict.ok ? "aug-callout-green" : "aug-callout-amber"}`} style={{ marginTop: 10 }}>
+          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
+            {verdict.ok
+              ? `${verdict.pack_id} passes the static checks (${countNoun(verdict.files, "file")}).`
+              : `${verdict.pack_id || "This pack"} does not pass the static checks: ${countNoun(verdict.errors.length, "error")}.`}
+          </div>
+          {verdict.errors.map(x => <div className="aug-fs-sm" key={x} style={{ color: "var(--red4)", marginTop: 4 }}>{x}</div>)}
+          {verdict.warnings.map(x => <div className="aug-fs-sm" key={x} style={{ color: "var(--t2)", marginTop: 4 }}>Warning: {x}</div>)}
+          <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 4 }}>
+            {declares.length ? `It declares ${declares.join(", ")}.` : "It declares nothing the platform reads."}
+            {skipped.length ? ` Left behind, not text or over the size limit: ${skipped.slice(0, 6).join(", ")}${skipped.length > 6 ? ` and ${skipped.length - 6} more` : ""}.` : ""}
+          </div>
+          {verdict.ok && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <Button size="xs" disabled={busy} onClick={() => void upload(false)}>Upload as a draft</Button>
+              {exists && <Button size="xs" variant="outline" disabled={busy} onClick={() => void upload(true)}>Replace the one that exists</Button>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── projection methods ───────────────────────────────────────────────────────────────────
+
+const METHOD_KINDS = ["forecaster", "estimator", "simulator"] as const;
+
+function backtestWords(m: RegisteredMethod): string {
+  const b = m.backtest;
+  const error = b.mape != null ? `mean error ${pct(b.mape)}` : b.mae != null ? `mean error ${b.mae}` : "";
+  const held = b.coverage_observed != null ? `its interval held ${pct(b.coverage_observed)} of the time` : "";
+  return `scored on ${countNoun(b.n, "case")}${b.metric ? ` of ${keyToWords(b.metric)}` : ""} (${b.measured_on.join(", ")}): ${[error, held].filter(Boolean).join("; ")}`;
+}
+
+function Methods({ builtin, registered, rule, onChanged }: {
+  builtin: string[]; registered: RegisteredMethod[]; rule: string; onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<string>("forecaster");
+  const [server, setServer] = useState("");
+  const [tool, setTool] = useState("");
+  const [n, setN] = useState("");
+  const [measuredOn, setMeasuredOn] = useState("");
+  const [mape, setMape] = useState("");
+  const [coverage, setCoverage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const share = (v: string): number | null => (v.trim() === "" || Number.isNaN(Number(v)) ? null : Number(v) / 100);
+  const act = async (fn: () => Promise<unknown>, then?: () => void) => {
+    setBusy(true); setError("");
+    try { await fn(); then?.(); onChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+  const submit = () => act(() => registerMethod({
+    name: name.trim(), kind,
+    adapter: { server_id: server.trim(), tool: tool.trim() },
+    backtest: { n: Number(n) || 0, measured_on: measuredOn.split(",").map(x => x.trim()).filter(Boolean), mape: share(mape), coverage_observed: share(coverage) },
+  }), () => { setOpen(false); setName(""); setServer(""); setTool(""); setN(""); setMeasuredOn(""); setMape(""); setCoverage(""); });
+  return (
+    <>
+      <div className="aug-item">
+        <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>Built in: {builtin.join(", ")}.</div>
+        <div className="aug-item-foot aug-fs-sm"><span>{rule.charAt(0).toUpperCase() + rule.slice(1)}.</span></div>
+      </div>
+      {registered.length === 0 ? <Absent>No method is registered from outside.</Absent> : withUniqueKeys(registered, m => m.name).map(([key, m]) => (
+        <div className="aug-item" key={key}>
+          <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <span className="aug-fs-ui aug-mono" style={{ color: "var(--t1)" }}>{m.name}</span>
+            <StatusChip hue="muted">{m.kind}</StatusChip>
+          </div>
+          <div className="aug-item-foot aug-fs-sm">
+            <span>{backtestWords(m)}</span>
+            <span>runs as {m.adapter.tool} on {m.adapter.server_id}</span>
+            {m.declared_by && <span>registered by {m.declared_by}</span>}
+            <span style={{ flex: 1 }} />
+            <Button size="xs" variant="outline" disabled={busy} onClick={() => void act(() => withdrawMethod(m.name))}>Withdraw</Button>
+          </div>
+        </div>
+      ))}
+      {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "8px 0 0" }}>{error}</p>}
+      {!open ? (
+        <Button size="xs" variant="outline" style={{ marginTop: 10 }} onClick={() => setOpen(true)}>Register a method</Button>
+      ) : (
+        <div className="aug-form-grid" style={{ marginTop: 10 }}>
+          <label className="aug-fs-sm" htmlFor="me-name">Name</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <Input id="me-name" value={name} onChange={e => setName(e.target.value)} placeholder="vendor-forecaster" style={{ width: 240 }} />
+            <div role="group" aria-label="Kind of method" className="aug-segmented">
+              {METHOD_KINDS.map(k => (
+                <Button key={k} variant="ghost" size="xs" aria-pressed={kind === k}
+                  className={`aug-seg-item${kind === k ? " active" : ""}`} onClick={() => setKind(k)}>{k}</Button>
+              ))}
+            </div>
+          </div>
+          <label className="aug-fs-sm" htmlFor="me-server">Runs as</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <Input id="me-server" value={server} onChange={e => setServer(e.target.value)} placeholder="the connected tool server's id" style={{ flex: "1 1 220px" }} />
+            <Input aria-label="Tool" value={tool} onChange={e => setTool(e.target.value)} placeholder="the tool it calls" style={{ flex: "1 1 180px" }} />
+          </div>
+          <label className="aug-fs-sm" htmlFor="me-n">Its backtest</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <Input id="me-n" value={n} onChange={e => setN(e.target.value)} placeholder="cases" inputMode="numeric" style={{ width: 90 }} />
+            <Input aria-label="Measured on" value={measuredOn} onChange={e => setMeasuredOn(e.target.value)} placeholder="where: datasets or installs, comma-separated" style={{ flex: "1 1 260px" }} />
+            <Input aria-label="Mean error, percent" value={mape} onChange={e => setMape(e.target.value)} placeholder="mean error %" inputMode="decimal" style={{ width: 120 }} />
+            <Input aria-label="Interval held, percent" value={coverage} onChange={e => setCoverage(e.target.value)} placeholder="interval held %" inputMode="decimal" style={{ width: 130 }} />
+          </div>
+          <span />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Button size="xs" disabled={busy || !name.trim()} onClick={() => void submit()}>Register it</Button>
+            <Button size="xs" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>A method with no backtest is refused: a projection nobody has scored is a guess with a name.</span>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

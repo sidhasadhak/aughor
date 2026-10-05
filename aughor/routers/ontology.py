@@ -1925,6 +1925,32 @@ def list_ontology_domains():
     return {"org": _domain_scope(None).org, "default": DEFAULT_DOMAIN, "domains": rows}
 
 
+@router.get("/ontology/claim-links/{claim_id}")
+def list_claim_links(
+    claim_id: str,
+    domain: Optional[str] = Query(default=None, description="One of the organisation's ontologies; every domain it has declared anything in when absent"),
+):
+    """The declared links from the types a claim is about into types read from another connection, each with the
+    newest claims about its far type (ROADMAP §6 item 42e). A read of the declaration files and the Record: no
+    warehouse query, no model call. A far connection the reader may not see is said to be withheld and not read."""
+    from aughor.ontology.domains import DEFAULT_DOMAIN, domain_graph, domain_names
+    from aughor.record import claims as record_claims
+    from aughor.record.cross_links import connection_of, cross_links
+    from aughor.security.authz import org_visible_conn_ids
+
+    seen = org_visible_conn_ids()
+
+    def visible(conn_id: str) -> bool:
+        return seen is None or not conn_id or conn_id in seen
+
+    claim = record_claims.get(claim_id)
+    if claim is None or not visible(connection_of(claim)):
+        raise HTTPException(status_code=404, detail="No such claim")
+    names = [domain] if domain else list(dict.fromkeys([DEFAULT_DOMAIN, *domain_names()]))
+    graphs = [(name, domain_graph(_domain_scope(name))) for name in names]
+    return {"links": cross_links(claim, graphs, visible=visible)}
+
+
 def _domain_declare_entity(spec: dict, domain: str) -> dict:
     from aughor import govern
     from aughor.ontology.domains import declare_entity, domain_graph

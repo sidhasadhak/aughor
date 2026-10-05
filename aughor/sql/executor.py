@@ -194,6 +194,13 @@ def flag_fanout(conn: "DatabaseConnection", sql: str, schema: Optional[str] = No
             "query the finer grain directly) before trusting these totals")
 
 
+def _counted(fn):
+    # One use of the tenth door; what runs through the connection beneath it is the same use.
+    from aughor.db.door_count import GUARDED, counted_door
+    return counted_door(GUARDED, fn)
+
+
+@_counted
 def execute_guarded(
     conn: "DatabaseConnection",
     sql: str,

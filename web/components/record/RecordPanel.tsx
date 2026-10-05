@@ -14,11 +14,12 @@ import type { Connection } from "@/lib/api";
 import { countNoun, formatTableNumber } from "@/lib/format";
 import { connectionLabel, keyToWords } from "@/lib/names";
 import {
-  getClaim, getClaimVersions, getOnboarding, listClaims, whoLabel,
-  type Claim, type Onboarding,
+  getClaim, getClaimCrossLinks, getClaimVersions, getOnboarding, listClaims, whoLabel,
+  type Claim, type ClaimCrossLink, type Onboarding,
 } from "@/lib/record";
 import {
-  Absent, BackHeader, Counted, Fact, Gate, Ledger, Page, Section, StatusMark, TierMark, day, useLoad,
+  Absent, BackHeader, Counted, Fact, Gate, Ledger, MarkWrong, Page, Section, StatusMark, TierMark, day,
+  markedWords, useActor, useLoad,
   type LedgerColumn,
 } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
@@ -43,12 +44,14 @@ const WARRANT_WORDS: Record<string, string> = {
   claim: "it rests on another claim",
 };
 
-export function RecordPanel({ connections, selectedConn, openId, onOpen, onOpenDecision, onOpenRun, onOpenReceipt, onOpenDefinitions, onOpenMap }: {
+export function RecordPanel({ connections, selectedConn, openId, onOpen, onOpenDecision, onInspectClaim, onOpenRun, onOpenReceipt, onOpenDefinitions, onOpenMap }: {
   connections: Connection[];
   selectedConn: string;
   openId: string | null;
   onOpen: (id: string | null) => void;
   onOpenDecision: (id: string) => void;
+  /** Read another claim beside this page. Absent, a cited claim opens as its own page. */
+  onInspectClaim?: (id: string) => void;
   onOpenRun: (runId: string) => void;
   onOpenReceipt: (ref: string) => void;
   onOpenDefinitions: () => void;
@@ -56,6 +59,7 @@ export function RecordPanel({ connections, selectedConn, openId, onOpen, onOpenD
 }) {
   if (openId) {
     return <ClaimReader id={openId} connections={connections} onBack={() => onOpen(null)} onOpen={onOpen}
+      onInspectClaim={onInspectClaim ?? onOpen}
       onOpenDecision={onOpenDecision} onOpenRun={onOpenRun} onOpenReceipt={onOpenReceipt} />;
   }
   return <ClaimLedger connections={connections} selectedConn={selectedConn} onOpen={onOpen}
@@ -174,14 +178,62 @@ function Coverage({ view }: { view: Onboarding }) {
   );
 }
 
+/** One declared link from a type this claim is about into another connection, with the newest
+ *  claims on the far side. A far connection the reader may not see is said, and nothing of it named. */
+function CrossLink({ link: l, connections, onInspectClaim }: {
+  link: ClaimCrossLink; connections: Connection[]; onInspectClaim: (id: string) => void;
+}) {
+  if (l.withheld) {
+    return (
+      <div className="aug-item" data-testid="cross-link">
+        <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{l.near_type} is linked to a type in a connection you may not see.</div>
+        <div className="aug-item-foot aug-fs-sm"><span>Withheld: nothing of that connection is listed here.</span></div>
+      </div>
+    );
+  }
+  const shown = l.far_claims.length;
+  return (
+    <div className="aug-item" data-testid="cross-link">
+      <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
+        {l.near_type} is linked to {l.far_type}, in {connectionLabel(l.far_connection, connections)}
+      </div>
+      <div className="aug-item-foot aug-fs-sm">
+        {l.name && <span>{l.name}</span>}
+        <span>declared in the organisation&apos;s ontology{l.domain && l.domain !== "default" ? `, ${l.domain}` : ""}</span>
+        <span>{l.far_claims_total === 0
+          ? `no claim about ${l.far_type} is on record there`
+          : l.far_claims_total > shown
+            ? `the newest ${shown} of ${countNoun(l.far_claims_total, "claim")} about ${l.far_type} there`
+            : `${countNoun(l.far_claims_total, "claim")} about ${l.far_type} there`}</span>
+      </div>
+      {l.far_claims.map(c => (
+        <div className="aug-claim-line" key={c.id}>
+          <div className="aug-fs-ui" style={{ color: "var(--t1)", minWidth: 0 }}>
+            <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => onInspectClaim(c.id)}>{c.text}</Button>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <StatusMark status={c.status} />
+            <TierMark tier={c.tier} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── a claim's own page ───────────────────────────────────────────────────────────────────
 
-function ClaimReader({ id, connections, onBack, onOpen, onOpenDecision, onOpenRun, onOpenReceipt }: {
+function ClaimReader({ id, connections, onBack, onOpen, onInspectClaim, onOpenDecision, onOpenRun, onOpenReceipt }: {
   id: string; connections: Connection[]; onBack: () => void; onOpen: (id: string) => void;
+  onInspectClaim: (id: string) => void;
   onOpenDecision: (id: string) => void; onOpenRun: (runId: string) => void; onOpenReceipt: (ref: string) => void;
 }) {
   const load = useLoad(() => getClaim(id), [id]);
   const versions = useLoad(() => getClaimVersions(id), [id]);
+  // Asked of the ontology's own door, which alone opens an organisation's ontology.
+  const links = useLoad(() => getClaimCrossLinks(id), [id]);
+  const actor = useActor();
+  const [said, setSaid] = useState("");
   const c = load.data;
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
@@ -190,6 +242,7 @@ function ClaimReader({ id, connections, onBack, onOpen, onOpenDecision, onOpenRu
       <Gate load={load} what="the claim">
         {claim => (
           <Page rail={<ClaimRail c={claim} connections={connections} />}>
+            {said && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 12px" }}>{said}</p>}
             {claim.superseded_by && (
               <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
                 <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This version was replaced. </span>
@@ -203,6 +256,12 @@ function ClaimReader({ id, connections, onBack, onOpen, onOpenDecision, onOpenRu
                 {(claim.statement.range_start || claim.statement.range_end) && <span>{claim.statement.range_start || "…"} to {claim.statement.range_end || "…"}</span>}
                 <Counted claim={claim} />
               </div>
+              {!claim.superseded_by && (
+                <div style={{ display: "flex", flexWrap: "wrap", marginTop: 8 }}>
+                  {/* The page follows the claim to the version the correction booked. */}
+                  <MarkWrong claim={claim} actor={actor} onMarked={out => { setSaid(markedWords(out)); onOpen(out.id); }} />
+                </div>
+              )}
             </Section>
 
             <Section label="Why it is held" meta={countNoun(claim.warrants.length, "warrant")}>
@@ -212,7 +271,8 @@ function ClaimReader({ id, connections, onBack, onOpen, onOpenDecision, onOpenRu
                 <div className="aug-item" key={`${w.kind}:${w.ref}`}>
                   <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{w.detail || WARRANT_WORDS[w.kind] || w.kind}</div>
                   <div className="aug-item-foot aug-fs-sm">
-                    <span>{WARRANT_WORDS[w.kind] ?? w.kind}</span>
+                    {w.detail && <span>{WARRANT_WORDS[w.kind] ?? w.kind}</span>}
+                    {w.kind === "attestation" && w.ref && <span>by {whoLabel(w.ref)}</span>}
                     {w.reproducible === false && <span>cannot be re-run: {w.why_not || "no reason recorded"}</span>}
                     <span style={{ flex: 1 }} />
                     {w.kind === "run" && <Button size="xs" variant="ghost" onClick={() => onOpenRun(w.ref)}>Open the run</Button>}
@@ -236,6 +296,32 @@ function ClaimReader({ id, connections, onBack, onOpen, onOpenDecision, onOpenRu
                 </div>
               )}
             </Section>
+
+            <Section label="Who else was told" meta={claim.told?.length ? countNoun(claim.told.length, "message") : undefined}>
+              {(claim.told?.length ?? 0) === 0 ? (
+                <Absent>{sentence(claim.told_note || "no message citing this claim is on record")}</Absent>
+              ) : claim.told!.map(t => (
+                <div className="aug-item" key={t.departure_id}>
+                  <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
+                    {t.state === "departed" || t.state === "sent" ? "Sent" : t.state === "held" ? "Held at the gate" : sentence(t.state.replace(/_/g, " "))}
+                    {t.addressed_to ? ` to ${whoLabel(t.addressed_to)}` : t.target ? ` to ${t.target}` : ""}
+                  </div>
+                  <div className="aug-item-foot aug-fs-sm">
+                    <span>{day(t.at)}</span>
+                    {t.kind && <span>{t.kind.replace(/_/g, " ")}</span>}
+                    {t.by && <span>by {t.by}</span>}
+                    {t.verdict && <span>their verdict: {t.verdict.replace(/_/g, " ")}</span>}
+                  </div>
+                </div>
+              ))}
+            </Section>
+
+            {((links.data?.length ?? 0) > 0 || links.error) && (
+              <Section label="Linked in other connections" meta={links.data?.length ? countNoun(links.data.length, "link") : undefined}>
+                {links.error && <Absent>The organisation&apos;s ontology could not be read just now, so no link is listed.</Absent>}
+                {(links.data ?? []).map(l => <CrossLink key={`${l.domain}:${l.relationship}`} link={l} connections={connections} onInspectClaim={onInspectClaim} />)}
+              </Section>
+            )}
 
             <Section label="Every version" meta={versions.data ? countNoun(versions.data.length, "version") : undefined}>
               <Gate load={versions} what="the versions">
@@ -265,6 +351,8 @@ function ClaimReader({ id, connections, onBack, onOpen, onOpenDecision, onOpenRu
     </div>
   );
 }
+
+const sentence = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) + (/[.!?]$/.test(s) ? "" : ".") : "");
 
 function ClaimRail({ c, connections }: { c: Claim; connections: Connection[] }) {
   return (

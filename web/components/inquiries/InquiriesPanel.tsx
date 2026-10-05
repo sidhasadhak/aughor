@@ -14,11 +14,13 @@ import type { Connection } from "@/lib/api";
 import { compactNumber, countNoun, formatTableNumber } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
 import {
-  closeInquiry, getClaim, getInquiry, listInquiries, proposeInquiryRun, verdictWords, whoLabel,
+  addInquiryHypothesis, closeInquiry, getInquiry, handInquiry, listInquiries, proposeInquiryRun,
+  setInquiryNextCheck, verdictWords, whoLabel,
   type Claim, type Inquiry, type InquiryDetail,
 } from "@/lib/record";
 import {
-  Absent, BackHeader, ClaimLine, Fact, Gate, Ledger, Page, Section, day, dayDistance, useLoad,
+  Absent, ActorField, BackHeader, ClaimLine, Fact, Gate, Ledger, MarkWrong, Page, Section, day, dayDistance,
+  markedWords, useActor, useLoad,
   type LedgerColumn,
 } from "@/components/record/kit";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
@@ -77,6 +79,7 @@ function InquiryLedger({ connections, onOpen, onAsk }: {
     { head: "Question", cell: q => q.question },
     { head: "State", cell: q => <StatusChip hue={STATE_HUE[q.state] ?? "muted"}>{inquiryState(q)}</StatusChip>, width: 190 },
     { head: "Opened by", cell: q => whoLabel(q.opened_by), width: 150 },
+    { head: "Owner", cell: q => (typeof q.extra.owner === "string" && q.extra.owner ? whoLabel(q.extra.owner) : "—"), width: 130 },
     { head: "Hypotheses", cell: q => q.hypotheses.length, num: true, width: 96 },
     { head: "Still open", cell: q => q.open.length, num: true, width: 90 },
     { head: "Next check", cell: q => (q.next_check ? `${day(q.next_check)} · ${dayDistance(q.next_check)}` : "—"), width: 170 },
@@ -148,47 +151,114 @@ function InquiryReader({ id, connections, onBack, onMoved, onOpenRun, onOpenDeci
       <BackHeader from="Inquiries" onBack={onBack} title={q?.question ?? "Inquiry"}
         chips={q && <StatusChip hue={STATE_HUE[q.state] ?? "muted"}>{inquiryState(q)}</StatusChip>} />
       <Gate load={load} what="the inquiry">
-        {detail => <InquiryBody q={detail} connections={connections} onMoved={onMoved}
+        {detail => <InquiryBody q={detail} connections={connections} onMoved={onMoved} onReload={load.reload}
           onOpenRun={onOpenRun} onOpenDecision={onOpenDecision} onOpenClaim={onOpenClaim} />}
       </Gate>
     </div>
   );
 }
 
-function InquiryBody({ q, connections, onMoved, onOpenRun, onOpenDecision, onOpenClaim }: {
-  q: InquiryDetail; connections: Connection[]; onMoved: (id: string) => void;
+function InquiryBody({ q, connections, onMoved, onReload, onOpenRun, onOpenDecision, onOpenClaim }: {
+  q: InquiryDetail; connections: Connection[]; onMoved: (id: string) => void; onReload: () => void;
   onOpenRun: (runId: string) => void; onOpenDecision: (id: string) => void; onOpenClaim: (id: string) => void;
 }) {
-  const established = useLoad<Claim[]>(
-    () => Promise.all(q.claims.map(cid => getClaim(cid).catch(() => null))).then(cs => cs.filter((c): c is Claim => c !== null)),
-    [q.id, q.claims.join(",")]);
+  const actor = useActor();
   const supported = q.hypothesis_claims.filter(h => h.state === "supported");
   const proposed = (q.extra.proposed_run as ProposedRun | undefined) ?? null;
+  const owner = typeof q.extra.owner === "string" ? q.extra.owner : "";
+  const closed = q.state === "closed";
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const act = async (fn: () => Promise<InquiryDetail>) => {
+  const [said, setSaid] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [hypothesis, setHypothesis] = useState("");
+  const [handTo, setHandTo] = useState("");
+  const [checkOn, setCheckOn] = useState("");
+  const [waitsFor, setWaitsFor] = useState("");
+  const act = async (fn: () => Promise<InquiryDetail>, then?: (d: InquiryDetail) => void) => {
     setBusy(true);
     setError("");
-    try { onMoved((await fn()).id); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+    setSaid("");
+    try {
+      const d = await fn();
+      then?.(d);
+      onMoved(d.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
+  // Marking a claim wrong writes the CLAIM; this inquiry moves only if it established that claim
+  // and woke. Either way the page re-reads, following its own new version when it has one.
+  const afterMarked = async (words: string) => {
+    setSaid(words);
+    try {
+      const fresh = await getInquiry(q.id);
+      if (fresh.superseded_by) onMoved(fresh.superseded_by); else onReload();
+    } catch {
+      onReload();
+    }
+  };
+  const today = new Date().toISOString().slice(0, 10);
 
   const rail = (
     <>
       <div className="aug-rail-head"><span className="aug-label">This inquiry</span></div>
       <Fact label="Opened by">{whoLabel(q.opened_by)}</Fact>
+      <Fact label="Owner">{owner ? whoLabel(owner) : "nobody named"}</Fact>
       <Fact label="Opened">{day(q.opened_at)}</Fact>
       <Fact label="Connection">{connectionLabel(q.connection_id, connections)}</Fact>
       <Fact label="State">{inquiryState(q)}</Fact>
       <Fact label="Next check">{q.next_check ? `${day(q.next_check)} · ${dayDistance(q.next_check)}` : "none set"}</Fact>
       <Fact label="Runs">{q.runs.length}</Fact>
       {q.woke.length > 0 && <Fact label="Woken">{countNoun(q.woke.length, "time")} without being asked</Fact>}
+      {!closed && !q.superseded_by && (
+        <>
+          <div className="aug-rail-head" style={{ marginTop: 12 }}><span className="aug-label">Hand it on</span></div>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Input aria-label="Hand to" value={handTo} onChange={e => setHandTo(e.target.value)} placeholder="a person" style={{ flex: 1, minWidth: 0 }} />
+              <Button size="xs" variant="outline" disabled={busy || !handTo.trim()}
+                onClick={() => void act(() => handInquiry(q.id, handTo.trim(), actor.by), () => { setHandTo(""); setSaid("Handed over. Nothing was sent: the name is on the record."); })}>
+                Hand over
+              </Button>
+            </div>
+            {owner && (
+              <Button size="xs" variant="link" style={{ padding: 0, justifySelf: "start" }} disabled={busy}
+                onClick={() => void act(() => handInquiry(q.id, "", actor.by), () => setSaid("The owner's name was taken off."))}>
+                Take {whoLabel(owner)} off
+              </Button>
+            )}
+            <div style={{ display: "flex", gap: 6 }}>
+              <Input type="date" aria-label="Next check date" min={today} value={checkOn} onChange={e => setCheckOn(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+              <Button size="xs" variant="outline" disabled={busy || !checkOn}
+                onClick={() => void act(() => setInquiryNextCheck(q.id, checkOn, waitsFor.trim(), actor.by), () => { setCheckOn(""); setWaitsFor(""); setSaid("It waits until that day, then wakes on its own."); })}>
+                Set
+              </Button>
+              {q.next_check && (
+                <Button size="xs" variant="ghost" disabled={busy}
+                  onClick={() => void act(() => setInquiryNextCheck(q.id, "", "", actor.by), () => setSaid("The check date was cleared, so it is open again."))}>
+                  Clear
+                </Button>
+              )}
+            </div>
+            <Input aria-label="What it waits for" value={waitsFor} onChange={e => setWaitsFor(e.target.value)} placeholder="what it waits for (optional)" />
+            <ActorField actor={actor} id="inq-actor" />
+            <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}>
+              Handing it over sends nothing. A check date makes it wait until that day; clearing one opens it again.
+            </p>
+          </div>
+        </>
+      )}
     </>
   );
 
   return (
     <Page rail={rail}>
       {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "0 0 12px" }}>{error}</p>}
+      {said && !error && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 12px" }}>{said}</p>}
       {q.superseded_by && (
         <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
           <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This is an earlier version of the inquiry. </span>
@@ -196,20 +266,48 @@ function InquiryBody({ q, connections, onMoved, onOpenRun, onOpenDecision, onOpe
         </div>
       )}
 
-      <Section label="What is established" meta={countNoun(supported.length + (established.data?.length ?? 0), "statement")}>
-        {supported.length === 0 && q.claims.length === 0 ? (
+      <Section label="What is established" meta={countNoun(supported.length + q.established_claims.length, "statement")}>
+        {supported.length === 0 && q.established_claims.length === 0 ? (
           <Absent>Nothing is established yet. A hypothesis a run supports, and a finding a run measures, are listed here with how often statements of their kind have held.</Absent>
         ) : (
           <>
             {supported.map(h => <ClaimLine key={h.id} claim={h} onOpen={onOpenClaim} />)}
-            <Gate load={established} what="the established claims">
-              {cs => <>{cs.map(c => <ClaimLine key={c.id} claim={c} onOpen={onOpenClaim} />)}</>}
-            </Gate>
+            {q.established_claims.map(c => (
+              <ClaimLine key={c.id} claim={c} onOpen={onOpenClaim}
+                note={c.restated_since ? "restated since this inquiry established it" : undefined}
+                action={!q.superseded_by && <MarkWrong claim={c} actor={actor} onMarked={out => void afterMarked(markedWords(out))} />} />
+            ))}
           </>
         )}
       </Section>
 
-      <Section label="Hypotheses" meta={q.hypothesis_claims.length ? hypothesisMeta(q.hypothesis_claims) : undefined}>
+      <Section label="Hypotheses" meta={q.hypothesis_claims.length ? hypothesisMeta(q.hypothesis_claims) : undefined}
+        action={!closed && !q.superseded_by && (
+          <Button size="xs" variant="outline" aria-expanded={adding} onClick={() => setAdding(v => !v)}>Add a hypothesis</Button>
+        )}>
+        {adding && (
+          <div className="aug-form-grid" style={{ marginBottom: 12 }}>
+            <label className="aug-fs-sm" htmlFor="inq-hyp">You think</label>
+            <Input id="inq-hyp" value={hypothesis} onChange={e => setHypothesis(e.target.value)} placeholder="A cause, stated so a run could test it" />
+            <span />
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <ActorField actor={actor} id="inq-hyp-actor" />
+              <Button size="xs" disabled={busy || !hypothesis.trim() || (!actor.signedIn && !actor.by)}
+                onClick={() => void act(() => addInquiryHypothesis(q.id, hypothesis.trim(), actor.by), d => {
+                  const like = (d as InquiryDetail & { resembles_refuted?: { refuted_on?: string; evidence?: string } | null }).resembles_refuted;
+                  setSaid(like
+                    ? `Added. The Record already holds one like it as refuted${like.refuted_on ? ` on ${like.refuted_on}` : ""}${like.evidence ? `: ${like.evidence}` : ""}. Yours is kept beside it.`
+                    : "Added under your name. It stays open until a run tests it.");
+                  setHypothesis("");
+                  setAdding(false);
+                })}>
+                Add it
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+              <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>It is recorded as said, under your name, until a run tests it.</span>
+            </div>
+          </div>
+        )}
         {q.hypothesis_claims.length === 0 ? (
           <Absent>No hypothesis is recorded on this inquiry.</Absent>
         ) : q.hypothesis_claims.map(h => (
@@ -220,9 +318,12 @@ function InquiryBody({ q, connections, onMoved, onOpenRun, onOpenDecision, onOpe
             </div>
             <div className="aug-item-foot aug-fs-sm">
               {typeof h.extra.evidence === "string" && h.extra.evidence
-                ? <span>{h.state === "refuted" ? "tested false: " : h.state === "supported" ? "held: " : ""}{h.extra.evidence}</span>
+                ? <span>{h.state === "refuted"
+                    ? (typeof h.extra.marked_wrong_by === "string" ? `marked false by ${whoLabel(h.extra.marked_wrong_by)}: ` : "tested false: ")
+                    : h.state === "supported" ? "held: " : ""}{h.extra.evidence}</span>
                 : <span>{h.state === "abandoned" ? "not tested by any run" : "no run has decided it"}</span>}
-              <span>proposed by {whoLabel(h.author_kind === "agent" ? `agent:${h.author}` : h.author)}</span>
+              <span>{h.author_kind === "person" ? "held by" : "proposed by"} {whoLabel(h.author_kind === "agent" ? `agent:${h.author}` : h.author)}</span>
+              {!q.superseded_by && <><span style={{ flex: 1 }} /><MarkWrong claim={h} actor={actor} onMarked={() => void afterMarked("Recorded as refuted. It is kept, so it is not proposed again.")} /></>}
             </div>
           </div>
         ))}

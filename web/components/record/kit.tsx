@@ -13,9 +13,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { TableActions, tableFromElement } from "@/components/TableActions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Loading, ReadFailed } from "@/components/ui/states";
+import { claimsOf, getIdToken } from "@/lib/auth";
 import { pct } from "@/lib/format";
-import type { Claim } from "@/lib/record";
+import { markClaimWrong, type Claim, type MarkedWrong } from "@/lib/record";
 
 // ── a read ───────────────────────────────────────────────────────────────────────────────
 
@@ -56,6 +58,50 @@ export function Gate<T>({ load, what, children }: {
   if (load.error) return <ReadFailed what={what} error={load.error} onRetry={load.reload} style={{ padding: "12px 0" }} />;
   if (load.data === null) return <Loading what={what} style={{ padding: "12px 0" }} />;
   return <>{children(load.data)}</>;
+}
+
+// ── who is writing ───────────────────────────────────────────────────────────────────────
+
+const ACTOR_KEY = "aughor_record_actor";
+
+export interface Actor {
+  /** A sign-in names the reader; the server records it and nothing here is sent. */
+  signedIn: boolean;
+  name: string;
+  setName: (v: string) => void;
+  /** What a write carries as `by`: the typed name without a sign-in, nothing with one. */
+  by: string | undefined;
+}
+
+/**
+ * Who a page writes as. With a sign-in the server records the person and the form asks nothing.
+ * Without one, a form that records a person's act asks for a name — once, remembered on this
+ * browser — because "nobody identified marked this wrong" is not a record anyone can use.
+ */
+export function useActor(): Actor {
+  const [signedIn] = useState(() => {
+    try { return !!claimsOf(getIdToken())?.email; } catch { return false; }
+  });
+  const [name, setNameState] = useState(() => {
+    try { return window.localStorage.getItem(ACTOR_KEY) ?? ""; } catch { return ""; }
+  });
+  const setName = useCallback((v: string) => {
+    setNameState(v);
+    try { window.localStorage.setItem(ACTOR_KEY, v); } catch { /* a private window keeps it for the page */ }
+  }, []);
+  return { signedIn, name, setName, by: signedIn ? undefined : name.trim() || undefined };
+}
+
+/** The name a write is recorded under, asked only when no sign-in gives one. */
+export function ActorField({ actor, id = "record-actor" }: { actor: Actor; id?: string }) {
+  if (actor.signedIn) return null;
+  return (
+    <label htmlFor={id} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+      title="Nobody is signed in on this install, so the record keeps the name you give here.">
+      <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Recorded as</span>
+      <Input id={id} value={actor.name} onChange={e => actor.setName(e.target.value)} placeholder="your name" style={{ width: 150 }} />
+    </label>
+  );
 }
 
 // ── page furniture ───────────────────────────────────────────────────────────────────────
@@ -130,6 +176,8 @@ export interface LedgerColumn<T> {
   /** Right-aligned, tabular — a figure. */
   num?: boolean;
   width?: number | string;
+  /** A column of buttons, not of facts: drawn, and left out of what Copy and CSV take away. */
+  control?: boolean;
 }
 
 /**
@@ -182,7 +230,13 @@ export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected
         </table>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 4 }}>
-        <TableActions name={name} read={() => (ref.current ? tableFromElement(ref.current) : null)} />
+        <TableActions name={name} read={() => {
+          if (!ref.current) return null;
+          const t = tableFromElement(ref.current);
+          const facts = columns.map((c, i) => (c.control ? -1 : i)).filter(i => i >= 0);
+          return facts.length === columns.length
+            ? t : { columns: facts.map(i => t.columns[i]), rows: t.rows.map(r => facts.map(i => r[i])) };
+        }} />
       </div>
     </div>
   );
@@ -240,7 +294,13 @@ export function Counted({ claim, brief = false }: {
 }
 
 /** A claim as one cited line: the statement, then its marks. The statement opens the claim. */
-export function ClaimLine({ claim, onOpen }: { claim: Claim; onOpen?: (id: string) => void }) {
+export function ClaimLine({ claim, onOpen, note, action }: {
+  claim: Claim; onOpen?: (id: string) => void;
+  /** Something a reader must know about this citation — that the claim was restated since. */
+  note?: React.ReactNode;
+  /** What a person can do to the claim from here. */
+  action?: React.ReactNode;
+}) {
   return (
     <div className="aug-claim-line">
       <div className="aug-fs-ui" style={{ color: "var(--t1)", minWidth: 0 }}>
@@ -253,9 +313,79 @@ export function ClaimLine({ claim, onOpen }: { claim: Claim; onOpen?: (id: strin
         <TierMark tier={claim.tier} />
         <Counted claim={claim} />
         {claim.as_of && <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>as of {claim.as_of}</span>}
+        {note && <span className="aug-fs-sm" style={{ color: "var(--amb4)" }}>{note}</span>}
+        {action && <><span style={{ flex: 1 }} />{action}</>}
       </div>
     </div>
   );
+}
+
+/**
+ * A person says a claim is wrong. A hypothesis takes the reason it is false and is kept as
+ * refuted; anything else takes what is true instead and is restated as that person's statement,
+ * the wrong version kept. A prediction is not offered this — it is scored on its day, by code.
+ */
+export function MarkWrong({ claim, actor, onMarked }: {
+  claim: Pick<Claim, "id" | "kind" | "state" | "statement">;
+  actor: Actor;
+  onMarked: (out: MarkedWrong) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [corrected, setCorrected] = useState("");
+  const [why, setWhy] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (claim.kind === "prediction" || (claim.kind === "hypothesis" && claim.state === "refuted")) return null;
+  if (!open) return <Button size="xs" variant="ghost" onClick={() => setOpen(true)}>Mark wrong</Button>;
+  const hypothesis = claim.kind === "hypothesis";
+  const ready = (hypothesis ? why.trim() : corrected.trim()) && (actor.signedIn || actor.by);
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      onMarked(await markClaimWrong(claim.id, { corrected: corrected.trim(), why: why.trim(), by: actor.by }));
+      setOpen(false);
+      setCorrected("");
+      setWhy("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="aug-form-grid" style={{ flexBasis: "100%", marginTop: 8 }}>
+      {!hypothesis && (
+        <>
+          <label className="aug-fs-sm" htmlFor={`wrong-is-${claim.id}`}>What is true instead</label>
+          <Input id={`wrong-is-${claim.id}`} value={corrected} onChange={e => setCorrected(e.target.value)}
+            placeholder="The corrected statement, in full" />
+        </>
+      )}
+      <label className="aug-fs-sm" htmlFor={`wrong-why-${claim.id}`}>{hypothesis ? "What shows it is false" : "Why"}</label>
+      <Input id={`wrong-why-${claim.id}`} value={why} onChange={e => setWhy(e.target.value)}
+        placeholder={hypothesis ? "The evidence against it" : "What the wrong version missed (optional)"} />
+      <span />
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <ActorField actor={actor} id={`wrong-by-${claim.id}`} />
+        <Button size="xs" disabled={busy || !ready} onClick={() => void submit()}>Mark it wrong</Button>
+        <Button size="xs" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+          {hypothesis ? "It is kept, as refuted." : "The wrong version is kept; whatever relied on it is told."}
+        </span>
+        {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** What marking a claim wrong set in motion, as a sentence. */
+export function markedWords(out: Pick<MarkedWrong, "woke_inquiries" | "reopened_decisions">): string {
+  const parts = [
+    out.woke_inquiries.length ? `${out.woke_inquiries.length} inquir${out.woke_inquiries.length === 1 ? "y" : "ies"} that established it woke` : "",
+    out.reopened_decisions.length ? `${out.reopened_decisions.length} decision${out.reopened_decisions.length === 1 ? "" : "s"} that relied on it reopened` : "",
+  ].filter(Boolean);
+  return parts.length ? `Recorded: ${parts.join(" and ")}.` : "Recorded. Nothing else relied on it.";
 }
 
 /** A day as the ledger wrote it (`2026-10-26`, or a full instant) read as a date. */

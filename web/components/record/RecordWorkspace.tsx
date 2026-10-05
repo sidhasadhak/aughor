@@ -6,14 +6,16 @@
  *
  * One rail item, not five: an instance of the same `<Workspace>` shell Agent Ops and Evals are,
  * so the rail that was here keeps every row above the fold. A Ledger row opens its Reader in
- * place, addressed as `?id=`; a citation that points at another view (an inquiry's decision, a
- * decision's claim) switches the view and opens that record.
+ * place, addressed as `?id=`. A citation that points at another record (an inquiry's decision, a
+ * decision's claim) opens it in the inspector, beside the page that cites it; the page stays, and
+ * "Open full page" in the drawer is what switches the view.
  */
 import dynamic from "next/dynamic";
 
 import type { Connection } from "@/lib/api";
 import { listInquiries } from "@/lib/record";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
+import { InspectorHost } from "@/components/record/Inspector";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
 
@@ -62,6 +64,8 @@ export function RecordWorkspace({
   // Every view stays mounted once visited; only the one on screen holds the open record.
   const idFor = (l: RecordLayer) => (layer === l ? openId : null);
   return (
+    <InspectorHost connections={connections} pageKey={`${layer}:${openId ?? ""}`} onOpenFull={onOpenRecord} top={36}>
+      {inspect => (
     <Workspace
       layers={LAYERS}
       layer={layer}
@@ -74,35 +78,41 @@ export function RecordWorkspace({
         if (id === "inquiries") return (
           <InquiriesPanel connections={connections} openId={idFor("inquiries")}
             onOpen={x => onOpenRecord("inquiries", x)} onOpenRun={onOpenRun} onAsk={onAsk}
-            onOpenDecision={x => onOpenRecord("decisions", x)} onOpenClaim={x => onOpenRecord("claims", x)} />
+            onOpenDecision={x => inspect("decisions", x)} onOpenClaim={x => inspect("claims", x)} />
         );
         if (id === "decisions") return (
           <DecisionsPanel connections={connections} selectedConn={selectedConn} openId={idFor("decisions")}
-            onOpen={x => onOpenRecord("decisions", x)} onOpenClaim={x => onOpenRecord("claims", x)} />
+            onOpen={x => onOpenRecord("decisions", x)} onOpenClaim={x => inspect("claims", x)} />
         );
         if (id === "missions") return (
           <MissionsPanel connections={connections} selectedConn={selectedConn} openId={idFor("missions")}
             onOpen={x => onOpenRecord("missions", x)} onOpenMonitors={onOpenMonitors}
-            onOpenInquiry={x => onOpenRecord("inquiries", x)} onOpenDecision={x => onOpenRecord("decisions", x)}
-            onOpenClaim={x => onOpenRecord("claims", x)} />
+            onOpenInquiry={x => inspect("inquiries", x)} onOpenDecision={x => inspect("decisions", x)}
+            onOpenClaim={x => inspect("claims", x)} />
         );
         if (id === "claims") return (
           <RecordPanel connections={connections} selectedConn={selectedConn} openId={idFor("claims")}
-            onOpen={x => onOpenRecord("claims", x)} onOpenDecision={x => onOpenRecord("decisions", x)}
+            onOpen={x => onOpenRecord("claims", x)} onOpenDecision={x => inspect("decisions", x)}
+            onInspectClaim={x => inspect("claims", x)}
             onOpenRun={onOpenRun} onOpenReceipt={onOpenReceipt}
             onOpenDefinitions={onOpenDefinitions} onOpenMap={onOpenMap} />
         );
         return ( // "corrections"
           <CorrectionsPanel connections={connections}
-            onOpenClaim={x => onOpenRecord("claims", x)} onOpenDecision={x => onOpenRecord("decisions", x)}
+            onOpenClaim={x => inspect("claims", x)} onOpenDecision={x => inspect("decisions", x)}
             onOpenInquiryKey={key => {
-              // A refuted cause names its inquiry by key; the view it opens is addressed by id.
+              // A refuted cause names its inquiry by key; the record it opens is addressed by id.
               listInquiries({ limit: 500 })
-                .then(rows => onOpenRecord("inquiries", rows.find(q => q.key === key)?.id ?? null))
+                .then(rows => {
+                  const found = rows.find(q => q.key === key)?.id;
+                  if (found) inspect("inquiries", found); else onOpenRecord("inquiries", null);
+                })
                 .catch(() => onOpenRecord("inquiries", null));
             }} />
         );
       }}
     />
+      )}
+    </InspectorHost>
   );
 }

@@ -29,6 +29,7 @@ import type { RangeChoice } from "@/components/brief/BriefRange";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
 import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
+import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
 import { PeriodPicker } from "@/components/cockpit/PeriodPicker";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -258,9 +259,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       if (l === null) { setList("off"); return; }
       setList(l);
       const live = l.cockpits.filter(c => !c.retired);
+      // The metrics are the cockpit a person opens on (asked 2026-10-05); one of their own is
+      // opened when it is where they left off.
       setChosen(prev => {
         const want = prev || remembered(connectionId);
-        return live.some(c => c.cockpit_id === want) ? want : (live[0]?.cockpit_id ?? "");
+        return live.some(c => c.cockpit_id === want) ? want : METRICS_COCKPIT;
       });
     }).catch(e => { if (!cancelled) setProblem((e as Error).message); });
     return () => { cancelled = true; };
@@ -268,7 +271,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
 
   // The chosen cockpit, read for the page's range, each card it places run through the guards.
   useEffect(() => {
-    if (!chosen || list === "off") { setData(null); return; }
+    if (!chosen || chosen === METRICS_COCKPIT || list === "off") { setData(null); return; }
     if (rangesOn === null) return;
     let cancelled = false;
     (async () => {
@@ -315,7 +318,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     } finally { setBusy(false); }
   }, [reload]);
 
-  const choose = (id: string) => { setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); };
+  const choose = (id: string) => { setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); setProblem(""); };
 
   const refreshOne = useCallback(async (id: string) => {
     try {
@@ -359,12 +362,33 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const lines = new Map<string, CardLine>((data?.cards ?? []).map(c => [c.id, { title: c.title }]));
   const unplaced = arranging ? (data?.cards ?? []).filter(c => !cardsPlaced(arranging).includes(c.id)) : [];
 
+  const noneYet = (
+        <EmptyState icon="gauge" variant="inline"
+          title={list.cockpits.length ? "You have no cockpits in use" : "You have no cockpits yet"}
+          action={pinned > 0 ? (
+            <Button variant="secondary" size="sm" disabled={busy}
+              onClick={() => void write(() => startMyCockpit(connectionId), () => "“My cockpit” started from your pinned cards.")}>
+              Start “My cockpit” from {pinned} pinned {pinned === 1 ? "card" : "cards"}
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => setNewOpen(true)}>New cockpit</Button>
+          )}>
+          A cockpit is the set of cards you keep watching for one area — returns, pricing, marketing. It is yours:
+          nobody else sees it or changes it. Name an area and one is drafted for you to keep, or start from the cards already pinned here.
+        </EmptyState>
+  );
+
   return (
     <div data-testid="briefing-cockpits" style={{ flex: 1, overflow: "auto", padding: "14px 32px 32px" }}>
       {/* The strip: the person's cockpits, and the door to a new one. */}
       <div role="tablist" aria-label="Your cockpits" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+        {/* The connection's metrics come first and are nobody's to arrange; what follows is the person's. */}
+        <Button role="tab" aria-selected={chosen === METRICS_COCKPIT} size="sm" data-testid="cockpit-strip-metrics"
+          variant={chosen === METRICS_COCKPIT ? "secondary" : "ghost"} onClick={() => choose(METRICS_COCKPIT)}>
+          Metrics
+        </Button>
         {/* The layer's own label, as the Briefing has always marked it: violet is the user's. */}
-        <span className="aug-label" style={{ color: "var(--vio4)", marginRight: 6 }}>Your cockpits</span>
+        <span className="aug-label" style={{ color: "var(--vio4)", margin: "0 6px 0 10px" }}>Your cockpits</span>
         {live.map(c => (
           <Button key={c.cockpit_id} role="tab" aria-selected={c.cockpit_id === chosen} size="sm"
             variant={c.cockpit_id === chosen ? "secondary" : "ghost"} data-testid="cockpit-strip-item"
@@ -420,21 +444,13 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           doors={[{ label: "Try again", onClick: reload, primary: true }]} />
       )}
 
-      {live.length === 0 ? (
-        <EmptyState icon="gauge" variant="inline"
-          title={list.cockpits.length ? "You have no cockpits in use" : "You have no cockpits yet"}
-          action={pinned > 0 ? (
-            <Button variant="secondary" size="sm" disabled={busy}
-              onClick={() => void write(() => startMyCockpit(connectionId), () => "“My cockpit” started from your pinned cards.")}>
-              Start “My cockpit” from {pinned} pinned {pinned === 1 ? "card" : "cards"}
-            </Button>
-          ) : (
-            <Button variant="secondary" size="sm" onClick={() => setNewOpen(true)}>New cockpit</Button>
-          )}>
-          A cockpit is the set of cards you keep watching for one area — returns, pricing, marketing. It is yours:
-          nobody else sees it or changes it. Name an area and one is drafted for you to keep, or start from the cards already pinned here.
-        </EmptyState>
-      ) : drawn && data ? (
+      {chosen === METRICS_COCKPIT ? (
+        <>
+          <MetricsCockpit connectionId={connectionId} schema={schema} rangesOn={rangesOn}
+            value={chosenRange} onChange={setChosenRange} />
+          {live.length === 0 && <div style={{ marginTop: 20 }}>{noneYet}</div>}
+        </>
+      ) : live.length === 0 ? noneYet : drawn && data ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
             {data.ranges_on && (

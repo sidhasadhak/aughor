@@ -7,7 +7,8 @@
  * much of it stands on something, how its runs ended by type, and what a warranted entry cost.
  * Then the failures by type, what left and what was held, and every principal — a person, a
  * built-in agent, an outside vendor's — with what became of its entries. The score is a count,
- * never a model's opinion. The live tail and the traces are one door away, folded.
+ * never a model's opinion. The live tail and the traces are one door away, folded. Between the
+ * departures and the principals: what is filed and still open, and what is on probation.
  */
 import { useMemo } from "react";
 
@@ -19,6 +20,7 @@ import {
   getPrincipalRecord, getServicePrincipals, listClaims, verdictWords, whoLabel,
 } from "@/lib/record";
 import { Absent, Gate, Ledger, Page, Section, day, useLoad, type LedgerColumn } from "@/components/record/kit";
+import { FilingsSection, ProbationSection } from "@/components/operations/FilingsSection";
 import { Button } from "@/components/ui/button";
 
 interface DutyRow {
@@ -93,13 +95,14 @@ async function readPrincipals(): Promise<PrincipalRow[]> {
   }).sort((a, b) => b.n - a.n);
 }
 
-export function WorkPanel({ onOpenRuns, onOpenDepartures, onOpenActivity, onOpenAgents, onOpenActionCentre, onOpenDeveloper }: {
+export function WorkPanel({ onOpenRuns, onOpenDepartures, onOpenActivity, onOpenAgents, onOpenActionCentre, onOpenDeveloper, onOpenHub }: {
   onOpenRuns: () => void;
   onOpenDepartures: () => void;
   onOpenActivity: () => void;
   onOpenAgents: () => void;
   onOpenActionCentre: () => void;
   onOpenDeveloper: () => void;
+  onOpenHub: () => void;
 }) {
   const week = useLoad(() => readDuties(), []);
   const departures = useLoad(() => getDepartureSummary(), []);
@@ -192,6 +195,10 @@ export function WorkPanel({ onOpenRuns, onOpenDepartures, onOpenActivity, onOpen
           }}
         </Gate>
       </Section>
+
+      <FilingsSection />
+
+      <ProbationSection onOpenHub={onOpenHub} />
 
       <Section label="Principals" meta={principals.data ? countNoun(principals.data.length, "principal") : undefined}
         action={

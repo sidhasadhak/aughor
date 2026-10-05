@@ -5590,6 +5590,46 @@ export async function getHubMap(connId?: string): Promise<HubMapResponse | null>
   return res.json();
 }
 
+// ── HB-3 · filings — a ticket, thread, webhook or doc filed against an object ──
+
+/** One filing: what was filed, against what, and — once closed — what came of it. `object_ref`
+ *  is a securable string (`promise:…`, `process:…`, `finding:…`, `entity:…`). */
+export interface Filing {
+  id: string;
+  ts: string;
+  object_ref: string;
+  kind: "ticket" | "thread" | "webhook" | "doc";
+  ref: string;
+  url: string;
+  title: string;
+  source: string;
+  status: "open" | "closed";
+  outcome: string;
+  number_recovered: string;
+  closed_at: string | null;
+  closed_by: string;
+}
+
+/** Every filing in one state, newest first, whatever it was filed against. */
+export async function listFilings(status: "open" | "closed", limit = 200): Promise<Filing[]> {
+  const res = await fetch(`${getApiBase()}/links?status=${status}&limit=${limit}`);
+  if (!res.ok) throw new Error(`The filings could not be read (${res.status})`);
+  return (await res.json()).links ?? [];
+}
+
+/** Close a filing with what happened. `by` names the closer where no sign-in does. */
+export async function closeFiling(id: string, outcome: string, numberRecovered = "", by?: string): Promise<Filing> {
+  const res = await fetch(`${getApiBase()}/links/${encodeURIComponent(id)}/close`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outcome, number_recovered: numberRecovered, by: by ?? "" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The filing could not be closed");
+  }
+  return res.json();
+}
+
 // ── HB-2 · the departures ledger — what left, what was held, what a person owes ──
 
 /** `held_budget` (phase 2 of the 2027 study): a clean departure the attention budget held — the
@@ -6085,6 +6125,11 @@ export interface StandingGrant {
   created_at: string;
   use_count: number;
   last_used_at: string | null;
+  /** A grant signed on the authority ladder cites the graduation receipt that licensed it, and
+   *  carries an expiry and a cap on uses (0 = no cap). A person's accept-time grant carries none. */
+  graduation_receipt?: string;
+  expires_at?: string | null;
+  max_uses?: number;
 }
 
 /** The inbox routes' one base path — spelled once. */
@@ -6750,6 +6795,153 @@ export async function readRangeBriefing(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? "Failed to read the briefing for this range");
+  }
+  return res.json();
+}
+
+/** The range's approved metrics, measured — the Cockpit's default view. No narrative is written
+ *  and no model is called; a Briefing built for the same window inside its cache age hands back
+ *  its own figures (`from_briefing`), so the two pages cannot disagree about one. */
+export interface RangeMeasuresResponse {
+  period: BriefingRangeBlock;
+  from_briefing: boolean;
+  measured_at: string | null;
+  scope_key: string;
+}
+
+export async function measureRange(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<RangeMeasuresResponse> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/measures?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "The metrics for this range could not be measured");
+  }
+  return res.json();
+}
+
+/** One range of a metric's trend. `partial` says which days its rows cover when they cover less
+ *  than the range; the last point is the range itself. */
+export interface MetricTrendPoint {
+  start: string;
+  last_day: string;
+  label: string;
+  value: number | null;
+  value_text: string | null;
+  partial: string | null;
+  current: boolean;
+}
+
+/** What a measured figure opens to: the metric over the range and the ranges before it, each
+ *  read at the same age, with how it is defined and dated. `why` says what stopped a read. */
+export interface MetricTrend {
+  metric: string;
+  found: boolean;
+  name: string;
+  unit: string;
+  definition: string;
+  tables: string[];
+  filters: string[];
+  caveats: string;
+  owner: string;
+  approved_by: string;
+  version: number;
+  time_kind: "flow" | "stock" | "cohort" | null;
+  time_source: string;
+  confirmed: boolean;
+  series: MetricTrendPoint[];
+  why: string;
+  period: BriefingRangeBlock;
+}
+
+export async function readMetricTrend(
+  connectionId: string, metric: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<MetricTrend> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/metric/${encodeURIComponent(metric)}?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "This metric could not be read");
+  }
+  return res.json();
+}
+
+/** One send of a Briefing that left: the version it delivered, to whom, when, under which receipt.
+ *  `restated_since`: the Briefing's figures have moved since, so the page shows a later version. */
+export interface BriefingDelivery {
+  id: string;
+  version: number | null;
+  covers: string;
+  label: string;
+  scope_key: string;
+  sent_at: string;
+  to: string;
+  to_kind: "slack" | "trigger";
+  subscription_id: string;
+  subscription_name: string;
+  departure_id: string;
+  receipt_line: string;
+  held_lines: number;
+  restated_since: boolean;
+}
+
+/** A delivery opened: the Briefing as it was sent — the version it cites, not today's. */
+export interface BriefingDeliveryOpened extends BriefingDelivery {
+  connection_id: string;
+  as_of: string;
+  current_version: number | null;
+  briefing: (BriefingNarrativeResponse & { period?: BriefingRangeBlock | null }) | null;
+}
+
+/** Every delivery of the Briefing a page is showing — its scope and range — newest first. */
+export async function listBriefingDeliveries(
+  connectionId: string, covers: string, scopeKey: string, recipe: string,
+): Promise<{ deliveries: BriefingDelivery[]; current_version: number | null }> {
+  const q = new URLSearchParams({ conn_id: connectionId, covers, scope_key: scopeKey, recipe });
+  const res = await fetch(`${getApiBase()}/briefing/deliveries?${q.toString()}`);
+  if (!res.ok) throw new Error(`This Briefing's deliveries could not be read (${res.status})`);
+  return res.json();
+}
+
+export async function getBriefingDelivery(id: string): Promise<BriefingDeliveryOpened> {
+  const res = await fetch(`${getApiBase()}/briefing/deliveries/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`The delivery could not be read (${res.status})`);
+  return res.json();
+}
+
+/** What one metric is expected to read for the range after this one: a band from its own past,
+ *  booked as a prediction (`claim_id`) and scored once that range has settled. */
+export interface ExpectedBand {
+  claim_id: string;
+  low: number | null;
+  mid: number | null;
+  high: number | null;
+  text: string;
+  state: "open" | "scored" | string;
+  scored_against: "inside" | "above" | "below" | "cannot_tell" | null;
+  must_say: string[];
+  n: number;
+}
+
+/** `target` is null — with `why` — for a range that has no next one to predict (a range to date).
+ *  An item with no `expected` says in `why` what stopped a band being stated. */
+export interface ExpectedNext {
+  target: { start: string; last_day: string; label: string; settles_on: string } | null;
+  why: string;
+  items: { metric: string; name: string; expected: ExpectedBand | null; why: string }[];
+}
+
+/** The band each approved metric is expected to fall in next. The first ask for a range measures
+ *  and books; later asks read the booked predictions back. No model call. */
+export async function readExpectedNext(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<ExpectedNext> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/expected?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "What is expected next could not be read");
   }
   return res.json();
 }

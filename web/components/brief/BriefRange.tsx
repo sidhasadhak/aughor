@@ -12,9 +12,13 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { STATUS_LABEL, changeOf, rangeOf, useOpenMetric, useShownMetric } from "@/components/brief/MetricDetail";
 import { StatTile, type StatDelta } from "@/components/brief/StatTile";
-import type { BriefingRange, BriefingRangeBlock, BriefingRangeMeasure, RangePreset } from "@/lib/api";
-import { formatPoints, formatVariance } from "@/lib/format";
+import { Ledger, StatusMark, useLoad, type LedgerColumn } from "@/components/record/kit";
+import {
+  readExpectedNext,
+  type BriefingRange, type BriefingRangeBlock, type BriefingRangeMeasure, type ExpectedNext, type RangePreset,
+} from "@/lib/api";
 
 /** The control's value: the standing view, or a range. */
 export type RangeChoice = { preset: "standing" } | BriefingRange;
@@ -79,18 +83,6 @@ export function RangeControl({ value, onChange, disabled, standing, label = "Bri
   );
 }
 
-const STATUS_LABEL: Record<BriefingRangeMeasure["status"], string> = {
-  final: "Final", provisional: "Provisional", to_date: "To date",
-};
-
-/** A share's change is in points; everything else is relative. */
-function changeOf(m: BriefingRangeMeasure, against: "previous" | "last_year"): string {
-  const other = m[against];
-  if (m.current === null || other === null) return "";
-  if (m.unit === "ratio 0..1") return formatPoints(other, m.current);
-  return formatVariance(against === "previous" ? m.rel : m.rel_last_year, 0);
-}
-
 function deltaOf(m: BriefingRangeMeasure): StatDelta | null {
   const text = changeOf(m, "previous");
   if (!text || m.rel === null) return null;
@@ -149,8 +141,51 @@ export function rangeStats(block: BriefingRangeBlock): string {
   return `${measured} measured${missing ? ` · ${missing} not measured` : ""} · as of ${block.as_of}`;
 }
 
-export function RangeMeasures({ block }: { block: BriefingRangeBlock }) {
+/** The measured table with what each metric is expected to read next (ROADMAP §6 item 42c). The
+ *  bands are asked for once the table is on the page — the first ask for a range books them as
+ *  predictions, later asks read them back. Until they arrive, and where they cannot be read, the
+ *  table stands without the column. */
+export function RangeMeasuresExpected({ connectionId, schema, workspaceId, block }: {
+  connectionId: string; schema?: string; workspaceId?: string; block: BriefingRangeBlock;
+}) {
+  const load = useLoad(() => readExpectedNext(connectionId, rangeOf(block), schema, workspaceId),
+    [connectionId, schema, workspaceId, block.key]);
+  return <RangeMeasures block={block} expected={load.data} />;
+}
+
+/** The range's measured metrics. Under a page that offers the metric drawer (`MetricDetailHost`),
+ *  a metric's name opens it: the trend, what moved inside it, how it is defined. With `expected`,
+ *  each metric also says the band its own past puts on the next range, or that none is stated. */
+export function RangeMeasures({ block, expected }: { block: BriefingRangeBlock; expected?: ExpectedNext | null }) {
   const hasYear = block.measured.some(m => m.last_year !== null) && !!block.last_year_label;
+  const open = useOpenMetric();
+  const shown = useShownMetric(block.key);
+  const bands = new Map((expected?.items ?? []).map(i => [i.metric, i]));
+  const columns: LedgerColumn<BriefingRangeMeasure>[] = [
+    { head: "Metric", cell: m => <span title={m.time_source ?? undefined}>{m.name}</span> },
+    { head: "This range", cell: m => m.current_text ?? "", num: true, width: 130 },
+    { head: "Comparison", cell: m => m.previous_text ?? "", num: true, width: 130 },
+    { head: "Change", width: 190, cell: m => (m.current_partial || m.previous_partial
+        ? `no change stated: data covers only ${m.current_partial ?? m.previous_partial}`
+        : changeOf(m, "previous") || "no comparison rows") },
+    ...(hasYear ? [{
+      head: "A year earlier", width: 190,
+      cell: (m: BriefingRangeMeasure) => {
+        const change = m.last_year !== null ? changeOf(m, "last_year") : "";
+        return `${m.last_year_text ?? ""}${change ? ` (${change})` : ""}`;
+      },
+    }] : []),
+    ...(expected?.target ? [{
+      head: "Expected next", width: 210,
+      cell: (m: BriefingRangeMeasure) => {
+        const e = bands.get(m.metric);
+        return e?.expected
+          ? <span title={e.expected.must_say.join(" · ")}>{e.expected.text}</span>
+          : <span title={e?.why || "no band was stated for it"} style={{ color: "var(--t3)" }}>not predicted</span>;
+      },
+    }] : []),
+    { head: "Status", cell: m => <StatusMark status={STATUS_LABEL[m.status]} />, width: 120 },
+  ];
   return (
     <div className="aug-fs-sm" data-testid="range-measures" style={{ marginBottom: 14 }}>
       <div className="aug-label" style={{ marginBottom: 6 }}>
@@ -166,42 +201,20 @@ export function RangeMeasures({ block }: { block: BriefingRangeBlock }) {
         </div>
       )}
       {block.measured.length > 0 && (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ color: "var(--t3)", textAlign: "left" }}>
-              <th style={{ fontWeight: 500, padding: "2px 8px 2px 0" }}>Metric</th>
-              <th style={{ fontWeight: 500, padding: "2px 8px" }}>This range</th>
-              <th style={{ fontWeight: 500, padding: "2px 8px" }}>Comparison</th>
-              <th style={{ fontWeight: 500, padding: "2px 8px" }}>Change</th>
-              {hasYear && <th style={{ fontWeight: 500, padding: "2px 8px" }}>A year earlier</th>}
-              <th style={{ fontWeight: 500, padding: "2px 0 2px 8px" }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {block.measured.map(m => (
-              <tr key={m.metric} style={{ borderTop: "1px solid var(--b1)" }}>
-                <td style={{ padding: "4px 8px 4px 0", color: "var(--t1)" }} title={m.time_source ?? undefined}>
-                  {m.name}
-                </td>
-                <td style={{ padding: "4px 8px" }}>{m.current_text ?? ""}</td>
-                <td style={{ padding: "4px 8px", color: "var(--t2)" }}>{m.previous_text ?? ""}</td>
-                <td style={{ padding: "4px 8px", color: "var(--t2)" }}>
-                  {m.current_partial || m.previous_partial
-                    ? `no change stated: data covers only ${m.current_partial ?? m.previous_partial}`
-                    : changeOf(m, "previous") || "no comparison rows"}
-                </td>
-                {hasYear && (
-                  <td style={{ padding: "4px 8px", color: "var(--t2)" }}>
-                    {m.last_year_text ?? ""}{m.last_year !== null ? ` (${changeOf(m, "last_year")})` : ""}
-                  </td>
-                )}
-                <td style={{ padding: "4px 0 4px 8px", color: m.status === "final" ? "var(--t2)" : "var(--amb4)" }}>
-                  {STATUS_LABEL[m.status]}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Ledger name="measured-metrics" columns={columns} rows={block.measured} rowKey={m => m.metric}
+          onOpen={open ? m => open({ measure: m, block, expected: expected?.target ? { target: expected.target, item: bands.get(m.metric) } : undefined }) : undefined}
+          selected={shown} empty="No metric was measured for this range." />
+      )}
+      {block.measured.length > 0 && expected?.target && (
+        <div data-testid="range-expected-note" style={{ color: "var(--t3)", marginTop: 4 }}>
+          Expected next is for {expected.target.label}: the band each metric&apos;s own earlier ranges put on it,
+          checked on {expected.target.settles_on}, when that range has settled.
+        </div>
+      )}
+      {block.measured.length > 0 && expected && !expected.target && expected.why && (
+        <div data-testid="range-expected-note" style={{ color: "var(--t3)", marginTop: 4 }}>
+          Nothing is predicted from this range: {expected.why}.
+        </div>
       )}
       {block.unmeasured.length > 0 && (
         <ul style={{ margin: "8px 0 0", paddingLeft: 16, color: "var(--t3)" }}>
@@ -226,7 +239,6 @@ export function RangeSections({ block }: { block: BriefingRangeBlock }) {
   const thin = block.thin ?? [];
   const why = block.why ?? [];
   const early = block.early;
-  const provisional = block.measured.filter(m => m.status !== "final");
   return (
     <div className="aug-fs-sm" data-testid="range-sections" style={{ display: "grid", gap: 12, marginBottom: 14 }}>
       {block.recipe && (
@@ -282,15 +294,9 @@ export function RangeSections({ block }: { block: BriefingRangeBlock }) {
           </ul>
         </div>
       )}
-      {(provisional.length > 0 || block.recipe_error) && (
-        <div>
-          <div className="aug-label" style={{ marginBottom: 4 }}>Data health</div>
-          <ul style={{ margin: 0, paddingLeft: 16, color: "var(--t3)" }}>
-            {provisional.map(m => (
-              <li key={m.metric}>{m.name} is {m.status === "to_date" ? "to date — the range is still under way" : "provisional — it can still change"}.</li>
-            ))}
-            {block.recipe_error && <li>{block.recipe_error}.</li>}
-          </ul>
+      {block.recipe_error && (
+        <div data-testid="range-recipe-error" style={{ color: "var(--t3)" }}>
+          This range's own sections are missing: {block.recipe_error}.
         </div>
       )}
     </div>

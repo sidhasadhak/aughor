@@ -2231,6 +2231,7 @@ export default function Home() {
                     },
                     onOpenCorrections: () => handleNavigate("corrections"),
                     onOpenMissions: () => handleNavigate("missions"),
+                    onOpenRecord: openRecord,
                     onOpenHome: () => handleNavigate("home"),
                   }}
                 />

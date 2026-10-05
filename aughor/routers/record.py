@@ -51,6 +51,12 @@ def _who(principal) -> str:
     return ""
 
 
+def _actor(principal, named: str = "") -> str:
+    """Who is acting — the identified caller, or the name a form carried (`authz.acting_person`)."""
+    from aughor.security.authz import acting_person
+    return acting_person(principal, named)
+
+
 # ── claims ─────────────────────────────────────────────────────────────────────────────────
 
 @router.get("/record/claims")
@@ -76,6 +82,13 @@ def get_record_claim(claim_id: str) -> dict:
         raise HTTPException(status_code=404, detail="No such claim")
     view = _claim_view(c)
     view["relied_on_by"] = C.relied_on_by(claim_id)
+    try:
+        from aughor.record.receipt_lines import told_about
+        view["told"], view["told_note"] = told_about(c)
+    except Exception as exc:  # noqa: BLE001 — the claim reads without the line, and says the line is missing
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the departures citing a claim's answer could not be read", counter="record.claim_told")
+        view["told"], view["told_note"] = [], "the departures ledger could not be read just now"
     return view
 
 
@@ -87,6 +100,28 @@ def get_record_claim_versions(claim_id: str) -> list[dict]:
     if c is None or not _visible(c.about.key if c.about.kind == "connection" else ""):
         raise HTTPException(status_code=404, detail="No such claim")
     return [_claim_view(v) for v in C.versions(c.key)]
+
+
+class MarkWrongRequest(BaseModel):
+    corrected: str = ""            # what is true instead; a hypothesis needs only the reason
+    why: str = ""
+    by: str = ""                   # the person, when no sign-in names them
+
+
+@router.post("/record/claims/{claim_id}/wrong", status_code=201)
+def mark_record_claim_wrong(claim_id: str, req: MarkWrongRequest, principal=Depends(get_principal)) -> dict:
+    """A person marks a claim wrong, with the corrected statement. The claim is restated — the
+    wrong version kept — every inquiry that established it wakes and every decision that relied
+    on it reopens. Returns the new version with what it set in motion."""
+    c = C.get(claim_id)
+    if c is None or not _visible(c.about.key if c.about.kind == "connection" else ""):
+        raise HTTPException(status_code=404, detail="No such claim")
+    try:
+        out = C.mark_wrong(claim_id, by=_actor(principal, req.by), corrected=req.corrected, why=req.why)
+    except C.ClaimRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {**get_record_claim(out["claim_id"]), "superseded": out["superseded"],
+            "woke_inquiries": out.get("woke_inquiries", []), "reopened_decisions": out.get("reopened_decisions", [])}
 
 
 # ── decisions ──────────────────────────────────────────────────────────────────────────────
@@ -137,6 +172,7 @@ class OutcomeIn(BaseModel):
     why: str = ""
     against_expectation: str = ""
     writes_back: list[str] = Field(default_factory=list)
+    measured_by: str = ""          # the person booking it, when no sign-in names them
 
 
 @router.get("/record/decisions")
@@ -161,6 +197,9 @@ def get_record_decision(decision_id: str) -> dict:
     view["expectation"] = (C.get(d.expectation_claim).model_dump() if d.expectation_claim and C.get(d.expectation_claim) else None)
     o = D.outcome_by_id(d.outcome) if d.outcome else D.get_outcome(decision_id)
     view["outcome_record"] = o.model_dump() if o is not None else None
+    # what replaced the claim it stood on, when its ground moved and nobody has answered yet
+    moved = C.get(d.reopened_by) if d.reopened_by else None
+    view["reopened_by_claim"] = moved.model_dump() if moved is not None else None
     return view
 
 
@@ -172,7 +211,8 @@ def declare_record_decision(req: DeclareDecisionRequest, principal=Depends(get_p
     from aughor.record.byproducts import declare_decision
     if req.connection_id and not _visible(req.connection_id):
         raise HTTPException(status_code=404, detail="No such connection")
-    who = req.decided_by or _who(principal)
+    # who DECIDED, which the form may name — a decision taken elsewhere is not always the caller's
+    who = _actor(None, req.decided_by) or _who(principal)
     try:
         did = declare_decision(
             question=req.question, chosen=req.chosen, options=req.options, owner=req.owner,
@@ -185,6 +225,46 @@ def declare_record_decision(req: DeclareDecisionRequest, principal=Depends(get_p
     return get_record_decision(did)
 
 
+class AmendDecisionRequest(BaseModel):
+    option: str = ""               # an option that was on the table
+    dissent: Optional[DissentIn] = None
+    by: str = ""
+
+
+class StandsRequest(BaseModel):
+    why: str
+    by: str = ""
+
+
+@router.post("/record/decisions/{decision_id}/amend", status_code=201)
+def amend_record_decision(decision_id: str, req: AmendDecisionRequest, principal=Depends(get_principal)) -> dict:
+    """Add an option or a dissent to a decision already booked — a new version, the addition dated
+    and named. What was chosen does not change here."""
+    d = D.get_decision(decision_id)
+    if d is None or not _visible(d.connection_id):
+        raise HTTPException(status_code=404, detail="No such decision")
+    try:
+        amended = D.amend_decision(decision_id, by=_actor(principal, req.by), option=req.option,
+                                   dissent_who=req.dissent.who if req.dissent else "",
+                                   dissent_why=req.dissent.why if req.dissent else "")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return get_record_decision(amended.id)
+
+
+@router.post("/record/decisions/{decision_id}/stands", status_code=201)
+def settle_record_decision_reopening(decision_id: str, req: StandsRequest, principal=Depends(get_principal)) -> dict:
+    """A person answers a reopened decision: it stands on what replaced the claim, and why."""
+    d = D.get_decision(decision_id)
+    if d is None or not _visible(d.connection_id):
+        raise HTTPException(status_code=404, detail="No such decision")
+    try:
+        settled = D.settle_reopening(decision_id, by=_actor(principal, req.by), why=req.why)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return get_record_decision(settled.id)
+
+
 # ── inquiries ──────────────────────────────────────────────────────────────────────────────
 
 class CloseInquiryRequest(BaseModel):
@@ -192,10 +272,30 @@ class CloseInquiryRequest(BaseModel):
     lessons: list[dict] = Field(default_factory=list)   # [{believed, turned_out}]
 
 
+def _as_it_stands(ids: list[str]) -> list[tuple[str, C.Claim]]:
+    """Each cited claim as it stands NOW — the latest version under its key — once per claim, in
+    the order cited, with the id it was cited by. A record cites a claim as it was recorded; a
+    page that reads the record shows what is held today and says when that has changed."""
+    seen: set[str] = set()
+    out: list[tuple[str, C.Claim]] = []
+    for cid in ids:
+        cited = C.get(cid)
+        if cited is None:
+            continue
+        current = C.latest(cited.key) or cited
+        if current.key in seen:
+            continue
+        seen.add(current.key)
+        out.append((cid, current))
+    return out
+
+
 def _inquiry_view(q) -> dict:
     from aughor.record.inquiry import run_verdict
     view = q.model_dump()
-    view["hypothesis_claims"] = [c.model_dump() for c in (C.get(cid) for cid in q.hypotheses) if c is not None]
+    view["hypothesis_claims"] = [_claim_view(c) for _, c in _as_it_stands(q.hypotheses)]
+    view["established_claims"] = [{**_claim_view(c), "cited_as": cid, "restated_since": c.id != cid}
+                                  for cid, c in _as_it_stands(q.claims)]
     view["run_verdicts"] = [run_verdict(r.run) or {"run": r.run, "verdict": r.verdict, "why": r.why} for r in q.runs]
     return view
 
@@ -258,6 +358,67 @@ def close_record_inquiry(inquiry_id: str, req: CloseInquiryRequest, principal=De
     return _inquiry_view(closed)
 
 
+class HypothesisRequest(BaseModel):
+    text: str
+    by: str = ""
+
+
+class HandToRequest(BaseModel):
+    owner: str = ""                # "" takes the name off
+    by: str = ""
+
+
+class NextCheckRequest(BaseModel):
+    on: str = ""                   # ISO day; "" clears it
+    waiting_for: str = ""
+    by: str = ""
+
+
+def _inquiry_or_404(inquiry_id: str):
+    from aughor.record.inquiry import get_inquiry
+    q = get_inquiry(inquiry_id)
+    if q is None or not _visible(q.connection_id):
+        raise HTTPException(status_code=404, detail="No such inquiry")
+    return q
+
+
+@router.post("/record/inquiries/{inquiry_id}/hypothesis", status_code=201)
+def add_record_inquiry_hypothesis(inquiry_id: str, req: HypothesisRequest, principal=Depends(get_principal)) -> dict:
+    """A person's hypothesis, named — booked as a claim at tier ``said``, open until a run tests
+    it. When the Record already holds one like it as refuted on this connection, the answer says
+    which, beside it."""
+    from aughor.record.inquiry import InquiryRefused, add_hypothesis
+    q = _inquiry_or_404(inquiry_id)
+    try:
+        booked, note = add_hypothesis(q, text=req.text, by=_actor(principal, req.by))
+    except (InquiryRefused, C.ClaimRefused) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {**_inquiry_view(booked), "resembles_refuted": note or None}
+
+
+@router.post("/record/inquiries/{inquiry_id}/owner")
+def hand_record_inquiry(inquiry_id: str, req: HandToRequest, principal=Depends(get_principal)) -> dict:
+    """Name the person answerable for an inquiry, or take the name off. Nothing is sent."""
+    from aughor.record.inquiry import InquiryRefused, hand_to
+    q = _inquiry_or_404(inquiry_id)
+    owner = _actor(None, req.owner)
+    try:
+        return _inquiry_view(hand_to(q, owner=owner, by=_actor(principal, req.by)))
+    except InquiryRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/record/inquiries/{inquiry_id}/next-check")
+def set_record_inquiry_next_check(inquiry_id: str, req: NextCheckRequest, principal=Depends(get_principal)) -> dict:
+    """Set the day an inquiry wakes without being asked, or clear it."""
+    from aughor.record.inquiry import InquiryRefused, set_next_check
+    q = _inquiry_or_404(inquiry_id)
+    try:
+        return _inquiry_view(set_next_check(q, on=req.on, by=_actor(principal, req.by), waiting_for=req.waiting_for))
+    except InquiryRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 # ── scenarios and calibration ──────────────────────────────────────────────────────────────
 
 class AssumptionIn(BaseModel):
@@ -271,7 +432,7 @@ class AssumptionIn(BaseModel):
 
 
 class ScenarioRequest(BaseModel):
-    method: str                                  # identity | declared | history
+    method: str                                  # identity | declared | history | intervention
     metric: str
     settles_on: str = ""                         # defaults to the decision's review date
     direction: str = ""
@@ -280,21 +441,26 @@ class ScenarioRequest(BaseModel):
     inputs: dict[str, float] = Field(default_factory=dict)
     varied: list[str] = Field(default_factory=list)
     assumption: Optional[AssumptionIn] = None    # declared
-    spec: Optional[dict] = None                  # history: the measurable definition
+    spec: Optional[dict] = None                  # history: the measurable definition; resolved from the governed metric when absent
+    like: str = ""                               # intervention: the question past decisions asked; defaults to this decision's
+    action_id: str = ""                          # intervention: the declared action past decisions ran
     limits: list[str] = Field(default_factory=list)
     question: str = ""
+    by: str = ""                                 # the person projecting, when no sign-in names them
 
 
 @router.post("/record/decisions/{decision_id}/scenario", status_code=201)
 def book_record_scenario(decision_id: str, req: ScenarioRequest, principal=Depends(get_principal)) -> dict:
-    """Project under one method of the ladder (identity · declared · history) FOR a decision, and
-    book the prediction with its method, band and what it must say; the scenario is a ledger
-    entry inside the decision. A method the ladder does not have yet is refused by name."""
+    """Project under one method of the ladder (identity · declared · history · intervention) FOR a
+    decision, and book the prediction with its method, band and what it must say; the scenario is
+    a ledger entry inside the decision. A method the ladder does not have is refused by name, and
+    one that projects nothing — too few past cases, a metric with no measurable definition — is
+    refused with that reason."""
     from aughor.record import scenario as S
     d = D.get_decision(decision_id)
     if d is None or not _visible(d.connection_id):
         raise HTTPException(status_code=404, detail="No such decision")
-    who = _who(principal)
+    who = _actor(principal, req.by)
     try:
         if req.method == "identity":
             proj = S.identity(req.formula, req.inputs, unit=req.unit, varied=req.varied)
@@ -305,10 +471,17 @@ def book_record_scenario(decision_id: str, req: ScenarioRequest, principal=Depen
             proj = S.declared(variable=a.variable, value=a.value, by=a.by or who, text=a.text, unit=a.unit or req.unit,
                               connection_id=d.connection_id, low=a.low, high=a.high)
         elif req.method == "history":
-            if not req.spec:
-                raise HTTPException(status_code=422, detail="the history method takes the metric's measurable spec")
+            spec = req.spec or _metric_spec(req.metric, d.connection_id)
+            if not spec:
+                raise HTTPException(status_code=422, detail=(
+                    f"the history method reads the metric's own past, and {req.metric!r} has no approved definition "
+                    "that can be measured on this connection — approve one under Definitions, or use another method"))
             from aughor.db.measure import run_sql_for
-            proj = S.history(req.spec, run_sql_for(d.connection_id, internal=True))
+            proj = S.history(spec, run_sql_for(d.connection_id, internal=True))
+            req.spec = spec
+        elif req.method == "intervention":
+            proj = S.intervention(metric=req.metric, connection_id=d.connection_id, action_id=req.action_id,
+                                  like=req.like or d.question, unit=req.unit)
         else:
             raise HTTPException(status_code=422, detail=f"no method named {req.method!r}; the ladder has {', '.join(S.METHODS)}")
         settles_on = req.settles_on or d.review_on
@@ -325,6 +498,26 @@ def book_record_scenario(decision_id: str, req: ScenarioRequest, principal=Depen
             "prediction": (C.get(pid).model_dump() if C.get(pid) else None)}
 
 
+def _metric_spec(metric: str, connection_id: str) -> Optional[dict]:
+    from aughor.record.mission import spec_for_metric
+    return spec_for_metric(metric, connection_id)
+
+
+@router.get("/record/decisions/{decision_id}/cases")
+def list_record_decision_cases(decision_id: str, metric: str = "") -> dict:
+    """What the intervention method would read for this decision: the past decisions on this
+    install that asked the same question, each with its measured effect — and how many are the
+    least an effect is read from. A read: nothing is projected or booked."""
+    from aughor.record import scenario as S
+    d = D.get_decision(decision_id)
+    if d is None or not _visible(d.connection_id):
+        raise HTTPException(status_code=404, detail="No such decision")
+    cases = [c for c in S.intervention_cases(metric=metric, connection_id=d.connection_id, like=d.question)
+             if c["decision"] != d.id]
+    return {"cases": cases, "needed": S.INTERVENTION_MIN_CASES,
+            "measurable": bool(_metric_spec(metric, d.connection_id)) if metric else None}
+
+
 @router.get("/record/decisions/{decision_id}/scenarios")
 def list_record_scenarios(decision_id: str) -> dict:
     """The scenarios booked FOR a decision, oldest first, with the predictions made under them as
@@ -333,7 +526,10 @@ def list_record_scenarios(decision_id: str) -> dict:
     d = D.get_decision(decision_id)
     if d is None or not _visible(d.connection_id):
         raise HTTPException(status_code=404, detail="No such decision")
-    scenarios = sorted(S.scenarios_for(decision_id), key=lambda s: s.recorded_at)
+    # booked FOR the decision as it stood then; an outcome, an amendment or a reopening has since
+    # given it a new version, and the scenarios are still its own
+    found = {s.id: s for vid in (D.version_ids(decision_id) or [decision_id]) for s in S.scenarios_for(vid)}
+    scenarios = sorted(found.values(), key=lambda s: s.recorded_at)
     wanted = [pid for s in scenarios for pid in s.predictions]
     if d.expectation_claim:
         wanted.append(d.expectation_claim)
@@ -353,6 +549,63 @@ def record_calibration(connection_id: Optional[str] = None) -> list[dict]:
     if connection_id and not _visible(connection_id):
         raise HTTPException(status_code=404, detail="No such connection")
     return calibration(conn_id=connection_id)
+
+
+# ── set aside: "not now" on what waits on a person (the Now page) ──────────────────────────
+
+class SetAsideRequest(BaseModel):
+    kind: str                      # decision | inquiry | departure | approval
+    ref: str                       # the item's id as the page holds it
+    until: str                     # ISO day it returns on
+    why: str
+    title: str = ""                # the row as it reads, kept so the list can say what was set aside
+    by: str = ""
+
+
+class RestoreRequest(BaseModel):
+    kind: str
+    ref: str                       # the stable name the listing gives
+    by: str = ""
+
+
+def _set_aside_view(s: dict) -> bool:
+    return _visible(str(s.get("connection_id") or ""))
+
+
+@router.get("/record/set-aside")
+def list_record_set_aside() -> dict:
+    """What a person set aside on Now: ``active`` items are off the list until their day;
+    ``returned`` ones are back — their day came, or the record behind them changed — with why."""
+    from aughor.record.set_aside import listing
+    out = listing()
+    return {**out, "active": [s for s in out["active"] if _set_aside_view(s)],
+            "returned": [s for s in out["returned"] if _set_aside_view(s)]}
+
+
+@router.post("/record/set-aside", status_code=201)
+def set_record_item_aside(req: SetAsideRequest, principal=Depends(get_principal)) -> dict:
+    """Set one waiting item aside until a day, with why. Nothing about the item itself is written:
+    a review set aside is still due on its own page."""
+    from aughor.record.set_aside import ITEM_KINDS, SetAsideRefused, record_of, set_aside
+    # a caller may only set aside what they can see — checked before anything is written
+    there = record_of(req.kind, req.ref) if req.kind in ITEM_KINDS else None
+    if there is not None and not _visible(there["connection_id"]):
+        raise HTTPException(status_code=404, detail="No such item")
+    try:
+        return set_aside(item_kind=req.kind, ref=req.ref, until=req.until, why=req.why, title=req.title,
+                         by=_actor(principal, req.by)).model_dump()
+    except SetAsideRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/record/set-aside/restore")
+def restore_record_item(req: RestoreRequest, principal=Depends(get_principal)) -> dict:
+    """Bring a set-aside item back before its day."""
+    from aughor.record.set_aside import SetAsideRefused, restore
+    try:
+        return restore(item_kind=req.kind, ref=req.ref, by=_actor(principal, req.by)).model_dump()
+    except SetAsideRefused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 # ── the week by duty (Operations) ──────────────────────────────────────────────────────────
@@ -434,6 +687,7 @@ class MissionRequest(BaseModel):
     cadence: str = "monthly"       # weekly | monthly | quarterly
     state: str = "proposed"        # proposed | active (active needs an owner)
     key: str = ""                  # to edit an existing mission (a new version, the old kept)
+    written_by: str = ""           # the person writing it, when no sign-in names them
 
 
 class MissionStateRequest(BaseModel):
@@ -469,7 +723,7 @@ def write_record_mission(req: MissionRequest, principal=Depends(get_principal)) 
     for c in req.connections:
         if not _visible(c):
             raise HTTPException(status_code=404, detail="No such connection")
-    who = _who(principal)
+    who = _actor(principal, req.written_by)
     m = M.Mission(
         name=req.name, objective=M.Objective(**req.objective.model_dump()),
         constraints=[M.Constraint(**c.model_dump()) for c in req.constraints],
@@ -563,6 +817,20 @@ def get_record_mission_report(mission_id: str, compose: bool = False) -> dict:
     return {"booked": True, "report": latest_report}
 
 
+@router.get("/record/missions/{mission_id}/reports/{report_id}")
+def get_record_mission_past_report(mission_id: str, report_id: str) -> dict:
+    """One booked report of this mission, in full, as it was written on its day."""
+    from aughor.record import mission as M
+    m = M.get_mission(mission_id)
+    if m is None or not all(_visible(c) for c in m.scope.connections):
+        raise HTTPException(status_code=404, detail="No such mission")
+    current = M.latest(m.key) or m
+    report = M.get_report(report_id) if report_id in current.review.reports else None
+    if report is None:
+        raise HTTPException(status_code=404, detail="No such report of this mission")
+    return {"booked": True, "report": report}
+
+
 @router.post("/record/missions/{mission_id}/report", status_code=201)
 def post_record_mission_report(mission_id: str, deliver: bool = True, principal=Depends(get_principal)) -> dict:
     """Report now: composed, booked and delivered to the owner through the gate."""
@@ -588,7 +856,7 @@ def book_record_outcome(decision_id: str, req: OutcomeIn, principal=Depends(get_
             of=decision_id, measured_on=req.measured_on, actual=req.actual, baseline=req.baseline,
             effect=D.Effect(value=req.effect_value, low=req.effect_low, high=req.effect_high, method=req.method),
             verdict=req.verdict, why=req.why, against_expectation=req.against_expectation,
-            writes_back=req.writes_back, measured_by=_who(principal) or "unidentified"))
+            writes_back=req.writes_back, measured_by=_actor(principal, req.measured_by) or "unidentified"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     latest = D.latest_decision(d.source)

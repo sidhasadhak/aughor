@@ -64,6 +64,8 @@ def get_one(link_id: str):
 class CloseBody(BaseModel):
     outcome: str
     number_recovered: str = ""
+    #: Who closed it, where no sign-in names them — the By duty page asks once and sends it.
+    by: str = ""
 
 
 @router.post("/links/{link_id}/close")
@@ -73,10 +75,13 @@ def close_one(link_id: str, body: CloseBody):
     if not body.outcome.strip():
         raise HTTPException(status_code=422, detail="outcome must say what happened")
     from aughor.org.context import current_user_id
+    from aughor.security.authz import acting_person
     uid = current_user_id()
+    # A sign-in names the closer; without one the name the form carried is kept as `person:<name>`,
+    # never as an authenticated `user:`. Neither: the bare `user:` this door has always written.
     row = close_link(link_id, outcome=body.outcome.strip(),
                      number_recovered=body.number_recovered.strip(),
-                     closed_by=f"user:{uid}" if uid else "user:")
+                     closed_by=f"user:{uid}" if uid else (acting_person(None, body.by) or "user:"))
     if row is None:
         raise HTTPException(status_code=404, detail="Link not found")
     return row

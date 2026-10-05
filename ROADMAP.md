@@ -11561,7 +11561,65 @@ to 10 in `docs/assets/platform-2027-screens-2026-10-05/` are of the pages under 
 same, the rail around them is not; figures 11 and 12 are Now and a Decision inside the rail as restored. `tsc`, the six lint gates (one ratchet lowered as it asked: raw font sizes 890 → 877) and the web suite pass (132
 files, 1,578 tests). The full Python suite, run as CI runs it: 13,821 passed and 7 failed on the first run —
 the seven named above beside the census one, each failing identically on the base commit — and 13,828 passed, none failed, after them.
-**Still open on screen, each for want of a door or a decision, none drawn as if it worked:** an inquiry cannot take a
+**The page interactions — BUILT 2026-10-05** at the user's word ("let's go for the rest"), on
+`claude/platform-2027-doors`, after #568 merged the screens. Measured first, as the paragraph below was written from
+memory of the build and half of it was wrong: of the interactions it lists as wanting a door, a mission's edit and its
+"report now", an approval's accept and reject, a standing grant's withdrawal, a group's members, a pack's check and
+upload and a method's registration each already had one, and only the page was missing. What was built. **Inquiry:**
+a person's hypothesis, named, as a claim at tier said (one the Record already holds as refuted is said beside it, never
+a refusal); an owner, handed over with nothing sent; a check date set — it then waits — or cleared, which wakes it.
+**Claim:** marked wrong by a person and RESTATED, the wrong version kept — a hypothesis as refuted with the reason as
+its evidence, anything else as that person's statement at tier declared, a prediction refused (it is scored by code);
+and who else was told, read from the departures that cited the answer behind it. **Decision:** an option or a dissent
+added after booking, dated and named; and a restatement — the re-check's or a person's — reopens every decision that
+stood on the claim, again when what replaced it is itself replaced, until a person answers that it still stands and
+why. **Scenario:** history resolves the approved metric's definition and says so when there is none; method 4 is
+offered from the page with the cases it would read; a decision taken before today is recorded with its day. **Mission:**
+edited in place as a new version with its report day kept, a past report read in full, "report now" as a choice
+between booking and sending. **Now:** a proposed action is decided on its row, in the card Attention already shows.
+**Action centre:** a person's ceiling as its own ledger entry that only lowers (`authority.ceiling`, catalogued and in
+the governance feed), a standing grant signed at L4 and withdrawn, a demotion marked as a drill. **Developer:** a pack
+checked then uploaded as a draft, a method registered with its backtest or refused. Figures 13 to 16 in
+`docs/assets/platform-2027-screens-2026-10-05/`. Receipt: every door driven over HTTP on a scratch API with its own
+stores, then each control driven in the browser on that pair — a mission saved as version 4 with its report day
+unchanged, a claim marked wrong that reopened its decision, that decision answered, a ceiling set and lifted, an
+approval rejected on Now; 13 new tests over the doors; `tsc`, the six lint gates and the web suite pass.
+**Found on the way, each fixed:** on an install with no sign-in a mission could not be written and "my assumption"
+could not be booked — both doors need a named person and no page could give a name, so every write that records a
+person's act now carries a "Recorded as" name, kept as `person:<name>` and never as an authenticated `user:`
+(`security/authz.acting_person`); a decision's scenarios left its page the moment an outcome, an amendment or a
+reopening gave it a new version, because they were read by the version's id; an inquiry read each hypothesis as it
+was recorded, so one since refuted still read as open and was still named in the run it proposed; an edited mission
+restarted its report clock; and `POST /authority/{id}/widen`, cited by the autonomy agent's own message, did not
+exist. **Not built, each for a decision and not for want of time:** ~~dismissing an item on Now (nothing says what a
+dismissal is); the inspector drawer (a change to how every page opens another, to be shown before it is built on,
+§4.10)~~ *(both decided and built the same day — the next paragraph)*; a clearance (no such thing exists apart from the access grants); when a statement door last fired (nothing
+counts it per site); an action, a prediction and a signature on a Briefing's items; the hub's links and probation
+queues on By duty; a link followed across connections from a claim.
+
+**Set aside and the inspector — BUILT 2026-10-05** on the two decisions of §6 item 40, same branch. **Set aside**
+(`record/set_aside.py`, `/record/set-aside`): "Not now" on any row of Waiting on you takes a day and a reason; the row
+leaves the list and the rail's badge the same moment; "Set aside: n items" lists each with its reason, who and until
+when, with Restore. It is one ledger entry per item, keyed by the item's stable name so every version of a decision is
+the same item, and whether it still hides its row is computed on read — its day came, or the version current today is
+not the one that was set aside — never written by looking. Only what still waits is listed: an item dealt with on its
+own page has left both lists. **The inspector** (`components/record/Inspector.tsx`): a decision's claim, a claim's
+decision, an inquiry's claims and hypotheses, a mission's inquiries and decisions, and a correction's record open in
+a drawer over the page's own right-hand column, under the tabs; a citation inside the drawer opens in the drawer;
+"Open full page" is the only thing that leaves. On Now, a row's sentence opens its record there to be read, and its
+button still leaves for the page it is dealt with on. Receipt: both driven on the scratch pair — a review set aside
+from the page (the list fell from two to one, the badge cleared), restored, set aside again; a decision set aside and
+brought back early by correcting the claim it stood on; the drawer opened from a decision, followed to the decision
+that cites the claim, closed by Esc with the page untouched, and left by "Open full page". Figures 17 (the
+inspector beside a decision) and 18 (Now, with one item set aside), taken from the running pages by a headless
+browser. 2 more tests over the door. **Found on
+the way:** the drawer's first class name was already a panel's — three screens use `.aug-inspector` — and would have
+restyled them; it is `.aug-beside`. And the scratch API's launcher handed its state folder to every temp-dir request,
+so the pack check's own clean-up deleted the scratch state (the launcher's defect, fixed there; no product code and
+no real data involved). **Not included:** a `?inspect=` address for an open drawer — a reload closes it.
+
+**Still open on screen, as written 2026-10-05 before the two paragraphs above (kept as written; what it lists is
+now built or decided there):** an inquiry cannot take a
 person's hypothesis, be handed to an owner, have its next check set, or have a claim marked wrong from its page; a
 decision cannot gain an option or dissent after it is booked, and does not reopen on a restated claim; a mission is
 written but not edited in place, its past reports are listed by headline only, and "report now" is not a button (it
@@ -11571,6 +11629,8 @@ Security & Audit writes no policy, adds nobody to a group and sets no clearance,
 for a statement door (nothing records it per site); Developer manages packs through Settings ▸ System and does not
 declare an action or register a method; the hub's links and probation queues still have no screen; the Briefing's
 items carry no action or prediction of their own, and a Briefing is not signed as a delivery.
+*(2026-10-05, later: the items of this paragraph that waited on a decision were all decided and built, or closed,
+under §6 item 42 — and "no action of their own" was wrong when written: cited items have carried one since CB-7.)*
 
 ---
 
@@ -13479,6 +13539,127 @@ the browser** · **measure the premise before building.**
     their reasons the same day (twenty-two lines; TJ-5 and TJ-6 appear twice), and the phase of every kept and
     reshaped item carried onto its line the same day at the user's word (76 lines, as *2027 study: phase N*); the
     study's placement section holds the reasons.
+    *(d) was refused on screen the next day — §4.10: the 2026 rail stands and the pages sit inside it.*
+
+40. ✅ **DECIDED 2026-10-05 — two things the 2027 pages had left open for a decision** (§3.53, "Set aside and the
+    inspector"), each asked with its options and a worked example, the second on a mock-up.
+    **(a) ✅ Dismissing an item on Now is a SNOOZE, not a verdict** (the user chose it over closing the item with a
+    reason, setting it aside with no date, and having no dismissal). A person says until when and why; the row leaves
+    the list until that day and returns. Nothing is written on the thing itself — a review set aside is still due on
+    its own page, and no outcome, closing or rejection is booked in its name.
+    **(b) ✅ It comes back early when its ground moves** (over "only on its date" and "only when restored"): a
+    decision whose relied-on claim is restated, an inquiry that wakes.
+    **(c) ✅ It is visible as a line on Now** — "Set aside: n items", opening to each with its reason, who, until
+    when, and Restore (over also noting it on the item's page, and over the audit trail alone).
+    **(d) ✅ The inspector is built as the mock-up showed it**: a cited record opens beside the page that cites it,
+    on Now and the Record's pages only, read-only, closed by Esc or its button, with "Open full page" to leave. Shown
+    as a mock-up BEFORE it was built (§4.10's lesson). The user, on the mock-up: *"I actually liked the colour and
+    structure here.. the actual colour, contrast and rounded boxes with clear text.. I think its great for the dark
+    theme that we have."* The structure is in the drawer (a labelled part, each cited record a box of its own);
+    the colour was the mock-up tool's own neutral charcoal, not the Du Bois skin — ~~**whether the dark skin moves
+    toward it is NOT decided** and nothing in the tokens changed~~ *decided the same night: item 41.*
+
+41. ✅ **DECIDED 2026-10-05 — the dark skin's greys move to neutral charcoal** (the user, on a side-by-side of three
+    real pages captured in both: *"go with charcoal.. in this same branch.."*). What moved: every surface, line and
+    text grey of the dark skin — page `#171717`, chrome and cards `#212121`, pressed `#303030`, hover `#2A2A2A`, lines
+    `#2A2A2A` · `#333333` · `#454545` · `#6E6E6E`, text `#EDEDED` · `#ABABAB` · `#9C9C9C`, the code well `#111111`,
+    the scrim. What did not: the one blue, the navy selection tint, the six intent ramps, the chart palette and its
+    order, every size and radius, and the whole light skin. It supersedes the 2026-10-04 "+8" lift of the Du Bois
+    greys (#567) — the greys it lifted are gone — and it is the third dark ground in a fortnight, so
+    `web/aughor-v2/theme/tokens-v2.css` carries the note. Measured: text is clearer on every surface (captions on a
+    card 5.87:1, was 4.92:1; on a pressed control 4.81:1, was 3.84:1); `--t3` is one step above the value in the
+    comparison (`#9C9C9C`, not `#9A9A9A`) so a caption on a selected row still clears 4.5:1. Fainter, and shown so
+    in the comparison: the row rule on the page (1.25:1, was 1.39:1) and the step from page to chrome (1.11:1, was
+    1.22:1). `--chart-deemph` keeps its slate cast: it is a series colour, held by the chart gate and baked into the
+    export bundle. The four hand-kept mirrors moved with the tokens (`AugTable`'s fallback, the chart surface, the
+    Vega fallbacks, `INSTRUMENT.md`); the chart palette gate passes on the new surface and both server bundles rebuild
+    byte-identical. Figure 19 is the comparison the decision was made on; figures 17 and 18 are on the new skin.
+
+42. ✅ **DECIDED 2026-10-05 — the five items the 2027 pages had left waiting on the user** (asked with options, each
+    answered as recommended unless said):
+    (a) **Clearance is not a separate thing.** What a person may see is the access grants in Settings ▸ Access; the
+    study's word is dropped and nothing is built. The Policies lens keeps its link there.
+    (b) **"Last used" on the gate map, per entry point** — not per call place. *Built:* the SQL door has ten ways in
+    (nine methods on a connection and `execute_guarded`); one use is counted at the method the caller came in through,
+    and a door reached through another is the same use (`aughor/db/door_count.py`). Nobody lists which connections are
+    counted: `DatabaseConnection` wraps the door methods of every class that subclasses it. The count is batched into
+    the audit store beside the internal-statement count (`door_counts`: organisation, door, day, uses, last used), and
+    the gate map's "By door" table shows Uses and Last used with the day counting began — nothing earlier was
+    recorded, and the page says so. Two populations are held to the code, not to a list: every door the census names
+    is counted, and every door method on every connection class is wrapped.
+    (c) **The Briefing gains all three**: signed and dated as a delivery, an action on an item, a prediction on an
+    item. *Built so far — signed and dated:* a send that leaves books one ledger entry (`briefing_delivery`) citing
+    the kept version it delivered and the departure that carried it — to whom, when, under which receipt
+    (`aughor/briefing/deliveries.py`). The Briefing lists its deliveries under its measured table, each saying
+    whether the version sent is still the one on the page, and "Open what was sent" reads that version by its id,
+    never the latest. A send the gate held or a channel refused books nothing; the standing Briefing, which keeps no
+    version, books nothing. The entry is in the ledger's export. Not seen on a real send yet: the scratch install has
+    no channel, so the first scheduled send is its receipt.
+    *Built — a prediction on each measured item:* for every approved metric, the band its own past puts on the
+    range AFTER the one on the page — the mean of the six ranges before it, each stepped back the way the range's own
+    comparison is and all read at one age, with an interval at 80% stated coverage and the backtest on those ranges
+    (`aughor/briefing/expected.py`). The method is the Record's "history"; the measurement is the Briefing's own, so
+    the prediction is of the figure the next Briefing will print. It is booked as a prediction claim under a stable
+    key (asking twice books nothing and measures nothing), shown as an "Expected next" column and in the metric's
+    drawer, listed with the predictions in play at the Briefing's head, and scored by the hourly tick by measuring
+    that range the same way once it has settled. Said, not guessed: fewer than three readable ranges states no band
+    and why; a range to date is not predicted. Two traps found and closed, each with a test: a metric in percent was
+    going to be judged as a band relative to a before-figure (always "cannot tell"), and a count over a window with
+    no rows read as a zero — found on the scratch install, where it put "0 to 961" on a metric that had read 800
+    every month it existed.
+    *The action on an item — measured before building, and it was already there.* The question put to the user
+    said an item carried none, repeating the study's line ("no item carries an action"). That was stale: since CB-7
+    (2026-09-23) each cited item carries one — the first recommendation of the deep analysis it came from,
+    executable through the inbox's gated door, else the playbook's best play by learned success rate, shown as a
+    suggestion (`knowledge/briefing.best_action_for`, `brief/BriefActions.tsx`). So nothing was built for it. What
+    is true and still open, each a narrower question than the one asked: the action is taken in the inbox, one
+    click away, not in place on the Briefing; and a measured metric's row carries none (a play is chosen from a
+    finding's labels, which a metric row does not have). Neither is decided.
+    (d) **Filings get one list on Agent Ops ▸ By duty** — what is open, what it is about, its age, and "close with an
+    outcome". Measured before asking: probation already has two screens (the Hub map's column and Departures), so only
+    the filings were without one; By duty gets a probation count that opens the Hub map. *Built:* "Filed and open"
+    lists every open filing with what it is about, who filed it and how long it has been open, and closes one with
+    what happened and what it recovered; the close is recorded under the person's name where no sign-in gives one
+    (`person:<name>`, never a `user:`). "On probation" is one count and the door to the Hub map. Figure 22.
+    (e) **A claim's page cites links into other connections, read-only** — the link is named and the claims on the
+    other side open in the drawer; no query runs on the second connection. *Built:* a claim is tied to a type of
+    the organisation's ontology by the entities its writer recorded, else by the tables its runs read — on its own
+    connection only, and two tables are the same only where every segment both names spell agrees (`shop.orders` is
+    not `crm.orders`). For each declared link from such a type into a type read from another connection, the claim's
+    page names the two types and the far connection and lists the newest five claims about the far type, which open
+    beside the page (`aughor/record/cross_links.py`). The organisation's ontology is opened by its own door —
+    `GET /ontology/claim-links/{claim_id}`, one of the doors that take `?domain=` — and handed to that module; the
+    first build read it from the claim's route, and the boundary that keeps an organisation's ontology behind its
+    doors refused that in the full suite. A far connection the reader may not see is said to be withheld
+    and nothing of it is read. A claim tied to no link has no such section. **Not shown on a real ontology yet:** the
+    scratch install declares no type, so this is held by its tests (both guards mutation-tested) and by the route
+    serving an empty list on real claims; the first install with a link across two connections is its first receipt.
+
+43. ✅ **ASKED 2026-10-05 — the measured metrics are the Cockpit a person opens on** (the user, on a screenshot of the
+    Briefing's measured table: *"Let this metrics section to default cockpit for the user.. make each of these metrics
+    clickable to gain more insight.. remove data health section completely.."*). *Built:*
+    (a) **Metrics is the first tab on the Cockpit and the one it opens on.** It is the Briefing's own measured table
+    (this range, comparison, change, a year earlier, status) for the period picked, read without writing a Briefing:
+    `POST /exploration/{conn}/briefing/measures` measures the approved metrics and calls no model. A Briefing built
+    for the same window inside its cache age hands back its own figures, so the two pages cannot disagree about one.
+    It is the connection's, not the person's — not in "Your cockpits", not arranged or retired. A person's own
+    cockpit still opens first when it is where they left off.
+    (b) **A metric's name opens it beside the page**, on the Cockpit and on the Briefing: the figure with its
+    comparisons, the metric over the range and the seven ranges before it (three for a year), the segments that moved
+    inside it when the range's Briefing read any, and how it is defined and dated. The trend is one warehouse
+    statement (`POST …/briefing/metric/{metric}`), each earlier range stepped back the way the range's own comparison
+    is and read at the same age. "Investigate this change" hands the question to the Agent; the drawer itself starts
+    no run. The table is now one a reader can take away (Copy, CSV), as every table is meant to be.
+    (c) **The Data health section is gone.** It repeated the Status column line by line. A recipe that fails is still
+    said, once, on its own line.
+    (d) **Wanted, not built — a reading order for metrics** (*"gross sales/sales at the top and net profit (or
+    similar) at the bottom... each industry should have a ranking for each metric or an order in which those will make
+    most sense collectively.. give it a thought later but just mark this requirement somewhere.. its a good to have
+    feature"*). Today the table is in the order the definitions were approved. The likely home is the industry
+    package, which already names an industry's headline metrics; a connection with no package would need a default
+    order by kind (sales, volume, margin, cost, profit). Not designed.
+    Kept as it was: the table also stays on the Briefing — the ask was to make it the Cockpit's default, and the
+    Briefing's narrative cites its figures.
 
 ---
 

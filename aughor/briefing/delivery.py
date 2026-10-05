@@ -359,6 +359,19 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
     return result
 
 
+def _book_delivery(sub: BriefSubscription, built: dict, verdict, result: dict, *, to: str, to_kind: str) -> None:
+    """A Briefing that left is signed and dated as a delivery: which version, to whom, when, under
+    which receipt (`aughor.briefing.deliveries`). A send that did not leave books nothing."""
+    if result.get("status") != "ok":
+        return
+    from aughor.briefing.deliveries import record_delivery
+    scope_key = f"{sub.conn_id}:{sub.schema_name}" if sub.schema_name else sub.conn_id
+    result["delivery_id"] = record_delivery(
+        conn_id=sub.conn_id, scope_key=scope_key, briefing=built.get("brief") or {}, to=to, to_kind=to_kind,
+        subscription_id=sub.id, subscription_name=sub.name, departure_id=verdict.record_id,
+        receipt_line=verdict.receipt_line(), held_lines=len(built.get("held_lines") or []))
+
+
 def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
     """Send the Briefing written for *sub*'s period through the same departure gate and
     trigger as the alert summary. Refused — and said — while the flag is off: a subscription saved
@@ -406,6 +419,7 @@ def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
             text = built["markdown"]
             ok, info = post_as_bot(bot.bot_token, sub.channel, f"{text}\n\n{receipt}" if receipt else text)
             result["status"], result["http_status"], result["error"] = _bot_outcome(ok, info)
+            _book_delivery(sub, built, verdict, result, to=f"{sub.channel} as {bot.name}", to_kind="slack")
             return
         log = fire_action(trigger, ActionPayload(
             investigation_id=f"brief:{sub.id}", rec_index=0, recommendation=built["summary"],
@@ -414,6 +428,8 @@ def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
             triggered_at=_dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z"),
             context={"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()}))
         result["status"], result["http_status"], result["error"] = log.status, log.http_status, log.error
+        _book_delivery(sub, built, verdict, result, to=str(getattr(trigger, "name", "") or sub.trigger_id),
+                       to_kind="trigger")
     except Exception as exc:  # the period build / delivery crash — non-fatal, as the alert summary's
         logger.error("Period briefing delivery for sub %s crashed: %s", sub.id, exc)
         result["error"] = str(exc)

@@ -15,12 +15,13 @@ import type { Connection } from "@/lib/api";
 import { countNoun, formatTableNumber } from "@/lib/format";
 import { connectionLabel, keyToWords } from "@/lib/names";
 import {
-  getMission, getMissionReport, getMissionTemplates, listMissions, setMissionState, verdictWords, whoLabel,
-  writeMission,
+  getMission, getMissionReport, getMissionTemplates, getPastMissionReport, listMissions, reportMissionNow,
+  setMissionState, verdictWords, whoLabel, writeMission,
   type Mission, type MissionBody, type MissionDetail, type MissionReport, type MissionTemplate,
 } from "@/lib/record";
 import {
-  Absent, BackHeader, Fact, Gate, Ledger, Page, Section, day, dayDistance, useLoad, type LedgerColumn,
+  Absent, ActorField, BackHeader, Fact, Gate, Ledger, Page, Section, day, dayDistance, useActor, useLoad,
+  type LedgerColumn,
 } from "@/components/record/kit";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
@@ -51,7 +52,7 @@ export function MissionsPanel({ connections, selectedConn, openId, onOpen, onOpe
   onOpenMonitors: () => void;
 }) {
   if (openId) {
-    return <MissionReader id={openId} connections={connections} onBack={() => onOpen(null)}
+    return <MissionReader id={openId} connections={connections} onBack={() => onOpen(null)} onMoved={onOpen}
       onOpenInquiry={onOpenInquiry} onOpenDecision={onOpenDecision} onOpenClaim={onOpenClaim} onOpenMonitors={onOpenMonitors} />;
   }
   return <MissionLedger connections={connections} selectedConn={selectedConn} onOpen={onOpen} />;
@@ -100,23 +101,34 @@ function MissionLedger({ connections, selectedConn, onOpen }: {
 
 const num = (v: string): number | null => (v.trim() === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
-/** Five lines: the objective, what not to damage, the owner, what it may interrupt, how often it reports. */
-function MissionForm({ connectionId, connections, onWritten, onCancel }: {
+const numText = (v: number | null | undefined): string => (v == null ? "" : String(v));
+
+/**
+ * Five lines: the objective, what not to damage, the owner, what it may interrupt, how often it
+ * reports. With `editing`, the same five lines over a mission that exists: saving writes a new
+ * version under its key — the earlier one kept — and everything the form does not show (its
+ * scope, its watches, its spend budget, its ceiling, its further constraints) is carried over.
+ */
+function MissionForm({ connectionId, connections, onWritten, onCancel, editing }: {
   connectionId: string; connections: Connection[]; onWritten: (m: Mission) => void; onCancel: () => void;
+  editing?: Mission;
 }) {
-  const templates = useLoad(() => getMissionTemplates(connectionId || undefined), [connectionId]);
-  const [name, setName] = useState("");
-  const [metric, setMetric] = useState("");
-  const [direction, setDirection] = useState("up");
-  const [target, setTarget] = useState("");
-  const [unit, setUnit] = useState("");
-  const [byWhen, setByWhen] = useState("");
-  const [guardMetric, setGuardMetric] = useState("");
-  const [guardBound, setGuardBound] = useState("at_least");
-  const [guardLimit, setGuardLimit] = useState("");
-  const [owner, setOwner] = useState("");
-  const [interruptions, setInterruptions] = useState("3");
-  const [cadence, setCadence] = useState("monthly");
+  const actor = useActor();
+  const templates = useLoad(
+    () => (editing ? Promise.resolve(null) : getMissionTemplates(connectionId || undefined)), [connectionId, editing?.id]);
+  const guard = editing?.constraints[0];
+  const [name, setName] = useState(editing?.name ?? "");
+  const [metric, setMetric] = useState(editing?.objective.metric ?? "");
+  const [direction, setDirection] = useState(editing?.objective.direction || "up");
+  const [target, setTarget] = useState(numText(editing?.objective.target));
+  const [unit, setUnit] = useState(editing?.objective.unit ?? "");
+  const [byWhen, setByWhen] = useState(day(editing?.objective.by_when));
+  const [guardMetric, setGuardMetric] = useState(guard?.metric ?? "");
+  const [guardBound, setGuardBound] = useState<string>(guard?.bound ?? "at_least");
+  const [guardLimit, setGuardLimit] = useState(numText(guard?.limit));
+  const [owner, setOwner] = useState(editing?.owner ?? "");
+  const [interruptions, setInterruptions] = useState(String(editing?.budget.interruptions_per_week ?? 3));
+  const [cadence, setCadence] = useState(editing?.review.cadence ?? "monthly");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -136,16 +148,44 @@ function MissionForm({ connectionId, connections, onWritten, onCancel }: {
     setBusy(true);
     setError("");
     try {
-      const body: MissionBody = {
+      const objective = { metric: metric.trim(), direction, target: num(target), unit: unit.trim(), by_when: byWhen };
+      const first = guardMetric.trim() ? [{ metric: guardMetric.trim(), bound: guardBound, limit: num(guardLimit) }] : [];
+      const was = editing?.objective;
+      // The objective's own sentence is kept only while the fields it was written from are unchanged.
+      const sameObjective = !!was && was.metric === objective.metric && was.direction === direction
+        && was.target === objective.target && was.unit === objective.unit && day(was.by_when) === byWhen;
+      const body: MissionBody = editing ? {
         name: name.trim(),
-        objective: { metric: metric.trim(), direction, target: num(target), unit: unit.trim(), by_when: byWhen },
-        constraints: guardMetric.trim()
-          ? [{ metric: guardMetric.trim(), bound: guardBound, limit: num(guardLimit) }] : [],
+        // A definition the mission was written with is kept while its metric is; a new metric is resolved afresh.
+        objective: { ...objective, text: sameObjective ? was!.text : "", spec: was!.metric === objective.metric ? was!.spec : undefined },
+        constraints: [
+          ...first.map(c => ({
+            ...c, kind: guard?.kind, unit: guard?.unit,
+            text: guard && guard.metric === c.metric ? guard.text : "",
+            spec: guard && guard.metric === c.metric ? guard.spec : undefined,
+          })),
+          ...editing.constraints.slice(1),
+        ],
+        domain: editing.scope.domain,
+        segment: editing.scope.segment,
+        connections: editing.scope.connections,
+        owner: owner.trim(),
+        budget: { ...editing.budget, interruptions_per_week: num(interruptions) ?? editing.budget.interruptions_per_week },
+        watches: editing.watches,
+        cadence,
+        state: editing.state,
+        key: editing.key,
+        written_by: actor.by,
+      } : {
+        name: name.trim(),
+        objective,
+        constraints: first,
         connections: connectionId ? [connectionId] : [],
         owner: owner.trim(),
         budget: { interruptions_per_week: num(interruptions) ?? 3 },
         cadence,
         state: "proposed",
+        written_by: actor.by,
       };
       onWritten(await writeMission(body));
     } catch (e) {
@@ -165,8 +205,10 @@ function MissionForm({ connectionId, connections, onWritten, onCancel }: {
   );
 
   return (
-    <Section label="Write a mission"
-      meta={connectionId ? `on ${connectionLabel(connectionId, connections)}` : "no connection selected — it will span every connection"}>
+    <Section label={editing ? "Edit this mission" : "Write a mission"}
+      meta={editing
+        ? `version ${editing.version} — saving writes version ${editing.version + 1} and keeps this one`
+        : connectionId ? `on ${connectionLabel(connectionId, connections)}` : "no connection selected — it will span every connection"}>
       {(templates.data?.templates.length ?? 0) > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Start from a template the installed packs ship:</span>
@@ -206,9 +248,15 @@ function MissionForm({ connectionId, connections, onWritten, onCancel }: {
         </div>
         <span />
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <Button size="xs" disabled={busy || !name.trim() || !metric.trim()} onClick={() => void submit()}>Write it</Button>
+          <ActorField actor={actor} id="mi-actor" />
+          <Button size="xs" disabled={busy || !name.trim() || !metric.trim() || (!actor.signedIn && !actor.by)}
+            onClick={() => void submit()}>{editing ? "Save as a new version" : "Write it"}</Button>
           <Button size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
-          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>It is written as proposed; activating it is a separate step.</span>
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+            {editing
+              ? `It stays ${editing.state}, and its next report keeps its day unless the cadence changes.`
+              : "It is written as proposed; activating it is a separate step."}
+          </span>
           {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
         </div>
       </div>
@@ -226,17 +274,44 @@ const NEXT_STATES: Record<string, { to: string; label: string }[]> = {
   retired: [],
 };
 
-function MissionReader({ id, connections, onBack, onOpenInquiry, onOpenDecision, onOpenClaim, onOpenMonitors }: {
+/** What "report now" did — said in the words of the door that did it. */
+function deliveryWords(d: { status?: string; note?: string } | undefined, sent: boolean): string {
+  if (!sent) return "Booked as of today. It was not sent — you asked for the book only.";
+  if (d?.status === "sent" || d?.status === "delivered" || d?.status === "departed") return "Booked as of today and sent to the owner.";
+  if (d?.status === "held") return `Booked as of today. The send was held at the gate${d.note ? `: ${d.note}` : "."}`;
+  return `Booked as of today. It was not sent${d?.note ? `: ${d.note}` : "."}`;
+}
+
+function MissionReader({ id, connections, onBack, onMoved, onOpenInquiry, onOpenDecision, onOpenClaim, onOpenMonitors }: {
   id: string; connections: Connection[]; onBack: () => void;
+  /** An edit books a new version; the page follows it. */
+  onMoved: (id: string) => void;
   onOpenInquiry: (id: string) => void; onOpenDecision: (id: string) => void; onOpenClaim: (id: string) => void;
   onOpenMonitors: () => void;
 }) {
   const load = useLoad(() => getMission(id), [id]);
   const [error, setError] = useState("");
+  const [panel, setPanel] = useState<"" | "edit" | "report">("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
   const m = load.data;
   const move = async (to: string) => {
     setError("");
     try { await setMissionState(id, to); load.reload(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const report = async (deliver: boolean) => {
+    setBusy(true);
+    setError("");
+    try {
+      const out = await reportMissionNow(id, deliver);
+      setSaid(deliveryWords(out.delivery, deliver));
+      setPanel("");
+      load.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
@@ -244,14 +319,39 @@ function MissionReader({ id, connections, onBack, onOpenInquiry, onOpenDecision,
         chips={m && <StatusChip hue={STATE_HUE[m.state] ?? "muted"}>{m.state}</StatusChip>}
         actions={m && (
           <span style={{ display: "inline-flex", gap: 6 }}>
+            {m.state !== "retired" && (
+              <Button size="xs" variant="ghost" aria-expanded={panel === "edit"} onClick={() => setPanel(p => (p === "edit" ? "" : "edit"))}>Edit</Button>
+            )}
+            <Button size="xs" variant="ghost" aria-expanded={panel === "report"} onClick={() => setPanel(p => (p === "report" ? "" : "report"))}>Report now</Button>
             {(NEXT_STATES[m.state] ?? []).map(s => (
               <Button key={s.to} size="xs" variant={s.to === "active" ? "default" : "outline"} onClick={() => void move(s.to)}>{s.label}</Button>
             ))}
           </span>
         )} />
       {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: 0, padding: "8px 20px" }}>{error}</p>}
+      {said && !error && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: 0, padding: "8px 20px" }}>{said}</p>}
+      {m && panel === "report" && (
+        <div className="aug-callout" style={{ margin: "12px 20px 0" }}>
+          <p className="aug-fs-ui" style={{ color: "var(--t1)", margin: "0 0 8px" }}>
+            This books the report as it reads now, as of today, and moves the next one a {m.review.cadence.replace(/ly$/, "")} on.{" "}
+            {m.owner
+              ? <>Sending it goes to {whoLabel(m.owner)} through the gate, which may hold it.</>
+              : <>It has no owner, so there is nobody to send it to.</>}
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {m.owner && <Button size="xs" disabled={busy} onClick={() => void report(true)}>Book and send</Button>}
+            <Button size="xs" variant={m.owner ? "outline" : "default"} disabled={busy} onClick={() => void report(false)}>Book without sending</Button>
+            <Button size="xs" variant="ghost" onClick={() => setPanel("")}>Cancel</Button>
+          </div>
+        </div>
+      )}
       <Gate load={load} what="the mission">
         {detail => <MissionBodyView m={detail} connections={connections}
+          form={panel === "edit" && (
+            <MissionForm editing={detail} connectionId={detail.scope.connections[0] ?? ""} connections={connections}
+              onCancel={() => setPanel("")}
+              onWritten={next => { setPanel(""); setSaid(`Saved as version ${next.version}. Version ${detail.version} is kept.`); onMoved(next.id); load.reload(); }} />
+          )}
           onOpenInquiry={onOpenInquiry} onOpenDecision={onOpenDecision} onOpenClaim={onOpenClaim} onOpenMonitors={onOpenMonitors} />}
       </Gate>
     </div>
@@ -263,14 +363,19 @@ const OBJECTIVE_HUE: Record<string, ChipHue> = {
   behind: "negative", worse: "negative", no_effect: "caution", cannot_tell: "muted",
 };
 
-function MissionBodyView({ m, connections, onOpenInquiry, onOpenDecision, onOpenClaim, onOpenMonitors }: {
+function MissionBodyView({ m, connections, form, onOpenInquiry, onOpenDecision, onOpenClaim, onOpenMonitors }: {
   m: MissionDetail; connections: Connection[];
+  /** The edit form, when it is open — above the report it will change. */
+  form?: React.ReactNode;
   onOpenInquiry: (id: string) => void; onOpenDecision: (id: string) => void; onOpenClaim: (id: string) => void;
   onOpenMonitors: () => void;
 }) {
   // The report as it would read now, composed from fields and not booked; the booked ones are
-  // the cadence's, listed beneath with the day each was written.
-  const report = useLoad(() => getMissionReport(m.id, true), [m.id, m.version]);
+  // the cadence's, listed beneath with the day each was written — and any one of them opens in
+  // full, as it was written on its day.
+  const [pastId, setPastId] = useState("");
+  const report = useLoad(
+    () => (pastId ? getPastMissionReport(m.id, pastId) : getMissionReport(m.id, true)), [m.id, m.version, pastId, m.reports.length]);
   const ceiling = Object.entries(m.budget.authority_ceiling);
   const rail = (
     <>
@@ -294,6 +399,15 @@ function MissionBodyView({ m, connections, onOpenInquiry, onOpenDecision, onOpen
   );
   return (
     <Page rail={rail}>
+      {form}
+      {pastId && (
+        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+          <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>
+            This is a past report, as it was written{report.data?.report ? ` on ${day(report.data.report.composed_at)}` : ""}.{" "}
+          </span>
+          <Button size="xs" variant="link" onClick={() => setPastId("")}>Back to how it reads now</Button>
+        </div>
+      )}
       <Gate load={report} what="the mission's report">
         {r => r.report
           ? <ReportView report={r.report} m={m} onOpenInquiry={onOpenInquiry} onOpenDecision={onOpenDecision}
@@ -309,6 +423,10 @@ function MissionBodyView({ m, connections, onOpenInquiry, onOpenDecision, onOpen
             <div className="aug-item-foot aug-fs-sm">
               {r.period && <span>{day(r.period.from)} to {day(r.period.to)}</span>}
               {r.verdict && <span>{verdictWords(r.verdict)}</span>}
+              <span style={{ flex: 1 }} />
+              {pastId === r.id
+                ? <span>open above</span>
+                : <Button size="xs" variant="ghost" onClick={() => setPastId(r.id)}>Read it in full</Button>}
             </div>
           </div>
         ))}
@@ -329,7 +447,7 @@ function ReportView({ report, m, onOpenInquiry, onOpenDecision, onOpenClaim, onO
   return (
     <>
       <Section label="The objective against its baseline" meta={`${day(report.period.from)} to ${day(report.period.to)}`}>
-        <p className="aug-fs-h1 aug-lede">{objectiveLine(m.objective)}</p>
+        <p className="aug-fs-h1 aug-lede">{objectiveLine(report.objective.metric ? report.objective : m.objective)}</p>
         <div className="aug-item">
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
             <StatusChip hue={OBJECTIVE_HUE[o.verdict] ?? "muted"}>{verdictWords(o.verdict)}</StatusChip>

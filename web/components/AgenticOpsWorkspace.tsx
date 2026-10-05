@@ -273,14 +273,16 @@ export function AgenticOpsWorkspace({
             onOpenActivity={() => onLayerChange("activity")}
             onOpenAgents={() => onLayerChange("agents")}
             onOpenActionCentre={() => onLayerChange("action-centre")}
-            onOpenDeveloper={() => onLayerChange("developer")} />
+            onOpenDeveloper={() => onLayerChange("developer")}
+            onOpenHub={() => onLayerChange("hub")} />
         );
         if (id === "action-centre") return (
           <ActionCentrePanel connections={connections ?? []} selectedConn={connId ?? ""}
             onOpenDeclared={() => onOpenDeclaredActions?.()} onOpenApprovals={() => onOpenApprovals?.()} />
         );
         if (id === "developer") return (
-          <DeveloperPanel onOpenPacks={() => onOpenSettings?.()} onOpenIntegrations={() => onOpenIntegrations?.()} />
+          <DeveloperPanel onOpenPacks={() => onOpenSettings?.()} onOpenIntegrations={() => onOpenIntegrations?.()}
+            onOpenDeclared={() => onOpenDeclaredActions?.()} />
         );
         if (id === "departures") return (
           // Hub-wide, like the map: every departure the platform recorded, any connection.

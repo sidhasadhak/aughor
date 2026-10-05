@@ -226,3 +226,64 @@ def test_the_authority_door_lists_the_table_and_books_receipts(monkeypatch):
         R.authority_demote("refund", R.DemoteBody(connection_id=conn, why="  "), principal=None)
     rec = R.authority_record("refund", connection_id=conn)
     assert rec["demotion"] and rec["executions"] == []
+
+
+# ── what a person does from the Action centre ──────────────────────────────────────────────
+
+def test_a_persons_ceiling_only_lowers_and_is_lifted_as_a_new_version(monkeypatch):
+    from fastapi import HTTPException
+    from aughor.routers import authority as R
+    conn = _conn()
+    assert A.person_ceiling("refund", conn) is None and A.level_for(_action(), conn)["person_ceiling"] is None
+    for bad in (6, -1, True):
+        with pytest.raises(ValueError, match="L0–L5"):
+            A.set_ceiling("refund", conn, level=bad, by="user:ana")
+    with pytest.raises(ValueError, match="nothing to lift"):
+        A.set_ceiling("refund", conn, level=None, by="user:ana")
+    A.set_ceiling("refund", conn, level=2, by="user:ana", why="finance is mid-audit")
+    capped = A.level_for(_action(), conn)
+    assert (capped["level"], capped["earned"], capped["ceiling"]) == (2, 3, 2)
+    assert capped["person_ceiling"]["level"] == 2 and capped["person_ceiling"]["by"] == "user:ana"
+    assert any("user:ana capped it at L2" in n and "finance is mid-audit" in n for n in capped["notes"])
+    # another action and another connection are untouched
+    assert A.level_for(_action(id="pause_promo"), conn)["level"] == 3 and A.level_for(_action(), _conn())["level"] == 3
+    # a ceiling above what the record earned grants nothing, and never opens L5
+    A.set_ceiling("refund", conn, level=5, by="user:ana")
+    high = A.level_for(_action(), conn)
+    assert (high["level"], high["ceiling"]) == (3, 4)
+    # the lower of a mission's ceiling and the person's binds
+    assert A.level_for(_action(), conn, ceiling=1)["level"] == 1
+    out = R.authority_ceiling("refund", R.CeilingBody(connection_id=conn, level=None), principal=None)
+    assert out["entry"]["level"] is None and A.person_ceiling("refund", conn) is None
+    assert A.level_for(_action(), conn)["person_ceiling"] is None
+    with pytest.raises(HTTPException) as exc:
+        R.authority_ceiling("refund", R.CeilingBody(connection_id=conn, level=9), principal=None)
+    assert exc.value.status_code == 422
+    from aughor.kernel.events import CATALOGUE
+    assert "authority.ceiling" in CATALOGUE
+
+
+def test_a_standing_grant_is_signed_only_at_l4_and_a_drill_is_a_demotion_that_says_so(monkeypatch):
+    from fastapi import HTTPException
+    from aughor.routers import authority as R
+    conn = _conn()
+    monkeypatch.setattr(R, "_actions", lambda c, s: {"refund": _action()})
+    with pytest.raises(HTTPException) as exc:                           # at L3: widening is itself a graduation
+        R.authority_widen("refund", R.WidenBody(connection_id=conn, target_value="ord-1"), principal=None)
+    assert exc.value.status_code == 422 and "a policy grant needs L4" in exc.value.detail
+    with pytest.raises(HTTPException) as exc:
+        R.authority_widen("refund", R.WidenBody(connection_id=conn, target_value="  "), principal=None)
+    assert exc.value.status_code == 422 and "bound to one target value" in exc.value.detail
+    # at L4 the grant is minted, bound, expiring and capped, citing the receipt
+    monkeypatch.setattr(A, "level_for", lambda action, scope, **kw: {"level": 4, "label": "execute within policy",
+                                                                    "why": "graduated", "graduation": "receipt-9"})
+    signed = R.authority_widen("refund", R.WidenBody(connection_id=conn, target_value="ord-1", expires_days=7, max_uses=3),
+                               principal=None)["grant"]
+    assert (signed["target_arg"], signed["target_value"], signed["max_uses"]) == ("order_id", "ord-1", 3)
+    assert signed["graduation_receipt"] == "receipt-9" and signed["expires_at"] and signed["created_by"] == "unidentified"
+    assert [g.id for g in grants.list_grants(conn)] == [signed["id"]]
+    monkeypatch.undo()
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    drill = R.authority_demote("refund", R.DemoteBody(connection_id=conn, why="quarterly drill", drill=True), principal=None)
+    assert drill["drill"] is True and A._latest(A.DEMOTION_KIND, "refund", conn)["evidence"] == {"drill": True}
+    assert grants.list_grants(conn) == []                              # a demotion withdraws the standing grants, drill or not

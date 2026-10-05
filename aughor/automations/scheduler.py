@@ -195,6 +195,15 @@ def score_due_predictions_hourly(*, now: Optional[float] = None, force: bool = F
     from aughor.db.measure import run_sql_for
     from aughor.record.scenario import score_due_predictions
     scored = score_due_predictions(run_sql_for=run_sql_for)
+    # A Briefing's own predictions carry no one-table spec: each is scored by measuring its metric
+    # for its range the Briefing's way (`aughor.briefing.expected`).
+    try:
+        from aughor.briefing.expected import score_due
+        scored = [*scored, *score_due()]
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the Briefing's predictions could not be scored this hour; the next tick tries again",
+                 counter="briefing.expected.score")
     for cid in scored:
         logger.info("prediction %s scored", cid)
     return len(scored)

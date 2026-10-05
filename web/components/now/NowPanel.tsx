@@ -14,16 +14,22 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { getDepartures, getNeedsHuman, type Connection, type Departure, type NeedsHuman } from "@/lib/api";
+import { approverName } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { owes, summaryLine, whenText } from "@/lib/departures";
 import { countNoun } from "@/lib/format";
 import { connectionLabel, destinationLabel, needsYouTitle } from "@/lib/names";
 import {
-  getAttentionBudget, getAttentionHeld, getCorrections, listDecisions, listInquiries, listMissions,
-  setAttentionSlots, whoLabel,
+  WAITING_CHANGED_EVENT, getAttentionBudget, getAttentionHeld, getCorrections, getSetAside, listDecisions,
+  listInquiries, listMissions, restoreItem, setAttentionSlots, setItemAside, whoLabel,
   type AttentionBudget, type CorrectionEntry, type Decision, type HeldItem, type Inquiry, type Mission,
+  type SetAside, type SetAsideKind,
 } from "@/lib/record";
-import { Absent, Gate, Page, Section, day, dayDistance, useLoad } from "@/components/record/kit";
+import {
+  Absent, ActorField, Gate, Page, Section, day, dayDistance, useActor, useLoad, type Actor,
+} from "@/components/record/kit";
+import { ProposalCardById } from "@/components/ProposalCard";
+import { InspectorHost, type Inspect, type InspectLayer } from "@/components/record/Inspector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -80,6 +86,8 @@ export interface NowDoors {
   onOpenBriefing: (connectionId?: string) => void;
   onOpenCorrections: () => void;
   onOpenMissions: () => void;
+  /** A record's own page — where the inspector's "Open full page" goes. */
+  onOpenRecord: (layer: InspectLayer, id: string) => void;
   /** Home — where a first run connects data and asks its first question. */
   onOpenHome: () => void;
 }
@@ -92,6 +100,7 @@ export function NowPanel({ connections, contextReady, doors }: {
 }) {
   const week = useLoad(readWeek, []);
   const waiting = useLoad(readWaiting, []);
+  const aside = useLoad(getSetAside, []);
   const corrections = useLoad(() => getCorrections({ limit: 60 }), []);
   const briefing = useLoad(readOrgBriefing, []);
   const missions = useLoad(() => listMissions({ state: "active" }), []);
@@ -113,6 +122,8 @@ export function NowPanel({ connections, contextReady, doors }: {
   if (firstRun) return <FirstRun doors={doors} />;
 
   return (
+    <InspectorHost connections={connections} pageKey="now" onOpenFull={doors.onOpenRecord}>
+      {inspect => (
     <Page>
       <Section label="This week's slots" meta={week.data ? slotsMeta(week.data) : undefined}>
         <Gate load={week} what="this week's sends">
@@ -120,16 +131,18 @@ export function NowPanel({ connections, contextReady, doors }: {
         </Gate>
       </Section>
 
-      <Section label="Waiting on you" meta={waiting.data ? waitingMeta(waiting.data) : undefined}>
+      <Section label="Waiting on you" meta={waiting.data ? waitingMeta(waiting.data, aside.data?.active ?? []) : undefined}>
         <Gate load={waiting} what="what waits on a person">
-          {w => <WaitingList waiting={w} connections={connections} doors={doors} />}
+          {w => <WaitingList waiting={w} aside={aside.data?.active ?? []} returned={aside.data?.returned ?? []}
+            connections={connections} doors={doors} inspect={inspect} onResolved={waiting.reload}
+            onAsideChanged={() => { aside.reload(); window.dispatchEvent(new Event(WAITING_CHANGED_EVENT)); }} />}
         </Gate>
       </Section>
 
       <Section label="Since you were here" meta={since ? `last visit ${whenText(since)}` : "your first visit in this browser — the last seven days"}
         action={<Button variant="ghost" size="xs" onClick={doors.onOpenCorrections}>All corrections</Button>}>
         <Gate load={corrections} what="what was restated">
-          {c => <Restated entries={c.entries} since={since} labels={c.labels} />}
+          {c => <Restated entries={c.entries} since={since} labels={c.labels} inspect={inspect} />}
         </Gate>
       </Section>
 
@@ -146,6 +159,8 @@ export function NowPanel({ connections, contextReady, doors }: {
         </Gate>
       </Section>
     </Page>
+      )}
+    </InspectorHost>
   );
 }
 
@@ -156,15 +171,35 @@ function slotsMeta(w: Week): string {
   return `${used} of ${slots} used across ${countNoun(w.budgets.length, "place")}`;
 }
 
-function waitingMeta(w: Waiting): string {
-  const n = w.decisions.length + w.inquiries.length + w.departures.length + w.needs.rows.length;
-  return n === 0 ? "nothing" : countNoun(n, "thing");
+/** One row of "Waiting on you", whatever it is about, with the name a set-aside knows it by. */
+interface WaitingRow {
+  kind: SetAsideKind;
+  /** The stable name: a decision's or an inquiry's key outlives its versions. */
+  ref: string;
+  /** What the set-aside door is given: the id the page holds today. */
+  id: string;
+  title: string;
 }
 
-/** The number a person is waited on for — the Now badge reads the same reads. */
-export function waitingCount(w: Waiting): number {
-  return w.decisions.length + w.inquiries.length + w.departures.length + w.needs.rows.length;
+function rowsOf(w: Waiting): WaitingRow[] {
+  return [
+    ...w.decisions.map(d => ({ kind: "decision" as const, ref: d.key, id: d.id, title: `What became of “${d.chosen}”?` })),
+    ...w.inquiries.map(q => ({ kind: "inquiry" as const, ref: q.key, id: q.id, title: q.question })),
+    ...w.departures.map(d => ({ kind: "departure" as const, ref: d.id, id: d.id, title: summaryLine(d) })),
+    ...w.needs.rows.map(r => ({ kind: "approval" as const, ref: `${r.source}:${r.id}`, id: `${r.source}:${r.id}`, title: needsYouTitle(r.title).display })),
+  ];
 }
+
+const asideKey = (kind: string, ref: string) => `${kind}:${ref}`;
+
+function waitingMeta(w: Waiting, active: SetAside[]): string {
+  const hidden = new Set(active.map(a => asideKey(a.item_kind, a.ref)));
+  const rows = rowsOf(w);
+  const aside = rows.filter(r => hidden.has(asideKey(r.kind, r.ref))).length;
+  const n = rows.length - aside;
+  return `${n === 0 ? "nothing" : countNoun(n, "thing")}${aside ? ` · ${aside} set aside` : ""}`;
+}
+
 
 // ── 1 · the week's slots ─────────────────────────────────────────────────────────────────
 
@@ -283,51 +318,172 @@ function SentItem({ d, missions, connections, doors }: {
 
 // ── 2 · waiting on a person ──────────────────────────────────────────────────────────────
 
-function WaitingList({ waiting, connections, doors }: { waiting: Waiting; connections: Connection[]; doors: NowDoors }) {
-  const none = waitingCount(waiting) === 0;
-  if (none) {
-    return <Absent>Nothing is addressed to a person: no review date has come, no inquiry is due, no send is waiting on an answer and no approval is open.</Absent>;
-  }
+const tomorrow = () => new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * "Not now": the row leaves this list until a day the person picks, with why. Nothing about the
+ * thing itself is written — a review set aside is still due on its own page — and it comes back
+ * on that day, or sooner if the record behind it changes.
+ */
+function NotNow({ row, actor, onDone, onCancel }: {
+  row: WaitingRow; actor: Actor; onDone: () => void; onCancel: () => void;
+}) {
+  const [until, setUntil] = useState("");
+  const [why, setWhy] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await setItemAside({ kind: row.kind, ref: row.id, until, why: why.trim(), title: row.title, by: actor.by });
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+      <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Not until</span>
+      <Input type="date" aria-label="Set aside until" min={tomorrow()} value={until} onChange={e => setUntil(e.target.value)} style={{ width: 160 }} />
+      <Input aria-label="Why it is set aside" value={why} onChange={e => setWhy(e.target.value)} placeholder="Why — what it waits for" style={{ flex: "1 1 240px" }} />
+      <ActorField actor={actor} id={`aside-by-${row.kind}-${row.id}`} />
+      <Button size="xs" disabled={busy || !until || !why.trim()} onClick={() => void submit()}>Set aside</Button>
+      <Button size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
+      <span className="aug-fs-sm" style={{ color: "var(--t3)", flexBasis: "100%" }}>
+        It comes back on that day, or sooner if what it rests on changes. Nothing is recorded on the item itself.
+      </span>
+      {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", flexBasis: "100%" }}>{error}</span>}
+    </div>
+  );
+}
+
+function WaitingList({ waiting, aside, returned, connections, doors, inspect, onResolved, onAsideChanged }: {
+  waiting: Waiting; connections: Connection[]; doors: NowDoors;
+  /** Read a row's record beside this page; its own button is what leaves for the page it is dealt with on. */
+  inspect: Inspect;
+  /** What a person set aside and is still off the list; what was set aside and is back. */
+  aside: SetAside[]; returned: SetAside[];
+  /** An approval was decided here; the list re-reads. */
+  onResolved: () => void;
+  onAsideChanged: () => void;
+}) {
+  const actor = useActor();
+  // The proposed action a person is deciding in place — the same card Attention shows, so what
+  // either click does is read before it is clicked.
+  const [deciding, setDeciding] = useState("");
+  const [decided, setDecided] = useState("");
+  const [deferring, setDeferring] = useState("");
+  const [showAside, setShowAside] = useState(false);
+  const [error, setError] = useState("");
+
+  const hidden = new Map(aside.map(a => [asideKey(a.item_kind, a.ref), a]));
+  const back = new Map(returned.map(a => [asideKey(a.item_kind, a.ref), a]));
+  const rows = rowsOf(waiting);
+  const rowFor = (kind: SetAsideKind, ref: string) => rows.find(r => r.kind === kind && r.ref === ref)!;
+  const isHidden = (kind: SetAsideKind, ref: string) => hidden.has(asideKey(kind, ref));
+  // Only what still waits can be set aside: one dealt with on its own page has left both lists.
+  const asideRows = rows.filter(r => isHidden(r.kind, r.ref)).map(r => ({ row: r, a: hidden.get(asideKey(r.kind, r.ref))! }));
+  const shown = rows.length - asideRows.length;
+
+  /** The buttons every row ends with, and — when open — the form under it. */
+  const notNow = (kind: SetAsideKind, ref: string) => {
+    const row = rowFor(kind, ref);
+    const key = asideKey(kind, ref);
+    return {
+      button: <Button size="xs" variant="ghost" aria-expanded={deferring === key} onClick={() => setDeferring(x => (x === key ? "" : key))}>Not now</Button>,
+      form: deferring === key && (
+        <NotNow row={row} actor={actor} onCancel={() => setDeferring("")}
+          onDone={() => { setDeferring(""); setDecided("Set aside. It is listed below until its day."); onAsideChanged(); }} />
+      ),
+      // It was set aside and is here again: say so, and why.
+      note: back.has(key) && (
+        <span style={{ color: "var(--amb4)" }}>
+          back {back.get(key)!.back_because.startsWith("its day came") ? "on its day" : `early: ${back.get(key)!.back_because}`}
+          {" — set aside by "}{whoLabel(back.get(key)!.by)}: {back.get(key)!.why}
+        </span>
+      ),
+    };
+  };
+  const restore = async (a: SetAside) => {
+    setError("");
+    try { await restoreItem(a.item_kind, a.ref, actor.by); onAsideChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+
   return (
     <div>
-      {waiting.decisions.map(d => (
-        <div className="aug-item" key={`decision:${d.id}`}>
-          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
-            What became of &ldquo;{d.chosen}&rdquo;?
+      {decided && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 8px" }}>{decided}</p>}
+      {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "0 0 8px" }}>{error}</p>}
+      {shown === 0 && (
+        <Absent>
+          {asideRows.length
+            ? "Nothing else is addressed to a person right now."
+            : "Nothing is addressed to a person: no review date has come, no inquiry is due, no send is waiting on an answer and no approval is open."}
+        </Absent>
+      )}
+      {waiting.decisions.filter(d => !isHidden("decision", d.key)).map(d => {
+        const n = notNow("decision", d.key);
+        return (
+          <div className="aug-item" key={`decision:${d.id}`}>
+            <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
+              <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => inspect("decisions", d.id)}>
+                What became of &ldquo;{d.chosen}&rdquo;?
+              </Button>
+            </div>
+            <div className="aug-item-foot aug-fs-sm">
+              <span>review date {day(d.review_on)} · {dayDistance(d.review_on)}</span>
+              <span>decided by {whoLabel(d.decided_by)}</span>
+              {n.note}
+              <span style={{ flex: 1 }} />
+              {n.button}
+              <Button size="xs" variant="outline" onClick={() => doors.onOpenDecision(d.id)}>Open the decision</Button>
+            </div>
+            {n.form}
           </div>
-          <div className="aug-item-foot aug-fs-sm">
-            <span>review date {day(d.review_on)} · {dayDistance(d.review_on)}</span>
-            <span>decided by {whoLabel(d.decided_by)}</span>
-            <span style={{ flex: 1 }} />
-            <Button size="xs" variant="outline" onClick={() => doors.onOpenDecision(d.id)}>Open the decision</Button>
+        );
+      })}
+      {waiting.inquiries.filter(q => !isHidden("inquiry", q.key)).map(q => {
+        const n = notNow("inquiry", q.key);
+        return (
+          <div className="aug-item" key={`inquiry:${q.id}`}>
+            <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
+              <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => inspect("inquiries", q.id)}>{q.question}</Button>
+            </div>
+            <div className="aug-item-foot aug-fs-sm">
+              <span>its check date has come ({day(q.next_check)}){q.waiting_for ? ` — it was waiting for ${q.waiting_for}` : ""}</span>
+              {n.note}
+              <span style={{ flex: 1 }} />
+              {n.button}
+              <Button size="xs" variant="outline" onClick={() => doors.onOpenInquiry(q.id)}>Open the inquiry</Button>
+            </div>
+            {n.form}
           </div>
-        </div>
-      ))}
-      {waiting.inquiries.map(q => (
-        <div className="aug-item" key={`inquiry:${q.id}`}>
-          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{q.question}</div>
-          <div className="aug-item-foot aug-fs-sm">
-            <span>its check date has come ({day(q.next_check)}){q.waiting_for ? ` — it was waiting for ${q.waiting_for}` : ""}</span>
-            <span style={{ flex: 1 }} />
-            <Button size="xs" variant="outline" onClick={() => doors.onOpenInquiry(q.id)}>Open the inquiry</Button>
+        );
+      })}
+      {waiting.departures.filter(d => !isHidden("departure", d.id)).map(d => {
+        const n = notNow("departure", d.id);
+        return (
+          <div className="aug-item" key={`departure:${d.id}`}>
+            <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{summaryLine(d)}</div>
+            <div className="aug-item-foot aug-fs-sm">
+              <span>{owes(d) === "answer" ? "an owner's answer is needed" : "its declarer marks it right or wrong"}</span>
+              <span>{destinationLabel(d.target).label}</span>
+              {n.note}
+              <span style={{ flex: 1 }} />
+              {n.button}
+              <Button size="xs" variant="outline" onClick={() => doors.onOpenDepartures(d.id)}>
+                {owes(d) === "answer" ? "Answer" : "Mark it"}
+              </Button>
+            </div>
+            {n.form}
           </div>
-        </div>
-      ))}
-      {waiting.departures.map(d => (
-        <div className="aug-item" key={`departure:${d.id}`}>
-          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{summaryLine(d)}</div>
-          <div className="aug-item-foot aug-fs-sm">
-            <span>{owes(d) === "answer" ? "an owner's answer is needed" : "its declarer marks it right or wrong"}</span>
-            <span>{destinationLabel(d.target).label}</span>
-            <span style={{ flex: 1 }} />
-            <Button size="xs" variant="outline" onClick={() => doors.onOpenDepartures(d.id)}>
-              {owes(d) === "answer" ? "Answer" : "Mark it"}
-            </Button>
-          </div>
-        </div>
-      ))}
-      {waiting.needs.rows.map(r => {
+        );
+      })}
+      {waiting.needs.rows.filter(r => !isHidden("approval", `${r.source}:${r.id}`)).map(r => {
         const t = needsYouTitle(r.title);
+        const n = notNow("approval", `${r.source}:${r.id}`);
         return (
           <div className="aug-item" key={`needs:${r.source}:${r.id}`}>
             <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{t.display}</div>
@@ -335,12 +491,46 @@ function WaitingList({ waiting, connections, doors }: { waiting: Waiting; connec
               <span>{NEEDS_WORDS[r.source] ?? "an action waits for approval"}</span>
               {r.connection_id && <span>{connectionLabel(r.connection_id, connections)}</span>}
               {r.since && <span>since {whenText(r.since)}</span>}
+              {n.note}
               <span style={{ flex: 1 }} />
-              <Button size="xs" variant="outline" onClick={doors.onOpenAttention}>Resolve</Button>
+              {n.button}
+              {r.source === "kinetic_inbox"
+                ? <Button size="xs" variant="outline" aria-expanded={deciding === r.id}
+                    onClick={() => setDeciding(x => (x === r.id ? "" : r.id))}>{deciding === r.id ? "Close" : "Review and decide"}</Button>
+                : <Button size="xs" variant="outline" onClick={doors.onOpenAttention}>Resolve</Button>}
             </div>
+            {n.form}
+            {deciding === r.id && (
+              <div style={{ marginTop: 8 }}>
+                <ProposalCardById proposalId={r.id} actor={approverName("now")}
+                  onResolved={(status, message) => { setDecided(message); if (status === "ok") { setDeciding(""); onResolved(); } }} />
+              </div>
+            )}
           </div>
         );
       })}
+      {asideRows.length > 0 && (
+        <div className="aug-item" data-testid="now-set-aside">
+          <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+            <span className="aug-fs-ui" style={{ color: "var(--t2)" }}>
+              Set aside: {countNoun(asideRows.length, "item")}, the next back on {day(asideRows.map(x => x.a.until).sort()[0])}
+            </span>
+            <span style={{ flex: 1 }} />
+            <Button size="xs" variant="ghost" aria-expanded={showAside} onClick={() => setShowAside(v => !v)}>{showAside ? "Hide" : "Show"}</Button>
+          </div>
+          {showAside && asideRows.map(({ row, a }) => (
+            <div key={asideKey(row.kind, row.ref)} style={{ marginTop: 10 }}>
+              <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{row.title}</div>
+              <div className="aug-item-foot aug-fs-sm">
+                <span>set aside by {whoLabel(a.by)} until {day(a.until)} · {dayDistance(a.until)}</span>
+                <span>{a.why}</span>
+                <span style={{ flex: 1 }} />
+                <Button size="xs" variant="outline" onClick={() => void restore(a)}>Restore</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -355,9 +545,13 @@ const NEEDS_WORDS: Record<string, string> = {
 
 // ── 3 · since you were here ──────────────────────────────────────────────────────────────
 
-function Restated({ entries, since, labels }: {
-  entries: CorrectionEntry[]; since: string | null; labels: Record<string, string>;
+function Restated({ entries, since, labels, inspect }: {
+  entries: CorrectionEntry[]; since: string | null; labels: Record<string, string>; inspect: Inspect;
 }) {
+  // What a correction is about, when it is a record the drawer can read.
+  const target = (e: CorrectionEntry): [InspectLayer, string] | null =>
+    e.kind === "decision_worse_than_expected" && e.decision ? ["decisions", e.decision]
+      : e.kind !== "missed_move" && e.ref ? ["claims", e.ref] : null;
   // A first visit reads the last seven days; the floor is fixed as the section arrives.
   const [weekAgo] = useState(() => new Date(Date.now() - 7 * 86_400_000).toISOString());
   const shown = useMemo(() => {
@@ -371,7 +565,11 @@ function Restated({ entries, since, labels }: {
     <div>
       {shown.map(e => (
         <div className="aug-item" key={`${e.kind}:${e.ref}:${e.at}`}>
-          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{e.replaced_by}</div>
+          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
+            {target(e)
+              ? <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => inspect(...target(e)!)}>{e.replaced_by}</Button>
+              : e.replaced_by}
+          </div>
           <div className="aug-item-foot aug-fs-sm">
             <span>{labels[e.kind] ?? e.kind}</span>
             <span>was: {e.believed}</span>

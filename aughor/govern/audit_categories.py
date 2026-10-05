@@ -109,6 +109,7 @@ KIND_CATEGORY: dict[str, str] = {
     # `pack.installed` is governance and a status flip is not.
     "authority.graduated": "governance_change",
     "authority.demoted": "governance_change",
+    "authority.ceiling": "governance_change",
     "service_principal.minted": "governance_change",
     "mcp.oauth": "governance_change",
     "method.registered": "governance_change",
@@ -275,6 +276,10 @@ def _summarize(kind: str, p: dict) -> str:
         revoked = p.get("grants_revoked") or 0
         return (f"{p.get('action_id', '?')} on {p.get('scope') or '*'} demoted: {str(p.get('why') or '?')[:120]}"
                 + (f" ({revoked} standing grant{'s' if revoked != 1 else ''} withdrawn)" if revoked else ""))
+    if kind == "authority.ceiling":
+        capped = "the ceiling was lifted" if p.get("level") is None else f"capped at L{p.get('level')}"
+        return (f"{p.get('action_id', '?')} on {p.get('scope') or '*'}: {capped} by {p.get('by') or '?'}"
+                + (f" — {str(p.get('why'))[:120]}" if p.get("why") else ""))
     if kind == "service_principal.minted":
         what = ("minted" if not p.get("rotated") else "rotated") if p.get("active") else "revoked"
         return f"service principal {p.get('name', '?')} {what}"
@@ -506,6 +511,7 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("governance_change", lambda n: _from_ledger("pack.installed", n)),
     ("governance_change", lambda n: _from_ledger("authority.graduated", n)),
     ("governance_change", lambda n: _from_ledger("authority.demoted", n)),
+    ("governance_change", lambda n: _from_ledger("authority.ceiling", n)),
     ("governance_change", lambda n: _from_ledger("service_principal.minted", n)),
     ("governance_change", lambda n: _from_ledger("mcp.oauth", n)),
     ("governance_change", lambda n: _from_ledger("method.registered", n)),

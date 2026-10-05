@@ -158,11 +158,14 @@ def test_the_heartbeat_scores_predictions_hourly(monkeypatch):
     from aughor.automations import scheduler as Sch
     from aughor.record import scenario as S
     calls: list[int] = []
+    briefing: list[int] = []
     monkeypatch.setattr(S, "score_due_predictions", lambda *, run_sql_for, now=None: calls.append(1) or [])
+    # the same tick scores a Briefing's own predictions, which carry no one-table spec (§6 item 42c)
+    monkeypatch.setattr("aughor.briefing.expected.score_due", lambda **kw: briefing.append(1) or ["a-briefing-prediction"])
     monkeypatch.setattr(Sch, "_last_prediction_check", 0.0)
-    assert Sch.score_due_predictions_hourly(now=10_000.0) == 0 and len(calls) == 1
-    assert Sch.score_due_predictions_hourly(now=10_000.0 + 60) == 0 and len(calls) == 1
-    assert Sch.score_due_predictions_hourly(now=10_000.0 + 3601) == 0 and len(calls) == 2
+    assert Sch.score_due_predictions_hourly(now=10_000.0) == 1 and len(calls) == len(briefing) == 1
+    assert Sch.score_due_predictions_hourly(now=10_000.0 + 60) == 0 and len(calls) == len(briefing) == 1
+    assert Sch.score_due_predictions_hourly(now=10_000.0 + 3601) == 1 and len(calls) == len(briefing) == 2
 
 
 def test_the_delivery_reaches_a_group_channel_through_the_gate_and_cites_the_departure(tmp_path, monkeypatch):

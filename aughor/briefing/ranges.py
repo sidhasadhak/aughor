@@ -395,6 +395,179 @@ def range_findings(measured: list[dict], block: dict, currency_code: Optional[st
     return out
 
 
+def _read_unit(time_kind: Optional[str], unit: str, values: list) -> str:
+    """A cohort's value is the share of its rows whose outcome arrived: 0..1 by construction, so it
+    reads as a percentage (theLook's return rate read 0.142857)."""
+    if time_kind == "cohort" and all(v is None or 0 <= v <= 1 for v in values):
+        return "ratio 0..1"
+    return unit
+
+
+def _figure_text(value: Optional[float], name: str, unit: str, currency: Optional[str]) -> Optional[str]:
+    from aughor.knowledge import period_brief
+    if unit == "ratio 0..1" and value is not None:
+        return _share(value)
+    return period_brief._fmt(value, name, unit, currency)
+
+
+def say_figures(measured: list[dict], currency: Optional[str]) -> None:
+    """Each measured figure worded once, in place: the screen shows the SAME text the lines and the
+    narrator read, whichever door measured it."""
+    for m in measured:
+        m["declared_unit"] = m["unit"]
+        m["unit"] = _read_unit(m.get("time_kind"), m["unit"], [m.get(k) for k in ("current", "previous", "last_year")])
+        for k in ("current", "previous", "last_year"):
+            m[f"{k}_text"] = _figure_text(m.get(k), m["name"], m["unit"], currency)
+
+
+def _currency(profile: Any, workspace_id: Optional[str]) -> Optional[str]:
+    from aughor.orgsettings import resolve_currency
+    return resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
+
+
+def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, workspace_id: Optional[str] = None,
+                   runner: Optional[Callable[[], Any]] = None) -> dict:
+    """The range's approved metrics, measured, and nothing else — the Cockpit's default view (ROADMAP
+    §6 item 43). The same measurement and the same wording a range Briefing carries, with no recipe
+    section, no narrative and no model call."""
+    from aughor.knowledge import period_brief
+
+    block = range_block(spec)
+    north = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
+    try:
+        with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
+            got = measure_range(conn_id, spec, run_sql=run_sql, dialect=dialect, north_stars=north)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the range measurement could not open the connection", counter="briefing.range.measure")
+        return {**block, "unmeasured": [{"name": "headline metrics",
+                                         "reason": f"the connection could not be opened ({type(exc).__name__})"}]}
+    say_figures(got["measured"], _currency(profile, workspace_id))
+    return {**block, **got}
+
+
+#: How many ranges a metric's trend reads, the range itself included. A year reaches less far back.
+TREND_RANGES = 8
+TREND_YEARS = 4
+
+
+def earlier_ranges(spec: RangeSpec, n: int) -> list[tuple[date, date]]:
+    """The range and the ``n - 1`` before it, oldest first, as ``(start, end)`` with ``end`` exclusive.
+    Each is stepped back the way the range's own comparison is: a month by a calendar month, a year
+    by a year, anything else by the whole weeks between the range and its comparison — so a day is
+    read against the same weekday."""
+    monthly = spec.period == "month" or spec.preset == "month_to_date"
+    yearly = spec.period == "year" or spec.preset == "year_to_date"
+    step = spec.start - spec.previous_start
+    out = [(spec.start, spec.end)]
+    s, e = spec.start, spec.end
+    for _ in range(max(0, n - 1)):
+        if yearly:
+            s, e = _year_back(s), _year_back(e)
+        elif monthly:
+            before = (s - timedelta(days=1)).replace(day=1)
+            # a whole month ends where the next begins; a month to date reads the same days of it
+            s, e = before, (s if spec.period == "month" else min(before + (e - s), s))
+        elif step.days > 0:
+            s, e = s - step, e - step
+        else:
+            break
+        out.append((s, e))
+    return out[::-1]
+
+
+def later_spec(spec: RangeSpec) -> Optional[RangeSpec]:
+    """The range after this one, of the same kind — the next day, week, month or year; a custom range
+    moved on by its own length — read at the same age as this one. None for a range to date: its next
+    reading is the same range, longer, not a new one. Its comparison is this range's own step back, so
+    ``earlier_ranges`` walks from it exactly as it walks from this one."""
+    from dataclasses import replace
+    if spec.preset in ("month_to_date", "year_to_date"):
+        return None
+    start = spec.end
+    if spec.period == "year":
+        try:
+            end = start.replace(year=start.year + 1)
+        except ValueError:           # 29 February
+            end = start.replace(year=start.year + 1, day=28)
+    elif spec.period == "month":
+        end = (start + timedelta(days=32)).replace(day=1)
+    else:
+        end = start + (spec.end - spec.start)
+    step = spec.start - spec.previous_start
+    return replace(spec, start=start, end=end, previous_start=start - step, previous_end=end - step,
+                   last_year_start=None, last_year_end=None, as_of=end + (spec.as_of - spec.end))
+
+
+def read_value(row: Optional[dict]) -> Optional[float]:
+    """A window's value, or None when it is not a reading: no row came back for it, or the rows it was
+    cut from number none. A count over an empty window answers 0 where a sum answers nothing; neither
+    is a figure anybody measured, and a trend or a band that took the 0 would be drawn from it."""
+    if not row or row.get("value") is None or not int(row.get("n") or 0):
+        return None
+    return row["value"]
+
+
+def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: Any = None,
+                 workspace_id: Optional[str] = None, runner: Optional[Callable[[], Any]] = None) -> dict:
+    """One approved metric read for the range and the ranges before it, with how it is defined and
+    dated — what a reader opens a figure for. One warehouse statement and no model call. Every
+    earlier range is read at the same age as the range, as its comparison is. A metric that cannot
+    be read says why and carries no series."""
+    from aughor.knowledge import period_brief
+    from aughor.knowledge.period_brief import partial_span
+    from aughor.semantic import metric_time as mt
+    from aughor.semantic.metrics import list_metrics
+
+    def approved():
+        return next((x for x in list_metrics(connection_id=conn_id)
+                     if x.name == metric_name and x.status == "approved" and x.connection == conn_id), None)
+
+    def describe(m) -> dict:
+        return {"metric": m.name, "found": True, "name": m.label or m.name, "unit": m.unit or "",
+                "definition": m.sql, "tables": list(m.tables), "filters": list(m.filters),
+                "caveats": m.caveats or "", "owner": m.owner or "", "approved_by": m.approved_by or "",
+                "version": m.version, "time_kind": m.time_kind, "time_source": m.time_source or "",
+                "confirmed": bool(m.time_confirmed_by), "series": [], "why": ""}
+
+    m = approved()
+    if m is None:
+        return {"metric": metric_name, "found": False, "series": [],
+                "why": "no approved metric by that name is on this connection"}
+    yearly = spec.period == "year" or spec.preset == "year_to_date"
+    age = spec.as_of - spec.end
+    windows = [Window(f"r{i}", s, e, as_of=e + age)
+               for i, (s, e) in enumerate(earlier_ranges(spec, TREND_YEARS if yearly else TREND_RANGES))]
+    try:
+        with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
+            # the same first step a Briefing's measurement takes: a metric's dates are set by rule
+            said = mt.ensure_dates(conn_id, run_sql=run_sql, dialect=dialect, today=spec.as_of)
+            m = approved() or m
+            if not mt.declared(m):
+                return {**describe(m), "why": said.get(m.name) or "its dates are not set"}
+            rows, why = mt.run_measure(m, windows, run_sql, dialect=dialect)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a metric's trend could not open the connection", counter="briefing.range.trend")
+        rows, why = [], f"the connection could not be opened ({type(exc).__name__})"
+    about, name = describe(m), m.label or m.name
+    if why:
+        return {**about, "why": why}
+    got = {r["window"]: r for r in rows}
+    values = [read_value(got.get(w.label)) for w in windows]
+    unit = _read_unit(m.time_kind, m.unit or "", values)
+    currency, slack = _currency(profile, workspace_id), _slack(spec.days)
+    series = []
+    for w, v in zip(windows, values):
+        row = got.get(w.label)
+        partial = (None if (row is None or v is None or m.time_kind == "stock")
+                   else partial_span(row["first"], row["last"], w.start, w.end, slack))
+        series.append({"start": _d(w.start), "last_day": _d(w.last_day), "label": _span(w.start, w.end),
+                       "value": v, "value_text": _figure_text(v, name, unit, currency) if v is not None else None,
+                       "partial": partial, "current": w is windows[-1]})
+    return {**about, "unit": unit, "series": series}
+
+
 def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domain_data: dict,
                          profile: Any, workspace_id: Optional[str] = None,
                          col_types: Optional[dict] = None, force_refresh: bool = False,
@@ -403,14 +576,13 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
     the lag moves. ``runner`` opens ``(run_sql, dialect)``; it defaults to the connection's own."""
     from aughor.knowledge import period_brief
     from aughor.knowledge.briefing import get_briefing
-    from aughor.orgsettings import resolve_currency
 
     from aughor.briefing.recipes import SECTIONS, recipe_for
 
     block = {**range_block(spec), "recipe": recipe_for(spec.preset),
              "sections": list(SECTIONS[recipe_for(spec.preset)])}
     north = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
-    currency = resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
+    currency = _currency(profile, workspace_id)
 
     def measure() -> dict:
         from aughor.briefing import recipes
@@ -433,16 +605,7 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
             return {"findings": [], "measured": [],
                     "unmeasured": [{"name": "headline metrics",
                                     "reason": f"the connection could not be opened ({type(exc).__name__})"}]}
-        for m in got["measured"]:   # the screen shows the SAME text the lines and the narrator read
-            m["declared_unit"] = m["unit"]
-            vals = [m.get(k) for k in ("current", "previous", "last_year")]
-            if m.get("time_kind") == "cohort" and all(v is None or 0 <= v <= 1 for v in vals):
-                # a cohort's value is the share of its rows whose outcome arrived: 0..1 by
-                # construction, so it reads as a percentage (theLook's return rate read 0.142857)
-                m["unit"] = "ratio 0..1"
-            for k in ("current", "previous", "last_year"):
-                m[f"{k}_text"] = (_share(m.get(k)) if m["unit"] == "ratio 0..1" and m.get(k) is not None
-                                  else period_brief._fmt(m.get(k), m["name"], m["unit"], currency))
+        say_figures(got["measured"], currency)
         candidates = extra.pop("candidates", {})
         return {**got, **extra, "findings": range_findings(got["measured"], block, currency),
                 "candidates": candidates}
