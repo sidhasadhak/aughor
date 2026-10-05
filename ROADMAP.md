@@ -13554,8 +13554,24 @@ the browser** · **measure the premise before building.**
     as a mock-up BEFORE it was built (§4.10's lesson). The user, on the mock-up: *"I actually liked the colour and
     structure here.. the actual colour, contrast and rounded boxes with clear text.. I think its great for the dark
     theme that we have."* The structure is in the drawer (a labelled part, each cited record a box of its own);
-    the colour was the mock-up tool's own neutral charcoal, not the Du Bois skin — **whether the dark skin moves
-    toward it is NOT decided** and nothing in the tokens changed.
+    the colour was the mock-up tool's own neutral charcoal, not the Du Bois skin — ~~**whether the dark skin moves
+    toward it is NOT decided** and nothing in the tokens changed~~ *decided the same night: item 41.*
+
+41. ✅ **DECIDED 2026-10-05 — the dark skin's greys move to neutral charcoal** (the user, on a side-by-side of three
+    real pages captured in both: *"go with charcoal.. in this same branch.."*). What moved: every surface, line and
+    text grey of the dark skin — page `#171717`, chrome and cards `#212121`, pressed `#303030`, hover `#2A2A2A`, lines
+    `#2A2A2A` · `#333333` · `#454545` · `#6E6E6E`, text `#EDEDED` · `#ABABAB` · `#9C9C9C`, the code well `#111111`,
+    the scrim. What did not: the one blue, the navy selection tint, the six intent ramps, the chart palette and its
+    order, every size and radius, and the whole light skin. It supersedes the 2026-10-04 "+8" lift of the Du Bois
+    greys (#567) — the greys it lifted are gone — and it is the third dark ground in a fortnight, so
+    `web/aughor-v2/theme/tokens-v2.css` carries the note. Measured: text is clearer on every surface (captions on a
+    card 5.87:1, was 4.92:1; on a pressed control 4.81:1, was 3.84:1); `--t3` is one step above the value in the
+    comparison (`#9C9C9C`, not `#9A9A9A`) so a caption on a selected row still clears 4.5:1. Fainter, and shown so
+    in the comparison: the row rule on the page (1.25:1, was 1.39:1) and the step from page to chrome (1.11:1, was
+    1.22:1). `--chart-deemph` keeps its slate cast: it is a series colour, held by the chart gate and baked into the
+    export bundle. The four hand-kept mirrors moved with the tokens (`AugTable`'s fallback, the chart surface, the
+    Vega fallbacks, `INSTRUMENT.md`); the chart palette gate passes on the new surface and both server bundles rebuild
+    byte-identical. Figure 19 is the comparison the decision was made on; figures 17 and 18 are on the new skin.
 
 ---
 
