@@ -56,6 +56,9 @@ def test_server_registers_the_governed_tools():
         # VA-5 — the trace surface: find a run, see its shape, read the one span that
         # matters. Same reasoning as above; and note what is NOT here, deliberately.
         "list_runs", "inspect_run", "read_run_span",
+        # Phase 7 of the 2027 study — the ledger API through the same door: the contract, claims
+        # as recorded, what was restated, and posting a claim with its warrant as oneself.
+        "read_contract", "read_claims", "read_restatements", "post_claim",
     }
     # No whole-trace tool either, for the same reason as `query`: `GET /traces/{id}` is
     # 1.2 MB for a 1,140-event run, so a tool wrapping it would exhaust the context that

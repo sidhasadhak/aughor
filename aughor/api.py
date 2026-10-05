@@ -1108,6 +1108,8 @@ app.include_router(attention_router.router)  # the attention budget: terms publi
 from aughor.routers import authority as authority_router  # noqa: E402 — phase 4 of the 2027 study
 from aughor.routers import onboarding as onboarding_router  # noqa: E402 — phase 6 of the 2027 study
 app.include_router(onboarding_router.router)  # the day-one screen: onboarding hours, the shopping list, coverage
+from aughor.routers import ledger as ledger_router  # noqa: E402 — phase 7 of the 2027 study
+app.include_router(ledger_router.router)  # the published ledger API: contract, claims, restatements, subscriptions, export
 app.include_router(authority_router.router)  # earned authority: the L0–L5 table, graduation and demotion receipts
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)

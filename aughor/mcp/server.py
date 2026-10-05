@@ -167,6 +167,69 @@ async def list_connections() -> list[dict]:
     return await _client.list_connections()
 
 
+# ── Phase 7 of the 2027 study — the ledger API through the same door ───────────────────────
+
+@mcp.tool()
+async def read_contract() -> dict:
+    """Read the agent contract Aughor holds every agent to — its own and yours: the seven duties
+    and what each may book, the typed verdicts a run ends in, what an entry must carry (kinds,
+    tiers, warrants and the laws at the ledger's door), who may book, the levels, the doors, how
+    an agent is scored (by what became of its entries, never by a judge) and every refusal code.
+    Read it once before posting a claim."""
+    return await _client.contract()
+
+
+@mcp.tool()
+async def read_claims(
+    connection: Annotated[Optional[str], Field(description="A connection id from list_connections; omit for organisation-wide claims too.")] = None,
+    kind: Annotated[Optional[str], Field(description="observation · finding · reading · definition · hypothesis · prediction · said · cause")] = None,
+    author: Annotated[Optional[str], Field(description="A principal, e.g. service:acme-forecaster, to read one author's entries.")] = None,
+    as_of: Annotated[Optional[str], Field(description="An ISO date: each claim as it stood on that day (belief as a view).")] = None,
+    limit: Annotated[int, Field(description="At most this many claims.")] = 50,
+) -> list[dict]:
+    """Read what the organisation holds true from Aughor's ledger: current claims, or — with
+    `as_of` — each claim as it was recorded on that date. Every claim carries its warrant, its
+    tier, its author and, where counted, how often claims of its class have been right (a hit rate
+    with its n, or nothing — never a model's confidence)."""
+    return await _client.read_claims(connection=connection, kind=kind, author=author, as_of=as_of, limit=limit)
+
+
+@mcp.tool()
+async def read_restatements(
+    since: Annotated[str, Field(description="An ISO moment; every claim restated after it, oldest first. Empty for the recent ones.")] = "",
+    connection: Annotated[Optional[str], Field(description="A connection id to narrow to.")] = None,
+    limit: Annotated[int, Field(description="At most this many.")] = 100,
+) -> dict:
+    """What the ledger changed its mind about since a cursor: each restated claim with the text it
+    replaced, and the cursor to read from next time. Poll this after relying on a number, or
+    subscribe to `claim.restated` through the ledger API for a webhook."""
+    return await _client.read_restatements(since=since, connection=connection, limit=limit)
+
+
+@mcp.tool()
+async def post_claim(
+    kind: Annotated[str, Field(description="observation · finding · reading · hypothesis · prediction · said · cause (a definition is a person's).")],
+    text: Annotated[str, Field(description="The statement, in words.")],
+    warrants: Annotated[list[dict], Field(description="At least one: [{kind: run|document|attestation|claim, ref: <receipt id, document locator, verdict id or claim id>, detail?}].")],
+    connection: Annotated[Optional[str], Field(description="The connection the claim is about; omit for an organisation-wide claim.")] = None,
+    tier: Annotated[str, Field(description="said (default) · mined · measured (needs a run warrant); approved and declared are a person's.")] = "said",
+    metric: Annotated[str, Field(description="The metric the statement is about, when one; required for a prediction.")] = "",
+    value: Annotated[Optional[float], Field(description="The typed value, when one.")] = None,
+    unit: Annotated[str, Field(description="The value's unit.")] = "",
+    as_of: Annotated[str, Field(description="The data's date (ISO); today when empty.")] = "",
+    natural_key: Annotated[str, Field(description="Your own key for this claim, to restate it later under the same key.")] = "",
+    state: Annotated[str, Field(description="hypothesis: open · supported · refuted; prediction: open.")] = "",
+) -> dict:
+    """Post a claim into Aughor's ledger with its warrant, as yourself (your service principal is the
+    author; every entry carries it and is scored by what becomes of it). The ledger's laws are
+    enforced at the door: no fact without a warrant, no model-authored fact above tier `said`, no
+    stated confidence. A refusal says why, with its code. Read `read_contract` first."""
+    body = {"kind": kind, "statement": {"text": text, "metric": metric, "value": value, "unit": unit}, "tier": tier,
+            "about": {"kind": "connection", "key": connection} if connection else {"kind": "organisation", "key": ""},
+            "warrants": warrants, "as_of": as_of, "natural_key": natural_key, "state": state}
+    return await _client.post_claim(body)
+
+
 @mcp.tool()
 async def ask(
     question: Annotated[str, Field(description="A natural-language analytical question, e.g. 'What was total revenue last quarter?'")],

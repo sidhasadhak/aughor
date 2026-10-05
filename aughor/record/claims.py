@@ -181,9 +181,33 @@ def book(claim: Claim, *, key: str, conn_id: Optional[str] = None,
         edges.append((f"warrant:{w.kind}", w.ref, (w.detail or "")[:400]))
     if supersedes:
         edges.append(("supersedes", supersedes, "restated"))
-    return _ledger().artifact_write(KIND, key, _payload(claim, supersedes=supersedes),
-                                    conn_id=conn_id or (claim.about.key if claim.about.kind == "connection" else None),
-                                    created_by_job=created_by_job, lineage=edges)
+    conn = conn_id or (claim.about.key if claim.about.kind == "connection" else None)
+    aid = _ledger().artifact_write(KIND, key, _payload(claim, supersedes=supersedes), conn_id=conn,
+                                   created_by_job=created_by_job, lineage=edges)
+    _events_out(claim, aid, key, supersedes, conn or "")
+    return aid
+
+
+def _events_out(claim: Claim, aid: str, key: str, supersedes: str, conn: str) -> None:
+    """Phase 7 of the 2027 study — a restatement and a refutation are events out: journaled by
+    kind (`kernel/events.py`) and delivered to the subscriptions that asked (`record/subscriptions`).
+    Best-effort: the claim is booked whether or not anyone hears of it."""
+    kinds: list[tuple[str, dict]] = []
+    if supersedes:
+        kinds.append(("claim.restated", {"claim_id": aid, "supersedes": supersedes, "key": key, "kind": claim.kind, "tier": claim.tier,
+                                         "author": claim.author, "text": claim.statement.text[:300], "metric": claim.statement.metric,
+                                         "value": claim.statement.value, "unit": claim.statement.unit, "as_of": claim.as_of}))
+    if claim.kind == "hypothesis" and claim.state == "refuted":
+        kinds.append(("claim.refuted", {"claim_id": aid, "key": key, "tier": claim.tier, "text": claim.statement.text[:300],
+                                        "evidence": str(claim.extra.get("evidence") or "")[:300], "run": str(claim.extra.get("run") or "")}))
+    for kind, payload in kinds:
+        try:
+            _ledger().emit(kind, payload, conn_id=conn or None)
+            from aughor.record.subscriptions import notify
+            notify(kind, payload, conn_id=conn)
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"the {kind} event could not go out; the claim stands", counter="claims.events_out", conn_id=conn or None)
 
 
 def restate(key: str, claim: Claim, **kw) -> str:

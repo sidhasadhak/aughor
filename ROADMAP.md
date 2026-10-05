@@ -11106,7 +11106,7 @@ python scripts/phase0_prompt_block_ablation.py` when a model key is at hand, the
 `AUGHOR_OIDC_ISSUER` and `AUGHOR_OIDC_AUDIENCE` — the day an identity provider is chosen; group grants, the
 proposal approver's name and the grant-ownership refusal all take effect then with no further code. **The
 organisation-scale half of the exit — five owners, identity on — is not observable yet**, by the user's own
-answers, and this line says so rather than reading as met. Phases 1 to 6 followed back to back on the same
+answers, and this line says so rather than reading as met. Phases 1 to 7 followed back to back on the same
 branch at the user's word (2026-10-05, below): each phase's CODE half is built and receipted by its tests; each
 phase's exit is the install's to show, and every "Still open" line names what the install, not the code, still owes.
 
@@ -11268,6 +11268,45 @@ and vocabulary suites pass. **Still open in phase 6:** terms proposed for confir
 prior's band with a backtest on the connection; B2B SaaS as the second deep vertical (banking chosen instead, its
 package drafted); the nouns still in the kernel's docstrings, which the ratchet counts down; and the exit — the hours
 measured on a new customer's install in each vertical, with the receipt.
+
+**Phase 7 — the code half BUILT 2026-10-05**, one slice, five parts. (P7-1) `routers/ledger.py` — the ledger API under
+`/ledger/v1`: `POST /claims` books a claim with its warrant under the three laws (no fact without a warrant, no model-
+authored fact above `said`, no stated confidence), refused with why; the author is the principal at the door, never a
+field, and a claim's key carries its author, so one author's restatement is a new version under its key and another's
+same natural key is their own claim; `GET /claims?as_of=` reads as recorded on a date; `GET /restatements?since=` reads
+what was restated from a cursor with what each replaced; `GET /export` streams the ledger as JSON lines so adopting is
+not a trap. `security/service_principals.py` — a principal a person mints (`POST /principals/service`), presented as
+`X-Aughor-Service` and `X-Aughor-Service-Key`, keyed by a hash in the kernel's kv store (no new store), revocable, held
+to the organisation's agent policy by `rbac/agent_gate` like the MCP server, its record read at `GET /principals/{id}/
+record` beside the built-in agents'. (P7-2) `kernel/contract.py` — the agent contract rendered from the code that
+enforces it (the seven duties and what each books, the typed verdicts, what an entry carries, the principals and levels,
+the doors, how an author is scored, what is refused) into `docs/AGENT_CONTRACT.md`, which `tests/unit/
+test_agent_contract.py` holds equal to the module; `read_contract`, `read_claims`, `read_restatements` and `post_claim`
+as MCP tools under the same policy levels. `kernel/events.py` — the event catalogue: every kind the source journals, with
+what its payload carries and the governance feed's category, held by a ratchet (`tests/unit/test_event_catalogue.py`)
+that walks the source for literal kinds; `GET /events/catalogue`, `GET /events`. `record/subscriptions.py` — events out:
+a subscription (a kernel artifact) names a URL and the subscribable kinds, and each delivery goes through the one
+departure gate as kind `ledger_event` — the entry's own numbers its measurement, its tier and warrant its declared
+definition, the subscriber's host the place the repeat law remembers, the attention budget exempt by the gate's written
+policy (`ATTENTION_POLICY`: a machine asked) — then through the notifications executor; a held delivery is said on the
+`ledger.delivered` event with why. (P7-3) `packs/kit.py` — the kit: the guide read from the models, `POST /packs/check`
+(the static gate without writing), `POST /packs/upload` (a passing pack written as a DRAFT under the imported root with
+who, when and from where; code refused; an authored pack cannot be shadowed); `packs/record.py` — a pack's measured
+record from its claims across installs, `GET /packs/listing` as the record, and `POST /packs/{id}/demote` refused
+unless the record calls for it (ten measured, half refuted) or a person forces it with a reason. (P7-4)
+`record/methods.py` — the method interface: a forecaster, estimator or simulator registered with its declared backtest
+(n, error, where measured) and an MCP adapter — nothing runs inside the process — refused without one or under a
+built-in name; `scenario.project` falls through to a registered method, which answers in the ladder's shape through
+`mcpservers.call`, and a prediction under it carries the method and its tier. (P7-5) `packs/aggregates.py` — the
+install's aggregate priors (pack records, base rates with n, normal ranges as the band for share metrics and the
+relative width for every other unit, method backtests), never a connection id, a claim's text or an absolute level
+(`assert_no_identifiers`, run on every compute); readable locally at `GET /aggregates`; leaves only through
+`POST /aggregates/export` when `aggregates.share` is on — off by default, the user's call, the door refusing and saying
+so. Receipt: 20 phase-7 tests pass; the MCP, agent-policy, identity, RBAC, departure, pack, Record, flag, vocabulary,
+noun and exit-gate suites pass; the API registers 21 `/ledger/v1` routes. **Still open in phase 7:** the Developer
+screen and the web client's regeneration for the new routes; OAuth for MCP servers that need their own sign-in; a second
+install to receive an aggregate; and the exit — an outside vendor's agent on a real service principal scored beside the
+built-in ones, a third party's pack uploaded and measured on a connection.
 
 ---
 

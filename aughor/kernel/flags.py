@@ -114,6 +114,11 @@ FLAG_ENV = {
     "cockpit.composed": "AUGHOR_COCKPIT_COMPOSED",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
+    # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
+    # rates, normal ranges for share metrics, method backtests, never a connection id or a claim's text —
+    # may LEAVE the install through POST /ledger/v1/aggregates/export. OFF (the default; the user's
+    # call): the export door refuses and says so; GET /ledger/v1/aggregates still reads it locally.
+    "aggregates.share": "AUGHOR_AGGREGATES_SHARE",
     "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
     "chat.buttons_reach_agent": "AUGHOR_CHAT_BUTTONS_REACH_AGENT",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
@@ -335,6 +340,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "aggregates.share": {
+        "label": "Let this install's aggregate priors leave it",
+        "description": "Allows POST /ledger/v1/aggregates/export to hand out this install's aggregate: how often each pack's claims held here, each play's learned success rate with its count, the normal band of metrics stated as a share, and registered methods' backtests. Never a connection id, a claim's text, a name or an absolute value of a metric that is not a share — a check refuses any document that carries one. Off by default: nothing leaves, the export door refuses and says so, and the aggregate can still be read locally at GET /ledger/v1/aggregates.",
+    },
     "agents.testing_centre": {
         "label": "A testing centre for custom agents",
         "description": "On an agent's Quality tab, 'Draft questions' asks the model for up to six golden QUESTIONS drawn from the connection's governed metrics and the agent's purpose — one model call per batch; the model never writes the answer, a person certifies each with SQL before it counts. Every night each enabled agent with certified goldens is re-measured on the production path and the result says which goldens newly fail or pass. Costs one model call per certified golden per agent per night. Off by default → the tab is exactly as today: goldens by hand, evaluation on a click.",
@@ -462,6 +471,12 @@ EXPERIMENT: dict = {
     # fields (set automatically, corrected by a person), says whether each figure is final,
     # provisional or to date, and writes each horizon as its own recipe. OFF → the Briefing,
     # its period versions and their subscriptions are exactly §3.27's.
+    "aggregates.share": "does an aggregate that leaves — base rates, normal ranges for share metrics, pack records, "
+                        "method backtests, never one install's claim — make a second install's priors better than the "
+                        "pack's own? Exit: a receiving install's pack claims held more often, or its first Briefing "
+                        "arrived sooner, with the aggregate than without; the user decides what may leave before "
+                        "any install sends one (the 2027 study §W, phase 7). Falsifier: no receiver measures a gain "
+                        "within two installs → the door is removed and aggregates stay local.",
     "briefing.ranges": "does a dated Briefing carry what the standing one cannot? Falsifier "
                        "(§3.48 BR-4): a person given the Day and the Month Briefing for theLook "
                        "beside the standing one cannot name a move only the dated one carries — "

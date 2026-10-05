@@ -118,7 +118,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "aughor/ontology/prompt_reach.py",
          # CB-7 (2026-09-23): its fixtures are BriefingCitation rows, and the type requires the wire
          # field `insight_id` — the same ground as api.ts; renaming it in a fixture stops testing the wire.
-         "web/components/brief/BriefActions.test.tsx",),
+         "web/components/brief/BriefActions.test.tsx",
+         # Phase 7 of the 2027 study (2026-10-05): the event catalogue names every kind the journal is
+         # written with VERBATIM, and `exploration.first_insight` / `exploration.insight` are frozen wire
+         # kinds the explorer already emits and the UI subscribes to; a catalogue that respelled them
+         # would publish kinds the journal does not carry. Its prose says 'finding'.
+         "aughor/kernel/events.py",),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),

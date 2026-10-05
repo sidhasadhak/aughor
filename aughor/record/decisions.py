@@ -265,6 +265,16 @@ def book_outcome(outcome: Outcome) -> str:
             pred.extra["scored_against"] = outcome.against_expectation
             pred.extra["outcome"] = oid
             _claims.restate(pred.key, pred, conn_id=decision.connection_id or None)
+    # Phase 7 — an outcome is an event out: journaled and delivered to the subscriptions that asked.
+    try:
+        payload = {"outcome_id": oid, "decision": outcome.of, "verdict": outcome.verdict, "against_expectation": outcome.against_expectation,
+                   "actual": outcome.actual, "baseline": outcome.baseline, "text": decision.question[:300]}
+        _ledger().emit("outcome.booked", payload, conn_id=decision.connection_id or None)
+        from aughor.record.subscriptions import notify
+        notify("outcome.booked", payload, conn_id=decision.connection_id or "")
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the outcome.booked event could not go out; the outcome stands", counter="decisions.events_out")
     return oid
 
 

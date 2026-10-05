@@ -166,6 +166,15 @@ REPEAT_POLICY: dict[str, str] = {
     "briefing": "a scheduled briefing speaks by its schedule",
 }
 
+#: Departure kinds the attention budget does not judge, each with its reason. The budget is a
+#: PERSON's interruptions a week (`govern/attention.py`); a ledger subscription (phase 7 of the
+#: 2027 study, `record/subscriptions.py`) delivers Record entries to a machine that asked for
+#: exactly these kinds, so there is no attention to spend — every accuracy law and the repeat
+#: law still run, and a hold is said on the delivery record.
+ATTENTION_POLICY: dict[str, str] = {
+    "ledger_event": "a subscription delivers to a machine that asked for these entries; the attention budget is a person's",
+}
+
 #: Transport call sites that deliberately do NOT ask this gate, each with its reason. The
 #: exit ratchet reads this map both ways: every call site listed must still exist, and a
 #: call site not listed must ask the gate in the same function.
@@ -967,6 +976,8 @@ def _attention(state: str, origin: str, kind: str, target: str, addressed_to: st
     which mission spent them."""
     if origin == PERSON:
         return _Check(EXEMPT, "a person chose to send it")
+    if kind in ATTENTION_POLICY:
+        return _Check(EXEMPT, ATTENTION_POLICY[kind])
     if state != DEPARTED:
         return _Check(NOT_APPLICABLE, f"not judged — the departure is already {state.replace('_', ' ')}")
     addressee = addressed_to or target

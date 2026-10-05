@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.packs import (
@@ -78,6 +78,78 @@ def get_packs():
         if root is not None:
             packs.append(_summary(root))
     return {"enabled": enabled, "packs": packs}
+
+
+# ── the pack kit (phase 7 of the 2027 study) — declared before `/packs/{pack_id}` so the static paths win ──
+
+class PackFilesIn(BaseModel):
+    files: dict[str, str] = Field(description="path inside the pack → file text; pack.yaml is required")
+    source_url: str = ""
+    overwrite: bool = False
+
+
+@router.get("/packs/kit")
+def get_pack_kit():
+    """The authoring guide: the anatomy from the models that define it, the gates, the steps."""
+    from aughor.packs.kit import guide
+    return guide()
+
+
+@router.post("/packs/check")
+def post_pack_check(body: PackFilesIn):
+    """The static gate over a set of files — nothing is written."""
+    from aughor.packs.kit import check
+    return check(body.files)
+
+
+@router.post("/packs/upload", status_code=201)
+def post_pack_upload(body: PackFilesIn, request: Request):
+    """Check, then write the pack as a draft under the imported root with its provenance. A pack with
+    errors is refused with them; a draft steers nothing until a person activates it."""
+    from aughor.packs.kit import KitRefused, upload
+    from aughor.security.authz import get_principal
+    principal = get_principal(request)
+    who = next((f"user:{getattr(principal, a)}" for a in ("user_id", "email", "id") if getattr(principal, a, "")), "") if principal else ""
+    try:
+        return upload(body.files, by=who or "unidentified", source_url=body.source_url, overwrite=body.overwrite)
+    except KitRefused as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/packs/listing")
+def get_pack_listing():
+    """Every pack with its measured record — the listing is the record, not a star rating."""
+    from aughor.packs.record import listing
+    return {"packs": listing(), "rule": "a pack whose claims keep failing on real installs is demoted by the same record that promoted it"}
+
+
+@router.get("/packs/{pack_id}/record")
+def get_pack_record(pack_id: str):
+    from aughor.packs.record import measured_record
+    _dir_for(pack_id)
+    return measured_record(pack_id)
+
+
+class DemoteIn(BaseModel):
+    why: str = ""
+    force: bool = False
+
+
+@router.post("/packs/{pack_id}/demote")
+def post_pack_demote(pack_id: str, body: DemoteIn, request: Request):
+    """Demote a pack on its measured record; refused when the record does not call for it unless a
+    person forces it with a reason."""
+    from aughor.packs.record import demote
+    from aughor.security.authz import get_principal
+    _dir_for(pack_id)
+    principal = get_principal(request)
+    who = next((f"user:{getattr(principal, a)}" for a in ("user_id", "email", "id") if getattr(principal, a, "")), "") if principal else "unidentified"
+    try:
+        return demote(pack_id, by=who, why=body.why, force=body.force)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except PacksError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/packs/{pack_id}")

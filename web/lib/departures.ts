@@ -92,6 +92,7 @@ const KIND_LABEL: Record<string, string> = {
   agent_alert: "Agent alert",
   finding_share: "Shared finding",
   recommendation: "Recommendation",
+  ledger_event: "Subscription delivery",
 };
 
 export function kindLabel(kind: string): string {

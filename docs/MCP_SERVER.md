@@ -35,8 +35,12 @@ that fired. The answer is verified, not plausible.
 | `list_jobs` / `get_job` / `cancel_job` | The agent fleet — running/finished work, each with agent + real cost. | the legible view over the kernel's metered jobs. |
 | `search_graph` / `describe_entity` / `get_table_health` / `list_trusted_queries` | What Aughor already knows: the knowledge graph, one object type, a table's quality verdicts, the trusted query patterns. | $0 reads, through the API (DE-2c) under the caller's organisation and clearances. |
 | `list_runs` / `inspect_run` / `read_run_span` | Debug an answer: which runs, one run's shape, one span's payload. | the summary plus one span, never a whole trace. |
+| `read_contract` / `read_claims` / `read_restatements` / `post_claim` | The ledger API (the 2027 study's phase 7): read the agent contract, read claims as recorded on a date, read what was restated since a cursor, and post a claim **with its warrant** as yourself. | the ledger's laws at the door (no fact without a warrant, no model-authored fact above `said`, no stated confidence); the author is the principal, scored by what becomes of its entries. |
 
-There is deliberately **no raw `query` tool**.
+There is deliberately **no raw `query` tool**. The ledger API behind the last row is also served over
+REST under `/ledger/v1` (`docs/AGENT_CONTRACT.md` is the published contract), where an outside vendor's
+agent presents a **service principal** (`X-Aughor-Service`, `X-Aughor-Service-Key`, minted by a person
+at `POST /ledger/v1/principals/service`) and is held to the same agent policy as this server.
 
 ### What each tool needs — and the organisation's agent policy (DE-2b)
 

@@ -62,6 +62,7 @@ RunSql = Callable[[str], tuple]
 
 class Projection(BaseModel):
     method: str
+    tier: str = ""                         # a registered method's declared tier; "" for a built-in
     value: Optional[float] = None
     low: Optional[float] = None
     high: Optional[float] = None
@@ -340,7 +341,12 @@ def project(method: str, **kw) -> Projection:
     if method == "intervention":
         return intervention(metric=kw.get("metric", ""), connection_id=kw.get("connection_id", ""), action_id=kw.get("action_id", ""),
                             like=kw.get("like", ""), unit=kw.get("unit", ""))
-    raise ValueError(f"no method named {method!r} on the ladder yet; the four built are {', '.join(METHODS)}")
+    # Phase 7 — a registered method (a forecaster, estimator or simulator with its backtest, run as a
+    # foreign tool through the one door); an unknown name is still refused by name.
+    from aughor.record import methods as _methods
+    if _methods.get_method(method) is not None:
+        return _methods.project_registered(method, **kw)
+    raise ValueError(f"no method named {method!r} on the ladder or registered; the four built are {', '.join(METHODS)}")
 
 
 _TIER_BY_METHOD = {"identity": "mined", "declared": "declared", "history": "mined", "intervention": "mined"}
@@ -355,7 +361,7 @@ def predict(*, metric: str, projection: Projection, settles_on: str, author: str
     with a measurable ``spec`` — how the settle tick scores it. Returns the claim id."""
     if projection.value is None and projection.low is None:
         raise _claims.ClaimRefused(f"the {projection.method} method projected nothing: {projection.note or 'no value'}")
-    tier = _TIER_BY_METHOD.get(projection.method, "said")
+    tier = projection.tier or _TIER_BY_METHOD.get(projection.method, "said")
     author_kind = "person" if tier == "declared" else "system"
     unit = projection.unit
     low, high, mid = projection.low, projection.high, projection.value
@@ -441,7 +447,20 @@ def score_prediction(claim: _claims.Claim, *, actual: Optional[float], measured_
     new.state = "scored"
     new.extra = {**claim.extra, "scored_against": against, "actual": actual, "scored_on": measured_on,
                  **({"score_note": note} if note else {})}
-    return _claims.restate(claim.key, new, conn_id=claim.about.key if claim.about.kind == "connection" else None)
+    conn = claim.about.key if claim.about.kind == "connection" else None
+    cid = _claims.restate(claim.key, new, conn_id=conn)
+    # Phase 7 — a scored prediction is an event out: journaled and delivered to the subscriptions that asked.
+    try:
+        payload = {"claim_id": cid, "key": claim.key, "metric": claim.statement.metric, "method": str(claim.extra.get("method") or ""),
+                   "scored_against": against, "actual": actual, "low": claim.extra.get("low"), "high": claim.extra.get("high"),
+                   "tier": claim.tier, "text": claim.statement.text[:300]}
+        _ledger().emit("prediction.scored", payload, conn_id=conn)
+        from aughor.record.subscriptions import notify
+        notify("prediction.scored", payload, conn_id=conn or "")
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the prediction.scored event could not go out; the score stands", counter="scenario.events_out")
+    return cid
 
 
 def due_predictions(now: Optional[_dt.datetime] = None, *, conn_id: Optional[str] = None) -> list[_claims.Claim]:

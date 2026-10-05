@@ -660,9 +660,16 @@ def report_now(m: Mission, *, run_sql_for, now: Optional[_dt.datetime] = None, d
     report = compose_report(m, run_sql_for=run_sql_for, now=now)
     rid, updated = book_report(m, report)
     delivery = deliver_report(updated, report, rid, now=now) if deliver else {"door": "none", "status": "not_requested"}
-    _ledger().emit("mission.reported", {"mission": m.id, "report": rid, "verdict": report["objective"]["verdict"],
-                                        "delivery": delivery.get("status")},
-                   conn_id=(m.scope.connections[0] if len(m.scope.connections) == 1 else None))
+    conn = m.scope.connections[0] if len(m.scope.connections) == 1 else None
+    payload = {"mission": m.id, "report": rid, "verdict": report["objective"]["verdict"], "delivery": delivery.get("status"),
+               "text": str(report.get("headline") or "")[:300], "metric": m.objective.metric}
+    _ledger().emit("mission.reported", payload, conn_id=conn)
+    try:
+        from aughor.record.subscriptions import notify
+        notify("mission.reported", payload, conn_id=conn or "")
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the mission.reported event could not go out; the report stands", counter="mission.events_out")
     return {"report_id": rid, "report": report, "delivery": delivery, "mission": updated.model_dump()}
 
 

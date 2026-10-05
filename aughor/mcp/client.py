@@ -512,6 +512,21 @@ class AughorClient:
     async def agent_policy(self) -> dict:
         return await self._get("/org-settings/agent-policy")
 
+    # ── Phase 7 of the 2027 study: the ledger API ──────────────────────────────────
+    async def contract(self) -> dict:
+        return await self._get("/ledger/v1/contract")
+
+    async def read_claims(self, *, connection: Optional[str] = None, kind: Optional[str] = None,
+                          author: Optional[str] = None, as_of: Optional[str] = None, limit: int = 50) -> Any:
+        return await self._get("/ledger/v1/claims", params={"connection_id": connection, "kind": kind, "author": author,
+                                                            "as_of": as_of, "limit": limit})
+
+    async def read_restatements(self, *, since: str = "", connection: Optional[str] = None, limit: int = 100) -> Any:
+        return await self._get("/ledger/v1/restatements", params={"since": since or None, "connection_id": connection, "limit": limit})
+
+    async def post_claim(self, body: dict) -> Any:
+        return await self._post("/ledger/v1/claims", json_body=body)
+
     # ── DE-2c: the knowledge tools, through the API like everything else ───────────
     async def search_graph(self, connection: str, query: str, *, limit: int = 10) -> dict:
         return await self._get(f"/knowledge/{connection}/graph/search", params={"q": query, "limit": limit})
