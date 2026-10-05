@@ -430,7 +430,9 @@ sits inside it — the place is named on its line.**
 - [x] 3 · The Briefing — the mission line, the inquiries waiting to speak, the predictions in play.
   - [x] A Briefing signed and dated as a delivery. *Decided and built 2026-10-05 (§6 item 42c, `claude/platform-2027-doors`): each send that leaves names the version it delivered; "Open what was sent" reads that version. Receipt owed: the first real scheduled send.*
   - [x] A prediction on each measured item. *Decided and built 2026-10-05 (§6 item 42c, `claude/platform-2027-doors`): the band the metric's own past puts on the next range, booked once, shown beside the figure and scored when that range has settled.*
-  - [ ] An action on each item. *Decided 2026-10-05 (§6 item 42c). Not yet built.*
+  - [x] An action on each item. *Measured 2026-10-05 before building (§6 item 42c): already there since CB-7 (2026-09-23) — each cited item carries the first recommendation of its deep analysis, executable through the inbox's gated door, or the playbook's best play as a suggestion. The study's "no item carries an action" was stale; nothing was built.*
+  - [ ] Take a Briefing item's action in place on the Briefing, through the gate, instead of one click away in the inbox. *Open — a narrower question than the one decided.*
+  - [ ] An action beside a measured metric's row. *Open — a play is chosen from a finding's labels, which a metric row does not have.*
   - [ ] The same range a year ago, at the same age.
 - [x] 4 · Inquiry (Record ▸ Inquiries) — ledger and reader; propose the next run with its cost; close with a lesson.
   - [x] Add a person's hypothesis · hand it to an owner · set or clear the next check · mark a claim wrong. *Built 2026-10-05 (`claude/platform-2027-doors`): four doors under `/record/inquiries/{id}/…` and `/record/claims/{id}/wrong`. A person's hypothesis is a claim at tier said under their name, and one the Record already holds as refuted is said beside it, never refused. Handing over sends nothing. A claim marked wrong is restated — the wrong version kept — as the person's statement; a hypothesis as refuted.*

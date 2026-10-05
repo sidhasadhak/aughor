@@ -11629,6 +11629,8 @@ Security & Audit writes no policy, adds nobody to a group and sets no clearance,
 for a statement door (nothing records it per site); Developer manages packs through Settings ▸ System and does not
 declare an action or register a method; the hub's links and probation queues still have no screen; the Briefing's
 items carry no action or prediction of their own, and a Briefing is not signed as a delivery.
+*(2026-10-05, later: the items of this paragraph that waited on a decision were all decided and built, or closed,
+under §6 item 42 — and "no action of their own" was wrong when written: cited items have carried one since CB-7.)*
 
 ---
 
@@ -13604,7 +13606,15 @@ the browser** · **measure the premise before building.**
     and why; a range to date is not predicted. Two traps found and closed, each with a test: a metric in percent was
     going to be judged as a band relative to a before-figure (always "cannot tell"), and a count over a window with
     no rows read as a zero — found on the scratch install, where it put "0 to 961" on a metric that had read 800
-    every month it existed. *The action on an item: not yet built.*
+    every month it existed.
+    *The action on an item — measured before building, and it was already there.* The question put to the user
+    said an item carried none, repeating the study's line ("no item carries an action"). That was stale: since CB-7
+    (2026-09-23) each cited item carries one — the first recommendation of the deep analysis it came from,
+    executable through the inbox's gated door, else the playbook's best play by learned success rate, shown as a
+    suggestion (`knowledge/briefing.best_action_for`, `brief/BriefActions.tsx`). So nothing was built for it. What
+    is true and still open, each a narrower question than the one asked: the action is taken in the inbox, one
+    click away, not in place on the Briefing; and a measured metric's row carries none (a play is chosen from a
+    finding's labels, which a metric row does not have). Neither is decided.
     (d) **Filings get one list on Agent Ops ▸ By duty** — what is open, what it is about, its age, and "close with an
     outcome". Measured before asking: probation already has two screens (the Hub map's column and Departures), so only
     the filings were without one; By duty gets a probation count that opens the Hub map. *Built:* "Filed and open"
