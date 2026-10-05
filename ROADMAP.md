@@ -11134,10 +11134,10 @@ the CLI print a model's stated confidence as a word, never a percentage. (P1-5) 
 `record.confidence` and `record.told` (the departures that cited the analysis), rebuilt live on each read inside
 the signed body; the web receipt shows both. Receipt: 180 tests across the Record, the receipt, the re-check, the
 inbox, the recommendation review, the departures gate and the vocabulary ratchet pass. **Still open in phase 1:**
-the graph as a projection; and the two exit parts only the install can show (a restatement delivered on the
-organisation's warehouse; ten decisions booked by people). The Explorer's, a pack's and the hub's claim shapes landed
-as writers since (phase 6; the close-out below), and organisation scope on glossary, metrics and the Briefing with
-the close-out's C2.
+the two exit parts only the install can show (a restatement delivered on the organisation's warehouse; ten decisions
+booked by people). The Explorer's, a pack's and the hub's claim shapes landed as writers since (phase 6; the close-out
+below), organisation scope on glossary, metrics and the Briefing with the close-out's C2, and the graph as a projection
+of the ledger with its C3.
 
 **Phase 2 — the code half BUILT 2026-10-05**, three slices. (P2-1) `aughor/record/inquiry.py` — the inquiry as a
 kernel artifact that outlives its runs: the question, who opened it (a person's ask, a monitor's alert, a restated
@@ -11339,6 +11339,21 @@ version, headline theme, lede, measured figures — a connection with none kept 
 connections. Receipt: the organisation-scope, O2 re-key, glossary, metric, Briefing-versions and ratchet suites pass
 (`test_glossary_scope_gaps::test_retrieval_passes_the_scope_filter_to_qdrant` fails on the base commit too, before
 any close-out change — the vector store's filter wiring, not this slice's).
+(C3, phase 1) The context graph as a projection of the ledger, rebuilt on demand (§F: "a way of reading claims, not a
+place they live"). `context_graph_build.load_record_findings` projects the Record's measured findings and observations
+(not a hypothesis, a said statement or a withdrawn finding) into the graph's finding nodes with `source="record"`, each
+node naming the claim it reads — id, key, tier, kind, author — and `graph_warrant` reading the claim's TIER as the
+node's warrant class (measured and mined → derived; approved and declared → human; said → inferred); the explorer store
+and the answer receipts fill in only the findings no claim covers (`merge_finding_sources`: the same investigation or
+explorer finding id is dropped, what predates the Record is kept). `context_graph_store.graphs_for_connection` rebuilds
+a missing graph from the ontology and the Record and keeps it for the next reader; read-back, the MCP knowledge tools,
+lineage and the answer trace go through it, so a missing file is never a missing fact. `data/context_graph/` is
+generated state now: untracked (`git rm --cached`, the five committed graphs left on disk), ignored whole in
+`.gitignore`, out of `db/home.AUTHORED_ENTRIES` so it moves with a migrated home — a home that never received a copy
+rebuilds it. Also closed here: the live-drive isolation helper (`scripts/dump_openapi._isolate_stores`) now pins the
+two causal files phase 5 registered in the conftest, which the hermeticity ratchet had been reporting. Receipt: the
+projection, context-graph, warrant, read-back, lineage, answer-trace, brain-map, data-home, hermeticity and vocabulary
+suites pass.
 
 ---
 

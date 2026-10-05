@@ -143,9 +143,11 @@ class TestTheFourConventionsAreReconciled:
 
 
 class TestAuthoredContentStaysInTheCheckout:
-    """`data/` is MIXED — 102 of its files are git-tracked, and `.gitignore` is a per-file
-    denylist whose own comments keep `ontology_overrides/` and `context_graph/` tracked because
-    they are the reviewable governed artifacts. Versioned content does not follow the state."""
+    """`data/` is MIXED — most of its files are git-tracked, and `.gitignore` is a per-file
+    denylist whose own comments keep `ontology_overrides/` tracked because it is a reviewable
+    governed artifact. Versioned content does not follow the state. `context_graph/` left the
+    authored list with the 2027 study's close-out (C3): a projection of the ledger, rebuilt on
+    demand, it is generated state and moves like the metrics instance."""
 
     CHECKOUT = paths.Path("/somewhere/aughor")
 
@@ -155,12 +157,19 @@ class TestAuthoredContentStaysInTheCheckout:
         default = self.CHECKOUT / "data" / entry
         assert resolve_db_path(f"X_{entry}", default) == default
 
-    @pytest.mark.parametrize("entry", ["context_graph", "ontology_column_config",
+    @pytest.mark.parametrize("entry", ["ontology_column_config",
                                        "ontology_overrides", "shipped", "demo_packs"])
     def test_an_authored_directory_does_not_move(self, clean_env, entry):
         (clean_env / home.MARKER).write_text("migrated")
         default = self.CHECKOUT / "data" / entry / "inner.json"
         assert resolve_db_path(f"X_{entry}", default) == default
+
+    def test_the_context_graph_is_generated_state_and_moves(self, clean_env):
+        """The close-out (C3): the graph is a projection of the ledger, rebuilt on demand — a home
+        that never received a copy rebuilds it, so it moves with the state and is not tracked."""
+        (clean_env / home.MARKER).write_text("migrated")
+        default = self.CHECKOUT / "data" / "context_graph" / "default" / "c1" / "main.json"
+        assert resolve_db_path("X_context_graph", default) == clean_env / home.STATE_SUBDIR / "context_graph" / "default" / "c1" / "main.json"
 
     @pytest.mark.parametrize("entry", ["metrics.instance.json", "metrics.instance.converted.json",
                                        "glossary.instance.yaml", "glossary.instance.converted.yaml"])

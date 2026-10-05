@@ -86,6 +86,14 @@ _BY_SOURCE: dict[str, Warrant] = {
     "exploration": "derived",
     "evidence_ledger": "derived",      # the CLAIM is derived; its self-confidence is banned (J4)
     "briefing": "derived",
+    "record": "derived",               # a Record claim: derived by default, its TIER decides (below)
+}
+
+#: A Record claim's tier → the warrant class (the 2027 study §G ladder read in this module's words):
+#: a measured or mined claim is the platform's own derivation from executed SQL; an approved or
+#: declared one is a person's statement; a said one is a statement nobody has checked.
+_BY_RECORD_TIER: dict[str, Warrant] = {
+    "measured": "derived", "mined": "derived", "approved": "human", "declared": "human", "said": "inferred",
 }
 
 # Edge kinds whose construction rule fixes the warrant regardless of source. `defines`
@@ -190,6 +198,14 @@ def warrant_for(provenance, *, edge_kind: str = "", node_data: Optional[dict] = 
             return WarrantVerdict("inferred", "auto-generated description")
         return WarrantVerdict("declared", "written definition")
 
+    # 6. A Record claim's tier is its warrant (the close-out, C3: the graph is a projection of the
+    #    ledger, so the ledger's own ladder is what the node stands on).
+    if source == "record":
+        tier = (note_field(note, "tier") or "").strip().lower()
+        if tier in _BY_RECORD_TIER:
+            return WarrantVerdict(_BY_RECORD_TIER[tier], f"a Record claim at tier {tier}")
+        return WarrantVerdict("derived", "a Record claim, tier not recorded")
+
     known = _BY_SOURCE.get(source)
     if known:
         return WarrantVerdict(known, _SOURCE_DETAIL.get(source, ""))
@@ -205,6 +221,7 @@ _SOURCE_DETAIL: dict[str, str] = {
     "exploration": "from an exploration run",
     "evidence_ledger": "from an investigation's SQL",
     "briefing": "synthesized from cited findings",
+    "record": "a Record claim",
 }
 
 

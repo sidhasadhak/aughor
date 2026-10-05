@@ -79,6 +79,10 @@ def _isolate_stores() -> None:
     # both places at once, which is the rule this file's sibling comment below states.
     os.environ.setdefault("AUGHOR_UPLOAD_DIR", os.path.join(tmp, "uploads"))
     os.environ.setdefault("AUGHOR_PLAYBOOK_PATH", os.path.join(tmp, "playbook.json"))
+    # Phase 5 of the 2027 study (P5-4): the confirmed-cause graph and its proposals are files the review
+    # path WRITES back to; a live drive must not grow the checkout's.
+    os.environ.setdefault("AUGHOR_CAUSAL_PROPOSALS_FILE", os.path.join(tmp, "causal_proposals.json"))
+    os.environ.setdefault("AUGHOR_CAUSAL_GRAPH_FILE", os.path.join(tmp, "causal_graph.json"))
     # IP-2 — the industries chosen at install: a live drive that changes the choice must not narrow the
     # running deployment's.
     os.environ.setdefault("AUGHOR_INDUSTRIES_FILE", os.path.join(tmp, "industries.json"))

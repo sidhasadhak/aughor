@@ -53,8 +53,10 @@ reasoning lives in the wave arc docs under `docs/`.
 - **Tests:** run targeted — `pytest -k "ratchet or contract or <your area>"`. A full local
   run has twice destroyed `data/`; each store honours an `AUGHOR_*_DB` override registered
   in `tests/conftest.py`, and a new store must be added there.
-- **`data/` is partly TRACKED on purpose** — `data/context_graph/` and `data/vocabulary/` are
-  governed artifacts a reviewer should see in a diff. `data/ontology_overrides/` is an install's
+- **`data/` is partly TRACKED on purpose** — `data/shipped/` and `data/ontology_column_config/` are
+  governed artifacts a reviewer should see in a diff (`data/context_graph/` was one until the 2027
+  study's close-out: the graph is a projection of the ledger, rebuilt on demand, generated state
+  now and untracked). `data/ontology_overrides/` is an install's
   OWN tree now: nothing new is tracked there (`test_seed_overlay_frozen`), and a declaration the
   repo ships goes in `data/shipped/ontology_overrides/` — under `key=<scope key>/` when it is for
   a connection that has no builtin id (PENDING item 14). Snapshot before any migration and verify

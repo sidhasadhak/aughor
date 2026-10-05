@@ -265,11 +265,11 @@ def dependents_of_table(
     """
     try:
         from aughor.ontology.context_graph_search import merge_graphs
-        from aughor.ontology.context_graph_store import load_graphs_for_connection
+        from aughor.ontology.context_graph_store import graphs_for_connection
         from aughor.org.context import current_org_id
 
         graph = merge_graphs(
-            load_graphs_for_connection(org_id or current_org_id(), connection_id))
+            graphs_for_connection(org_id or current_org_id(), connection_id))   # rebuilt on demand (C3)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 

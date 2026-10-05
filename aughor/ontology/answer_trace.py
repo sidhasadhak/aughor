@@ -127,11 +127,11 @@ def build_answer_trace(
 def _build(connection_id: str, tables: list, metrics: list, cited: list,
            finding_id: str, org_id: str) -> Optional[AnswerTrace]:
     from aughor.ontology.context_graph_search import merge_graphs
-    from aughor.ontology.context_graph_store import load_graphs_for_connection
+    from aughor.ontology.context_graph_store import graphs_for_connection
     from aughor.ontology.graph_warrant import warrant_of_edge, warrant_of_node
     from aughor.org.context import current_org_id
 
-    cg = merge_graphs(load_graphs_for_connection(org_id or current_org_id(), connection_id))
+    cg = merge_graphs(graphs_for_connection(org_id or current_org_id(), connection_id))   # rebuilt on demand (C3)
     if cg is None or not cg.nodes:
         return None
 

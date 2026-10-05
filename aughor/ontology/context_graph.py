@@ -57,6 +57,7 @@ ProvenanceSource = Literal[
     "evidence_ledger",     # an investigation EvidenceClaim (sql_source, not its confidence)
     "ambiguity_ledger",    # a crystallized resolution (probe|user|verdict)
     "briefing",            # a synthesized executive narrative
+    "record",              # a claim in the Record (the 2027 study §G) — the graph projects the ledger
 ]
 
 
@@ -691,6 +692,12 @@ def finding_node_data(f: dict) -> dict:
     # when present, so a graph built from sources without it serializes as before.
     if f.get("investigation_id"):
         data["investigation_id"] = str(f["investigation_id"])
+    # The close-out (C3): a finding projected from the Record names the claim it is — its id, its
+    # key, its tier and its author — so the node is a way of READING the claim, never a second
+    # copy of it. Emitted only when present, so a legacy-sourced finding serializes as before.
+    for k in ("claim_id", "claim_key", "tier", "author", "claim_kind"):
+        if f.get(k):
+            data[k] = str(f[k])
     if f.get("supersedes"):
         data["supersedes"] = int(f["supersedes"])
         data["superseded_ids"] = list(f.get("superseded_ids") or [])
@@ -721,6 +728,10 @@ def _project_findings(cg: ContextGraph, findings: list) -> list[str]:
             if not fid or not text:
                 continue
             source = f.get("source") or "exploration"
+            note = f"finding from {source}"
+            if source == "record":
+                # the claim's tier rides the note so the warrant class is read from it (graph_warrant)
+                note = f"finding from the Record tier={f.get('tier') or 'unknown'} claim={f.get('claim_key') or fid}"
             node = GraphNode(
                 id=_finding_node_id(fid),
                 kind="finding",
@@ -728,8 +739,9 @@ def _project_findings(cg: ContextGraph, findings: list) -> list[str]:
                 summary=text,
                 provenance=Provenance(
                     source=source if source in (
-                        "dossier", "exploration", "evidence_ledger") else "exploration",
-                    note=f"finding from {source}",
+                        "dossier", "exploration", "evidence_ledger", "record") else "exploration",
+                    note=note,
+                    author=str(f.get("author") or ""),
                 ),
                 data=finding_node_data(f),
             )

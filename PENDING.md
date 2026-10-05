@@ -300,7 +300,7 @@ Just outside the list: the next industry package (insurance has public data to t
 
 ### Install — Arc IN (§3.19)
 - [ ] ⚑ `aughor migrate-state`, which moves the data out of the code folder, has never run for real — it needs the API stopped. *2027 study: phase 0 — the install.*
-- [ ] `context_graph/` and `ontology_column_config/` are both tracked in git and rewritten by the app, so `aughor update` will eventually refuse on them (the same split `metrics.json` got). *2027 study: phase 1, reshaped — the graph becomes a projection of the ledger, rebuilt on demand; nothing of it is tracked.*
+- [~] `context_graph/` and `ontology_column_config/` are both tracked in git and rewritten by the app, so `aughor update` will eventually refuse on them (the same split `metrics.json` got). *2027 study: phase 1, reshaped — the graph becomes a projection of the ledger, rebuilt on demand; nothing of it is tracked.* *Half closed 2026-10-05 (ROADMAP §3.53, the close-out, C3): `data/context_graph/` is untracked and ignored whole — a projection of the ledger rebuilt on demand, generated state that moves with the home. `ontology_column_config/` is still tracked and still rewritten; the same split is owed there.*
 - [ ] Moving `ontology_overrides/` into the data folder needs a safe top-up for installs that already migrated. *2027 study: phase 0 — the install.*
 
 ### Ontology — Arc ON (§3.15; finished, these are its leftovers)
