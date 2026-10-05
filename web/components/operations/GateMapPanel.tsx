@@ -22,7 +22,8 @@ interface GateMap {
   statements: {
     present: boolean; sites: number; note: string;
     by_dialect: { dialect: string; sites: number; means: string }[];
-    by_door: { door: string; sites: number }[];
+    by_door: { door: string; sites: number; uses: number; last_used: string }[];
+    counted_since?: string | null; uses_note?: string;
     unguarded: Site[];
   };
   departures: {
@@ -48,9 +49,12 @@ export function GateMapView() {
     { head: "Sites", cell: r => r.sites, num: true, width: 80 },
     { head: "What that means", cell: r => r.means },
   ];
-  const doorColumns: LedgerColumn<{ door: string; sites: number }>[] = [
+  type DoorRow = GateMap["statements"]["by_door"][number];
+  const doorColumns: LedgerColumn<DoorRow>[] = [
     { head: "Door", cell: r => keyToWords(r.door) },
     { head: "Sites", cell: r => r.sites, num: true, width: 80 },
+    { head: "Uses", cell: r => r.uses, num: true, width: 90 },
+    { head: "Last used", cell: r => (r.last_used ? day(r.last_used) : "not since counting began"), width: 190 },
   ];
   const lawColumns: LedgerColumn<LawRow>[] = [
     { head: "Guard", cell: r => r.label, width: 170 },
@@ -97,6 +101,7 @@ export function GateMapView() {
               <Section label="By door" meta={countNoun(g.statements.by_door.length, "door")}>
                 <Ledger name="statement-doors" columns={doorColumns} rows={g.statements.by_door} rowKey={r => r.door}
                   empty="No door is recorded." />
+                {g.statements.uses_note && <Absent>{g.statements.uses_note}.</Absent>}
               </Section>
             )}
 

@@ -129,6 +129,17 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             n             INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (org_id, connection_id, day)
         );
+
+        -- The gate map's "last used": how often each of the SQL door's methods was the way a caller came in, per
+        -- day, and when it last was. Counted from the day this table exists -- nothing earlier was recorded.
+        CREATE TABLE IF NOT EXISTS door_counts (
+            org_id  TEXT    NOT NULL DEFAULT 'default',
+            door    TEXT    NOT NULL,
+            day     TEXT    NOT NULL,
+            n       INTEGER NOT NULL DEFAULT 0,
+            last_at TEXT    NOT NULL DEFAULT '',
+            PRIMARY KEY (org_id, door, day)
+        );
         PRAGMA journal_mode=WAL;
     """)
     run_migrations(c, _MIGRATIONS, store="audit")
@@ -352,14 +363,78 @@ class InternalCounter:
             c.close()
 
 
+class DoorCounter:
+    """How often each of the SQL door's methods was the way a caller came in, and when it last was — the gate map's
+    "last used" (`aughor/db/door_count.py` says what one use is). Per organisation and day.
+
+    Batched exactly as ``InternalCounter`` is, and for its reason: a write per statement would cost more than many
+    of the statements. A count a reader sees is never behind this process — ``totals`` writes the batch first."""
+
+    FLUSH_AT = 100
+    FLUSH_EVERY_S = 10.0
+    _lock = threading.Lock()
+    _pending: dict[tuple[str, str, str], tuple[int, str]] = {}
+    _pending_n = 0
+    _last_flush = time.monotonic()
+
+    @classmethod
+    def count(cls, door: str) -> None:
+        from aughor.org.context import current_org_id
+        now = time.gmtime()
+        key = (current_org_id() or "default", door, time.strftime("%Y-%m-%d", now))
+        at = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", now)
+        with cls._lock:
+            n, _ = cls._pending.get(key, (0, ""))
+            cls._pending[key] = (n + 1, at)
+            cls._pending_n += 1
+            due = cls._pending_n >= cls.FLUSH_AT or time.monotonic() - cls._last_flush >= cls.FLUSH_EVERY_S
+        if due:
+            cls.flush()
+
+    @classmethod
+    def flush(cls) -> None:
+        with cls._lock:
+            pending, cls._pending, cls._pending_n = cls._pending, {}, 0
+            cls._last_flush = time.monotonic()
+        if not pending:
+            return
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            c.executemany(
+                """INSERT INTO door_counts (org_id, door, day, n, last_at) VALUES (?,?,?,?,?)
+                   ON CONFLICT(org_id, door, day) DO UPDATE
+                   SET n = n + excluded.n, last_at = MAX(last_at, excluded.last_at)""",
+                [(*key, n, at) for key, (n, at) in pending.items()])
+            c.commit()
+        finally:
+            c.close()
+
+    @classmethod
+    def totals(cls, org_id: str | None = None) -> dict[str, Any]:
+        """``{"since": the first day counted or None, "doors": {door: {"uses": n, "last_used": iso}}}``."""
+        cls.flush()
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            where, params = ("WHERE org_id = ?", (org_id,)) if org_id is not None else ("", ())
+            rows = c.execute(f"SELECT door, SUM(n) AS n, MAX(last_at) AS last_at, MIN(day) AS since "
+                             f"FROM door_counts {where} GROUP BY door", params).fetchall()
+            since = min((r["since"] for r in rows if r["since"]), default=None)
+            return {"since": since,
+                    "doors": {r["door"]: {"uses": int(r["n"] or 0), "last_used": r["last_at"] or ""} for r in rows}}
+        finally:
+            c.close()
+
+
 def _flush_at_exit() -> None:
     """The last batch, written at exit — never an error there: a test run's store may already be gone."""
-    try:
-        InternalCounter.flush()
-    except Exception:  # noqa: BLE001
-        import logging
-        logging.getLogger(__name__).debug("the last internal-statement count could not be written at exit",
-                                          exc_info=True)
+    for counter, what in ((InternalCounter, "internal-statement"), (DoorCounter, "door-use")):
+        try:
+            counter.flush()
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).debug("the last %s count could not be written at exit", what, exc_info=True)
 
 
 atexit.register(_flush_at_exit)
