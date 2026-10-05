@@ -6546,6 +6546,17 @@ export interface AnswerRecheck {
   told?: { door?: string; status?: string; note?: string };
 }
 
+/** Re-run an answer's own statement now and compare it with what was said (idea 5). The server
+ *  refuses with its reason — re-checking is behind a flag — and that reason is what is thrown. */
+export async function recheckAnswer(investigationId: string): Promise<AnswerRecheck & { text?: string }> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(investigationId)}/recheck`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(typeof body?.detail === "string" ? body.detail : `The re-check failed (${res.status})`);
+  }
+  return res.json();
+}
+
 /** "history" is the standing Briefing; the rest are written for one complete period. */
 export type BriefingPeriod = "history" | "day" | "week" | "month" | "year";
 
@@ -7400,6 +7411,8 @@ export interface PublicReceipt {
    *  answers of this kind have held, COUNTED with n (the `confidence` above is the model's own
    *  word about itself), and who else was told. null on a receipt that is not an answer's. */
   record: {
+    /** The run this receipt is for — what Re-perform re-runs. Absent on an API older than the screen. */
+    answer?: string;
     claim: { id: string; key: string; version: number; tier: string; kind: string; as_of: string;
              recorded_at: string; restated: boolean; warrants_this_receipt: boolean } | null;
     confidence: { reference_class: string; hit_rate: number | null; n: number; scope: string; note: string } | null;

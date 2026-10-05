@@ -380,13 +380,14 @@ function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
 
 // ── Lens toggle ───────────────────────────────────────────────────────────────
 
-type Lens = "security" | "activity" | "approvals";
+// The approvals lens moved to Operations ▸ Action centre (the 2027 study §V, screen 11): authority
+// is one table there, and the trail of what the gate decided is read beside it.
+type Lens = "security" | "activity";
 
 function LensToggle({ value, onChange }: { value: Lens; onChange: (v: Lens) => void }) {
   const opts: { v: Lens; label: string }[] = [
     { v: "security", label: "Security" },
     { v: "activity", label: "Activity" },
-    { v: "approvals", label: "Approvals" },
   ];
   return (
     <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-1)", borderRadius: 6, border: "0.5px solid var(--b1)" }}>
@@ -411,7 +412,7 @@ const _DECISION_COLOR: Record<string, string> = {
   allowlisted: "var(--grn4)", revoked: "var(--amb4)",
 };
 
-function ActionApprovalsSection() {
+export function ActionApprovalsSection() {
   const [audit, setAudit] = useState<ApprovalAuditEvent[]>([]);
   const [allow, setAllow] = useState<AllowlistEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -627,13 +628,6 @@ export function SecurityAuditPanel({
       {/* Activity lens — exploration episode log (merged Audit Log) */}
       {lens === "activity" && (
         <ActivityLog connectionId={connId ?? ""} isActive />
-      )}
-
-      {/* Approvals lens — graduated-approval allowlist + audit trail, on its own tab */}
-      {lens === "approvals" && (
-        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
-          <ActionApprovalsSection />
-        </div>
       )}
 
       {lens === "security" && (

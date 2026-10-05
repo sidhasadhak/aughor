@@ -1,4 +1,5 @@
 "use client";
+import { DESTINATIONS, type PageAt } from "@/lib/destinations";
 
 /**
  * CommandPalette — ⌘K global search overlay.
@@ -128,6 +129,8 @@ interface CommandPaletteProps {
   onClose: () => void;
   selectedConn: string;
   onNavigate: (tab: string) => void;
+  /** Open one destination page — a tab and, for a workspace, the layer inside it. */
+  onOpenPage?: (at: PageAt) => void;
   onGoToChat: (q?: string) => void;
   /** SP-2 — the tab the palette was summoned over; rides every Spotlight ask as
    *  one line of prompt orientation ("schedule this" knows what *this* is). */
@@ -165,7 +168,30 @@ export function GlobalCommands({ onNavigate, onGoToChat, onAddSource }: {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoToChat, surface = "" }: CommandPaletteProps) {
+/** The 2026 words for the screens the destination pages absorbed — search terms, never shown. */
+const FORMER_WORDS: Record<string, string> = {
+  now: "home start",
+  briefing: "intelligence digest",
+  runs: "agent runs history recents analyses",
+  proposed: "inbox recommendations",
+  monitors: "watches thresholds drift alerts",
+  definitions: "semantic layer metrics glossary annotations",
+  catalog: "tables columns schemas data",
+  map: "ontology entities object model",
+  profile: "domains coverage hub",
+  org: "organization org intelligence",
+  canvases: "data canvas",
+  work: "agent ops overview duties failures",
+  "action-centre": "actions approvals authority grants declared undo",
+  agents: "agent ops roster attention activity automations hub departures",
+  notifications: "action hub webhooks slack jira",
+  audit: "security audit query log guardrails",
+  sql: "sql editor query builder",
+  admin: "settings theme model system access roles organization",
+  developer: "packs api keys mcp contract",
+};
+
+export function CommandPalette({ open, onClose, selectedConn, onNavigate, onOpenPage, onGoToChat, surface = "" }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   // ── SP-2: the Spotlight answer pane ──────────────────────────────────────
@@ -281,47 +307,30 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
 
   // ── Static nav action items ───────────────────────────────────────────────
 
-  // PX-0 — every sidebar destination is findable here, under the sidebar's own word
-  // for it (naming drift between the two was how surfaces got "lost": the sidebar
-  // said "Agent runs" while this list said "Agent history").
+  // Every page of the six destinations is findable here under the rail's own words for it
+  // (lib/destinations.ts is the one list) — and under the 2026 word for the screen it
+  // absorbed, so somebody typing "inbox" or "settings" still finds the place they mean.
+  const PAGE_ACTIONS: PaletteItem[] = DESTINATIONS.flatMap(d =>
+    d.pages.filter(page => !page.flag).map(page => ({
+      id: `page-${d.id}-${page.id}`,
+      label: page.label === d.label ? d.label : `${d.label} ▸ ${page.label}`,
+      sublabel: page.blurb,
+      keywords: FORMER_WORDS[page.id] ?? "",
+      type: "action" as const,
+      icon: d.icon,
+      accent: "var(--t3)",
+      onSelect: () => (onOpenPage ? onOpenPage(page.at) : onNavigate(page.at.tab)),
+    })));
+
+  // What is not a page of its own, and is still asked for by name.
   const NAV_ACTIONS: Omit<PaletteItem, "onSelect">[] = [
-    { id: "nav-home",        label: "Home",                 sublabel: "Ask, get started, recent activity", type: "action", icon: "home",     accent: "var(--t3)" },
-    { id: "nav-canvases",    label: "Data Canvas",           sublabel: "Browse and open Data Canvases",     type: "action", icon: "canvas",   accent: "var(--blue3)" },
-    { id: "nav-briefing",    label: "Briefing",             sublabel: "The connection's intelligence digest", type: "action", icon: "brief",  accent: "var(--blue3)" },
-    { id: "nav-recents",     label: "Agent runs",           sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
-    { id: "nav-inbox",       label: "Inbox",                sublabel: "Act on Aughor's recommendations",   type: "action", icon: "inbox",    accent: "var(--amb3)" },
-    { id: "nav-documents",   label: "Documents",            sublabel: "Upload and review knowledge documents", type: "action", icon: "folder", accent: "var(--t2)" },
-    { id: "nav-intel",       label: "Profile",              sublabel: "Per-domain findings and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },
-    { id: "nav-ontology",    label: "Ontology",             sublabel: "Entity graph and lifecycle states", type: "action", icon: "node",     accent: "var(--grn3)" },
-    { id: "nav-health",      label: "Health",               sublabel: "Business metric targets and status",type: "action", icon: "activity", accent: "var(--grn3)" },
-    { id: "nav-agentic-ops", label: "Agent Ops",            sublabel: "Overview, roster, attention, activity, automations, hub map, departures", type: "action", icon: "process", accent: "var(--vio3)" },
     { id: "create-agent",    label: "Create agent",          sublabel: "Define a custom agent: its scope, its stance, and how you'll know it works", type: "action", icon: "spark",   accent: "var(--grn3)" },
-    { id: "nav-playbook",    label: "Playbook",             sublabel: "Settings ▸ Organization",             type: "action", icon: "playbook", accent: "var(--t2)" },
-    { id: "nav-catalog",     label: "Catalog",              sublabel: "Browse tables, columns, row counts", type: "action", icon: "db",       accent: "var(--blue3)" },
-    { id: "nav-builder",     label: "SQL Editor",           sublabel: "Write SQL, or compose visually, with live results",type: "action", icon: "builder", accent: "var(--t2)" },
-    { id: "nav-semantic",    label: "Semantic Layer",       sublabel: "Annotations, knowledge, metrics, import", type: "action", icon: "layers", accent: "var(--amb3)" },
+    { id: "nav-playbook",    label: "Playbook",             sublabel: "Operations ▸ Admin ▸ Settings",       type: "action", icon: "playbook", accent: "var(--t2)" },
     { id: "nav-connections", label: "Connections",          sublabel: "Data source connections live in the Catalog", type: "action", icon: "plug", accent: "var(--grn3)" },
     { id: "nav-metrics",     label: "Metrics Catalog",      sublabel: "Semantic KPI definitions",           type: "action", icon: "metric",   accent: "var(--amb3)" },
-    { id: "nav-monitors",    label: "Monitors",             sublabel: "Thresholds, drift and staleness watches", type: "action", icon: "activity", accent: "var(--grn3)" },
-    { id: "nav-actions",     label: "Notifications",        sublabel: "Webhooks, Slack, Jira integrations", type: "action", icon: "inbox",    accent: "var(--vio3)" },
-    { id: "nav-integrations", label: "Integrations",        sublabel: "OAuth accounts, Slack apps, MCP servers", type: "action", icon: "plug",  accent: "var(--grn3)" },
-    { id: "nav-spend",       label: "Spend",                sublabel: "Model usage, cost, caps and the governance feed", type: "action", icon: "scales", accent: "var(--amb3)" },
-    { id: "nav-security",    label: "Security & Audit",     sublabel: "Query audit, approvals, guardrail activity", type: "action", icon: "shield", accent: "var(--red3)" },
-    { id: "nav-evals",       label: "Evals",                sublabel: "Suites, runs and experiments",       type: "action", icon: "flask",    accent: "var(--cyn3)" },
-    { id: "nav-settings",    label: "Settings",             sublabel: "Theme, model, system configuration", type: "action", icon: "settings", accent: "var(--t3)" },
   ];
 
   const NAV_DISPATCH: Record<string, () => void> = {
-    "nav-home":        () => onNavigate("home"),
-    "nav-canvases":    () => onNavigate("canvases"),
-    "nav-briefing":    () => onNavigate("intelligence"),
-    "nav-recents":     () => onNavigate("recents"),
-    "nav-inbox":       () => onNavigate("inbox"),
-    "nav-documents":   () => onNavigate("documents"),
-    "nav-intel":       () => onNavigate("intel"),
-    "nav-ontology":    () => onNavigate("ontology"),
-    "nav-health":      () => onNavigate("health"),
-    "nav-agentic-ops": () => onNavigate("agentic-ops"),
     // Deep-links into the creation flow. `onNavigate` only carries a tab, so the intent
     // rides the URL — which also makes "create an agent" a linkable place, not just a
     // button somebody has to already be standing next to.
@@ -334,20 +343,10 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       onNavigate("agentic-ops");
     },
     "nav-playbook":    () => onNavigate("playbook"),
-    "nav-catalog":     () => onNavigate("catalog"),
-    "nav-builder":     () => onNavigate("builder"),
-    "nav-semantic":    () => onNavigate("semantic"),
     // "connections" resolves to the Catalog on every path now (PX-0) — this entry
     // exists so someone TYPING "connections" still finds the place they mean.
     "nav-connections": () => onNavigate("connections"),
     "nav-metrics":     () => onNavigate("metrics"),
-    "nav-monitors":    () => onNavigate("monitors"),
-    "nav-actions":     () => onNavigate("actions"),
-    "nav-integrations": () => onNavigate("integrations"),
-    "nav-spend":       () => onNavigate("spend"),
-    "nav-security":    () => onNavigate("security"),
-    "nav-evals":       () => onNavigate("evals"),
-    "nav-settings":    () => onNavigate("settings"),
   };
 
   // ── Build full item list ──────────────────────────────────────────────────
@@ -365,7 +364,10 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       onSelect: c.run,
     }));
 
-    const navItems: PaletteItem[] = NAV_ACTIONS.map(a => ({ ...a, onSelect: NAV_DISPATCH[a.id] ?? (() => {}) }));
+    const navItems: PaletteItem[] = [
+      ...PAGE_ACTIONS,
+      ...NAV_ACTIONS.map(a => ({ ...a, onSelect: NAV_DISPATCH[a.id] ?? (() => {}) })),
+    ];
 
     const invItems: PaletteItem[] = investigations.map(inv => ({
       id: `inv-${inv.id}`,

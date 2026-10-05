@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * KineticPanel — what Aughor may do on a connection (Aughor Intelligence · 07 Actions).
+ * DeclaredActionsPanel — what Aughor may do on a connection (Aughor Intelligence · 07 Actions).
  *
  * Numbered sections beside a rail. §01 the declared actions — what each does, what it is about, and
  * its gate — with the form that declares one; §02 the overlay edits a person wrote over the data,
@@ -353,7 +353,7 @@ function ProposeSection({ connectionId, onStaged }: { connectionId: string; onSt
 
 // ── The layer ────────────────────────────────────────────────────────────────────
 
-export function KineticPanel({ connectionId }: { connectionId: string }) {
+export function DeclaredActionsPanel({ connectionId }: { connectionId: string }) {
   const [actions, setActions] = useState<Record<string, any>>({});
   const [actionsErr, setActionsErr] = useState<string | null>(null);
   const [edits, setEdits] = useState<any[]>([]);

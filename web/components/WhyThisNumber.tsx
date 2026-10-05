@@ -15,7 +15,9 @@ import { useEffect, useState } from "react";
 import {
   getAnswerTrace, getPublicReceipt,
   type AnswerTrace, type PublicReceipt, type PublicReceiptGuard, type TracedNode,
+  recheckAnswer, type AnswerRecheck as AnswerRecheckResult,
 } from "@/lib/api";
+import { AnswerRecheck } from "@/components/AnswerRecheck";
 import { Button } from "@/components/ui/button";
 import { renderEmphasis } from "@/components/brief/BriefProse";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
@@ -464,6 +466,11 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
                 </Section>
               )}
 
+              {/* Screen 10 of the 2027 study — the re-check that already runs is offered as a button:
+                  the statement run now, both figures, and whether the difference is late rows or a
+                  restatement. A person asks; nothing is sent anywhere. */}
+              {rec.record?.answer && <Reperform answerId={rec.record.answer} />}
+
               {(rec.confidence.level || rec.confidence.capped_by) && (
                 <Section title="Stated confidence">
                   <div className="aug-fs-xs" style={{ color: "var(--t2)" }}>
@@ -503,6 +510,47 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
 
 /** Idea 11 — `/receipt/<id>`: the page every exported figure links back to. The drawer's
  *  own body, so a reader of a PDF or a deck sees exactly what "Why this number" shows. */
+function Reperform({ answerId }: { answerId: string }) {
+  const [state, setState] = useState<"idle" | "running" | "done" | "refused">("idle");
+  const [result, setResult] = useState<AnswerRecheckResult | null>(null);
+  const [why, setWhy] = useState("");
+  const run = async () => {
+    setState("running");
+    try {
+      setResult(await recheckAnswer(answerId));
+      setState("done");
+    } catch (e) {
+      setWhy(e instanceof Error ? e.message : String(e));
+      setState("refused");
+    }
+  };
+  return (
+    <Section title="Re-perform">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Button size="xs" variant="outline" onClick={() => void run()} disabled={state === "running"} data-testid="receipt-reperform">
+          {state === "running" ? "Running the statement…" : state === "idle" ? "Run the statement now" : "Run it again"}
+        </Button>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+          Runs this answer&apos;s own statement again and compares it with what was said.
+        </span>
+      </div>
+      {state === "refused" && (
+        <div className="aug-fs-xs" role="alert" style={{ color: "var(--t2)", marginTop: 6, lineHeight: 1.5 }}>Not re-performed: {why}.</div>
+      )}
+      {state === "done" && result && (
+        result.status === "changed" ? <AnswerRecheck recheck={result} />
+        : (
+          <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 6, lineHeight: 1.5 }} data-testid="receipt-reperform-result">
+            {result.status === "unchanged"
+              ? `The statement returned the same figures just now (${formatTimestamp(result.checked_at, "short")}).`
+              : `It could not be compared: ${result.reason || "the answer keeps no statement to run again"}.`}
+          </div>
+        )
+      )}
+    </Section>
+  );
+}
+
 export function TrustReceiptPage({ receiptId }: { receiptId: string }) {
   return <Drawer receiptId={receiptId} asPage onClose={() => { window.location.href = "/"; }} />;
 }

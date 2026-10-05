@@ -15,7 +15,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { KineticPanel } from "@/components/KineticPanel";
+import { DeclaredActionsPanel } from "@/components/DeclaredActionsPanel";
 
 type Call = { url: string; method: string; body: any };
 const calls: Call[] = [];
@@ -44,10 +44,10 @@ beforeEach(() => {
   }) as typeof fetch;
 });
 
-describe("KineticPanel — declaring an action about an object", () => {
+describe("DeclaredActionsPanel — declaring an action about an object", () => {
   it("sends an object parameter and the edit it writes, not just the value params", async () => {
     const user = userEvent.setup();
-    render(<KineticPanel connectionId="c1" />);
+    render(<DeclaredActionsPanel connectionId="c1" />);
 
     await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "flag_order_for_review");
     await user.selectOptions(screen.getAllByRole("combobox")[0], "annotate");
@@ -77,7 +77,7 @@ describe("KineticPanel — declaring an action about an object", () => {
 
   it("keeps a plain value parameter typed, with no object_type smuggled in", async () => {
     const user = userEvent.setup();
-    render(<KineticPanel connectionId="c1" />);
+    render(<DeclaredActionsPanel connectionId="c1" />);
     await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "refund_order");
     await user.click(screen.getByRole("button", { name: "Save action" }));
 
@@ -87,12 +87,12 @@ describe("KineticPanel — declaring an action about an object", () => {
   });
 });
 
-describe("KineticPanel — withdrawing one overlay edit", () => {
+describe("DeclaredActionsPanel — withdrawing one overlay edit", () => {
   it("deletes THAT edit on THIS connection and re-reads the list", async () => {
     annotations = [{ id: "e1", table: "orders", column: "status", key_column: "order_id", row_key: "8821",
                      body: "known test order", source: "user" }];
     const user = userEvent.setup();
-    render(<KineticPanel connectionId="c1" />);
+    render(<DeclaredActionsPanel connectionId="c1" />);
     // The overlay edits share the page with the declared actions now — no tab to open first.
 
     await screen.findByText("known test order");
