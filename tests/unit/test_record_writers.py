@@ -265,3 +265,89 @@ def test_a_file_whose_column_still_refuses_null_is_rebuilt_with_its_rows(tmp_pat
     assert cols["confidence"] == 0 and cols["claim_text"] == 1                             # nullable; the rest as shipped
     assert {r[1] for r in con.execute("PRAGMA index_list(evidence_claims)")} >= {"idx_ec_inv", "idx_ec_met"}
     con.close()
+
+
+# ── the explorer's finding and the hub's ClaimCheck (the last two of the five shapes) ──────────
+
+def _finding_artifact(conn: str, fid: str, text: str, sql: str) -> str:
+    return Ledger.default().artifact_write("finding", f"finding:{conn}:{fid}", {"id": fid, "finding": text, "sql": sql}, conn_id=conn)
+
+
+def test_the_explorer_writer_books_a_measured_finding_and_leaves_an_unchanged_one_alone():
+    conn, fid = _conn(), "Sales__seasonality__1"
+    finding = {"id": fid, "finding": "Weekend days carry 31% of weekly units", "sql": "SELECT dow, SUM(units) FROM sales GROUP BY 1",
+               "domain": "Sales", "angle": "seasonality", "measures": ["units"], "dimensions": ["dow"], "entities_involved": ["sales"],
+               "confidence": 0.7, "novelty": 3, "generated_at": "2026-10-03T10:00:00Z"}
+    receipt = _finding_artifact(conn, fid, finding["finding"], finding["sql"])
+    cid = W.book_explorer_finding(finding=finding, sql=finding["sql"], connection_id=conn, receipt_id=receipt, schema_name="main")
+    claim = C.get(cid)
+    assert claim.kind == "finding" and claim.tier == "measured" and claim.author == "agent:explorer" and claim.author_kind == "agent"
+    assert [(w.kind, w.ref) for w in claim.warrants] == [("run", receipt)] and claim.as_of == "2026-10-03" and claim.confidence is None
+    assert claim.extra["writer"] == "explorer" and claim.extra["finding_id"] == fid and claim.extra["schema"] == "main"
+    assert "confidence" not in claim.extra and "novelty" not in claim.extra and "investigation_id" not in claim.extra
+    assert claim.key == W.explorer_finding_key(conn, "main", fid) and claim.version == 1
+    # the next run reads it back unchanged: no restatement (a restatement is a Correction)
+    again = W.book_explorer_finding(finding=finding, sql=finding["sql"], connection_id=conn, receipt_id=_finding_artifact(conn, fid, finding["finding"], finding["sql"]),
+                                    schema_name="main")
+    assert again == cid and C.get(cid).version == 1
+    # the same id on another schema is another claim; a changed text is a restatement
+    other = W.book_explorer_finding(finding=finding, sql=finding["sql"], connection_id=conn, receipt_id=receipt, schema_name="archive")
+    assert other != cid and C.get(other).version == 1
+    moved = W.book_explorer_finding(finding={**finding, "finding": "Weekend days carry 28% of weekly units"}, sql=finding["sql"], connection_id=conn,
+                                    receipt_id=receipt, schema_name="main")
+    assert C.get(moved).version == 2 and C.get(moved).supersedes == cid
+    # what is never booked: a person's unverified fix, an invalid finding, a finding with no query
+    assert W.book_explorer_finding(finding={**finding, "unverified": True}, sql=finding["sql"], connection_id=conn, receipt_id=receipt) is None
+    assert W.book_explorer_finding(finding={**finding, "invalid": True}, sql=finding["sql"], connection_id=conn, receipt_id=receipt) is None
+    assert W.book_explorer_finding(finding=finding, sql="", connection_id=conn, receipt_id=receipt) is None
+
+
+def test_a_finding_the_revalidation_or_a_person_withdraws_is_restated_withdrawn_with_the_measured_version_kept():
+    from aughor.explorer import store as S
+    conn, fid = _conn(), "Returns__rate__2"
+    finding = {"id": fid, "finding": "Returns ran at 4.1% last month", "sql": "SELECT 1", "generated_at": "2026-10-01"}
+    cid = W.book_explorer_finding(finding=finding, sql="SELECT 1", connection_id=conn, receipt_id=_finding_artifact(conn, fid, "x", "SELECT 1"), schema_name="s")
+    gone = W.withdraw_explorer_finding(connection_id=conn, finding_id=fid, schema_name="s", reason="auto re-validation: the number moved")
+    w = C.get(gone)
+    assert w.state == "withdrawn" and w.valid_until and w.status == "Final" and w.statement.text.startswith("Withdrawn: Returns ran")
+    assert w.extra["withdrawn_reason"].startswith("auto re-validation") and w.supersedes == cid and w.tier == "measured"
+    assert C.get(cid).statement.text == "Returns ran at 4.1% last month"     # the measured version is kept beneath
+    assert W.withdraw_explorer_finding(connection_id=conn, finding_id=fid, schema_name="s", reason="again") is None
+    assert W.withdraw_explorer_finding(connection_id=conn, finding_id="never-booked", reason="x") is None
+    # a re-booking after a withdrawal is a new statement, not "unchanged"
+    back = W.book_explorer_finding(finding=finding, sql="SELECT 1", connection_id=conn, receipt_id=_finding_artifact(conn, fid, "x", "SELECT 1"), schema_name="s")
+    assert C.get(back).state == "" and C.get(back).version == 3
+    # the store's dismissal reaches the Record through the store key; a canvas run's does not
+    S._withdraw_in_record(f"{conn}__s", fid, "dismissed by user: wrong grain")
+    assert C.latest(W.explorer_finding_key(conn, "s", fid)).extra["withdrawn_by"] == "person"
+    S._withdraw_in_record("canvas_abc", fid, "dismissed")      # no-op, never raises
+
+
+def test_the_hub_writer_books_one_said_claim_per_reply_never_per_object():
+    conn, obj = _conn(), "promise:order_to_delivery.dispatch"
+    measured = {"verification": "measured", "said": [{"text": "187", "value": 187}], "against": {"breached": 187, "reached": 2000},
+                "matched": {"said": "187", "label": "breached", "value": 187}}
+    contradicted = {"verification": "contradicted", "said": [{"text": "400", "value": 400}], "against": {"breached": 187},
+                    "question": "You said 400; the platform measured 187. Which is right?", "question_to": "user:ops@corp"}
+    r1 = W.reply_id_for(reply_ts="1712.010", author_ref="slack:U1", author="Ana", text="we breached on 187")
+    r2 = W.reply_id_for(reply_ts="", author_ref="slack:U2", author="Bo", text="no, it was 400")
+    assert r1 == "1712-010" and r2 == W.reply_id_for(reply_ts="", author_ref="slack:U2", author="Bo", text="no, it was 400") and r2 != r1
+    a = W.book_said_claim(text="we breached on 187", object_ref=obj, connection_id=conn, reply_id=r1, check=measured,
+                          author="Ana", author_ref="slack:U1", thread_ref="C9:1712.009", observed_at="2026-09-23T10:00:00Z")
+    b = W.book_said_claim(text="no, it was 400", object_ref=obj, connection_id=conn, reply_id=r2, check=contradicted,
+                          author="Bo", author_ref="slack:U2", thread_ref="C9:1712.009", observed_at="2026-09-23T11:00:00Z")
+    ca, cb = C.get(a), C.get(b)
+    assert ca.kind == cb.kind == "said" and ca.tier == cb.tier == "said" and ca.about.kind == "object" and ca.about.key == obj
+    assert ca.state == "supported" and ca.statement.metric == "breached" and ca.statement.value == 187 and ca.author == "slack:U1" and ca.author_kind == "person"
+    assert cb.state == "refuted" and cb.extra["question_to"] == "user:ops@corp" and cb.version == 1 and ca.version == 1 and ca.key != cb.key
+    assert [w.kind for w in ca.warrants] == ["document"] and ca.warrants[0].ref == "thread:C9:1712.009" and "breached=187" in ca.warrants[0].detail
+    assert ca.as_of == "2026-09-23"
+    said = [c for c in C.list_claims(kind="said", conn_id=conn) if c.extra.get("writer") == "hub"]
+    assert len(said) == 2
+    # the same person saying the same words again restates their own claim; an unchecked note is open with no warrant
+    again = W.book_said_claim(text="no, it was 400", object_ref=obj, connection_id=conn, reply_id=r2, check=contradicted, author="Bo", author_ref="slack:U2")
+    assert C.get(again).version == 2 and C.get(again).supersedes == b
+    u = C.get(W.book_said_claim(text="looks fine to me", object_ref=obj, connection_id="", reply_id="r3", check={"verification": "unchecked", "note": "no number is stated"},
+                                author="Cy"))
+    assert u.state == "open" and u.warrants == [] and u.author == "person:Cy" and u.status == "Provisional"
+    assert W.book_said_claim(text="", object_ref=obj, connection_id=conn, reply_id="r4", check={}, author="x") is None

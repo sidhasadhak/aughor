@@ -597,7 +597,7 @@ class SchemaExplorer:
             _payload = insight if dossier is None else {**insight, "dossier": dossier}
             if _columns:
                 _payload = {**_payload, "columns": _columns}
-            Ledger.default().artifact_write(
+            _aid = Ledger.default().artifact_write(
                 "finding",
                 f"insight:{self.connection_id}:{insight_id}",
                 _payload,
@@ -606,6 +606,17 @@ class SchemaExplorer:
                 created_by_job=current_job_id(),
                 lineage=_lineage,
             )
+            # The explorer writer (the 2027 study §E, the first of the five shapes): the finding is
+            # a measured claim in the Record, warranted by the artifact just written. Best-effort.
+            try:
+                from aughor.record.writers import book_explorer_finding
+                book_explorer_finding(finding=_payload, sql=sql, connection_id=self.connection_id,
+                                      receipt_id=_aid, schema_name=self.schema_name or "",
+                                      canvas_id=self.canvas_id or "")
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "the explorer's finding could not be booked into the Record; the artifact stands",
+                         counter="record.explorer_finding", conn_id=self.connection_id)
         except Exception:
             logger.debug("finding artifact write failed", exc_info=True)
         payload = {"insight_id": insight_id, "finding": str(insight.get("finding", ""))[:120]}

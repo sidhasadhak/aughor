@@ -470,8 +470,24 @@ def _dismiss(state: dict, insight_id: str, reason: str, scope: str) -> Optional[
             ins["invalid"] = True
             ins["invalid_reason"] = f"dismissed by user: {reason}" if reason else "dismissed by user"
             _log_dismissal(scope, ins, reason)
+            _withdraw_in_record(scope, str(ins.get("id") or ""), ins["invalid_reason"])
             return ins
     return None
+
+
+def _withdraw_in_record(scope: str, finding_id: str, reason: str) -> None:
+    """A dismissed finding is withdrawn in the Record too (the 2027 study §E): the store key names
+    the connection and, for a per-schema run, the schema; a canvas run's finding is not booked."""
+    if not scope or scope.startswith("canvas"):
+        return
+    conn_id, _, schema = scope.partition("__")
+    try:
+        from aughor.record.writers import withdraw_explorer_finding
+        withdraw_explorer_finding(connection_id=conn_id, finding_id=finding_id, schema_name=schema, reason=reason, by="person")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the dismissed finding could not be withdrawn in the Record; the store's flag stands",
+                 counter="record.explorer_withdraw", conn_id=conn_id)
 
 
 def dismiss_insight_conn(connection_id: str, insight_id: str, reason: str = "") -> Optional[dict]:

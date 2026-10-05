@@ -1,9 +1,10 @@
-"""Writers into the Record — the first three of the study's §E shapes (phase 1, P1-2).
+"""Writers into the Record — the study's §E shapes (phase 1, P1-2; the pack writer with phase 6; the
+explorer's and the hub's with the arc's close-out).
 
 The study counted five claim shapes that never met (§E): the Explorer's finding, the deep
 analysis's finding, ``EvidenceClaim``, a pack's ``CoreClaim`` and the hub's ``ClaimCheck``. Each
-becomes a WRITER into the one ledger (:mod:`aughor.record.claims`) rather than a store of its own.
-This module holds the writers that ride the two spines already running:
+becomes a WRITER into the one ledger (:mod:`aughor.record.claims`) rather than a store of its own —
+all five are here now. The first two ride the spines already running:
 
 - **the Trust Receipt** — `routers/investigations.py::_write_answer_receipt` is the one place every
   user-facing answer (chat · deep analysis · monitor · the conversation's ``run_sql``) is receipted,
@@ -292,6 +293,135 @@ def pack_claims(connection_id: str, *, pack_id: str = "", limit: int = 500) -> l
     """What packs expected of this connection and what the data said, as the Record holds it now."""
     return [c for c in _claims.list_claims(kind="hypothesis", conn_id=connection_id, limit=limit)
             if c.extra.get("writer") == "pack" and (not pack_id or c.extra.get("pack") == pack_id)]
+
+
+# ── the Explorer's finding (the fifth shape's first half) ──────────────────────────────────
+
+def explorer_finding_key(connection_id: str, schema_name: str, finding_id: str) -> str:
+    """One claim per connection · schema · finding id. The schema is in the key because per-schema
+    runs reuse ids (``pinned__0``, ``<domain>__<angle>__1``) and would otherwise restate each other."""
+    return _claims.claim_key("finding", "explorer", connection_id, schema_name or "-", finding_id)
+
+
+def book_explorer_finding(*, finding: dict, sql: str, connection_id: str, receipt_id: str,
+                          schema_name: str = "", canvas_id: str = "") -> Optional[str]:
+    """The explorer writer — the Explorer's finding, the first of the study's five shapes (§E),
+    booked at the moment the explorer writes its own ``finding`` artifact (the emission tail in
+    `explorer/agent.py`): a FINDING at tier ``measured``, warranted by that artifact — the run that
+    produced it, with its SQL, its tables and the numeric-grounding guard that passed it. A finding
+    the explorer re-reads unchanged on its next run is left alone (an unchanged finding is not a
+    restatement, and a restatement is a Correction); one whose text changed is restated under its
+    key, the old version kept. What is deliberately not copied: the explorer's own ``confidence``
+    and ``novelty`` numbers — law 3 — and an ``unverified`` finding a person wrote by hand
+    (`explorer/fix_persist`) never reaches this writer, so it books nothing.
+    Returns the claim's artifact id, or None when there is nothing to book."""
+    text = str((finding or {}).get("finding") or "").strip()
+    fid = str((finding or {}).get("id") or "")
+    if not (text and fid and sql and connection_id and receipt_id) or finding.get("unverified") or finding.get("invalid"):
+        return None
+    key = explorer_finding_key(connection_id, schema_name, fid)
+    prior = _claims.latest(key)
+    if prior is not None and prior.statement.text == text[:1000] and prior.state != "withdrawn":
+        return prior.id
+    measures = [str(m) for m in (finding.get("measures") or [])][:8]
+    claim = _claims.Claim(
+        kind="finding", tier="measured",
+        about=_claims.About(kind="connection", key=connection_id),
+        statement=_claims.Statement(text=text[:1000], metric=measures[0] if len(measures) == 1 else ""),
+        status="Provisional", as_of=str(finding.get("generated_at") or "")[:10] or _today(),
+        warrants=[_claims.Warrant(kind="run", ref=receipt_id, detail=sql[:400])],
+        falsifier="the finding's own query, re-run before a Briefing (the live re-validation) and on a person's "
+                  "re-check from the Evidence drawer; a number that no longer holds withdraws this claim",
+        author="agent:explorer", author_kind="agent",
+        extra={"writer": "explorer", "finding_id": fid, "domain": str(finding.get("domain") or ""),
+               "angle": str(finding.get("angle") or ""), "measures": measures,
+               "dimensions": [str(d) for d in (finding.get("dimensions") or [])][:8],
+               "entities": [str(e) for e in (finding.get("entities_involved") or [])][:8],
+               "schema": schema_name or "", **({"canvas_id": canvas_id} if canvas_id else {}),
+               **({"pinned": True} if finding.get("pinned") else {}),
+               **({"synthesized": True} if finding.get("synthesized") else {})},
+    )
+    return _claims.book(claim, key=key, conn_id=connection_id)
+
+
+def withdraw_explorer_finding(*, connection_id: str, finding_id: str, reason: str,
+                              schema_name: str = "", by: str = "system") -> Optional[str]:
+    """A finding the re-validation found no longer holds, or a person dismissed, is WITHDRAWN in the
+    Record: restated with ``state="withdrawn"``, ``valid_until`` today and the reason, the measured
+    version kept beneath it — so the Corrections view lists it and "what did we believe" still
+    answers. Returns the new version's id, or None when the finding was never booked or is already
+    withdrawn."""
+    key = explorer_finding_key(connection_id, schema_name, finding_id)
+    prior = _claims.latest(key)
+    if prior is None or prior.state == "withdrawn":
+        return None
+    new = prior.model_copy(deep=True)
+    new.confidence = None
+    new.state = "withdrawn"
+    new.valid_until = _today()
+    new.status = "Final"
+    new.statement = _claims.Statement(text=f"Withdrawn: {prior.statement.text}"[:1000], metric=prior.statement.metric,
+                                      value=prior.statement.value, unit=prior.statement.unit)
+    new.extra = {**prior.extra, "withdrawn_reason": (reason or "")[:400], "withdrawn_by": by or "system"}
+    return _claims.restate(key, new, conn_id=connection_id)
+
+
+# ── the hub's ClaimCheck (the fifth shape's second half) ────────────────────────────────────
+
+def said_claim_key(connection_id: str, object_ref: str, reply_id: str) -> str:
+    """One claim per reply, never per object: a second reply on the same object is its own claim."""
+    return _claims.claim_key("said", "hub", connection_id or "-",
+                             "".join(ch if ch.isalnum() else "-" for ch in object_ref)[:120], reply_id)
+
+
+def reply_id_for(*, reply_ts: str, author_ref: str, author: str, text: str) -> str:
+    """The reply's own id when the bot sent it; else a hash of who said what — the same words by the
+    same person are the same statement, a different reply is a different claim."""
+    if reply_ts:
+        return reply_ts.replace(".", "-")
+    import hashlib
+    return hashlib.sha1(f"{author_ref or author}|{text}".encode("utf-8")).hexdigest()[:12]
+
+
+#: The hub's verification word → the claim's state.
+SAID_CLAIM_STATE: dict[str, str] = {"measured": "supported", "contradicted": "refuted", "unchecked": "open"}
+
+
+def book_said_claim(*, text: str, object_ref: str, connection_id: str, reply_id: str, check: dict,
+                    author: str, author_ref: str = "", thread_ref: str = "", observed_at: str = "") -> Optional[str]:
+    """The hub writer — the hub's ``ClaimCheck``, the last of the study's five shapes (§E): what a
+    person said in a filed thread, booked as a SAID claim at tier ``said`` about the object the
+    thread was filed on, with the check's verdict as its state (``supported`` when the data the
+    thread was filed with agreed, ``refuted`` when it contradicted, ``open`` when nothing could be
+    checked) and the measures it was checked against as a document warrant — the filing's snapshot,
+    never a run, so the tier stays ``said``: the check is against a stamped reading, not a query.
+    One claim per reply (`said_claim_key`), so a second reply on the same object is counted beside
+    the first, not over it. Returns the artifact id, or None when there is no text or object."""
+    text = (text or "").strip()
+    if not (text and object_ref and reply_id):
+        return None
+    check = dict(check or {})
+    verification = str(check.get("verification") or "unchecked")
+    state = SAID_CLAIM_STATE.get(verification, "open")
+    against = {k: v for k, v in (check.get("against") or {}).items() if isinstance(v, (int, float))}
+    warrants = []
+    if verification in ("measured", "contradicted") and thread_ref:
+        warrants.append(_claims.Warrant(kind="document", ref=f"thread:{thread_ref}",
+                                        detail=("checked against the measures the thread was filed with: "
+                                                + ", ".join(f"{k}={v}" for k, v in list(against.items())[:6]))[:400]))
+    claim = _claims.Claim(
+        kind="said", tier="said", about=_claims.About(kind="object", key=object_ref),
+        statement=_claims.Statement(text=text[:1000], metric=str((check.get("matched") or {}).get("label") or ""),
+                                    value=(check.get("matched") or {}).get("value")),
+        status="Provisional" if state == "open" else "Final",
+        as_of=(observed_at or "")[:10] or _today(), warrants=warrants,
+        author=author_ref or f"person:{author or 'someone'}", author_kind="person", state=state,
+        extra={"writer": "hub", "verification": verification, "said": list(check.get("said") or [])[:8],
+               "against": against, "matched": check.get("matched") or {}, "question": str(check.get("question") or ""),
+               "question_to": str(check.get("question_to") or ""), "check_note": str(check.get("note") or ""),
+               "thread": thread_ref, "reply_id": reply_id, "author_name": author or ""},
+    )
+    return _claims.book(claim, key=said_claim_key(connection_id, object_ref, reply_id), conn_id=connection_id or None)
 
 
 def _restated_text(first: str, changes: list[dict], entry: dict) -> str:

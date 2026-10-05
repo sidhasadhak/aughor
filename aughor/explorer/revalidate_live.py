@@ -109,6 +109,16 @@ def _revalidate_one_run(conn_id: str, store_key: str, schema: Optional[str], lim
         return []
     for iid, reason in failed:
         logger.info("[revalidate:%s] suppressed finding %s — %s", store_key, iid, reason)
+        # The Record hears of it too: the explorer's claim is withdrawn with the reason, the measured
+        # version kept beneath it (the 2027 study §E; `record/writers.withdraw_explorer_finding`).
+        try:
+            from aughor.record.writers import withdraw_explorer_finding
+            withdraw_explorer_finding(connection_id=conn_id, finding_id=str(iid), schema_name=schema or "",
+                                      reason=f"auto re-validation: {reason}")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the withdrawn finding could not be restated in the Record; the store's flag stands",
+                     counter="record.explorer_withdraw", conn_id=conn_id)
     return [{"id": iid, "reason": reason} for iid, reason in failed]
 
 

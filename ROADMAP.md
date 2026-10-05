@@ -11134,9 +11134,9 @@ the CLI print a model's stated confidence as a word, never a percentage. (P1-5) 
 `record.confidence` and `record.told` (the departures that cited the analysis), rebuilt live on each read inside
 the signed body; the web receipt shows both. Receipt: 180 tests across the Record, the receipt, the re-check, the
 inbox, the recommendation review, the departures gate and the vocabulary ratchet pass. **Still open in phase 1:**
-the Explorer's, a pack's and the hub's claim shapes as writers; organisation scope on glossary, metrics and the
-Briefing; the graph as a projection; and the two exit parts only the install can show (a restatement delivered
-on the organisation's warehouse; ten decisions booked by people).
+organisation scope on glossary, metrics and the Briefing; the graph as a projection; and the two exit parts only the
+install can show (a restatement delivered on the organisation's warehouse; ten decisions booked by people). The
+Explorer's, a pack's and the hub's claim shapes landed as writers since (phase 6; the close-out below).
 
 **Phase 2 — the code half BUILT 2026-10-05**, three slices. (P2-1) `aughor/record/inquiry.py` — the inquiry as a
 kernel artifact that outlives its runs: the question, who opened it (a person's ask, a monitor's alert, a restated
@@ -11307,6 +11307,22 @@ noun and exit-gate suites pass; the API registers 21 `/ledger/v1` routes. **Stil
 screen and the web client's regeneration for the new routes; OAuth for MCP servers that need their own sign-in; a second
 install to receive an aggregate; and the exit — an outside vendor's agent on a real service principal scored beside the
 built-in ones, a third party's pack uploaded and measured on a connection.
+
+**The close-out — the code still open inside the phases, taken back to back from 2026-10-05** at the user's word
+("finish these back to back where a UI check is not required"); the screens and the install's exits stay the user's.
+(C1, phase 1) The last two of §E's five claim shapes are writers into the Record (`record/writers.py`): the
+Explorer's finding is booked at the explorer's own emission tail as a FINDING at tier `measured`, warranted by the
+`finding` artifact it had just written (its SQL, its tables, the grounding guard that passed it), keyed by connection ·
+schema · finding id so per-schema runs that reuse ids never restate each other, left alone when a run reads it back
+unchanged (an unchanged finding is not a Correction), and WITHDRAWN — `state="withdrawn"`, `valid_until`, the reason,
+the measured version kept beneath — when the live re-validation drops it before a Briefing or a person dismisses it
+(`explorer/revalidate_live.py`, `explorer/store._dismiss`); the explorer's own `confidence` and `novelty` numbers are
+not copied (law 3), and a hand-written `unverified` fix books nothing. The hub's `ClaimCheck` is a SAID claim at tier
+`said` about the object the thread was filed on, author the person, the check's verdict as its state (supported ·
+refuted · open) and the filing's measures as a document warrant — never a run, so never `measured` — one claim per
+REPLY (`SlackArrival.reply_ts` when the bot sends it, else who-said-what), so a second reply is counted beside the
+first, never over it; the staged note still shows the latest check. Receipt: the writers, hub-claims, re-validation,
+dismissal, corrections, confidence and vocabulary suites pass.
 
 ---
 
