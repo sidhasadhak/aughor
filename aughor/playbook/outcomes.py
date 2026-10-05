@@ -380,34 +380,60 @@ def load_all_outcomes(path: Path | None = None) -> list[RecOutcome]:
     return [RecOutcome(**o) for o in _load_raw(path)]
 
 
+def _record_verdicts(path: Path | None = None) -> dict[str, tuple[str, str]]:
+    """Phase 5 — the Record's measured verdict per recommendation record (``{rec outcome id: (verdict,
+    inv_id)}``): the review's own comparison against the metric's history, which outranks a person's
+    answer for the same record. A verdict of ``cannot_tell`` is not a case."""
+    try:
+        from aughor.record import decisions as D
+    except Exception:  # noqa: BLE001 — no Record, no measured verdicts
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    for d in D.list_decisions(limit=2000):
+        if d.source.kind != "recommendation" or not d.outcome:
+            continue
+        o = D.outcome_by_id(d.outcome)
+        if o is None or o.verdict == "cannot_tell":
+            continue
+        out[d.source.ref] = (o.verdict, str(d.extra.get("investigation_id") or ""))
+    return out
+
+
 def update_playbook_success_rates(path: Path | None = None) -> int:
-    """
-    Recompute historical_success_rate for all playbook entries that have outcomes.
-    Returns the number of entries updated.
-    """
+    """Recompute each matched play's success rate FROM OUTCOMES, not from use (phase 5): the Record's
+    measured verdict on a decision's review date counts first (as expected or better is a hit, worse
+    a miss); a person's answer (verified · rejected) counts for a record the Record has not measured.
+    The rate is stored with its count (``outcome_n``) and its source, so a reader sees "held in 3 of
+    4" and never a bare percentage. Returns the number of entries updated."""
     from aughor.playbook.retriever import retrieve_for_metric_and_phases
     from aughor.playbook.store import get_entry, save_entry
 
+    measured = _record_verdicts(path)
     outcomes = load_all_outcomes(path)
-    terminal = [o for o in outcomes if o.status in ("verified", "rejected")]
-    if not terminal:
+    cases: list[tuple[RecOutcome, bool, str]] = []          # (record, hit, source)
+    for o in outcomes:
+        if o.id in measured:
+            verdict, _inv = measured[o.id]
+            cases.append((o, verdict in ("as_expected", "better"), "record"))
+        elif o.status in ("verified", "rejected"):
+            cases.append((o, o.status == "verified", "answers"))
+    if not cases:
         return 0
 
     # Group outcomes by matched playbook entry
-    entry_stats: dict[str, dict] = {}  # entry_id -> {wins, total}
-    for outcome in terminal:
+    entry_stats: dict[str, dict] = {}  # entry_id -> {wins, total, sources, from}
+    for outcome, hit, source in cases:
         # Match the recommendation text to playbook entries
         matches = retrieve_for_metric_and_phases([outcome.rec_text], limit=1)
         if not matches:
             continue
         entry = matches[0]
-        if entry.id not in entry_stats:
-            entry_stats[entry.id] = {"wins": 0, "total": 0, "sources": []}
-        entry_stats[entry.id]["total"] += 1
-        if outcome.status == "verified":
-            entry_stats[entry.id]["wins"] += 1
-        if outcome.inv_id not in entry_stats[entry.id]["sources"]:
-            entry_stats[entry.id]["sources"].append(outcome.inv_id)
+        stats = entry_stats.setdefault(entry.id, {"wins": 0, "total": 0, "sources": [], "from": set()})
+        stats["total"] += 1
+        stats["wins"] += hit
+        stats["from"].add(source)
+        if outcome.inv_id not in stats["sources"]:
+            stats["sources"].append(outcome.inv_id)
 
     updated = 0
     for entry_id, stats in entry_stats.items():
@@ -415,6 +441,8 @@ def update_playbook_success_rates(path: Path | None = None) -> int:
         if not entry:
             continue
         entry.historical_success_rate = stats["wins"] / stats["total"] if stats["total"] else 0.0
+        entry.outcome_n = int(stats["total"])
+        entry.rate_source = "record" if stats["from"] == {"record"} else "answers" if stats["from"] == {"answers"} else "record+answers"
         entry.evidence_sources = stats["sources"]
         # Auto-promote to active if success rate >= 50% with at least 2 outcomes
         if entry.status == "draft" and stats["total"] >= 2 and entry.historical_success_rate >= 0.5:

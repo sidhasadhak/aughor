@@ -194,7 +194,39 @@ def outcome_from_review(outcome) -> Optional[str]:
             latest.extra["actual"] = actual
             latest.confidence = None
             _claims.restate(latest.key, latest, conn_id=decision.connection_id or None)
+    _write_back(oid, inv_id=str(getattr(outcome, "inv_id", "") or ""), verdict=verdict)
     return oid
+
+
+def _write_back(outcome_id: str, *, inv_id: str, verdict: str) -> None:
+    """Phase 5: the measured outcome writes back to the confirmed-cause graph (the investigation's
+    proposed causes, confirmed or weakened by the verdict) and to the playbook's success rates
+    (learned from outcomes, not from use). Both best-effort; what was written back is restated onto
+    the outcome so the record says it."""
+    from aughor.kernel.errors import tolerate
+    wrote: list[str] = []
+    if inv_id:
+        try:
+            from aughor.lifecycle.causal import promote_on_record_outcome
+            done = promote_on_record_outcome(inv_id, verdict)
+            if done["affected"]:
+                wrote.append(f"confirmed-cause graph: {done['did']} {done['affected']} edge{'s' if done['affected'] != 1 else ''}")
+        except Exception as exc:  # noqa: BLE001
+            tolerate(exc, "the outcome stands; the confirmed-cause graph could not be written back", counter="record.causal_writeback")
+    try:
+        from aughor.playbook.outcomes import update_playbook_success_rates
+        n = update_playbook_success_rates()
+        if n:
+            wrote.append(f"playbook: {n} entr{'y' if n == 1 else 'ies'} re-rated from outcomes")
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the outcome stands; the playbook's success rates could not be re-learned", counter="record.playbook_writeback")
+    if wrote:
+        try:
+            prior = _dec.outcome_by_id(outcome_id)
+            if prior is not None:
+                _dec.restate_outcome(outcome_id, extra={"written_back": prior.writes_back + wrote})
+        except Exception as exc:  # noqa: BLE001
+            tolerate(exc, "what was written back could not be noted on the outcome", counter="record.writeback_note")
 
 
 def outcome_from_review_answer(outcome, *, status: str, answered_by: str) -> Optional[str]:

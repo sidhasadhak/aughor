@@ -17,10 +17,22 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-_PROPOSALS_PATH  = Path(__file__).parent.parent.parent / "data" / "causal_proposals.json"
-_CONFIRMED_PATH  = Path(__file__).parent.parent.parent / "data" / "causal_graph.json"
+_PROPOSALS_DEFAULT = Path(__file__).parent.parent.parent / "data" / "causal_proposals.json"
+_CONFIRMED_DEFAULT = Path(__file__).parent.parent.parent / "data" / "causal_graph.json"
 
 from aughor.util.time import now_iso_z as _now
+
+
+def _proposals_path() -> Path:
+    """Where proposals live — ``AUGHOR_CAUSAL_PROPOSALS_FILE`` overrides, resolved on call (phase 5
+    made the review a writer here, so the store joins the suite's hermetic set)."""
+    from aughor.db.sqlite_util import resolve_db_path
+    return resolve_db_path("AUGHOR_CAUSAL_PROPOSALS_FILE", _PROPOSALS_DEFAULT)
+
+
+def _confirmed_path() -> Path:
+    from aughor.db.sqlite_util import resolve_db_path
+    return resolve_db_path("AUGHOR_CAUSAL_GRAPH_FILE", _CONFIRMED_DEFAULT)
 
 
 def _edge_id(from_signal: str, to_signal: str) -> str:
@@ -60,30 +72,34 @@ class ConfirmedCausalEdge(BaseModel):
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 def _load_proposals() -> dict[str, list[dict]]:
-    if not _PROPOSALS_PATH.exists():
+    p = _proposals_path()
+    if not p.exists():
         return {}
-    with open(_PROPOSALS_PATH) as f:
+    with open(p) as f:
         data = json.load(f)
     return data if isinstance(data, dict) else {}
 
 
 def _save_proposals(data: dict[str, list[dict]]) -> None:
-    _PROPOSALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(_PROPOSALS_PATH, "w") as f:
+    p = _proposals_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
         json.dump(data, f, indent=2)
 
 
 def _load_confirmed() -> list[dict]:
-    if not _CONFIRMED_PATH.exists():
+    p = _confirmed_path()
+    if not p.exists():
         return []
-    with open(_CONFIRMED_PATH) as f:
+    with open(p) as f:
         data = json.load(f)
     return data if isinstance(data, list) else []
 
 
 def _save_confirmed(edges: list[dict]) -> None:
-    _CONFIRMED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(_CONFIRMED_PATH, "w") as f:
+    p = _confirmed_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
         json.dump(edges, f, indent=2)
 
 
@@ -151,6 +167,21 @@ def promote_on_outcome(inv_id: str, contradicted: bool = False) -> int:
     surviving = [e for e in edge_map.values() if e.get("weight", 1) > 0]
     _save_confirmed(surviving)
     return affected
+
+
+def promote_on_record_outcome(inv_id: str, verdict: str) -> dict:
+    """Phase 5 of the 2027 study — the confirmed-cause graph grows from the install's own REVIEWED
+    decisions: the Record's measured verdict (`record/byproducts.outcome_from_review`) confirms the
+    investigation's proposed causes when the decision went as expected or better, weakens them when
+    it went worse, and leaves them alone when the review could not tell. Until this, promotion ran
+    only on a person's answer, and the file had never been written on the live deployment."""
+    if verdict in ("as_expected", "better"):
+        n = promote_on_outcome(inv_id, contradicted=False)
+        return {"affected": n, "did": "confirmed" if n else "nothing: no proposed causes on this investigation", "verdict": verdict}
+    if verdict == "worse":
+        n = promote_on_outcome(inv_id, contradicted=True)
+        return {"affected": n, "did": "weakened" if n else "nothing: no confirmed edge to weaken", "verdict": verdict}
+    return {"affected": 0, "did": "nothing: the review could not tell", "verdict": verdict}
 
 
 def load_causal_graph(conn_id: Optional[str] = None) -> list[ConfirmedCausalEdge]:

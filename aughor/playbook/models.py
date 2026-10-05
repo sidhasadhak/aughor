@@ -22,6 +22,11 @@ class PlaybookEntry(BaseModel):
     tags: list[str] = Field(default_factory=list)
     evidence_sources: list[str] = Field(default_factory=list)  # inv_ids where this worked
     historical_success_rate: float = 0.0        # 0–1; updated by outcomes
+    # Phase 5 of the 2027 study — a procedure's rate is learned from OUTCOMES, not from use, and is
+    # said with its count or not at all: how many reviewed outcomes the rate rests on, and where they
+    # came from ("record": the Record's measured verdicts; "answers": people's answers at review).
+    outcome_n: int = 0
+    rate_source: str = ""
     status: Literal["active", "deprecated", "draft"] = "draft"
     # ── A data-quality play's own words (IP-1) ─────────────────────────────────
     # The KB cause it checks and the KB's fix for it, verbatim — what a deep analysis lists as a

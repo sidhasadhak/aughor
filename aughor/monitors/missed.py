@@ -205,7 +205,42 @@ def review_missed(connection_id: str, metric: str, day: str, *, stage: bool = Tr
         review.watches.append(w)
     review.waiting_proposal = _waiting_proposal(connection_id, cand.name)
     _decide(review, cand, points, today, stage)
+    book_missed_move(review)
     return review
+
+
+#: The verdict phrases that mean "nothing flagged a move that was one" — a miss, in the study §N's
+#: sense (a Correction), as opposed to an ordinary day, a day still settling, or a move that WAS flagged.
+_MISS_PHRASES = ("Nothing was watching it", "did not count that as a breach", "it was switched off",
+                 "did not exist yet on that day", "no alert is on record")
+
+
+def is_miss(review: MissReview) -> bool:
+    """Whether the review found a miss: the day was a move by the series' own spread and nothing
+    that watched it fired — not an ordinary day, not a day still settling, not a move that WAS flagged."""
+    v = review.verdict or ""
+    if review.value is None or "It WAS flagged" in v or "still settling" in v or "ordinary day" in v:
+        return False
+    return any(p in v for p in _MISS_PHRASES)
+
+
+def book_missed_move(review: MissReview) -> str:
+    """Phase 5 of the 2027 study — a miss is a Correction: booked as a kernel artifact (kind
+    ``missed_move``, one per connection · metric · day, a second review restating the first) so the
+    Record's Corrections view lists it. Returns the entry id, or "" when the review found no miss."""
+    if not is_miss(review):
+        return ""
+    try:
+        from aughor.kernel.ledger import Ledger
+        from aughor.record.corrections import MISSED_MOVE_KIND
+        key = f"{MISSED_MOVE_KIND}:{review.connection_id}:{review.metric.strip().lower()}:{review.day}"
+        return Ledger.default().artifact_write(MISSED_MOVE_KIND, key, review.to_dict(), conn_id=review.connection_id or None,
+                                               lineage=[("missed", f"metric:{review.metric}", review.day)])
+    except Exception as exc:  # noqa: BLE001 — the review stands; its Corrections entry is best-effort and said
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the missed move could not be booked as a correction", counter="missed.book",
+                 conn_id=review.connection_id or None)
+        return ""
 
 
 def _decide(review: MissReview, cand, points, today: date, stage: bool) -> None:

@@ -321,6 +321,24 @@ def record_calibration(connection_id: Optional[str] = None) -> list[dict]:
     return calibration(conn_id=connection_id)
 
 
+# ── corrections (phase 5) ──────────────────────────────────────────────────────────────────
+
+@router.get("/record/corrections")
+def record_corrections(connection_id: Optional[str] = None, kind: Optional[str] = None, limit: int = 100) -> dict:
+    """What the platform was wrong about, as a first-class view: restatements, refuted hypotheses,
+    missed moves, predictions outside their interval, decisions worse than expected — each with what
+    was believed and what replaced it, counted by kind."""
+    from aughor.record.corrections import corrections
+    if connection_id and not _visible(connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    try:
+        out = corrections(conn_id=connection_id, kind=kind, limit=max(1, min(int(limit), 500)))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    out["entries"] = [e for e in out["entries"] if _visible(str(e.get("connection_id") or ""))]
+    return out
+
+
 # ── missions (phase 5) ─────────────────────────────────────────────────────────────────────
 
 class ObjectiveIn(BaseModel):

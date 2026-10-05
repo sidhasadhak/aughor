@@ -15,9 +15,15 @@ must say:
    this metric (each past window predicted from the ones before it: mean absolute error, and how
    often the interval would have held). Must say its interval and that error.
 
-Methods 4–6 (intervention, simulation, learned) are not here; the interface refuses a method it
-does not know rather than guessing. What the platform never does is let a model supply a number
-on this ladder — there is no ``llm_inferred`` provenance and no method named for one.
+4. **intervention** (phase 5, P5-4) — what decisions of this kind did before, on THIS install: the
+   measured effects of past Outcome entries (actual against the metric's own history) for decisions
+   that ran the same declared action or asked the same question, their mean and band, and how many
+   cases that rests on. Reads Outcome entries and nothing else; projects nothing below
+   :data:`INTERVENTION_MIN_CASES` and says so. Must say the count of past cases.
+
+Methods 5–6 (simulation, learned) are not here; the interface refuses a method it does not know
+rather than guessing. What the platform never does is let a model supply a number on this ladder —
+there is no ``llm_inferred`` provenance and no method named for one.
 
 A prediction made under a scenario is a prediction CLAIM (`record/claims.py`) carrying its method,
 its band, what it assumed and — where its spec is measurable — how to score it. The settle tick
@@ -39,10 +45,14 @@ from pydantic import BaseModel, Field
 from aughor.record import claims as _claims
 
 KIND = "scenario"
-METHODS: tuple[str, ...] = ("identity", "declared", "history")
+METHODS: tuple[str, ...] = ("identity", "declared", "history", "intervention")
 #: How many prior windows the history method reads, and the coverage its interval states.
 HISTORY_WINDOWS = 6
 HISTORY_COVERAGE = 0.8
+#: The fewest past reviewed decisions method 4 projects from — the same floor as history's windows.
+INTERVENTION_MIN_CASES = 3
+#: Two decisions ask the same question when their content words overlap this far (Jaccard).
+SAME_DECISION = 0.5
 #: z for an 80% two-sided normal interval — the coverage is STATED, and the backtest says how
 #: often it held, which is the number a reader should trust over the z.
 _Z80 = 1.2816
@@ -250,6 +260,73 @@ def _fmt(v: Optional[float]) -> str:
     return f"{v:,.2f}".rstrip("0").rstrip(".") if abs(v) >= 1000 else f"{v:.4g}"
 
 
+# ── method 4: intervention ─────────────────────────────────────────────────────────────────
+
+def _same_question(a: str, b: str) -> bool:
+    from aughor.record.inquiry import content_words
+    wa, wb = content_words(a), content_words(b)
+    if not wa or not wb:
+        return False
+    return len(wa & wb) / len(wa | wb) >= SAME_DECISION
+
+
+def intervention_cases(*, metric: str, connection_id: str = "", action_id: str = "", like: str = "",
+                       min_cases: int = INTERVENTION_MIN_CASES) -> list[dict]:
+    """The past cases method 4 reads: every Outcome on this install whose decision ran ``action_id``
+    or asked the same question as ``like``, on ``metric``, with a measured effect against the
+    metric's own history. Each case is the outcome's id, the decision's, the effect and the verdict."""
+    from aughor.record import decisions as D
+    want = (metric or "").strip().lower()
+    cases: list[dict] = []
+    for d in D.list_decisions(conn_id=connection_id or None, limit=2000):
+        if not d.outcome:
+            continue
+        same_action = bool(action_id) and action_id in (d.actions or [])
+        same_q = bool(like) and _same_question(like, d.question)
+        if not (same_action or same_q):
+            continue
+        o = D.outcome_by_id(d.outcome)
+        if o is None or o.effect.value is None:
+            continue
+        pred = _claims.get(d.expectation_claim) if d.expectation_claim else None
+        case_metric = (pred.statement.metric if pred else "") or str((o.extra.get("spec") or {}).get("metric_label") or "")
+        if want and case_metric and case_metric.strip().lower() != want:
+            continue
+        cases.append({"outcome": o.id, "decision": d.id, "effect": float(o.effect.value), "verdict": o.verdict,
+                      "measured_on": o.measured_on, "method": o.effect.method, "question": d.question[:160],
+                      "matched_on": "action" if same_action else "question"})
+    return cases
+
+
+def intervention(*, metric: str, connection_id: str = "", action_id: str = "", like: str = "", unit: str = "",
+                 min_cases: int = INTERVENTION_MIN_CASES, coverage: float = HISTORY_COVERAGE) -> Projection:
+    """Method 4 — the effect decisions of this kind had before, on this install, read from Outcome
+    entries and nothing else: the mean measured effect, a band at the stated coverage, the count of
+    cases and how many went the wanted way. Projects nothing below ``min_cases`` and says so."""
+    if not (action_id or like):
+        return Projection(method="intervention", note="method 4 needs the kind of decision: the declared action it ran, "
+                                                      "or the question it asked", must_say=["no decision kind named"])
+    cases = intervention_cases(metric=metric, connection_id=connection_id, action_id=action_id, like=like, min_cases=min_cases)
+    n = len(cases)
+    if n < min_cases:
+        return Projection(method="intervention", backtest={"n": n},
+                          note=f"only {n} past decision{'s' if n != 1 else ''} of this kind {'has' if n == 1 else 'have'} a measured "
+                               f"outcome on this install; {min_cases} are the least an effect is read from",
+                          inputs={"cases": [c["outcome"] for c in cases]},
+                          must_say=[f"{n} past case{'s' if n != 1 else ''} — too few to project from"])
+    effects = [c["effect"] for c in cases]
+    mu, sd = _mean(effects), _sd(effects)
+    held = sum(1 for c in cases if c["verdict"] in ("as_expected", "better"))
+    low, high = mu - _Z80 * sd, mu + _Z80 * sd
+    return Projection(method="intervention", value=round(mu, 6), low=round(low, 6), high=round(high, 6), coverage=coverage, unit=unit,
+                      backtest={"n": n, "held": held, "worse": sum(1 for c in cases if c["verdict"] == "worse"),
+                                "cannot_tell": sum(1 for c in cases if c["verdict"] == "cannot_tell")},
+                      inputs={"cases": [c["outcome"] for c in cases], "matched_on": sorted({c["matched_on"] for c in cases})},
+                      must_say=[f"{n} past decision{'s' if n != 1 else ''} of this kind on this install, each measured against the "
+                                f"metric's own history: effect {_fmt(low)} to {_fmt(high)}{unit} at {int(coverage * 100)}% stated coverage",
+                                f"{held} of {n} went the wanted way; read from Outcome entries and nothing else"])
+
+
 def project(method: str, **kw) -> Projection:
     """The one interface: a method by name, or a refusal — never a guess at one."""
     if method == "identity":
@@ -260,10 +337,13 @@ def project(method: str, **kw) -> Projection:
                         low=kw.get("low"), high=kw.get("high"))
     if method == "history":
         return history(kw["spec"], kw["run_sql"], end_day=kw.get("end_day"), windows=kw.get("windows", HISTORY_WINDOWS))
-    raise ValueError(f"no method named {method!r} on the ladder yet; the three built are {', '.join(METHODS)}")
+    if method == "intervention":
+        return intervention(metric=kw.get("metric", ""), connection_id=kw.get("connection_id", ""), action_id=kw.get("action_id", ""),
+                            like=kw.get("like", ""), unit=kw.get("unit", ""))
+    raise ValueError(f"no method named {method!r} on the ladder yet; the four built are {', '.join(METHODS)}")
 
 
-_TIER_BY_METHOD = {"identity": "mined", "declared": "declared", "history": "mined"}
+_TIER_BY_METHOD = {"identity": "mined", "declared": "declared", "history": "mined", "intervention": "mined"}
 
 
 # ── predictions under a scenario ───────────────────────────────────────────────────────────
@@ -305,7 +385,7 @@ def book_scenario(s: Scenario) -> Scenario:
     for read_only in ("id", "key", "version", "recorded_at"):
         data.pop(read_only, None)
     if s.methods:
-        order = {"identity": 0, "declared": 1, "history": 2}
+        order = {"identity": 0, "declared": 1, "history": 2, "intervention": 3}
         data["tier"] = s.tier or sorted(s.methods, key=lambda m: order.get(m, 9))[-1]
     key = f"scenario:{s.for_kind}:{s.for_id}:{_dt.datetime.now(_dt.timezone.utc).strftime('%Y%m%dT%H%M%S%f')}"
     aid = _ledger().artifact_write(KIND, key, data, conn_id=s.connection_id or None,
