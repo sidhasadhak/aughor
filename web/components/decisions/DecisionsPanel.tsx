@@ -19,13 +19,15 @@ import type { Connection } from "@/lib/api";
 import { countNoun, formatTableNumber, pct } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
 import {
-  bookOutcome, bookScenario, declareDecision, getCalibration, getDecision, listDecisions, listScenarios,
-  plainWho, verdictWords, whoLabel,
+  amendDecision, bookOutcome, bookScenario, declareDecision, decisionStands, getCalibration, getDecision,
+  getPastCases, listDecisions, listScenarios, plainWho, verdictWords, whoLabel,
   type CalibrationRow, type Claim, type Decision, type DecisionDetail, type OutcomeVerdict, type Scenario,
+  type ScenarioBody,
 } from "@/lib/record";
 import {
-  Absent, BackHeader, ClaimLine, Fact, Gate, Ledger, Page, Section, day, dayDistance, daysUntil, useLoad,
-  type LedgerColumn,
+  Absent, ActorField, BackHeader, ClaimLine, Fact, Gate, Ledger, Page, Section, day, dayDistance, daysUntil,
+  useActor, useLoad,
+  type Actor, type LedgerColumn,
 } from "@/components/record/kit";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
@@ -87,7 +89,12 @@ function DecisionLedger({ connections, selectedConn, onOpen }: {
     { head: "Decided by", cell: d => whoLabel(d.decided_by), width: 130 },
     { head: "Decided", cell: d => day(d.decided_at), width: 110 },
     { head: "Review date", cell: d => (d.review_on ? `${day(d.review_on)} · ${dayDistance(d.review_on)}` : "none set"), width: 190 },
-    { head: "Review", cell: d => <StatusChip hue={REVIEW_HUE[reviewState(d)]}>{REVIEW_WORDS[reviewState(d)]}</StatusChip>, width: 150 },
+    { head: "Review", cell: d => (
+      <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+        <StatusChip hue={REVIEW_HUE[reviewState(d)]}>{REVIEW_WORDS[reviewState(d)]}</StatusChip>
+        {d.reopened_by && <StatusChip hue="caution" title="A claim it relied on was restated; a person has not answered yet">reopened</StatusChip>}
+      </span>
+    ), width: 200 },
     ...(many ? [{ head: "Connection", cell: (d: Decision) => (d.connection_id ? connectionLabel(d.connection_id, connections) : "every connection"), width: 150 }] : []),
   ];
   return (
@@ -144,6 +151,8 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
   const [high, setHigh] = useState("");
   const [unit, setUnit] = useState("");
   const [reviewOn, setReviewOn] = useState("");
+  const [decidedOn, setDecidedOn] = useState("");
+  const actor = useActor();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async () => {
@@ -154,6 +163,7 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
       const options = [chosen, ...others.split("\n")].map(o => o.trim()).filter(Boolean);
       const d = await declareDecision({
         question: question.trim(), chosen: chosen.trim(), options, connection_id: connectionId, review_on: reviewOn,
+        decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined, decided_by: actor.by,
         expectation: metric.trim()
           ? { metric: metric.trim(), low: lo, high: hi, mid: lo !== null && hi !== null ? (lo + hi) / 2 : null, unit: unit.trim(), settles_on: reviewOn }
           : null,
@@ -186,8 +196,14 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
           <Input id="dec-r" type="date" value={reviewOn} onChange={e => setReviewOn(e.target.value)} style={{ width: 170 }} />
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>left empty, the date is proposed from how long this connection&apos;s days take to settle</span>
         </div>
+        <label className="aug-fs-sm" htmlFor="dec-d">Decided on</label>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Input id="dec-d" type="date" value={decidedOn} max={new Date().toISOString().slice(0, 10)} onChange={e => setDecidedOn(e.target.value)} style={{ width: 170 }} />
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>left empty, today. A past decision, with its outcome booked, becomes a case later ones are projected from.</span>
+        </div>
         <span />
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <ActorField actor={actor} id="dec-actor" />
           <Button size="xs" disabled={busy || !question.trim() || !chosen.trim()} onClick={() => void submit()}>Book it</Button>
           <Button size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
           {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
@@ -233,6 +249,35 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
   const scenarios = useLoad(() => listScenarios(d.id), [d.id, d.version]);
   const calibration = useLoad(() => getCalibration(d.connection_id || undefined), [d.connection_id]);
   const state = reviewState(d);
+  const actor = useActor();
+  const current = !d.superseded_by;
+  const [adding, setAdding] = useState<"" | "option" | "dissent">("");
+  const [option, setOption] = useState("");
+  const [dissentWho, setDissentWho] = useState("");
+  const [dissentWhy, setDissentWhy] = useState("");
+  const [standsWhy, setStandsWhy] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const write = async (fn: () => Promise<DecisionDetail>) => {
+    setBusy(true);
+    setError("");
+    try {
+      const next = await fn();
+      setAdding(""); setOption(""); setDissentWho(""); setDissentWhy(""); setStandsWhy("");
+      onMoved(next.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  // What was added after the decision was booked — dated and named, so it never reads as having
+  // been on the table at the moment of deciding.
+  const amendments = (Array.isArray(d.extra.amendments) ? d.extra.amendments : []) as { kind: string; what: string; at: string; by: string }[];
+  const addedLater = (kind: string, what: string) => amendments.find(a => a.kind === kind && a.what === what);
+  const reopenings = (Array.isArray(d.extra.reopened) ? d.extra.reopened : []) as
+    { at: string; why?: string; settled_at?: string; settled_by?: string; settled_why?: string }[];
+  const answered = reopenings.filter(r => r.settled_at);
   const rail = (
     <>
       <div className="aug-rail-head"><span className="aug-label">This decision</span></div>
@@ -253,7 +298,37 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
           <Button size="xs" variant="link" onClick={() => onMoved(d.superseded_by)}>Open it as it stands now</Button>
         </div>
       )}
-      <Section label="The options" meta={countNoun(d.options.length, "option")}>
+      {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "0 0 12px" }}>{error}</p>}
+      {current && d.reopened_by && (
+        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+          <p className="aug-fs-ui" style={{ color: "var(--t1)", margin: "0 0 4px" }}>
+            Reopened: a claim this decision relied on was restated.
+            {d.reopened_by_claim && <> It now reads: “{d.reopened_by_claim.statement.text}”</>}
+          </p>
+          <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 8px" }}>
+            Nothing was undone. If the choice still holds on what replaced the claim, say why and it is no longer open; if it does not, record the new decision.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Input aria-label="Why it still stands" value={standsWhy} onChange={e => setStandsWhy(e.target.value)}
+              placeholder="Why the choice still holds" style={{ flex: "1 1 260px" }} />
+            <ActorField actor={actor} id="dec-stands-actor" />
+            <Button size="xs" disabled={busy || !standsWhy.trim()} onClick={() => void write(() => decisionStands(d.id, standsWhy.trim(), actor.by))}>It still stands</Button>
+            <Button size="xs" variant="ghost" onClick={() => onOpenClaim(d.reopened_by)}>Open the claim</Button>
+          </div>
+        </div>
+      )}
+      <Section label="The options" meta={countNoun(d.options.length, "option")}
+        action={current && <Button size="xs" variant="outline" aria-expanded={adding === "option"} onClick={() => setAdding(a => (a === "option" ? "" : "option"))}>Add an option</Button>}>
+        {adding === "option" && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+            <Input aria-label="An option that was on the table" value={option} onChange={e => setOption(e.target.value)}
+              placeholder="An option that was on the table" style={{ flex: "1 1 280px" }} />
+            <ActorField actor={actor} id="dec-opt-actor" />
+            <Button size="xs" disabled={busy || !option.trim()} onClick={() => void write(() => amendDecision(d.id, { option: option.trim(), by: actor.by }))}>Add it</Button>
+            <Button size="xs" variant="ghost" onClick={() => setAdding("")}>Cancel</Button>
+            <span className="aug-fs-sm" style={{ color: "var(--t3)", flexBasis: "100%" }}>It is marked as added today. What was chosen does not change — choosing again is a new decision.</span>
+          </div>
+        )}
         {d.options.length === 0 ? (
           <Absent>Only the choice was recorded: {d.chosen}. The options it was chosen over were not written down.</Absent>
         ) : (
@@ -270,6 +345,11 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
                     {[o.cost && `cost: ${o.cost}`, o.reversibility && `reversibility: ${o.reversibility}`, o.actor && `acts: ${whoLabel(o.actor)}`]
                       .filter(Boolean).join(" · ") || "no cost, reversibility or actor recorded"}
                   </div>
+                  {addedLater("option", o.id) && (
+                    <div className="aug-fs-sm" style={{ color: "var(--amb4)" }}>
+                      added on {day(addedLater("option", o.id)!.at)} by {whoLabel(addedLater("option", o.id)!.by)}, after the decision
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -280,7 +360,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
       <Section label="The scenario"
         meta={scenarios.data ? countNoun(scenarios.data.predictions.filter(p => p.booked_as !== d.expectation_claim).length, "prediction") : undefined}>
         <Gate load={scenarios} what="the scenario">
-          {s => <ScenarioBlock decision={d} scenarios={s.scenarios} predictions={s.predictions}
+          {s => <ScenarioBlock decision={d} scenarios={s.scenarios} predictions={s.predictions} actor={actor}
             calibration={calibration.data ?? []} onBooked={() => { scenarios.reload(); reload(); }} onOpenClaim={onOpenClaim} />}
         </Gate>
       </Section>
@@ -288,14 +368,43 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
       <Section label="What it relied on" meta={countNoun(d.relied_on_claims.length, "claim")}>
         {d.relied_on_claims.length === 0 ? (
           <Absent>No claim was cited when this decision was booked.</Absent>
-        ) : d.relied_on_claims.map(c => <ClaimLine key={c.id} claim={c} onOpen={onOpenClaim} />)}
+        ) : d.relied_on_claims.map(c => (
+          <ClaimLine key={c.id} claim={c} onOpen={onOpenClaim}
+            note={c.superseded_by ? "as recorded when it was decided — restated since" : undefined}
+            action={c.superseded_by && <Button size="xs" variant="ghost" onClick={() => onOpenClaim(c.superseded_by)}>What replaced it</Button>} />
+        ))}
+        {answered.map(r => (
+          <p className="aug-fs-sm" key={r.at} style={{ color: "var(--t2)", margin: "8px 0 0" }}>
+            Reopened on {day(r.at)} when a claim it relied on was restated; {whoLabel(r.settled_by ?? "")} answered on {day(r.settled_at)} that it still stands: {r.settled_why}
+          </p>
+        ))}
       </Section>
 
-      <Section label="Dissent" meta={d.dissent.length ? countNoun(d.dissent.length, "voice") : undefined}>
+      <Section label="Dissent" meta={d.dissent.length ? countNoun(d.dissent.length, "voice") : undefined}
+        action={current && <Button size="xs" variant="outline" aria-expanded={adding === "dissent"} onClick={() => setAdding(a => (a === "dissent" ? "" : "dissent"))}>Record dissent</Button>}>
+        {adding === "dissent" && (
+          <div className="aug-form-grid" style={{ marginBottom: 12 }}>
+            <label className="aug-fs-sm" htmlFor="dec-dis-who">Who disagreed</label>
+            <Input id="dec-dis-who" value={dissentWho} onChange={e => setDissentWho(e.target.value)} placeholder="a person" />
+            <label className="aug-fs-sm" htmlFor="dec-dis-why">Why</label>
+            <Input id="dec-dis-why" value={dissentWhy} onChange={e => setDissentWhy(e.target.value)} placeholder="What they said against the choice" />
+            <span />
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <ActorField actor={actor} id="dec-dis-actor" />
+              <Button size="xs" disabled={busy || !dissentWho.trim() || !dissentWhy.trim()}
+                onClick={() => void write(() => amendDecision(d.id, { dissent: { who: dissentWho.trim(), why: dissentWhy.trim() }, by: actor.by }))}>Record it</Button>
+              <Button size="xs" variant="ghost" onClick={() => setAdding("")}>Cancel</Button>
+              <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Dissent is kept with the decision; it is marked as recorded today.</span>
+            </div>
+          </div>
+        )}
         {d.dissent.length === 0 ? <Absent>No dissent was recorded.</Absent> : d.dissent.map(x => (
           <div className="aug-item" key={`${x.who}:${x.why}`}>
             <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{x.why}</div>
-            <div className="aug-item-foot aug-fs-sm"><span>{whoLabel(x.who)}</span></div>
+            <div className="aug-item-foot aug-fs-sm">
+              <span>{whoLabel(x.who)}</span>
+              {addedLater("dissent", x.who) && <span>recorded on {day(addedLater("dissent", x.who)!.at)}, after the decision</span>}
+            </div>
           </div>
         ))}
       </Section>
@@ -328,7 +437,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
             </div>
           </div>
         ) : state === "due" ? (
-          <OutcomeForm decisionId={d.id} onBooked={id => (id ? onMoved(id) : reload())} />
+          <OutcomeForm decisionId={d.id} actor={actor} onBooked={id => (id ? onMoved(id) : reload())} />
         ) : (
           <Absent>
             Its review date is {d.review_on ? `${day(d.review_on)} (${dayDistance(d.review_on)})` : "not set"}. On that date the outcome
@@ -358,9 +467,9 @@ function licence(method: string, metric: string, rows: CalibrationRow[]): string
   return `${inside} of ${n} scored predictions by this method fell inside their interval${onMetric ? ` (${onMetric} on this metric)` : ""}`;
 }
 
-function ScenarioBlock({ decision, scenarios, predictions, calibration, onBooked, onOpenClaim }: {
+function ScenarioBlock({ decision, scenarios, predictions, calibration, actor, onBooked, onOpenClaim }: {
   decision: DecisionDetail; scenarios: Scenario[]; predictions: (Claim & { booked_as?: string })[];
-  calibration: CalibrationRow[]; onBooked: () => void; onOpenClaim: (id: string) => void;
+  calibration: CalibrationRow[]; actor: Actor; onBooked: () => void; onOpenClaim: (id: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const made = predictions.filter(p => p.id !== decision.expectation?.id && p.booked_as !== decision.expectation_claim);
@@ -369,7 +478,7 @@ function ScenarioBlock({ decision, scenarios, predictions, calibration, onBooked
   return (
     <div>
       {made.length === 0 && !adding && (
-        <Absent>No scenario has been projected for this decision. A projection states its method — arithmetic on stated inputs, a named person&apos;s assumption, or the metric&apos;s own history — and is scored when its days settle.</Absent>
+        <Absent>No scenario has been projected for this decision. A projection states its method — arithmetic on stated inputs, a named person&apos;s assumption, the metric&apos;s own history, or what past decisions like this one did — and is scored when its days settle.</Absent>
       )}
       {assumptions.length > 0 && (
         <div style={{ marginBottom: 6 }}>
@@ -421,18 +530,35 @@ function ScenarioBlock({ decision, scenarios, predictions, calibration, onBooked
       )}
       <div style={{ marginTop: 10 }}>
         {adding
-          ? <ProjectForm decision={decision} onCancel={() => setAdding(false)} onBooked={() => { setAdding(false); onBooked(); }} />
+          ? <ProjectForm decision={decision} actor={actor} onCancel={() => setAdding(false)} onBooked={() => { setAdding(false); onBooked(); }} />
           : <Button size="xs" variant="outline" onClick={() => setAdding(true)}>Add a projection</Button>}
       </div>
     </div>
   );
 }
 
-/** One projection under one method: arithmetic on stated inputs, or an assumption with a name on it. */
-function ProjectForm({ decision, onBooked, onCancel }: {
-  decision: DecisionDetail; onBooked: () => void; onCancel: () => void;
+type Method = ScenarioBody["method"];
+
+const METHOD_LABEL: Record<Method, string> = {
+  identity: "Arithmetic", declared: "My assumption", history: "Its own history", intervention: "Past decisions like it",
+};
+
+/** What the method's booking line says, before it is booked. */
+const METHOD_HINT: Record<Method, string> = {
+  identity: "It says which inputs it held fixed.",
+  declared: "It is booked as your declared claim, under your name.",
+  history: "It reads the metric's last six periods on this connection and states how often that band has held. The metric needs an approved definition.",
+  intervention: "It reads the measured effect of past decisions that asked the same question, and projects nothing from fewer than the least it needs.",
+};
+
+/** One projection under one method of the ladder — refused, with the reason, when the method has nothing to read. */
+function ProjectForm({ decision, actor, onBooked, onCancel }: {
+  decision: DecisionDetail; actor: Actor; onBooked: () => void; onCancel: () => void;
 }) {
-  const [method, setMethod] = useState<"identity" | "declared">("identity");
+  const [method, setMethod] = useState<Method>("identity");
+  // What method 4 would read, shown before anything is booked.
+  const cases = useLoad(
+    () => (method === "intervention" ? getPastCases(decision.id, "") : Promise.resolve(null)), [method, decision.id]);
   const [metric, setMetric] = useState("");
   const [formula, setFormula] = useState("");
   const [inputs, setInputs] = useState("");
@@ -455,12 +581,14 @@ function ProjectForm({ decision, onBooked, onCancel }: {
           if (num(v ?? "") === null) throw new Error(`"${part.trim()}" is not a name = number`);
           parsed[k] = Number(v);
         }
-        await bookScenario(decision.id, { method, metric: metric.trim(), formula: formula.trim(), inputs: parsed, unit: unit.trim() });
-      } else {
+        await bookScenario(decision.id, { method, metric: metric.trim(), formula: formula.trim(), inputs: parsed, unit: unit.trim(), by: actor.by });
+      } else if (method === "declared") {
         await bookScenario(decision.id, {
-          method, metric: metric.trim(), unit: unit.trim(),
+          method, metric: metric.trim(), unit: unit.trim(), by: actor.by,
           assumption: { variable: variable.trim(), value: num(value), low: num(low), high: num(high), unit: unit.trim() },
         });
+      } else {
+        await bookScenario(decision.id, { method, metric: metric.trim(), unit: unit.trim(), by: actor.by });
       }
       onBooked();
     } catch (e) {
@@ -473,10 +601,10 @@ function ProjectForm({ decision, onBooked, onCancel }: {
     <div className="aug-form-grid">
       <label className="aug-fs-sm">Method</label>
       <div role="group" aria-label="Method" className="aug-segmented" style={{ justifySelf: "start" }}>
-        {(["identity", "declared"] as const).map(m => (
+        {(["identity", "declared", "history", "intervention"] as const).map(m => (
           <Button key={m} variant="ghost" size="xs" aria-pressed={method === m} title={METHOD_WORDS[m]}
             className={`aug-seg-item${method === m ? " active" : ""}`} onClick={() => setMethod(m)}>
-            {m === "identity" ? "Arithmetic" : "My assumption"}
+            {METHOD_LABEL[m]}
           </Button>
         ))}
       </div>
@@ -492,7 +620,7 @@ function ProjectForm({ decision, onBooked, onCancel }: {
           <label className="aug-fs-sm" htmlFor="sc-inputs">Inputs</label>
           <Input id="sc-inputs" value={inputs} onChange={e => setInputs(e.target.value)} placeholder="accounts = 31, credit = 1290" />
         </>
-      ) : (
+      ) : method === "declared" ? (
         <>
           <label className="aug-fs-sm" htmlFor="sc-var">Assumption</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -502,15 +630,42 @@ function ProjectForm({ decision, onBooked, onCancel }: {
             <Input aria-label="High" value={high} onChange={e => setHigh(e.target.value)} placeholder="high" inputMode="decimal" style={{ flex: "1 1 70px" }} />
           </div>
         </>
-      )}
+      ) : method === "intervention" ? (
+        <>
+          <label className="aug-fs-sm">Past cases</label>
+          <Gate load={cases} what="the past cases">
+            {c => (c === null ? null : (
+              <div>
+                <p className="aug-fs-ui" style={{ color: "var(--t1)", margin: 0 }}>
+                  {countNoun(c.cases.length, "past decision")} that asked this question {c.cases.length === 1 ? "has" : "have"} a measured effect;{" "}
+                  {c.needed} are the least an effect is read from.
+                </p>
+                {c.cases.map(k => (
+                  <div className="aug-item-foot aug-fs-sm" key={k.outcome} style={{ marginTop: 4 }}>
+                    <span>{k.question}</span>
+                    <span>effect {formatTableNumber(k.effect)}</span>
+                    <span>{verdictWords(k.verdict)}</span>
+                    <span>measured {day(k.measured_on)}</span>
+                  </div>
+                ))}
+                {c.cases.length < c.needed && (
+                  <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: "4px 0 0" }}>
+                    A case is a decision with its outcome booked and an effect measured. One taken before today can be recorded from the Decisions list, with the day it was decided.
+                  </p>
+                )}
+              </div>
+            ))}
+          </Gate>
+        </>
+      ) : null}
       <span />
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <Button size="xs" disabled={busy || !metric.trim()} onClick={() => void submit()}>Book the projection</Button>
+        {method === "declared" && <ActorField actor={actor} id="sc-actor" />}
+        <Button size="xs" disabled={busy || !metric.trim() || (method === "declared" && !actor.signedIn && !actor.by)}
+          onClick={() => void submit()}>Book the projection</Button>
         <Button size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-          {method === "declared" ? "It is booked as your declared claim, under your name." : "It says which inputs it held fixed."}
-        </span>
-        {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
+        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{METHOD_HINT[method]}</span>
+        {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", flexBasis: "100%" }}>{error}</span>}
       </div>
     </div>
   );
@@ -519,9 +674,12 @@ function ProjectForm({ decision, onBooked, onCancel }: {
 const VERDICTS: OutcomeVerdict[] = ["as_expected", "better", "worse", "cannot_tell"];
 
 /** The review date has come: what was measured, against the expectation and the baseline. */
-function OutcomeForm({ decisionId, onBooked }: { decisionId: string; onBooked: (restatedId: string | null) => void }) {
+function OutcomeForm({ decisionId, actor, onBooked }: {
+  decisionId: string; actor: Actor; onBooked: (restatedId: string | null) => void;
+}) {
   const [actual, setActual] = useState("");
   const [baseline, setBaseline] = useState("");
+  const [effect, setEffect] = useState("");
   const [verdict, setVerdict] = useState<OutcomeVerdict>("cannot_tell");
   const [why, setWhy] = useState("");
   const [error, setError] = useState("");
@@ -532,6 +690,9 @@ function OutcomeForm({ decisionId, onBooked }: { decisionId: string; onBooked: (
     try {
       const booked = await bookOutcome(decisionId, {
         measured_on: new Date().toISOString().slice(0, 10), actual: num(actual), baseline: num(baseline), verdict, why: why.trim(),
+        // Left empty, the effect is the measured figure less its baseline when both are given.
+        effect_value: num(effect) ?? (num(actual) !== null && num(baseline) !== null ? num(actual)! - num(baseline)! : null),
+        measured_by: actor.by,
       });
       onBooked(booked.decision?.id ?? null);
     } catch (e) {
@@ -548,6 +709,8 @@ function OutcomeForm({ decisionId, onBooked }: { decisionId: string; onBooked: (
         <div style={{ display: "flex", gap: 8 }}>
           <Input id="out-actual" value={actual} onChange={e => setActual(e.target.value)} placeholder="actual" inputMode="decimal" style={{ width: 140 }} />
           <Input aria-label="Baseline" value={baseline} onChange={e => setBaseline(e.target.value)} placeholder="baseline" inputMode="decimal" style={{ width: 140 }} />
+          <Input aria-label="Effect" value={effect} onChange={e => setEffect(e.target.value)} placeholder="effect" inputMode="decimal" style={{ width: 140 }}
+            title="What the decision changed, against the baseline. Left empty, the measured figure less the baseline." />
         </div>
         <label className="aug-fs-sm">Verdict</label>
         <div role="group" aria-label="Verdict" className="aug-segmented" style={{ justifySelf: "start" }}>
@@ -559,7 +722,8 @@ function OutcomeForm({ decisionId, onBooked }: { decisionId: string; onBooked: (
         <label className="aug-fs-sm" htmlFor="out-why">Why</label>
         <Input id="out-why" value={why} onChange={e => setWhy(e.target.value)} placeholder="What the measurement showed" />
         <span />
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <ActorField actor={actor} id="out-actor" />
           <Button size="xs" disabled={busy} onClick={() => void submit()}>Book the outcome</Button>
           {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
         </div>

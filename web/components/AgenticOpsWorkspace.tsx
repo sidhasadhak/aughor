@@ -280,7 +280,8 @@ export function AgenticOpsWorkspace({
             onOpenDeclared={() => onOpenDeclaredActions?.()} onOpenApprovals={() => onOpenApprovals?.()} />
         );
         if (id === "developer") return (
-          <DeveloperPanel onOpenPacks={() => onOpenSettings?.()} onOpenIntegrations={() => onOpenIntegrations?.()} />
+          <DeveloperPanel onOpenPacks={() => onOpenSettings?.()} onOpenIntegrations={() => onOpenIntegrations?.()}
+            onOpenDeclared={() => onOpenDeclaredActions?.()} />
         );
         if (id === "departures") return (
           // Hub-wide, like the map: every departure the platform recorded, any connection.

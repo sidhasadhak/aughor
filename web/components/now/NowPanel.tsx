@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { getDepartures, getNeedsHuman, type Connection, type Departure, type NeedsHuman } from "@/lib/api";
+import { approverName } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { owes, summaryLine, whenText } from "@/lib/departures";
 import { countNoun } from "@/lib/format";
@@ -24,6 +25,7 @@ import {
   type AttentionBudget, type CorrectionEntry, type Decision, type HeldItem, type Inquiry, type Mission,
 } from "@/lib/record";
 import { Absent, Gate, Page, Section, day, dayDistance, useLoad } from "@/components/record/kit";
+import { ProposalCardById } from "@/components/ProposalCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -122,7 +124,7 @@ export function NowPanel({ connections, contextReady, doors }: {
 
       <Section label="Waiting on you" meta={waiting.data ? waitingMeta(waiting.data) : undefined}>
         <Gate load={waiting} what="what waits on a person">
-          {w => <WaitingList waiting={w} connections={connections} doors={doors} />}
+          {w => <WaitingList waiting={w} connections={connections} doors={doors} onResolved={waiting.reload} />}
         </Gate>
       </Section>
 
@@ -283,13 +285,27 @@ function SentItem({ d, missions, connections, doors }: {
 
 // ── 2 · waiting on a person ──────────────────────────────────────────────────────────────
 
-function WaitingList({ waiting, connections, doors }: { waiting: Waiting; connections: Connection[]; doors: NowDoors }) {
+function WaitingList({ waiting, connections, doors, onResolved }: {
+  waiting: Waiting; connections: Connection[]; doors: NowDoors;
+  /** An approval was decided here; the list re-reads. */
+  onResolved: () => void;
+}) {
+  // The proposed action a person is deciding in place — the same card Attention shows, so what
+  // either click does is read before it is clicked.
+  const [deciding, setDeciding] = useState("");
+  const [decided, setDecided] = useState("");
   const none = waitingCount(waiting) === 0;
   if (none) {
-    return <Absent>Nothing is addressed to a person: no review date has come, no inquiry is due, no send is waiting on an answer and no approval is open.</Absent>;
+    return (
+      <>
+        {decided && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 8px" }}>{decided}</p>}
+        <Absent>Nothing is addressed to a person: no review date has come, no inquiry is due, no send is waiting on an answer and no approval is open.</Absent>
+      </>
+    );
   }
   return (
     <div>
+      {decided && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 8px" }}>{decided}</p>}
       {waiting.decisions.map(d => (
         <div className="aug-item" key={`decision:${d.id}`}>
           <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
@@ -336,8 +352,17 @@ function WaitingList({ waiting, connections, doors }: { waiting: Waiting; connec
               {r.connection_id && <span>{connectionLabel(r.connection_id, connections)}</span>}
               {r.since && <span>since {whenText(r.since)}</span>}
               <span style={{ flex: 1 }} />
-              <Button size="xs" variant="outline" onClick={doors.onOpenAttention}>Resolve</Button>
+              {r.source === "kinetic_inbox"
+                ? <Button size="xs" variant="outline" aria-expanded={deciding === r.id}
+                    onClick={() => setDeciding(x => (x === r.id ? "" : r.id))}>{deciding === r.id ? "Close" : "Review and decide"}</Button>
+                : <Button size="xs" variant="outline" onClick={doors.onOpenAttention}>Resolve</Button>}
             </div>
+            {deciding === r.id && (
+              <div style={{ marginTop: 8 }}>
+                <ProposalCardById proposalId={r.id} actor={approverName("now")}
+                  onResolved={(status, message) => { setDecided(message); if (status === "ok") { setDeciding(""); onResolved(); } }} />
+              </div>
+            )}
           </div>
         );
       })}

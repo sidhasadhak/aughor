@@ -6085,6 +6085,11 @@ export interface StandingGrant {
   created_at: string;
   use_count: number;
   last_used_at: string | null;
+  /** A grant signed on the authority ladder cites the graduation receipt that licensed it, and
+   *  carries an expiry and a cap on uses (0 = no cap). A person's accept-time grant carries none. */
+  graduation_receipt?: string;
+  expires_at?: string | null;
+  max_uses?: number;
 }
 
 /** The inbox routes' one base path — spelled once. */

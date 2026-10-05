@@ -103,6 +103,23 @@ export interface Claim {
   confidence_note?: string;
   /** Present on the single-claim read: the decisions that cite this claim. */
   relied_on_by?: string[];
+  /** Present on the single-claim read: every gate decision on a message that cited the answer
+   *  behind this claim — and, when there is nothing to read, why. */
+  told?: ToldRow[];
+  told_note?: string;
+}
+
+/** One message that left (or was held) citing an answer. */
+export interface ToldRow {
+  at: string; state: string; kind: string; target: string; addressed_to: string; by: string;
+  verdict: string; departure_id: string;
+}
+
+/** What marking a claim wrong set in motion, beside the claim's new version. */
+export interface MarkedWrong extends Claim {
+  superseded: string;
+  woke_inquiries: string[];
+  reopened_decisions: string[];
 }
 
 export interface ClaimFilter {
@@ -113,6 +130,8 @@ export interface ClaimFilter {
 export const listClaims = (f: ClaimFilter = {}) => read<Claim[]>(`/record/claims${qs({ ...f })}`);
 export const getClaim = (id: string) => read<Claim>(`/record/claims/${encodeURIComponent(id)}`);
 export const getClaimVersions = (id: string) => read<Claim[]>(`/record/claims/${encodeURIComponent(id)}/versions`);
+export const markClaimWrong = (id: string, body: { corrected?: string; why?: string; by?: string }) =>
+  send<MarkedWrong>(`/record/claims/${encodeURIComponent(id)}/wrong`, body);
 
 // ── inquiries ────────────────────────────────────────────────────────────────────────────
 
@@ -149,7 +168,10 @@ export interface Inquiry {
 }
 
 export interface InquiryDetail extends Inquiry {
+  /** Each hypothesis as it stands now — the latest version, once. */
   hypothesis_claims: Claim[];
+  /** What it established, as it stands now; `restated_since` when that is not how it was cited. */
+  established_claims: (Claim & { cited_as: string; restated_since: boolean })[];
   run_verdicts: { run: string; verdict: string; why: string; at?: string }[];
 }
 
@@ -164,6 +186,17 @@ export const proposeInquiryRun = (id: string) =>
   send<InquiryDetail>(`/record/inquiries/${encodeURIComponent(id)}/propose`);
 export const closeInquiry = (id: string, closedAs: string, lessons: { believed: string; turned_out: string }[]) =>
   send<InquiryDetail>(`/record/inquiries/${encodeURIComponent(id)}/close`, { closed_as: closedAs, lessons });
+
+/** What the Record already holds as refuted that a new hypothesis resembles — said beside it. */
+export interface ResemblesRefuted { hypothesis: string; refuted_by: string; refuted_on: string; overlap: number; evidence: string }
+
+export const addInquiryHypothesis = (id: string, text: string, by?: string) =>
+  send<InquiryDetail & { resembles_refuted: ResemblesRefuted | null }>(
+    `/record/inquiries/${encodeURIComponent(id)}/hypothesis`, { text, by });
+export const handInquiry = (id: string, owner: string, by?: string) =>
+  send<InquiryDetail>(`/record/inquiries/${encodeURIComponent(id)}/owner`, { owner, by });
+export const setInquiryNextCheck = (id: string, on: string, waitingFor = "", by?: string) =>
+  send<InquiryDetail>(`/record/inquiries/${encodeURIComponent(id)}/next-check`, { on, waiting_for: waitingFor, by });
 
 // ── decisions, outcomes, scenarios ───────────────────────────────────────────────────────
 
@@ -219,6 +252,8 @@ export interface DecisionDetail extends Decision {
   relied_on_claims: Claim[];
   expectation: Claim | null;
   outcome_record: Outcome | null;
+  /** What replaced the claim it stood on, while the decision is reopened and unanswered. */
+  reopened_by_claim: Claim | null;
 }
 
 export interface ExpectationIn {
@@ -235,6 +270,9 @@ export interface DeclareDecisionBody {
   relied_on?: string[];
   objective?: string;
   connection_id?: string;
+  /** When it was decided, for a decision taken before today. */
+  decided_at?: string;
+  decided_by?: string;
   review_on?: string;
   expectation?: ExpectationIn | null;
   note?: string;
@@ -243,6 +281,10 @@ export interface DeclareDecisionBody {
 export interface OutcomeBody {
   measured_on: string; actual?: number | null; baseline?: number | null; verdict: OutcomeVerdict;
   why?: string; against_expectation?: string;
+  /** The measured effect against the baseline — what a later decision of this kind is projected from. */
+  effect_value?: number | null;
+  /** The person booking it, when no sign-in names them. */
+  measured_by?: string;
 }
 
 export interface Projection {
@@ -265,8 +307,14 @@ export interface Scenario {
   recorded_at: string;
 }
 
+/** A past decision that asked the same question, with its measured effect. */
+export interface PastCase {
+  outcome: string; decision: string; effect: number; verdict: string; measured_on: string; method: string;
+  question: string; matched_on: string;
+}
+
 export interface ScenarioBody {
-  method: "identity" | "declared" | "history";
+  method: "identity" | "declared" | "history" | "intervention";
   metric: string;
   settles_on?: string;
   direction?: string;
@@ -277,6 +325,8 @@ export interface ScenarioBody {
   assumption?: { variable: string; value: number | null; by?: string; text?: string; unit?: string; low?: number | null; high?: number | null };
   limits?: string[];
   question?: string;
+  /** The person projecting, when no sign-in names them. */
+  by?: string;
 }
 
 export interface CalibrationRow {
@@ -293,6 +343,13 @@ export const bookOutcome = (id: string, body: OutcomeBody) =>
 export const listScenarios = (decisionId: string) =>
   read<{ scenarios: Scenario[]; predictions: (Claim & { booked_as: string })[] }>(
     `/record/decisions/${encodeURIComponent(decisionId)}/scenarios`);
+export const amendDecision = (id: string, body: { option?: string; dissent?: { who: string; why: string }; by?: string }) =>
+  send<DecisionDetail>(`/record/decisions/${encodeURIComponent(id)}/amend`, body);
+export const decisionStands = (id: string, why: string, by?: string) =>
+  send<DecisionDetail>(`/record/decisions/${encodeURIComponent(id)}/stands`, { why, by });
+export const getPastCases = (decisionId: string, metric: string) =>
+  read<{ cases: PastCase[]; needed: number; measurable: boolean | null }>(
+    `/record/decisions/${encodeURIComponent(decisionId)}/cases${qs({ metric })}`);
 export const bookScenario = (decisionId: string, body: ScenarioBody) =>
   send<{ scenario: Scenario; projection: Projection; prediction: Claim | null }>(
     `/record/decisions/${encodeURIComponent(decisionId)}/scenario`, body);
@@ -333,11 +390,16 @@ export const getCorrections = (f: { connection_id?: string; kind?: string; limit
 
 // ── missions ─────────────────────────────────────────────────────────────────────────────
 
+/** The measurable definition a metric is read by — resolved from the approved metric when absent. */
+type MetricSpec = Record<string, unknown> | null;
+
 export interface MissionObjective {
   metric: string; direction: string; target: number | null; unit: string; by_when: string; text: string;
+  spec?: MetricSpec;
 }
 export interface MissionConstraint {
   metric: string; kind: string; limit: number | null; bound: "at_least" | "at_most"; unit: string; text: string;
+  spec?: MetricSpec;
 }
 export interface MissionBudget {
   interruptions_per_week: number; spend_per_month: number | null; spend_unit: string;
@@ -362,6 +424,8 @@ export interface Mission {
   opened_at: string;
   history: Record<string, unknown>[];
   recorded_at: string;
+  /** The version that replaced this one — "" on the current version. */
+  superseded_by: string;
   interruptions_this_week: number;
   /** Whether the loop reads it: active and owned. */
   runs: boolean;
@@ -401,8 +465,8 @@ export interface MissionReport {
 
 export interface MissionBody {
   name: string;
-  objective: { metric: string; direction?: string; target?: number | null; unit?: string; by_when?: string; text?: string };
-  constraints?: { metric: string; kind?: string; limit?: number | null; bound?: string; unit?: string; text?: string }[];
+  objective: { metric: string; direction?: string; target?: number | null; unit?: string; by_when?: string; text?: string; spec?: MetricSpec };
+  constraints?: { metric: string; kind?: string; limit?: number | null; bound?: string; unit?: string; text?: string; spec?: MetricSpec }[];
   domain?: string;
   segment?: string;
   connections?: string[];
@@ -411,6 +475,9 @@ export interface MissionBody {
   cadence?: string;
   state?: string;
   key?: string;
+  watches?: MissionWatch[];
+  /** The person writing it, when no sign-in names them. */
+  written_by?: string;
 }
 
 /** A body a pack ships for a person to write a mission from — it never becomes one on its own. */
@@ -433,6 +500,13 @@ export const setMissionState = (id: string, state: string, why = "") =>
 export const getMissionReport = (id: string, compose = false) =>
   read<{ booked: boolean; report: MissionReport | null; note?: string }>(
     `/record/missions/${encodeURIComponent(id)}/report${qs({ compose })}`);
+export const getPastMissionReport = (id: string, reportId: string) =>
+  read<{ booked: boolean; report: MissionReport | null; note?: string }>(
+    `/record/missions/${encodeURIComponent(id)}/reports/${encodeURIComponent(reportId)}`);
+/** Report now: composed and booked, and — unless `deliver` is false — sent to the owner through the gate. */
+export const reportMissionNow = (id: string, deliver: boolean) =>
+  send<{ report_id: string; report: MissionReport; delivery: { door?: string; status?: string; note?: string }; mission: Mission }>(
+    `/record/missions/${encodeURIComponent(id)}/report?deliver=${deliver ? "true" : "false"}`);
 export const getMissionTemplates = (connectionId?: string) =>
   read<{ templates: MissionTemplate[]; packs: string[]; note: string }>(
     `/record/missions/templates${qs({ connection_id: connectionId })}`);
@@ -483,6 +557,8 @@ export interface AuthorityLevel {
   graduation: string;
   demotion: string;
   l5: string;
+  /** The ceiling a person set on this action here, outside any mission — null when none stands. */
+  person_ceiling: { level: number; by: string; why: string; at: string } | null;
 }
 
 export interface AuthorityRow extends AuthorityLevel {
@@ -524,8 +600,14 @@ export const getAuthorityTable = (connectionId: string) =>
   read<AuthorityTable>(`/authority${qs({ connection_id: connectionId })}`);
 export const getAuthorityRecord = (actionId: string, connectionId: string) =>
   read<AuthorityRecord>(`/authority/${encodeURIComponent(actionId)}/record${qs({ connection_id: connectionId })}`);
-export const demoteAction = (actionId: string, connectionId: string, why: string) =>
-  send<Record<string, unknown>>(`/authority/${encodeURIComponent(actionId)}/demote`, { connection_id: connectionId, why });
+export const demoteAction = (actionId: string, connectionId: string, why: string, drill = false, by?: string) =>
+  send<Record<string, unknown>>(`/authority/${encodeURIComponent(actionId)}/demote`, { connection_id: connectionId, why, drill, by });
+/** Cap an action on a connection at a level, or — with `null` — lift the cap. It only ever lowers. */
+export const setActionCeiling = (actionId: string, connectionId: string, level: number | null, why = "", by?: string) =>
+  send<Record<string, unknown>>(`/authority/${encodeURIComponent(actionId)}/ceiling`, { connection_id: connectionId, level, why, by });
+/** Sign a standing grant for an action at L4: one target value, an expiry, a cap on uses. */
+export const signStandingGrant = (actionId: string, connectionId: string, body: { target_value: string; expires_days: number; max_uses: number; by?: string }) =>
+  send<{ grant: Record<string, unknown> }>(`/authority/${encodeURIComponent(actionId)}/widen`, { connection_id: connectionId, ...body });
 export const graduateAction = (actionId: string, connectionId: string) =>
   send<Record<string, unknown>>(`/authority/${encodeURIComponent(actionId)}/graduate`, { connection_id: connectionId });
 export const undoExecution = (actionId: string, entryId: string, connectionId: string) =>
@@ -561,8 +643,35 @@ export const mintServicePrincipal = (body: Record<string, unknown>) =>
   send<Record<string, unknown>>("/ledger/v1/principals/service", body);
 export const revokeServicePrincipal = (name: string, why: string) =>
   send<Record<string, unknown>>(`/ledger/v1/principals/service/${encodeURIComponent(name)}${qs({ why })}`, undefined, "DELETE");
+/** A projection method registered from outside: it runs as a foreign tool and carries its backtest. */
+export interface RegisteredMethod {
+  name: string; kind: string; declared_by: string; tier: string; note: string; registered_at: string;
+  backtest: { n: number; metric: string; mae: number | null; mape: number | null; coverage_stated: number | null;
+    coverage_observed: number | null; measured_on: string[]; note: string };
+  adapter: { kind: string; server_id: string; tool: string };
+}
+
+export interface MethodBody {
+  name: string; kind: string; note?: string;
+  backtest: { n: number; metric?: string; mae?: number | null; mape?: number | null; coverage_observed?: number | null; measured_on: string[] };
+  adapter: { server_id: string; tool: string };
+}
+
 export const getMethods = () =>
-  read<{ builtin: string[]; registered: Record<string, unknown>[]; rule: string }>("/ledger/v1/methods");
+  read<{ builtin: string[]; registered: RegisteredMethod[]; rule: string }>("/ledger/v1/methods");
+export const registerMethod = (body: MethodBody) => send<RegisteredMethod>("/ledger/v1/methods", body);
+export const withdrawMethod = (name: string) =>
+  send<RegisteredMethod>(`/ledger/v1/methods/${encodeURIComponent(name)}`, undefined, "DELETE");
+
+/** What the static gate says about a set of pack files — nothing is written by asking. */
+export interface PackVerdict {
+  ok: boolean; pack_id: string; errors: string[]; warnings: string[]; files: number;
+  static_gate?: string; declares?: Record<string, number | boolean>;
+}
+
+export const checkPack = (files: Record<string, string>) => send<PackVerdict>("/packs/check", { files });
+export const uploadPack = (files: Record<string, string>, overwrite = false) =>
+  send<Record<string, unknown>>("/packs/upload", { files, overwrite });
 export const getRestatements = (since: string, connectionId?: string) =>
   read<{ restatements: Record<string, unknown>[]; [k: string]: unknown }>(
     `/ledger/v1/restatements${qs({ since, connection_id: connectionId })}`);
