@@ -456,6 +456,53 @@ def _conn_of(raw: dict) -> str:
     return str(raw.get("connection") or GLOBAL_CONNECTION)
 
 
+# ── the organisation layer (the 2027 study §E item 2: the organisation first, the connection second) ──
+
+#: A metric scoped to an ORGANISATION, not one connection: ``connection = "org:<org id>"``. Every
+#: connection of that organisation reads it between its own definitions and the install's global
+#: ones — the layer that was missing when glossary, metrics and the Briefing read one connection.
+ORG_SCOPE_PREFIX = "org:"
+
+
+def org_scope(org_id: str) -> str:
+    return f"{ORG_SCOPE_PREFIX}{org_id}"
+
+
+def is_org_scope(connection: str | None) -> bool:
+    return bool(connection) and str(connection).startswith(ORG_SCOPE_PREFIX)
+
+
+def organisation_of(connection_id: str) -> str:
+    """The organisation a connection belongs to: the registry's word (`connections.org_id`), else
+    the current context's — the shared builtins carry none and read the caller's organisation."""
+    try:
+        from aughor.db.registry import get_connection_org
+        org = get_connection_org(connection_id)
+    except Exception as exc:  # noqa: BLE001 — a registry that cannot answer reads the caller's organisation
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the connection's organisation could not be read; the caller's is used", counter="metrics.org_of")
+        org = None
+    if org:
+        return str(org)
+    from aughor.org.context import current_org_id
+    return current_org_id()
+
+
+def organisation_visible(metrics: list["MetricDefinition"]) -> list["MetricDefinition"]:
+    """The unscoped list as ONE organisation may read it, when identity is on: the install's global
+    definitions, its own organisation's, and those of the connections it can see — never another
+    organisation's. Identity off (one tenant owns every row) → unchanged, byte for byte."""
+    from aughor.security.authz import org_visible_conn_ids, tenant_scope
+    org = tenant_scope()
+    if org is None:
+        return metrics
+    visible = org_visible_conn_ids() or set()
+    mine = org_scope(org)
+    return [m for m in metrics
+            if m.connection == GLOBAL_CONNECTION or m.connection == mine
+            or (not is_org_scope(m.connection) and m.connection in visible)]
+
+
 def _folded_scopes(connection_id: str) -> list[str]:
     """Connection ids whose scoped metrics ``connection_id`` also reads, in order.
 
@@ -478,13 +525,20 @@ def _folded_scopes(connection_id: str) -> list[str]:
 
 
 def _scoped_rows(rows: list[dict], connection_id: str) -> list[dict]:
-    """The connection's own entries, then the folded scopes' entries it does not shadow,
-    then the global entries no scoped name shadows — override-wins at every step."""
+    """The connection's own entries, then the folded scopes' entries it does not shadow, then its
+    ORGANISATION's (`org:<id>`), then the global entries no scoped name shadows — override-wins at
+    every step: the specific answer beats the general one, and the organisation's beats the install's."""
     out = [m for m in rows if _conn_of(m) == connection_id]
     names = {m.get("name") for m in out}
     for scope in _folded_scopes(connection_id):
         for m in rows:
             if _conn_of(m) == scope and m.get("name") not in names:
+                out.append(m)
+                names.add(m.get("name"))
+    if not is_org_scope(connection_id):
+        org = org_scope(organisation_of(connection_id))
+        for m in rows:
+            if _conn_of(m) == org and m.get("name") not in names:
                 out.append(m)
                 names.add(m.get("name"))
     out += [m for m in rows if _conn_of(m) == GLOBAL_CONNECTION and m.get("name") not in names]

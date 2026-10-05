@@ -11134,9 +11134,10 @@ the CLI print a model's stated confidence as a word, never a percentage. (P1-5) 
 `record.confidence` and `record.told` (the departures that cited the analysis), rebuilt live on each read inside
 the signed body; the web receipt shows both. Receipt: 180 tests across the Record, the receipt, the re-check, the
 inbox, the recommendation review, the departures gate and the vocabulary ratchet pass. **Still open in phase 1:**
-organisation scope on glossary, metrics and the Briefing; the graph as a projection; and the two exit parts only the
-install can show (a restatement delivered on the organisation's warehouse; ten decisions booked by people). The
-Explorer's, a pack's and the hub's claim shapes landed as writers since (phase 6; the close-out below).
+the graph as a projection; and the two exit parts only the install can show (a restatement delivered on the
+organisation's warehouse; ten decisions booked by people). The Explorer's, a pack's and the hub's claim shapes landed
+as writers since (phase 6; the close-out below), and organisation scope on glossary, metrics and the Briefing with
+the close-out's C2.
 
 **Phase 2 — the code half BUILT 2026-10-05**, three slices. (P2-1) `aughor/record/inquiry.py` — the inquiry as a
 kernel artifact that outlives its runs: the question, who opened it (a person's ask, a monitor's alert, a restated
@@ -11323,6 +11324,21 @@ refuted · open) and the filing's measures as a document warrant — never a run
 REPLY (`SlackArrival.reply_ts` when the bot sends it, else who-said-what), so a second reply is counted beside the
 first, never over it; the staged note still shows the latest check. Receipt: the writers, hub-claims, re-validation,
 dismissal, corrections, confidence and vocabulary suites pass.
+(C2, phase 1) The organisation first, the connection second (§E item 2). Metrics: a definition scoped `org:<org id>`
+(`semantic/metrics.org_scope`) is read by every connection of that organisation between its own definitions and the
+install's global ones (`_scoped_rows`: own · folded · the organisation's · global), written by that organisation only
+(`ORGANISATION_SCOPE_DENIED` for another's when identity is on), bind-checked against no one connection and said so;
+the unscoped `GET /metrics` is one organisation's when identity is on — the global rows, its `org:` rows, its visible
+connections' — and byte-identical when it is off (`organisation_visible`). Glossary: an `organisations: {<id>: {tables}}`
+section (`semantic/glossary.ORGANISATIONS_KEY`) sits between the global entries and a connection's overlay in
+`load_glossary`, `_connection_layers` and so every merged read; `PUT /glossary/{table}?organisation=true` writes the
+caller's section; `GET /glossary` shows one organisation its own section and its visible connections' overlays when
+identity is on. The Briefing: `briefing/versions.history` reads a key's versions by the reader's organisation, and
+`GET /briefing/organisation` (`briefing/organisation.py`) folds every visible connection's latest kept Briefing — as-of,
+version, headline theme, lede, measured figures — a connection with none kept said so, no narrative written across
+connections. Receipt: the organisation-scope, O2 re-key, glossary, metric, Briefing-versions and ratchet suites pass
+(`test_glossary_scope_gaps::test_retrieval_passes_the_scope_filter_to_qdrant` fails on the base commit too, before
+any close-out change — the vector store's filter wiring, not this slice's).
 
 ---
 

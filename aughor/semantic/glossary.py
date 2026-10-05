@@ -336,6 +336,12 @@ def _load_raw(path: Path | None = None) -> dict:
 #: twice with non-hermetic writes — and a migration that silently narrowed the glossary to
 #: one connection would break every other connection's answers with no error anywhere.
 CONNECTIONS_KEY = "connections"
+#: The ORGANISATION's section (the 2027 study §E item 2: the organisation first, the connection
+#: second): ``organisations: {<org id>: {tables: …}}`` — a person's words for every connection of the
+#: organisation, read between the install's global entries and a connection's own. Authored only: a
+#: model writes for one connection, never for an organisation.
+ORGANISATIONS_KEY = "organisations"
+_SCAFFOLDING_KEYS = (CONNECTIONS_KEY, ORGANISATIONS_KEY)
 
 
 def connection_overlay(data: dict, connection_id: str | None) -> dict:
@@ -346,23 +352,68 @@ def connection_overlay(data: dict, connection_id: str | None) -> dict:
     return conns.get(connection_id) or {}
 
 
+def organisation_overlay(data: dict, org_id: str | None) -> dict:
+    """The section declared for one organisation, or ``{}``."""
+    if not org_id:
+        return {}
+    orgs = (data or {}).get(ORGANISATIONS_KEY) or {}
+    return orgs.get(org_id) or {}
+
+
+def organisation_of(connection_id: str) -> str:
+    """The organisation a connection belongs to (the registry's word, else the caller's)."""
+    try:
+        from aughor.db.registry import get_connection_org
+        org = get_connection_org(connection_id)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the connection's organisation could not be read; the caller's is used", counter="glossary.org_of")
+        org = None
+    if org:
+        return str(org)
+    from aughor.org.context import current_org_id
+    return current_org_id()
+
+
+def organisation_visible(data: dict) -> dict:
+    """The whole glossary as ONE organisation may read it, when identity is on: the global entries,
+    its own organisation's section and its visible connections' overlays — never another
+    organisation's section or another organisation's connections. Identity off → unchanged."""
+    from aughor.security.authz import org_visible_conn_ids, tenant_scope
+    org = tenant_scope()
+    if org is None:
+        return data
+    visible = org_visible_conn_ids() or set()
+    out = dict(data or {})
+    if CONNECTIONS_KEY in out:
+        out[CONNECTIONS_KEY] = {cid: sec for cid, sec in (out.get(CONNECTIONS_KEY) or {}).items() if cid in visible}
+    if ORGANISATIONS_KEY in out:
+        out[ORGANISATIONS_KEY] = {oid: sec for oid, sec in (out.get(ORGANISATIONS_KEY) or {}).items() if oid == org}
+    return out
+
+
 def load_glossary(path: Path | None = None,
                   connection_id: str | None = None) -> dict:
     """The manual YAML glossary (no dbt or auto-seed merging).
 
-    With ``connection_id``, the connection's overlay is deep-merged over the global
-    entries — override-wins, the same direction as every other layer here. Without it the
-    return is exactly what it always was, so every existing caller is unchanged.
+    With ``connection_id``, the connection's ORGANISATION's section and then the connection's own
+    overlay are deep-merged over the global entries — override-wins, the same direction as every
+    other layer here: the specific answer beats the general one. Without it the return is exactly
+    what it always was, so every existing caller is unchanged.
     """
     data = _load_raw(path)
-    overlay = connection_overlay(data, connection_id)
-    if not overlay:
+    if not connection_id:
         return data
-    merged = _deep_merge(data, overlay)
-    # The overlay section itself is scaffolding, not content: leaving it in the returned
-    # dict would let a caller iterating `tables` also walk every OTHER connection's
-    # entries, which is the leak this scoping exists to prevent.
-    merged.pop(CONNECTIONS_KEY, None)
+    org_section = organisation_overlay(data, organisation_of(connection_id))
+    overlay = connection_overlay(data, connection_id)
+    if not overlay and not org_section:
+        return data
+    merged = _deep_merge(_deep_merge(data, org_section), overlay) if org_section else _deep_merge(data, overlay)
+    # The overlay sections themselves are scaffolding, not content: leaving them in the returned
+    # dict would let a caller iterating `tables` also walk every OTHER connection's or
+    # organisation's entries, which is the leak this scoping exists to prevent.
+    for k in _SCAFFOLDING_KEYS:
+        merged.pop(k, None)
     return merged
 
 
@@ -417,13 +468,19 @@ def _connection_layers(path: Path | None, connection_id: str) -> tuple[dict, dic
     """
     data = _load_raw(path)
     section = connection_overlay(data, connection_id)
+    org_section = organisation_overlay(data, organisation_of(connection_id))
     own = section.get("tables") or {}
     peoples = {t: e for t, e in (data.get("tables") or {}).items() if not _generated(e)}
+    # the organisation's words sit between the install's and the connection's own
+    for table, entry in (org_section.get("tables") or {}).items():
+        if not _generated(entry):
+            peoples[table] = _deep_merge(peoples.get(table) or {}, entry)
     for table, entry in own.items():
         if not _generated(entry):
             peoples[table] = _deep_merge(peoples.get(table) or {}, entry)
     models = {t: e for t, e in own.items() if _generated(e)}
-    rest = _deep_merge({k: v for k, v in data.items() if k not in ("tables", CONNECTIONS_KEY)},
+    rest = _deep_merge(_deep_merge({k: v for k, v in data.items() if k not in ("tables", *_SCAFFOLDING_KEYS)},
+                                   {k: v for k, v in org_section.items() if k != "tables"}),
                        {k: v for k, v in section.items() if k != "tables"})
     return {**rest, "tables": {**models, **peoples}}, models, peoples
 
@@ -588,13 +645,23 @@ def save_glossary(data: dict, path: Path | None = None) -> None:
         _write_yaml(gen_p, {"tables": {}})
 
 
+def _tables_for(data: dict, organisation: str | None) -> dict:
+    """The ``tables`` dict a write lands in: the organisation's section when one is named (the 2027
+    study §E item 2 — a person's words for every connection of the organisation), else the global."""
+    if organisation:
+        return data.setdefault(ORGANISATIONS_KEY, {}).setdefault(organisation, {}).setdefault("tables", {})
+    return data.setdefault("tables", {})
+
+
 def update_table(table: str, description: str | None = None, grain: str | None = None,
                  joins: list[str] | None = None, path: Path | None = None,
-                 schema: str | None = None, owner: str | None = None) -> None:
+                 schema: str | None = None, owner: str | None = None,
+                 organisation: str | None = None) -> None:
     """Upsert table-level glossary entry, keyed per schema when one is known. ``owner`` (CB-3)
-    is the person or team responsible, free text a person may later link to a principal."""
+    is the person or team responsible, free text a person may later link to a principal.
+    ``organisation`` writes the entry into that organisation's section instead of the global one."""
     data = _load_raw(path)
-    tables = data.setdefault("tables", {})
+    tables = _tables_for(data, organisation)
     entry = tables.setdefault(canonical_key(table, schema), {})
     if owner is not None:
         entry["owner"] = " ".join(owner.split())
@@ -610,12 +677,12 @@ def update_table(table: str, description: str | None = None, grain: str | None =
 def update_column(table: str, column: str, description: str | None = None,
                   values: str | None = None, caveats: str | None = None,
                   path: Path | None = None, schema: str | None = None,
-                  owner: str | None = None) -> None:
+                  owner: str | None = None, organisation: str | None = None) -> None:
     """Upsert column-level glossary entry, keyed per schema when one is known. ``owner`` (CB-3) as
-    on a table."""
+    on a table; ``organisation`` as on a table."""
     data = _load_raw(path)
     col_entry = (
-        data.setdefault("tables", {})
+        _tables_for(data, organisation)
             .setdefault(canonical_key(table, schema), {})
             .setdefault("columns", {})
             .setdefault(column, {})

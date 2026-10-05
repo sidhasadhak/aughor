@@ -679,7 +679,19 @@ def delete_org_intelligence_endpoint(point_id: str):
 
 @router.get("/glossary")
 def get_glossary():
-    return load_glossary()
+    """The whole glossary as the caller's organisation may read it: with identity on, another
+    organisation's section and another organisation's connections are not in it (the 2027 study
+    §E item 2); identity off is one tenant and reads exactly what it always did."""
+    from aughor.semantic.glossary import organisation_visible
+    return organisation_visible(load_glossary())
+
+
+def _organisation_for_write(organisation: bool) -> Optional[str]:
+    """``?organisation=true`` writes the caller's organisation's section — never another's."""
+    if not organisation:
+        return None
+    from aughor.org.context import current_org_id
+    return current_org_id()
 
 
 class UpdateTableRequest(BaseModel):
@@ -702,18 +714,21 @@ class UpdateColumnRequest(BaseModel):
 # unqualified behaviour, so existing callers are unaffected.
 
 @router.put("/glossary/{table}")
-def put_table_glossary(table: str, req: UpdateTableRequest, schema: Optional[str] = None):
+def put_table_glossary(table: str, req: UpdateTableRequest, schema: Optional[str] = None,
+                       organisation: bool = False):
+    org = _organisation_for_write(organisation)
     update_table(table, description=req.description, grain=req.grain, joins=req.joins,
-                 schema=schema, owner=req.owner)
-    return {"ok": True, "table": table, "schema": schema}
+                 schema=schema, owner=req.owner, organisation=org)
+    return {"ok": True, "table": table, "schema": schema, "organisation": org}
 
 
 @router.put("/glossary/{table}/{column}")
 def put_column_glossary(table: str, column: str, req: UpdateColumnRequest,
-                        schema: Optional[str] = None):
+                        schema: Optional[str] = None, organisation: bool = False):
+    org = _organisation_for_write(organisation)
     update_column(table, column, description=req.description, values=req.values,
-                  caveats=req.caveats, schema=schema, owner=req.owner)
-    return {"ok": True, "table": table, "column": column, "schema": schema}
+                  caveats=req.caveats, schema=schema, owner=req.owner, organisation=org)
+    return {"ok": True, "table": table, "column": column, "schema": schema, "organisation": org}
 
 
 # ── Knowledge sources (2026-09-06) — Confluence / Notion, on the documents surface ──
