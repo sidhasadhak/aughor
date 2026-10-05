@@ -13573,6 +13573,52 @@ the browser** · **measure the premise before building.**
     Vega fallbacks, `INSTRUMENT.md`); the chart palette gate passes on the new surface and both server bundles rebuild
     byte-identical. Figure 19 is the comparison the decision was made on; figures 17 and 18 are on the new skin.
 
+42. ✅ **DECIDED 2026-10-05 — the five items the 2027 pages had left waiting on the user** (asked with options, each
+    answered as recommended unless said):
+    (a) **Clearance is not a separate thing.** What a person may see is the access grants in Settings ▸ Access; the
+    study's word is dropped and nothing is built. The Policies lens keeps its link there.
+    (b) **"Last used" on the gate map, per entry point** — not per call place. *Built:* the SQL door has ten ways in
+    (nine methods on a connection and `execute_guarded`); one use is counted at the method the caller came in through,
+    and a door reached through another is the same use (`aughor/db/door_count.py`). Nobody lists which connections are
+    counted: `DatabaseConnection` wraps the door methods of every class that subclasses it. The count is batched into
+    the audit store beside the internal-statement count (`door_counts`: organisation, door, day, uses, last used), and
+    the gate map's "By door" table shows Uses and Last used with the day counting began — nothing earlier was
+    recorded, and the page says so. Two populations are held to the code, not to a list: every door the census names
+    is counted, and every door method on every connection class is wrapped.
+    (c) **The Briefing gains all three**: signed and dated as a delivery, an action on an item, a prediction on an
+    item. *Decided; not yet built.*
+    (d) **Filings get one list on Agent Ops ▸ By duty** — what is open, what it is about, its age, and "close with an
+    outcome". Measured before asking: probation already has two screens (the Hub map's column and Departures), so only
+    the filings were without one; By duty gets a probation count that opens the Hub map. *Decided; not yet built.*
+    (e) **A claim's page cites links into other connections, read-only** — the link is named and the claims on the
+    other side open in the drawer; no query runs on the second connection. *Decided; not yet built.*
+
+43. ✅ **ASKED 2026-10-05 — the measured metrics are the Cockpit a person opens on** (the user, on a screenshot of the
+    Briefing's measured table: *"Let this metrics section to default cockpit for the user.. make each of these metrics
+    clickable to gain more insight.. remove data health section completely.."*). *Built:*
+    (a) **Metrics is the first tab on the Cockpit and the one it opens on.** It is the Briefing's own measured table
+    (this range, comparison, change, a year earlier, status) for the period picked, read without writing a Briefing:
+    `POST /exploration/{conn}/briefing/measures` measures the approved metrics and calls no model. A Briefing built
+    for the same window inside its cache age hands back its own figures, so the two pages cannot disagree about one.
+    It is the connection's, not the person's — not in "Your cockpits", not arranged or retired. A person's own
+    cockpit still opens first when it is where they left off.
+    (b) **A metric's name opens it beside the page**, on the Cockpit and on the Briefing: the figure with its
+    comparisons, the metric over the range and the seven ranges before it (three for a year), the segments that moved
+    inside it when the range's Briefing read any, and how it is defined and dated. The trend is one warehouse
+    statement (`POST …/briefing/metric/{metric}`), each earlier range stepped back the way the range's own comparison
+    is and read at the same age. "Investigate this change" hands the question to the Agent; the drawer itself starts
+    no run. The table is now one a reader can take away (Copy, CSV), as every table is meant to be.
+    (c) **The Data health section is gone.** It repeated the Status column line by line. A recipe that fails is still
+    said, once, on its own line.
+    (d) **Wanted, not built — a reading order for metrics** (*"gross sales/sales at the top and net profit (or
+    similar) at the bottom... each industry should have a ranking for each metric or an order in which those will make
+    most sense collectively.. give it a thought later but just mark this requirement somewhere.. its a good to have
+    feature"*). Today the table is in the order the definitions were approved. The likely home is the industry
+    package, which already names an industry's headline metrics; a connection with no package would need a default
+    order by kind (sales, volume, margin, cost, profit). Not designed.
+    Kept as it was: the table also stays on the Briefing — the ask was to make it the Cockpit's default, and the
+    Briefing's narrative cites its figures.
+
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
