@@ -97,6 +97,33 @@ def get_organisation_briefing():
     return organisation_briefing()
 
 
+def _may_see(conn_id: str) -> bool:
+    from aughor.security.authz import org_visible_conn_ids
+    visible = org_visible_conn_ids()
+    return visible is None or not conn_id or conn_id in visible
+
+
+@router.get("/briefing/deliveries")
+def list_briefing_deliveries(conn_id: str, covers: str, scope_key: str = "", recipe: str = "") -> dict:
+    """Every delivery of one Briefing — the scope and range the page is showing — newest first, each
+    naming the version that left and whether it has been restated since. A read; nothing is sent."""
+    from aughor.briefing import deliveries
+    if not _may_see(conn_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    return deliveries.deliveries_of(conn_id, {"period": {"covers": covers, "period": recipe}},
+                                    scope_key=scope_key or conn_id)
+
+
+@router.get("/briefing/deliveries/{delivery_id}")
+def get_briefing_delivery(delivery_id: str) -> dict:
+    """One delivery with the Briefing as it was sent — the version it cites, not today's."""
+    from aughor.briefing import deliveries
+    row = deliveries.delivery(delivery_id)
+    if row is None or not _may_see(row.get("connection_id") or ""):
+        raise HTTPException(status_code=404, detail="No such delivery")
+    return row
+
+
 @router.get("/briefing/subscriptions")
 def list_briefing_subscriptions(conn_id: Optional[str] = None):
     from aughor.briefing.store import list_subscriptions

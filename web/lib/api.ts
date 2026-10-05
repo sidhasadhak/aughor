@@ -6867,6 +6867,49 @@ export async function readMetricTrend(
   return res.json();
 }
 
+/** One send of a Briefing that left: the version it delivered, to whom, when, under which receipt.
+ *  `restated_since`: the Briefing's figures have moved since, so the page shows a later version. */
+export interface BriefingDelivery {
+  id: string;
+  version: number | null;
+  covers: string;
+  label: string;
+  scope_key: string;
+  sent_at: string;
+  to: string;
+  to_kind: "slack" | "trigger";
+  subscription_id: string;
+  subscription_name: string;
+  departure_id: string;
+  receipt_line: string;
+  held_lines: number;
+  restated_since: boolean;
+}
+
+/** A delivery opened: the Briefing as it was sent — the version it cites, not today's. */
+export interface BriefingDeliveryOpened extends BriefingDelivery {
+  connection_id: string;
+  as_of: string;
+  current_version: number | null;
+  briefing: (BriefingNarrativeResponse & { period?: BriefingRangeBlock | null }) | null;
+}
+
+/** Every delivery of the Briefing a page is showing — its scope and range — newest first. */
+export async function listBriefingDeliveries(
+  connectionId: string, covers: string, scopeKey: string, recipe: string,
+): Promise<{ deliveries: BriefingDelivery[]; current_version: number | null }> {
+  const q = new URLSearchParams({ conn_id: connectionId, covers, scope_key: scopeKey, recipe });
+  const res = await fetch(`${getApiBase()}/briefing/deliveries?${q.toString()}`);
+  if (!res.ok) throw new Error(`This Briefing's deliveries could not be read (${res.status})`);
+  return res.json();
+}
+
+export async function getBriefingDelivery(id: string): Promise<BriefingDeliveryOpened> {
+  const res = await fetch(`${getApiBase()}/briefing/deliveries/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`The delivery could not be read (${res.status})`);
+  return res.json();
+}
+
 /** Build (or return the fresh cached) Briefing for a range — runs its queries and one narrator call. */
 export async function buildRangeBriefing(
   connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string, refresh = false,

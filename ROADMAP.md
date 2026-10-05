@@ -13586,7 +13586,13 @@ the browser** · **measure the premise before building.**
     recorded, and the page says so. Two populations are held to the code, not to a list: every door the census names
     is counted, and every door method on every connection class is wrapped.
     (c) **The Briefing gains all three**: signed and dated as a delivery, an action on an item, a prediction on an
-    item. *Decided; not yet built.*
+    item. *Built so far — signed and dated:* a send that leaves books one ledger entry (`briefing_delivery`) citing
+    the kept version it delivered and the departure that carried it — to whom, when, under which receipt
+    (`aughor/briefing/deliveries.py`). The Briefing lists its deliveries under its measured table, each saying
+    whether the version sent is still the one on the page, and "Open what was sent" reads that version by its id,
+    never the latest. A send the gate held or a channel refused books nothing; the standing Briefing, which keeps no
+    version, books nothing. The entry is in the ledger's export. Not seen on a real send yet: the scratch install has
+    no channel, so the first scheduled send is its receipt. *The action and the prediction on an item: not yet built.*
     (d) **Filings get one list on Agent Ops ▸ By duty** — what is open, what it is about, its age, and "close with an
     outcome". Measured before asking: probation already has two screens (the Hub map's column and Departures), so only
     the filings were without one; By duty gets a probation count that opens the Hub map. *Built:* "Filed and open"

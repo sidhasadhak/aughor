@@ -2036,6 +2036,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/briefing/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Briefing Deliveries
+         * @description Every delivery of one Briefing — the scope and range the page is showing — newest first, each
+         *     naming the version that left and whether it has been restated since. A read; nothing is sent.
+         */
+        get: operations["list_briefing_deliveries_briefing_deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/briefing/deliveries/{delivery_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Briefing Delivery
+         * @description One delivery with the Briefing as it was sent — the version it cites, not today's.
+         */
+        get: operations["get_briefing_delivery_briefing_deliveries__delivery_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/briefing/organisation": {
         parameters: {
             query?: never;
@@ -24332,6 +24373,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_briefing_deliveries_briefing_deliveries_get: {
+        parameters: {
+            query: {
+                conn_id: string;
+                covers: string;
+                scope_key?: string;
+                recipe?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_briefing_delivery_briefing_deliveries__delivery_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

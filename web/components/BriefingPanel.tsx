@@ -76,6 +76,7 @@ import { BriefingRecordLines } from "@/components/brief/BriefingRecordLines";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodMeasures, PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, RangeMeasures, RangeSections, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
+import { BriefDeliveries } from "@/components/brief/BriefDeliveries";
 import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
@@ -3261,7 +3262,12 @@ export function BriefingPanel({
           )}
           {!narrativeLoading && hasNarrative && narrative?.period && (
             isRangeBlock(narrative.period)
-              ? <><RangeMeasures block={narrative.period} /><RangeSections block={narrative.period} /></>
+              ? (
+                <>
+                  <RangeMeasures block={narrative.period} /><RangeSections block={narrative.period} />
+                  {connectionId && <BriefDeliveries connectionId={connectionId} scopeKey={narrative.scope_key || connectionId} block={narrative.period} />}
+                </>
+              )
               : <PeriodMeasures block={narrative.period} />
           )}
           {!narrativeLoading && hasNarrative && narrative && (
