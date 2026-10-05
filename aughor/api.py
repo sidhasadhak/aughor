@@ -1105,6 +1105,8 @@ from aughor.routers import record as record_router  # noqa: E402 — phase 1 of 
 app.include_router(record_router.router)  # the Record: claims as recorded, decisions declared and listed, outcomes booked
 from aughor.routers import attention as attention_router  # noqa: E402 — phase 2 of the 2027 study
 app.include_router(attention_router.router)  # the attention budget: terms published, slots, the held list
+from aughor.routers import authority as authority_router  # noqa: E402 — phase 4 of the 2027 study
+app.include_router(authority_router.router)  # earned authority: the L0–L5 table, graduation and demotion receipts
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
 app.include_router(cockpit_router.router)  # Arc CT-4 — a Data Canvas's cockpit (self-gates on cockpit.composed)

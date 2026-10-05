@@ -11106,8 +11106,9 @@ python scripts/phase0_prompt_block_ablation.py` when a model key is at hand, the
 `AUGHOR_OIDC_ISSUER` and `AUGHOR_OIDC_AUDIENCE` — the day an identity provider is chosen; group grants, the
 proposal approver's name and the grant-ownership refusal all take effect then with no further code. **The
 organisation-scale half of the exit — five owners, identity on — is not observable yet**, by the user's own
-answers, and this line says so rather than reading as met. Phases 1 and 2 follow back to back on the same
-branch at the user's word, then phases 3 and 4.
+answers, and this line says so rather than reading as met. Phases 1 to 4 followed back to back on the same
+branch at the user's word (2026-10-05, below): each phase's CODE half is built and receipted by its tests; each
+phase's exit is the install's to show, and every "Still open" line names what the install, not the code, still owes.
 
 **Phase 1 — the code half BUILT 2026-10-05**, five slices on the same branch. (P1-1) `aughor/record/` — the one
 claim ledger as kernel artifacts (`claim` · `decision` · `outcome`; no new store): a Claim with the hub's envelope
@@ -11185,6 +11186,30 @@ open in phase 3:** the Decision page and the Scenario inside it; the Inbox retir
 items carrying predictions; a bought forecaster behind method 3 (today the platform's own mean-and-band, its backtest
 said); and the exit, which is the install's: decisions reconciled on real review dates, coverage published on a real
 metric, a departed forecast scored.
+
+**Phase 4 — the code half BUILT 2026-10-05**, three slices. (P4-1) `ontology/models.KineticAction` gains its
+reversibility class, a `Verification` (the read that proves the change, over the declared parameters) and an `Undo`
+(the compensating action and its window); optional on the model so an ontology declared before phase 4 still loads,
+REQUIRED at the declare door for a side-effect action (`actions/authority.declaration_problem`: no verification → no
+declaration; no undo → declared irreversible by name or refused). The executor runs the verification read through the
+ordinary query door after dispatch — passed · failed · unavailable (a read that cannot run is recorded, never a failed
+change) — and books every execution as an Action ledger entry citing what it ran under (a person's accept, a standing
+grant by id, the gate). (P4-2) `actions/authority.py` — the ladder keyed by (action, scope) and computed from that
+record: L1 declared · L2 complete · L3 execute with approval · L4 only on a graduation receipt · L5 unreachable until
+missions exist; the lower of the ceiling a person set and what the record earned; an irreversible action never passes
+L3. A graduation is a receipt a person books and the record decides: `GRADUATION_N` approved executions whose
+verification passed, no failed verification, and an outcome inside expectation on a decision that ran the action —
+phase 3's exit, the condition §4.8's amendment set, held by construction (nothing graduates on an install with no
+outcome). `actions/grants.py` grows the policy grant: bound to a target and a scope, capped and expiring, citing its
+receipt, minted only at L4 (`authority.widen`), allowing nothing once spent. (P4-3) A failed verification demotes the
+(action, scope) automatically — a ledger entry naming the evidence — and withdraws its standing grants; a person can
+book the same entry in a drill; `/authority` serves the L0–L5 table with each row's record, receipt, demotion and what
+L4 would still need. Receipt: 7 authority tests pass; the executor, grants, inbox, declared-action, propose, MCP-grant,
+autonomy-ladder and vocabulary suites pass. **Still open in phase 4:** the Action centre and the approval queue folded
+into it; the Operate duty row; firing the declared undo from an Action entry; the integration and MCP write paths
+booking Action entries; and the exit's live halves — a graduation on the organisation's install (which needs phase 3's
+first reconciled outcomes) and a demotion in a drill there. §4.8's refusal stands as amended: the mechanism exists,
+and L4 stays unreachable until an outcome is recorded and scored.
 
 ---
 

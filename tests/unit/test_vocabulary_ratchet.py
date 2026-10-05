@@ -138,6 +138,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         r"(?i)kinetic", CODE_ROOTS,
         ("web/components/FleetOverviewPanel.tsx",
          "tests/unit/test_kinetic_inbox_expiry.py",
+         # Phase 4 of the 2027 study (2026-10-05), the same ground as RC-3's expiry suite: every
+         # hit in the authority suite is an identifier from the existing API — the `KineticAction`
+         # class its fixtures build and `execute_kinetic_action`, the one executor it drives. Its
+         # own prose, and `aughor/actions/authority.py`, say "declared action" throughout.
+         "tests/unit/test_action_authority.py",
          # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
          # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
          # the server ships (`kinetic_action`) at the priority the server gives it. The

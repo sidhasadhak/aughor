@@ -48,6 +48,10 @@ class KineticResult:
     outcome: dict = field(default_factory=dict)   # dispatch result, when executed
     detail: dict = field(default_factory=dict)    # structured extras (e.g. the 428 body)
     granted_by: str = ""                    # A4: the standing-grant id that auto-allowed this run ('' otherwise)
+    #: Phase 4 of the 2027 study — what the declared verification read found after dispatch
+    #: ({"status": passed|failed|unavailable|not_declared, "why", …}) and the Action ledger entry.
+    verification: dict = field(default_factory=dict)
+    action_entry: str = ""
 
     def http_status(self) -> int:
         return {
@@ -693,6 +697,32 @@ def execute_kinetic_action(
         govern.audit(gov_action, scope, "dispatch_error", actor=actor, detail=str(e), risk=risk)
         return KineticResult("dispatch_error", False, action.id, message=str(e))
 
-    # 5 — audit the completed run
-    govern.audit(gov_action, scope, "executed", actor=actor, detail=action.kind, risk=risk)
-    return KineticResult("executed", True, action.id, outcome=outcome, granted_by=grant_id)
+    # 4b — the verification read (phase 4 of the 2027 study, §M): the statement the declaration
+    #      names, run through the ordinary query door AFTER the change. A read that cannot run is
+    #      `unavailable`, never `failed` — the tie-out's rule — and a failed one DEMOTES the
+    #      (action, scope) and withdraws its standing grants, as a ledger entry nobody has to notice.
+    from aughor.actions import authority
+    verification: dict = {"status": "not_declared", "why": "the action declares no verification statement"}
+    try:
+        verification = authority.verify(action, coerced, scope)
+    except Exception as exc:  # noqa: BLE001 — the change happened; a verifier that crashed is said
+        verification = {"status": "unavailable", "why": f"the verifier failed: {str(exc)[:160]}"}
+
+    # 5 — audit the completed run, and book it as an Action in the ledger with what it ran under
+    govern.audit(gov_action, scope, "executed", actor=actor,
+                 detail=f"{action.kind}; verification {verification.get('status')}", risk=risk)
+    entry = ""
+    try:
+        entry = authority.book_action(action=action, params=coerced, scope=scope, actor=actor, status="executed",
+                                      outcome=outcome if isinstance(outcome, dict) else {"result": outcome},
+                                      grant_id=grant_id, approved_by=("human accept" if approved else ""),
+                                      verification=verification)
+        if verification.get("status") == "failed":
+            authority.demote(action.id, scope, why=f"verification failed after execution: {verification.get('why', '')}",
+                             evidence={"action_entry": entry, "verification": verification})
+    except Exception as exc:  # noqa: BLE001 — the execution stands; its record is best-effort and said
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the action ran; its ledger entry could not be booked", counter="actions.book_entry",
+                 conn_id=scope or None)
+    return KineticResult("executed", True, action.id, outcome=outcome, granted_by=grant_id,
+                         verification=verification, action_entry=entry)
