@@ -2,6 +2,10 @@
 
 All writes are append-only (no UPDATE on claim rows, only on feedback fields).
 This preserves a complete audit trail of every claim Aughor has ever made.
+
+Since phase 1 of the 2027 study this store is a WRITER's staging, not the Record: a deep
+analysis's rows here are booked as claims in the kernel ledger when its receipt is written
+(`aughor/record/writers.py::book_deep_findings`), with the receipt as their run warrant.
 """
 from __future__ import annotations
 
@@ -25,9 +29,7 @@ def _get_conn() -> sqlite3.Connection:
     return conn
 
 
-def _init_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS evidence_claims (
+_COLUMNS = """
             id                          TEXT PRIMARY KEY,
             investigation_id            TEXT NOT NULL,
             hypothesis_id               TEXT,
@@ -35,17 +37,49 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             sql_source                  TEXT,
             metric_used                 TEXT,
             data_freshness              TEXT,
-            confidence                  REAL NOT NULL,
+            confidence                  REAL,
             created_at                  TEXT NOT NULL,
             owner_feedback              TEXT,
             feedback_note               TEXT,
             downstream_recommendations  TEXT NOT NULL DEFAULT '[]',
             outcome_status              TEXT
-        );
+"""
+_COLUMN_LIST = ("id, investigation_id, hypothesis_id, claim_text, sql_source, metric_used, "
+                "data_freshness, confidence, created_at, owner_feedback, feedback_note, "
+                "downstream_recommendations, outcome_status")
+_INDEXES = """
         CREATE INDEX IF NOT EXISTS idx_ec_inv  ON evidence_claims(investigation_id);
         CREATE INDEX IF NOT EXISTS idx_ec_met  ON evidence_claims(metric_used);
-    """)
+"""
+#: Store files whose ``confidence`` column has been checked for the NOT NULL it shipped with.
+_NULLABLE_CHECKED: set[str] = set()
+
+
+def _init_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(f"CREATE TABLE IF NOT EXISTS evidence_claims ({_COLUMNS});{_INDEXES}")
     conn.commit()
+    _confidence_nullable(conn)
+
+
+def _confidence_nullable(conn: sqlite3.Connection) -> None:
+    """Phase 1 of the 2027 study: confidence is counted or absent, so a claim row must be storable
+    WITHOUT one. The column shipped ``REAL NOT NULL`` and a self-reported 0.8 / 0.5 filled it; a
+    file from before this change is rebuilt once, every row and its number kept (an old number
+    stays readable; nothing writes a new one). Checked once per store path per process."""
+    key = str(_DB_PATH)
+    if key in _NULLABLE_CHECKED:
+        return
+    cols = conn.execute("PRAGMA table_info(evidence_claims)").fetchall()
+    if any(r[1] == "confidence" and r[3] for r in cols):        # (cid, name, type, notnull, …)
+        conn.executescript(f"""
+            CREATE TABLE evidence_claims__nullable ({_COLUMNS});
+            INSERT INTO evidence_claims__nullable ({_COLUMN_LIST}) SELECT {_COLUMN_LIST} FROM evidence_claims;
+            DROP TABLE evidence_claims;
+            ALTER TABLE evidence_claims__nullable RENAME TO evidence_claims;
+            {_INDEXES}
+        """)
+        conn.commit()
+    _NULLABLE_CHECKED.add(key)
 
 
 def _row_to_claim(row: sqlite3.Row) -> EvidenceClaim:
@@ -90,13 +124,14 @@ def append_claim(claim: EvidenceClaim) -> None:
 
 
 def get_claims_for_investigation(investigation_id: str) -> list[EvidenceClaim]:
-    """Return all claims for a given investigation, ordered by confidence desc."""
+    """Return all claims for a given investigation, in the order they were recorded (it used to be
+    by confidence, a column nothing writes now)."""
     with _LOCK:
         conn = _get_conn()
         try:
             _init_schema(conn)
             rows = conn.execute(
-                "SELECT * FROM evidence_claims WHERE investigation_id = ? ORDER BY confidence DESC",
+                "SELECT * FROM evidence_claims WHERE investigation_id = ? ORDER BY created_at, id",
                 (investigation_id,),
             ).fetchall()
             return [_row_to_claim(r) for r in rows]

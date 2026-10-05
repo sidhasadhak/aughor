@@ -306,7 +306,7 @@ def measure_answer(answer: dict, *, run_sql: Optional[RunSql] = None,
     if not (sql and report.get("columns") and report.get("rows")):
         entry["reason"] = "the answer carries no query result to compare"
         return entry
-    if _RELATIVE_TIME.search(sql):
+    if not can_recheck(sql):
         # "yesterday", "this month so far": re-run tomorrow, the same SQL measures another window,
         # and the difference would be told as a correction it is not
         entry["reason"] = ("its query is relative to today (it reads the current date), so re-running "
@@ -346,7 +346,48 @@ def measure_answer(answer: dict, *, run_sql: Optional[RunSql] = None,
     return entry
 
 
+def can_recheck(sql: str) -> bool:
+    """Whether a query's re-run measures the same window: SQL that reads the clock does not."""
+    return not _RELATIVE_TIME.search(str(sql or ""))
+
+
+def restated_statement(answer: dict, recheck: dict) -> str:
+    """The restated observation's one line for the Record (phase 1 of the 2027 study) — the new
+    numbers first, what was first said after. Code-written, like :func:`correction_text`."""
+    changes = recheck.get("changes") or []
+    parts = [f"{_what(c)} is now {_fmt(c['new'])} (we said {_fmt(c['old'])})" for c in changes[:NAMED_CHANGES]]
+    if len(changes) > NAMED_CHANGES:
+        parts.append(f"{len(changes) - NAMED_CHANGES} more number"
+                     f"{'s' if len(changes) - NAMED_CHANGES != 1 else ''} changed")
+    gone = int(recheck.get("missing_rows") or 0)
+    if gone:
+        parts.append(f"{gone} row{'s' if gone != 1 else ''} the answer gave {'is' if gone == 1 else 'are'} no longer returned")
+    cause = {"late_rows": "late rows", "restated": "the source restated settled days"}.get(
+        str(recheck.get("cause") or ""), "")
+    first = str((answer.get("report") or {}).get("headline") or answer.get("headline") or "").strip()
+    line = "Restated: " + "; ".join(parts) + "."
+    if cause:
+        line += f" Cause: {cause}."
+    if first:
+        line += f" First said: {first}"
+    return line
+
+
 def _record(answer: dict, entry: dict) -> None:
+    # Phase 1 of the 2027 study — the Record: an answer whose numbers moved RESTATES the observation
+    # it booked when it was first receipted (a new version, the old text kept, the re-check's own
+    # run as its warrant), before the entry is filed so the entry can name the restatement. An
+    # answer that booked no observation (it predates the Record, or concluded nothing) says so.
+    if entry.get("status") == "changed":
+        try:
+            from aughor.record.writers import restate_answer_observation
+            noted = restate_answer_observation(answer, entry, text=restated_statement(answer, entry))
+            entry["claim"] = noted or {"restated": "", "why": "this answer booked no observation to restate"}
+        except Exception as exc:  # noqa: BLE001 — the re-check is the record; its restatement is a by-product
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the re-check is recorded on the answer; its restatement in the Record was lost",
+                     counter="answers.recheck.restate")
+            entry["claim"] = {"restated": "", "why": "the restatement failed; the re-check stands"}
     from aughor.db.history import append_recheck
     append_recheck(answer["id"], entry)
     try:

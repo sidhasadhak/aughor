@@ -16,9 +16,13 @@ def _new_id() -> str:
 class EvidenceClaim(BaseModel):
     """A single verifiable finding produced during an investigation.
 
-    Every claim carries the SQL that produced it, the metric it references,
-    how fresh the underlying data was, and a confidence score from the agent.
-    Claims can be validated or disputed by humans after the fact.
+    Every claim carries the SQL that produced it, the metric it references and how fresh the
+    underlying data was. Claims can be validated or disputed by humans after the fact.
+
+    ``confidence`` is None since phase 1 of the 2027 study (ROADMAP §3.53): the ledger stored 0.8
+    or 0.5 by whether a phase called itself significant — a self-reported number wearing a badge.
+    Confidence is counted or absent (`aughor/record/claims.py`, law 3); the field stays on the model
+    so rows written before the change still read, and nothing writes it now.
     """
 
     id: str = Field(default_factory=_new_id)
@@ -28,7 +32,7 @@ class EvidenceClaim(BaseModel):
     sql_source: Optional[str] = None           # exact SQL that produced this number
     metric_used: Optional[str] = None          # metric catalog name if applicable
     data_freshness: Optional[str] = None       # ISO timestamp of latest data point used
-    confidence: float = Field(ge=0.0, le=1.0)  # 0–1 from scoring node
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)  # None: not counted (see above)
     created_at: str = Field(default_factory=_now_iso)
 
     # Human-in-the-loop feedback

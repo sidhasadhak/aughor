@@ -15,9 +15,9 @@ constructible. The measured confidence that annotates a ``joins_on`` edge is the
 join guard's value-domain overlap (``OntologyRelationship.value_overlap``), already
 computed and persisted at ontology-build time; a value-disjoint name coincidence is
 dropped from the ontology upstream, so it never reaches this projection. The
-self-reported model confidences (``EvidenceClaim.confidence``,
-``pack_deltas.confidence``) are deliberately NOT allowed as edge provenance — they
-are UA's hardcoded weights wearing a badge.
+self-reported model confidences (``pack_deltas.confidence``; ``EvidenceClaim.confidence``
+until phase 1 of the 2027 study emptied it) are deliberately NOT allowed as edge
+provenance — they are UA's hardcoded weights wearing a badge.
 
 Wave-C node/edge type system (T3.1):
   nodes: table · metric · glossary_term · domain · finding · brief

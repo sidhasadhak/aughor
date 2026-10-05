@@ -260,6 +260,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         except Exception:
             logger.debug("column lineage skipped", exc_info=True)
         enf = None
+        _metrics_used: list[str] = []
         try:
             from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
             from aughor.semantic.enforcement import (
@@ -279,6 +280,8 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             for v in verdicts:
                 rel = "metric_used" if v["status"] == "used" else "metric_drift"
                 lineage.append((rel, f"metric:{v['metric']}", v["detail"]))
+                if v["status"] == "used":
+                    _metrics_used.append(str(v["metric"]))
             enf = enforcement_summary(verdicts)
             # B-7 propose-to-define: KPI concepts the question names that nothing
             # governs yet — surfaced so the user can define them (then they're enforced).
@@ -407,12 +410,29 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             headline=headline if _concluded else "", sql=sqls[0] if sqls else "",
             tables=sorted(seen),
         )
+        # Phase 1 of the 2027 study (ROADMAP §3.53): the answer becomes a CLAIM in the Record,
+        # warranted by this receipt — an observation when it concluded something with a query
+        # behind it, and for a deep analysis its findings beside it. One writer, every caller,
+        # for the same reason the graph note lives here. Best-effort; the receipt stands without it.
+        _claims: dict = {"observation": None, "findings": []}
+        try:
+            from aughor.record.writers import book_from_receipt
+            _claims = book_from_receipt(
+                kind=kind, natural_key=natural_key, receipt_id=_receipt_id, connection_id=connection_id,
+                question=question, headline=headline if _concluded else "", sql=sqls[0] if sqls else "",
+                metrics_used=_metrics_used, agent=_agent, canvas_id=canvas_id or "",
+                payload_extra=payload_extra or {})
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the Record's claim is best-effort; the Trust Receipt stands without it",
+                     counter="chat.receipt_claim", conn_id=connection_id)
         # `receipt_id` is the stable artifact id → the unified GET /receipt/{id} (WP-10); a
         # streaming caller emits it so the UI's "Why this number" opens the public receipt.
-        return {"learning": _learning, "activations": _activations, "receipt_id": _receipt_id}
+        return {"learning": _learning, "activations": _activations, "receipt_id": _receipt_id,
+                "claim_id": _claims.get("observation"), "finding_claims": _claims.get("findings") or []}
     except Exception:
         logger.debug("%s receipt write failed", kind, exc_info=True)
-    return {"learning": None, "activations": None, "receipt_id": None}
+    return {"learning": None, "activations": None, "receipt_id": None, "claim_id": None, "finding_claims": []}
 
 
 #: Public name for the Trust-Receipt writer. The converse tool loop's `run_sql`
@@ -6868,7 +6888,8 @@ def get_recent_evidence(connection_id: str, canvas_id: Optional[str] = None, lim
 
 @router.get("/investigations/{inv_id}/evidence")
 def get_investigation_evidence(inv_id: str):
-    """Return all evidence claims for an investigation, ordered by confidence."""
+    """Return all evidence claims for an investigation, in the order recorded. ``confidence`` is
+    null on every row written since phase 1 of the 2027 study: not counted, so not shown."""
     from aughor.evidence import store as _ev_store
     claims = _ev_store.get_claims_for_investigation(inv_id)
     return [c.model_dump() for c in claims]

@@ -4300,7 +4300,8 @@ export interface EvidenceClaim {
   sql_source: string | null;
   metric_used: string | null;
   data_freshness: string | null;
-  confidence: number;
+  /** null on every row since phase 1 of the 2027 study: not counted, so not shown as a figure. */
+  confidence: number | null;
   created_at: string;
   owner_feedback: "validated" | "disputed" | "needs_context" | null;
   feedback_note: string | null;
