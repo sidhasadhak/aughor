@@ -123,10 +123,14 @@ def test_the_answer_at_review_books_the_outcome_against_the_expectation_and_owes
     assert "not yet against the metric's own history" in o.why
     pred = C.latest(C.claim_key("prediction", D.decision_key(src)))
     assert pred.state == "scored" and pred.extra["scored_against"] == "inside"
-    # a second answer does not book a second outcome
+    # a second answer books no second outcome: it is laid beside the first as a restatement (phase 3),
+    # the decision pointing at the new version — both answers kept
     inv.log_recommendation_outcome(
         inv_id, 0, inv.OutcomeRequest(rec_text="Raise the threshold", status="rejected"), principal=None)
-    assert D.latest_decision(src).version == 2
+    latest = D.latest_decision(src)
+    restated = D.outcome_by_id(latest.outcome)
+    assert restated.key == o.key and restated.id != o.id and restated.extra["answer"] == "rejected"
+    assert restated.verdict == "as_expected"                    # the measured verdict stays as booked
 
 
 def test_a_relative_expectation_with_no_before_value_cannot_be_compared_and_says_so():

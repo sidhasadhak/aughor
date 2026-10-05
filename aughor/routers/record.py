@@ -245,6 +245,82 @@ def close_record_inquiry(inquiry_id: str, req: CloseInquiryRequest, principal=De
     return _inquiry_view(closed)
 
 
+# ── scenarios and calibration ──────────────────────────────────────────────────────────────
+
+class AssumptionIn(BaseModel):
+    variable: str
+    value: Optional[float] = None
+    by: str = ""
+    text: str = ""
+    unit: str = ""
+    low: Optional[float] = None
+    high: Optional[float] = None
+
+
+class ScenarioRequest(BaseModel):
+    method: str                                  # identity | declared | history
+    metric: str
+    settles_on: str = ""                         # defaults to the decision's review date
+    direction: str = ""
+    unit: str = ""
+    formula: str = ""                            # identity
+    inputs: dict[str, float] = Field(default_factory=dict)
+    varied: list[str] = Field(default_factory=list)
+    assumption: Optional[AssumptionIn] = None    # declared
+    spec: Optional[dict] = None                  # history: the measurable definition
+    limits: list[str] = Field(default_factory=list)
+    question: str = ""
+
+
+@router.post("/record/decisions/{decision_id}/scenario", status_code=201)
+def book_record_scenario(decision_id: str, req: ScenarioRequest, principal=Depends(get_principal)) -> dict:
+    """Project under one method of the ladder (identity · declared · history) FOR a decision, and
+    book the prediction with its method, band and what it must say; the scenario is a ledger
+    entry inside the decision. A method the ladder does not have yet is refused by name."""
+    from aughor.record import scenario as S
+    d = D.get_decision(decision_id)
+    if d is None or not _visible(d.connection_id):
+        raise HTTPException(status_code=404, detail="No such decision")
+    who = _who(principal)
+    try:
+        if req.method == "identity":
+            proj = S.identity(req.formula, req.inputs, unit=req.unit, varied=req.varied)
+        elif req.method == "declared":
+            if req.assumption is None:
+                raise HTTPException(status_code=422, detail="a declared method takes an assumption")
+            a = req.assumption
+            proj = S.declared(variable=a.variable, value=a.value, by=a.by or who, text=a.text, unit=a.unit or req.unit,
+                              connection_id=d.connection_id, low=a.low, high=a.high)
+        elif req.method == "history":
+            if not req.spec:
+                raise HTTPException(status_code=422, detail="the history method takes the metric's measurable spec")
+            from aughor.db.measure import run_sql_for
+            proj = S.history(req.spec, run_sql_for(d.connection_id, internal=True))
+        else:
+            raise HTTPException(status_code=422, detail=f"no method named {req.method!r}; the ladder has {', '.join(S.METHODS)}")
+        settles_on = req.settles_on or d.review_on
+        pid = S.predict(metric=req.metric, projection=proj, settles_on=settles_on, author=who or "unidentified",
+                        connection_id=d.connection_id, direction=req.direction, spec=req.spec, for_ref=decision_id)
+    except (S.FormulaRefused, C.ClaimRefused, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    assumptions = [S.Assumption(variable=req.assumption.variable, value=req.assumption.value, by=req.assumption.by or who,
+                                text=req.assumption.text, claim=proj.claim)] if req.assumption else []
+    scenario = S.book_scenario(S.Scenario(for_kind="decision", for_id=decision_id, question=req.question,
+                                          assumptions=assumptions, predictions=[pid], limits=req.limits,
+                                          methods=[req.method], connection_id=d.connection_id))
+    return {"scenario": scenario.model_dump(), "projection": proj.model_dump(),
+            "prediction": (C.get(pid).model_dump() if C.get(pid) else None)}
+
+
+@router.get("/record/calibration")
+def record_calibration(connection_id: Optional[str] = None) -> list[dict]:
+    """Interval coverage by method, metric and author over scored predictions — counted."""
+    from aughor.record.scenario import calibration
+    if connection_id and not _visible(connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    return calibration(conn_id=connection_id)
+
+
 @router.post("/record/decisions/{decision_id}/outcome", status_code=201)
 def book_record_outcome(decision_id: str, req: OutcomeIn, principal=Depends(get_principal)) -> dict:
     """Book what became of a decision: the actual against the expectation and against the

@@ -74,10 +74,12 @@ REMEDIES: dict[str, dict] = {
         "doors": [DOOR_SEMANTIC, DOOR_ASK],
     },
     "claims": {
-        "meaning": ("A sentence makes a causal, associational or forecast claim the analysis "
-                    "did not license."),
+        "meaning": ("A sentence makes a causal or associational claim the analysis did not "
+                    "license, or a forecast that cites no scored prediction — one whose method "
+                    "carries a backtest on this metric."),
         "action": ("Reword the automation's question or instruction to state the fact; the "
-                   "reader draws the conclusion."),
+                   "reader draws the conclusion. A forecast departs once it is booked as a "
+                   "prediction under a scored method on the decision it serves."),
         "doors": [DOOR_AUTOMATION, DOOR_ASK],
     },
     "disagreement": {

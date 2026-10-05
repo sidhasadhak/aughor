@@ -287,3 +287,27 @@ def get_outcome(decision_id: str) -> Optional[Outcome]:
 
 def outcome_by_id(outcome_id: str) -> Optional[Outcome]:
     return _outcome_from(_ledger().artifact_by_id(outcome_id)) if outcome_id else None
+
+
+def restate_outcome(outcome_id: str, *, extra: dict, verdict: Optional[str] = None, why: str = "") -> str:
+    """A new version of an outcome under its key — a person's answer laid beside the measured
+    verdict, never over it. Returns the new version's id and leaves the decision pointing at it."""
+    prior = outcome_by_id(outcome_id)
+    if prior is None:
+        raise ValueError(f"no outcome {outcome_id!r} to restate")
+    data = prior.model_dump()
+    for read_only in ("id", "key", "recorded_at"):
+        data.pop(read_only, None)
+    data["extra"] = {**(data.get("extra") or {}), **(extra or {})}
+    if verdict:
+        data["verdict"] = verdict
+    if why:
+        data["why"] = why
+    new_id = _ledger().artifact_write(OUTCOME_KIND, prior.key, data, lineage=[("supersedes", outcome_id, "restated")])
+    decision = get_decision(prior.of)
+    if decision is not None:
+        latest = latest_decision(decision.source) or decision
+        if latest.outcome == outcome_id:
+            latest.outcome = new_id
+            book_decision(latest)
+    return new_id

@@ -11162,6 +11162,30 @@ cost; the settling lag and a process's early stages as signals; triage's mission
 choice); and the exit's live halves — a refusal on a real object, the held list read by a real person, a measured
 share of inquiries the platform opened (the record's `opened_by` counts it; 0 until alerts fire on the install).
 
+**Phase 3 — the code half BUILT 2026-10-05**, three slices. (P3-1) The review (`playbook/outcomes.run_due_reviews`)
+measures the metric's OWN HISTORY beside the "before" — the prior same-length windows, their mean and band, and the
+method's backtest on this metric (`record/scenario.history`) — and books the Record's Outcome with both verdicts by
+code (`record/byproducts.outcome_from_review`): against the expectation (inside · above · below · cannot tell) and
+against history (better · as expected · worse · cannot tell, each with why: inside the baseline's own noise, the
+wrong way, no expectation named the wanted direction, no history could be measured). The prediction is scored at the
+same moment; a person's later answer is laid beside the measured verdict as a restatement, never over it. The review
+question is DELIVERED (`playbook/review_delivery.py`) to the resolved owner's channel through the departure gate,
+where before it was written to a log; a person with no channel bound is said on the record, and the question waits on
+the departures screen. (P3-2) `aughor/record/scenario.py` — the ladder's first three methods behind one interface:
+identity (exact arithmetic over named inputs, refusing anything else, saying what it held fixed), declared (a
+person's assumption as a claim at tier `declared` in their name, refused without one), history (mean and band of the
+prior windows with the backtest: MAE, MAPE, how often the band held); an unknown method refused by name. A
+prediction carries its method, band, what it assumed and how to score it; the settle tick scores every open
+prediction whose range is Final from its own spec; `/record/calibration` counts interval coverage by method, metric
+and author; `POST /record/decisions/{id}/scenario` books a Scenario inside a decision. (P3-3) The gate's law 5
+narrowed: an UNSCORED forecast never departs — a forecast citing a prediction whose method carries a backtest on
+this metric, or whose class has scored predictions, departs and the receipt says on what. Receipt: 25 phase-3 tests
+pass; the review, Record, gate, remedies, exit-ratchet, attention, scheduler and vocabulary suites pass. **Still
+open in phase 3:** the Decision page and the Scenario inside it; the Inbox retired into Decisions; the Briefing's
+items carrying predictions; a bought forecaster behind method 3 (today the platform's own mean-and-band, its backtest
+said); and the exit, which is the install's: decisions reconciled on real review dates, coverage published on a real
+metric, a departed forecast scored.
+
 ---
 
 ## 4 · Decided AGAINST — do not re-propose without new facts

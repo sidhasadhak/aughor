@@ -49,6 +49,17 @@ class RecOutcome(BaseModel):
     review_asked_to: str = ""            # principal the question went to
     review_asked_at: str = ""
     review_note: str = ""                # why a baseline or review could not be measured
+    # Phase 3 of the 2027 study — the review measures the metric's OWN HISTORY beside the "before":
+    # what the prior windows predicted for the review window (method 3, `record/scenario.py`),
+    # with its band, so the outcome is judged against what would have happened anyway. The Record's
+    # outcome id and how the question was delivered ride here too. Additive: older rows carry none.
+    history_value: Optional[float] = None
+    history_low: Optional[float] = None
+    history_high: Optional[float] = None
+    history_n: int = 0
+    history_note: str = ""
+    record_outcome_id: str = ""
+    review_delivery: dict = Field(default_factory=dict)
 
 
 from aughor.util.time import now_iso_z as _now
@@ -133,7 +144,9 @@ def log_outcome(
 
 _REVIEW_FIELDS = ("connection_id", "accepted_by", "spec", "baseline_value", "baseline_at", "baseline_window",
                   "review_days", "review_at", "review_value", "reviewed_at", "review_window", "review_question",
-                  "review_asked_to", "review_asked_at", "review_note")
+                  "review_asked_to", "review_asked_at", "review_note",
+                  "history_value", "history_low", "history_high", "history_n", "history_note",
+                  "record_outcome_id", "review_delivery")
 DEFAULT_REVIEW_DAYS = 30
 _QUALIFIED_REF = re.compile(r"\b([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)(?:\.([A-Za-z_][\w]*))?\b")
 
@@ -292,10 +305,12 @@ def run_due_reviews(now: Optional[datetime] = None, *, run_sql_for, path: Path |
     reviewed = []
     for o in due_reviews(now, path):
         value, label, note = None, "", ""
+        hist: dict = {}
         if o.spec:
             try:
                 run_sql = run_sql_for(o.connection_id, internal=True)
                 value, label, note = measure_spec(o.spec, run_sql, end_day=now.date() - timedelta(days=1))
+                hist = _history_fields(o.spec, run_sql, end_day=now.date() - timedelta(days=1))
             except Exception as exc:  # noqa: BLE001 — recorded on the row
                 note = f"review measurement failed: {str(exc)[:160]}"
         else:
@@ -304,11 +319,45 @@ def run_due_reviews(now: Optional[datetime] = None, *, run_sql_for, path: Path |
         notes = "; ".join(x for x in (note or o.review_note, owner_note) if x)
         fields = {"review_value": value, "reviewed_at": now.isoformat(), "review_window": label,
                   "review_question": review_question(o, value, label), "review_asked_to": asked_to,
-                  "review_asked_at": now.isoformat(), "review_note": notes}
+                  "review_asked_at": now.isoformat(), "review_note": notes, **hist}
         if value is not None and o.metric_after is None:
             fields["metric_after"] = value
-        reviewed.append(_update(o.id, fields, path))
+        updated = _update(o.id, fields, path)
+        # Phase 3 of the 2027 study — the review BOOKS the outcome in the Record with both verdicts
+        # (against the expectation, against the metric's own history), scores the prediction, and
+        # DELIVERS the question to the resolved owner through the departure gate. Each best-effort,
+        # each recorded on the row: a review that could not be delivered says so, never nothing.
+        extra_fields: dict = {}
+        try:
+            from aughor.record.byproducts import outcome_from_review
+            oid = outcome_from_review(updated)
+            if oid:
+                extra_fields["record_outcome_id"] = oid
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the review ran; its outcome could not be booked in the Record", counter="review.outcome")
+        try:
+            from aughor.playbook.review_delivery import deliver_review_question
+            extra_fields["review_delivery"] = deliver_review_question(updated, now=now)
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the review ran; its question could not be delivered", counter="review.deliver")
+            extra_fields["review_delivery"] = {"status": "failed", "note": f"delivery failed: {str(exc)[:160]}"}
+        reviewed.append(_update(o.id, extra_fields, path) if extra_fields else updated)
     return reviewed
+
+
+def _history_fields(spec: dict, run_sql, *, end_day: "date") -> dict:
+    """Method 3 on the review window: the metric's own prior windows, as fields on the record."""
+    try:
+        from aughor.record.scenario import history
+        p = history(spec, run_sql, end_day=end_day)
+    except Exception as exc:  # noqa: BLE001 — a baseline that cannot be read is a note, never a number
+        return {"history_note": f"history baseline failed: {str(exc)[:160]}"}
+    if p.value is None:
+        return {"history_note": p.note or "no history baseline", "history_n": int((p.backtest or {}).get("n") or 0)}
+    return {"history_value": p.value, "history_low": p.low, "history_high": p.high,
+            "history_n": int((p.backtest or {}).get("n") or 0), "history_note": " · ".join(p.must_say)}
 
 
 def _update(outcome_id: str, fields: dict, path: Path | None = None) -> RecOutcome:

@@ -106,43 +106,107 @@ def decision_from_recommendation(outcome, *, chosen: str, decided_by: str, conne
 _ANSWER_VERDICT = {"verified": "as_expected", "rejected": "worse", "implemented": "cannot_tell"}
 
 
+def _against_expectation(decision, actual: Optional[float], before: Optional[float]) -> tuple[str, Optional[_claims.Claim]]:
+    """Where the actual fell against the decision's expectation: inside · above · below · cannot
+    tell (a relative band with no before value) · no expectation."""
+    if not decision.expectation_claim:
+        return "no expectation", None
+    pred = _claims.get(decision.expectation_claim)
+    if pred is None:
+        return "no expectation", None
+    from aughor.record.scenario import against_band
+    return against_band(actual, low=pred.extra.get("low"), high=pred.extra.get("high"),
+                        unit=pred.statement.unit, before=before), pred
+
+
+def _verdict_against_history(*, actual: Optional[float], baseline: Optional[float], low: Optional[float],
+                             high: Optional[float], direction: str, against: str, history_note: str) -> tuple[str, str, _dec.Effect]:
+    """Both verdicts' meeting point (the study §K rule 2; `IDEAS.md` 13 and 22): the effect is the
+    actual against what the metric's own history predicted, with history's band; the verdict is
+    code over that effect and the expected direction, and ``cannot tell`` says why."""
+    if actual is None:
+        return "cannot_tell", "the review could not measure the metric", _dec.Effect(method="history")
+    if baseline is None:
+        return "cannot_tell", f"no history baseline could be measured: {history_note or 'unknown'}", _dec.Effect(method="history")
+    effect = actual - baseline
+    eff_low = (actual - high) if high is not None else None
+    eff_high = (actual - low) if low is not None else None
+    e = _dec.Effect(value=round(effect, 6), low=round(eff_low, 6) if eff_low is not None else None,
+                    high=round(eff_high, 6) if eff_high is not None else None, method="history")
+    if eff_low is not None and eff_high is not None and eff_low <= 0 <= eff_high:
+        return ("cannot_tell", f"inside the baseline's own noise: history predicted {low:,.4g} to {high:,.4g} and the "
+                               f"metric read {actual:,.4g}", e)
+    if direction not in ("up", "down"):
+        return ("cannot_tell", f"the metric moved {effect:+,.4g} against its own history, but no expectation named the "
+                               "wanted direction", e)
+    wanted = effect > 0 if direction == "up" else effect < 0
+    if not wanted:
+        return "worse", f"the metric moved {effect:+,.4g} against its own history, the wrong way for '{direction}'", e
+    if against == "above" and direction == "up" or against == "below" and direction == "down":
+        return "better", f"the metric moved {effect:+,.4g} against its own history, beyond the expected band", e
+    if against in ("inside", "no expectation", "cannot_tell"):
+        return "as_expected", f"the metric moved {effect:+,.4g} against its own history, the wanted way", e
+    return "worse", f"the metric moved {effect:+,.4g} the wanted way but short of the expected band", e
+
+
+def outcome_from_review(outcome) -> Optional[str]:
+    """The REVIEW books the Outcome (phase 3): the actual measured on the review date against the
+    expectation and against the metric's own history (method 3, measured by the review), the
+    verdict by code, and the prediction scored. None when no decision was booked for this
+    recommendation; the outcome already booked when the review ran before."""
+    src = _dec.Source(kind="recommendation", ref=outcome.id)
+    decision = _dec.latest_decision(src)
+    if decision is None:
+        return None
+    if decision.outcome:
+        return decision.outcome
+    actual = outcome.review_value
+    before = outcome.baseline_value if outcome.baseline_value is not None else outcome.metric_before
+    against, pred = _against_expectation(decision, actual, before)
+    direction = str(pred.extra.get("direction") or "") if pred is not None else ""
+    verdict, why, effect = _verdict_against_history(
+        actual=actual, baseline=outcome.history_value, low=outcome.history_low, high=outcome.history_high,
+        direction=direction, against=against, history_note=outcome.history_note)
+    result = _dec.Outcome(of=decision.id, measured_on=(outcome.reviewed_at or _dt.datetime.now(_dt.timezone.utc).isoformat())[:10],
+                          actual=actual, baseline=outcome.history_value, effect=effect, verdict=verdict, why=why,
+                          against_expectation=against, measured_by="system:review",
+                          writes_back=["prediction scored"] if pred is not None else [],
+                          extra={"before": before, "after": actual, "review_window": outcome.review_window,
+                                 "history_n": outcome.history_n, "history_note": outcome.history_note,
+                                 "history_band": [outcome.history_low, outcome.history_high]})
+    oid = _dec.book_outcome(result)
+    if pred is not None:
+        latest = _claims.latest(pred.key)
+        if latest is not None and latest.state == "scored":
+            latest.extra["actual"] = actual
+            latest.confidence = None
+            _claims.restate(latest.key, latest, conn_id=decision.connection_id or None)
+    return oid
+
+
 def outcome_from_review_answer(outcome, *, status: str, answered_by: str) -> Optional[str]:
-    """A person's answer at review (verified · rejected · implemented) books the Outcome of the
-    decision their acceptance booked: the actual as measured, the person's verdict, and where the
-    actual fell against the expectation. Against the metric's OWN HISTORY is phase 3's measure,
-    so ``baseline`` stays empty and ``why`` says which comparison this is. None when no decision
-    was booked for this recommendation (accepted before the Record), or when the answer is not
-    one of the three."""
+    """A person's answer at review (verified · rejected · implemented): when the review already
+    booked the Outcome, the answer is RESTATED onto it — both verdicts kept, the measured one and
+    the person's, never one overwriting the other (a good decision with a bad outcome is both). When
+    no review ran yet (the answer came first), the answer books the Outcome against the expectation
+    alone and says the history comparison is still owed. None when no decision was booked."""
     verdict = _ANSWER_VERDICT.get(status)
     if verdict is None:
         return None
     src = _dec.Source(kind="recommendation", ref=outcome.id)
     decision = _dec.latest_decision(src)
-    if decision is None or decision.outcome:
+    if decision is None:
         return None
+    if decision.outcome:
+        return _dec.restate_outcome(decision.outcome, extra={"answer": status, "answered_by": answered_by or "unidentified",
+                                                            "answer_verdict": verdict,
+                                                            "answered_at": _dt.datetime.now(_dt.timezone.utc).isoformat()})
     actual = outcome.metric_after if outcome.metric_after is not None else outcome.review_value
     before = outcome.metric_before if outcome.metric_before is not None else outcome.baseline_value
-    against = "no expectation"
-    if decision.expectation_claim and actual is not None:
-        pred = _claims.get(decision.expectation_claim)
-        if pred is not None:
-            low, high = pred.extra.get("low"), pred.extra.get("high")
-            unit = pred.statement.unit
-            value: Optional[float] = actual
-            if unit == "%":
-                # a relative expectation needs the value before; without one nothing is compared
-                value = ((actual - before) / abs(before) * 100.0) if before not in (None, 0) else None
-            if value is None:
-                against = "cannot_tell"
-            elif low is not None and value < low:
-                against = "below"
-            elif high is not None and value > high:
-                against = "above"
-            elif low is not None or high is not None:
-                against = "inside"
+    against, _pred = _against_expectation(decision, actual, before)
     why = (f"the person's answer at review was '{status}'; measured against what was expected"
            f"{'' if against != 'no expectation' else ' (none was given)'}, not yet against the metric's "
-           "own history — that comparison arrives with phase 3")
+           "own history — the review that measures it has not run")
     result = _dec.Outcome(of=decision.id, measured_on=(outcome.reviewed_at or _dt.datetime.now(_dt.timezone.utc).isoformat())[:10],
                           actual=actual, baseline=None,
                           effect=_dec.Effect(value=(actual - before) if (actual is not None and before is not None) else None,
@@ -150,7 +214,7 @@ def outcome_from_review_answer(outcome, *, status: str, answered_by: str) -> Opt
                           verdict=verdict, why=why, against_expectation=against,
                           measured_by=answered_by or "unidentified",
                           extra={"before": before, "after": actual, "review_window": outcome.review_window,
-                                 "answer": status})
+                                 "answer": status, "answered_by": answered_by or "unidentified"})
     return _dec.book_outcome(result)
 
 
