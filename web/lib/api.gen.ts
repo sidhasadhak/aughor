@@ -1350,6 +1350,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/authority/{action_id}/ceiling": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authority Ceiling
+         * @description A person caps an action on a connection at a level, outside any mission — or lifts the cap.
+         *     A ceiling only lowers what the record earned; it grants nothing.
+         */
+        post: operations["authority_ceiling_authority__action_id__ceiling_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/authority/{action_id}/demote": {
         parameters: {
             query?: never;
@@ -1466,6 +1487,28 @@ export interface paths {
         get: operations["authority_record_authority__action_id__record_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/authority/{action_id}/widen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authority Widen
+         * @description A person signs a standing grant for an action at L4 — bound to one target value on this
+         *     connection, expiring, capped — citing the graduation receipt that licenses it. Refused below
+         *     L4 and for an action that does not declare exactly one target parameter, with why.
+         */
+        post: operations["authority_widen_authority__action_id__widen_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12882,6 +12925,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/claims/{claim_id}/wrong": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Record Claim Wrong
+         * @description A person marks a claim wrong, with the corrected statement. The claim is restated — the
+         *     wrong version kept — every inquiry that established it wakes and every decision that relied
+         *     on it reopens. Returns the new version with what it set in motion.
+         */
+        post: operations["mark_record_claim_wrong_record_claims__claim_id__wrong_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/corrections": {
         parameters: {
             query?: never;
@@ -12948,6 +13013,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/decisions/{decision_id}/amend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Amend Record Decision
+         * @description Add an option or a dissent to a decision already booked — a new version, the addition dated
+         *     and named. What was chosen does not change here.
+         */
+        post: operations["amend_record_decision_record_decisions__decision_id__amend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/decisions/{decision_id}/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Record Decision Cases
+         * @description What the intervention method would read for this decision: the past decisions on this
+         *     install that asked the same question, each with its measured effect — and how many are the
+         *     least an effect is read from. A read: nothing is projected or booked.
+         */
+        get: operations["list_record_decision_cases_record_decisions__decision_id__cases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/decisions/{decision_id}/outcome": {
         parameters: {
             query?: never;
@@ -12980,9 +13088,11 @@ export interface paths {
         put?: never;
         /**
          * Book Record Scenario
-         * @description Project under one method of the ladder (identity · declared · history) FOR a decision, and
-         *     book the prediction with its method, band and what it must say; the scenario is a ledger
-         *     entry inside the decision. A method the ladder does not have yet is refused by name.
+         * @description Project under one method of the ladder (identity · declared · history · intervention) FOR a
+         *     decision, and book the prediction with its method, band and what it must say; the scenario is
+         *     a ledger entry inside the decision. A method the ladder does not have is refused by name, and
+         *     one that projects nothing — too few past cases, a metric with no measurable definition — is
+         *     refused with that reason.
          */
         post: operations["book_record_scenario_record_decisions__decision_id__scenario_post"];
         delete?: never;
@@ -13006,6 +13116,26 @@ export interface paths {
         get: operations["list_record_scenarios_record_decisions__decision_id__scenarios_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/decisions/{decision_id}/stands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Settle Record Decision Reopening
+         * @description A person answers a reopened decision: it stands on what replaced the claim, and why.
+         */
+        post: operations["settle_record_decision_reopening_record_decisions__decision_id__stands_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13107,6 +13237,68 @@ export interface paths {
          *     the start and turned out wrong.
          */
         post: operations["close_record_inquiry_record_inquiries__inquiry_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/inquiries/{inquiry_id}/hypothesis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Record Inquiry Hypothesis
+         * @description A person's hypothesis, named — booked as a claim at tier ``said``, open until a run tests
+         *     it. When the Record already holds one like it as refuted on this connection, the answer says
+         *     which, beside it.
+         */
+        post: operations["add_record_inquiry_hypothesis_record_inquiries__inquiry_id__hypothesis_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/inquiries/{inquiry_id}/next-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Record Inquiry Next Check
+         * @description Set the day an inquiry wakes without being asked, or clear it.
+         */
+        post: operations["set_record_inquiry_next_check_record_inquiries__inquiry_id__next_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/inquiries/{inquiry_id}/owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand Record Inquiry
+         * @description Name the person answerable for an inquiry, or take the name off. Nothing is sent.
+         */
+        post: operations["hand_record_inquiry_record_inquiries__inquiry_id__owner_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13241,6 +13433,26 @@ export interface paths {
          * @description Report now: composed, booked and delivered to the owner through the gate.
          */
         post: operations["post_record_mission_report_record_missions__mission_id__report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/missions/{mission_id}/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Record Mission Past Report
+         * @description One booked report of this mission, in full, as it was written on its day.
+         */
+        get: operations["get_record_mission_past_report_record_missions__mission_id__reports__report_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -14801,6 +15013,20 @@ export interface components {
              */
             scope: string;
         };
+        /** AmendDecisionRequest */
+        AmendDecisionRequest: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            dissent?: components["schemas"]["DissentIn"] | null;
+            /**
+             * Option
+             * @default
+             */
+            option: string;
+        };
         /** AnnotateRequest */
         AnnotateRequest: {
             /** Body */
@@ -15368,6 +15594,26 @@ export interface components {
         CasesIn: {
             /** Cases */
             cases: components["schemas"]["CaseIn"][];
+        };
+        /** CeilingBody */
+        CeilingBody: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Connection Id
+             * @default fixture
+             */
+            connection_id: string;
+            /** Level */
+            level?: number | null;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
         };
         /** ChangeOut */
         ChangeOut: {
@@ -16058,10 +16304,20 @@ export interface components {
         /** DemoteBody */
         DemoteBody: {
             /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
              * Connection Id
              * @default fixture
              */
             connection_id: string;
+            /**
+             * Drill
+             * @default false
+             */
+            drill: boolean;
             /** Why */
             why: string;
         };
@@ -16784,6 +17040,19 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HandToRequest */
+        HandToRequest: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Owner
+             * @default
+             */
+            owner: string;
+        };
         /** HeartbeatBody */
         HeartbeatBody: {
             /**
@@ -16819,6 +17088,16 @@ export interface components {
              * @default []
              */
             revisions: components["schemas"]["RevisionOut"][];
+        };
+        /** HypothesisRequest */
+        HypothesisRequest: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** Text */
+            text: string;
         };
         /**
          * ImageInputContent
@@ -17035,6 +17314,24 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** MarkWrongRequest */
+        MarkWrongRequest: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Corrected
+             * @default
+             */
+            corrected: string;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+        };
         /**
          * MeasureTerm
          * @description One aggregate: a verified named `metric` of the object type, or `agg` over `path`. An
@@ -17248,6 +17545,11 @@ export interface components {
             state: string;
             /** Watches */
             watches?: components["schemas"]["WatchIn"][];
+            /**
+             * Written By
+             * @default
+             */
+            written_by: string;
         };
         /** MissionStateRequest */
         MissionStateRequest: {
@@ -17263,6 +17565,24 @@ export interface components {
         MoveRequest: {
             /** Canvas Id */
             canvas_id: string;
+        };
+        /** NextCheckRequest */
+        NextCheckRequest: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * On
+             * @default
+             */
+            on: string;
+            /**
+             * Waiting For
+             * @default
+             */
+            waiting_for: string;
         };
         /**
          * ObjectFilter
@@ -17496,6 +17816,11 @@ export interface components {
             effect_low?: number | null;
             /** Effect Value */
             effect_value?: number | null;
+            /**
+             * Measured By
+             * @default
+             */
+            measured_by: string;
             /** Measured On */
             measured_on: string;
             /**
@@ -18103,7 +18428,17 @@ export interface components {
         };
         /** ScenarioRequest */
         ScenarioRequest: {
+            /**
+             * Action Id
+             * @default
+             */
+            action_id: string;
             assumption?: components["schemas"]["AssumptionIn"] | null;
+            /**
+             * By
+             * @default
+             */
+            by: string;
             /**
              * Direction
              * @default
@@ -18118,6 +18453,11 @@ export interface components {
             inputs?: {
                 [key: string]: number;
             };
+            /**
+             * Like
+             * @default
+             */
+            like: string;
             /** Limits */
             limits?: string[];
             /** Method */
@@ -18401,6 +18741,16 @@ export interface components {
             connection_id: string;
             /** Session Id */
             session_id?: string | null;
+        };
+        /** StandsRequest */
+        StandsRequest: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** Why */
+            why: string;
         };
         /** StatementIn */
         StatementIn: {
@@ -19132,6 +19482,33 @@ export interface components {
              * @default
              */
             session_id: string;
+        };
+        /** WidenBody */
+        WidenBody: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Connection Id
+             * @default fixture
+             */
+            connection_id: string;
+            /**
+             * Expires Days
+             * @default 30
+             */
+            expires_days: number;
+            /**
+             * Max Uses
+             * @default 0
+             */
+            max_uses: number;
+            /** Schema Name */
+            schema_name?: string | null;
+            /** Target Value */
+            target_value: string;
         };
         /** _ActionOverride */
         _ActionOverride: {
@@ -22709,6 +23086,43 @@ export interface operations {
             };
         };
     };
+    authority_ceiling_authority__action_id__ceiling_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CeilingBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     authority_demote_authority__action_id__demote_post: {
         parameters: {
             query?: never;
@@ -22911,6 +23325,43 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    authority_widen_authority__action_id__widen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WidenBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -42210,6 +42661,43 @@ export interface operations {
             };
         };
     };
+    mark_record_claim_wrong_record_claims__claim_id__wrong_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                claim_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkWrongRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     record_corrections_record_corrections_get: {
         parameters: {
             query?: {
@@ -42348,6 +42836,78 @@ export interface operations {
             };
         };
     };
+    amend_record_decision_record_decisions__decision_id__amend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AmendDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_record_decision_cases_record_decisions__decision_id__cases_get: {
+        parameters: {
+            query?: {
+                metric?: string;
+            };
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     book_record_outcome_record_decisions__decision_id__outcome_post: {
         parameters: {
             query?: never;
@@ -42435,6 +42995,43 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settle_record_decision_reopening_record_decisions__decision_id__stands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StandsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -42603,6 +43200,117 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CloseInquiryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_record_inquiry_hypothesis_record_inquiries__inquiry_id__hypothesis_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inquiry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HypothesisRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_record_inquiry_next_check_record_inquiries__inquiry_id__next_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inquiry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NextCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hand_record_inquiry_record_inquiries__inquiry_id__owner_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inquiry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandToRequest"];
             };
         };
         responses: {
@@ -42883,6 +43591,40 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_record_mission_past_report_record_missions__mission_id__reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_id: string;
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

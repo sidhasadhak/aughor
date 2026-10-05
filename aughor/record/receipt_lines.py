@@ -26,6 +26,26 @@ def _told(investigation_id: str) -> list[dict]:
     return out
 
 
+def told_about(claim: _claims.Claim) -> tuple[list[dict], str]:
+    """``(told, note)`` for a claim's own page (the study §V, screen 9): every gate decision on a
+    message that cited the answer this claim came from. The departures ledger is keyed by the
+    answer a message cites, so a claim with no answer behind it — a declared term, a pack's
+    prior — has nothing to read, and the note says that rather than "nobody"."""
+    # an answer's observation and a deep run's findings carry `investigation_id`; a hypothesis, `run`
+    answers: list[str] = []
+    for field in ("investigation_id", "run"):
+        v = str(claim.extra.get(field) or "")
+        if v and v not in answers:
+            answers.append(v)
+    if not answers:
+        return [], "this claim did not come from an answer, and the gate records a message by the answer it cites — nothing can be read for it"
+    told: list[dict] = []
+    for inv_id in answers:
+        told += _told(inv_id)
+    told.sort(key=lambda t: str(t.get("at") or ""), reverse=True)
+    return told, ("" if told else "no message citing the answer behind this claim has passed the departure gate")
+
+
 def record_lines(raw: dict) -> Optional[dict]:
     """``{"answer", "claim", "confidence", "confidence_note", "told", "told_note"}`` for a raw ledger receipt
     (`{artifact, lineage, …}`), or None when the artifact is not an answer's receipt."""

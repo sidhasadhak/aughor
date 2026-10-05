@@ -70,7 +70,8 @@ def refuted_hypotheses(*, conn_id: Optional[str] = None, limit: int = 200) -> li
         out.append({"kind": "refuted_hypothesis", "at": c.recorded_at, "connection_id": _conn_of(c), "ref": c.id,
                     "believed": c.statement.text, "replaced_by": str(c.extra.get("evidence") or "refuted by the run; no evidence text recorded"),
                     "run": str(c.extra.get("run") or ""), "inquiry": str(c.extra.get("inquiry") or ""),
-                    "why": "tested false by the run that refuted it"})
+                    "why": ("marked wrong by a person" if c.extra.get("marked_wrong_by")
+                            else "tested false by the run that refuted it")})
     return out
 
 

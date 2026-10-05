@@ -209,6 +209,10 @@ def write_mission(m: Mission, *, by: str, by_kind: str = "person") -> Mission:
         m.history = list(prior.history) + [{"at": now, "by": by, "from": prior.state, "to": m.state, "why": "edited"}]
         m.review.reports = m.review.reports or list(prior.review.reports)
         m.review.last_report = m.review.last_report or prior.review.last_report
+        # an edit does not restart the clock: the next report keeps its day unless the cadence changed
+        if not m.review.next_report_on and prior.review.cadence == m.review.cadence:
+            m.review.next_report_on = prior.review.next_report_on
+        m.extra = {**prior.extra, **m.extra}
     if not m.objective.spec:
         m.objective.spec = spec_for_metric(m.objective.metric, conn)
     for c in m.constraints:

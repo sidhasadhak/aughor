@@ -100,6 +100,21 @@ def get_principal(request: Request) -> Optional[Principal]:
     return getattr(request.state, "principal", None)
 
 
+def acting_person(principal, named: str = "") -> str:
+    """Who a write is recorded under: the identified caller as ``user:<id>`` — or, when no sign-in
+    is bound to the request, the name the form carried, kept as ``person:<name>`` so it never
+    reads as an authenticated ``user:``. "" when neither: a door that needs a named person then
+    refuses and says so, and one that does not records "unidentified"."""
+    for attr in ("user_id", "email", "id", "sub", "name"):
+        v = getattr(principal, attr, "") if principal is not None else ""
+        if v:
+            return f"user:{v}"
+    named = (named or "").strip()
+    if not named:
+        return ""
+    return named if ":" in named else f"person:{named}"
+
+
 # ── Ownership resolution: resource → connection → org ────────────────────────────
 
 def _resource_org(kind: str, resource_id: str) -> Optional[str]:

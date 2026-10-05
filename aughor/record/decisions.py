@@ -234,6 +234,17 @@ def list_decisions(*, conn_id: Optional[str] = None, limit: int = 200) -> list[D
     return [_decision_from(a) for a in _ledger().artifacts_of_kind(DECISION_KIND, conn_id=conn_id, limit=limit)]
 
 
+def version_ids(decision_id: str) -> list[str]:
+    """The id of every version of the decision this id belongs to, newest first. What was booked
+    FOR an earlier version — a scenario, a prediction — is still the decision's after an outcome,
+    an amendment or a reopening has restated it."""
+    d = get_decision(decision_id)
+    if d is None:
+        return []
+    return [str(a.get("id") or "") for a in _ledger().artifact_versions(d.key, limit=500)
+            if a.get("kind") == DECISION_KIND]
+
+
 def decisions_relying_on(claim_id: str) -> list[Decision]:
     return [d for d in list_decisions(limit=2000) if claim_id in d.relied_on]
 
@@ -321,3 +332,80 @@ def restate_outcome(outcome_id: str, *, extra: dict, verdict: Optional[str] = No
             latest.outcome = new_id
             book_decision(latest)
     return new_id
+
+
+# ── what a person adds after a decision is booked (the study §V, screen 5) ─────────────────
+
+def _current(decision: Decision) -> Decision:
+    return latest_decision(decision.source) or decision
+
+
+def amend_decision(decision_id: str, *, by: str = "", option: str = "", dissent_who: str = "",
+                   dissent_why: str = "") -> Decision:
+    """Add an option that was on the table, or a dissent, to a decision already booked — a new
+    version, the earlier one kept, the addition dated and named so it never reads as having been
+    there at the moment of deciding. What was chosen does not change here: choosing again is a
+    new decision."""
+    asked = get_decision(decision_id)
+    if asked is None:
+        raise ValueError(f"no decision {decision_id!r}")
+    option, dissent_who, dissent_why = (option or "").strip(), (dissent_who or "").strip(), (dissent_why or "").strip()
+    if not option and not (dissent_who or dissent_why):
+        raise ValueError("an amendment adds an option or a dissent")
+    if (dissent_who or dissent_why) and not (dissent_who and dissent_why):
+        raise ValueError("a dissent names who disagreed and why")
+    d = _current(asked)
+    added: list[dict] = []
+    if option:
+        if option.lower() in {o.description.strip().lower() for o in d.options} | {o.id.strip().lower() for o in d.options}:
+            raise ValueError("that option is already on the decision")
+        d.options = list(d.options) + [Option(id=option[:200], description=option[:500])]
+        added.append({"kind": "option", "what": option[:200]})
+    if dissent_who:
+        d.dissent = list(d.dissent) + [Dissent(who=dissent_who[:200], why=dissent_why[:1000])]
+        added.append({"kind": "dissent", "what": dissent_who[:200]})
+    now = _now()
+    d.extra["amendments"] = list(d.extra.get("amendments") or []) + [
+        {**a, "at": now, "by": by or "unidentified"} for a in added]
+    new_id = book_decision(d)
+    return get_decision(new_id) or d
+
+
+def reopen_for_claim(claim_id: str, *, restated_as: str = "", why: str = "") -> list[Decision]:
+    """A claim was restated or marked wrong: every decision that relied on it — as recorded at the
+    moment of deciding — is reopened, naming the version that replaced what it stood on. A
+    reopened decision is not undone; it says its ground moved, and a person answers."""
+    if not claim_id:
+        return []
+    out: list[Decision] = []
+    for d in list_decisions(limit=2000):
+        # what it stands on: the claims it cited, and whatever replaced one of them since
+        stood_on = set(d.relied_on) | {str(r.get("restated_as") or "") for r in (d.extra.get("reopened") or [])}
+        if claim_id not in stood_on or d.reopened_by == (restated_as or claim_id):
+            continue
+        d.reopened_by = restated_as or claim_id
+        d.extra["reopened"] = list(d.extra.get("reopened") or []) + [
+            {"at": _now(), "claim": claim_id, "restated_as": restated_as, "why": (why or "")[:400]}]
+        new_id = book_decision(d)
+        out.append(get_decision(new_id) or d)
+    return out
+
+
+def settle_reopening(decision_id: str, *, by: str = "", why: str = "") -> Decision:
+    """A person answers a reopened decision: it stands on the restated ground, and why. The
+    reopening stays in the decision's history; only the open flag is cleared."""
+    asked = get_decision(decision_id)
+    if asked is None:
+        raise ValueError(f"no decision {decision_id!r}")
+    d = _current(asked)
+    if not d.reopened_by:
+        raise ValueError("this decision is not reopened")
+    if not (why or "").strip():
+        raise ValueError("say why the decision still stands on what replaced the claim")
+    history = list(d.extra.get("reopened") or [])
+    if history:
+        history[-1] = {**history[-1], "settled_at": _now(), "settled_by": by or "unidentified", "settled_why": why.strip()[:1000]}
+    d.extra["reopened"] = history
+    d.reopened_by = ""
+    new_id = book_decision(d)
+    return get_decision(new_id) or d

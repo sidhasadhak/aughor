@@ -310,9 +310,15 @@ def propose_run(q: Inquiry, *, now: Optional[_dt.datetime] = None) -> dict:
     the proposal says why."""
     now = now or _now()
     open_hyps = []
+    seen: set[str] = set()
     for cid in q.hypotheses:
-        c = _claims.get(cid)
-        if c is not None and c.state == "open":
+        cited = _claims.get(cid)
+        # as it stands now: a hypothesis a run or a person has since decided is no longer open
+        c = (_claims.latest(cited.key) or cited) if cited is not None else None
+        if c is None or c.key in seen:
+            continue
+        seen.add(c.key)
+        if c.state == "open":
             open_hyps.append({"claim": c.id, "text": c.statement.text[:200]})
     items = [{"what": o.what, "settled_by": o.settled_by} for o in q.open]
     # the cheapest test first: an open item that names what would settle it is the one a run can
@@ -386,6 +392,99 @@ def wake_for_claim(claim_id: str, *, why: str) -> list[Inquiry]:
         return []
     return [wake(q, why=why) for q in list_inquiries(limit=2000)
             if claim_id in q.claims and q.state != "closed"]
+
+
+# ── what a person does to an inquiry from its page (the study §V, screen 4) ───────────────
+
+class InquiryRefused(ValueError):
+    """The door said no, and why."""
+
+
+def _is_named_person(who: str) -> bool:
+    who = (who or "").strip()
+    return bool(who) and who != "unidentified" and not who.startswith(("agent:", "system")) and who != "model"
+
+
+def _current(q: Inquiry) -> Inquiry:
+    """The version a write lands on: the latest under the key, whichever version's id was asked for."""
+    return latest(q.key) or q
+
+
+def add_hypothesis(q: Inquiry, *, text: str, by: str, now: Optional[_dt.datetime] = None) -> tuple[Inquiry, dict]:
+    """A person's hypothesis, named: booked as a hypothesis claim at tier ``said`` with the person
+    as its author, open until a run tests it, and attached to the inquiry. Returns the inquiry and
+    a note — which refuted claim it resembles, when the Record already holds one tested false on
+    this connection (said beside it, never a refusal: a person may know something the run did not)."""
+    text = (text or "").strip()
+    if not text:
+        raise InquiryRefused("a hypothesis states something")
+    if not _is_named_person(by):
+        raise InquiryRefused("a person's hypothesis is named — say who holds it")
+    q = _current(q)
+    if q.state == "closed":
+        raise InquiryRefused("this inquiry is closed; a new hypothesis belongs to a new question")
+    now = now or _now()
+    _, refused = refuse_already_refuted([{"description": text}], refuted_on(q.connection_id, now=now))
+    note = refused[0] if refused else {}
+    claim = _claims.Claim(
+        kind="hypothesis", tier="said", about=_claims.About(kind="connection", key=q.connection_id or ""),
+        statement=_claims.Statement(text=text[:1000]), status="Provisional", as_of=now.date().isoformat(),
+        author=by, author_kind="person", state="open",
+        extra={"inquiry": q.key, "held_by": by,
+               **({"resembles_refuted": note["refuted_by"], "resembles_refuted_on": note.get("refuted_on", "")} if note else {})},
+    )
+    cid = _claims.book(claim, key=_claims.claim_key("hypothesis", q.connection_id or "-", q.key.rsplit(":", 1)[-1],
+                                                     f"person-{now.strftime('%Y%m%dT%H%M%S%f')}"),
+                       conn_id=q.connection_id or None)
+    q.hypotheses = list(q.hypotheses) + [cid]
+    # an untested hypothesis is a run waiting to be proposed — with what it costs
+    q.extra["proposed_run"] = propose_run(q, now=now)
+    return _book(q, lineage=[("hypothesis", cid, f"held by {by}")]), note
+
+
+def hand_to(q: Inquiry, *, owner: str, by: str = "", now: Optional[_dt.datetime] = None) -> Inquiry:
+    """Name the person answerable for this inquiry (or, with an empty owner, take the name off).
+    Nothing is sent: the hand-off is on the record, and the inquiry reads as theirs."""
+    owner = (owner or "").strip()
+    if owner and not _is_named_person(owner):
+        raise InquiryRefused("an inquiry is handed to a person — an agent cannot own one")
+    q = _current(q)
+    if q.state == "closed":
+        raise InquiryRefused("this inquiry is closed; there is nothing left to hand over")
+    now = now or _now()
+    was = str(q.extra.get("owner") or "")
+    if owner == was:
+        return q
+    q.extra["owner"] = owner
+    q.extra["handed"] = list(q.extra.get("handed") or []) + [
+        {"at": now.isoformat(), "by": by or "unidentified", "from": was, "to": owner}]
+    return _book(q, lineage=[("owned_by", owner, "handed over")] if owner else [])
+
+
+def set_next_check(q: Inquiry, *, on: str, by: str = "", waiting_for: str = "",
+                   now: Optional[_dt.datetime] = None) -> Inquiry:
+    """Set the day this inquiry wakes without being asked — it then waits — or, with an empty
+    date, clear it: an inquiry with no check date is a run waiting to be proposed again."""
+    q = _current(q)
+    if q.state == "closed":
+        raise InquiryRefused("this inquiry is closed; it has no next check")
+    now = now or _now()
+    on = (on or "").strip()
+    who = by or "unidentified"
+    if not on:
+        if not q.next_check:
+            return q
+        return wake(q, why=f"its check date {q.next_check} was cleared by {who}", now=now)
+    try:
+        when = _dt.date.fromisoformat(on[:10])
+    except ValueError:
+        raise InquiryRefused("a check date is a day, written YYYY-MM-DD")
+    if when < now.date():
+        raise InquiryRefused("a check date is today or later — a day that has passed cannot wake anything")
+    q.state, q.next_check = "waiting", when.isoformat()
+    q.waiting_for = (waiting_for or "").strip()[:200] or q.waiting_for or "its check date"
+    q.extra["next_check_set"] = {"at": now.isoformat(), "by": who}
+    return _book(q)
 
 
 def close_inquiry(q: Inquiry, *, closed_as: str, lessons: Optional[list[Lesson]] = None, by: str = "") -> Inquiry:
