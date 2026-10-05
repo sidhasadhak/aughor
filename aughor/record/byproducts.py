@@ -70,6 +70,14 @@ def _person(uid: str, fallback: str) -> str:
     return f"user:{uid}" if uid and not uid.startswith("user:") else (uid or fallback or "")
 
 
+def _mission_for(connection_id: str, metric: str) -> str:
+    """The active mission the decision's metric bears on, or "" (phase 5) — best-effort."""
+    if not metric:
+        return ""
+    from aughor.record.inquiry import mission_for
+    return mission_for(connection_id, metric)
+
+
 # ── the acceptance door ────────────────────────────────────────────────────────────────────
 
 def decision_from_recommendation(outcome, *, chosen: str, decided_by: str, connection_id: str,
@@ -91,10 +99,15 @@ def decision_from_recommendation(outcome, *, chosen: str, decided_by: str, conne
         extra["review_note"] = outcome.review_note
     if expectation is None:
         extra["expectation_note"] = "none given with the acceptance — nothing to score on the review date"
+    # Phase 5: the decision carries the mission its metric bears on, so the mission's report can count it.
+    metric = (expectation.metric if expectation is not None else "") or (getattr(outcome, "spec", None) or {}).get("metric_label") \
+        or getattr(outcome, "metric_name", "") or ""
+    objective = prior.objective if prior is not None and prior.objective else _mission_for(connection_id, metric)
     decision = _dec.Decision(
         question=(outcome.rec_text or "").strip()[:500] or f"recommendation {outcome.rec_index}",
         owner=decided_by, options=list(_ACCEPT_OPTIONS), chosen=chosen,
         relied_on=prior.relied_on if prior is not None else relied_on_claims(connection_id, outcome.inv_id),
+        objective=objective,
         decided_by=decided_by, review_on=review_on or (outcome.review_at or "")[:10],
         expectation_claim=prior.expectation_claim if prior is not None else "",
         source=src, connection_id=connection_id or "", extra={**(prior.extra if prior else {}), **extra},

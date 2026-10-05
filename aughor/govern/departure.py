@@ -328,7 +328,8 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
     # unattended departure has a slot this week; every hold above outranks it, and a held
     # departure is listed with its score, never silenced.
     found["attention"] = _guarded(
-        "attention", lambda: _attention(state, origin, kind, target, addressed_to, found["repeat"], triage))
+        "attention", lambda: _attention(state, origin, kind, target, addressed_to, found["repeat"], triage,
+                                        conn_id=conn_id, text=text, about=about))
     if found["attention"].outcome == HOLDS:
         state = HELD_BUDGET
 
@@ -342,6 +343,9 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
         checks["definition_missing"] = " · ".join(missing)     # CB-5: what would clear the hold
     if found["attention"].detail.get("triage"):
         checks["triage"] = found["attention"].detail["triage"]  # the four terms and the score, on every row
+    if found["attention"].detail.get("mission"):
+        checks["mission"] = found["attention"].detail["mission"]   # phase 5: the missions this bore on — the charge
+        checks["mission_names"] = found["attention"].detail.get("mission_names", "")
     guards = {g: found[g].outcome for g in GUARDS}
     as_of = str(found["freshness"].detail.get("as_of") or "")
     cited = list(found["definition"].detail.get("cited") or [])
@@ -938,10 +942,29 @@ def _probation(state: str, probation: bool, declared_by: str) -> _Check:
                   f"(≥{GRADUATION_PRECISION:.0%} over ≥{GRADUATION_MIN_MARKED} marked)")
 
 
+def _bearing(conn_id: str, text: str, about: str, triage: Optional[dict]) -> dict:
+    """Triage's first term, read from the missions people wrote (phase 5, `record/mission.py`);
+    a caller that already read it passes ``triage["mission"]`` and is believed."""
+    given = (triage or {}).get("mission")
+    if isinstance(given, dict) and "score" in given:
+        return given
+    try:
+        from aughor.record.mission import bearing
+        return bearing(conn_id, text=text, about=about)
+    except Exception as exc:  # noqa: BLE001 — an unreadable mission ledger reads 0, and says so
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the missions could not be read for triage; the term reads 0", counter="departure.bearing")
+        return {"score": 0.0, "missions": [], "why": "the missions could not be read"}
+
+
 def _attention(state: str, origin: str, kind: str, target: str, addressed_to: str,
-               repeat: _Check, triage: Optional[dict]) -> _Check:
+               repeat: _Check, triage: Optional[dict], *, conn_id: str = "", text: str = "", about: str = "") -> _Check:
     """The attention budget — phase 2 of the 2027 study (`govern/attention.py`). Judged only on
-    a clean unattended departure; the score rides every row it judges."""
+    a clean unattended departure; the score rides every row it judges. Phase 5 feeds its first
+    term: a message that bears on an active mission scores the mission term, carries the mission
+    on its row (``detail["mission"]``), and is charged against that mission's own interruptions a
+    week on top of the addressee's slots — a mission with none left is silent, and the hold says
+    which mission spent them."""
     if origin == PERSON:
         return _Check(EXEMPT, "a person chose to send it")
     if state != DEPARTED:
@@ -953,13 +976,29 @@ def _attention(state: str, origin: str, kind: str, target: str, addressed_to: st
     summary = (repeat.summary or "").lower()
     novelty = 0.5 if "moved" in summary and "since" in summary else 1.0
     size = float((triage or {}).get("size") or 0.0)
-    verdict = attention.charge(addressee=addressee, kind=kind, size=size, novelty=novelty)
+    bearing = _bearing(conn_id, text, about, triage)
+    verdict = attention.charge(addressee=addressee, kind=kind, size=size, novelty=novelty,
+                               mission=float(bearing.get("score") or 0.0))
     triage_line = (" · ".join(f"{k} {v:.2f}" for k, v in verdict["terms"].items())
                    + f" → score {verdict['score']:.2f}")
     detail = {"triage": triage_line, "used": verdict["used"], "slots": verdict["slots"], "addressee": addressee}
-    if verdict["allowed"]:
-        return _Check(PASSED, verdict["why"], detail=detail)
-    return _Check(HOLDS, verdict["why"], verdict["why"], detail=detail)
+    hits = list(bearing.get("missions") or [])
+    if hits:
+        detail["mission"] = " · ".join(str(h.get("mission") or "") for h in hits if h.get("mission"))
+        detail["mission_names"] = " · ".join(str(h.get("name") or "") for h in hits)
+    if not verdict["allowed"]:
+        return _Check(HOLDS, verdict["why"], verdict["why"], detail=detail)
+    if hits:
+        from aughor.record.mission import charge as mission_charge
+        spent = mission_charge(hits)
+        if not spent["allowed"]:
+            m = spent["spent"][0]
+            why = (f"mission budget: {m['name']} has used its {m['interruptions_per_week']} interruptions a week "
+                   f"({spent['used'].get(m['mission'], 0)} departed bearing on it); held with score "
+                   f"{verdict['score']:.2f} — listed on the departures screen and the mission's report")
+            return _Check(HOLDS, why, why, detail=detail)
+        verdict["why"] += f"; {bearing.get('why', '')}"
+    return _Check(PASSED, verdict["why"], detail=detail)
 
 
 # ── text helpers (pure) ───────────────────────────────────────────────────────────

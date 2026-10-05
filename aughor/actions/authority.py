@@ -261,11 +261,25 @@ def level_for(action, scope: str, *, ceiling: Optional[int] = None) -> dict:
     if demotion and (not graduation or demotion["recorded_at"] > graduation["recorded_at"]):
         why += f"; demoted on {demotion['recorded_at'][:10]}: {demotion['why'][:160]}"
     hard_ceiling = 3 if irreversible else 4
-    level = min(earned, hard_ceiling, ceiling if ceiling is not None else 5)
     notes = []
+    if ceiling is None:
+        # Phase 5: the ceiling a person set in an active mission on this scope — "the ceiling a person set".
+        try:
+            from aughor.record.mission import ceiling_for
+            ceiling = ceiling_for(action.id, scope)
+        except Exception as exc:  # noqa: BLE001 — an unreadable mission ledger leaves the ladder to the record, said
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the missions' authority ceiling could not be read", counter="authority.ceiling", conn_id=scope or None)
+            notes.append("the missions' ceiling could not be read; the level is the record's alone")
+            ceiling = None
+        else:
+            if ceiling is not None:
+                notes.append(f"an active mission on this scope caps it at L{int(ceiling)}")
+    level = min(earned, hard_ceiling, ceiling if ceiling is not None else 5)
     if irreversible:
         notes.append("irreversible: never above L3")
-    notes.append("L5 is unreachable until missions exist (phase 5)")
+    notes.append("L5 is granted by no code path: missions exist (phase 5), the agent that chooses among declared "
+                 "actions toward one does not")
     return {"action_id": action.id, "scope": scope, "level": level, "label": LEVELS[level], "earned": earned,
             "ceiling": min(hard_ceiling, ceiling if ceiling is not None else 5), "why": why, "notes": notes,
             "record": rec, "graduation": graduation["id"] if graduation else "", "demotion": demotion["id"] if demotion else ""}

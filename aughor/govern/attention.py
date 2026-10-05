@@ -34,7 +34,10 @@ HELD_BUDGET = "held_budget"
 #: The four terms, with their weights (summing to 1) and how each is read today.
 TERMS: tuple[dict[str, Any], ...] = (
     {"term": "mission", "label": "bears on a mission", "weight": 0.35,
-     "read_today": "0 for every message: no mission exists to bear on until phase 5"},
+     "read_today": ("from the missions people wrote (`record/mission.py`, phase 5): 1 when the message is about an "
+                    "active mission's objective metric, 0.7 a constraint's, 0.5 something it watches; 0 when no "
+                    "active mission with an owner bears on it — and a mission's own interruptions a week are "
+                    "charged on top of the addressee's slots")},
     {"term": "size", "label": "size against its own normal range", "weight": 0.25,
      "read_today": ("the caller's reading of how far the number sits outside its declared range, 0 to 1 — "
                     "a monitor alert gives |current − threshold| / |threshold|, capped; a message that "
@@ -102,15 +105,16 @@ def _unit(x) -> float:
         return 0.0
 
 
-def charge(*, addressee: str, kind: str, size: float = 0.0, novelty: float = 1.0,
+def charge(*, addressee: str, kind: str, size: float = 0.0, novelty: float = 1.0, mission: float = 0.0,
            now: Optional[datetime] = None) -> dict:
     """Whether this unattended departure has a slot: ``{"allowed", "used", "slots", "score",
     "terms", "why", "resets"}``. The slot is not spent here — the departure's own ledger row,
-    written by the gate, is the count."""
+    written by the gate, is the count. ``mission`` is the bearing term the gate read from the
+    missions people wrote (phase 5)."""
     now = now or datetime.now(timezone.utc)
     slots = slots_for(addressee)
     used = used_this_week(addressee, now)
-    ranked = score(kind=kind, size=size, novelty=novelty)
+    ranked = score(kind=kind, size=size, novelty=novelty, mission=mission)
     start = datetime.strptime(week_start(now), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     resets = (start + timedelta(days=7)).date().isoformat()
     allowed = used < slots

@@ -110,11 +110,12 @@ def _alert_size(alert: "MonitorAlert") -> float:
 
 def _open_inquiry_for_alert(alert: "MonitorAlert", monitor: "Monitor") -> None:
     try:
-        from aughor.record.inquiry import open_inquiry, subject_of
+        from aughor.record.inquiry import mission_for, open_inquiry, subject_of
         metric = alert.metric_name or getattr(monitor, "metric_name", None) or getattr(monitor, "name", "") or "the metric"
         question = f"Why did {metric} {_threshold_phrase(alert)}?".replace("??", "?")
-        open_inquiry(question=question[:500], connection_id=alert.conn_id or getattr(monitor, "conn_id", "") or "",
-                     opened_by=f"monitor:{alert.monitor_id}", subject=subject_of("", metric))
+        conn = alert.conn_id or getattr(monitor, "conn_id", "") or ""
+        open_inquiry(question=question[:500], connection_id=conn, opened_by=f"monitor:{alert.monitor_id}",
+                     subject=subject_of("", metric), mission=mission_for(conn, metric))
     except Exception as exc:  # noqa: BLE001 — a signal that cannot open an inquiry still alerts
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the alert fired; its inquiry could not be opened", counter="inquiry.from_alert",

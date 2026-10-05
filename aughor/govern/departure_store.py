@@ -169,6 +169,41 @@ def count_departed_to(addressee: str, *, since: str) -> int:
             conn.close()
 
 
+def _bearing_rows(mission_id: str, *, state: str, since: str, limit: int) -> list[dict]:
+    """Rows whose checks name this mission (``checks["mission"]``, the ids joined by " · ")."""
+    if not mission_id:
+        return []
+    import json
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM departures WHERE state = ? AND origin = 'unattended' AND ts >= ? AND checks LIKE ? "
+                "ORDER BY ts DESC LIMIT ?", (state, since or "", f"%{mission_id}%", max(1, min(int(limit), 2000)))).fetchall()
+        finally:
+            conn.close()
+    out = []
+    for r in rows:
+        try:
+            checks = json.loads(r["checks"] or "{}") or {}
+        except ValueError:
+            checks = {}
+        if mission_id in [x.strip() for x in str(checks.get("mission") or "").split(" · ")]:
+            out.append(dict(r))
+    return out
+
+
+def count_departed_bearing(mission_id: str, *, since: str) -> int:
+    """Phase 5 of the 2027 study — a mission's charge: unattended departures that DEPARTED since
+    ``since`` bearing on it (the gate wrote the mission on the row)."""
+    return len(_bearing_rows(mission_id, state="departed", since=since, limit=2000))
+
+
+def held_bearing(mission_id: str, *, since: str = "", limit: int = 100) -> list[dict]:
+    """The departures the budget held that bore on this mission, newest first."""
+    return _bearing_rows(mission_id, state="held_budget", since=since, limit=limit)
+
+
 def held_by_budget(*, addressee: Optional[str] = None, since: str = "", limit: int = 100) -> list[dict]:
     """The departures the attention budget held since ``since``, newest first."""
     clauses, params = ["state = 'held_budget'"], []

@@ -192,11 +192,12 @@ def due(now: Optional[_dt.datetime] = None) -> list[Inquiry]:
 # ── opening and waking ─────────────────────────────────────────────────────────────────────
 
 def open_inquiry(*, question: str, connection_id: str, opened_by: str, run_id: str = "",
-                 subject: str = "", now: Optional[_dt.datetime] = None) -> Inquiry:
+                 subject: str = "", now: Optional[_dt.datetime] = None, mission: str = "") -> Inquiry:
     """Open an inquiry — or WAKE the one on the same subject opened in the last
     :data:`REOPEN_WITHIN_DAYS` and not closed, attaching the run to it rather than doubling.
     ``opened_by`` names the door: ``person:<id>`` · ``monitor:<id>`` · ``restated:<claim>`` ·
-    ``review`` · ``mission:<id>``."""
+    ``review`` · ``mission:<id>``. ``mission`` (phase 5) is the mission the question bears on,
+    when the door read one — kept on the inquiry so the mission's report can count what it opened."""
     now = now or _now()
     subject = subject or subject_of(question)
     since = (now - _dt.timedelta(days=REOPEN_WITHIN_DAYS)).isoformat()
@@ -204,15 +205,30 @@ def open_inquiry(*, question: str, connection_id: str, opened_by: str, run_id: s
         if q.state != "closed" and q.opened_at >= since:
             if run_id and not any(r.run == run_id for r in q.runs):
                 q.extra.setdefault("pending_runs", []).append(run_id)
+            if mission and not q.extra.get("mission"):
+                q.extra["mission"] = mission
             if q.state == "waiting":
                 q.state = "open"
                 q.woke.append({"at": now.isoformat(), "why": f"a new run was opened by {opened_by}"})
             return _book(q)
     q = Inquiry(question=(question or "").strip()[:500], subject=subject, connection_id=connection_id or "",
                 opened_by=opened_by or "unidentified", state="open", opened_at=now.isoformat(),
-                extra={"first_run": run_id} if run_id else {})
+                extra={**({"first_run": run_id} if run_id else {}), **({"mission": mission} if mission else {})})
     q.key = inquiry_key(connection_id or "-", subject, (run_id or now.strftime("%Y%m%dT%H%M%S%f")))
     return _book(q)
+
+
+def mission_for(connection_id: str, metric: str) -> str:
+    """The active mission a metric bears on most (its id), or "" — what a door passes as
+    ``mission`` when it opens an inquiry from a signal about that metric."""
+    try:
+        from aughor.record.mission import bearing
+        hits = bearing(connection_id, metric=metric).get("missions") or []
+        return str(hits[0]["mission"]) if hits else ""
+    except Exception as exc:  # noqa: BLE001 — a signal that cannot read the missions still opens its inquiry
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the missions could not be read for an inquiry", counter="inquiry.mission")
+        return ""
 
 
 def wake(q: Inquiry, *, why: str, now: Optional[_dt.datetime] = None) -> Inquiry:
