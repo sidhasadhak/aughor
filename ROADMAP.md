@@ -11561,7 +11561,44 @@ to 10 in `docs/assets/platform-2027-screens-2026-10-05/` are of the pages under 
 same, the rail around them is not; figures 11 and 12 are Now and a Decision inside the rail as restored. `tsc`, the six lint gates (one ratchet lowered as it asked: raw font sizes 890 → 877) and the web suite pass (132
 files, 1,578 tests). The full Python suite, run as CI runs it: 13,821 passed and 7 failed on the first run —
 the seven named above beside the census one, each failing identically on the base commit — and 13,828 passed, none failed, after them.
-**Still open on screen, each for want of a door or a decision, none drawn as if it worked:** an inquiry cannot take a
+**The page interactions — BUILT 2026-10-05** at the user's word ("let's go for the rest"), on
+`claude/platform-2027-doors`, after #568 merged the screens. Measured first, as the paragraph below was written from
+memory of the build and half of it was wrong: of the interactions it lists as wanting a door, a mission's edit and its
+"report now", an approval's accept and reject, a standing grant's withdrawal, a group's members, a pack's check and
+upload and a method's registration each already had one, and only the page was missing. What was built. **Inquiry:**
+a person's hypothesis, named, as a claim at tier said (one the Record already holds as refuted is said beside it, never
+a refusal); an owner, handed over with nothing sent; a check date set — it then waits — or cleared, which wakes it.
+**Claim:** marked wrong by a person and RESTATED, the wrong version kept — a hypothesis as refuted with the reason as
+its evidence, anything else as that person's statement at tier declared, a prediction refused (it is scored by code);
+and who else was told, read from the departures that cited the answer behind it. **Decision:** an option or a dissent
+added after booking, dated and named; and a restatement — the re-check's or a person's — reopens every decision that
+stood on the claim, again when what replaced it is itself replaced, until a person answers that it still stands and
+why. **Scenario:** history resolves the approved metric's definition and says so when there is none; method 4 is
+offered from the page with the cases it would read; a decision taken before today is recorded with its day. **Mission:**
+edited in place as a new version with its report day kept, a past report read in full, "report now" as a choice
+between booking and sending. **Now:** a proposed action is decided on its row, in the card Attention already shows.
+**Action centre:** a person's ceiling as its own ledger entry that only lowers (`authority.ceiling`, catalogued and in
+the governance feed), a standing grant signed at L4 and withdrawn, a demotion marked as a drill. **Developer:** a pack
+checked then uploaded as a draft, a method registered with its backtest or refused. Figures 13 to 16 in
+`docs/assets/platform-2027-screens-2026-10-05/`. Receipt: every door driven over HTTP on a scratch API with its own
+stores, then each control driven in the browser on that pair — a mission saved as version 4 with its report day
+unchanged, a claim marked wrong that reopened its decision, that decision answered, a ceiling set and lifted, an
+approval rejected on Now; 13 new tests over the doors; `tsc`, the six lint gates and the web suite pass.
+**Found on the way, each fixed:** on an install with no sign-in a mission could not be written and "my assumption"
+could not be booked — both doors need a named person and no page could give a name, so every write that records a
+person's act now carries a "Recorded as" name, kept as `person:<name>` and never as an authenticated `user:`
+(`security/authz.acting_person`); a decision's scenarios left its page the moment an outcome, an amendment or a
+reopening gave it a new version, because they were read by the version's id; an inquiry read each hypothesis as it
+was recorded, so one since refuted still read as open and was still named in the run it proposed; an edited mission
+restarted its report clock; and `POST /authority/{id}/widen`, cited by the autonomy agent's own message, did not
+exist. **Not built, each for a decision and not for want of time:** dismissing an item on Now (nothing says what a
+dismissal is); the inspector drawer (a change to how every page opens another, to be shown before it is built on,
+§4.10); a clearance (no such thing exists apart from the access grants); when a statement door last fired (nothing
+counts it per site); an action, a prediction and a signature on a Briefing's items; the hub's links and probation
+queues on By duty; a link followed across connections from a claim.
+
+**Still open on screen, as written 2026-10-05 before the paragraph above (kept as written; what it lists is now
+built or decided there):** an inquiry cannot take a
 person's hypothesis, be handed to an owner, have its next check set, or have a claim marked wrong from its page; a
 decision cannot gain an option or dissent after it is booked, and does not reopen on a restated claim; a mission is
 written but not edited in place, its past reports are listed by headline only, and "report now" is not a button (it

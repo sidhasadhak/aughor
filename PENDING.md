@@ -422,28 +422,32 @@ sits inside it — the place is named on its line.**
   - [ ] The inspector drawer: a citation opening beside the page it was cited on. Today it opens its page.
   - [ ] Now's badge as slots used of a person's budget — waits on identity; the budget is per place today.
 - [x] 2 · Now (a rail row) — the week's slots, what waits on a person, restated since the last visit, the held list, the Briefing line.
-  - [ ] Resolve an approval in place (it links to Agent Ops ▸ Attention), and dismiss an item with a reason.
+  - [x] Resolve an approval in place. *Built 2026-10-05 (`claude/platform-2027-doors`): a proposed action opens the same approval card Attention shows, on the row, and the list re-reads once it is decided. A paused run, an automation's approval, an agent alert and a failing automation still link to Agent Ops ▸ Attention.*
+  - [ ] Dismiss an item with a reason — nothing in the record says what a dismissal is (a snooze, a verdict, or a withdrawal); a decision before a door.
 - [x] 3 · The Briefing — the mission line, the inquiries waiting to speak, the predictions in play.
   - [ ] An action and a prediction on each item; a Briefing signed and dated as a delivery; the same range a year ago.
 - [x] 4 · Inquiry (Record ▸ Inquiries) — ledger and reader; propose the next run with its cost; close with a lesson.
-  - [ ] Add a person's hypothesis · hand it to an owner · set or clear the next check · mark a claim wrong.
+  - [x] Add a person's hypothesis · hand it to an owner · set or clear the next check · mark a claim wrong. *Built 2026-10-05 (`claude/platform-2027-doors`): four doors under `/record/inquiries/{id}/…` and `/record/claims/{id}/wrong`. A person's hypothesis is a claim at tier said under their name, and one the Record already holds as refuted is said beside it, never refused. Handing over sends nothing. A claim marked wrong is restated — the wrong version kept — as the person's statement; a hypothesis as refuted.*
 - [x] 5 · Decision (Record ▸ Decisions) — ledger and reader; record one in a sentence; book an outcome when its date has come.
-  - [ ] Add an option or dissent after booking; reopen when a relied-on claim is restated.
+  - [x] Add an option or dissent after booking; reopen when a relied-on claim is restated. *Built 2026-10-05 (`claude/platform-2027-doors`): an addition is dated and named so it never reads as having been on the table; what was chosen does not move. A restatement — by the re-check or by a person — reopens every decision that stood on the claim, and a person answers "it still stands" with why (`/record/decisions/{id}/amend`, `/stands`).*
 - [x] 6 · Scenario, inside the decision — assumptions, predictions by method with what each must say, limits; add a projection.
-  - [ ] The history method from the page (it needs the metric's measurable definition), and a past case added by hand.
+  - [x] The history method from the page (it needs the metric's measurable definition), and a past case added by hand. *Built 2026-10-05 (`claude/platform-2027-doors`): history resolves the definition from the approved metric and is refused, with that reason, when there is none; "past decisions like it" (method 4) is offered from the page and shows the cases it would read; a decision taken before today is recorded with its day, and its outcome with the measured effect, which is what makes it a case.*
 - [x] 7 · Mission (Record ▸ Missions) — ledger, the five-line form, the reader on the objective against its baseline; activate, pause, retire.
-  - [ ] Edit in place as a new version · read a past report in full · report now.
+  - [x] Edit in place as a new version · read a past report in full · report now. *Built 2026-10-05 (`claude/platform-2027-doors`): the five-line form over a mission that exists, everything it does not show carried over, the next report keeping its day unless the cadence changes; a past report opens as it was written; "report now" says it sends before it sends, and offers the book alone.*
 - [x] 8 · Agent Ops ▸ By duty — the week by duty, failures by type, departures, principals.
   - [ ] The hub's links and probation queues (above, Arc HB); rehearse or pause a principal from this page.
 - [x] 9 · Record ▸ Claims and Corrections — claims as of any date, a claim's page, coverage; Corrections by kind.
-  - [ ] "Who else was told" on a claim's page; follow a link across connections.
+  - [x] "Who else was told" on a claim's page, and mark it wrong from there. *Built 2026-10-05 (`claude/platform-2027-doors`): every gate decision on a message that cited the answer behind the claim; a claim with no answer behind it says so rather than "nobody".*
+  - [ ] Follow a link across connections — the Map draws these; a claim's page does not cite one yet.
 - [x] 10 · The receipt page — Re-perform beside the counted confidence and who else was told.
 - [x] 11 · Agent Ops ▸ Action centre — the authority table, an action's record, undo in its window, graduate, demote; it links to Intelligence ▸ Actions and Security & Audit ▸ Approvals, which stay where they were.
-  - [ ] Set a ceiling outside a mission · sign or withdraw a standing grant · run a drill.
+  - [x] Set a ceiling outside a mission · sign or withdraw a standing grant · run a drill. *Built 2026-10-05 (`claude/platform-2027-doors`): a person's ceiling is its own ledger entry and only ever lowers (`/authority/{id}/ceiling`); a standing grant is signed at L4 on one target with an expiry and a cap, and withdrawn in one gesture (`/authority/{id}/widen` — the door the autonomy message already cited and that did not exist); a drill is the same demotion, marked as one.*
 - [x] 12 · Security & Audit ▸ Gate map and Policies — the gate map; policies, groups and identity as sentences; the ledger's export. Settings stays in the rail's footer.
-  - [ ] Write a policy from clauses · add a person to a group · set a clearance · when each statement door last fired.
+  - [x] Write a policy · add a person to a group. *Measured 2026-10-05: both already have a page — Settings ▸ Access (roles, groups, members, grants) and the agent policy — and the Policies lens links to each; a second editor here would be the same thing twice.*
+  - [ ] Set a clearance — no door by that name exists; what a person may see is the access grants in Settings ▸ Access. A decision on whether "clearance" is a separate thing.
+  - [ ] When each statement door last fired — nothing records a firing per site; it needs a counter at each of the doors before a page can read one.
 - [x] 13 · Agent Ops ▸ Developer — packs with their record, the doors, the event catalogue, service principals, the kits, the agent contract.
-  - [ ] Upload a pack and run its checks from this page · declare an action · register a method.
+  - [x] Upload a pack and run its checks from this page · declare an action · register a method. *Built 2026-10-05 (`claude/platform-2027-doors`): a pack's folder is checked before it is uploaded — the check writes nothing — and arrives as a draft; a method is registered with its backtest or refused, and withdrawn; "Declare an action" opens Intelligence ▸ Actions, where the form already is. Measured first: no page offered the upload or the check, though this page's own tooltip said Settings did.*
 
 ---
 
