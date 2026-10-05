@@ -1,7 +1,7 @@
 """CB-3 (2026-09-22) — owners the platform can reach.
 
 An ``owner`` is free text on a metric, a process, a business rule and (now) a glossary term:
-"Ana (logistics)", "Revenue team". Routing understands a PRINCIPAL spelling (``user:ana@corp``,
+"Ana (logistics)", "Finance team". Routing understands a PRINCIPAL spelling (``user:ana@corp``,
 ``group:finance``, ``agent:ua_x``) and leaves display text unrouted — honest, and the reason a
 question for Ana had nowhere to go (ideas 17, 20 and 22 all end in "ask the owner").
 

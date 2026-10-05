@@ -68,13 +68,15 @@ NOUNS: dict[str, str] = {
     "churn": r"(?i)\bchurn\w*\b",
 }
 
-#: Measured 2026-10-05 on `claude/platform-2027-study` with phase 6 built. May fall, never rise. Where the
-#: words sit today: `order` in the executor's object-parameter examples, the overlay's annotation example, the
-#: gate's two live anchors, the metric store's grain examples and the row-policy example; `revenue` in the metric
-#: store's examples; `refund` in the gate's LuxExperience anchor and the executor's example — docstrings, every one.
+#: Measured 2026-10-05 on `claude/platform-2027-study` with phase 6 built (order 25 · customer 3 · shipment 1 ·
+#: product 1 · refund 5 · revenue 14 — docstrings, every one), and counted down the same day by the close-out's C8:
+#: the executor's object-parameter examples, the overlay's annotation example, the gate's two live anchors, the
+#: metric store's grain examples, the row-policy example and the settling anchors were reworded to the kernel's own
+#: words (parent row, line, object, total). What remains is the one line in `packs/models.py` that names the
+#: FUNCTION knowledge layers (finance, marketing, product, customer) — the layers' own ids, not an industry's word.
 BASELINE: dict[str, int] = {
-    "order": 25, "customer": 3, "patient": 0, "loan": 0, "shipment": 1, "invoice": 0, "product": 1, "sku": 0,
-    "refund": 5, "merchant": 0, "carrier": 0, "promotion": 0, "deposit": 0, "passenger": 0, "revenue": 14,
+    "order": 0, "customer": 1, "patient": 0, "loan": 0, "shipment": 0, "invoice": 0, "product": 1, "sku": 0,
+    "refund": 0, "merchant": 0, "carrier": 0, "promotion": 0, "deposit": 0, "passenger": 0, "revenue": 0,
     "gross margin": 0, "churn": 0,
 }
 

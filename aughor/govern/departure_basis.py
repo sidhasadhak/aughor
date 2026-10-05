@@ -187,7 +187,7 @@ def measurement_for_promise(securable: str, conn_id: str) -> Optional[Measuremen
     """A promise's stamp — objects, reached, breached, kept, open, overdue, its breach rate
     and the data's own as-of. Scoped to exactly that promise: a sibling promise's count is
     not a measurement of this one (the 2026-09-16 anchor stated the delivery promise's
-    99,441 ORDERS as dispatch-promise order lines)."""
+    99,441 PARENT rows as dispatch-promise lines)."""
     kind, _, ident = str(securable or "").partition(":")
     if kind != "promise":
         return None

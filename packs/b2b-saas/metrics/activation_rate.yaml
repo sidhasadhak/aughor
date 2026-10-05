@@ -1,0 +1,28 @@
+name: activation_rate
+title: Activation rate
+aliases: [activation rate, user activation rate, trial activation, activated share of signups]
+unit: ratio
+definition: >
+  The share of signups that reached the product's declared activation milestone — the first report built, the first
+  teammate invited, the first integration connected. The milestone is the business's own declaration
+  (`activation_milestone` in the ontology); the rate means nothing without it.
+formula: >
+  SUM(CASE WHEN {{role.signup.activated}} = 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)
+grain: >
+  One signup, counted over the signups in the period asked for; by channel or plan by filtering the same rows.
+  A cohort younger than the milestone's usual time-to-reach reads low because it has not had the time.
+binds:
+  required: [signup]
+anti_patterns:
+  - "Changing the milestone and comparing the rate across the change: two definitions, one line."
+  - "Counting this week's signups as not activated: give a cohort the days the milestone usually takes before reading it."
+  - "Dividing by paid accounts instead of signups: that is conversion, not activation."
+sane_range:
+  min: 0.05
+  max: 0.548
+  basis: >
+    Average activation rates by industry in Userpilot's 2024 benchmark, AS INDEXED on 2026-10-05 and not read in
+    the document: from 5% (fintech and insurance) to 54.8% (HR), an average of 37.5% over 62 SaaS companies on one
+    platform. Each product defines its own milestone, so the figures compare loosely; a single product sits where
+    its milestone and its motion put it.
+  sources: [userpilot-activation-2024]

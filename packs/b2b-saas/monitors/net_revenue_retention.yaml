@@ -1,0 +1,15 @@
+# A watch B2B SaaS keeps, with the PRIOR range the surveys' medians sit in: SaaS Capital's 2025 medians by ACV
+# band, 98% to 106%, AS INDEXED (the document was not read where this was drafted — sources.yaml). A prior, not a
+# norm: proposed for a person to confirm on connect, with a backtest of the band on the connection, never armed by
+# itself; replaced by the connection's own learned band as soon as one exists.
+id: net_revenue_retention
+metric: net_revenue_retention
+unit: ratio
+low: 0.98
+high: 1.06
+measured_on: [saas-capital-retention-2025]
+sources: [saas-capital-retention-2025]
+description: Net revenue retention of the cohort with revenue at the period's start, read on the period's last day.
+note: >
+  `measured_on` names a survey of more than 1,000 private B2B SaaS companies (as indexed), not an install; the
+  band is the spread of its medians by ACV band, and a single company sits where its contracts put it.

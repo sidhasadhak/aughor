@@ -21,7 +21,7 @@ receipt the message carries:
 - **caveat** — a measurement that REFUTES its own number does not leave. A promise's flags
   mostly qualify a figure and ride the receipt, but one class says the figure is
   arithmetically wrong: objects whose lag is impossible, counted as kept, so the rate is
-  lower than the truth. Live anchor: 2026-09-20, LuxExperience's refund promise measured
+  lower than the truth. Live anchor: 2026-09-20, LuxExperience's money-back promise measured
   23.27% breached over a population including 4,199 Returns refunded BEFORE they arrived —
   25.41% without them. Which caveats block is `departure_basis._blocking`'s call, not this
   module's.
@@ -37,8 +37,8 @@ receipt the message carries:
   departs on, and that measurement must be one taken AT departure: older than
   ``REMEASURE_WITHIN_SECONDS`` it is re-executed first. A magnitude with no measurement
   behind it holds — what leaves is information the platform measured. Live anchor:
-  2026-09-16, the dispatch-promise watch departed "10,423 of 99,441 order lines"; the
-  promise it was about counted 111,456 lines — 99,441 is the ORDER count, and no
+  2026-09-16, the dispatch-promise watch departed "10,423 of 99,441 lines"; the
+  promise it was about counted 111,456 lines — 99,441 is the PARENT-row count, and no
   measurement of that promise ever said it.
 - **freshness** (law 4) — a governed metric whose data breaches its declared SLA holds, and
   every departure states the data's as-of wherever one is known.
@@ -220,7 +220,7 @@ class Measurement:
     #: What the measurement itself found worth a reader's eye — a promise's `flags`. These do
     #: NOT hold a departure: they qualify a number rather than refute it, and a gate that
     #: blocked on every caveat would teach senders to stop writing them. They ride the receipt
-    #: instead, because the alternative is what shipped on LuxExperience: a refund promise
+    #: instead, because the alternative is what shipped on LuxExperience: a money-back promise
     #: departing as "23.27% breached" when 4,199 of the 50,048 objects were refunded BEFORE
     #: they arrived and were counted as kept — 25.41% without them, with nothing on the
     #: message to say so.
@@ -522,7 +522,7 @@ def _caveat(measurement: Optional[Measurement]) -> _Check:
     The flags a measurement carries mostly QUALIFY it — "never broken" is a surprising shape,
     not a wrong figure — and those ride the receipt. A blocking caveat is different in kind:
     the number is arithmetically wrong, and the measurement itself says so. Live anchor,
-    2026-09-20: LuxExperience's refund promise measured 23.27% breached over a population
+    2026-09-20: LuxExperience's money-back promise measured 23.27% breached over a population
     that included 4,199 Returns refunded BEFORE they were received, every one counted as
     kept; the true rate is 25.41%. On the screen the flag is shown beside the number, which
     is honesty. In a channel it would be a wrong number with a footnote, so it holds — the
@@ -657,7 +657,7 @@ def _definition(text: str, conn_id: str, about: str, declared: str) -> _Check:
             problems.extend(f"'{p}' is stated with a number and no approved metric defines it "
                             f"on this connection" for p in inferred)
     if problems:
-        # CB-5: the definitions that would clear this hold, structurally — so "approve `revenue` and
+        # CB-5: the definitions that would clear this hold, structurally — so "approve `<metric>` and
         # N sends unblock" is counted from the record, never parsed out of the sentence.
         missing = sorted(unapproved) + [p for p in inferred if p not in unapproved]
         return _Check(HOLDS, "; ".join(problems),

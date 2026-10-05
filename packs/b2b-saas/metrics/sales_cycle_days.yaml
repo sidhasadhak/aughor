@@ -1,0 +1,27 @@
+name: sales_cycle_days
+title: Sales cycle length
+aliases: [sales cycle, sales cycle length, days to close, time to close, deal cycle]
+unit: number
+definition: >
+  The days from an opportunity's creation to its close, averaged over the opportunities won in the period. Stated
+  in days. Lost opportunities have a cycle too, but the figure the industry publishes is the won one.
+formula: >
+  AVG(CASE WHEN {{role.opportunity.won}} = 1
+           THEN DATE_DIFF('day', {{role.opportunity.created_on}}, {{role.opportunity.closed_on}}) END)
+grain: >
+  One opportunity, averaged over the ones won in the period asked for; by segment, by new business against
+  expansion, or by rep by filtering the same rows.
+binds:
+  required: [opportunity]
+anti_patterns:
+  - "Averaging open opportunities' age into the cycle: an open deal has no close date, and the old ones drag the mean."
+  - "Mixing new business with expansion and renewal: expansion closes in roughly half the days."
+  - "Reading the mean without the segment: enterprise cycles run near four times SMB's."
+sane_range:
+  min: 38
+  max: 142
+  basis: >
+    The median sales cycle by segment in the Ebsta and Pavilion 2025 GTM Benchmarks, AS INDEXED on 2026-10-05 and
+    not read in the document: 38 days (SMB), 78 (mid-market), 142 (enterprise); new business 91 days on average
+    and expansion 52. A single company sits where its segment mix puts it.
+  sources: [ebsta-pavilion-gtm-2025]

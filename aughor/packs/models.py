@@ -120,7 +120,7 @@ class RoleAttribute(_Base):
 
 
 class RoleSpec(_Base):
-    """One entry in `entities.yaml` — a declared ROLE (customer, event, cohort_anchor…),
+    """One entry in `entities.yaml` — a declared ROLE (party, event, cohort_anchor…),
     never a table. The resolver (P1) maps roles → concrete tables/columns at deploy."""
     description: str = ""
     expects: dict = Field(default_factory=dict)
@@ -243,7 +243,7 @@ class ExpectedLink(_Base):
     to_object: str
     cardinality: Literal["1:1", "1:N", "N:1", "N:N"] = "N:1"
     via: str = ""                       # the key column both sides are expected to carry
-    to_side_optional: bool = False      # a from-row may have NO to-row (an order without a shipment)
+    to_side_optional: bool = False      # a from-row may have NO to-row (a parent without a child row)
     description: str = ""
 
 
@@ -271,7 +271,7 @@ class ExpectedPromise(_Base):
     """A promise the core expects a stage to carry (ON-9) — with its TERMS left to the business: whether it dispatches
     in two days or five, and which deadline column it keeps, only the business knows. `within_days` stays empty in a
     core map; `deadline_hints` are the column-name fragments a per-object deadline is usually spelled with, and
-    `grain` the object it is usually kept per (a marketplace keeps a shipping limit per order LINE)."""
+    `grain` the object it is usually kept per (a marketplace keeps a dispatch limit per LINE, not per parent)."""
     name: str = ""
     kind: Literal["within_days", "deadline"] = "within_days"
     within_days: Optional[int] = None
@@ -346,10 +346,17 @@ class PackSource(_Base):
     title: str = ""
     publisher: str = ""
     url: str = ""
-    published: str = ""        # ISO date
+    published: str = ""        # ISO date; YYYY-MM or YYYY when the publisher gives no more
     retrieved: str = ""        # ISO date
     figures: list[SourceFigure] = Field(default_factory=list)
     notes: str = ""
+    #: The close-out's C8 — the document was NOT read where the package was drafted (a blocked network,
+    #: a paywall): what the package says of it is a report of a report, and `notes` says how it was
+    #: reached. An unread source carries no `figures` (a quote cannot be verbatim), the static gate
+    #: holds that, and a pack citing one cannot be promoted to active until a person has read the
+    #: document and dropped the flag — a band read off a search index would otherwise become a norm
+    #: the day a connection is made.
+    unread: bool = False
 
     @field_validator("published", "retrieved", mode="before")
     @classmethod

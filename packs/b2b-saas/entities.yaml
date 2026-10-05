@@ -1,0 +1,192 @@
+# The roles B2B SaaS's formulas, watches and detections name — never a table. A connection's binding (or a
+# dataset's, when one exists) maps each attribute to a column. Six roles, each a grain a formula sums over.
+roles:
+  subscription:
+    description: >
+      One subscription of one account to one plan as it stands at a point in time: its status, its billing
+      period, the price per billing period and that price normalised to a month. The subscription BOOK is the set of
+      these rows on an as-of date; MRR is their monthly prices summed where the status is active.
+    expects: {kind: entity}
+    attributes:
+      subscription_id:
+        type: code
+        description: "The subscription's identifier."
+      account_id:
+        type: code
+        description: "The account (the paying company) the subscription belongs to."
+      plan_id:
+        type: code
+        description: "The plan subscribed to."
+      status:
+        type: code
+        description: "The subscription's state on the as-of date: active, trialing, past_due, paused, cancelled, expired."
+      billing_period:
+        type: code
+        description: "How often it bills: monthly, quarterly, annual."
+      plan_price:
+        type: currency
+        description: "The recurring price per billing period, before one-time charges."
+      monthly_price:
+        type: currency
+        description: "The recurring price normalised to one month: an annual price divided by 12, a quarterly by 3."
+      seats:
+        type: count
+        description: "Seats or licences the subscription carries."
+      started_on:
+        type: date
+        description: "The day the subscription started."
+      ended_on:
+        type: date
+        description: "The day it ended, empty while it runs."
+  account_period:
+    description: >
+      One account over one retention period: its recurring revenue at the period's start and at its end, with
+      the expansion, contraction and churn that moved it in between. The retention metrics divide the same cohort's
+      ending MRR by its starting MRR — an account that joined inside the period starts at zero and is not in the
+      cohort.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      account_id:
+        type: code
+        description: "The account."
+      period_start:
+        type: date
+        description: "The first day of the retention period."
+      period_end:
+        type: date
+        description: "The last day of the retention period."
+      segment:
+        type: code
+        description: "The account's segment — SMB, mid-market, enterprise — or its ACV band."
+      starting_mrr:
+        type: currency
+        description: "The account's MRR on the period's first day; zero for an account that joined inside the period."
+      ending_mrr:
+        type: currency
+        description: "The same account's MRR on the period's last day; zero when it churned."
+      expansion_mrr:
+        type: currency
+        description: "MRR added by upgrades and added seats over the period."
+      contraction_mrr:
+        type: currency
+        description: "MRR removed by downgrades and removed seats over the period, as a positive amount."
+      churned_mrr:
+        type: currency
+        description: "MRR lost to full cancellations over the period, as a positive amount."
+      churned:
+        type: flag
+        description: "Whether the account fully cancelled inside the period."
+  opportunity:
+    description: >
+      One sales opportunity: when it was created, when and how it closed, its amount and segment. The sales
+      cycle is the days from creation to a win; a win rate divides wins by closed opportunities, never by every
+      opportunity open.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      opportunity_id:
+        type: code
+        description: "The opportunity's identifier."
+      account_id:
+        type: code
+        description: "The account it is with."
+      created_on:
+        type: date
+        description: "The day the opportunity was created (or sales-accepted)."
+      closed_on:
+        type: date
+        description: "The day it closed, won or lost; empty while open."
+      stage:
+        type: code
+        description: "Its stage: open, qualified, proposal, negotiation, closed_won, closed_lost."
+      won:
+        type: flag
+        description: "Closed won."
+      lost:
+        type: flag
+        description: "Closed lost."
+      amount:
+        type: currency
+        description: "The annual contract value proposed or won."
+      segment:
+        type: code
+        description: "SMB, mid-market or enterprise."
+      new_business:
+        type: flag
+        description: "A new logo, as against an expansion or a renewal."
+  acquisition_period:
+    description: >
+      One period's cost of acquiring new accounts and what it bought: sales and marketing spend, the new MRR it
+      won and the gross margin that MRR earns. CAC payback divides the spend by the gross-margin-adjusted new MRR —
+      spend and new MRR over the SAME period.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      period_start:
+        type: date
+        description: "The first day of the period."
+      period_end:
+        type: date
+        description: "The last day of the period."
+      sales_and_marketing_spend:
+        type: currency
+        description: "Sales and marketing expense over the period."
+      new_accounts:
+        type: count
+        description: "Accounts whose first paid subscription started inside the period."
+      new_mrr:
+        type: currency
+        description: "The MRR those new accounts carried at the period's end."
+      gross_margin:
+        type: number
+        description: "The gross margin earned on subscription revenue over the period, as a share (0 to 1)."
+  signup:
+    description: >
+      One signup or trial start and whether it reached the product's activation milestone and a paid plan. The
+      milestone is the product's own declaration — the first report built, the first teammate invited — and the rate
+      is read against it.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      signup_id:
+        type: code
+        description: "The signup's identifier."
+      account_id:
+        type: code
+        description: "The account it became, empty when it never did."
+      signed_up_on:
+        type: date
+        description: "The day of the signup."
+      activated:
+        type: flag
+        description: "Reached the declared activation milestone."
+      activated_on:
+        type: date
+        description: "The day it reached the milestone."
+      converted_to_paid:
+        type: flag
+        description: "Started a paid subscription."
+      channel:
+        type: code
+        description: "How it arrived: organic, paid, sales-sourced, partner."
+  company_period:
+    description: >
+      The company's own figures for one period — ARR at the period's start and end, cash and net burn — the
+      grain of growth and runway.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      period_start:
+        type: date
+        description: "The first day of the period."
+      period_end:
+        type: date
+        description: "The last day of the period."
+      starting_arr:
+        type: currency
+        description: "ARR on the period's first day."
+      ending_arr:
+        type: currency
+        description: "ARR on the period's last day."
+      cash:
+        type: currency
+        description: "Cash and equivalents at the period's end."
+      net_burn:
+        type: currency
+        description: "Cash spent less cash collected over the period, as a positive amount when cash fell."

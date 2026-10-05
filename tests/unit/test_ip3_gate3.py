@@ -139,6 +139,10 @@ PLANTED = [
      "retrieved is not an ISO date"),
     ("a figure without its words", "sources.yaml", lambda s: s["sources"][0]["figures"][0].pop("quote"),
      "a figure needs a label, a value and the words it was published in"),
+    ("an unread source carrying figures", "sources.yaml", lambda s: s["sources"][0].update(unread=True),
+     "is marked unread and carries figures"),
+    ("a publication date that is not a date", "sources.yaml", lambda s: s["sources"][0].update(published="spring 2020"),
+     "published is not an ISO date"),
     ("no questions", "", lambda files: files.pop("questions.yaml"), "anatomy 1 needs questions.yaml"),
     ("a link to an undeclared object", "ontology.yaml",
      lambda o: o["links"].append({"from_object": "Train", "to_object": "Depot"}), "'Depot' is not a declared object"),
@@ -159,6 +163,18 @@ def test_an_unquoted_yaml_date_is_read_as_the_date_it_names(tmp_path):
     (root / "sources.yaml").write_text(text, encoding="utf-8")
     assert load_pack(root).sources[0].published == "2020-02-01"
     assert run_gate3(load_pack(root)).ok
+
+
+def test_a_publication_date_may_be_as_coarse_as_the_publisher_gives(tmp_path):
+    """The close-out's C8: an annual report is published in a year, an upload path dates to a month — the
+    gate takes the precision the publisher gives and never a day nobody stated. `retrieved` stays a full date."""
+    for published in ("2020-02", "2020"):
+        files = _package()
+        files["sources.yaml"]["sources"][0]["published"] = published
+        assert _findings(tmp_path / published, files) == []
+    files = _package()
+    files["sources.yaml"]["sources"][0]["retrieved"] = "2026-09"
+    assert any("retrieved is not an ISO date" in line for line in _findings(tmp_path / "r", files))
 
 
 def test_a_pack_before_the_anatomy_is_not_held(tmp_path):

@@ -1,0 +1,12 @@
+# A mission template whose objective names a metric the INSTALL declares — the error of the quarter's bookings
+# forecast against the bookings that came — because the package cannot measure a forecast it never saw. On
+# connect it is the shopping list's line: declare the forecast and its actuals to run this mission whole.
+id: improve_forecast_accuracy
+name: Improve forecast accuracy
+cadence: quarterly
+objective: {metric: forecast_error, direction: down, unit: ratio, text: "the absolute error of the quarter's bookings forecast against bookings, as a share of bookings, at or below the limit"}
+constraints:
+  - {metric: sales_cycle_days, bound: at_most, unit: number, text: "without the sales cycle lengthening past the limit — accuracy bought by closing later is not accuracy"}
+watches:
+  - {metric: pipeline_coverage}
+description: Know the quarter's bookings before the quarter ends.

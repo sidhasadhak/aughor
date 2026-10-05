@@ -509,7 +509,7 @@ EXPERIMENT: dict = {
     # question was answered by measurement — fewer champion calls AND, after the seam slim,
     # fewer total tokens, at higher accuracy. Receipt on the FLAG_DEFAULT entry.
     # JD-5 (ROADMAP §3.20; docs/JEV_LIVE_RECEIPT_2026-09-21.md). ON puts TypeSafe's Jev
-    # behind JD-1's seam as the banded cascade's CHEAP tier — customer row text leaves the
+    # behind JD-1's seam as the banded cascade's CHEAP tier — a tenant's row text leaves the
     # box, so every bundle rides govern.outbound (cap + EXTERNAL_CALL event), a PII-bearing
     # bundle is withheld whole, and any bundle Jev cannot answer falls back to the house
     # tier (aughor/judgment/jev.py). Needs TYPESAFE_API_KEY and AUGHOR_JEV_MODEL — no model

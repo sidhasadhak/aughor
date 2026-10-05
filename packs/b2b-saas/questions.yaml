@@ -1,0 +1,23 @@
+canonical:
+  - What is our MRR today, and how did it move this month?
+  - What was our net revenue retention last quarter, and how does it compare by segment?
+  - What was our gross revenue retention last quarter?
+  - How many months does it take to pay back the cost of acquiring a customer?
+  - How long does a deal take to close, by segment?
+  - What share of last month's signups activated?
+  - How fast is ARR growing year over year?
+diagnostic:
+  - Did net retention fall because accounts churned, because they contracted, or because expansion slowed?
+  - Which segment and which cohort carry the loss in gross retention, and which accounts are behind it?
+  - Did CAC payback lengthen because spend rose, because new MRR fell, or because gross margin fell?
+  - Is the sales cycle longer because the deal mix shifted toward enterprise, or because one stage takes longer?
+  - Did activation fall for every channel and plan, or for one?
+explorer_angles:
+  - MRR movements split into new, expansion, contraction and churn, by month
+  - Net and gross revenue retention by segment and by cohort age
+  - Sales cycle by segment and by stage, won against lost
+  - Activation and conversion by signup channel and plan
+  - CAC payback by segment against the surveys' medians
+intent_tags: [MRR, ARR, recurring revenue, net revenue retention, NRR, NDR, gross revenue retention, GRR, churn,
+              logo churn, expansion, contraction, CAC, CAC payback, sales cycle, win rate, pipeline coverage,
+              activation, trial conversion, ARR growth, runway, bookings]

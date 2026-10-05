@@ -1,7 +1,7 @@
 """Idea 4 · learn when a table's numbers stop changing — the learner, pure.
 
 Many sources keep rewriting recent days: late rows arrive, backfills land. On theLook a
-day's order count reads about eight times what the same day settles at a week later, and
+day's row count reads about eight times what the same day settles at a week later, and
 until the lag was set to 8 by hand (2026-09-08) the daily briefing reported that settling
 as a business spike every morning.
 

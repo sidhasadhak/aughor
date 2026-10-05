@@ -85,7 +85,11 @@ def test_the_two_verticals_packs_ship_priors_and_templates_that_pass_the_gate():
                                                 {"protect_gross_margin", "cut_returns_without_hurting_conversion", "keep_stock_cover_inside_a_band"},
                                                 {"price_identity", "promotion_pause"}),
                                                ("banking", {"net_interest_margin", "noncurrent_loan_rate", "approval_rate"},
-                                                {"hold_cost_of_risk"}, {"liquidity_runoff"})):
+                                                {"hold_cost_of_risk"}, {"liquidity_runoff"}),
+                                               ("b2b-saas", {"net_revenue_retention", "gross_revenue_retention", "cac_payback_months",
+                                                             "activation_rate", "win_rate", "pipeline_coverage"},
+                                                {"hold_net_retention_above_a_floor", "find_churn_risk_early", "improve_forecast_accuracy"},
+                                                {"runway", "capacity_to_bookings", "loss_of_a_named_account", "conversion_assumption"})):
         pack = load_pack(pack_dir(pid))
         assert {m.id for m in pack.monitors} == monitors and {t.id for t in pack.missions} == missions
         assert {s.id for s in pack.scenarios} == scenarios

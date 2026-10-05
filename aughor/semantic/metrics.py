@@ -82,7 +82,7 @@ def _seed_path() -> Path:
 
 
 #: A metric that applies to every connection. Wave O2: the store was keyed by NAME
-#: alone, so two connections could not hold different definitions of `revenue` — the
+#: alone, so two connections could not hold different definitions of one metric name — the
 #: #198 shape (a store keyed without the dimension distinguishing its owners), for the
 #: third time in this codebase.
 #:
@@ -98,7 +98,7 @@ class MetricDefinition(BaseModel):
     connection: str = Field(
         default=GLOBAL_CONNECTION,
         description="Connection this definition applies to; '*' is the default for all")
-    label: str = Field(description="Human-readable display name, e.g. 'Monthly Recurring Revenue'")
+    label: str = Field(description="Human-readable display name, e.g. 'Active accounts'")
     sql: str = Field(description="Approved SQL expression, e.g. \"SUM(amount) FILTER (WHERE status='active')\"")
     tables: list[str] = Field(default_factory=list, description="Tables this metric draws from")
     dimensions: list[str] = Field(default_factory=list, description="Columns the metric can be sliced by")
@@ -118,7 +118,7 @@ class MetricDefinition(BaseModel):
     target_period: Optional[str] = Field(default=None, description="'monthly', 'quarterly', 'ytd'")
     benchmark_source: Optional[str] = Field(default=None, description="e.g. 'internal: FY2025 plan'")
     # Governance fields (M21)
-    owner: Optional[str] = Field(default=None, description="Team or person responsible, e.g. 'Revenue team'")
+    owner: Optional[str] = Field(default=None, description="Team or person responsible, e.g. 'Finance team'")
     freshness_sla: Optional[str] = Field(default=None, description="Human description of SLA, e.g. 'daily by 6am UTC'")
     freshness_check_sql: Optional[str] = Field(default=None, description="SQL returning the latest data timestamp for this metric")
     quality_tests: list[str] = Field(default_factory=list, description="SQL assertions that must be true; failure = metric flagged unreliable")
@@ -509,7 +509,7 @@ def _folded_scopes(connection_id: str) -> list[str]:
     One case today: the Workspace folds the samples warehouse's tables in read-only
     (`registry.get_meta(WORKSPACE_ID)["seed_duckdb"]`), and the metrics the repo ships are
     scoped to ``samples`` — an id the registry never lists. Measured 2026-10-03 on a fresh
-    install: `revenue` and `aov` applied to NO listed connection, so the agent drafter had
+    install: the shipped `samples` metrics applied to NO listed connection, so the agent drafter had
     no governed metric to draw from. The tables and their metrics travel together.
     """
     try:
@@ -584,7 +584,7 @@ def get_metric(name: str, path: Path | None = None,
 def save_metric(metric: MetricDefinition, path: Path | None = None) -> None:
     """Upsert a metric by (connection, name).
 
-    The identity is the PAIR. Upserting by name alone would mean scoping `revenue` to one
+    The identity is the PAIR. Upserting by name alone would mean scoping one name to one
     connection silently overwrote the global definition every other connection reads —
     which is the exact failure this wave exists to make impossible.
     """
@@ -618,7 +618,7 @@ def delete_metric(name: str, sql: str | None = None, path: Path | None = None,
     """Remove a metric by name. Returns True if anything was deleted.
 
     Grain-aware: a name can carry several governed grains, each with a distinct
-    formula (e.g. ``revenue`` over ``orders`` vs ``order_items``). When ``sql`` is
+    formula (e.g. one name over the parent table vs its line table). When ``sql`` is
     given, only the entry whose formula matches is removed — so deleting one grain
     from the UI doesn't wipe the others. Without ``sql`` every entry sharing the
     name is removed (legacy behaviour, used by bulk cleanup paths).
@@ -691,7 +691,7 @@ def value_query(metric: "MetricDefinition") -> str:
     A metric whose ``sql`` is already a full SELECT is run verbatim — it has stated its
     own shape. Otherwise the aggregate expression is wrapped over the metric's first
     table with its declared filters applied, because those filters ARE the definition:
-    revenue that includes cancelled orders is a different metric from the one Finance
+    a total that includes cancelled rows is a different metric from the one Finance
     approved, and computing it without them would answer the wrong question precisely.
     """
     from aughor.semantic.metric_statement import as_statement
@@ -911,8 +911,8 @@ def _metric_matches_schema(metric, tables: set[str], cols: set[str]) -> bool:
     `final_price_usd`) leaks a wrong, column-mismatched formula into every other
     connection's prompt — a real NL2SQL-corrupting bug surfaced by the golden-SQL
     eval. The formula-column check closes the half the table/dimension checks
-    miss: a metric like `revenue = SUM(total_amount)` must NOT inject into a
-    connection whose orders has `o_totalprice`/`final_price_usd` and no
+    miss: a metric like `total = SUM(total_amount)` must NOT inject into a
+    connection whose table has `o_totalprice`/`final_price_usd` and no
     `total_amount` (observed leaking AVG(total_amount) into beautycommerce, which
     has neither). Conservative: only drops when a declared name is genuinely absent."""
     for tbl in (metric.tables or []):
@@ -968,7 +968,7 @@ def _apply_ontology_overlay(
             # case); otherwise the curated, Finance-approved catalog is highest
             # authority and wins. (Without this, a connection whose ontology carries a
             # wrong templated SUM(total_amount) — e.g. beautycommerce — silently strips
-            # the correct catalog revenue/AOV from the LLM prompt.)
+            # the correct catalog metrics from the LLM prompt.)
             om_sql = (getattr(om, "formula_sql", "") or "").strip()
             if om_sql and om_sql == (m.sql or "").strip():
                 continue  # validator tested THIS exact formula and it failed → drop
@@ -1015,7 +1015,7 @@ def _dedupe_by_name(metrics: list) -> list:
 
     A metric name is its identity — ``save_metric`` upserts by name — so two
     entries sharing a name is an invariant violation. It only surfaces once a
-    schema keeps both grains of the same KPI (e.g. ``orders`` AND ``order_items``
+    schema keeps both grains of the same KPI (e.g. a parent table AND its line table
     both present), and the damage is real: the catalog gets injected into the
     prompt twice with CONFLICTING formulas, enforcement double-counts, and the
     Trust Receipt collides React keys. We restore the invariant at the
@@ -1050,8 +1050,8 @@ def filter_metrics_to_schema(metrics: list, schema_text: str, dedupe: bool = Tru
 
     ``dedupe=False`` keeps EVERY surviving grain of a duplicated name. Two
     same-named metrics can be genuinely different formulas at different grains
-    (e.g. ``revenue`` over ``orders`` = ``SUM(total_amount)`` vs over
-    ``order_items`` = ``SUM(final_price_usd * quantity)``). A query can only match
+    (e.g. one name over the parent table = ``SUM(total_amount)`` vs over
+    its line table = ``SUM(final_price_usd * quantity)``). A query can only match
     one grain, so collapsing here would drop the matching grain and mislabel a
     correct answer as drift — the enforcement path passes ``dedupe=False`` and
     lets ``check_metric_enforcement`` collapse its own verdicts (used > drift)
@@ -1127,7 +1127,7 @@ def build_metrics_block(
         metrics = _apply_ontology_overlay(metrics, connection_id)
         # Re-filter AFTER the overlay: it can INJECT a verified ontology metric that has no
         # catalog counterpart, and that injection is NOT schema-checked — so a stale ontology
-        # formula (e.g. revenue = SUM(total_amount) on a connection whose orders has
+        # formula (e.g. total = SUM(total_amount) on a connection whose table has
         # order_value, not total_amount) would leak a missing-column formula into the prompt.
         if _tables:
             metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]

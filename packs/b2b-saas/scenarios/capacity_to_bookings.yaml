@@ -1,0 +1,16 @@
+# Method 1 — bookings from selling capacity is an identity over declared inputs: reps, the share of them ramped,
+# the quota each carries and the attainment assumed. Adding reps faster varies `reps` and `ramped_share`; the
+# attainment is a declared assumption (method 2), never this formula's.
+id: capacity_to_bookings
+name: Bookings from selling capacity
+for_kind: decision
+method: identity
+metric: bookings
+unit: currency
+formula: reps * ramped_share * quota * attainment
+inputs: [reps, ramped_share, quota, attainment]
+varied: [reps, ramped_share]
+limits:
+  - "attainment is a declared assumption or last year's measured rate, stated with its author"
+  - "a rep added this quarter sells next quarter: `ramped_share` carries the ramp, and the identity does not"
+description: What adding selling capacity does to bookings, under a stated attainment.

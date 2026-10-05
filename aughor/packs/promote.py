@@ -143,6 +143,17 @@ def set_status(pack_id: str, status: str, *, packs_dir=None, actor: str = "",
                 + "; ".join(f"{f.rule} (line {f.line})" for f in refused),
                 findings=findings)
 
+        # The close-out's C8: a source the package cites but nobody read (`unread: true` — reached
+        # through an index or a summary where it was drafted) keeps the pack a draft. Its bands and
+        # plays rest on a report of a report; a person reads the document, carries the figures it
+        # publishes, drops the flag, and promotes. Said here rather than left as a note nobody acts on.
+        unread = [s.id or "?" for s in load_pack(root).sources if getattr(s, "unread", False)]
+        if unread:
+            raise PromotionRefused(
+                f"'{pack_id}' cites {len(unread)} source{'s' if len(unread) != 1 else ''} marked unread "
+                f"({', '.join(unread)}): read each in the publisher's document, carry the figures it "
+                f"publishes with the words they were published in, drop `unread`, then promote.")
+
         # Demotion is never gated — taking something out of service must not require
         # passing a test. Only this direction asks anything.
         if not load_pack(root).manifest.partial:

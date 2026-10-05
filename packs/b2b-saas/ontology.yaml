@@ -1,0 +1,115 @@
+# What a B2B SaaS business's data is expected to hold — claims, each measured into a tier (expected · measured-true
+# · measured-false) on a connection. Never the organisation's ontology: the §P row's objects, Account · Contact ·
+# Opportunity · Subscription · Invoice · Plan · Seat · Ticket, and the Signup a trial starts as.
+objects:
+  - name: Account
+    roles: [party]
+    aliases: [accounts, customers, companies, organizations, organisations, tenants, workspaces, clients]
+    description: The paying company — the grain retention, churn and ACV are counted at.
+  - name: Contact
+    roles: [party]
+    aliases: [contacts, users, people, leads, members, end_users]
+    description: A person at an account — a user of the product or a buyer in the deal.
+  - name: Opportunity
+    roles: [transaction]
+    aliases: [opportunities, deals, pipeline, opps]
+    description: A sales opportunity with an account, from creation to closed won or lost.
+  - name: Subscription
+    roles: [asset]
+    aliases: [subscriptions, contracts, agreements, licenses, licences]
+    description: An account's subscription to a plan, with its billing period and recurring price.
+  - name: Plan
+    roles: [catalog]
+    aliases: [plans, tiers, price_plans, pricing_plans, editions, skus]
+    description: A priced offering — a tier, an edition — a subscription is to.
+  - name: Invoice
+    roles: [transaction]
+    aliases: [invoices, bills, charges, payments]
+    description: A bill for a subscription period or a one-time charge; collected cash, not recurring revenue.
+  - name: Seat
+    roles: [asset]
+    aliases: [seats, assigned_licenses, license_assignments, memberships]
+    description: One licence assigned to one user under a subscription.
+  - name: Ticket
+    roles: [event]
+    aliases: [tickets, cases, support_tickets, support_requests, conversations]
+    description: A support request from an account, with its first response and its resolution.
+  - name: Signup
+    roles: [event]
+    aliases: [signups, sign_ups, trials, registrations, free_trials]
+    description: A trial or free signup that may activate and convert to a paid subscription.
+
+# from:to — many from-rows per to-row is N:1. `via` is the key both sides are expected to carry.
+links:
+  - {from_object: Contact,      to_object: Account,      cardinality: "N:1", via: account_id,      description: many people per account}
+  - {from_object: Opportunity,  to_object: Account,      cardinality: "N:1", via: account_id,      description: many deals per account over time}
+  - {from_object: Subscription, to_object: Account,      cardinality: "N:1", via: account_id,      description: an account holds one or more subscriptions}
+  - {from_object: Subscription, to_object: Plan,         cardinality: "N:1", via: plan_id}
+  - {from_object: Invoice,      to_object: Subscription, cardinality: "N:1", via: subscription_id, to_side_optional: true, description: a one-time charge may have no subscription}
+  - {from_object: Seat,         to_object: Subscription, cardinality: "N:1", via: subscription_id}
+  - {from_object: Seat,         to_object: Contact,      cardinality: "N:1", via: contact_id,      to_side_optional: true, description: an unassigned seat has no person}
+  - {from_object: Ticket,       to_object: Account,      cardinality: "N:1", via: account_id,      to_side_optional: true, description: a ticket from a trial has no account yet}
+  - {from_object: Signup,       to_object: Account,      cardinality: "N:1", via: account_id,      to_side_optional: true, description: a signup that never converted became no account}
+
+# Terminal states are EXPECTATIONS the data can refute or confirm; `end_state_names` are the words that read as final.
+lifecycles:
+  - object: Subscription
+    column_hint: status
+    states: [trialing, active, past_due, paused, cancelled, expired]
+    terminal_states: [cancelled, expired]
+    end_state_names: [cancelled, canceled, expired, churned, terminated, ended, closed]
+  - object: Opportunity
+    column_hint: stage
+    states: [open, qualified, proposal, negotiation, closed_won, closed_lost]
+    terminal_states: [closed_won, closed_lost]
+    end_state_names: [closed_won, closed_lost, won, lost, closed, disqualified]
+  - object: Invoice
+    column_hint: status
+    states: [draft, open, paid, void, uncollectible]
+    terminal_states: [paid, void, uncollectible]
+    end_state_names: [paid, void, voided, uncollectible, written_off, refunded]
+  - object: Ticket
+    column_hint: status
+    states: [open, pending, solved, closed]
+    terminal_states: [solved, closed]
+    end_state_names: [solved, closed, resolved, done]
+
+# Processes the core expects, with where each stage's moment is usually spelled — and the promise a support
+# organisation usually makes, its terms left to the business (ON-9).
+processes:
+  - name: trial_to_paid
+    object: Signup
+    description: A signup activates, then converts to a paid subscription.
+    stages:
+      - {name: signed_up, timestamp_hints: [signed_up_at, created_at, registered_at, trial_started_at]}
+      - {name: activated, timestamp_hints: [activated_at, activation_at, first_value_at, onboarded_at]}
+      - {name: converted, timestamp_hints: [converted_at, paid_at, subscription_started_at, became_customer_at]}
+  - name: ticket_resolution
+    object: Ticket
+    description: A ticket is opened, answered and solved; the first response and the resolution usually carry a promise.
+    stages:
+      - {name: opened, timestamp_hints: [created_at, opened_at]}
+      - name: first_response
+        timestamp_hints: [first_response_at, first_replied_at, first_reply_at]
+        promise: {name: first_response_time, kind: deadline, deadline_hints: [first_response_due_at, response_due_at, sla_due_at], grain: Ticket}
+      - name: solved
+        timestamp_hints: [solved_at, resolved_at, closed_at]
+        promise: {name: resolution_time, kind: deadline, deadline_hints: [resolution_due_at, due_at, sla_due_at], grain: Ticket}
+
+# Definitions the core expects the business to hold, with their values left EMPTY: only the business knows which
+# statuses mean churned and where its segments divide.
+rules:
+  - name: churned_account
+    object: Account
+    kind: value_set
+    property_hint: status
+    description: The account statuses that count as churned (every subscription ended, not paused or past due).
+  - name: account_segment
+    object: Account
+    kind: value_set
+    property_hint: segment
+    description: How accounts divide into SMB, mid-market and enterprise — by seats, by ACV or by employees.
+  - name: activation_milestone
+    object: Signup
+    kind: condition
+    description: What counts as activated — the first report built, the first teammate invited, the first integration connected.

@@ -1,0 +1,11 @@
+# A mission template: find the accounts that will leave before they do. The objective is gross retention — the
+# figure churn moves and expansion cannot repair — and the constraint keeps the fix from being a cheaper product.
+id: find_churn_risk_early
+name: Find churn risk early
+cadence: monthly
+objective: {metric: gross_revenue_retention, direction: up, unit: ratio, text: "gross revenue retention of the starting cohort at or above the target, read each month"}
+constraints:
+  - {metric: activation_rate, bound: at_least, unit: ratio, text: "while new signups keep activating at or above the floor"}
+watches:
+  - {metric: net_revenue_retention}
+description: Lose fewer accounts at renewal by seeing the signs a quarter before.

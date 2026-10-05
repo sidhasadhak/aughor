@@ -1,0 +1,16 @@
+id: opportunity-closed-twice-or-backwards
+kind: data_quality
+trigger_metric: sales_cycle_days
+trigger_condition: an opportunity is both won and lost, or closed before it was created
+recommendation: >
+  An opportunity flagged both won and lost counts in a win rate's numerator and twice in its denominator; one
+  closed before its creation date carries a negative cycle that shortens the mean of every segment it sits in —
+  usually a creation date overwritten on import or a stage changed by hand. Fix the rows at the source before
+  reading the cycle or the win rate; dropping them silently hides the deals.
+expected_impact: Every closed opportunity has one outcome and a cycle of zero or more days.
+owner_role: Sales Operations
+tags: [opportunities, sales cycle, data quality]
+sources: [ebsta-pavilion-gtm-2025]
+detection: >
+  SUM(CASE WHEN ({{role.opportunity.won}} = 1 AND {{role.opportunity.lost}} = 1)
+  OR ({{role.opportunity.closed_on}} < {{role.opportunity.created_on}}) THEN 1 ELSE 0 END)

@@ -1,0 +1,16 @@
+id: new-accounts-inside-the-retention-cohort
+kind: data_quality
+trigger_metric: net_revenue_retention
+trigger_condition: an account with no revenue at the period's start carries revenue at its end
+recommendation: >
+  An account that started the period at zero and ends it with revenue is new business, not retention; left in the
+  cohort it adds to the numerator and nothing to the denominator, and net retention reads above what the surviving
+  accounts did. Exclude it from both sides — the cohort is the accounts with revenue on the period's first day —
+  and count it under new ARR instead.
+expected_impact: Retention is read over the cohort that existed at the start, and new business is counted as new.
+owner_role: Revenue Operations
+tags: [net revenue retention, cohort, data quality]
+sources: [chartmogul-retention-2025]
+detection: >
+  SUM(CASE WHEN COALESCE({{role.account_period.starting_mrr}}, 0) <= 0 AND {{role.account_period.ending_mrr}} > 0
+  THEN 1 ELSE 0 END)

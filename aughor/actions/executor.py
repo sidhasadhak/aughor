@@ -124,7 +124,7 @@ def _eval(node: ast.AST, params: dict, objects: Optional[dict] = None):
             left = right
         return True
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in objects:
-        # ON-4 — `order.status`: a property of an object parameter's object, read live. Only a name
+        # ON-4 — `entity.status`: a property of an object parameter's object, read live. Only a name
         # bound to a resolved object may be dotted, and only into that object's property values.
         target = objects[node.value.id]
         props = target.get("properties") or {}
@@ -199,7 +199,7 @@ def _type_word(name: str) -> str:
 
 def object_ref(value, param) -> str:
     """ON-4 — the canonical ``"<type>:<key>"`` for a value passed to an object parameter:
-    ``"Order:123"``, ``{"object_type": "Order", "pk": "123"}``, or a bare key the parameter's own type
+    ``"Thing:123"``, ``{"object_type": "Thing", "pk": "123"}``, or a bare key the parameter's own type
     names. A reference to another object type is invalid, however plausible its key."""
     want = param.object_type
     if isinstance(value, dict):
@@ -455,8 +455,8 @@ def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, param
         agent_id=str(cfg.get("agent_id") or "") or None,
     )
     # Two runs of one action are the same work only when they ask the same question as the same
-    # persona — the parameters are already baked into `question`, so a refund investigation for
-    # order A must not deduplicate onto order B's.
+    # persona — the parameters are already baked into `question`, so an investigation for
+    # object A must not deduplicate onto object B's.
     import hashlib
     digest = hashlib.sha256(f"{question}\x00{req.agent_id or ''}".encode()).hexdigest()[:12]
     run = run_investigation(req, idempotency_key=f"kinetic:{action.id}:{digest}",
@@ -508,7 +508,7 @@ def _dispatch_annotate(action: KineticAction, params: dict, scope: str, *, actor
     """Write a human overlay edit to the K3 ledger — an annotation/correction merged onto reads,
     never a source mutation. The action's parameters carry the target + body. The row is named by
     ``row_key`` or, when that is absent, by the parameter its ``key_column`` names — an action taking
-    ``order_id`` with ``key_column="order_id"`` annotates that order's row, which is how an object
+    ``row_id`` with ``key_column="row_id"`` annotates that object's row, which is how an object
     page pre-fills the object's key."""
     if action.edits:
         return _dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {})

@@ -1,0 +1,13 @@
+# A watch B2B SaaS keeps, with the PRIOR range of SaaS Capital's 2025 medians by ACV band, 90% to 95%, AS
+# INDEXED (sources.yaml). Proposed for confirmation with its backtest; never armed by itself.
+id: gross_revenue_retention
+metric: gross_revenue_retention
+unit: ratio
+low: 0.90
+high: 0.95
+measured_on: [saas-capital-retention-2025]
+sources: [saas-capital-retention-2025, benchmarkit-2025]
+description: Gross revenue retention of the cohort with revenue at the period's start, read on the period's last day.
+note: >
+  Benchmarkit's 2025 median (84%, as indexed) sits below this band — a different population; the band is one
+  survey's medians by ACV band, and a business selling small contracts sits lower at unchanged behaviour.

@@ -8,8 +8,10 @@ The rules, each a `Finding.rule`:
 
 - **anatomy** — every part is there: cited sources, entity roles with attributes, metrics, an ontology, plays,
   questions, goldens and at least one named dataset to measure on.
-- **sources** — a source has an id, a title, a publisher, an http(s) url, and ISO dates for when it was published and
-  when it was read; a figure it publishes carries the words it was published in.
+- **sources** — a source has an id, a title, a publisher, an http(s) url, and ISO dates for when it was published
+  (to the month or the year, when the publisher gives no more) and when it was read; a figure it publishes carries
+  the words it was published in. A source marked `unread` (not read where the package was drafted) carries no figures: a quote
+  it cannot give verbatim is not a quote.
 - **sane_range** — every metric states its unit and a band with a lower or upper bound, the population and period
   it holds for, and at least one declared source. A band without a source fails (§3.17's law).
 - **roles_not_tables** — a formula, a golden's filter and a play's detection are expressions over
@@ -171,9 +173,13 @@ def _check_sources(pack: Pack, add) -> set[str]:
                 add(Finding("sources", where, f"has no {key}"))
         if not re.match(r"^https?://\S+$", source.url or ""):
             add(Finding("sources", where, "has no http(s) url"))
-        for key in ("published", "retrieved"):
-            if not _iso_date(getattr(source, key)):
-                add(Finding("sources", where, f"{key} is not an ISO date (YYYY-MM-DD)"))
+        if not _iso_date(source.published, month_ok=True):
+            add(Finding("sources", where, "published is not an ISO date (YYYY-MM-DD; YYYY-MM or YYYY when the publisher gives no more)"))
+        if not _iso_date(source.retrieved):
+            add(Finding("sources", where, "retrieved is not an ISO date (YYYY-MM-DD)"))
+        if source.unread and source.figures:
+            add(Finding("sources", where, "is marked unread and carries figures — a figure's quote is the words it was "
+                                          "published in, which a source nobody read cannot give"))
         for figure in source.figures:
             if not figure.label.strip() or figure.value is None or not figure.quote.strip():
                 add(Finding("sources", where, "a figure needs a label, a value and the words it was published in"))
@@ -340,9 +346,14 @@ def _check_ontology(pack: Pack, add) -> None:
             add(Finding("ontology", f"lifecycle {lifecycle.object}", f"terminal states {sorted(stray)} are not states"))
 
 
-def _iso_date(text: str) -> bool:
+def _iso_date(text: str, *, month_ok: bool = False) -> bool:
+    """A full ISO date; with ``month_ok``, also the year and month, or the year alone — the precision
+    an annual report or a dated upload path gives — never a day the publisher did not state."""
+    raw = str(text or "")
+    if month_ok and re.fullmatch(r"\d{4}(-(0[1-9]|1[0-2]))?", raw):
+        return True
     try:
-        date.fromisoformat(str(text or ""))
+        date.fromisoformat(raw)
         return True
     except ValueError:
         return False

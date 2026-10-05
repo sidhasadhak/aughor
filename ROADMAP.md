@@ -11265,10 +11265,10 @@ from the visibility module; the bound packs' priors and templates. (P6-3) `tests
 — the kernel's industry-noun count at its measured baseline, English and SQL senses stripped first, a baseline that may
 fall and never rise; and the kernel's doors answering with no pack installed. Receipt: 15 phase-6 tests pass; the pack
 loader, static gate, pack-claims, banking package, release gate, demo pack, roster, rebuild, package-parity, prompt-reach
-and vocabulary suites pass. **Still open in phase 6:** B2B SaaS as the second deep vertical (banking chosen instead, its
-package drafted); the nouns still in the kernel's docstrings, which the ratchet counts down; and the exit — the hours
-measured on a new customer's install in each vertical, with the receipt. (Terms proposed for confirmation on connect and
-alerts from a prior's band with a backtest were open here until the close-out's C7, §3.53 below.)
+and vocabulary suites pass. **Still open in phase 6:** the exit — the hours measured on a new customer's install in
+each vertical, with the receipt. (Terms proposed for confirmation on connect and alerts from a prior's band with a
+backtest were open here until the close-out's C7; B2B SaaS as the second deep vertical and the kernel's docstring
+nouns until its C8 — §3.53 below.)
 
 **Phase 7 — the code half BUILT 2026-10-05**, one slice, five parts. (P7-1) `routers/ledger.py` — the ledger API under
 `/ledger/v1`: `POST /claims` books a claim with its warrant under the three laws (no fact without a warrant, no model-
@@ -11427,6 +11427,30 @@ proposed, `POST /packs/{id}/terms/confirm` confirms or declines; the day-one scr
 carries `arrival` with the terms' counts and the alerts by status. Receipt: the connect suite (six tests, on the real
 banking package), the vocabulary, ranking, synonyms-block, framing, prose-mapper, interchange, sentinel, packs-router,
 priors, HB-6, promotion, uptake, onboarding and claims-reach suites pass, and the six ratchets.
+(C8, phase 6) B2B SaaS drafted as the second deep vertical (`packs/b2b-saas/`, §P's row: Account · Contact ·
+Opportunity · Subscription · Invoice · Plan · Seat · Ticket): six roles with attributes (`subscription`,
+`account_period`, `opportunity`, `acquisition_period`, `signup`, `company_period`); eight metrics as formulas over
+them — MRR, ARR, net and gross revenue retention, CAC payback, the sales cycle, activation, ARR growth — each with a
+unit, a sourced sane range and anti-patterns; nine plays (six diagnostic, three data-quality with detections); six
+watches (NRR, GRR and CAC payback with prior bands from the surveys' medians, activation, win rate and pipeline
+coverage said as unmeasured); three mission templates (hold net retention above a floor · find churn risk early ·
+improve forecast accuracy, whose metric is the install's own) and four scenario identities (runway, capacity to
+bookings, loss of a named account, the conversion assumption); questions; goldens without a dataset. Two things the
+package says rather than hides. First, `anatomy: 0`, because the anatomy's one part it cannot carry is a named public
+dataset for gate 4 — no public subscription ledger with published figures exists (what is public is GAAP filings,
+which measure revenue and gross margin and none of ARR, retention or churn) — and `test_b2b_saas_package` runs gate 3
+with the anatomy forced and expects the dataset finding alone. Second, every source is marked `unread` (a new
+`PackSource` field): where the package was drafted the network egress proxy blocked every publisher's domain (SaaS
+Capital, ChartMogul, Benchmarkit, KeyBanc/Sapphire, Ebsta/Pavilion, Userpilot), so each band's figures are as a web
+search index reported them on 2026-10-05, each `basis` and each source's `notes` say so, no source carries `figures`
+(the static gate now refuses figures on an unread source: a quote nobody read cannot be verbatim), and
+`promote.set_status` refuses `active` while any cited source is unread — the review IS reading them. `published` may
+now be as coarse as the publisher gives (YYYY-MM or YYYY), never a day nobody stated. The kernel's industry nouns:
+the docstring examples in the executor, the overlay, the gate's live anchors, the metric store, the row-policy example
+and the settling anchors reworded to the kernel's own words (parent row, line, object, total, money-back promise),
+and `test_industry_noun_ratchet.BASELINE` lowered to the measured floor — order 25→0, refund 5→0, revenue 14→0,
+shipment 1→0, customer 3→1 and product 1→1, the one line in `packs/models.py` that names the function knowledge
+layers. Receipt: the package, gate-3, promotion, priors, kit, router, HB-6, noun and vocabulary suites pass.
 
 ---
 

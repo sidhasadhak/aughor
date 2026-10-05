@@ -1,7 +1,7 @@
 """Wave K3 — the edits-as-overlay ledger.
 
 A human annotation or correction on the data ("this outlier is a known launch-day spike";
-"order 8821's status is a test order") is written here and MERGED AT READ TIME onto query
+"row 8821's status is a test row") is written here and MERGED AT READ TIME onto query
 results — it never mutates the source. It generalizes the ambiguity ledger from *resolutions*
 to *data annotations*, sharing its store idiom exactly (SQLite via `resolve_db_path` so the
 suite never touches live `data/`; org+connection scoped; forward-only migrations) and its
@@ -290,7 +290,7 @@ def apply_overlay(result, connection_id: str, org_id: str = "") -> "object":
 
         # case-insensitive column-name → index
         col_idx = {str(c).lower(): i for i, c in enumerate(result.columns)}
-        # last segment of a possibly-qualified column ("orders.status" → "status")
+        # last segment of a possibly-qualified column ("t.status" → "status")
         for name, i in list(col_idx.items()):
             col_idx.setdefault(name.split(".")[-1], i)
         sql_lower = (getattr(result, "sql", "") or "").lower()
