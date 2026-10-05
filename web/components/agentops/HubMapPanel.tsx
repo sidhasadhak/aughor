@@ -113,7 +113,7 @@ export function HubMapPanel({ connId, onOpenAgent, onOpenAutomation }: {
         </EmptyState>
       ) : (
         <div style={{ flex: 1, overflow: "auto", padding: "0 16px 16px" }}>
-          <Table className="aug-dt">
+          <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Automation</TableHead>

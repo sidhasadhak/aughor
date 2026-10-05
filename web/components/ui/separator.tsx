@@ -1,26 +1,13 @@
-"use client"
+import type * as React from "react"
+import { Separator as ThemesSeparator } from "@radix-ui/themes"
 
-import { Separator as SeparatorPrimitive } from "@base-ui/react/separator"
-
-import { cn } from "@/lib/utils"
-
-/** --b1 between blocks. (A rule between rows is --b0, drawn by the row itself.) */
+/** A rule between blocks, on Radix Themes: the Theme's own line colour, full length. (A rule
+ *  between rows is drawn by the row itself.) */
 function Separator({
-  className,
   orientation = "horizontal",
   ...props
-}: SeparatorPrimitive.Props) {
-  return (
-    <SeparatorPrimitive
-      data-slot="separator"
-      orientation={orientation}
-      className={cn(
-        "shrink-0 bg-[var(--b1)] data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",
-        className
-      )}
-      {...props}
-    />
-  )
+}: Omit<React.ComponentProps<typeof ThemesSeparator>, "size">) {
+  return <ThemesSeparator data-slot="separator" size="4" orientation={orientation} {...props} />
 }
 
 export { Separator }

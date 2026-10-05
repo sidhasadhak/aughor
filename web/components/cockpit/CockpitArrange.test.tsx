@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@/lib/testing";
 import { describe, expect, it, vi } from "vitest";
 
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";

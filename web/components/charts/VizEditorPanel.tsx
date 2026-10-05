@@ -305,8 +305,11 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
       role="dialog"
       aria-label="Edit visualization"
       className="animate-in slide-in-from-right-8 fade-in-0 duration-150"
+      // No z-index: it is portalled into <body> after the page, which is one layer (.aug-root),
+      // so it is above the page already — and a select opened inside it, portalled after IT,
+      // is above this. A z-index here would put that menu underneath.
       style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(340px, 92vw)", zIndex: 300,
+        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(340px, 92vw)",
         background: "var(--bg-2)", borderLeft: "1px solid var(--b2)",
         boxShadow: "-8px 0 28px -12px rgba(0,0,0,.55)",
         display: "flex", flexDirection: "column", overflow: "hidden",

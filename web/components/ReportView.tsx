@@ -565,7 +565,7 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
         <DirectResultTable table={directTable} />
       )}
 
-      <Separator className="bg-zinc-800" />
+      <Separator />
 
       {/* 7. Data Quality Issues */}
       {dqNotes.length > 0 && (
@@ -701,9 +701,9 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
         <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
           <Table>
             <TableHeader>
-              <TableRow className="border-zinc-600 hover:bg-transparent">
+              <TableRow>
                 {columns.map(col => (
-                  <TableHead key={col} className="text-xs text-zinc-500 font-mono whitespace-nowrap bg-zinc-800/80 h-8">
+                  <TableHead key={col} className="font-mono">
                     {col}
                   </TableHead>
                 ))}
@@ -711,9 +711,9 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
             </TableHeader>
             <TableBody>
               {rows.map((row, ri) => (
-                <TableRow key={ri} className="border-zinc-600/50 hover:bg-zinc-700/30">
+                <TableRow key={ri}>
                   {(row as unknown[]).map((cell, ci) => (
-                    <TableCell key={ci} className="text-xs text-zinc-300 font-mono py-1.5 whitespace-nowrap">
+                    <TableCell key={ci} className="font-mono">
                       {cell === null || cell === undefined ? (
                         <span className="text-zinc-500 italic">null</span>
                       ) : (

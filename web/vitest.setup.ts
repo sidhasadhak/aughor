@@ -55,3 +55,35 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
     + "base for real.",
   );
 }) as typeof fetch;
+
+/**
+ * jsdom has no layout, and so none of the observers layout feeds. Radix's scroll area — inside
+ * every Themes table and select menu — constructs a `ResizeObserver` as it mounts, and without
+ * one the component throws before a test can look at it. A stand-in that never fires is the
+ * honest version: nothing here has a size to report (web/AGENTS.md, "What jsdom cannot do").
+ * Radix's select also asks an option about pointer capture and scrolls it into view.
+ */
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+if (typeof Element !== "undefined") {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+}
+
+/**
+ * jsdom loads no stylesheet, so one thing Radix Themes hides with CSS alone is audible here
+ * and not in a browser: a tab draws its label twice — once shown, once `visibility: hidden` to
+ * hold the tab's width as its weight changes. This is that rule, so `getByRole("tab", { name })`
+ * hears what a person's screen reader does.
+ */
+if (typeof document !== "undefined") {
+  const style = document.createElement("style");
+  style.textContent = ".rt-BaseTabListTriggerInnerHidden { visibility: hidden; }";
+  document.head.appendChild(style);
+}

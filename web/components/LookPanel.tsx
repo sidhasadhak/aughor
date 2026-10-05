@@ -10,9 +10,10 @@
  *
  * The chart palette does not move: a chart's colours are data.
  */
-import { SegmentedControl, Tooltip } from "@radix-ui/themes";
+import { SegmentedControl } from "@radix-ui/themes";
 
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { putMyPreference } from "@/lib/api";
 import {
   ACCENTS, DEFAULT_LOOK, GREYS, LOOK_KEYS, RADII, SCALINGS, setLook, useLook,

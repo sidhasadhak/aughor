@@ -77,7 +77,9 @@ export default function RootLayout({
         </head>
         <body className="min-h-full flex flex-col">
           <Providers>
-            {children}
+            {/* The page is one layer: a Radix dialog, menu or tooltip is portalled into <body>
+                after it and so sits above it, whatever z-index the rail or the topbar carry. */}
+            <div className="aug-root">{children}</div>
             <Toaster />
           </Providers>
         </body>

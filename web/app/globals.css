@@ -1393,14 +1393,21 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
   line-height: inherit;
   color: inherit;
 }
+/* The page, as one layer under everything Radix portals into <body> (app/layout.tsx). */
+.aug-root { isolation: isolate; display: flex; flex-direction: column; flex: 1 1 0%; min-height: 100%; }
 /* A Themes ghost button bleeds into its neighbours by design (negative margins, to line its
    label up with text). In a toolbar or a table cell that eats the gap, so ours sit still. */
 .rt-BaseButton:where(.rt-variant-ghost) { margin: 0; }
-/* A ledger row: Themes draws the table, the page says which row is hovered and which is open. */
-[data-ledger] .rt-TableRow:where(:hover) { background-color: var(--gray-a3); }
-[data-ledger] .rt-TableRow[aria-selected="true"] { background-color: var(--accent-a4); }
-[data-ledger] .rt-TableCell.num, [data-ledger] .rt-TableColumnHeaderCell.num { text-align: right; font-variant-numeric: tabular-nums; }
-/* Our ledgers are dense and their columns are sized: the page's 13px, and only the first column —
-   the statement — wraps. A date or a chip broken over two lines doubles the row for nothing. */
-[data-ledger] .rt-TableRootTable { font-size: 13px; line-height: 1.45; }
-[data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell { white-space: nowrap; }
+/* A table's rows: Themes draws the table, the page says which row is hovered and which is open.
+   Both the record ledger and the shared table (components/ui/table.tsx) are Themes' size-1 table. */
+:is([data-ledger], [data-slot="table"]) .rt-TableRow:where(:hover) { background-color: var(--gray-a3); }
+:is([data-ledger], [data-slot="table"]) .rt-TableRow:is([aria-selected="true"], [data-state="selected"]) { background-color: var(--accent-a4); }
+:is([data-ledger], [data-slot="table"]) :is(.rt-TableCell, .rt-TableColumnHeaderCell).num { text-align: right; font-variant-numeric: tabular-nums; }
+/* A header row is not a row to pick. */
+:is([data-ledger], [data-slot="table"]) .rt-TableHeader .rt-TableRow:hover { background-color: transparent; }
+/* Columns are sized and their cells are short: a date or a chip broken over two lines doubles the
+   row for nothing. In a ledger the first column is the statement, and it alone wraps. */
+[data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell,
+[data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; }
+/* A table whose columns are sized (layout="fixed") keeps a cell inside its column. */
+[data-slot="table"] .rt-TableRootTable:where(.rt-r-tl-fixed) :is(.rt-TableCell, .rt-TableColumnHeaderCell) { overflow: hidden; text-overflow: ellipsis; }

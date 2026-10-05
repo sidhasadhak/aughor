@@ -54,11 +54,7 @@ export function ApprovalModal() {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
-      <DialogContent
-        showCloseButton={false}
-        className="sm:max-w-[400px] gap-3.5 p-6"
-        style={{ background: "var(--bg-3)", border: "1px solid var(--b2)" }}
-      >
+      <DialogContent showCloseButton={false} maxWidth="400px" className="gap-3.5">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
             width: 34, height: 34, borderRadius: "var(--r2)", background: "var(--amb1)",

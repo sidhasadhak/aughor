@@ -11,13 +11,16 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@/lib/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import type { DashboardCard } from "@/lib/api";
 import type { CardStatus, CockpitHostState, RangeStatus } from "@/lib/cockpit/hostState";
+
+/** Open a tab as a pointer does: a Radix tab opens on the press, not on the click that follows. */
+const openTab = (tab: HTMLElement) => fireEvent.mouseDown(tab, { button: 0 });
 
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
@@ -57,7 +60,11 @@ describe("the premise spec, drawn", () => {
     render(<ComposedCockpit spec={premise()} cards={CARDS} host={host("final", "within")} doors={DOORS} />);
 
     expect(screen.getByRole("region", { name: "Returns" })).toBeInTheDocument();
-    expect(screen.getAllByRole("tab").map(t => t.textContent)).toEqual(["Overview", "Watches"]);
+    // By the name a person hears: a Radix tab holds its label twice (one hidden, for its width).
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toHaveAccessibleName("Overview");
+    expect(tabs[1]).toHaveAccessibleName("Watches");
     expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Headline")).toBeInTheDocument();
 
@@ -92,7 +99,7 @@ describe("the premise spec, drawn", () => {
     const spec = premise();
     const { rerender } = render(<ComposedCockpit spec={spec} cards={CARDS} host={host("final", "within")} doors={DOORS} />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Watches" }));
+    openTab(screen.getByRole("tab", { name: "Watches" }));
     expect(screen.getByRole("tab", { name: "Watches" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Limits")).toBeInTheDocument();
     expect(screen.queryByText("Headline")).toBeNull();
@@ -105,7 +112,7 @@ describe("the premise spec, drawn", () => {
 
   it("keeps the tab open when the same spec arrives as a new object", () => {
     const { rerender } = render(<ComposedCockpit spec={premise()} cards={CARDS} host={host("final", "within")} doors={DOORS} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Watches" }));
+    openTab(screen.getByRole("tab", { name: "Watches" }));
 
     rerender(<ComposedCockpit spec={premise()} cards={CARDS} host={host("final", "over")} doors={DOORS} />);
     expect(screen.getByRole("tab", { name: "Watches" })).toHaveAttribute("aria-selected", "true");
@@ -113,7 +120,7 @@ describe("the premise spec, drawn", () => {
 
   it("opens on its own first tab again when the spec itself changes", () => {
     const { rerender } = render(<ComposedCockpit spec={premise()} cards={CARDS} host={host("final", "within")} doors={DOORS} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Watches" }));
+    openTab(screen.getByRole("tab", { name: "Watches" }));
 
     const edited = premise();
     edited.elements["sec-headline"].props.title = "At a glance";
@@ -124,7 +131,7 @@ describe("the premise spec, drawn", () => {
 
   it("says a section is waiting, rather than showing an empty tab", () => {
     render(<ComposedCockpit spec={premise()} cards={CARDS} host={host("to_date", "within")} doors={DOORS} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Watches" }));
+    openTab(screen.getByRole("tab", { name: "Watches" }));
     expect(screen.queryByText("Limits")).toBeNull();
     expect(screen.getByTestId("cockpit-waiting-sections")).toHaveTextContent("1 section waits on a condition");
   });
