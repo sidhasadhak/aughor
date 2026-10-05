@@ -113,9 +113,23 @@ def preferred_timezone() -> str:
         return ""
 
 
+#: The look — the four knobs of Radix Themes' panel, kept per person (ROADMAP §6 item 44). The
+#: values are Radix's own and are spelled once more in `web/lib/look.ts`, which is what hands them
+#: to the Theme; `tests/unit/test_user_prefs_look.py` fails if the two lists part.
+LOOK_ACCENTS = ("gray", "gold", "bronze", "brown", "yellow", "amber", "orange", "tomato", "red", "ruby",
+                "crimson", "pink", "plum", "purple", "violet", "iris", "indigo", "blue", "cyan", "teal",
+                "jade", "green", "grass", "lime", "mint", "sky")
+LOOK_GREYS = ("gray", "mauve", "slate", "sage", "olive", "sand")
+LOOK_RADII = ("none", "small", "medium", "large", "full")
+LOOK_SCALINGS = ("90%", "95%", "100%", "105%", "110%")
+
 ALLOWED_KEYS: dict[str, tuple] = {
     "theme": (_one_of("dark", "light", "system"), "UI theme"),
     "density": (_one_of("comfortable", "compact"), "layout density"),
+    "accent": (_one_of(*LOOK_ACCENTS), "accent colour: buttons, links, selection"),
+    "grey": (_one_of(*LOOK_GREYS), "the grey surfaces, lines and text are drawn in"),
+    "radius": (_one_of(*LOOK_RADII), "how round corners are"),
+    "scaling": (_one_of(*LOOK_SCALINGS), "the size of controls and their spacing"),
     "default_connection": (_connection_id, "connection new conversations open on"),
     "ontology_map_layout": (_map_layout, "where you dragged the cards on the ontology map"),
     # SP-13 — the clock drafts and new schedules speak. Cosmetic-plus: it changes what
