@@ -27,7 +27,14 @@ def _visible(conn_id: str) -> bool:
 
 
 def _claim_view(c: C.Claim) -> dict:
-    return c.model_dump()
+    """The claim with its confidence COUNTED on read (P1-4): a hit rate with its n, the count
+    alone below the threshold, or nothing — with why — when no class counts this kind yet."""
+    from aughor.record.confidence import why_uncounted, with_confidence
+    seen = with_confidence(c)
+    view = seen.model_dump()
+    if seen.confidence is None:
+        view["confidence_note"] = why_uncounted(c)
+    return view
 
 
 def _decision_view(d: D.Decision) -> dict:

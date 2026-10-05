@@ -153,6 +153,22 @@ def list_departures(state: Optional[str] = None, automation_id: Optional[str] = 
             conn.close()
 
 
+def departures_for(*, investigation_id: str = "", limit: int = 50) -> list[dict]:
+    """Phase 1 of the 2027 study — "who else was told": every gate decision on a message that
+    cited this analysis, newest first (departed and held alike; the state says which)."""
+    if not investigation_id:
+        return []
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM departures WHERE investigation_id = ? ORDER BY ts DESC LIMIT ?",
+                (investigation_id, max(1, min(int(limit), 500)))).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
 def get_departure(departure_id: str) -> Optional[dict]:
     with _LOCK:
         conn = _connect()

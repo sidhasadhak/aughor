@@ -148,9 +148,13 @@ def _keynums(kns, S):
 
 
 def _confidence_chip(conf: float) -> str:
-    pct = int(round(conf * 100))
+    """The analysis's STATED confidence as a word — never as a percentage. The number here is
+    the model's own estimate of itself (the scoring node's), and a figure like "83%" in an exported
+    document reads as a measured frequency it is not (the 2027 study §B; phase 1 removed every
+    such figure from what leaves the platform). Counted confidence — how often claims of this
+    kind held — lives on the receipt, with its n."""
     label = "High" if conf >= 0.75 else "Medium" if conf >= 0.5 else "Low"
-    return f"confidence: {label} ({pct}%)"
+    return f"stated confidence: {label}"
 
 
 def _flow(block: Block, S) -> list:

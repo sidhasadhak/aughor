@@ -11107,7 +11107,35 @@ python scripts/phase0_prompt_block_ablation.py` when a model key is at hand, the
 proposal approver's name and the grant-ownership refusal all take effect then with no further code. **The
 organisation-scale half of the exit — five owners, identity on — is not observable yet**, by the user's own
 answers, and this line says so rather than reading as met. Phases 1 and 2 follow back to back on the same
-branch at the user's word.
+branch at the user's word, then phases 3 and 4.
+
+**Phase 1 — the code half BUILT 2026-10-05**, five slices on the same branch. (P1-1) `aughor/record/` — the one
+claim ledger as kernel artifacts (`claim` · `decision` · `outcome`; no new store): a Claim with the hub's envelope
+and two clocks, restated by supersession with the old text kept, the three laws enforced at the door (a measured
+claim names its run warrant; a model's inference is a hypothesis at tier `said`, never a claim; confidence is
+counted or absent — no writer sets it), belief as a view (`as_recorded` on a date); a Decision with the claims it
+relied on as recorded and its expectation booked as a prediction claim at the moment of deciding, the review date
+proposed from the connection's learned settling lag and saying which rule set it; an Outcome that stamps the
+decision and scores the prediction. (P1-2) `aughor/record/writers.py` — every receipted answer that concluded
+something with a query behind it books an observation warranted by its receipt, from the one receipt writer; a
+deep analysis books its findings beside it (measured on the report's receipt when a finding has its own SQL; a
+hypothesis at tier `said` when it does not); the daily re-check restates the observation when the numbers moved,
+warranted by a receipt of the re-check run. `EvidenceClaim.confidence` is None from now on — the 0.8 / 0.5 the
+linker stamped by `is_significant` are gone, the store rebuilds a NOT NULL file with every row kept, and the
+Evidence panel says "not counted" instead of drawing a bar. (P1-3) `aughor/record/byproducts.py` — accepting a
+recommendation, approving or rejecting a staged proposal and declaring a decision each book a Decision in passing,
+with what each door already knows; the answer at review books the Outcome against the expectation and says the
+comparison against the metric's own history is phase 3's; `/record/*` reads claims as recorded on a date and
+decisions due. (P1-4) `aughor/record/confidence.py` — two reference classes counted from what the platform already
+measures (answers re-checked; stated causes challenged) plus predictions scored: the hit rate with its *n* from 30
+cases up, the count alone below, counted across every connection when one has too few and saying so; exports and
+the CLI print a model's stated confidence as a word, never a percentage. (P1-5) the public receipt's line two —
+`record.confidence` and `record.told` (the departures that cited the analysis), rebuilt live on each read inside
+the signed body; the web receipt shows both. Receipt: 180 tests across the Record, the receipt, the re-check, the
+inbox, the recommendation review, the departures gate and the vocabulary ratchet pass. **Still open in phase 1:**
+the Explorer's, a pack's and the hub's claim shapes as writers; organisation scope on glossary, metrics and the
+Briefing; the graph as a projection; and the two exit parts only the install can show (a restatement delivered
+on the organisation's warehouse; ten decisions booked by people).
 
 ---
 

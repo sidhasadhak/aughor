@@ -423,8 +423,49 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
                 </Section>
               )}
 
+              {/* Phase 1 of the 2027 study — line two. The hit rate is shown only with its n, and
+                  only when n reached the counter's threshold; below it the count alone is shown,
+                  with why. A bar for a figure nobody counted is what this section refuses. */}
+              {rec.record && (
+                <Section title="How often this kind of answer has held">
+                  {rec.record.confidence ? (
+                    <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }} data-testid="receipt-counted">
+                      {rec.record.confidence.hit_rate != null
+                        ? <><span style={{ color: "var(--t1)", fontWeight: 600 }}>{Math.round(rec.record.confidence.hit_rate * 100)}%</span>
+                            {" "}of {rec.record.confidence.n} {rec.record.confidence.reference_class}
+                            {rec.record.confidence.scope === "all connections" ? ", across every connection" : ""} held.</>
+                        : <>Not enough to count yet: {rec.record.confidence.note} ({rec.record.confidence.reference_class}).</>}
+                    </div>
+                  ) : (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{rec.record.confidence_note}</div>
+                  )}
+                  {rec.record.claim?.restated && (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
+                      This answer was restated since it was given (version {rec.record.claim.version} in the Record).
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {rec.record && (
+                <Section title="Who else was told">
+                  {rec.record.told.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }} data-testid="receipt-told">
+                      {rec.record.told.map(t => (
+                        <div key={t.departure_id || `${t.at}:${t.target}`} className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                          {t.state === "departed" ? "sent to" : `held (${t.state.replace(/_/g, " ")}) for`} {t.target || t.addressed_to || "—"}
+                          {t.by ? ` by ${t.by}` : ""}{t.at ? ` · ${t.at.slice(0, 10)}` : ""}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{rec.record.told_note}</div>
+                  )}
+                </Section>
+              )}
+
               {(rec.confidence.level || rec.confidence.capped_by) && (
-                <Section title="Confidence">
+                <Section title="Stated confidence">
                   <div className="aug-fs-xs" style={{ color: "var(--t2)" }}>
                     {rec.confidence.level ?? "—"}
                     {rec.confidence.capped_by && <span style={{ color: "var(--t3)" }}> · capped by {rec.confidence.capped_by}</span>}

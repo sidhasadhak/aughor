@@ -946,13 +946,14 @@ def _print_final_report(state: Any, elapsed: float):
         ft.add_column("#", width=3)
         ft.add_column("Finding")
         ft.add_column("Evidence", style="dim")
-        ft.add_column("Confidence", width=14)
+        ft.add_column("Stated confidence", width=18)
         for i, f in enumerate(report.key_findings, 1):
             ft.add_row(
                 str(i),
                 f.claim,
                 f.evidence[:80] + ("…" if len(f.evidence) > 80 else ""),
-                f"{f.confidence:.0%}",
+                # a word, never a percentage — the number is the model's estimate of itself
+                "High" if f.confidence >= 0.75 else "Medium" if f.confidence >= 0.5 else "Low",
             )
         console.print(ft)
 

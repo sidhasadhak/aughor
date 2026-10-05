@@ -73,10 +73,14 @@ class Warrant(BaseModel):
 
 
 class Confidence(BaseModel):
-    """A counted frequency — never a stated one. Filled by the counter on read."""
+    """A counted frequency — never a stated one. Filled by the counter on read
+    (`aughor/record/confidence.py`). ``hit_rate`` is None below the counter's threshold: the count
+    is shown, the rate is not, and ``note`` says why."""
     reference_class: str
-    hit_rate: float
+    hit_rate: Optional[float]
     n: int
+    scope: str = ""            # the connection counted, or "all connections"
+    note: str = ""
 
 
 class Claim(BaseModel):

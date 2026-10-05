@@ -165,7 +165,8 @@ def _metrics_from_lineage(lineage: list) -> dict:
 
 def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
                          signed: bool = True,
-                         health_caveats: Optional[list] = None) -> Optional[dict]:
+                         health_caveats: Optional[list] = None,
+                         record: Optional[dict] = None) -> Optional[dict]:
     """Project a raw ledger receipt (`{artifact, lineage, job, cost}`) into the public
     contract. Pure — no I/O. Absent fields are honestly null/empty, never fabricated. When
     `signed`, an HMAC `signature` over the canonical body is attached.
@@ -176,6 +177,11 @@ def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
     a documented pure projection do I/O, and the caller already has the connection and the
     permission to read. The caller computes them with
     :func:`aughor.quality.caveats.caveats_for_answer`.
+
+    ``record`` (phase 1 of the 2027 study) is the Record's two lines for this answer — the counted
+    confidence of its class, with n, and who else was told — computed by the caller from the
+    claim ledger and the departures ledger (`aughor/record/receipt_lines.py`) for the same reason
+    the caveats are: this projection stays pure. Null when the caller had none to give.
     """
     if not raw or not raw.get("artifact"):
         return None
@@ -266,6 +272,10 @@ def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
             if e.get("relation") == "grounded_in_graph" and e.get("ref")
         ],
         "cost": raw.get("cost"),
+        # Phase 1 of the 2027 study — line two: how often answers of this kind held, COUNTED
+        # with n (never the model's own estimate, which is `confidence` above as a word), and
+        # who else was told. Live as of this read; null when the caller gave none.
+        "record": record or None,
     }
     if signed:
         receipt["signature"] = sign(receipt)

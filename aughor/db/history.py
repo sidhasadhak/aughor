@@ -528,6 +528,65 @@ def recent_chat_answers(since_iso: str, *, limit: int = 200) -> list[dict]:
     return out
 
 
+def recheck_tallies(*, connection_id: Optional[str] = None, limit: int = 5000) -> tuple[int, int]:
+    """Phase 1 of the 2027 study — the reference class "answers re-checked": ``(n, hits)`` over the
+    chat answers that carry at least one MEASURED re-check (status changed or unchanged; an
+    unchecked entry measured nothing). A hit is an answer none of whose re-checks found a change
+    past the noise band. Newest ``limit`` such answers; a connection narrows it."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    clause, params = "", []
+    if connection_id:
+        clause, params = " AND connection_id = ?", [connection_id]
+    rows = c.execute(
+        f"""SELECT report_json FROM investigations
+            WHERE kind = 'chat' AND report_json LIKE '%"rechecks"%'{clause}
+            ORDER BY completed_at DESC LIMIT ?""", (*params, int(limit)),
+    ).fetchall()
+    c.close()
+    n = hits = 0
+    for r in rows:
+        try:
+            statuses = [str(e.get("status")) for e in (json.loads(r["report_json"] or "{}").get("rechecks") or [])
+                        if isinstance(e, dict) and e.get("status") in ("changed", "unchanged")]
+        except (TypeError, ValueError):
+            continue
+        if not statuses:
+            continue
+        n += 1
+        hits += "changed" not in statuses
+    return n, hits
+
+
+def challenge_tallies(*, connection_id: Optional[str] = None, limit: int = 5000) -> tuple[int, int]:
+    """Phase 1 of the 2027 study — the reference class "stated causes challenged": ``(n, hits)``
+    over the deep analyses whose ``causal_checks.refutation`` records a check that RAN (survived or
+    refuted; not run is not a case). A hit is a cause that survived."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    clause, params = "", []
+    if connection_id:
+        clause, params = " AND connection_id = ?", [connection_id]
+    rows = c.execute(
+        f"""SELECT report_json FROM investigations
+            WHERE kind != 'chat' AND report_json LIKE '%"causal_checks"%'{clause}
+            ORDER BY completed_at DESC LIMIT ?""", (*params, int(limit)),
+    ).fetchall()
+    c.close()
+    n = hits = 0
+    for r in rows:
+        try:
+            checks = json.loads(r["report_json"] or "{}").get("causal_checks") or {}
+        except (TypeError, ValueError):
+            continue
+        status = str((checks.get("refutation") or {}).get("status") or "") if isinstance(checks, dict) else ""
+        if status not in ("survived", "refuted"):
+            continue
+        n += 1
+        hits += status == "survived"
+    return n, hits
+
+
 def recent_runs(since_iso: str, *, limit: int = 200) -> list[dict]:
     """TJ-3 — every completed run since ``since_iso`` that recorded a trace, chat turns and
     deep runs alike, newest first: ``{id, kind, question, connection_id, completed_at,

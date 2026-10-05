@@ -7394,6 +7394,18 @@ export interface PublicReceipt {
    *  Ids only, and signed: the labels/warrants resolve live via `getAnswerTrace`. */
   grounded_in_graph: string[];
   cost: Record<string, number | string> | null;
+  /** Phase 1 of the 2027 study — line two of the receipt, live as of this read: how often
+   *  answers of this kind have held, COUNTED with n (the `confidence` above is the model's own
+   *  word about itself), and who else was told. null on a receipt that is not an answer's. */
+  record: {
+    claim: { id: string; key: string; version: number; tier: string; kind: string; as_of: string;
+             recorded_at: string; restated: boolean; warrants_this_receipt: boolean } | null;
+    confidence: { reference_class: string; hit_rate: number | null; n: number; scope: string; note: string } | null;
+    confidence_note: string;
+    told: { at: string; state: string; kind: string; target: string; addressed_to: string; by: string;
+            verdict: string; departure_id: string }[];
+    told_note: string;
+  } | null;
   signature: string;                     // HMAC — server-issued proof
 }
 

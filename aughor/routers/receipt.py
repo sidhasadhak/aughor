@@ -54,10 +54,22 @@ def get_receipt(receipt_id: str) -> dict:
 
     receipt = build_public_receipt(
         raw, connection=_connection_view(conn_id),
-        health_caveats=_health_caveats(conn_id, raw))
+        health_caveats=_health_caveats(conn_id, raw),
+        record=_record_lines(raw))
     if receipt is None:
         raise HTTPException(status_code=404, detail="No such receipt")
     return receipt
+
+
+def _record_lines(raw: dict) -> Optional[dict]:
+    """Phase 1 of the 2027 study — the Record's two lines (counted confidence with n; who else was
+    told), read here for the same reason the caveats are: the projection stays pure. Best-effort."""
+    try:
+        from aughor.record.receipt_lines import record_lines
+        return record_lines(raw)
+    except Exception:
+        logger.debug("record lines skipped on receipt", exc_info=True)
+        return None
 
 
 @router.get("/receipt/{receipt_id}/trace")
