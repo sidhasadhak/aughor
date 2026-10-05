@@ -27,7 +27,7 @@ DECISION_KIND = "decision"
 OUTCOME_KIND = "outcome"
 DEFAULT_REVIEW_DAYS = 30
 
-SourceKind = Literal["recommendation", "approval", "declared"]
+SourceKind = Literal["recommendation", "approval", "declared", "autonomy"]
 Verdict = Literal["as_expected", "better", "worse", "cannot_tell"]
 
 

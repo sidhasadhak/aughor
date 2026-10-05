@@ -55,7 +55,7 @@ A **service principal** is:
 
 The agent policy: `read` · `run` · `act` (default `run`). Read: look things up. Run: start work or book an entry with its warrant. Act: change something outside the conversation — given only by a person.
 
-The authority ladder for actions: L0 observe · L1 recommend · L2 prepare · L3 execute with approval · L4 execute within policy · L5 autonomous. the lower of the ceiling a person set and what the record earned; L4 only on a graduation receipt; an irreversible action never passes L3; L5 is granted by no code path; graduation needs 5 verified executions.
+The authority ladder for actions: L0 observe · L1 recommend · L2 prepare · L3 execute with approval · L4 execute within policy · L5 autonomous. the lower of the ceiling a person set and what the record earned; L4 only on a graduation receipt; an irreversible action never passes L3; L5 only on an L5 receipt a person books on a long L4 record inside a mission whose ceiling sets it, and the agent then chooses among the declared actions at L5 by their measured effect on the mission's objective, one action per review period; graduation needs 5 verified executions.
 
 ## The doors
 

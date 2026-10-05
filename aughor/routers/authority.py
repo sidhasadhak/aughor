@@ -39,9 +39,40 @@ def authority_table(connection_id: str = BUILTIN_ID, schema_name: Optional[str] 
     """Every declared action's level on this connection, with the record it is computed from, the
     receipt that granted it, the demotion that took it, and what L4 would still need."""
     actions = _actions(connection_id, schema_name)
-    return {"connection_id": connection_id, "levels": A.LEVELS, "graduation_n": A.GRADUATION_N,
+    return {"connection_id": connection_id, "levels": A.LEVELS, "graduation_n": A.GRADUATION_N, "l5_n": A.L5_N,
             "actions": A.table(list(actions.values()), connection_id),
-            "note": "L5 is unreachable until missions exist (phase 5); an irreversible action never passes L3"}
+            "note": (f"L5 only on an L5 receipt a person books on a long L4 record ({A.L5_N} verified executions) inside a mission "
+                     "whose ceiling sets it; an irreversible action never passes L3")}
+
+
+@router.get("/{action_id}/l5-check")
+def authority_l5_check(action_id: str, connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)) -> dict:
+    """Whether (action, scope) has earned L5, with every blocker named (the close-out, C6)."""
+    actions = _actions(connection_id, schema_name)
+    action = actions.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    return A.evaluate_l5(action, connection_id)
+
+
+class GrantL5Body(BaseModel):
+    connection_id: str = BUILTIN_ID
+    schema_name: Optional[str] = None
+    mission: str = ""
+
+
+@router.post("/{action_id}/grant-l5", status_code=201)
+def authority_grant_l5(action_id: str, body: GrantL5Body, principal=Depends(get_principal)) -> dict:
+    """A person books the L5 receipt inside a mission whose ceiling sets the action at L5 — the record
+    decides whether it is earned (the close-out, C6)."""
+    actions = _actions(body.connection_id, body.schema_name)
+    action = actions.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    try:
+        return A.grant_l5(action, body.connection_id, by=_who(principal) or "unidentified", mission=body.mission)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/{action_id}/record")

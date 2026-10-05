@@ -151,8 +151,8 @@ def test_levels_from_the_record_and_the_ceilings(monkeypatch):
     assert off["level"] == 3 and "kill switch" in off["why"] and "the operator's doing" in off["why"]
     irreversible = A.level_for(_action(undo=None, reversibility="irreversible"), conn)
     assert irreversible["ceiling"] == 3 and "irreversible: never above L3" in irreversible["notes"]
-    # phase 5: missions exist, and L5 is still granted by no code path — the note says which half holds
-    assert any("L5 is granted by no code path" in n for n in irreversible["notes"])
+    # the close-out (C6): L5 is granted only on an L5 receipt inside a mission — the note says so
+    assert any("L5 is granted only on an L5 receipt" in n for n in irreversible["notes"])
     assert A.level_for(_action(), conn, ceiling=2)["level"] == 2                 # the ceiling a person set
 
 

@@ -11240,8 +11240,8 @@ the Record has none, stored with its count and said as "held in 1 of 2 reviewed 
 Receipt: 23 phase-5 tests pass; the attention, authority, inquiry, gate, laws, remedies, exit-ratchet, review,
 byproducts, scenario, writers, playbook, missed-move, causal, scheduler and vocabulary suites pass. **Still open in
 phase 5:** the Mission page and Missions as a destination; the Corrections view on screen; the Briefing's mission line;
-L5 (missions exist; the agent that chooses among actions toward one does not); spend attributed to a mission; and the
-exit, which is the install's and a quarter's.
+and the exit, which is the install's and a quarter's. (L5 and spend attributed to a mission were open here until the
+close-out's C6, §3.53 below.)
 
 **Phase 6 — the code half BUILT 2026-10-05**, two slices. (P6-1) `record/writers.book_pack_claims` — the pack writer,
 the fourth of the study's five claim shapes: a pack's map measured against a connection (`packs/ontology_map.
@@ -11387,6 +11387,26 @@ gateway write declares no verification read and no undo; they ride with no wareh
 record (`GET /authority/writes`) and never graduate. Receipt: the undo-and-writes, authority, executor, inbox,
 integration-call, MCP write-grant, automation-step and catalogue suites pass; the vocabulary ratchet exempts the new
 suite and `actions/authority.py` for the one executor identifier they spell.
+(C6, phase 5) Spend attributed to a mission, and L5. `record/mission.mission_spend` reads the receipts of the runs the
+mission's inquiries spent in the report window (`led.receipt`, the same receipt the receipt page shows) and the session
+log's priced calls for those runs, and the report's `cost.spend` now carries the amount in its unit, the tokens, calls
+and queries behind it, how many runs had a receipt, how many calls were unpriced, and the budget it is read against —
+"said as not counted" only when nothing prices it, never silently zero. L5 (§M: "autonomous within a mission's
+budget"): `actions/authority.grant_l5` books an `authority_l5` receipt only when the record earns it — L4 held, `L5_N`
+(20) verified executions, no failed verification, a reversible action, an undo declared, and an ACTIVE mission on the
+scope whose ceiling sets this action (or `*`) at L5; `level_for` reads the receipt as earned 5 and a later demotion
+takes it; `evaluate_l5` names every blocker (`GET /authority/{action}/l5-check`, `POST /authority/{action}/grant-l5`).
+The agent that chooses (`actions/autonomy.py`): on the mission's cadence, after each report, it reads the declared
+actions the ceiling sets at L5, the parameters the owner wrote on the mission (`extra.autonomy.params`), and method 4's
+measured effect of each on the objective's metric (Outcome entries only, with its count); it chooses the one with the
+largest effect toward the objective, books a Decision with source `autonomy` and an expectation from the projection,
+and runs it through the SAME governed pipeline as any execution — with no standing grant covering the written
+parameters it is HELD at the approval gate and the report says so; one action per review period; `action.autonomous`
+journaled and catalogued; the report's `autonomy` block lists what it ran and what became of each, or that it ran
+nothing. `POST /record/missions/{id}/act` runs one period by hand. The agent contract's authority rule says all of
+it; `docs/AGENT_CONTRACT.md` regenerated. Receipt: the spend-and-L5, authority, mission, method-4, undo, executor,
+catalogue, contract, departure-exit, hermeticity, noun and vocabulary suites pass; the vocabulary ratchet exempts
+`actions/autonomy.py` and the new suite on the C5 ground.
 
 ---
 

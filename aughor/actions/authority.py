@@ -35,6 +35,8 @@ from typing import Optional
 ACTION_KIND = "action"
 GRADUATION_KIND = "authority_graduation"
 DEMOTION_KIND = "authority_demotion"
+#: The L5 receipt (the close-out, C6): a person books it on a long L4 record, inside a mission.
+L5_KIND = "authority_l5"
 
 LEVELS: dict[int, str] = {0: "observe", 1: "recommend", 2: "prepare", 3: "execute with approval",
                           4: "execute within policy", 5: "autonomous"}
@@ -354,6 +356,67 @@ def graduate(action, scope: str, *, by: str) -> dict:
     return {**payload, "id": rid}
 
 
+def l5_missions(action_id: str, scope: str) -> list:
+    """The active missions on this scope whose ceiling sets THIS action at L5 (by its id or "*")."""
+    from aughor.record.mission import active_missions
+    out = []
+    for m in active_missions(scope or None):
+        c = m.budget.authority_ceiling or {}
+        level = c.get(action_id, c.get("*"))
+        if level is not None and int(level) >= 5:
+            out.append(m)
+    return out
+
+
+def evaluate_l5(action, scope: str) -> dict:
+    """Whether (action, scope) has EARNED L5 — §M's "a long L4 record" — with every blocker named:
+    graduated to L4 and not demoted since; :data:`L5_N` verified executions; no failed verification
+    on the record; reversible, with its undo declared; and an active mission on this scope whose
+    ceiling sets it at L5 — the person's half, without which no record reaches L5."""
+    rec = record(action.id, scope)
+    graduation = _latest(GRADUATION_KIND, action.id, scope)
+    demotion = _latest(DEMOTION_KIND, action.id, scope)
+    reasons: list[str] = []
+    if not graduation or (demotion and demotion["recorded_at"] > graduation["recorded_at"]):
+        reasons.append("L4 is the floor of L5: graduate first" + (" — demoted since the last graduation" if demotion and graduation else ""))
+    if rec["verified"] < L5_N:
+        reasons.append(f"{rec['verified']} of {L5_N} verified executions")
+    if rec["failed_verifications"]:
+        reasons.append(f"{rec['failed_verifications']} failed verification{'s' if rec['failed_verifications'] != 1 else ''} on the record")
+    if getattr(action, "reversibility", "") == "irreversible":
+        reasons.append("an irreversible action never passes L3")
+    if getattr(action, "undo", None) is None:
+        reasons.append("an autonomous action declares its undo")
+    missions = l5_missions(action.id, scope)
+    if not missions:
+        reasons.append("no active mission on this scope sets this action's ceiling at L5")
+    else:
+        from aughor.record.mission import ceiling_for
+        cap = ceiling_for(action.id, scope)
+        if cap is not None and cap < 5:
+            reasons.append(f"an active mission on this scope caps it at L{cap}")
+    return {"action_id": action.id, "scope": scope, "can_grant": not reasons, "reasons": reasons, "record": rec,
+            "missions": [m.id for m in missions],
+            "bar": {"verified": L5_N, "failed_verifications": 0, "graduated": True, "undo": True, "mission_ceiling": 5}}
+
+
+def grant_l5(action, scope: str, *, by: str, mission: str = "") -> dict:
+    """A person books the L5 receipt — or is refused with the blockers. The record and the
+    mission decide; the receipt names the mission the authority is granted inside."""
+    decision = evaluate_l5(action, scope)
+    if not decision["can_grant"]:
+        raise ValueError("not earned: " + "; ".join(decision["reasons"]))
+    mission = mission or decision["missions"][0]
+    if mission not in decision["missions"]:
+        raise ValueError(f"mission {mission!r} does not set this action's ceiling at L5 on this scope")
+    payload = {**decision, "by": by or "unidentified", "level": 5, "mission": mission, "at": _now()}
+    rid = _ledger().artifact_write(L5_KIND, f"l5:{scope}:{action.id}:{uuid.uuid4().hex[:8]}", payload,
+                                   conn_id=scope or None, lineage=[("grants_l5", action.id, "L4 → L5"), ("inside", mission, "the mission")])
+    _ledger().emit("authority.graduated", {"action_id": action.id, "scope": scope, "receipt": rid, "by": by, "level": 5, "mission": mission},
+                   conn_id=scope or None)
+    return {**payload, "id": rid}
+
+
 def demote(action_id: str, scope: str, *, why: str, by: str = "system", evidence: Optional[dict] = None) -> str:
     """Take authority away — automatically, as a ledger entry — and WITHDRAW the standing grants of
     (action, scope). Returns the demotion entry's id."""
@@ -377,11 +440,16 @@ def level_for(action, scope: str, *, ceiling: Optional[int] = None) -> dict:
     rec = record(action.id, scope)
     graduation = _latest(GRADUATION_KIND, action.id, scope)
     demotion = _latest(DEMOTION_KIND, action.id, scope)
+    l5 = _latest(L5_KIND, action.id, scope)
     irreversible = getattr(action, "reversibility", "") == "irreversible"
     incomplete = declaration_problem(action)
+    graduated = bool(graduation and not (demotion and demotion["recorded_at"] > graduation["recorded_at"]))
     if incomplete:
         earned, why = 1, f"declared; {incomplete}"
-    elif graduation and not (demotion and demotion["recorded_at"] > graduation["recorded_at"]):
+    elif graduated and l5 and not (demotion and demotion["recorded_at"] > l5["recorded_at"]):
+        earned, why = 5, (f"L5 on receipt {l5['id']} ({l5['record']['verified']} verified executions, inside mission "
+                          f"{l5.get('mission', '')}); graduated on receipt {graduation['id']}")
+    elif graduated:
         earned, why = 4, f"graduated on receipt {graduation['id']} ({graduation['record']['verified']} verified executions)"
     elif approval_enabled():
         earned, why = 3, "declared with verification and undo; executes with a person's approval"
@@ -390,7 +458,6 @@ def level_for(action, scope: str, *, ceiling: Optional[int] = None) -> dict:
                           "run unapproved — the operator's doing, not the ladder's")
     if demotion and (not graduation or demotion["recorded_at"] > graduation["recorded_at"]):
         why += f"; demoted on {demotion['recorded_at'][:10]}: {demotion['why'][:160]}"
-    hard_ceiling = 3 if irreversible else 4
     notes = []
     if ceiling is None:
         # Phase 5: the ceiling a person set in an active mission on this scope — "the ceiling a person set".
@@ -405,14 +472,19 @@ def level_for(action, scope: str, *, ceiling: Optional[int] = None) -> dict:
         else:
             if ceiling is not None:
                 notes.append(f"an active mission on this scope caps it at L{int(ceiling)}")
+    # L5 is reachable only inside a mission whose ceiling sets it (the close-out, C6): without one the
+    # hard ceiling stays L4, however long the record; an irreversible action never passes L3.
+    hard_ceiling = 3 if irreversible else (5 if ceiling is not None and int(ceiling) >= 5 else 4)
     level = min(earned, hard_ceiling, ceiling if ceiling is not None else 5)
     if irreversible:
         notes.append("irreversible: never above L3")
-    notes.append("L5 is granted by no code path: missions exist (phase 5), the agent that chooses among declared "
-                 "actions toward one does not")
+    notes.append(f"L5 is granted only on an L5 receipt a person books on a long L4 record ({L5_N} verified executions) "
+                 "inside a mission whose ceiling sets it; the agent that chooses among declared actions toward a mission "
+                 "runs on the mission's cadence (actions/autonomy)")
     return {"action_id": action.id, "scope": scope, "level": level, "label": LEVELS[level], "earned": earned,
             "ceiling": min(hard_ceiling, ceiling if ceiling is not None else 5), "why": why, "notes": notes,
-            "record": rec, "graduation": graduation["id"] if graduation else "", "demotion": demotion["id"] if demotion else ""}
+            "record": rec, "graduation": graduation["id"] if graduation else "", "demotion": demotion["id"] if demotion else "",
+            "l5": l5["id"] if l5 else ""}
 
 
 def table(actions: list, scope: str) -> list[dict]:

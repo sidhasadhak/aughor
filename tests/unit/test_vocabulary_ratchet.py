@@ -154,6 +154,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # governed pipeline — one identifier from the existing API, no prose. Both say "action".
          "tests/unit/test_action_undo_and_gateway_writes.py",
          "aughor/actions/authority.py",
+         # The close-out's C6 (2026-10-05), the same ground: the L5 agent (`actions/autonomy.py`) imports
+         # the one executor, `execute_kinetic_action`, to run the action it chose through the governed
+         # pipeline, and its suite builds `KineticAction` fixtures and drives that executor. Both say
+         # "declared action" in every line a reader sees.
+         "aughor/actions/autonomy.py",
+         "tests/unit/test_mission_spend_and_l5.py",
          # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
          # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
          # the server ships (`kinetic_action`) at the priority the server gives it. The

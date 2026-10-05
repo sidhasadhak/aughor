@@ -223,7 +223,7 @@ def test_the_report_leads_with_the_objective_against_its_own_history_and_says_no
     assert report["cost"]["interruptions_budgeted"] == 12          # 3 a week over a 30-day period
     assert report["period"] == {"from": "2026-10-03", "to": "2026-11-01", "days": 30, "cadence": "monthly"}
     assert report["constraints"][0]["held"] is None and "cannot tell" in report["constraints"][0]["note"]
-    assert report["watches"][0]["kind"] == "monitor" and report["cost"]["spend"]["note"].startswith("no spend budget")
+    assert report["watches"][0]["kind"] == "monitor" and report["cost"]["spend"]["note"].startswith("no run was spent")
     assert report["composed_by"].startswith("code")
     # the objective moved the wanted way, past the band, and the target is said
     moved = M.compose_report(m, run_sql_for=_warehouse(prior, default=0.43), now=NOW)["objective"]

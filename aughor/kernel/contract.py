@@ -83,7 +83,9 @@ def _levels() -> dict[str, Any]:
                          "act": "change something outside the conversation — given only by a person"},
         "authority": {"ladder": {f"L{k}": v for k, v in LEVELS.items()}, "graduation_n": GRADUATION_N,
                       "rule": "the lower of the ceiling a person set and what the record earned; L4 only on a graduation receipt; "
-                              "an irreversible action never passes L3; L5 is granted by no code path"},
+                              "an irreversible action never passes L3; L5 only on an L5 receipt a person books on a long L4 record "
+                              "inside a mission whose ceiling sets it, and the agent then chooses among the declared actions at L5 "
+                              "by their measured effect on the mission's objective, one action per review period"},
     }
 
 

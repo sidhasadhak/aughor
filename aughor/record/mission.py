@@ -542,9 +542,18 @@ def compose_report(m: Mission, *, run_sql_for, now: Optional[_dt.datetime] = Non
             if str(art.get("created_at") or "") >= since:
                 p = dict(art.get("payload") or {})
                 demotions.append({"action_id": p.get("action_id"), "why": str(p.get("why") or "")[:200], "at": str(art.get("created_at") or "")[:10]})
-    spend = ({"amount": None, "unit": m.budget.spend_unit, "note": "not counted: no spend is attributed to a mission yet; "
-                                                                   "the budget is stated, the charge is not"}
-             if m.budget.spend_per_month is not None else {"amount": None, "note": "no spend budget stated"})
+    spend = _tolerated(lambda: mission_spend(m, inquiries, since=since),
+                       {"amount": None, "unit": m.budget.spend_unit, "runs": 0, "note": "the spend could not be read"}, "spend")
+    # the close-out (C6): what the L5 agent did toward this mission this period, and what became of it
+    acted = []
+    for row in ((m.extra.get("autonomy") or {}).get("acted") or []):
+        if str(row.get("at") or "") < since:
+            continue
+        d = D.get_decision(str(row.get("decision") or "")) if row.get("decision") else None
+        o = D.outcome_by_id(d.outcome) if d is not None and d.outcome else None
+        acted.append({"at": str(row.get("at") or "")[:10], "action": row.get("action"), "status": row.get("status"),
+                      "decision": row.get("decision"), "outcome": (o.verdict if o else "not yet reviewed"),
+                      "against_expectation": (o.against_expectation if o else "")})
 
     moved_line = {"moved": "the objective moved against its baseline", "unmoved": "the objective did not move past its baseline's noise",
                   "against": "the objective moved the wrong way", "cannot_tell": "the objective could not be judged"}[verdict]
@@ -563,7 +572,74 @@ def compose_report(m: Mission, *, run_sql_for, now: Optional[_dt.datetime] = Non
             "decided": decided,
             "cost": {"interruptions": interruptions, "interruptions_budgeted": budgeted, "held": len(held),
                      "actions_by_level": actions_by_level, "demotions": demotions, "spend": spend},
+            "autonomy": {"acted": acted, "l5_actions": sorted(k for k, v in (m.budget.authority_ceiling or {}).items() if int(v) >= 5),
+                         "note": ("" if acted else "the L5 agent ran no action toward this mission this period")},
             "lessons": lessons, "composed_at": now.isoformat(), "composed_by": "code: composed from fields; no model"}
+
+
+def mission_spend(m: Mission, inquiries: list, *, since: str) -> dict:
+    """What the mission's work COST this period (the close-out, C6 — until it the report said "not
+    counted"): the metered cost of the runs its inquiries ran, read from each run's Trust Receipt
+    (tokens, model calls, queries — the receipt persists), and a dollar FLOOR from the session log's
+    priced calls (a fortnight's retention, the unpriced calls counted beside, never added as zero).
+    An action costs no model; the attention budget is counted in `cost.interruptions`. A budget
+    stated in another unit is said, not compared."""
+    conn = m.scope.connections[0] if m.scope.connections else ""
+    runs: dict[str, str] = {}
+    for q in inquiries:
+        for r in q.runs:
+            if not r.at or r.at >= since:
+                runs[r.run] = r.at
+        if q.opened_at >= since and q.extra.get("first_run"):
+            runs.setdefault(str(q.extra["first_run"]), q.opened_at)
+        for rid in (q.extra.get("pending_runs") or []):
+            runs.setdefault(str(rid), "")
+    tokens = llm = queries = with_receipt = 0
+    led = _ledger()
+    for rid in runs:
+        rec = None
+        for prefix in ("ada", "chat"):
+            rec = led.receipt(f"{prefix}:{conn}:{rid}") if conn else None
+            if rec:
+                break
+        cost = (rec or {}).get("cost") or {}
+        if cost:
+            with_receipt += 1
+            tokens += int(cost.get("total_tokens") or 0)
+            llm += int(cost.get("llm_calls") or 0)
+            queries += int(cost.get("query_count") or 0)
+    usd: Optional[float] = None
+    priced = unpriced = 0
+    if runs:
+        from aughor.obs.session_log import recent_sessions
+        for row in recent_sessions(limit=500, scan=5000):
+            if row.get("investigation_id") not in runs:
+                continue
+            if int(row.get("unpriced_calls") or 0) == 0 and row.get("llm_calls"):
+                usd = (usd or 0.0) + float(row.get("cost_usd") or 0.0)
+                priced += 1
+            else:
+                unpriced += int(row.get("unpriced_calls") or 0)
+    budget, unit = m.budget.spend_per_month, (m.budget.spend_unit or "")
+    if not runs:
+        note = "no run was spent on this mission this period; an action costs no model"
+    else:
+        note = (f"the metered cost of the {len(runs)} run{'s' if len(runs) != 1 else ''} this mission's inquiries ran this period, read from "
+                f"their receipts ({with_receipt} with a receipt); the dollar figure is a floor from the session log's fortnight "
+                f"({priced} priced run{'s' if priced != 1 else ''}" + (f", {unpriced} model calls unpriced" if unpriced else "") + "); "
+                "an action costs no model; interruptions are counted beside")
+    against = ""
+    if budget is not None:
+        if unit.upper() in ("USD", "$", "DOLLAR", "DOLLARS") and usd is not None:
+            against = f"{usd:.2f} of {budget:g} {unit} a month, as a floor"
+        elif unit:
+            against = f"the budget is stated in {unit}; the charge is counted in tokens and a dollar floor, not compared"
+        else:
+            against = "the budget states no unit; the charge is counted in tokens and a dollar floor"
+    return {"amount": round(usd, 4) if usd is not None else None, "unit": "USD" if usd is not None else unit,
+            "tokens": tokens, "llm_calls": llm, "queries": queries, "runs": len(runs), "runs_with_receipt": with_receipt,
+            "priced_runs": priced, "unpriced_calls": unpriced, "budget": budget, "budget_unit": unit,
+            **({"against_budget": against} if against else {}), "note": note}
 
 
 def book_report(m: Mission, report: dict) -> tuple[str, Mission]:
@@ -674,5 +750,18 @@ def report_now(m: Mission, *, run_sql_for, now: Optional[_dt.datetime] = None, d
 
 
 def report_due_missions(*, run_sql_for, now: Optional[_dt.datetime] = None) -> list[dict]:
-    """Every active mission whose report date has come: composed, booked, delivered."""
-    return [report_now(m, run_sql_for=run_sql_for, now=now) for m in due_reports(now)]
+    """Every active mission whose report date has come: composed, booked, delivered — and then, on the
+    same cadence, the L5 agent's turn (the close-out, C6): a mission whose ceiling sets an action at L5
+    chooses among the declared actions and acts once this period; what it did is on the next report."""
+    out = []
+    for m in due_reports(now):
+        row = report_now(m, run_sql_for=run_sql_for, now=now)
+        try:
+            from aughor.actions.autonomy import act_for_mission
+            row["autonomy"] = act_for_mission(latest(m.key) or m, now=now)
+        except Exception as exc:  # noqa: BLE001 — the report stands; the agent's turn is said
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the L5 agent's turn could not run for the mission", counter="autonomy.cadence")
+            row["autonomy"] = {"acted": False, "why": f"could not run: {str(exc)[:160]}"}
+        out.append(row)
+    return out

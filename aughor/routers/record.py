@@ -497,6 +497,18 @@ def set_record_mission_state(mission_id: str, req: MissionStateRequest, principa
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.post("/record/missions/{mission_id}/act", status_code=201)
+def act_record_mission(mission_id: str, principal=Depends(get_principal)) -> dict:
+    """The L5 agent's turn, now (the close-out, C6): among the connection's declared actions at L5,
+    choose by the measured effect on the objective and run one — or say why none was chosen."""
+    from aughor.actions.autonomy import act_for_mission
+    from aughor.record import mission as M
+    m = M.get_mission(mission_id)
+    if m is None or not all(_visible(c) for c in m.scope.connections):
+        raise HTTPException(status_code=404, detail="No such mission")
+    return act_for_mission(M.latest(m.key) or m)
+
+
 @router.get("/record/missions/{mission_id}/report")
 def get_record_mission_report(mission_id: str, compose: bool = False) -> dict:
     """The latest booked report — or, with ``compose``, the report as it would read now, composed
