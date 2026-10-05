@@ -99,6 +99,13 @@ def tick_once() -> dict[str, int]:
     except Exception as exc:
         logger.warning("automation heartbeat could not run due reviews: %s", exc)
         counts["reviews"] = 0
+    # Phase 2 of the 2027 study — the inquiries whose check date has come wake (state open, the
+    # reason recorded); the settle tick is the loop's heartbeat. Hourly, like the reviews.
+    try:
+        counts["inquiries_woken"] = wake_due_inquiries_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not wake due inquiries: %s", exc)
+        counts["inquiries_woken"] = 0
     # Idea 4 — the daily reading of every table's recent days, so the platform LEARNS when a
     # source's numbers stop changing instead of being told a lag by hand. Once a UTC day; a
     # count per table, no model.
@@ -158,6 +165,25 @@ def run_due_reviews_hourly(*, now: Optional[float] = None, force: bool = False) 
         logger.info("review due on %s asked %s: %s", o.id, o.review_asked_to or "(nobody linked)",
                     o.review_question[:120])
     return len(reviewed)
+
+
+_last_inquiry_check: float = 0.0
+
+
+def wake_due_inquiries_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Wake every waiting inquiry whose check date has come, at most once per
+    `REVIEW_CHECK_SECONDS`. Returns how many woke."""
+    global _last_inquiry_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_inquiry_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_inquiry_check = t
+    from aughor.record.inquiry import wake_due
+    woken = wake_due()
+    for q in woken:
+        logger.info("inquiry %s woke: %s", q.key, q.question[:120])
+    return len(woken)
 
 
 def _run_one(automation) -> None:

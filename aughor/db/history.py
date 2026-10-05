@@ -283,6 +283,18 @@ def complete_investigation(
                     conn_id=connection_id or _conn_scope, canvas_id=_canvas_scope,
                     headline=(headline or "")[:200],
                     query_count=len(queries_list))
+    # Phase 2 of the 2027 study — the run lands on its INQUIRY: hypotheses as claims with their
+    # state, the open items with what would settle each, the typed verdict (answered ·
+    # contradicted), the inquiry's own state. This is the one place every clean completion
+    # passes, so booking here covers every caller. Best-effort: the row is the record of the run.
+    try:
+        from aughor.record.inquiry import attach_run_result
+        attach_run_result(run_id=inv_id, connection_id=connection_id or _conn_scope or "", question=question,
+                          report=report_dict if isinstance(report_dict, dict) else {}, hypotheses=hypotheses_list)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the run completed; its inquiry could not be updated", counter="inquiry.attach",
+                 conn_id=connection_id or _conn_scope or None)
 
     # Index in the agent's RAG — the run as a past investigation (not a direct query's:
     # `cache` False) and its clean SQL as few-shot examples (every run's, PENDING item 24).
@@ -334,6 +346,16 @@ def fail_investigation(inv_id: str, status: InvStatus = "timed_out",
     c.close()
     _emit_lifecycle(inv_id, "investigation.failed", conn_id=_conn_scope,
                     canvas_id=_canvas_scope, status=status)
+    # Phase 2 of the 2027 study — every run books a TYPED verdict, never an empty result: the
+    # reason is classified by code (out of budget · withheld · no definition · no data · tool
+    # failed) and the inquiry, when the run has one, records it and stays open. Best-effort.
+    try:
+        from aughor.record.inquiry import attach_run_failure
+        attach_run_failure(run_id=inv_id, connection_id=_conn_scope or "", status=status, reason=str(reason or ""))
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the run failed and was recorded; its typed verdict could not be booked",
+                 counter="inquiry.verdict", conn_id=_conn_scope or None)
 
 
 def save_chat_turn(

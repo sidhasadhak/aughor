@@ -183,6 +183,68 @@ def declare_record_decision(req: DeclareDecisionRequest, principal=Depends(get_p
     return get_record_decision(did)
 
 
+# ── inquiries ──────────────────────────────────────────────────────────────────────────────
+
+class CloseInquiryRequest(BaseModel):
+    closed_as: str                 # answered | overtaken | abandoned
+    lessons: list[dict] = Field(default_factory=list)   # [{believed, turned_out}]
+
+
+def _inquiry_view(q) -> dict:
+    from aughor.record.inquiry import run_verdict
+    view = q.model_dump()
+    view["hypothesis_claims"] = [c.model_dump() for c in (C.get(cid) for cid in q.hypotheses) if c is not None]
+    view["run_verdicts"] = [run_verdict(r.run) or {"run": r.run, "verdict": r.verdict, "why": r.why} for r in q.runs]
+    return view
+
+
+@router.get("/record/inquiries")
+def list_record_inquiries(connection_id: Optional[str] = None, state: Optional[str] = None,
+                          due: bool = False, limit: int = 100) -> list[dict]:
+    """Inquiries, newest first; ``state`` is open · waiting · closed; ``due`` keeps the waiting ones
+    whose check date has come."""
+    from aughor.record import inquiry as I
+    limit = max(1, min(int(limit), 1000))
+    rows = I.due() if due else I.list_inquiries(conn_id=connection_id, state=state, limit=limit)
+    if due and connection_id:
+        rows = [q for q in rows if q.connection_id == connection_id]
+    return [q.model_dump() for q in rows[:limit] if _visible(q.connection_id)]
+
+
+@router.get("/record/inquiries/verdicts")
+def record_run_verdicts(connection_id: Optional[str] = None) -> dict:
+    """How runs ended, by typed verdict — the share that was a failure said as what it was."""
+    from aughor.record.inquiry import verdict_tallies
+    if connection_id and not _visible(connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    return verdict_tallies(conn_id=connection_id)
+
+
+@router.get("/record/inquiries/{inquiry_id}")
+def get_record_inquiry(inquiry_id: str) -> dict:
+    from aughor.record.inquiry import get_inquiry
+    q = get_inquiry(inquiry_id)
+    if q is None or not _visible(q.connection_id):
+        raise HTTPException(status_code=404, detail="No such inquiry")
+    return _inquiry_view(q)
+
+
+@router.post("/record/inquiries/{inquiry_id}/close")
+def close_record_inquiry(inquiry_id: str, req: CloseInquiryRequest, principal=Depends(get_principal)) -> dict:
+    """A person closes an inquiry — answered, overtaken or abandoned — with what was believed at
+    the start and turned out wrong."""
+    from aughor.record.inquiry import Lesson, close_inquiry, get_inquiry
+    q = get_inquiry(inquiry_id)
+    if q is None or not _visible(q.connection_id):
+        raise HTTPException(status_code=404, detail="No such inquiry")
+    try:
+        closed = close_inquiry(q, closed_as=req.closed_as, lessons=[Lesson(**lesson) for lesson in req.lessons],
+                               by=_who(principal) or "unidentified")
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return _inquiry_view(closed)
+
+
 @router.post("/record/decisions/{decision_id}/outcome", status_code=201)
 def book_record_outcome(decision_id: str, req: OutcomeIn, principal=Depends(get_principal)) -> dict:
     """Book what became of a decision: the actual against the expectation and against the

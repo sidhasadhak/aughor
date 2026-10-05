@@ -4160,6 +4160,20 @@ async def _stream_investigation(
     inv_id = create_investigation(question, connection_id, canvas_id=canvas_id,
                                   agent_id=_current_agent_id(), purpose=purpose,
                                   session_id=session_id or "")
+    # Phase 2 of the 2027 study — the run is opened INSIDE an inquiry: a person's ask opens one
+    # (or wakes the one on the same subject opened in the last fortnight), so what the run
+    # establishes, leaves open and refutes outlives the run. Best-effort, off the loop.
+    try:
+        from aughor.org.context import current_user_id
+        from aughor.record.inquiry import open_inquiry
+        _uid = current_user_id()
+        await asyncio.to_thread(lambda: open_inquiry(
+            question=question, connection_id=connection_id, run_id=inv_id,
+            opened_by=f"person:{_uid}" if _uid else "person"))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the inquiry could not be opened; the run proceeds and lands on one when it completes",
+                 counter="inquiry.open", conn_id=connection_id)
     from aughor import telemetry as _telemetry
     trace_id = _telemetry.new_trace(inv_id, question, connection_id)
     yield _sse("start", {"question": question, "connection_id": connection_id, "investigation_id": inv_id, "trace_id": trace_id})

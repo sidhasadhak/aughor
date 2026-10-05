@@ -546,11 +546,25 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
     except Exception:
         pass
 
+    # Phase 2 of the 2027 study — refuted hypotheses are MEMORY. What earlier runs on this
+    # connection tested and found false is read back before the planner proposes its own, and
+    # a hypothesis it proposes anyway is refused by code (content-word overlap) and recorded on
+    # the inquiry, so the report can say what it did not re-test. Best-effort: an unreadable
+    # Record plans exactly as before.
+    refuted_section, refuted = "", []
+    try:
+        from aughor.record.inquiry import refuted_block
+        refuted_section, refuted = refuted_block(state.get("connection_id", ""))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "refuted hypotheses could not be read back; the planner proposes without them",
+                 counter="inquiry.refuted_readback")
+
     rules_block = get_rules_block()
     llm = get_provider("coder")
     output: DecomposeOutput = llm.complete(
         system="You are a senior data analyst. Decompose the question into testable hypotheses.",
-        user=rules_block + exploration_section + DECOMPOSE_PROMPT.format(
+        user=rules_block + exploration_section + refuted_section + DECOMPOSE_PROMPT.format(
             question=state["question"],
             schema=state["schema_context"],
             kb_domain_section=kb_domain,
@@ -558,14 +572,29 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
         ),
         response_model=DecomposeOutput,
     )
+    hypotheses, refused = list(output.hypotheses), []
+    if refuted:
+        try:
+            from aughor.record.inquiry import record_refused, refuse_already_refuted
+            kept, refused = refuse_already_refuted(hypotheses, refuted)
+            if refused and kept:          # refusing every hypothesis would leave the run nothing to test
+                hypotheses = kept
+                record_refused(state.get("investigation_id", ""), state.get("connection_id", ""), refused)
+            elif refused:
+                refused = []
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "refused hypotheses could not be recorded; the run proceeds with what the planner proposed",
+                     counter="inquiry.refuse")
     return {
-        "hypotheses": output.hypotheses,
+        "hypotheses": hypotheses,
         "current_hypothesis_idx": 0,
         "iteration": 0,
         "pitfalls": [],
         # Preserve any seeded prior analyses (e.g. a Finding Dossier handed in for a
         # "deeper" drill) ahead of the RAG-retrieved ones; default seed is [].
         "prior_analyses": list(state.get("prior_analyses") or []) + prior_analyses,
+        **({"verification_checks": [f"refuted_readback:{len(refused)}"]} if refused else {}),
     }
 
 
@@ -1259,6 +1288,19 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
         ) + tensions_section + pre_check_section,
         response_model=AnalysisReport,
     )
+    # Phase 2 of the 2027 study — what this run did NOT re-test because the Record already holds
+    # it as refuted is said in the report's own ruled-out list, where a reader looks for it.
+    try:
+        from aughor.record.inquiry import refused_caveat, refused_for_run
+        _refused = refused_for_run(state.get("investigation_id", ""), state.get("connection_id", ""))
+        if _refused:
+            report = AnalysisReport(**{**report.model_dump(),
+                                       "what_is_not_the_cause": list(report.what_is_not_the_cause or [])
+                                       + [refused_caveat(_refused)]})
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the refused-hypotheses line could not be read back onto the report",
+                 counter="inquiry.refused_caveat")
     # ── Override narrator confidence with score_evidence values (deterministic) ─
     # The narrator cannot be trusted to honour evidence-depth ceilings when it
     # writes key findings. Overwrite Finding.confidence with the authoritative

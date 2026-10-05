@@ -216,7 +216,17 @@ def restate_answer_observation(answer: dict, entry: dict, *, text: str = "") -> 
         # late rows settle; the next re-check may move it again
         new.status = "Provisional"
     restated = _claims.restate(key, new, conn_id=conn_id)
-    return {"restated": restated, "superseded": prior.id, "recheck_receipt": receipt}
+    # Phase 2 of the 2027 study — an inquiry that established the restated claim wakes.
+    try:
+        from aughor.record.inquiry import wake_for_claim
+        woke = wake_for_claim(prior.id, why=f"claim {prior.id} it established was restated by the re-check")
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the restatement stands; the inquiries relying on it could not be woken",
+                 counter="inquiry.wake_on_restate")
+        woke = []
+    return {"restated": restated, "superseded": prior.id, "recheck_receipt": receipt,
+            **({"woke_inquiries": [q.id for q in woke]} if woke else {})}
 
 
 def _restated_text(first: str, changes: list[dict], entry: dict) -> str:

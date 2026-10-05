@@ -100,6 +100,19 @@ def alert_context(alert: "MonitorAlert") -> dict:
     }
 
 
+def _open_inquiry_for_alert(alert: "MonitorAlert", monitor: "Monitor") -> None:
+    try:
+        from aughor.record.inquiry import open_inquiry, subject_of
+        metric = alert.metric_name or getattr(monitor, "metric_name", None) or getattr(monitor, "name", "") or "the metric"
+        question = f"Why did {metric} {_threshold_phrase(alert)}?".replace("??", "?")
+        open_inquiry(question=question[:500], connection_id=alert.conn_id or getattr(monitor, "conn_id", "") or "",
+                     opened_by=f"monitor:{alert.monitor_id}", subject=subject_of("", metric))
+    except Exception as exc:  # noqa: BLE001 — a signal that cannot open an inquiry still alerts
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the alert fired; its inquiry could not be opened", counter="inquiry.from_alert",
+                 conn_id=alert.conn_id or None)
+
+
 def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -> Optional["ActionLog"]:
     """Deliver a fired alert through its monitor's configured channel.
 
@@ -114,6 +127,12 @@ def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -
             monitor = get_monitor(alert.monitor_id)
         if monitor is None:
             return None
+
+        # Phase 2 of the 2027 study — a fired alert is a SIGNAL, and a signal opens an inquiry
+        # (or wakes the one on the same metric): the platform opening inquiries from signals,
+        # not only from asks. Opened whether or not the message departs — the data moved either
+        # way. No run is spent here; the inquiry waits for one. Best-effort.
+        _open_inquiry_for_alert(alert, monitor)
 
         channel = (monitor.notification_channel or IN_APP).strip()
         if not channel or channel == IN_APP:

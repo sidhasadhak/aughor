@@ -10322,7 +10322,11 @@ def _refutation_record(verdict) -> dict:
         return {"status": "not_run", "why": "the skeptic returned no verdict"}
     return {"status": "refuted" if getattr(verdict, "refuted", False) else "survived",
             "reason": (getattr(verdict, "reason", "") or "").strip(),
-            "alternative": (getattr(verdict, "alternative", None) or "").strip()}
+            "alternative": (getattr(verdict, "alternative", None) or "").strip(),
+            # phase 2 of the 2027 study: which binding challenged — a second one where the
+            # install has two, said either way, so "survived the same model" never reads as
+            # "survived another"
+            "binding": dict(getattr(verdict, "binding", None) or {})}
 
 
 def _reader_text(report: dict) -> str:
@@ -10354,6 +10358,42 @@ def _attach_causal_checks(report: dict, licence: str, refutation: dict) -> None:
 
 
 # ── T4-3 / P5: tiered adversarial verification ─────────────────────────────────────────
+def _note_refuted_before(report: dict, connection_id: str) -> list[dict]:
+    """Phase 2 of the 2027 study: when a causal sentence the reader will see matches a hypothesis
+    the Record holds as REFUTED on this connection, say so among the data gaps and record the
+    match on the report (``causal_checks.refuted_before``). Code only — content-word overlap, the
+    same test the planner's refusal uses — and best-effort: an unreadable Record notes nothing."""
+    try:
+        from aughor.record.inquiry import refuse_already_refuted, refuted_on
+        refuted = refuted_on(connection_id) if connection_id else []
+        if not refuted:
+            return []
+        checks = report.get("causal_checks") if isinstance(report.get("causal_checks"), dict) else {}
+        sentences = [{"description": c.get("sentence", "")} for c in (checks.get("claims") or []) if c.get("sentence")]
+        if not sentences and report.get("headline"):
+            sentences = [{"description": str(report.get("headline"))}]
+        _kept, matched = refuse_already_refuted(sentences, refuted)
+        if not matched:
+            return []
+        if isinstance(checks, dict):
+            checks["refuted_before"] = matched
+            report["causal_checks"] = checks
+        gaps = list(report.get("data_gaps") or [])
+        for m in matched[:3]:
+            note = (f"Refuted before: an earlier run on this connection tested “{m['hypothesis'][:100]}” and found "
+                    f"it false on {m.get('refuted_on') or 'an earlier date'}"
+                    + (f" ({m['evidence'][:160]})" if m.get("evidence") else "")
+                    + ". This report reaches it again — read both before relying on either.")
+            if note not in gaps:
+                gaps.append(note)
+        report["data_gaps"] = gaps
+        return matched
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "refuted hypotheses could not be read back onto the report", counter="inquiry.refuted_note")
+        return []
+
+
 def _adversarial_should_run(synth) -> bool:
     """Whether the refuter should spend its ONE skeptic LLM call on this verdict. The
     caller has already confirmed the verdict is DECISION-CHANGING (a premise rejection /
@@ -11249,6 +11289,10 @@ def ada_synthesize(state: AgentState) -> dict:
     # Whether each cause-and-effect claim the reader will see was ever put to a check that could
     # have refuted it — recorded as a FIELD the departure gate reads, and said where it was not.
     _attach_causal_checks(answer_report, _recorded_claim_licence(intake_data, phases), _refutation)
+    # Phase 2 of the 2027 study — a cause this report reaches that an earlier run on this
+    # connection tested and REFUTED is said beside it: the Record is memory, and two runs
+    # disagreeing is a contested claim the reader sees, not a report that forgot.
+    _note_refuted_before(answer_report, state.get("connection_id", "") or "")
 
     # Also produce a legacy AnalysisReport for backward compat (history, cache)
     from aughor.agent.state import AnalysisReport, Finding
