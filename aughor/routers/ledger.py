@@ -32,8 +32,8 @@ router = APIRouter(prefix="/ledger/v1", tags=["ledger"], dependencies=[Depends(c
 
 #: What the export carries by default — every kind the Record writes.
 EXPORT_KINDS: tuple[str, ...] = ("claim", "decision", "outcome", "inquiry", "run_verdict", "scenario", "action",
-                                 "authority_graduation", "authority_demotion", "mission", "mission_report", "missed_move",
-                                 "method", "ledger_subscription")
+                                 "authority_graduation", "authority_demotion", "authority_l5", "authority_ceiling",
+                                 "mission", "mission_report", "missed_move", "method", "ledger_subscription", "set_aside")
 
 
 def _visible(conn_id: str) -> bool:

@@ -13479,6 +13479,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/set-aside": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Record Set Aside
+         * @description What a person set aside on Now: ``active`` items are off the list until their day;
+         *     ``returned`` ones are back — their day came, or the record behind them changed — with why.
+         */
+        get: operations["list_record_set_aside_record_set_aside_get"];
+        put?: never;
+        /**
+         * Set Record Item Aside
+         * @description Set one waiting item aside until a day, with why. Nothing about the item itself is written:
+         *     a review set aside is still due on its own page.
+         */
+        post: operations["set_record_item_aside_record_set_aside_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/set-aside/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Record Item
+         * @description Bring a set-aside item back before its day.
+         */
+        post: operations["restore_record_item_record_set_aside_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/saved-queries": {
         parameters: {
             query?: never;
@@ -18302,11 +18348,6 @@ export interface components {
              */
             dry_run: boolean;
         };
-        /** RestoreRequest */
-        RestoreRequest: {
-            /** Version */
-            version: number;
-        };
         /**
          * ResumeEntry
          * @description A per-interrupt response in the resume array of a RunAgentInput.
@@ -18569,6 +18610,27 @@ export interface components {
              * @default
              */
             note: string;
+        };
+        /** SetAsideRequest */
+        SetAsideRequest: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Until */
+            until: string;
+            /** Why */
+            why: string;
         };
         /** SheetIn */
         SheetIn: {
@@ -20766,6 +20828,11 @@ export interface components {
              */
             outcome: string;
         };
+        /** RestoreRequest */
+        aughor__routers__cockpit__RestoreRequest: {
+            /** Version */
+            version: number;
+        };
         /** LayoutRequest */
         aughor__routers__dashboard__LayoutRequest: {
             /** Connection Id */
@@ -20816,6 +20883,18 @@ export interface components {
         aughor__routers__metastore__GrantRequest: {
             /** Catalog Id */
             catalog_id: string;
+        };
+        /** RestoreRequest */
+        aughor__routers__record__RestoreRequest: {
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
         };
     };
     responses: never;
@@ -26141,7 +26220,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RestoreRequest"];
+                "application/json": components["schemas"]["aughor__routers__cockpit__RestoreRequest"];
             };
         };
         responses: {
@@ -43657,6 +43736,98 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MissionStateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_record_set_aside_record_set_aside_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    set_record_item_aside_record_set_aside_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAsideRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_record_item_record_set_aside_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__record__RestoreRequest"];
             };
         };
         responses: {

@@ -551,6 +551,63 @@ def record_calibration(connection_id: Optional[str] = None) -> list[dict]:
     return calibration(conn_id=connection_id)
 
 
+# ── set aside: "not now" on what waits on a person (the Now page) ──────────────────────────
+
+class SetAsideRequest(BaseModel):
+    kind: str                      # decision | inquiry | departure | approval
+    ref: str                       # the item's id as the page holds it
+    until: str                     # ISO day it returns on
+    why: str
+    title: str = ""                # the row as it reads, kept so the list can say what was set aside
+    by: str = ""
+
+
+class RestoreRequest(BaseModel):
+    kind: str
+    ref: str                       # the stable name the listing gives
+    by: str = ""
+
+
+def _set_aside_view(s: dict) -> bool:
+    return _visible(str(s.get("connection_id") or ""))
+
+
+@router.get("/record/set-aside")
+def list_record_set_aside() -> dict:
+    """What a person set aside on Now: ``active`` items are off the list until their day;
+    ``returned`` ones are back — their day came, or the record behind them changed — with why."""
+    from aughor.record.set_aside import listing
+    out = listing()
+    return {**out, "active": [s for s in out["active"] if _set_aside_view(s)],
+            "returned": [s for s in out["returned"] if _set_aside_view(s)]}
+
+
+@router.post("/record/set-aside", status_code=201)
+def set_record_item_aside(req: SetAsideRequest, principal=Depends(get_principal)) -> dict:
+    """Set one waiting item aside until a day, with why. Nothing about the item itself is written:
+    a review set aside is still due on its own page."""
+    from aughor.record.set_aside import ITEM_KINDS, SetAsideRefused, record_of, set_aside
+    # a caller may only set aside what they can see — checked before anything is written
+    there = record_of(req.kind, req.ref) if req.kind in ITEM_KINDS else None
+    if there is not None and not _visible(there["connection_id"]):
+        raise HTTPException(status_code=404, detail="No such item")
+    try:
+        return set_aside(item_kind=req.kind, ref=req.ref, until=req.until, why=req.why, title=req.title,
+                         by=_actor(principal, req.by)).model_dump()
+    except SetAsideRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/record/set-aside/restore")
+def restore_record_item(req: RestoreRequest, principal=Depends(get_principal)) -> dict:
+    """Bring a set-aside item back before its day."""
+    from aughor.record.set_aside import SetAsideRefused, restore
+    try:
+        return restore(item_kind=req.kind, ref=req.ref, by=_actor(principal, req.by)).model_dump()
+    except SetAsideRefused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 # ── the week by duty (Operations) ──────────────────────────────────────────────────────────
 
 @router.get("/record/duties")

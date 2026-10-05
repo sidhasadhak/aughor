@@ -10,7 +10,8 @@
  *   departuresOwed  sends held for a person's mark or answer (GET /departures/summary)
  *
  * The last three are what the Now page lists under "Waiting on you"; their sum is its badge, amber
- * like the alerts: each one waits on a human.
+ * like the alerts: each one waits on a human. What a person set aside on that page until a later
+ * day (GET /record/set-aside) is left out of each, as it is left off the page's list.
  *
  * Agent Ops' needs-human count is deliberately absent. Its route (GET …/needs-human) runs the
  * expiry and parked-run sweeps on every call, so polling it from the shell would run those sweeps
@@ -21,10 +22,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { getAllAlerts, getDepartureSummary } from "@/lib/api";
+import { getAllAlerts, getDepartureSummary, getDepartures } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
+import { owes } from "@/lib/departures";
 import { subscribeKernelEvents } from "@/lib/events";
-import { listDecisions, listInquiries } from "@/lib/record";
+import { WAITING_CHANGED_EVENT, getSetAside, listDecisions, listInquiries } from "@/lib/record";
 
 export interface NavCounts {
   unackedAlerts: number;
@@ -61,17 +63,28 @@ export function useNavCounts(workspaceId?: string): NavCounts {
           setCounts(c => ({ ...c, runningRuns: running }));
         })
         .catch(() => {});
-      listDecisions({ due: true })
-        .then(rows => { if (alive) setCounts(c => ({ ...c, decisionsDue: rows.length })); })
+      // What a person set aside is off the count as it is off the list. An older API has no such
+      // read, and then nothing is set aside.
+      const aside = getSetAside()
+        .then(a => new Set(a.active.map(x => `${x.item_kind}:${x.ref}`)))
+        .catch(() => new Set<string>());
+      Promise.all([listDecisions({ due: true }), aside])
+        .then(([rows, off]) => { if (alive) setCounts(c => ({ ...c, decisionsDue: rows.filter(d => !off.has(`decision:${d.key}`)).length })); })
         .catch(() => {});
-      listInquiries({ due: true })
-        .then(rows => { if (alive) setCounts(c => ({ ...c, inquiriesDue: rows.length })); })
+      Promise.all([listInquiries({ due: true }), aside])
+        .then(([rows, off]) => { if (alive) setCounts(c => ({ ...c, inquiriesDue: rows.filter(q => !off.has(`inquiry:${q.key}`)).length })); })
         .catch(() => {});
-      getDepartureSummary()
-        .then(sum => { if (alive) setCounts(c => ({ ...c, departuresOwed: sum?.awaiting ?? 0 })); })
+      aside.then(async off => {
+        // The summary is one cheap count; the rows are read only when one of them is set aside.
+        if (![...off].some(k => k.startsWith("departure:"))) return (await getDepartureSummary())?.awaiting ?? 0;
+        const rows = (await getDepartures({ awaiting: true, limit: 200 })) ?? [];
+        return rows.filter(d => owes(d) !== null && !off.has(`departure:${d.id}`)).length;
+      })
+        .then(n => { if (alive) setCounts(c => ({ ...c, departuresOwed: n })); })
         .catch(() => {});
     };
     load();
+    window.addEventListener(WAITING_CHANGED_EVENT, load);
     const throttled = () => {
       if (pending.current) return;
       pending.current = setTimeout(() => { pending.current = null; load(); }, 5_000);
@@ -80,6 +93,7 @@ export function useNavCounts(workspaceId?: string): NavCounts {
     const iv = setInterval(load, 60_000);
     return () => {
       alive = false;
+      window.removeEventListener(WAITING_CHANGED_EVENT, load);
       unsub();
       clearInterval(iv);
       if (pending.current) clearTimeout(pending.current);

@@ -511,6 +511,34 @@ export const getMissionTemplates = (connectionId?: string) =>
   read<{ templates: MissionTemplate[]; packs: string[]; note: string }>(
     `/record/missions/templates${qs({ connection_id: connectionId })}`);
 
+// ── set aside: "not now" on what waits on a person ───────────────────────────────────────
+
+export type SetAsideKind = "decision" | "inquiry" | "departure" | "approval";
+
+/** One item a person took off the Now list until a day — and, once it is back, why. */
+export interface SetAside {
+  item_kind: SetAsideKind;
+  /** The item's stable name: a decision's or an inquiry's key, a departure's or a proposal's id. */
+  ref: string;
+  until: string;
+  why: string;
+  by: string;
+  at: string;
+  title: string;
+  status: "active" | "returned";
+  /** Why it is on the list again: its day came, or the record behind it changed. */
+  back_because: string;
+}
+
+export const getSetAside = () => read<{ today: string; active: SetAside[]; returned: SetAside[] }>("/record/set-aside");
+export const setItemAside = (body: { kind: SetAsideKind; ref: string; until: string; why: string; title?: string; by?: string }) =>
+  send<SetAside>("/record/set-aside", body);
+export const restoreItem = (kind: SetAsideKind, ref: string, by?: string) =>
+  send<SetAside>("/record/set-aside/restore", { kind, ref, by });
+
+/** Told to the rail when what waits on a person changed on this page, so its badge re-reads now. */
+export const WAITING_CHANGED_EVENT = "aughor:waiting-changed";
+
 // ── the attention budget (triage at the departure gate) ──────────────────────────────────
 
 export interface HeldItem {

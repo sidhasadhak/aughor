@@ -324,3 +324,67 @@ def test_a_claims_page_reads_who_was_told_from_the_answer_behind_it_and_says_whe
     nobody, note = RL.told_about(C.get(did))
     assert nobody == [] and "did not come from an answer" in note
     assert R.get_record_claim(cid)["told"][0]["addressed_to"] == "user:bo"
+
+
+# ── set aside: "not now" on what waits on a person ─────────────────────────────────────────
+
+def test_setting_an_item_aside_hides_it_until_its_day_and_writes_nothing_on_the_item():
+    from aughor.record import set_aside as SA
+    conn = _conn()
+    did = _decision(conn, [])
+    before = D.get_decision(did)
+    for bad, why in (({"item_kind": "mission"}, "wait on a person here"), ({"why": " "}, "says why"),
+                     ({"until": "soon"}, "YYYY-MM-DD"), ({"until": NOW.date().isoformat()}, "a later day"),
+                     ({"ref": "no-such-decision"}, "no such decision")):
+        args = {"item_kind": "decision", "ref": did, "until": "2026-10-15", "why": "waiting for finance close", **bad}
+        with pytest.raises(SA.SetAsideRefused, match=why):
+            SA.set_aside(**args, now=NOW)
+    s = SA.set_aside(item_kind="decision", ref=did, until="2026-10-15", why="waiting for finance close", by="person:amit",
+                     title='What became of "Extend it"?', now=NOW)
+    assert (s.status, s.ref, s.seen, s.connection_id) == ("active", before.key, did, conn)
+    after = D.get_decision(did)                                        # the decision itself: not a word written
+    assert (after.version, after.superseded_by, after.outcome, after.extra) == (before.version, "", "", before.extra)
+    mine = lambda out, part: [x for x in out[part] if x["ref"] == before.key]      # noqa: E731
+    assert [x["why"] for x in mine(SA.listing(now=NOW), "active")] == ["waiting for finance close"]
+    # the day comes: it is back, and the listing says why
+    on_the_day = SA.listing(now=NOW + timedelta(days=10))
+    assert mine(on_the_day, "active") == [] and mine(on_the_day, "returned")[0]["back_because"] == "its day came (2026-10-15)"
+    # long after, it is no longer listed as returned
+    assert mine(SA.listing(now=NOW + timedelta(days=60)), "returned") == []
+    # restored before its day: gone from both lists, kept in its history
+    SA.restore(item_kind="decision", ref=before.key, by="person:amit", now=NOW)
+    assert mine(SA.listing(now=NOW), "active") == [] and mine(SA.listing(now=NOW), "returned") == []
+    with pytest.raises(SA.SetAsideRefused):
+        SA.restore(item_kind="decision", ref=before.key, now=NOW)
+    # set aside again by any version's id: the same item, a new version of the same set-aside
+    again = SA.set_aside(item_kind="decision", ref=did, until="2026-10-20", why="still waiting", now=NOW)
+    assert again.version == 3 and again.ref == before.key and again.restored_at == ""
+
+
+def test_a_set_aside_item_returns_early_when_the_record_behind_it_changes():
+    from aughor.record import set_aside as SA
+    conn = _conn()
+    cid = _observation(conn)
+    did = _decision(conn, [cid])
+    key = D.get_decision(did).key
+    q = I.open_inquiry(question="Why did APAC revenue fall?", connection_id=conn, opened_by="person:ana", run_id="r1", now=NOW)
+    q.claims, q.state, q.next_check = [cid], "waiting", "2026-12-01"
+    q = I._book(q)
+    SA.set_aside(item_kind="decision", ref=did, until="2026-10-15", why="waiting for finance close", now=NOW)
+    SA.set_aside(item_kind="inquiry", ref=q.id, until="2026-10-15", why="not this week", now=NOW)
+    find = lambda part, ref: next((x for x in SA.listing(now=NOW)[part] if x["ref"] == ref), None)      # noqa: E731
+    assert find("active", key)["status"] == "active" and find("active", q.key)["status"] == "active"
+    # the claim both stood on is corrected: the decision reopens, the inquiry wakes — both are back early
+    C.mark_wrong(cid, by="person:bo", corrected="APAC revenue was 2.72M last week")
+    assert find("active", key) is None and find("returned", key)["back_because"] == "a claim it relied on was restated"
+    assert find("active", q.key) is None and "marked wrong by person:bo" in find("returned", q.key)["back_because"]
+    # a departure and a proposed action have one id for life: they return on their day and not before
+    held = R.set_record_item_aside(R.SetAsideRequest(kind="departure", ref="dep-1", until="2099-01-01", why="next sprint", by="amit"),
+                                   principal=None)
+    assert (held["status"], held["ref"], held["by"], held["seen"]) == ("active", "dep-1", "person:amit", "")
+    assert any(x["ref"] == "dep-1" for x in R.list_record_set_aside()["active"])
+    back = R.restore_record_item(R.RestoreRequest(kind="departure", ref="dep-1", by="amit"), principal=None)
+    assert back["restored_by"] == "person:amit" and not any(x["ref"] == "dep-1" for x in R.list_record_set_aside()["active"])
+    with pytest.raises(HTTPException) as exc:
+        R.set_record_item_aside(R.SetAsideRequest(kind="decision", ref=did, until="2020-01-01", why="x"), principal=None)
+    assert exc.value.status_code == 422
