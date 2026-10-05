@@ -17,7 +17,8 @@ the measurement that showed it. Not re-measured: the leftovers under the older a
 DX, PX, KI, DS, VA, JD, CB), the loose ends, and the cockpit's open defects.*
 
 *Ticked again 2026-10-04 on #565's merge (`9fc94e4f`, byte-identical to the head CI tested): every line it
-changed names #565; a line it only measured keeps its box.*
+changed names #565; a line it only measured keeps its box. Ticked once more on #566's merge (`28d1818c`, also
+byte-identical to its tested head): each line it changed names #566.*
 
 *Placed against the 2027 study on 2026-10-04 and the study ADOPTED the same day (ROADMAP §6 item 39): twenty items — twenty-two lines, TJ-5 and TJ-6 appearing twice — are struck below with the kill, class or refusal each contradicts. The phase of every kept line is in the study's own placement section ([docs/PLATFORM_2027_STUDY_2026-10-04.md](docs/PLATFORM_2027_STUDY_2026-10-04.md), "The pending ledger against this roadmap") and was carried onto every kept and reshaped line the same day, as *2027 study: phase N* at the end of the line; a line with no such tag is a receipt owed, hygiene, parked, or the user's, and has no phase.*
 
@@ -278,7 +279,7 @@ Just outside the list: the next industry package (insurance has public data to t
 ### The hub — Arc HB (§3.18)
 - [ ] Group permissions are recorded but not enforced — waits on real sign-in. *2027 study: phase 0 — enforced once identity is on.* *Measured 2026-10-05: `rbac/access.py` already reads each group's grants when a principal is bound; waits on an identity provider (none chosen yet).*
 - [ ] The full live run of the promise-breach chain: Slack alert → Jira ticket → ticket closed → Briefing shows before and after. *2027 study: phase 0 — the first number that left and was acted on; the flywheel's first turn.*
-- [ ] Accepting a Slack send from the inbox does not file a thread the way automatic sends do. *2027 study: phase 1 — "who else was told" needs every send recorded.*
+- [x] Accepting a Slack send from the inbox does not file a thread the way automatic sends do. *2027 study: phase 1 — "who else was told" needs every send recorded.* *Fixed and merged 2026-10-04 · #566 — wider than written: the parked send froze its raw message, so one bound to an answer's envelope parked EMPTY, and the accept drew no chart. The card now carries the text the unattended path would post, and the accept route draws the chart and files the thread on what the send is about, so a reply there reaches the object.*
 - [ ] The links and probation queues have no screen — API data only. *2027 study: phase 2 — Operations, screen 8.*
 - [x] "That's wrong" said in a Slack thread does not come back as a correction. *Built and **merged 2026-10-04 · #565**: the bot follows a thread it has answered, and a reply that opens by saying the answer is wrong is recorded on that answer through the verdict door — `correct` when it says what is right, `reject` when it only says wrong; a mention in a followed thread is still answered, and anything else said there is left alone. `message.channels` is in the manifest. ⚑ Live only after the app is reinstalled with that event and the supervisor runs this code.*
 - [x] A deep report does not record whether its cause-and-effect claims survived their own checks. *Built and **merged 2026-10-04 · #565**: the skeptic step leaves a record either way — refuted, survived with its reason, or not run and why — the report carries `causal_checks`, a cause nothing challenged is said among its caveats, and the gate's law 5 reads the typed record. Measured first: 169 of 309 stored deep reports state a cause and none had recorded a challenge. A survived record has not been seen live; that takes a deep run.*
@@ -412,8 +413,8 @@ Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23
 
 ## Unmerged branches (2026-09-23)
 
-- [ ] `claude/dark-theme-lift` — the dark-theme contrast lift the user approved live, PLUS the law-8 amendment (no receipts on Slack messages), the quoted-rows guard fix (a product name "6B" read as billions) and the killed-run drain fix; not pushed; identical uncommitted copies sit in the main checkout.
-- [ ] `claude/delivery-log-truth` — a disabled trigger now logs `skipped` instead of `failed`; not pushed.
+- [~] `claude/dark-theme-lift` — the dark-theme contrast lift the user approved live, PLUS the law-8 amendment (no receipts on Slack messages), the quoted-rows guard fix (a product name "6B" read as billions) and the killed-run drain fix; not pushed; identical uncommitted copies sit in the main checkout. *Three of them merged 2026-10-04 · #566, cherry-picked: the law-8 amendment, the quoted-rows guard fix and the killed-run drain fix. Open: the contrast lift itself — it conflicts with the newer design tokens in four files, and porting it is the user's design call.*
+- [x] `claude/delivery-log-truth` — a disabled trigger now logs `skipped` instead of `failed`; not pushed. *Merged 2026-10-04 · #566, cherry-picked (`b72c6901`).*
 - [x] `claude/remove-vercel-config` — `vercel.json`, `.vercel/` and the Vercel-only entrypoint removed; its commit rode into `claude/pending-top-nine` and merged 2026-09-23 · #545 (`vercel.json` and `api/index.py` are gone on main). The local branch is redundant.
 - [ ] `claude/retire-vercel-platform-tick` — merged as #543; the local branch is redundant and can be deleted. *Measured 2026-09-23: the branch is also still on origin, and its tree matches the #543 squash exactly, so nothing is lost by deleting it; `git push origin --delete` from a cloud session is refused (403, the push credential is scoped to one branch) — delete it from a local checkout or the GitHub branches page.*
 
@@ -421,7 +422,7 @@ Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23
 
 ## Roadmap lines that read as pending but are not (to correct in ROADMAP.md)
 
-- [x] §3.9 MI-2a "the 336 failed deliveries are a live defect" — they were 332 skipped sends from disabled automations and 4 test sends; the logging fix is on `claude/delivery-log-truth`. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Measured 2026-10-05: §3.9's own paragraph already carries the correction (READ 2026-09-22); nothing left to change there — the logging fix's branch is the unmerged-branches line.*
+- [x] §3.9 MI-2a "the 336 failed deliveries are a live defect" — they were 332 skipped sends from disabled automations and 4 test sends; the logging fix is on `claude/delivery-log-truth`. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Measured 2026-10-05: §3.9's own paragraph already carries the correction (READ 2026-09-22); nothing left to change there — the logging fix's branch is the unmerged-branches line.* *Corrected and merged 2026-10-04 · #566: the cherry-picked `b72c6901` rewrote the passage in place.*
 - [x] §5 "remaining code: the langfuse.trace.input gate" — already built at `aughor/telemetry.py:812`. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Corrected in ROADMAP.md 2026-10-05 (phase 0).*
 - [x] §3.15 ON-2 "theLook's `revenue`, marked verified, is `SUM(num_of_item)`" — the approved definition is `SUM(sale_price)` v1. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Corrected in ROADMAP.md 2026-10-05 (phase 0).*
 - [x] §5 ledger "Slack reinstall with `files:write`" — the permission was granted at install; nothing to reinstall. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Corrected in ROADMAP.md 2026-10-05 (phase 0).*

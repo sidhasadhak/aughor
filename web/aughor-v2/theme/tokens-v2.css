@@ -44,36 +44,39 @@
    moved to #D57420 (L 0.656). The chart palette's ORDER is untouched.
 
    The 2026-09-22 "+8 RGB" lift of the warm charcoal set is superseded by this skin,
-   not layered under it.
+   not layered under it. On 2026-10-04 the user asked for the same step on THIS skin
+   ("Lift Du Bois one step"): every dark surface and line +8 RGB from the Du Bois values
+   named above (page #191F24, chrome #272F35), t2 and t3 +8 so every text pair that
+   cleared 4.5:1 still does (t3 on a card 4.92:1), t4 with b3. No hue moved.
    ════════════════════════════════════════════════════════════════════════════ */
 
 /* ── DARK · the default, rendered before the theme attribute is stamped ─────── */
 :root {
   /* surfaces */
-  --bg-0: #11171C;          /* the page — Du Bois 900 */
-  --bg-1: #1F272D;          /* chrome: topbar, rail, content header, a table's header row — 800 */
+  --bg-0: #191F24;          /* the page — Du Bois 900, lifted one step */
+  --bg-1: #272F35;          /* chrome: topbar, rail, content header, a table's header row — 800, lifted */
   --bg-2: var(--bg-1);      /* a card: one step lighter than the page */
-  --bg-3: #11171C;          /* inset, input, code well: the page colour, boxed by --b2 */
-  --bg-4: #2B3844;          /* pressed, the active segment */
-  --bg-hover: #26313A;      /* row and nav hover */
+  --bg-3: #191F24;          /* inset, input, code well: the page colour, boxed by --b2 */
+  --bg-4: #33404C;          /* pressed, the active segment */
+  --bg-hover: #2E3942;      /* row and nav hover */
   --bg-nav: var(--bg-1);    /* the rail sits on chrome */
-  --bg-sel: #142E45;        /* selected row, active nav: a navy tint */
+  --bg-sel: #1C364D;        /* selected row, active nav: a navy tint */
   --bg-canvas: var(--bg-0); /* the Data Canvas ground: no tinted ground on chrome */
   --scrim: rgba(6, 10, 14, .72);
-  --code-bg: #0B1116;       /* SQL, logs, pre — one step under the page */
+  --code-bg: #13191E;       /* SQL, logs, pre — one step under the page */
 
   /* lines — b0 is the row rule and carries most of the structure; b2 is a border you can see */
-  --b0: #253039;
-  --b1: #2F3C47;
-  --b2: #3F5162;
-  --b3: #5F7281;
+  --b0: #2D3841;
+  --b1: #37444F;
+  --b2: #47596A;
+  --b3: #677A89;
   --bfocus: var(--blue3);
 
   /* text — t3 is captions and meta (4.96:1 on chrome); t4 is never text */
   --t1: #E8ECF0;
-  --t2: #92A4B3;
-  --t3: #8496A4;
-  --t4: #5F7281;
+  --t2: #9AACBB;
+  --t3: #8C9EAC;
+  --t4: #677A89;
 
   /* intent — 1 tint · 2 border · 3 the colour · 4 text · 5 aliases 4
      blue interactive · green guard passed, healthy, live · violet deep analysis ·
