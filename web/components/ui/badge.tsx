@@ -1,7 +1,7 @@
 import type * as React from "react"
 import { Badge as ThemesBadge } from "@radix-ui/themes"
 
-/** A badge, on Radix Themes (trial, 2026-10-05): its `surface` look — tint, border and text of
+/** A badge, on Radix Themes: its `surface` look — tint, border and text of
  *  one hue — is the look ours always had. A hue appears only when a reader can name the state
  *  it means (INSTRUMENT.md §2). */
 type Variant = "default" | "secondary" | "destructive" | "green" | "amber" | "violet" | "cyan" | "outline" | "ghost" | "link"

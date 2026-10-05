@@ -200,7 +200,7 @@ export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected
   if (rows.length === 0) return <Absent>{empty}</Absent>;
   return (
     <div>
-      {/* On Radix Themes (trial, 2026-10-05): its size-1 table. The first column is what the row IS. */}
+      {/* On Radix Themes: its size-1 table. The first column is what the row IS. */}
       <Table.Root ref={ref} size="1" variant="ghost" data-ledger={name}>
         <Table.Header>
           <Table.Row>{columns.map((c, i) => (

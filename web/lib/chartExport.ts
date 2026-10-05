@@ -7,6 +7,8 @@
  * be fixed twice and would have drifted. One helper, one async-tolerant instance type.
  */
 
+import { tokenColor } from "@/lib/tokenColor";
+
 export interface PngOptions {
   type?: string;
   pixelRatio?: number;
@@ -20,9 +22,8 @@ export interface ChartInstance {
 
 /** The card surface a chart sits on — a PNG with a transparent ground reads as broken
  *  wherever it is pasted, so both engines export onto this. */
-export function chartExportBackground(fallback = "#161A20"): string {
-  if (typeof window === "undefined") return fallback;
-  return getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim() || fallback;
+export function chartExportBackground(): string {
+  return tokenColor("--bg-2");
 }
 
 export async function downloadChartPng(

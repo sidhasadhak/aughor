@@ -52,17 +52,14 @@ export const aughorEditorTheme = EditorView.theme({
   ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--t1) 5%, transparent)" },
   ".cm-activeLineGutter": { backgroundColor: "var(--bg-1)", color: "var(--t2)" },
   // The selection. Away from the keyboard it is a neutral step off the page; with the
-  // keyboard it is the app's selection blue as a tint. The focused selector is spelled as
+  // keyboard it is a tint of the accent, as selected text is everywhere else (Radix's
+  // `::selection`); the text keeps its colour. The focused selector is spelled as
   // CM6's own stylesheet spells it — a shorter one loses to that on specificity and the
   // editor shows CM6's stock lavender instead (it did, from SE-1 until 2026-10-06).
   ".cm-selectionBackground": { backgroundColor: "var(--bg-4)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
     backgroundColor: "color-mix(in srgb, var(--blue-solid) 35%, transparent)",
   },
-  // Selected text keeps its own colour. The app's `::selection` turns text white for its
-  // solid blue; here the blue is a tint drawn by CM6, and white on it — or on a white
-  // page, once the keyboard is elsewhere — is text that vanishes.
-  ".cm-line::selection, .cm-line ::selection": { color: "currentcolor" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--t1)" },
   ".cm-placeholder": { color: "var(--t3)" },
   // The statement the cursor sits in — the one ⌘↵ will run. Making "what will run"

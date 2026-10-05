@@ -19,23 +19,8 @@
  * change rather than smuggled inside a feature PR, and it replaces the workbench's
  * local client rather than adding a second one.
  */
-import { useEffect, useState } from "react";
-import { Theme } from "@radix-ui/themes";
+import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-/** Light or dark, as `<html data-theme>` says it — the attribute the app has always switched. */
-function useAppearance(): "light" | "dark" {
-  const [mode, setMode] = useState<"light" | "dark">("dark");
-  useEffect(() => {
-    const root = document.documentElement;
-    const sync = () => setMode(root.getAttribute("data-theme") === "light" ? "light" : "dark");
-    sync();
-    const seen = new MutationObserver(sync);
-    seen.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => seen.disconnect();
-  }, []);
-  return mode;
-}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(() => new QueryClient({
@@ -53,14 +38,5 @@ export function Providers({ children }: { children: React.ReactNode }) {
     },
   }));
 
-  const appearance = useAppearance();
-  // The one panel: accent, grey, radius and scaling here move every token and component under it.
-  return (
-    <QueryClientProvider client={client}>
-      <Theme appearance={appearance} accentColor="blue" grayColor="gray" radius="medium" scaling="100%"
-        panelBackground="solid" hasBackground={false} className="min-h-full flex flex-1 flex-col">
-        {children}
-      </Theme>
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }

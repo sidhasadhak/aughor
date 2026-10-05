@@ -10,7 +10,7 @@
  *   <AugTable<MyRow> columns={antColumns} dataSource={data} />
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Table, ConfigProvider, theme, type ThemeConfig } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 import { cleanLabel, formatMoney, formatTableNumber, formatPercent, displayCellValue } from "@/lib/format";
@@ -18,50 +18,17 @@ import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
 import { sqlColKey, sqlRowObjects } from "@/lib/sqlTable";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 import { rawCells, TableActions } from "@/components/TableActions";
+import { tokenColor, tokenPx, useThemeStamp } from "@/lib/tokenColor";
+import type { TokenName } from "@/lib/tokenFallback";
 
-// ── Theme-mode hook ──────────────────────────────────────────────────────────
-// Ant Design's theme tokens must be real colors (it derives shades), so we can't
-// feed it CSS vars. Instead we watch <html data-theme> and hand Ant a matching
-// dark/light token set so tables flip with the rest of the app.
-function useThemeMode(): "light" | "dark" {
-  const [mode, setMode] = useState<"light" | "dark">(() =>
-    typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"
-      ? "light" : "dark");
-  useEffect(() => {
-    const el = document.documentElement;
-    const sync = () => setMode(el.getAttribute("data-theme") === "light" ? "light" : "dark");
-    sync();
-    const obs = new MutationObserver(sync);
-    obs.observe(el, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => obs.disconnect();
-  }, []);
-  return mode;
-}
-
-// ── Aughor tokens for Ant Design — DERIVED from the live token sheet ─────────
-// Ant's theme tokens must be real colors (it derives shades), so we can't hand it
-// `var(--bg-0)` strings. Instead both mode themes are built from a single
-// getComputedStyle read of the ACTIVE sheet (tokens-v2 wins the cascade), so the
-// antd grid can never drift from the design tokens again — the old hand-mirrored
-// LIGHT block had fossilized the retired v1 palette. The literals below are
-// SSR/fallback values only, kept in sync with aughor-v2/theme/tokens-v2.css.
-
-const TOKEN_FALLBACK: Record<"dark" | "light", Record<string, string>> = {
-  dark: {
-    "--bg-0": "#171717", "--bg-1": "#212121", "--bg-2": "#212121", "--bg-3": "#171717",
-    "--bg-4": "#303030", "--b0": "#2A2A2A", "--b1": "#333333",
-    "--t1": "#EDEDED", "--t2": "#ABABAB", "--t3": "#9C9C9C", "--t4": "#6E6E6E",
-    "--blue3": "#4299E0", "--blue4": "#8ACAFF",
-    "--bg-hover": "#2A2A2A", "--bg-sel": "#1C364D",
-  },
-  light: {
-    "--bg-0": "#FFFFFF", "--bg-1": "#F3F3F3", "--bg-2": "#FFFFFF", "--bg-3": "#FFFFFF",
-    "--bg-4": "#E6E6E6", "--b0": "#E1E1E1", "--b1": "#D4D4D4",
-    "--t1": "#1F1F1F", "--t2": "#424242", "--t3": "#616161", "--t4": "#8A8A8A",
-    "--blue3": "#0F6CBD", "--blue4": "#0B5394",
-    "--bg-hover": "#EBEBEB", "--bg-sel": "#E6F2EB",
-  },
-};
+// ── Aughor tokens for Ant Design — READ from the live token sheet ────────────
+// Ant's theme tokens must be real colours (it derives shades in script), so it cannot be
+// handed `var(--bg-0)`. Both skins are built from the page's own tokens instead, read through
+// `lib/tokenColor.ts` — which also turns a Radix step into sRGB, since on a wide-gamut screen
+// a step is `color(display-p3 …)` and Ant's parser makes black of that. The grid is read
+// again whenever <html> changes skin or look (`useThemeStamp`), so it follows a person's
+// accent, grey and radius like everything else. Off the page the values are
+// `lib/tokenFallback.ts`: the same steps at the default look.
 
 // Selected-row hover: a stronger tint of the selection wash — no dedicated token.
 const ROW_SELECTED_HOVER: Record<"dark" | "light", string> = {
@@ -70,9 +37,7 @@ const ROW_SELECTED_HOVER: Record<"dark" | "light", string> = {
 };
 
 function buildAntTheme(mode: "dark" | "light"): ThemeConfig {
-  const fb = TOKEN_FALLBACK[mode];
-  const cs = typeof window !== "undefined" ? getComputedStyle(document.documentElement) : null;
-  const v = (name: string) => (cs?.getPropertyValue(name).trim() || fb[name]);
+  const v = (name: TokenName) => tokenColor(name, mode);
   return {
     algorithm: mode === "light" ? theme.defaultAlgorithm : theme.darkAlgorithm,
     token: {
@@ -96,8 +61,8 @@ function buildAntTheme(mode: "dark" | "light"): ThemeConfig {
       // Misc — grid stays Inter (text columns readable); numeric formatting keeps tabular alignment
       fontSize:             12,
       fontFamily:           "'Inter', system-ui, sans-serif",
-      borderRadius:         6,   // --r1 (v2 control radius; was the retired 3px)
-      borderRadiusSM:       4,
+      borderRadius:         tokenPx("--r2", 6),   // the Theme's radius, as a control wears it
+      borderRadiusSM:       tokenPx("--r1", 4),
       controlHeight:        30,
       lineWidth:            1,
     },
@@ -180,10 +145,11 @@ function fmt(col: string, v: unknown): React.ReactNode {
 export function AugTable<T extends object = Record<string, unknown>>(
   props: TableProps<T>,
 ) {
-  const mode = useThemeMode();
-  // Re-read tokens whenever the theme flips — getComputedStyle sees the sheet the
-  // moment [data-theme] changes (the MutationObserver in useThemeMode re-renders us).
-  const antTheme = useMemo(() => buildAntTheme(mode), [mode]);
+  // Re-read the tokens whenever <html> changes skin or look: the stamp is its attributes.
+  const stamp = useThemeStamp();
+  const mode = stamp.startsWith("light") ? "light" : "dark";
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the stamp IS the dependency: tokens are read from the page
+  const antTheme = useMemo(() => buildAntTheme(mode), [mode, stamp]);
   return (
     <ConfigProvider theme={antTheme}>
       <Table<T>

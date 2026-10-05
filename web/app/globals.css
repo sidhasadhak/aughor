@@ -109,7 +109,7 @@ html, body {
 
 #__next, body > div:first-child { height: 100%; }
 
-::selection { background: var(--blue-solid); color: #fff; }
+/* Selected text: Radix's own rule — a tint of the accent, the text's colour left alone. */
 
 button { font-family: var(--font-ui); cursor: pointer; }
 /* Raw <button>s get the chrome-stripping reset. The base-ui <Button> (data-slot="button")
@@ -1380,9 +1380,11 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-beside-link:hover { border-color: var(--b3); background: var(--bg-hover); }
 
 
-/* ── Radix Themes underneath (trial, 2026-10-05) ────────────────────────────────────────────
-   The Theme element keeps OUR typography: Inter at 13px, the figure face for code. Its
-   components size themselves from its own scale, so nothing else is said here about type. */
+/* ── Radix Themes underneath (ROADMAP §6 item 44) ───────────────────────────────────────────
+   <html> is the Theme's element (app/theme-root.tsx). It keeps OUR typography: the browser's
+   16px at the root (so a rem is what it was, whatever the panel's scaling says), Inter, and the
+   figure face for code. Themes' components size themselves from its own scale. A Theme nested
+   under it — a dialog's or a menu's content, portalled into <body> — reads as the page does. */
 .radix-themes {
   --default-font-family: var(--font-sans);
   --code-font-family: var(--font-mono);

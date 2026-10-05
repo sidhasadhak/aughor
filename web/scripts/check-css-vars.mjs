@@ -12,10 +12,16 @@
  * Tailwind v4's own theme namespace (--color-*, --radius-*, --spacing*, --text-*,
  * --font-*, …) and runtime-injected vars (--i, --len, ECharts/antd internals) are
  * allowlisted below.
+ *
+ * Radix Themes' variables are NOT allowlisted by prefix: since 2026-10-06 the tokens are
+ * names for Radix steps, and `var(--gray-13)` is exactly the silent drift this gate exists
+ * for. They are read from the installed stylesheet (scripts/radix-tokens.mjs), so a step
+ * Radix does not declare is an orphan like any other.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { radixNames, radixValues } from "./radix-tokens.mjs";
 
 const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const SRC_ROOTS = ["components", "app", "lib", "aughor-v2"];
@@ -45,8 +51,9 @@ function* walk(dir, exts) {
 }
 
 // 1) Collect defined custom properties: `--name:` in CSS sheets and TSX inline styles.
-const defined = new Set();
-const declaredValue = new Map(); // --name → its literal value, for the category gate below
+// Radix's declarations go in first, so a name our own sheets declare keeps OUR value.
+const defined = new Set(radixNames());
+const declaredValue = new Map(radixValues()); // --name → its literal value, for the category gate below
 const DEF_RE = /(--[a-zA-Z0-9-]+)\s*:\s*([^;}]*)/g;
 for (const root of CSS_ROOTS) {
   for (const file of walk(join(WEB, root), [".css"])) {
@@ -95,8 +102,10 @@ for (const root of [...new Set([...SRC_ROOTS, ...CSS_ROOTS])]) {
 // ignored: LENGTH tokens are few and their legitimate positions are a short closed list, so we
 // assert only that a length token stays in a length position (and, symmetrically, that a colour
 // never lands in one). Anything we cannot classify with certainty is left alone.
-const LENGTH_VALUE = /^-?\d*\.?\d+(px|rem|em|vh|vw|ch|%)$/;
-const COLOR_VALUE = /^(#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklch\(|color-mix\()/;
+// A Radix radius is `calc(3px * var(--scaling) * var(--radius-factor))`; a Radix colour on a
+// wide-gamut screen is `color(display-p3 …)`. Both are what they look like.
+const LENGTH_VALUE = /^(-?\d*\.?\d+(px|rem|em|vh|vw|ch|%)|calc\(\s*-?\d*\.?\d+(px|rem|em)\b[^;]*\))$/;
+const COLOR_VALUE = /^(#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklch\(|color-mix\(|color\()/;
 
 function categoryOf(name, seen = new Set()) {
   if (seen.has(name)) return "unknown"; // alias cycle
@@ -199,7 +208,8 @@ if (orphans.length === 0 && miscategorized.length === 0) {
 if (orphans.length > 0) {
   console.error(`✗ css-var gate: ${orphans.length} reference(s) to undefined custom properties\n`);
   for (const o of orphans) console.error(`  ${o.file}:${o.line}  var(${o.name})`);
-  console.error("\nDefine the token in styles/tokens.css | aughor-v2/theme/tokens-v2.css, or re-point the reference at an existing token.");
+  console.error("\nDefine the token in styles/tokens.css | aughor-v2/theme/tokens-v2.css, or re-point the reference at an existing token");
+  console.error("(a Radix step must be one @radix-ui/themes/styles.css declares).");
 }
 if (miscategorized.length > 0) {
   console.error(`${orphans.length > 0 ? "\n" : ""}✗ css-var gate: ${miscategorized.length} reference(s) use a token of the wrong KIND\n`);

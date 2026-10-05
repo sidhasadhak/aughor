@@ -60,74 +60,89 @@
    comparison (#9C9C9C, not #9A9A9A) so a caption on a selected row still clears 4.5:1.
    What is fainter, and was chosen so: the row rule on the page (1.25:1, was 1.39:1) and
    the step from page to chrome (1.11:1, was 1.22:1).
+
+   On 2026-10-06 the product moved onto Radix Themes (ROADMAP §6 item 44), at the user's
+   word: its components, and its one panel — accent, grey, radius, scaling — moving
+   everything at once. Since then every colour and radius below is a NAME for a step of
+   Radix's own scales, chosen by the role Radix gives the step: 1 the page, 2 chrome and
+   cards, 3 to 5 an element at rest, hovered, pressed, 6 to 8 lines, 9 and 10 a solid,
+   11 and 12 text. <html> is the Theme's own element, so the names resolve at the root and
+   follow its knobs everywhere, a portal included. The scales flip with the skin, so one
+   declaration serves both; the hexes named above are history, not values. What stays a
+   literal is what is DATA: the chart palette, held per skin and checked by its own gate.
+   The defaults the user chose are in lib/look.ts: indigo, gray, large, 100%.
    ════════════════════════════════════════════════════════════════════════════ */
 
-/* ── DARK · the default, rendered before the theme attribute is stamped ─────── */
+/* ── DARK · and LIGHT: each name is a Radix step, and the step flips with the skin ─── */
 :root {
   /* surfaces */
-  --bg-0: #171717;          /* the page — charcoal */
-  --bg-1: #212121;          /* chrome: topbar, rail, content header, a table's header row */
-  --bg-2: var(--bg-1);      /* a card: one step lighter than the page */
-  --bg-3: #171717;          /* inset, input, code well: the page colour, boxed by --b2 */
-  --bg-4: #303030;          /* pressed, the active segment */
-  --bg-hover: #2A2A2A;      /* row and nav hover */
-  --bg-nav: var(--bg-1);    /* the rail sits on chrome */
-  --bg-sel: #1C364D;        /* selected row, active nav: a navy tint — the skin's blue, kept */
-  --bg-canvas: var(--bg-0); /* the Data Canvas ground: no tinted ground on chrome */
-  --scrim: rgba(8, 8, 8, .72);
-  --code-bg: #111111;       /* SQL, logs, pre — one step under the page */
+  --bg-0: var(--color-background);   /* the page: Radix's own — gray 1 in dark, white in light */
+  --bg-1: var(--gray-2);             /* chrome: topbar, rail, content header, a table's header row */
+  --bg-2: var(--color-panel-solid);  /* a card: Radix's panel — gray 2 in dark, white in light */
+  --bg-3: var(--color-background);   /* inset, input: the page colour, boxed by --b2 */
+  --bg-4: var(--gray-5);             /* pressed, the active segment */
+  --bg-hover: var(--gray-4);         /* row and nav hover */
+  --bg-nav: var(--bg-1);             /* the rail sits on chrome */
+  --bg-sel: var(--accent-4);         /* selected row, active nav: a tint of the accent */
+  --bg-canvas: var(--bg-0);          /* the Data Canvas ground: no tinted ground on chrome */
+  --scrim: var(--color-overlay);
+  --code-bg: var(--gray-3);          /* SQL, logs, pre — reads on the page and in a card */
 
   /* lines — b0 is the row rule and carries most of the structure; b2 is a border you can see */
-  --b0: #2A2A2A;
-  --b1: #333333;
-  --b2: #454545;
-  --b3: #6E6E6E;
-  --bfocus: var(--blue3);
+  --b0: var(--gray-5);
+  --b1: var(--gray-6);
+  --b2: var(--gray-7);
+  --b3: var(--gray-8);
+  --bfocus: var(--focus-8);
 
-  /* text — t3 is captions and meta (5.87:1 on chrome); t4 is never text */
-  --t1: #EDEDED;
-  --t2: #ABABAB;
-  --t3: #9C9C9C;
-  --t4: #6E6E6E;
+  /* text — Radix has two text steps; t2 and t3 share the quieter one. t4 is never text */
+  --t1: var(--gray-12);
+  --t2: var(--gray-11);
+  --t3: var(--gray-11);
+  --t4: var(--gray-9);
 
   /* intent — 1 tint · 2 border · 3 the colour · 4 text · 5 aliases 4
-     blue interactive · green guard passed, healthy, live · violet deep analysis ·
-     amber waiting on a human · red adverse figure, failed run, refusal · cyan no state */
-  --blue1: #0E2A44; --blue2: #1F4A75; --blue3: #4299E0; --blue4: #8ACAFF; --blue5: var(--blue4);
-  --grn1:  #14331F; --grn2:  #1F5A33; --grn3:  #3CAA60; --grn4:  #8DDDA8; --grn5:  var(--grn4);
-  --vio1:  #2A2140; --vio2:  #4A3B70; --vio3:  #9C7BDD; --vio4:  #C0A9EE; --vio5:  var(--vio4);
-  --amb1:  #3A2A10; --amb2:  #6B4A1A; --amb3:  #D57420; --amb4:  #F2BE88; --amb5:  var(--amb4);
-  --red1:  #3B1A21; --red2:  #6E2536; --red3:  #E65B77; --red4:  #F792A6; --red5:  var(--red4);
-  --cyn1:  var(--bg-3); --cyn2: var(--b2); --cyn3: #32A6B2; --cyn4: #6FC5CE; --cyn5: var(--cyn4);
+     blue IS the accent: everything interactive follows the panel's accent colour ·
+     green guard passed, healthy, live · violet deep analysis · amber waiting on a human ·
+     red adverse figure, failed run, refusal · cyan no state */
+  --blue1: var(--accent-3); --blue2: var(--accent-7); --blue3: var(--accent-9); --blue4: var(--accent-11); --blue5: var(--blue4);
+  --grn1:  var(--green-3);  --grn2:  var(--green-7);  --grn3:  var(--green-9);  --grn4:  var(--green-11);  --grn5:  var(--grn4);
+  --vio1:  var(--violet-3); --vio2:  var(--violet-7); --vio3:  var(--violet-9); --vio4:  var(--violet-11); --vio5:  var(--vio4);
+  --amb1:  var(--amber-3);  --amb2:  var(--amber-7);  --amb3:  var(--amber-9);  --amb4:  var(--amber-11);  --amb5:  var(--amb4);
+  --red1:  var(--red-3);    --red2:  var(--red-7);    --red3:  var(--red-9);    --red4:  var(--red-11);    --red5:  var(--red4);
+  --cyn1:  var(--bg-3); --cyn2: var(--b2); --cyn3: var(--cyan-9); --cyn4: var(--cyan-11); --cyn5: var(--cyn4);
 
-  /* solid — the one filled button; a white label clears AA on it in both skins */
-  --blue-solid:       #2272B4;
-  --blue-solid-hover: #2A82C8;
+  /* solid — the one filled button. Its label is --on-primary, never a literal white:
+     Radix says which accents carry a dark label (sky, mint, lime, yellow, amber) */
+  --blue-solid:       var(--accent-9);
+  --blue-solid-hover: var(--accent-10);
   --vio-solid:        var(--vio3);
-  --primary:          var(--blue-solid);
-  --primary-hover:    var(--blue-solid-hover);
+  --primary:          var(--accent-9);
+  --primary-hover:    var(--accent-10);
+  --on-primary:       var(--accent-contrast);
 
-  /* accent — the skin's own selection colour: the active tab's underline, the rail's
-     active bar, the selected cell's edge. Dark is blue, like everything clickable. */
-  --accent:      var(--blue3);
-  --accent-text: var(--blue4);
+  /* accent — the selection colour: the active tab's underline, the rail's active bar,
+     the selected cell's edge. One accent in both skins since 2026-10-06. */
+  --accent:      var(--accent-9);
+  --accent-text: var(--accent-11);
 
-  /* charts — the six intent hues in CVD order. The ORDER is the colour-blindness
+  /* charts — a chart's colours are DATA: they do not follow the accent, and a person's
+     panel cannot move them. Six hues in CVD order; the ORDER is the colour-blindness
      guarantee: consecutive slots separate on lightness as well as hue. Do not reorder.
      Mirrored in components/charts/palette.ts; lint:palette validates both. */
-  --chart-1: var(--blue3);
-  --chart-2: var(--grn3);
-  --chart-3: var(--vio3);
-  --chart-4: var(--amb3);
-  --chart-5: var(--cyn3);
-  --chart-6: var(--red3);
+  --chart-1: #4299E0;
+  --chart-2: #3CAA60;
+  --chart-3: #9C7BDD;
+  --chart-4: #D57420;
+  --chart-5: #32A6B2;
+  --chart-6: #E65B77;
   --chart-7: #9B2378;       /* the KIND accent, not a series: validated against the six by the gate */
   --chart-deemph: #4E5A6A;  /* the only chart-only value: context series, the Other fold */
   --chart-axis: var(--b2);
   --chart-grid: var(--b0);
   --chart-tick: var(--t4);
-  --chart-threshold-warn:   var(--amb3);
-  --chart-threshold-crit:   var(--red3);
+  --chart-threshold-warn:   var(--chart-4);
+  --chart-threshold-crit:   var(--chart-6);
   --chart-threshold-target: var(--chart-deemph);
 
   /* elevation — only a popover, a toast or a dialog floats */
@@ -136,10 +151,10 @@
   --shadow-lg: var(--shadow-sm);   /* the older name menus and popovers reach for */
   --shadow-xl: var(--shadow-md);   /* the older name dialogs reach for */
 
-  /* geometry — 3 · 4 · 6, and 6 is a ceiling, not a default */
-  --r1: 3px;                /* chips, tags, buttons */
-  --r2: 4px;                /* inputs, nav items, small containers */
-  --r3: 6px;                /* frames, panels, overlays */
+  /* geometry — Radix's radius scale, which the panel's radius and scaling move */
+  --r1: var(--radius-1);    /* chips, tags */
+  --r2: var(--radius-2);    /* inputs, nav items, small containers */
+  --r3: var(--radius-4);    /* frames, panels, overlays: a Radix card's own corner */
   --r-pill: 9999px;         /* only what IS round: avatars and status dots */
   --r-chip: var(--r1);      /* a text-bearing chip is a rectangle */
   --r-composer: var(--r2);  /* the chat composer is a field */
@@ -178,86 +193,19 @@
   --shell-measure: 700px;
 }
 
-/* ── LIGHT · after Excel. Designed, not inverted: grey chrome, a white grid, near-black
-   text, and the app's own state in Excel green while blue stays a link. The aliases in
-   the dark block resolve against these values on their own; --bg-2 is re-declared
-   because a light card is the page, boxed by its border, not a step up from it. ── */
+/* ── LIGHT · only what is a literal: the chart palette and the shadows. Every other name
+   above is a Radix step and has already flipped. ── */
 [data-theme="light"] {
-  --bg-0: #FFFFFF;          /* the page and the grid */
-  --bg-1: #F3F3F3;          /* chrome: topbar, rail, content header, a table's header row */
-  --bg-2: var(--bg-0);      /* a card: a box drawn by its border on the page */
-  --bg-3: #FFFFFF;          /* inset, input: white, boxed by --b2 */
-  --bg-4: #E6E6E6;          /* pressed */
-  --bg-hover: #EBEBEB;
-  --bg-sel: #E6F2EB;        /* the green tint: selected row, active nav, the active segment */
-  --scrim: rgba(31, 31, 31, .32);
-  --code-bg: #FAFAFA;
-
-  --b0: #E1E1E1;            /* the gridline */
-  --b1: #D4D4D4;
-  --b2: #C4C4C4;
-  --b3: #8A8A8A;
-
-  --t1: #1F1F1F;
-  --t2: #424242;
-  --t3: #616161;            /* 5.58:1 on chrome, 6.19:1 on the page */
-  --t4: #8A8A8A;
-
-  --blue1: #DDEBF7; --blue2: #9DC3E6; --blue3: #0F6CBD; --blue4: #0B5394;
-  --grn1:  #C6EFCE; --grn2:  #8FD3A8; --grn3:  #1E7B45; --grn4:  #006100;   /* Excel's Good */
-  --vio1:  #EADDF7; --vio2:  #C9A9EA; --vio3:  #6B3FA0; --vio4:  #4B2C7F;
-  --amb1:  #FFEB9C; --amb2:  #E6C35C; --amb3:  #B25E00; --amb4:  #9C5700;   /* Excel's Neutral */
-  --red1:  #FFC7CE; --red2:  #F09AA5; --red3:  #C50F1F; --red4:  #9C0006;   /* Excel's Bad */
-  --cyn3:  #00819C; --cyn4:  #0B616C;
-
-  --blue-solid:       #0F6CBD;   /* blue stays a link's colour; the filled button is --primary */
-  --blue-solid-hover: #0B5A9E;
-  --primary:          #107C41;   /* Excel green: the filled button (5.27:1 under white) */
-  --primary-hover:    #0F703B;   /* light darkens on hover; dark lightens */
-  --accent:           #107C41;   /* the selection edge, the active tab, the rail's active bar */
-  --accent-text:      #0C5E32;   /* 6.86:1 on the green tint */
-
+  --chart-1: #0F6CBD;
+  --chart-2: #1E7B45;
+  --chart-3: #6B3FA0;
+  --chart-4: #B25E00;
+  --chart-5: #00819C;
+  --chart-6: #C50F1F;
   --chart-7: #DC1E98;       /* the KIND accent: #B73BCD sat 5.0 ΔE from the new blue under CVD; this clears 6 */
   --chart-deemph: #AEB5BA;
 
   /* near-black at a third of dark's opacity; on the grid a --b1 rule does more than any shadow */
   --shadow-sm: 0 1px 2px rgba(31, 31, 31, .10);
   --shadow-md: 0 1px 2px rgba(31, 31, 31, .10), 0 6px 16px rgba(31, 31, 31, .08);
-}
-
-
-/* ── Radix Themes underneath (trial, 2026-10-05) ────────────────────────────────────────────
-   Every Instrument token is now a NAME for a Radix step, chosen by the role Radix gives that
-   step: 1 page, 2 chrome and cards, 4 hover, 5 pressed, 5-8 lines, 9 solid, 11 and 12 text.
-   <html> carries .dark or .light, so the scales resolve at the root (portals, the body).
-   Inside the Theme the same names follow its knobs — accentColor, grayColor, radius — which is
-   the point: one panel moves the whole product. Both skins: the scales switch with the class. */
-:root, .radix-themes {
-  --bg-0: var(--gray-1); --bg-1: var(--gray-2); --bg-3: var(--gray-1); --bg-4: var(--gray-5); --bg-hover: var(--gray-4);
-  --code-bg: var(--gray-3);
-  --b0: var(--gray-5); --b1: var(--gray-6); --b2: var(--gray-7); --b3: var(--gray-8);
-  --t1: var(--gray-12); --t2: var(--gray-11); --t3: var(--gray-11); --t4: var(--gray-9);
-  --grn1: var(--green-3); --grn2: var(--green-7); --grn3: var(--green-9); --grn4: var(--green-11);
-  --vio1: var(--violet-3); --vio2: var(--violet-7); --vio3: var(--violet-9); --vio4: var(--violet-11);
-  --amb1: var(--amber-3); --amb2: var(--amber-7); --amb3: var(--amber-9); --amb4: var(--amber-11);
-  --red1: var(--red-3); --red2: var(--red-7); --red3: var(--red-9); --red4: var(--red-11);
-  --cyn3: var(--cyan-9); --cyn4: var(--cyan-11);
-}
-:root {
-  --blue1: var(--blue-3); --blue2: var(--blue-7); --blue3: var(--blue-9); --blue4: var(--blue-11);
-  --bg-sel: var(--blue-4); --blue-solid: var(--blue-9); --blue-solid-hover: var(--blue-10);
-}
-.radix-themes {
-  --blue1: var(--accent-3); --blue2: var(--accent-7); --blue3: var(--accent-9); --blue4: var(--accent-11);
-  --bg-sel: var(--accent-4); --blue-solid: var(--accent-9); --blue-solid-hover: var(--accent-10);
-  --r1: var(--radius-1); --r2: var(--radius-2); --r3: var(--radius-4);
-}
-/* The chart palette is held where it was: a chart's colours are data, checked by their own gate. */
-:root:not([data-theme="light"]), :root:not([data-theme="light"]) .radix-themes {
-  --chart-1: #4299E0; --chart-2: #3CAA60; --chart-3: #9C7BDD; --chart-4: #D57420; --chart-5: #32A6B2; --chart-6: #E65B77;
-  --chart-threshold-warn: #D57420; --chart-threshold-crit: #E65B77;
-}
-[data-theme="light"], [data-theme="light"] .radix-themes {
-  --chart-1: #0F6CBD; --chart-2: #1E7B45; --chart-3: #6B3FA0; --chart-4: #B25E00; --chart-5: #00819C; --chart-6: #C50F1F;
-  --chart-threshold-warn: #B25E00; --chart-threshold-crit: #C50F1F;
 }

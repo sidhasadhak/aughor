@@ -14,7 +14,9 @@
  * deleted; the gate moved with it.
  */
 
-import { CHART_SERIES, CHART_DEEMPH, CHART_SIGN, CHART_SURFACE, type ChartMode } from "@/components/charts/palette";
+import { CHART_SERIES, CHART_DEEMPH, CHART_SIGN, type ChartMode } from "@/components/charts/palette";
+import { tokenColor } from "@/lib/tokenColor";
+import { TOKEN_FALLBACK } from "@/lib/tokenFallback";
 
 export interface VegaTokens {
   palette: string[];
@@ -31,7 +33,7 @@ export interface VegaTokens {
   font: string;
 }
 
-/** Read a CSS custom property off <html>, with a dark-mode literal fallback for SSR. */
+/** A chart colour off <html>: a literal hex by design (the palette is data), so it is read as written. */
 function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -57,15 +59,16 @@ export function readVegaTokens(el?: Element | null): VegaTokens {
     palette: CHART_SERIES[mode].map((hex, k) => cssVar(`--chart-${k + 1}`, hex)),
     deemph: cssVar("--chart-deemph", CHART_DEEMPH[mode]),
     sign: {
-      pos: cssVar("--grn3", CHART_SIGN[mode].pos),
+      pos: cssVar("--chart-2", CHART_SIGN[mode].pos),
       neg: cssVar("--chart-threshold-crit", CHART_SIGN[mode].neg),
     },
-    axis: cssVar("--chart-axis", "#454545"),
-    grid: cssVar("--chart-grid", "#2A2A2A"),
-    tick: cssVar("--chart-tick", "#6E6E6E"),
-    t1: cssVar("--t1", "#EDEDED"),
-    t3: cssVar("--t3", "#9C9C9C"),
-    surface: cssVar("--bg-2", CHART_SURFACE[mode]),
+    // The frame around the marks wears the Theme, so these are Radix steps: read as sRGB.
+    axis: tokenColor("--chart-axis"),
+    grid: tokenColor("--chart-grid"),
+    tick: tokenColor("--chart-tick"),
+    t1: tokenColor("--t1"),
+    t3: tokenColor("--t3"),
+    surface: tokenColor("--bg-2"),
     font,
   };
 }
@@ -79,12 +82,12 @@ export function printVegaTokens(): VegaTokens {
     palette: [...CHART_SERIES.light],
     deemph: CHART_DEEMPH.light,
     sign: { ...CHART_SIGN.light },
-    axis: "#C4C4C4",
-    grid: "#E1E1E1",
-    tick: "#8A8A8A",
-    t1: "#1F1F1F",
-    t3: "#616161",
-    surface: "#FFFFFF",
+    axis: TOKEN_FALLBACK.light["--chart-axis"],
+    grid: TOKEN_FALLBACK.light["--chart-grid"],
+    tick: TOKEN_FALLBACK.light["--chart-tick"],
+    t1: TOKEN_FALLBACK.light["--t1"],
+    t3: TOKEN_FALLBACK.light["--t3"],
+    surface: TOKEN_FALLBACK.light["--bg-2"],
     font: "sans-serif",
   };
 }
