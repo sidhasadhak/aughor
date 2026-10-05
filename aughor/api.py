@@ -1101,6 +1101,8 @@ app.include_router(arrivals_router.router)  # HB-5 — arrivals: a Slack sentenc
 app.include_router(hub_router.router)  # HB-6 — the hub-wide map: every automation on one screen
 app.include_router(brain_router.router)  # PENDING item 9 — the company-brain map
 app.include_router(receipt_router.router)
+from aughor.routers import record as record_router  # noqa: E402 — phase 1 of the 2027 study, beside the receipt
+app.include_router(record_router.router)  # the Record: claims as recorded, decisions declared and listed, outcomes booked
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
 app.include_router(cockpit_router.router)  # Arc CT-4 — a Data Canvas's cockpit (self-gates on cockpit.composed)

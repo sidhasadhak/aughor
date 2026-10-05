@@ -104,12 +104,15 @@ def log_outcome(
             # before/after the answer is judged on default to the measured baseline and review.
             kept = {k: o.get(k) for k in _REVIEW_FIELDS if k in o}
             merged = {**outcome.model_dump(), **kept, "created_at": o.get("created_at", _now())}
+            # The numbers an earlier request gave are kept too: an answer that names no "before"
+            # does not erase the one the acceptance recorded (measured 2026-10-05 — the review
+            # answer dropped it, and the Record's outcome then had nothing to take a change against).
             if merged.get("metric_before") is None:
-                merged["metric_before"] = kept.get("baseline_value")
+                merged["metric_before"] = o.get("metric_before") if o.get("metric_before") is not None else kept.get("baseline_value")
             if merged.get("metric_after") is None:
-                merged["metric_after"] = kept.get("review_value")
+                merged["metric_after"] = o.get("metric_after") if o.get("metric_after") is not None else kept.get("review_value")
             if not merged.get("metric_name"):
-                merged["metric_name"] = (kept.get("spec") or {}).get("metric_label") or None
+                merged["metric_name"] = o.get("metric_name") or (kept.get("spec") or {}).get("metric_label") or None
             outcome = RecOutcome(**merged)
             raw[i] = outcome.model_dump()
             _save_raw(raw, path)

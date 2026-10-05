@@ -600,7 +600,22 @@ def reject_proposal(proposal_id: str, *, actor: str) -> bool:
         if p:
             govern.audit(gov_action_of(p), p.connection_id, "proposal_rejected",
                          actor=actor, detail=f"proposal {proposal_id}")
+            _book_decision(p, chosen="decline", actor=actor)
     return resolved
+
+
+def _book_decision(p: StagedProposal, *, chosen: str, actor: str) -> None:
+    """Phase 1 of the 2027 study (§K): a resolution IS the organisation's decision, so it is booked
+    in the Record as a by-product — approve or decline, the action it arms, who decided. After the
+    resolve-once UPDATE and outside its lock: the resolution is the durable thing, and a booking
+    that fails must never be able to cost someone their approval."""
+    try:
+        from aughor.record.byproducts import decision_from_proposal
+        decision_from_proposal(p, chosen=chosen, actor=actor)
+    except Exception as exc:  # noqa: BLE001 — see docstring
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "booking the decision in the Record is best-effort; the proposal is resolved",
+                 counter="record.decision_from_proposal", conn_id=p.connection_id or None)
 
 
 def supersede_proposal(proposal_id: str, *, actor: str, note: str = "") -> bool:
@@ -699,6 +714,7 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
     if not _resolve_once(proposal_id, "accepted", actor):
         return KineticResult("already_resolved", False, p.action_id,
                              message=f"proposal already {get_proposal(proposal_id).status}"), ""
+    _book_decision(p, chosen="approve", actor=actor)
     if filled_params is not None:
         # The record must show what was ARMED, not what was drafted — the fill is part of
         # the human's accept, and an audit that reads back the placeholder would say a

@@ -268,8 +268,7 @@ def book_outcome(outcome: Outcome) -> str:
     return oid
 
 
-def get_outcome(decision_id: str) -> Optional[Outcome]:
-    art = _ledger().artifact_latest(outcome_key(decision_id))
+def _outcome_from(art: Optional[dict]) -> Optional[Outcome]:
     if not art or art.get("kind") != OUTCOME_KIND:
         return None
     o = Outcome.model_validate(dict(art.get("payload") or {}))
@@ -277,3 +276,14 @@ def get_outcome(decision_id: str) -> Optional[Outcome]:
     o.key = str(art.get("natural_key") or "")
     o.recorded_at = str(art.get("created_at") or "")
     return o
+
+
+def get_outcome(decision_id: str) -> Optional[Outcome]:
+    """The outcome booked against this decision id — the version that was current when the
+    outcome was measured. A later version carries the outcome's id in ``outcome``; read that
+    with :func:`outcome_by_id`."""
+    return _outcome_from(_ledger().artifact_latest(outcome_key(decision_id)))
+
+
+def outcome_by_id(outcome_id: str) -> Optional[Outcome]:
+    return _outcome_from(_ledger().artifact_by_id(outcome_id)) if outcome_id else None
