@@ -1,0 +1,10 @@
+# Method 4 — what pausing a promotion did before, on THIS install, read from its own reviewed decisions.
+id: promotion_pause
+name: Pausing a promotion, from past decisions
+for_kind: decision
+method: intervention
+metric: gross_margin
+like: pause the promotion
+limits:
+  - "projects nothing below three reviewed decisions of this kind on the install"
+description: The measured effect past promotion pauses had on margin here.

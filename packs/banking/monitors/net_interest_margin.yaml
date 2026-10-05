@@ -1,0 +1,12 @@
+# Phase 6 of the 2027 study — a watch banking keeps, with the PRIOR range the metric sat in where it was measured:
+# the FDIC's insured institutions on the package's public dataset (gate 4, `measurements/fdic-financials-2025-q2.json`,
+# measured 2026-09-17: 3.26% over all institutions), and the band the FDIC's peer groups publish (the metric's
+# sane range, `metrics/net_interest_margin.yaml`). A single institution can sit outside a group's rate.
+id: net_interest_margin
+metric: net_interest_margin
+unit: ratio
+low: 0.02205
+high: 0.09415
+measured_on: [fdic-financials-2025-q2]
+sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]
+description: Net interest income over average earning assets, annualised.

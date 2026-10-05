@@ -1,0 +1,13 @@
+# Method 1 — liquidity under a run-off assumption is an identity over declared inputs: what remains liquid after a
+# stated share of deposits leaves. The share is a person's declared assumption (method 2), never this formula's.
+id: liquidity_runoff
+name: Liquid assets after a deposit run-off
+for_kind: decision
+method: identity
+metric: liquid_assets_after_runoff
+formula: liquid_assets - runoff_share * deposits
+inputs: [liquid_assets, runoff_share, deposits]
+varied: [runoff_share]
+limits:
+  - "the run-off share is a declared assumption or a stress scenario's, stated with its author"
+description: What stays liquid if a share of deposits leaves.

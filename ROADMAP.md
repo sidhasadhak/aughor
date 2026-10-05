@@ -11106,7 +11106,7 @@ python scripts/phase0_prompt_block_ablation.py` when a model key is at hand, the
 `AUGHOR_OIDC_ISSUER` and `AUGHOR_OIDC_AUDIENCE` — the day an identity provider is chosen; group grants, the
 proposal approver's name and the grant-ownership refusal all take effect then with no further code. **The
 organisation-scale half of the exit — five owners, identity on — is not observable yet**, by the user's own
-answers, and this line says so rather than reading as met. Phases 1 to 4 followed back to back on the same
+answers, and this line says so rather than reading as met. Phases 1 to 6 followed back to back on the same
 branch at the user's word (2026-10-05, below): each phase's CODE half is built and receipted by its tests; each
 phase's exit is the install's to show, and every "Still open" line names what the install, not the code, still owes.
 
@@ -11210,6 +11210,64 @@ into it; the Operate duty row; firing the declared undo from an Action entry; th
 booking Action entries; and the exit's live halves — a graduation on the organisation's install (which needs phase 3's
 first reconciled outcomes) and a demotion in a drill there. §4.8's refusal stands as amended: the mechanism exists,
 and L4 stays unreachable until an outcome is recorded and scored.
+
+**Phase 5 — the code half BUILT 2026-10-05**, two slices. (P5-1, P5-2) `aughor/record/mission.py` — the mission as a
+kernel artifact (kind `mission`) written by people: objective (metric, direction, target, by when, its measurable spec
+resolved from the governed metric), constraints, scope, owner, budget (interruptions a week, spend a month, an
+authority ceiling per action kind), watches, cadence, state proposed · active · paused · met · retired. Three laws at
+the door: a mission written by an agent or the system is refused; a mission without an owner does not run (it stays
+proposed, and the loop reads only active, owned missions); every interruption is charged. The loop reads it in three
+places — triage's first term (`bearing`: 1.0 on the objective's metric, 0.7 a constraint's, 0.5 a watch) at the
+departure gate, which writes the mission on the row and holds a spent mission's next departure under `held_budget`,
+named; the ladder's ceiling (`authority.level_for` caps at the lowest ceiling an active mission on the scope set); the
+inquiry and decision doors (an alert's inquiry and an acceptance's decision carry the mission their metric bears on).
+The report is composed from fields by code: the objective against the baseline the metric's own history predicts
+(method 3) FIRST — moved · unmoved · against · cannot tell, each with why — then constraints held or not, watches,
+inquiries by state, decisions and what became of each, cost (interruptions used of the budget, actions by level,
+demotions, spend said as not counted), lessons; "0 inquiries, 0 decisions, no measurable effect yet" is a valid
+headline. Booked as `mission_report`, the mission's review advanced, delivered to the owner's channel through the gate
+on the heartbeat (`report_due_missions_hourly`) or on demand; `/record/missions*` serves it. (P5-3)
+`aughor/record/corrections.py` — Corrections as one view over five ledger records, each with what was believed and what
+replaced it: restatements, refuted hypotheses, missed moves (the review of a miss now books a `missed_move` entry when
+and only when it found one), predictions outside their band, decisions worse than expected; `/record/corrections`
+counts by kind. (P5-4) `record/scenario.intervention` — method 4 reads Outcome entries and nothing else: the measured
+effects of past decisions that ran the same action or asked the same question, their mean, band and count, nothing
+below three cases; `lifecycle/causal.promote_on_record_outcome` — the review's measured verdict confirms or weakens
+the investigation's proposed causes, so the confirmed-cause graph grows from reviewed decisions (both its files now
+env-resolved and hermetic); a play's rate is learned from the Record's verdicts first and a person's answer only where
+the Record has none, stored with its count and said as "held in 1 of 2 reviewed outcomes", never a bare percentage.
+Receipt: 23 phase-5 tests pass; the attention, authority, inquiry, gate, laws, remedies, exit-ratchet, review,
+byproducts, scenario, writers, playbook, missed-move, causal, scheduler and vocabulary suites pass. **Still open in
+phase 5:** the Mission page and Missions as a destination; the Corrections view on screen; the Briefing's mission line;
+L5 (missions exist; the agent that chooses among actions toward one does not); spend attributed to a mission; and the
+exit, which is the install's and a quarter's.
+
+**Phase 6 — the code half BUILT 2026-10-05**, two slices. (P6-1) `record/writers.book_pack_claims` — the pack writer,
+the fourth of the study's five claim shapes: a pack's map measured against a connection (`packs/ontology_map.
+apply_core_claims`) is booked into the Record as the pack's hypotheses, `open` while the data cannot speak (tier
+`said`), `supported` or `refuted` once it has (tier `mined`, warranted by the build), `supported` at tier `declared`
+when a person's declaration settled it; one claim per pack · connection · schema · subject, restated on every build,
+from `apply_bound_pack_claims` and the review path in `ontology/store.py`. `packs/models.py` and the loader grow the
+priors a pack ships — `monitors/*.yaml` with prior normal ranges, `scenarios/*.yaml` and `missions/*.yaml` as templates,
+a play's `base_rate` with its count — and `packs/priors.py` holds the rule the static gate (`validate_loaded`) enforces
+on every pack: a prior carries the installs or datasets it was measured on, or says none; a template names a method
+the ladder has and a cadence the report keeps. The two verticals carry them with provenance: commerce's promise-breach
+band from the two public datasets' readings and a return rate said as unmeasured, three mission templates and two
+scenario templates; banking's margin and noncurrent-loan bands measured on the FDIC dataset gate 4 measured the
+package on, approval rate said as unmeasured, a cost-of-risk mission whose constraint the shopping list names, a
+liquidity identity. `GET /record/missions/templates` reads them as bodies a person writes from. (P6-2)
+`packs/onboarding.py` and `GET /onboarding` — the day-one door: hours from the connection's first build to the first
+claim a decision relied on against a 24-hour gate ("not yet", never a number, before any decision); the data shopping
+list (a bound pack's expected objects no table matched with what each unlocks, pack metrics whose roles the binding
+leaves unresolved with the plays and goldens that wait, mission templates whose metric nothing measures); coverage
+from the visibility module; the bound packs' priors and templates. (P6-3) `tests/unit/test_industry_noun_ratchet.py`
+— the kernel's industry-noun count at its measured baseline, English and SQL senses stripped first, a baseline that may
+fall and never rise; and the kernel's doors answering with no pack installed. Receipt: 15 phase-6 tests pass; the pack
+loader, static gate, pack-claims, banking package, release gate, demo pack, roster, rebuild, package-parity, prompt-reach
+and vocabulary suites pass. **Still open in phase 6:** terms proposed for confirmation on connect; alerts armed from a
+prior's band with a backtest on the connection; B2B SaaS as the second deep vertical (banking chosen instead, its
+package drafted); the nouns still in the kernel's docstrings, which the ratchet counts down; and the exit — the hours
+measured on a new customer's install in each vertical, with the receipt.
 
 ---
 

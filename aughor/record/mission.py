@@ -61,7 +61,7 @@ class Objective(BaseModel):
     unit: str = ""
     by_when: str = ""                    # ISO date
     spec: Optional[dict] = None          # the measurable definition (metric_sql · metric_table · date_column · window_days)
-    text: str = ""                       # the line as written: "gross margin ≥ 41%, rolling 4 weeks"
+    text: str = ""                       # the line as written: "<the metric> ≥ 41%, rolling 4 weeks"
 
 
 class Constraint(BaseModel):

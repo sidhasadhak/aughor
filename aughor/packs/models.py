@@ -154,6 +154,71 @@ class PackPlaybook(_Base):
     #: IP-3 — for a data-quality play: an aggregate over role attributes that counts the rows showing the pitfall's
     #: shape (a flight arriving three hours before its schedule). Gate 4 runs it; a count is exposure, not a defect.
     detection: str = ""
+    #: Phase 6 — the play's BASE RATE: how often it held where it was measured, with the count and the installs or
+    #: datasets it was measured on (or `unmeasured: true`). A rate with neither is refused by the static gate; an
+    #: install's own learned rate (`PlaybookEntry.historical_success_rate`, from outcomes) replaces it as cases arrive.
+    base_rate: Optional[float] = None
+    base_rate_n: int = 0
+    measured_on: list[str] = Field(default_factory=list)
+    unmeasured: bool = False
+
+
+class Prior(_Base):
+    """Phase 6 of the 2027 study (§P, §W) — a number a pack ships BEFORE this install measured it. A prior
+    carries the installs or public datasets it was measured on, or says none (`unmeasured: true`); a number
+    with neither is refused by the static gate, because a band nobody measured anywhere would read as
+    normal the day a connection is made. An unmeasured prior is shown as such and never as a range."""
+    measured_on: list[str] = Field(default_factory=list)   # install or dataset ids the number was measured on
+    unmeasured: bool = False                                 # said outright when no one has measured it
+    sources: list[str] = Field(default_factory=list)       # `sources.yaml` ids behind the number, when any
+    note: str = ""
+
+    @property
+    def provenance_declared(self) -> bool:
+        return bool(self.measured_on) or self.unmeasured
+
+
+class PackMonitorPrior(Prior):
+    """`monitors/*.yaml` — a watch the industry usually keeps on a metric, with its PRIOR normal range: the
+    band the metric sat in where it was measured. Proposed on connect for a person to confirm; never armed."""
+    id: str = ""
+    metric: str
+    low: Optional[float] = None
+    high: Optional[float] = None
+    unit: str = ""
+    description: str = ""
+
+
+class PackScenarioTemplate(_Base):
+    """`scenarios/*.yaml` — a projection the industry usually makes, as a template over the ladder's
+    methods (`record/scenario.METHODS`): an identity's formula and which inputs a decision varies, or
+    the kind of decision an intervention reads past outcomes of. Declarations only; the method is code."""
+    id: str
+    name: str = ""
+    for_kind: str = "decision"           # decision | mission | inquiry
+    method: str = "identity"             # identity | declared | history | intervention
+    metric: str = ""
+    unit: str = ""
+    formula: str = ""                    # identity: arithmetic over the named inputs
+    inputs: list[str] = Field(default_factory=list)
+    varied: list[str] = Field(default_factory=list)
+    like: str = ""                       # intervention: the kind of decision, as a question
+    action_id: str = ""                  # intervention: the declared action it ran
+    limits: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
+class PackMissionTemplate(_Base):
+    """`missions/*.yaml` — a standing objective the industry usually sets, as a template a PERSON writes a
+    mission from (`record/mission.py`): the objective's metric and direction, the constraints that must
+    not be damaged, the cadence. A template never becomes a mission on its own — people write missions."""
+    id: str
+    name: str
+    objective: dict = Field(default_factory=dict)      # {metric, direction, target?, unit?, text?}
+    constraints: list[dict] = Field(default_factory=list)   # [{metric, bound, limit?, unit?, text?}]
+    cadence: str = "monthly"
+    watches: list[dict] = Field(default_factory=list)
+    description: str = ""
 
 
 class PackSurface(_Base):
@@ -362,6 +427,10 @@ class Pack(_Base):
     function: Optional[PackFunction] = None          # function.yaml — the group the pack ships (HB-6)
     sources: list[PackSource] = Field(default_factory=list)    # sources.yaml (IP-3)
     datasets: list[PackDataset] = Field(default_factory=list)  # datasets/*.yaml (IP-3)
+    #: Phase 6 — the priors and templates a pack ships: watches with prior ranges, scenario and mission templates.
+    monitors: list[PackMonitorPrior] = Field(default_factory=list)      # monitors/*.yaml
+    scenarios: list[PackScenarioTemplate] = Field(default_factory=list)  # scenarios/*.yaml
+    missions: list[PackMissionTemplate] = Field(default_factory=list)   # missions/*.yaml
     path: str = ""                                   # source folder
 
     @property

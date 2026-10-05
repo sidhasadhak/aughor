@@ -1,0 +1,8 @@
+# A watch lending keeps and this package cannot yet measure: loan-level origination data (applications, approvals)
+# is not in the FDIC's per-institution file (PENDING: "loan-level lending metrics are not covered"). Said as
+# unmeasured; it is the shopping list's first line on a bank that connects only its Call Report figures.
+id: approval_rate
+metric: approval_rate
+unit: ratio
+unmeasured: true
+description: Approved applications over decided applications, by decision date.

@@ -180,10 +180,13 @@ def outcome_from_review(outcome) -> Optional[str]:
     verdict, why, effect = _verdict_against_history(
         actual=actual, baseline=outcome.history_value, low=outcome.history_low, high=outcome.history_high,
         direction=direction, against=against, history_note=outcome.history_note)
+    # Phase 5: the measured verdict writes back to the confirmed-cause graph BEFORE the outcome is booked,
+    # so the one outcome version the review books says what it wrote back.
+    writes_back = (["prediction scored"] if pred is not None else []) + \
+        _causal_write_back(str(getattr(outcome, "inv_id", "") or ""), verdict)
     result = _dec.Outcome(of=decision.id, measured_on=(outcome.reviewed_at or _dt.datetime.now(_dt.timezone.utc).isoformat())[:10],
                           actual=actual, baseline=outcome.history_value, effect=effect, verdict=verdict, why=why,
-                          against_expectation=against, measured_by="system:review",
-                          writes_back=["prediction scored"] if pred is not None else [],
+                          against_expectation=against, measured_by="system:review", writes_back=writes_back,
                           extra={"before": before, "after": actual, "review_window": outcome.review_window,
                                  "history_n": outcome.history_n, "history_note": outcome.history_note,
                                  "history_band": [outcome.history_low, outcome.history_high]})
@@ -194,39 +197,39 @@ def outcome_from_review(outcome) -> Optional[str]:
             latest.extra["actual"] = actual
             latest.confidence = None
             _claims.restate(latest.key, latest, conn_id=decision.connection_id or None)
-    _write_back(oid, inv_id=str(getattr(outcome, "inv_id", "") or ""), verdict=verdict)
+    _relearn_playbook()
     return oid
 
 
-def _write_back(outcome_id: str, *, inv_id: str, verdict: str) -> None:
-    """Phase 5: the measured outcome writes back to the confirmed-cause graph (the investigation's
-    proposed causes, confirmed or weakened by the verdict) and to the playbook's success rates
-    (learned from outcomes, not from use). Both best-effort; what was written back is restated onto
-    the outcome so the record says it."""
-    from aughor.kernel.errors import tolerate
-    wrote: list[str] = []
-    if inv_id:
-        try:
-            from aughor.lifecycle.causal import promote_on_record_outcome
-            done = promote_on_record_outcome(inv_id, verdict)
-            if done["affected"]:
-                wrote.append(f"confirmed-cause graph: {done['did']} {done['affected']} edge{'s' if done['affected'] != 1 else ''}")
-        except Exception as exc:  # noqa: BLE001
-            tolerate(exc, "the outcome stands; the confirmed-cause graph could not be written back", counter="record.causal_writeback")
+def _causal_write_back(inv_id: str, verdict: str) -> list[str]:
+    """Phase 5: the measured verdict confirms or weakens the investigation's proposed causes
+    (`lifecycle/causal.promote_on_record_outcome`). Best-effort; returns the write-back line for the
+    outcome's record, or nothing when there was nothing to write."""
+    if not inv_id:
+        return []
+    try:
+        from aughor.lifecycle.causal import promote_on_record_outcome
+        done = promote_on_record_outcome(inv_id, verdict)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the outcome stands; the confirmed-cause graph could not be written back", counter="record.causal_writeback")
+        return []
+    if not done["affected"]:
+        return []
+    return [f"confirmed-cause graph: {done['did']} {done['affected']} edge{'s' if done['affected'] != 1 else ''}"]
+
+
+def _relearn_playbook() -> int:
+    """Phase 5: a play's success rate is learned from outcomes, not from use — re-counted after an
+    outcome is booked (`playbook/outcomes.update_playbook_success_rates`). The playbook entry carries
+    the record of it (its count and source); the outcome is not restated for bookkeeping."""
     try:
         from aughor.playbook.outcomes import update_playbook_success_rates
-        n = update_playbook_success_rates()
-        if n:
-            wrote.append(f"playbook: {n} entr{'y' if n == 1 else 'ies'} re-rated from outcomes")
+        return update_playbook_success_rates()
     except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
         tolerate(exc, "the outcome stands; the playbook's success rates could not be re-learned", counter="record.playbook_writeback")
-    if wrote:
-        try:
-            prior = _dec.outcome_by_id(outcome_id)
-            if prior is not None:
-                _dec.restate_outcome(outcome_id, extra={"written_back": prior.writes_back + wrote})
-        except Exception as exc:  # noqa: BLE001
-            tolerate(exc, "what was written back could not be noted on the outcome", counter="record.writeback_note")
+        return 0
 
 
 def outcome_from_review_answer(outcome, *, status: str, answered_by: str) -> Optional[str]:

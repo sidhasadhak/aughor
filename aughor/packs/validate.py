@@ -99,6 +99,12 @@ def validate_loaded(pack: Pack) -> ValidationReport:
     if applies(pack):
         r.errors.extend(run_gate3(pack).lines())
 
+    # ── Phase 6 of the 2027 study — every pack's priors say where they were measured, or say none;
+    # its templates name what the kernel has. Held on every pack, anatomy or not: a bare number is
+    # the thing the rule exists to refuse.
+    from aughor.packs.priors import prior_problems
+    r.errors.extend(prior_problems(pack))
+
     # ── knowledge layer (IP-1) — a package is REFERENCE the agents read (§3.17), not a
     # steering pack, so the steering completeness warnings below do not apply to it ──────
     if m.layer or m.industry:

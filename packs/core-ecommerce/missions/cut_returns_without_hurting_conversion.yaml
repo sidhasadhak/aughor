@@ -1,0 +1,7 @@
+id: cut_returns_without_hurting_conversion
+name: Cut returns without hurting conversion
+cadence: monthly
+objective: {metric: return_rate, direction: down, unit: ratio}
+constraints:
+  - {metric: conversion_rate, bound: at_least, unit: ratio, text: "conversion must not fall below its floor"}
+description: Fewer returns, the same share of visitors buying.

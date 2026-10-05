@@ -1,0 +1,13 @@
+# Phase 6 of the 2027 study — a scenario template over the ladder's identity method (§L, §P): revenue under a price
+# change is arithmetic over the inputs a decision varies, exact under the formula, with units held fixed and said so.
+id: price_identity
+name: Revenue under a price change
+for_kind: decision
+method: identity
+metric: revenue
+formula: price * units
+inputs: [price, units]
+varied: [price]
+limits:
+  - "holds units fixed: the volume response to the price is a declared assumption or a past change, never this formula's"
+description: What revenue is at a new price if the same units sell.

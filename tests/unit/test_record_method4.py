@@ -129,11 +129,10 @@ def test_the_review_writes_back_to_the_graph_and_the_outcome_says_so():
     oid = outcome_from_review(rec)
     booked = D.outcome_by_id(oid)
     assert booked.verdict == "better"
-    latest = D.get_outcome(D.latest_decision(D.Source(kind="recommendation", ref=rec.id)).id) or booked
-    current = D.outcome_by_id(D.latest_decision(D.Source(kind="recommendation", ref=rec.id)).outcome)
-    assert any(w.startswith("confirmed-cause graph: confirmed 1 edge") for w in current.extra.get("written_back", []))
+    # the one outcome version the review books says what it wrote back — no restatement for bookkeeping
+    assert booked.writes_back == ["prediction scored", "confirmed-cause graph: confirmed 1 edge"]
+    assert D.latest_decision(D.Source(kind="recommendation", ref=rec.id)).outcome == oid
     assert CG.load_causal_graph(conn)[0].to_signal == "total sales"
-    assert latest is not None
 
 
 # ── a procedure's success rate learned from outcomes, said with its count ──────────────────

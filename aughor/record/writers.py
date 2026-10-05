@@ -229,6 +229,71 @@ def restate_answer_observation(answer: dict, entry: dict, *, text: str = "") -> 
             **({"woke_inquiries": [q.id for q in woke]} if woke else {})}
 
 
+# ── from a pack's map, measured on connect (phase 6) ───────────────────────────────────────
+
+#: A pack's measured tier → the hypothesis state its claim carries in the Record.
+PACK_CLAIM_STATE: dict[str, str] = {"expected": "open", "measured-true": "supported", "measured-false": "refuted",
+                                    "human": "supported"}
+
+
+def pack_claim_key(pack_id: str, connection_id: str, schema_name: str, kind: str, subject: str) -> str:
+    return _claims.claim_key("pack", pack_id, connection_id, schema_name or "-", kind,
+                             "".join(ch if ch.isalnum() else "-" for ch in subject)[:120])
+
+
+def book_pack_claims(report, *, connection_id: str, schema_name: str = "", fingerprint: str = "") -> dict:
+    """The pack writer — the fourth of the study's five claim shapes (§E): every claim in a pack's
+    map, evaluated against THIS connection's graph and data (`packs/ontology_map.apply_core_claims`),
+    booked into the Record as a HYPOTHESIS the pack made about the business: ``open`` while the data
+    cannot speak (tier ``said``), ``supported`` or ``refuted`` once it has (tier ``mined`` — the
+    platform's own scan, warranted by the build that measured it), and ``supported`` at tier
+    ``declared`` when a person's declaration settled it (an attestation warrant names it). One claim
+    per pack · connection · schema · subject, restated on every build, so "what did this pack expect
+    of us, and what did the data say" is the Record's to answer on any date. Best-effort by contract.
+    Returns ``{"booked", "by_state", "pack"}``."""
+    pack_id = str(getattr(report, "pack_id", "") or "")
+    claims = list(getattr(report, "claims", None) or [])
+    if not (pack_id and connection_id and claims):
+        return {"booked": 0, "by_state": {}, "pack": pack_id,
+                "note": "nothing to book: no pack, no connection or no claims" if not claims else ""}
+    build_ref = f"ontology:{connection_id}:{schema_name or '-'}:{fingerprint or 'build'}"
+    by_state: dict[str, int] = {}
+    booked = 0
+    for c in claims:
+        state = PACK_CLAIM_STATE.get(c.tier, "open")
+        measured = f" — measured: {c.measured}" if c.measured else ""
+        text = f"{c.kind}: {c.subject} — the pack expects {c.expected}{measured}"
+        if c.tier == "human":
+            tier, warrants = "declared", [_claims.Warrant(kind="attestation", ref=str(c.measured or "declared"), detail=(c.note or "")[:400])]
+        elif c.tier in ("measured-true", "measured-false"):
+            tier, warrants = "mined", [_claims.Warrant(kind="run", ref=build_ref, detail=(c.note or "")[:400])]
+        else:
+            tier, warrants = "said", []
+        claim = _claims.Claim(
+            kind="hypothesis", tier=tier, about=_claims.About(kind="connection", key=connection_id),
+            statement=_claims.Statement(text=text[:1000]), status="Provisional" if state == "open" else "Final",
+            as_of=_today(), warrants=warrants, author=f"pack:{pack_id}", author_kind="system", state=state,
+            extra={"pack": pack_id, "claim_kind": c.kind, "subject": c.subject, "expected": c.expected, "measured": c.measured,
+                   "tier_measured": c.tier, "note": c.note, "schema": schema_name or "", "writer": "pack"},
+        )
+        try:
+            _claims.book(claim, key=pack_claim_key(pack_id, connection_id, schema_name, c.kind, c.subject), conn_id=connection_id)
+        except Exception as exc:  # noqa: BLE001 — one claim the door refused does not stop the rest, and is said
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"a pack claim could not be booked ({c.kind} {c.subject})", counter="record.pack_claim",
+                     conn_id=connection_id)
+            continue
+        booked += 1
+        by_state[state] = by_state.get(state, 0) + 1
+    return {"booked": booked, "by_state": by_state, "pack": pack_id}
+
+
+def pack_claims(connection_id: str, *, pack_id: str = "", limit: int = 500) -> list[_claims.Claim]:
+    """What packs expected of this connection and what the data said, as the Record holds it now."""
+    return [c for c in _claims.list_claims(kind="hypothesis", conn_id=connection_id, limit=limit)
+            if c.extra.get("writer") == "pack" and (not pack_id or c.extra.get("pack") == pack_id)]
+
+
 def _restated_text(first: str, changes: list[dict], entry: dict) -> str:
     """A fallback statement when the re-check hands none: the numbers, then what was first said."""
     def what(c: dict) -> str:

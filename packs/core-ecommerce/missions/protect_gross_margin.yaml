@@ -1,0 +1,9 @@
+# Phase 6 of the 2027 study — a mission template (§J, §P vertical 1). A PERSON writes the mission from it, names its
+# owner, its target and its budget, and activates it; a template never becomes a mission on its own.
+id: protect_gross_margin
+name: Protect gross margin
+cadence: monthly
+objective: {metric: gross_margin, direction: up, unit: ratio, text: "gross margin held at or above the target, rolling four weeks"}
+constraints:
+  - {metric: delivery_promise_breach_rate, bound: at_most, unit: ratio, text: "without breaking more delivery promises"}
+description: Hold the margin without damaging the promise to the customer.

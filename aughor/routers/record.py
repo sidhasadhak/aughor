@@ -437,6 +437,25 @@ def write_record_mission(req: MissionRequest, principal=Depends(get_principal)) 
     return _mission_view(booked)
 
 
+@router.get("/record/missions/templates")
+def list_record_mission_templates(connection_id: Optional[str] = None, schema_name: Optional[str] = None,
+                                  pack_id: str = "") -> dict:
+    """The mission templates the packs bound to a connection ship (phase 6) — or one named pack's —
+    each as a body a person writes a mission from. A template never becomes a mission on its own."""
+    from aughor.packs.ontology_map import bound_pack_ids, load_pack_by_id
+    from aughor.packs.priors import mission_templates
+    if connection_id and not _visible(connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    pids = [pack_id] if pack_id else (bound_pack_ids(connection_id, schema_name) if connection_id else [])
+    out: list[dict] = []
+    for pid in pids:
+        pack = load_pack_by_id(pid)
+        if pack is not None:
+            out += mission_templates(pack)
+    return {"templates": out, "packs": pids,
+            "note": ("" if pids else "no pack is bound to this connection and none was named; name a pack_id to read its templates")}
+
+
 @router.get("/record/missions/{mission_id}")
 def get_record_mission(mission_id: str) -> dict:
     """The mission as it stands — its latest version, whichever version's id was asked for — with
