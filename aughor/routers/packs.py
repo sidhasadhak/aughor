@@ -19,7 +19,7 @@ from aughor.packs import (
 from aughor.packs import roots as _roots
 from aughor.packs import scope as _scope
 from aughor.packs.resolver import binding_report
-from aughor.security.authz import connection_owner_guard
+from aughor.security.authz import connection_owner_guard, get_principal
 
 #: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
 router = APIRouter(tags=["packs"], dependencies=[Depends(connection_owner_guard)])
@@ -264,6 +264,16 @@ def post_bind(pack_id: str, body: BindIn):
                        version=body.version, verified=verified, schema=body.schema_name or "")
     rec["missing"] = missing
     rec["dry_run_errors"] = dry_errors
+    # C7 — the day a pack is bound, its terms are proposed for confirmation and its alerts, each with
+    # its backtest on this connection, for arming. Best-effort: the binding stands, and what could
+    # not be proposed is said.
+    try:
+        from aughor.packs.connect import on_connect
+        rec["arrival"] = on_connect(pack_id, body.connection_id, schema_name=body.schema_name or "")
+    except Exception as e:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "a bound pack's terms and alerts could not be proposed; the binding stands", counter="packs.on_connect")
+        rec["arrival"] = {"note": f"terms and alerts could not be proposed: {str(e)[:160]}"}
     return rec
 
 
@@ -271,6 +281,86 @@ def post_bind(pack_id: str, body: BindIn):
 def get_binding(pack_id: str, connection_id: str, schema: Optional[str] = None):
     """The pinned binding for (org, pack, connection, schema), or null."""
     return load_binding(pack_id, connection_id, schema or "")
+
+
+# ── what a pack proposes on connect (the close-out, C7) ──────────────────────────────────────
+
+def _who(principal) -> str:
+    for attr in ("user_id", "email", "id", "sub", "name"):
+        v = getattr(principal, attr, "") if principal is not None else ""
+        if v:
+            return f"user:{v}"
+    return ""
+
+
+def _graph_for(connection_id: str, schema_name: Optional[str]):
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        return load_latest_ontology(connection_id, schema_name or None)
+    except Exception:  # noqa: BLE001 — no graph: the objects' terms are said to wait for the build
+        return None
+
+
+class ProposeOnConnectIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+
+
+@router.post("/packs/{pack_id}/propose")
+def post_propose_on_connect(pack_id: str, body: ProposeOnConnectIn):
+    """Propose again what the pack proposes on connect: its terms for confirmation (source `pack` in
+    the connection's vocabulary; no prompt until confirmed) and its alerts from measured priors, each
+    with a backtest on this connection, staged in the inbox and armed only by a person's accept.
+    Idempotent: nothing is proposed twice, and a declined term or a resolved proposal stays so."""
+    _dir_for(pack_id)
+    from aughor.packs.connect import on_connect
+    return on_connect(pack_id, body.connection_id, schema_name=body.schema_name or "")
+
+
+@router.get("/packs/{pack_id}/terms")
+def get_pack_terms(pack_id: str, connection_id: str, schema: Optional[str] = None):
+    """The pack's terms on this connection and what became of each — confirmed, pending, declined,
+    not yet proposed — the phase's "definitions confirmed against proposed", counted."""
+    from aughor.packs.connect import terms_status
+    try:
+        pack = load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return terms_status(pack, connection_id, graph=_graph_for(connection_id, schema))
+
+
+class TermsVerdictIn(BaseModel):
+    connection_id: str
+    #: [{subject_kind, subject_id, synonym}] — the rows `GET /packs/{id}/terms` lists.
+    terms: list[dict]
+    decline: bool = False
+    note: str = ""
+
+
+@router.post("/packs/{pack_id}/terms/confirm")
+def post_confirm_terms(pack_id: str, body: TermsVerdictIn, principal=Depends(get_principal)):
+    """A person confirms proposed terms — each becomes theirs and reaches the prompt — or, with
+    `decline`, refuses them: the row goes and a tombstone keeps the next bind from bringing it back."""
+    from aughor.ontology.vocabulary import SUBJECT_KINDS
+    from aughor.packs.connect import confirm_term, decline_term, terms_status
+    try:
+        pack = load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    by = _who(principal) or "unidentified"
+    done = []
+    for row in body.terms:
+        kind, subject, term = str(row.get("subject_kind") or ""), str(row.get("subject_id") or ""), str(row.get("synonym") or "")
+        if kind not in SUBJECT_KINDS or not subject or not term.strip():
+            raise HTTPException(status_code=422, detail=f"a term names its subject_kind ({', '.join(SUBJECT_KINDS)}), subject_id and synonym: {row}")
+        try:
+            done.append(decline_term(body.connection_id, kind, subject, term, by=by, note=body.note) if body.decline
+                        else confirm_term(body.connection_id, kind, subject, term, by=by))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    return {"by": by, "declined" if body.decline else "confirmed": done,
+            "status": terms_status(pack, body.connection_id, graph=_graph_for(body.connection_id, None))}
 
 
 class InstallIn(BaseModel):

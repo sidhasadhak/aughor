@@ -207,4 +207,21 @@ def onboarding(connection_id: str, schema_name: Optional[str] = None, *, pack_id
         tolerate(exc, "the packs' priors could not be read for the day-one screen", counter="onboarding.priors")
     out["priors"] = priors
     out["templates"] = templates
+    # C7 — what each bound pack proposed on connect and what became of it: terms confirmed against
+    # proposed, alerts with their backtests by status in the inbox.
+    arrival: dict[str, Any] = {"terms": [], "alerts": []}
+    try:
+        from aughor.packs.connect import alerts_status, terms_status
+        from aughor.packs.ontology_map import load_pack_by_id
+        for pid in packs:
+            pack = load_pack_by_id(pid)
+            if pack is None:
+                continue
+            arrival["terms"].append(terms_status(pack, connection_id, graph=graph))
+            arrival["alerts"].append(alerts_status(pack, connection_id))
+    except Exception as exc:  # noqa: BLE001 — the arrival line is additive
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "what the packs proposed on connect could not be read for the day-one screen", counter="onboarding.arrival")
+        arrival["note"] = f"could not be read: {str(exc)[:160]}"
+    out["arrival"] = arrival
     return out

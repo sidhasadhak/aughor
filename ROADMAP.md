@@ -11265,10 +11265,10 @@ from the visibility module; the bound packs' priors and templates. (P6-3) `tests
 — the kernel's industry-noun count at its measured baseline, English and SQL senses stripped first, a baseline that may
 fall and never rise; and the kernel's doors answering with no pack installed. Receipt: 15 phase-6 tests pass; the pack
 loader, static gate, pack-claims, banking package, release gate, demo pack, roster, rebuild, package-parity, prompt-reach
-and vocabulary suites pass. **Still open in phase 6:** terms proposed for confirmation on connect; alerts armed from a
-prior's band with a backtest on the connection; B2B SaaS as the second deep vertical (banking chosen instead, its
+and vocabulary suites pass. **Still open in phase 6:** B2B SaaS as the second deep vertical (banking chosen instead, its
 package drafted); the nouns still in the kernel's docstrings, which the ratchet counts down; and the exit — the hours
-measured on a new customer's install in each vertical, with the receipt.
+measured on a new customer's install in each vertical, with the receipt. (Terms proposed for confirmation on connect and
+alerts from a prior's band with a backtest were open here until the close-out's C7, §3.53 below.)
 
 **Phase 7 — the code half BUILT 2026-10-05**, one slice, five parts. (P7-1) `routers/ledger.py` — the ledger API under
 `/ledger/v1`: `POST /claims` books a claim with its warrant under the three laws (no fact without a warrant, no model-
@@ -11407,6 +11407,26 @@ nothing. `POST /record/missions/{id}/act` runs one period by hand. The agent con
 it; `docs/AGENT_CONTRACT.md` regenerated. Receipt: the spend-and-L5, authority, mission, method-4, undo, executor,
 catalogue, contract, departure-exit, hermeticity, noun and vocabulary suites pass; the vocabulary ratchet exempts
 `actions/autonomy.py` and the new suite on the C5 ground.
+(C7, phase 6) What a pack proposes the day it is bound (`packs/connect.py`; §W phase 6 "it arrives ready"). Terms:
+a metric's title and aliases on the metric, an object's name and aliases on the table the map matched it to, written
+into the connection's vocabulary at a new source rung `pack` (`ontology/vocabulary.SOURCE_RANKS`: human > mined >
+pack > llm_candidate — below this install's own evidence, above a model's guess) — a pack term widens retrieval the day
+the pack is bound (`synonym_expansion`) and reaches no prompt until a person confirms it (`build_synonyms_block` renders
+`human` only; a confirm is `add_synonym(source="human")`, which promotes in place); a decline is a tombstone in the same
+document (`decline_synonym`, `declined_synonyms`), so the next bind cannot resurrect it. The objects' terms need the
+graph, so they are proposed on the build that matches the map (`ontology_map.propose_terms_on_build`, from
+`apply_bound_pack_claims`) and the bind says they wait. Alerts: a MEASURED prior's band becomes one `monitor_bundle`
+proposal per bounded side — a threshold monitor on the metric below its low or above its high, with the chain its
+breach fires (`sentinel.watch_chain`, factored out of the Watcher so both stage one shape) — carrying the prior's
+provenance (band, unit, `measured_on`, sources) and a BACKTEST of that band on this connection (`monitors/backtest.
+backtest_monitor`: "would have fired 3 times in the last 365 days", or why it could not be replayed); an unmeasured
+prior and a metric the connection has not registered stage nothing and say why; idempotent by (pack, connection,
+prior, side), armed only by the inbox's accept. Doors: the bind (`POST /packs/{id}/bind`) proposes both halves and
+carries them as `arrival`, `POST /packs/{id}/propose` proposes again, `GET /packs/{id}/terms` counts confirmed against
+proposed, `POST /packs/{id}/terms/confirm` confirms or declines; the day-one screen (`packs/onboarding.onboarding`)
+carries `arrival` with the terms' counts and the alerts by status. Receipt: the connect suite (six tests, on the real
+banking package), the vocabulary, ranking, synonyms-block, framing, prose-mapper, interchange, sentinel, packs-router,
+priors, HB-6, promotion, uptake, onboarding and claims-reach suites pass, and the six ratchets.
 
 ---
 

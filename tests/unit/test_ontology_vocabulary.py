@@ -125,7 +125,9 @@ def test_an_unreadable_file_degrades_to_empty(vocab_root, monkeypatch):
 
 
 def test_the_vocabularies_are_small_and_closed():
-    assert SOURCE_RANKS == ("human", "mined", "llm_candidate")
+    # `pack` (the 2027 study's close-out, C7) is the one rung added since O1: an industry's declared
+    # word, below this install's own mined evidence and above a model's guess.
+    assert SOURCE_RANKS == ("human", "mined", "pack", "llm_candidate")
     assert "metric" in SUBJECT_KINDS and "percent" in FORMATS
 
 
