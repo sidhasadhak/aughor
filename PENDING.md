@@ -414,33 +414,35 @@ Ideas 15–22 became Arc CB and 23–24 became Arc CP. Git history to 2026-09-23
 ## The 2027 study — the product half (§3.53, the thirteen screens)
 
 Built 2026-10-05 on `claude/platform-2027-screens`; each line is a screen of the study's §V. What a screen still cannot
-do is under it, unticked — a door that does not exist yet, never a control drawn as if it worked.
+do is under it, unticked — a door that does not exist yet, never a control drawn as if it worked. **The study's
+six-destination rail was built, shown and refused the same day (ROADMAP §4.10): the 2026 rail stands, and each new page
+sits inside it — the place is named on its line.**
 
-- [x] 1 · Navigation — six destinations on the rail, one row of pages, every 2026 link resolved and said once, ⌘K from the same list.
+- [x] 1 · Navigation — ~~six destinations replacing the rail~~ refused (§4.10). The 2026 rail as it was, plus two rows: Now beside Home and the Inbox, and Record under Intelligence. ⌘K gains an entry per new page.
   - [ ] The inspector drawer: a citation opening beside the page it was cited on. Today it opens its page.
   - [ ] Now's badge as slots used of a person's budget — waits on identity; the budget is per place today.
-- [x] 2 · Now — the week's slots, what waits on a person, restated since the last visit, the held list, the Briefing line.
-  - [ ] Resolve an approval in place (it links to Agents ▸ Attention), and dismiss an item with a reason.
+- [x] 2 · Now (a rail row) — the week's slots, what waits on a person, restated since the last visit, the held list, the Briefing line.
+  - [ ] Resolve an approval in place (it links to Agent Ops ▸ Attention), and dismiss an item with a reason.
 - [x] 3 · The Briefing — the mission line, the inquiries waiting to speak, the predictions in play.
   - [ ] An action and a prediction on each item; a Briefing signed and dated as a delivery; the same range a year ago.
-- [x] 4 · Inquiry — ledger and reader; propose the next run with its cost; close with a lesson.
+- [x] 4 · Inquiry (Record ▸ Inquiries) — ledger and reader; propose the next run with its cost; close with a lesson.
   - [ ] Add a person's hypothesis · hand it to an owner · set or clear the next check · mark a claim wrong.
-- [x] 5 · Decision — ledger and reader; record one in a sentence; book an outcome when its date has come.
+- [x] 5 · Decision (Record ▸ Decisions) — ledger and reader; record one in a sentence; book an outcome when its date has come.
   - [ ] Add an option or dissent after booking; reopen when a relied-on claim is restated.
 - [x] 6 · Scenario, inside the decision — assumptions, predictions by method with what each must say, limits; add a projection.
   - [ ] The history method from the page (it needs the metric's measurable definition), and a past case added by hand.
-- [x] 7 · Mission — ledger, the five-line form, the reader on the objective against its baseline; activate, pause, retire.
+- [x] 7 · Mission (Record ▸ Missions) — ledger, the five-line form, the reader on the objective against its baseline; activate, pause, retire.
   - [ ] Edit in place as a new version · read a past report in full · report now.
-- [x] 8 · Operations ▸ Work — the week by duty, failures by type, departures, principals.
+- [x] 8 · Agent Ops ▸ By duty — the week by duty, failures by type, departures, principals.
   - [ ] The hub's links and probation queues (above, Arc HB); rehearse or pause a principal from this page.
-- [x] 9 · Record — claims as of any date, a claim's page, coverage; Corrections as a page of its own.
+- [x] 9 · Record ▸ Claims and Corrections — claims as of any date, a claim's page, coverage; Corrections by kind.
   - [ ] "Who else was told" on a claim's page; follow a link across connections.
 - [x] 10 · The receipt page — Re-perform beside the counted confidence and who else was told.
-- [x] 11 · Action centre — the authority table, an action's record, undo in its window, graduate, demote; the approval trail moved here.
+- [x] 11 · Agent Ops ▸ Action centre — the authority table, an action's record, undo in its window, graduate, demote; it links to Intelligence ▸ Actions and Security & Audit ▸ Approvals, which stay where they were.
   - [ ] Set a ceiling outside a mission · sign or withdraw a standing grant · run a drill.
-- [x] 12 · Admin — the gate map, policies as sentences, groups, identity, the ledger's export, the settings pages.
+- [x] 12 · Security & Audit ▸ Gate map and Policies — the gate map; policies, groups and identity as sentences; the ledger's export. Settings stays in the rail's footer.
   - [ ] Write a policy from clauses · add a person to a group · set a clearance · when each statement door last fired.
-- [x] 13 · Developer — packs with their record, the doors, the event catalogue, service principals, the kits, the agent contract.
+- [x] 13 · Agent Ops ▸ Developer — packs with their record, the doors, the event catalogue, service principals, the kits, the agent contract.
   - [ ] Upload a pack and run its checks from this page · declare an action · register a method.
 
 ---

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Operations ▸ Work — "what is the system doing?" (the 2027 study §V, screen 8).
+ * Agent Ops ▸ By duty — "what is the system doing?" (the 2027 study §V, screen 8).
  *
  * The row is a duty, not an agent's name: what each of the seven duties booked this week, how
  * much of it stands on something, how its runs ended by type, and what a warranted entry cost.
@@ -196,7 +196,7 @@ export function WorkPanel({ onOpenRuns, onOpenDepartures, onOpenActivity, onOpen
       <Section label="Principals" meta={principals.data ? countNoun(principals.data.length, "principal") : undefined}
         action={
           <span style={{ display: "inline-flex", gap: 4 }}>
-            <Button size="xs" variant="ghost" onClick={onOpenAgents} title="Each built-in and custom agent's runs, quality and setup">Agents</Button>
+            <Button size="xs" variant="ghost" onClick={onOpenAgents} title="Each built-in and custom agent's runs, quality and setup">Roster</Button>
             <Button size="xs" variant="ghost" onClick={onOpenActionCentre} title="What each action may do, and its grants">Authority</Button>
             <Button size="xs" variant="ghost" onClick={onOpenDeveloper} title="Service principals and their keys">Keys</Button>
           </span>
@@ -210,7 +210,7 @@ export function WorkPanel({ onOpenRuns, onOpenDepartures, onOpenActivity, onOpen
       </Section>
 
       <Section label="The live tail and traces" action={<Button size="xs" variant="outline" onClick={onOpenActivity}>Open activity</Button>}>
-        <Absent>What is running now, each run&apos;s trace and a deep run&apos;s phases are on the Agents page under Activity.</Absent>
+        <Absent>What is running now, each run&apos;s trace and a deep run&apos;s phases are on the Activity tab.</Absent>
       </Section>
     </Page>
   );

@@ -6,7 +6,7 @@
  * It is bounded and it ends: the few things that used one of the week's slots, each saying why
  * it won; what is addressed to a person; what was restated since they were last here; what
  * competed and lost, with why; and the Briefing in one line. A first run gets one sentence and
- * three steps. There is no funnel, no tile and nothing to arrange.
+ * the way to Home, where a first run starts. There is no tile here and nothing to arrange.
  *
  * Every row is a ledger entry read back — the departure gate's triage ranked it (code), and the
  * hold is as much a row as the send.
@@ -75,17 +75,13 @@ async function readOrgBriefing(): Promise<OrgBriefing> {
 export interface NowDoors {
   onOpenDecision: (id: string) => void;
   onOpenInquiry: (id: string) => void;
-  onOpenRun: (runId: string) => void;
   onOpenDepartures: (departureId?: string) => void;
   onOpenAttention: () => void;
   onOpenBriefing: (connectionId?: string) => void;
   onOpenCorrections: () => void;
   onOpenMissions: () => void;
-  onAsk: () => void;
-  onAddData: () => void;
-  /** Load the bundled demo dataset — the first run's other way in. */
-  onTryDemo: () => void;
-  demoLoading: boolean;
+  /** Home — where a first run connects data and asks its first question. */
+  onOpenHome: () => void;
 }
 
 export function NowPanel({ connections, contextReady, doors }: {
@@ -278,9 +274,8 @@ function SentItem({ d, missions, connections, doors }: {
         {d.conn_id && <span>{connectionLabel(d.conn_id, connections)}</span>}
         <span>{whenText(d.ts)}</span>
         <span style={{ flex: 1 }} />
-        {d.investigation_id
-          ? <Button size="xs" variant="outline" onClick={() => doors.onOpenRun(d.investigation_id)}>Open the analysis</Button>
-          : <Button size="xs" variant="outline" onClick={() => doors.onOpenDepartures(d.id)}>Open its receipt</Button>}
+        {/* Its row in Departures: every check it passed, and the analysis behind it when there is one. */}
+        <Button size="xs" variant="outline" onClick={() => doors.onOpenDepartures(d.id)}>Open its receipt</Button>
       </div>
     </div>
   );
@@ -443,37 +438,24 @@ function BriefingLine({ fold, doors }: { fold: OrgBriefing; doors: NowDoors }) {
 
 // ── a first run ──────────────────────────────────────────────────────────────────────────
 
+/** Nothing has been sent, held or asked yet. Home is where a first run starts; this page only says
+ *  what it will hold once there is something to hold. */
 function FirstRun({ doors }: { doors: NowDoors }) {
-  const steps: { id: string; title: string; body: string; door: string; go: () => void }[] = [
-    { id: "connect", title: "Connect your data", body: "A warehouse, a database or a file. Nothing is copied out of it.", door: "Add data", go: doors.onAddData },
-    { id: "ask", title: "Ask one question", body: "The answer comes with the statement that produced it and what it could not see.", door: "Ask", go: doors.onAsk },
-    { id: "mission", title: "Write a mission", body: "What to achieve and what not to damage. This page then ranks by what bears on it.", door: "Write a mission", go: doors.onOpenMissions },
-  ];
   return (
     <Page>
       <p className="aug-fs-h1 aug-lede">
         This page will hold the few things that need you each week, and say what it kept from you.
       </p>
-      <ol style={{ listStyle: "none", margin: "20px 0 0", padding: 0 }}>
-        {steps.map((s, i) => (
-          <li className="aug-item" key={s.id}>
-            <div className="aug-fs-h2" style={{ color: "var(--t1)", fontWeight: 600 }}>
-              <span className="aug-num" style={{ color: "var(--t3)", marginRight: 10 }}>{i + 1}</span>{s.title}
-            </div>
-            <div className="aug-item-foot aug-fs-ui">
-              <span style={{ color: "var(--t2)" }}>{s.body}</span>
-              <span style={{ flex: 1 }} />
-              {i === 0 && (
-                <Button size="sm" variant="ghost" onClick={doors.onTryDemo} disabled={doors.demoLoading}
-                  title="A synthetic dataset: 90 days of revenue with a real outage to find">
-                  {doors.demoLoading ? "Loading the demo…" : "Or load the demo"}
-                </Button>
-              )}
-              <Button size="sm" variant={i === 0 ? "default" : "outline"} onClick={s.go}>{s.door}</Button>
-            </div>
-          </li>
-        ))}
-      </ol>
+      <div className="aug-item" style={{ marginTop: 16 }}>
+        <div className="aug-fs-ui" style={{ color: "var(--t2)" }}>
+          Nothing has been sent, held or asked yet. It fills once data is connected and a mission is written —
+          what leaves the platform is then ranked by what bears on that mission.
+        </div>
+        <div className="aug-item-foot">
+          <Button size="sm" onClick={doors.onOpenHome}>Start from Home</Button>
+          <Button size="sm" variant="outline" onClick={doors.onOpenMissions}>Write a mission</Button>
+        </div>
+      </div>
     </Page>
   );
 }

@@ -24,6 +24,7 @@ const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then
 const ProfileLayer     = dynamic(() => import("@/components/ProfileLayer").then(m => ({ default: m.ProfileLayer })),       { ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
 const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
+const DeclaredActionsPanel = dynamic(() => import("@/components/DeclaredActionsPanel").then(m => ({ default: m.DeclaredActionsPanel })), { ssr: false, loading });
 const ConnectionGraphPanel = dynamic(() => import("@/components/ConnectionGraphPanel").then(m => ({ default: m.ConnectionGraphPanel })), { ssr: false, loading });
 // Relocated from the former Agents workspace (Agentic Ops merge): the closed
 // loop's accumulation is org-wide learning — "what Aughor knows", which is this
@@ -58,7 +59,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type IntelLayer = "briefing" | "cockpit" | "hub" | "ontology" | "graph" | "evidence" | "memory" | "org" | "brain";
+export type IntelLayer = "briefing" | "cockpit" | "hub" | "ontology" | "graph" | "evidence" | "memory" | "kinetic" | "org" | "brain";
 
 const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
@@ -66,6 +67,7 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "ontology", icon: "node",    label: "Ontology", blurb: "Object model & relationships" },
   { id: "evidence", icon: "check",   label: "Evidence", blurb: "Claim ledger & feedback" },
   { id: "memory",   icon: "memory",  label: "Memory",   blurb: "What the closed loop has learned" },
+  { id: "kinetic",  icon: "spark",   label: "Actions",  blurb: "Declared actions & overlay edits" },
   { id: "org",      icon: "spark",   label: "Org",      blurb: "Organizational knowledge" },
   { id: "brain",    icon: "compass", label: "Brain map", blurb: "Every store behind what Aughor knows, with live counts" },
 ];
@@ -101,9 +103,6 @@ type Props = {
   /** False while the shell is still resolving the workspace and its connections. An empty
    *  state renders only once this is true; before that the screen says it is finding them. */
   contextReady?: boolean;
-  /** Drop the layer row: the host already lists these layers as pages of its own (the six
-   *  destinations do — each layer here is a page of Now, Missions or Record). */
-  hideTabs?: boolean;
 };
 
 /**
@@ -117,7 +116,7 @@ type Props = {
  * scope (connection + schema pickers, the five panels, the icon set); the shell owns
  * the header chrome, the perspective switcher, and the keep-alive layered body.
  */
-export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, canvasId, workspaceId, initialGraphTable, contextReady = true, hideTabs }: Props) {
+export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, canvasId, workspaceId, initialGraphTable, contextReady = true }: Props) {
   // Shared schema scope — one selector that filters Briefing, Hub, and Domains
   // together (a connection can expose several schemas; a canvas is already scoped).
   const [schemas, setSchemas]               = useState<string[]>([]);
@@ -244,7 +243,6 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       ariaLabel="Intelligence layers"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       headerControls={headerControls}
-      hideTabs={hideTabs}
       renderLayer={id => {
         // `key` on the scope: a schema switch REMOUNTS the brief rather than mutating it in
         // place. Without it the panel keeps every piece of per-scope state it doesn't
@@ -281,6 +279,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         if (id === "hub")      return <ProfileLayer connectionId={connectionId} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "memory")   return <MemoryPanel />;
+        if (id === "kinetic")  return <DeclaredActionsPanel connectionId={connectionId} />;
         if (id === "brain")    return <BrainMapPanel connectionId={connectionId} workspaceId={workspaceId} contextReady={contextReady} />;
         return <OrgIntelPanel />; // "org"
       }}

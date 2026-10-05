@@ -28,6 +28,9 @@ const NeedsHumanPanel    = dynamic(() => import("@/components/NeedsHumanPanel").
 const AgenticActivityPanel = dynamic(() => import("@/components/AgenticActivityPanel").then(m => ({ default: m.AgenticActivityPanel })), { ssr: false, loading });
 const AutomationsPanel   = dynamic(() => import("@/components/AutomationsPanel").then(m => ({ default: m.AutomationsPanel })),     { ssr: false, loading });
 const HubMapPanel        = dynamic(() => import("@/components/agentops/HubMapPanel").then(m => ({ default: m.HubMapPanel })),      { ssr: false, loading });
+const ActionCentrePanel  = dynamic(() => import("@/components/operations/ActionCentrePanel").then(m => ({ default: m.ActionCentrePanel })), { ssr: false, loading });
+const DeveloperPanel     = dynamic(() => import("@/components/operations/DeveloperPanel").then(m => ({ default: m.DeveloperPanel })),       { ssr: false, loading });
+const WorkPanel          = dynamic(() => import("@/components/operations/WorkPanel").then(m => ({ default: m.WorkPanel })),         { ssr: false, loading });
 const DeparturesPanel    = dynamic(() => import("@/components/agentops/DeparturesPanel").then(m => ({ default: m.DeparturesPanel })), { ssr: false, loading });
 
 /**
@@ -59,7 +62,8 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 // (Automations → History and Activity → Traces are the others); its phase view —
 // the half with no second home — moved to Activity → Phases.
 export type AgenticOpsLayer =
-  "fleet" | "agents" | "attention" | "activity" | "automations" | "hub" | "departures";
+  "fleet" | "agents" | "attention" | "activity" | "automations" | "hub" | "departures"
+  | "duties" | "action-centre" | "developer";
 
 // Labels follow docs/GLOSSARY.md — Overview · Roster · Attention · Activity · Runs. The
 // inner layer stops being "Agents" now that the workspace is called Agent Ops (a workspace
@@ -84,6 +88,15 @@ const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
   // HB-2 — the departures ledger: what left the platform, what the departure gate held
   // and why, and the two things a person owes it (a probation mark, an owner's answer).
   { id: "departures", icon: "send",    label: "Departures", blurb: "What left, what was held and why — and what needs a person" },
+  // The 2027 study's screen 8 — the same estate read by DUTY rather than by agent: what each of
+  // the seven duties booked this week, how its runs ended by type, and every principal with what
+  // became of its entries. Last in the row, so every layer that was here keeps its place.
+  { id: "duties",    icon: "gauge",    label: "By duty",   blurb: "The week by duty: what was booked, what failed and how, what it cost" },
+  // Screens 11 and 13: what an action may do on its record, and what an outside agent or a pack
+  // author works with. Here rather than as rail rows of their own — the rail keeps every row it
+  // had above the fold, and this row scrolls rather than clips.
+  { id: "action-centre", icon: "hand", label: "Action centre", blurb: "Every declared action, the level it may run at, and its record" },
+  { id: "developer", icon: "gear",     label: "Developer", blurb: "Packs, doors, service principals, kits and the agent contract" },
 ];
 
 type Props = {
@@ -103,6 +116,13 @@ type Props = {
   onOpenConnection?: (connectionId: string) => void;
   /** PX-5 — open the chat already talking to this agent (the agent surface's Chat door). */
   onChatWithAgent?: (agentId: string) => void;
+  /** Doors out of this workspace for its newer layers, when the shell has them: every run; the
+   *  declared actions (Intelligence ▸ Actions); the approval trail (Security & Audit ▸ Approvals);
+   *  Settings, where packs are managed. */
+  onOpenRuns?: () => void;
+  onOpenDeclaredActions?: () => void;
+  onOpenApprovals?: () => void;
+  onOpenSettings?: () => void;
 };
 
 /**
@@ -115,6 +135,7 @@ export function AgenticOpsWorkspace({
   layer, onLayerChange, workspaceId, workspaceName,
   connId, onSelectConnection, onOpenInvestigation, onOpenAutomations,
   onOpenIntegrations, onOpenConnection, onChatWithAgent,
+  onOpenRuns, onOpenDeclaredActions, onOpenApprovals, onOpenSettings,
 }: Props) {
   // Cross-layer focus: a trace opened from Fleet/Agents/Attention lands in the
   // Activity layer's runs mode; an agent opened from Fleet lands in Agents.
@@ -201,7 +222,7 @@ export function AgenticOpsWorkspace({
             {!connId && <option value="">choose…</option>}
             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <span style={{ color: "var(--t3)" }}>scopes Automations; the Hub and Departures stay hub-wide</span>
+          <span style={{ color: "var(--t3)" }}>scopes Automations and the Action centre; the Hub and Departures stay hub-wide</span>
         </label>
       ) : undefined}
       toolbar={<>
@@ -244,6 +265,22 @@ export function AgenticOpsWorkspace({
         );
         if (id === "automations") return (
           <AutomationsPanel connId={connId} workspaceId={workspaceId} focusId={automationFocus} />
+        );
+        if (id === "duties") return (
+          <WorkPanel
+            onOpenRuns={() => onOpenRuns?.()}
+            onOpenDepartures={() => onLayerChange("departures")}
+            onOpenActivity={() => onLayerChange("activity")}
+            onOpenAgents={() => onLayerChange("agents")}
+            onOpenActionCentre={() => onLayerChange("action-centre")}
+            onOpenDeveloper={() => onLayerChange("developer")} />
+        );
+        if (id === "action-centre") return (
+          <ActionCentrePanel connections={connections ?? []} selectedConn={connId ?? ""}
+            onOpenDeclared={() => onOpenDeclaredActions?.()} onOpenApprovals={() => onOpenApprovals?.()} />
+        );
+        if (id === "developer") return (
+          <DeveloperPanel onOpenPacks={() => onOpenSettings?.()} onOpenIntegrations={() => onOpenIntegrations?.()} />
         );
         if (id === "departures") return (
           // Hub-wide, like the map: every departure the platform recorded, any connection.

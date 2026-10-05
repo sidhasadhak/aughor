@@ -1,14 +1,13 @@
 "use client";
 
 /**
- * Operations ▸ Admin — "see every door in and out and what guards it" (the 2027 study §V,
- * screen 12).
+ * Security & Audit ▸ Gate map and Policies — "see every door in and out and what guards it" (the
+ * 2027 study §V, screen 12), as two views of the Security & Audit page.
  *
  * The gate map is a screen: every place a statement reaches a warehouse with how its dialect is
  * handled, the sites nothing guards with the reason each is still there, and every law of the
- * departure gate with what it held. Policies are read back as sentences. Groups, identity and
- * the audit's way out are stated as they are — including what is recorded and not yet enforced.
- * The five settings pages are the last view, unchanged.
+ * departure gate with what it held. Policies are read back as sentences; groups, identity and
+ * the ledger's way out are stated as they are — including what is recorded and not yet enforced.
  */
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatTableNumber } from "@/lib/format";
@@ -17,14 +16,6 @@ import { keyToWords } from "@/lib/names";
 import { whoLabel } from "@/lib/record";
 import { Absent, Gate, Ledger, Page, Section, day, useLoad, type LedgerColumn } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
-
-type Lens = "gates" | "policies" | "settings";
-
-const LENSES: { id: Lens; label: string; blurb: string }[] = [
-  { id: "gates", label: "Gate map", blurb: "Every door in and out, and what guards it" },
-  { id: "policies", label: "Policies and groups", blurb: "Each policy as a sentence, who is in which group, identity and the audit's way out" },
-  { id: "settings", label: "Settings", blurb: "Organisation, access, appearance, models and system" },
-];
 
 interface Site { key: string; path: string; function: string; door: string; label: string; dialect: string; author: string; note: string }
 interface GateMap {
@@ -46,36 +37,9 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
-export function AdminPanel({ lens, onLensChange, settings, onOpenSpend, onOpenAudit }: {
-  lens: Lens;
-  onLensChange: (l: Lens) => void;
-  /** The five settings pages, as the shell renders them. */
-  settings: React.ReactNode;
-  onOpenSpend: () => void;
-  onOpenAudit: () => void;
-}) {
-  return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
-      <div className="aug-toolbar">
-        <div role="group" aria-label="Admin views" className="aug-segmented">
-          {LENSES.map(l => (
-            <Button key={l.id} variant="ghost" size="xs" aria-pressed={lens === l.id} title={l.blurb}
-              className={`aug-seg-item${lens === l.id ? " active" : ""}`} onClick={() => onLensChange(l.id)}>{l.label}</Button>
-          ))}
-        </div>
-      </div>
-      {lens === "gates" && <GateMapView />}
-      {lens === "policies" && <Policies onOpenSettings={() => onLensChange("settings")} onOpenSpend={onOpenSpend} onOpenAudit={onOpenAudit} />}
-      {lens === "settings" && <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>{settings}</div>}
-    </div>
-  );
-}
-
-export type AdminLens = Lens;
-
 // ── the gate map ─────────────────────────────────────────────────────────────────────────
 
-function GateMapView() {
+export function GateMapView() {
   const load = useLoad(() => get<GateMap>("/governance/gate-map"), []);
   type DialectRow = GateMap["statements"]["by_dialect"][number];
   type LawRow = GateMap["departures"]["laws"][number];
@@ -167,8 +131,8 @@ const LEVEL_SENTENCE: Record<string, string> = {
 
 const METRIC_WORDS: Record<string, string> = { calls: "model calls", total_tokens: "tokens", cost_usd: "US dollars" };
 
-function Policies({ onOpenSettings, onOpenSpend, onOpenAudit }: {
-  onOpenSettings: () => void; onOpenSpend: () => void; onOpenAudit: () => void;
+export function PoliciesView({ onOpenSettings, onOpenSpend }: {
+  onOpenSettings: () => void; onOpenSpend: () => void;
 }) {
   const policy = useLoad(() => get<AgentPolicy>("/org-settings/agent-policy"), []);
   const caps = useLoad(() => get<Caps>("/governance/caps"), []);
@@ -249,14 +213,14 @@ function Policies({ onOpenSettings, onOpenSpend, onOpenAudit }: {
         </Gate>
       </Section>
 
-      <Section label="The audit's way out" action={<Button size="xs" variant="ghost" onClick={onOpenAudit}>Audit</Button>}>
+      <Section label="The ledger's way out">
         <div className="aug-item">
           <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
             The whole ledger leaves as one file of JSON lines: every claim, decision, outcome, inquiry and mission as it stands.
           </div>
           <div className="aug-item-foot aug-fs-sm">
             <a href={`${getApiBase()}/ledger/v1/export`} download="aughor-ledger.jsonl" style={{ color: "var(--blue4)" }}>Download the ledger</a>
-            <span>The governance events of every audit sink are read on the Audit page.</span>
+            <span>The governance events of every audit sink are read in the feed on the Spend page.</span>
           </div>
         </div>
       </Section>

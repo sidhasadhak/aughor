@@ -60,7 +60,7 @@ const LAYERS: WorkspaceLayer<OpsLayer>[] = [
   { id: "security",    icon: "shield",   label: "Security & Audit", blurb: "Access, PII & the audit trail" },
 ];
 
-type SecLens = "security" | "activity";
+type SecLens = "security" | "activity" | "approvals" | "gates" | "policies";
 
 type Props = {
   connId?: string;
@@ -72,8 +72,6 @@ type Props = {
    *  `activity` deep-link can open the security layer already on the activity lens. */
   secLens: SecLens;
   onSecLensChange: (l: SecLens) => void;
-  /** Drop the layer row: the host lists these layers as pages of its own. */
-  hideTabs?: boolean;
 };
 
 /**
@@ -82,14 +80,13 @@ type Props = {
  * an *instance* of the generic `<Workspace>` shell (Part 2 REC-U5). The panels bring
  * their own bodies; the shell owns the switcher + keep-alive.
  */
-export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange, secLens, onSecLensChange, hideTabs }: Props) {
+export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange, secLens, onSecLensChange }: Props) {
   return (
     <Workspace
       layers={LAYERS}
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Operations views"
-      hideTabs={hideTabs}
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "monitors")    return <MonitorsPanel connId={connId} workspaceId={workspaceId} />;

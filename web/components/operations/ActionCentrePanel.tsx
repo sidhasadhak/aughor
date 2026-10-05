@@ -8,15 +8,12 @@
  * change can be undone. Every level cites what gave it; a demotion names the miss that caused
  * it. A person takes authority away in one gesture, with a reason.
  *
- * What waits on approval and what is declared stay on the page that already resolves them
- * (declared actions and their overlay edits); the trail of what the gate decided moved here
- * from Security & Audit, so everything about authority is read in one place.
+ * What is declared and what waits on approval stay where they already are — Intelligence ▸
+ * Actions — and the trail of what the gate decided stays under Security & Audit ▸ Approvals.
+ * This page links to both rather than showing either a second time.
  */
 import { useState } from "react";
 
-import dynamic from "next/dynamic";
-
-import type { Connection } from "@/lib/api";
 import { countNoun } from "@/lib/format";
 import { connectionLabel, keyToWords } from "@/lib/names";
 import {
@@ -29,23 +26,10 @@ import {
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loading } from "@/components/ui/states";
-
-const DeclaredActionsPanel = dynamic(() => import("@/components/DeclaredActionsPanel").then(m => ({ default: m.DeclaredActionsPanel })),
-  { ssr: false, loading: () => <Loading what="declared actions" style={{ padding: 24 }} /> });
-const ActionApprovalsSection = dynamic(
-  () => import("@/components/SecurityAuditPanel").then(m => ({ default: m.ActionApprovalsSection })),
-  { ssr: false, loading: () => <Loading what="the approval trail" style={{ padding: 24 }} /> });
-
-type Lens = "authority" | "declared" | "trail";
-
-const LENSES: { id: Lens; label: string; blurb: string }[] = [
-  { id: "authority", label: "Authority", blurb: "Every declared action, the level it may run at, and its record" },
-  { id: "declared", label: "Waiting and declared", blurb: "What waits on approval, each declaration, and the overlay edits" },
-  { id: "trail", label: "Approval trail", blurb: "What the approval gate decided, and what is on its allowlist" },
-];
 
 type Row = AuthorityRow;
+/** A connection as this page needs it: its id, and its name for the picker and the labels. */
+type Conn = { id: string; name: string };
 
 const LEVEL_HUE: ChipHue[] = ["muted", "muted", "info", "caution", "positive", "accent"];
 
@@ -53,51 +37,29 @@ function LevelChip({ level, label }: { level: number; label: string }) {
   return <StatusChip hue={LEVEL_HUE[level] ?? "muted"}>L{level} · {label}</StatusChip>;
 }
 
-export function ActionCentrePanel({ connections, selectedConn, onSelectConnection }: {
-  connections: Connection[];
+export function ActionCentrePanel({ connections, selectedConn, onOpenDeclared, onOpenApprovals }: {
+  /** For names. The connection itself is the workspace's — chosen in its context bar. */
+  connections: Conn[];
   selectedConn: string;
-  onSelectConnection: (id: string) => void;
+  /** Intelligence ▸ Actions: each declaration, the overlay edits, and what waits on approval. */
+  onOpenDeclared: () => void;
+  /** Security & Audit ▸ Approvals: what the approval gate decided, and its allowlist. */
+  onOpenApprovals: () => void;
 }) {
-  const [lens, setLens] = useState<Lens>("authority");
   const [openAction, setOpenAction] = useState<string | null>(null);
-  return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
-      {openAction === null && (
-        <div className="aug-toolbar">
-          <div role="group" aria-label="Action centre views" className="aug-segmented">
-            {LENSES.map(l => (
-              <Button key={l.id} variant="ghost" size="xs" aria-pressed={lens === l.id} title={l.blurb}
-                className={`aug-seg-item${lens === l.id ? " active" : ""}`} onClick={() => setLens(l.id)}>{l.label}</Button>
-            ))}
-          </div>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span className="aug-label">Connection</span>
-            <select value={selectedConn} onChange={e => onSelectConnection(e.target.value)} aria-label="Connection"
-              className="aug-fs-sm"
-              style={{ color: "var(--t2)", background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: "3px 8px", maxWidth: 220 }}>
-              {!selectedConn && <option value="">Choose a connection</option>}
-              {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </label>
-        </div>
-      )}
-      {!selectedConn ? (
-        <Page><Absent>Authority is held per connection: an action earns its level on the record of one. Choose a connection above.</Absent></Page>
-      ) : lens === "authority" ? (
-        openAction
-          ? <ActionRecord actionId={openAction} connectionId={selectedConn} connections={connections} onBack={() => setOpenAction(null)} />
-          : <AuthorityLedger connectionId={selectedConn} connections={connections} onOpen={setOpenAction} />
-      ) : lens === "declared" ? (
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}><DeclaredActionsPanel connectionId={selectedConn} /></div>
-      ) : (
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px" }}><ActionApprovalsSection /></div>
-      )}
-    </div>
-  );
+  if (!selectedConn) {
+    return <Page><Absent>Authority is held per connection: an action earns its level on the record of one. Choose a connection in the bar above.</Absent></Page>;
+  }
+  if (openAction) {
+    return <ActionRecord actionId={openAction} connectionId={selectedConn} connections={connections} onBack={() => setOpenAction(null)} />;
+  }
+  return <AuthorityLedger connectionId={selectedConn} connections={connections} onOpen={setOpenAction}
+    onOpenDeclared={onOpenDeclared} onOpenApprovals={onOpenApprovals} />;
 }
 
-function AuthorityLedger({ connectionId, connections, onOpen }: {
-  connectionId: string; connections: Connection[]; onOpen: (actionId: string) => void;
+function AuthorityLedger({ connectionId, connections, onOpen, onOpenDeclared, onOpenApprovals }: {
+  connectionId: string; connections: Conn[]; onOpen: (actionId: string) => void;
+  onOpenDeclared: () => void; onOpenApprovals: () => void;
 }) {
   const load = useLoad<AuthorityTable | null>(
     () => getAuthorityTable(connectionId).catch(e => {
@@ -118,7 +80,15 @@ function AuthorityLedger({ connectionId, connections, onOpen }: {
   ];
   return (
     <Page wide>
-      <Section label="The authority table" meta={connectionLabel(connectionId, connections)}>
+      <Section label="The authority table" meta={connectionLabel(connectionId, connections)}
+        action={
+          <span style={{ display: "inline-flex", gap: 4 }}>
+            <Button size="xs" variant="ghost" onClick={onOpenDeclared}
+              title="Each declaration, the overlay edits, and what waits on approval">Declared actions</Button>
+            <Button size="xs" variant="ghost" onClick={onOpenApprovals}
+              title="What the approval gate decided, and what is on its allowlist">Approval trail</Button>
+          </span>
+        }>
         <Gate load={load} what="the authority table">
           {t => t === null ? (
             <Absent>No object model is built for this connection yet, so no action can be declared on it. Actions are declared on the model, each with the read that verifies it and how it is undone.</Absent>
@@ -187,7 +157,7 @@ const VERIFY_WORDS: Record<string, string> = {
 };
 
 function ActionRecord({ actionId, connectionId, connections, onBack }: {
-  actionId: string; connectionId: string; connections: Connection[]; onBack: () => void;
+  actionId: string; connectionId: string; connections: Conn[]; onBack: () => void;
 }) {
   const load = useLoad(() => getAuthorityRecord(actionId, connectionId), [actionId, connectionId]);
   const [why, setWhy] = useState("");

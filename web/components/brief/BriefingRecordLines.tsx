@@ -111,7 +111,7 @@ export function BriefingRecordLines({ connectionId }: { connectionId: string }) 
           <div style={{ minWidth: 0, flex: 1 }}>
             {lines.predictions.map(p => (
               <div key={p.id} className="aug-brief-line-item">
-                <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => requestTab("record", { id: p.id })}>
+                <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => requestTab("claims", { id: p.id })}>
                   {p.statement.text}
                 </Button>
                 <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
