@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { takeMonitorDraft } from "@/lib/query/monitorDraft";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -609,10 +610,10 @@ function MonitorForm({
           ))}
         </div>
         {metricSource === "catalog" ? (
-          <select className="aug-input" value={form.metric_name ?? ""} onChange={e => setField("metric_name", e.target.value as any)} style={{ width: "100%" }}>
+          <SelectField value={form.metric_name ?? ""} onChange={e => setField("metric_name", e.target.value as any)} style={{ width: "100%" }}>
             <option value="">Select a metric…</option>
             {metrics.map(m => <option key={m.name} value={m.name}>{m.label ?? m.name}</option>)}
-          </select>
+          </SelectField>
         ) : (
           <textarea
             className="aug-input"

@@ -29,6 +29,7 @@ import { getProposals, type StagedProposal } from "@/lib/api";
 import { claimsOf, getIdToken } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
+import { SelectField } from "@/components/ui/select";
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -161,16 +162,16 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
       <Err e={err} />
       <input style={input} placeholder="action id (e.g. refund_order)" value={id} onChange={e => setId(e.target.value)} />
       <div style={{ display: "flex", gap: 6 }}>
-        <select style={{ ...input, flex: 1 }} value={kind} onChange={e => setKind(e.target.value)}>
+        <SelectField style={{ ...input, flex: 1 }} value={kind} onChange={e => setKind(e.target.value)}>
           <option value="side_effect">side_effect</option>
           <option value="annotate">annotate</option>
           <option value="query">query</option>
-        </select>
-        <select style={{ ...input, flex: 1 }} value={risk} onChange={e => setRisk(e.target.value)}>
+        </SelectField>
+        <SelectField style={{ ...input, flex: 1 }} value={risk} onChange={e => setRisk(e.target.value)}>
           <option value="high">high</option>
           <option value="low">low</option>
           <option value="read_only">read_only</option>
-        </select>
+        </SelectField>
       </div>
       <input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
       <input style={input} placeholder="object type this action is about (e.g. order) — optional"
@@ -180,19 +181,19 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <input style={{ ...input, flex: 2 }} placeholder="name (e.g. amount_eur)"
             value={p.name} onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-          <select style={{ ...input, width: 90 }} value={p.kind}
+          <SelectField style={{ ...input, width: 90 }} value={p.kind}
             onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, kind: e.target.value as "value" | "object" } : x))}>
             <option value="value">value</option>
             <option value="object">object</option>
-          </select>
+          </SelectField>
           {p.kind === "object" ? (
             <input style={{ ...input, flex: 1 }} placeholder="object type (e.g. order)" value={p.object_type}
               onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, object_type: e.target.value } : x))} />
           ) : (
-            <select style={{ ...input, flex: 1 }} value={p.data_type}
+            <SelectField style={{ ...input, flex: 1 }} value={p.data_type}
               onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, data_type: e.target.value } : x))}>
               {["TEXT", "NUMERIC", "INTEGER", "BOOLEAN", "DATE"].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </SelectField>
           )}
           <label className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4, marginBottom: 6, whiteSpace: "nowrap" }}>
             <input type="checkbox" checked={p.required}
@@ -247,9 +248,9 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
         <>
           <label style={hint}>the call this action makes — described, never coded</label>
           <div style={{ display: "flex", gap: 6 }}>
-            <select style={{ ...input, width: 110 }} value={httpMethod} onChange={e => setHttpMethod(e.target.value)}>
+            <SelectField style={{ ...input, width: 110 }} value={httpMethod} onChange={e => setHttpMethod(e.target.value)}>
               {["POST", "GET", "PUT", "PATCH", "DELETE"].map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
+            </SelectField>
             <input style={{ ...input, flex: 1 }} placeholder="https://events.pagerduty.com/v2/enqueue"
               value={httpUrl} onChange={e => setHttpUrl(e.target.value)} />
           </div>

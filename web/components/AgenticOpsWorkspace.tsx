@@ -13,6 +13,7 @@ import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { getConnections, getDepartureSummary, getNeedsHuman, type Connection } from "@/lib/api";
 import { askSpotlight } from "@/lib/commandRegistry";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
 
 // ── Lazy panels — load on first open, then keep mounted (Workspace keep-alive),
 // so the activity tail, a selected trace and an agent detail survive switches.
@@ -216,12 +217,12 @@ export function AgenticOpsWorkspace({
         <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 6,
           color: "var(--t2)" }}>
           Connection
-          <select className="aug-input" value={connId ?? ""} aria-label="Connection"
+          <SelectField value={connId ?? ""} aria-label="Connection"
             onChange={e => onSelectConnection(e.target.value)}
             style={{ height: 24, padding: "0 6px" }}>
             {!connId && <option value="">choose…</option>}
             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </SelectField>
           <span style={{ color: "var(--t3)" }}>scopes Automations and the Action centre; the Hub and Departures stay hub-wide</span>
         </label>
       ) : undefined}

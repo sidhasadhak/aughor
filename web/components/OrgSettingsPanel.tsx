@@ -28,6 +28,7 @@ import { OrgIndustriesSection } from "@/components/OrgIndustriesSection";
 import { OrgPlaybookSection } from "@/components/OrgPlaybookSection";
 import { OrgPrioritiesSection } from "@/components/OrgPrioritiesSection";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -133,19 +134,19 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
     </div>
   );
 
-  const SelectField = (
+  const SettingSelect = (
     k: keyof OrgSettings, label: string, opts: Array<string | number>,
     render?: (o: string | number) => string,
   ) => (
     <div style={{ display: "flex", flexDirection: "column" }}>
       <label style={labelStyle}>{label}</label>
-      <select className="aug-input" value={String(s[k] ?? "")} onChange={onChange(k)} style={{ cursor: "pointer" }}>
+      <SelectField value={String(s[k] ?? "")} onChange={onChange(k)} style={{ cursor: "pointer" }}>
         {opts.map((o) => (
           <option key={String(o)} value={String(o)}>
             {render ? render(o) : (o === "" ? (scope === "workspace" ? "(inherit)" : "(none)") : String(o))}
           </option>
         ))}
-      </select>
+      </SelectField>
     </div>
   );
 
@@ -227,10 +228,10 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       <div>
         <div className="aug-label" style={{ marginBottom: 10 }}>Localization</div>
         <div style={gridStyle}>
-          {SelectField("currency_code", "Reporting currency", CURRENCIES)}
-          {SelectField("timezone", "Timezone", TIMEZONES)}
-          {SelectField("date_format", "Date format", DATE_FORMATS)}
-          {SelectField("fiscal_year_start_month", "Fiscal year starts", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (m) => MONTHS[(m as number) - 1])}
+          {SettingSelect("currency_code", "Reporting currency", CURRENCIES)}
+          {SettingSelect("timezone", "Timezone", TIMEZONES)}
+          {SettingSelect("date_format", "Date format", DATE_FORMATS)}
+          {SettingSelect("fiscal_year_start_month", "Fiscal year starts", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (m) => MONTHS[(m as number) - 1])}
         </div>
         <div style={hintStyle}>
           A set currency renders all figures in that currency (briefings, metrics, tables). Empty = inferred from the data.
@@ -241,7 +242,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       <div>
         <div className="aug-label" style={{ marginBottom: 10 }}>Appearance</div>
         <div style={gridStyle}>
-          {SelectField("chart_palette", "Chart palette", ["", ...CHART_PALETTE_NAMES], (p) => chartPaletteLabel(String(p)))}
+          {SettingSelect("chart_palette", "Chart palette", ["", ...CHART_PALETTE_NAMES], (p) => chartPaletteLabel(String(p)))}
         </div>
         <div style={hintStyle}>Colour scheme for charts. “Default” uses the app theme palette (adapts to light/dark).</div>
         <div style={{ marginTop: 12 }}>

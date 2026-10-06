@@ -151,6 +151,7 @@ const CONN_TAG: Record<string, { label: string; color: string; bg: string; borde
 import { getApiBase } from "@/lib/config";
 import { Icon } from "@/components/ui/icon";
 import { Loading, ReadFailed } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
 const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
 const _KNOWLEDGE     = ["confluence", "notion"];
 const _FILE_UPLOAD   = ["local_upload"];
@@ -476,10 +477,10 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
       <div><label style={L}>Name</label><input style={S} placeholder="My database" value={name} onChange={e => setName(e.target.value)} required /></div>
       <div>
         <label style={L}>Type</label>
-        <select style={{ ...S, cursor: "pointer" }} value={type} onChange={e => setType(e.target.value)}>
+        <SelectField style={{ ...S, cursor: "pointer" }} value={type} onChange={e => setType(e.target.value)}>
           <option value="postgres">PostgreSQL</option>
           <option value="duckdb">DuckDB file</option>
-        </select>
+        </SelectField>
       </div>
       <div>
         <label style={L}>{type === "postgres" ? "Connection string" : "File path"}</label>
@@ -773,7 +774,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                     </div>
                     {editingCol === col.name ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <select
+                        <SelectField
                           value={editType}
                           onChange={e => setEditType(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(col.name); } if (e.key === "Escape") { setEditingCol(null); } }}
@@ -783,7 +784,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                           {TYPE_OPTIONS.map(t => (
                             <option key={t} value={t} style={{ background: "var(--bg-0)", color: "var(--t1)" }}>{t}</option>
                           ))}
-                        </select>
+                        </SelectField>
                         <Button
                           variant="ghost"
                           onClick={() => handleSave(col.name)}

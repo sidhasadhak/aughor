@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import type { EvalsLayer } from "@/components/EvalsWorkspace";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -263,11 +264,11 @@ function SuiteForm({ form, setForm, connections, saving, error, onSave, onCancel
           placeholder="What this suite measures" style={{ width: "100%", resize: "vertical" }} />
       </Field>
       <Field label="Connection">
-        <select className="aug-input" value={form.connection_id}
+        <SelectField value={form.connection_id}
           onChange={e => setForm(f => ({ ...f, connection_id: e.target.value }))} style={{ width: "100%" }}>
           <option value="">Select a connection…</option>
           {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        </SelectField>
         <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
           A <code style={{ fontFamily: "var(--font-code)" }}>reference</code> suite replays each case&apos;s own SQL against this connection and
           scores the result against itself — a no-model harness check that should score ~100%.

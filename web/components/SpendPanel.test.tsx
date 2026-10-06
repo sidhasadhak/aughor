@@ -4,7 +4,7 @@
  * (a typed cap, not a JSON blob) and what it refuses to claim (an empty cap list must
  * say "uncapped", cost with unpriced calls must read as a floor).
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, change } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getUsageCaps = vi.fn();
@@ -63,7 +63,7 @@ describe("SpendPanel", () => {
 
   it("declaring a cap hands the endpoint a typed body", async () => {
     render(<SpendPanel />);
-    fireEvent.change(await screen.findByTestId("cap-limit"), { target: { value: "25" } });
+    change(await screen.findByTestId("cap-limit"), { target: { value: "25" } });
     fireEvent.click(screen.getByTestId("cap-declare"));
     await waitFor(() => expect(putUsageCap).toHaveBeenCalledTimes(1));
     expect(putUsageCap.mock.calls[0][0]).toEqual({

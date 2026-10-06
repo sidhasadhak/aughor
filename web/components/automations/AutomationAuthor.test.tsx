@@ -7,7 +7,7 @@
  * an edit looks exactly like one that was already enabled, and a draft that reads dirty
  * forever looks exactly like one you have genuinely changed.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, change } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -15,6 +15,7 @@ import {
   updatePayload,
 } from "@/components/automations/AutomationAuthor";
 import type { Automation, AutoCondition, AutoEffect } from "@/lib/api";
+import { SelectField } from "@/components/ui/select";
 
 const cond = (over: Partial<AutoCondition> = {}): AutoCondition =>
   ({ kind: "schedule", config: { cron: "0 9 * * *" }, ...over });
@@ -246,8 +247,8 @@ describe("StepInspector", () => {
     render(<StepInspector draft={draft} onDraft={() => {}} selection="second"
       logicLabel="all match" onClose={() => {}} />);
     expect(await screen.findByText("second")).toBeInTheDocument();
-    // One EffectRow means one kind <select>; the whole-chain rail rendered one per step.
-    expect(screen.getAllByDisplayValue(/Notify/i)).toHaveLength(1);
+    // One EffectRow means one kind <SelectField>; the whole-chain rail rendered one per step.
+    expect(screen.getAllByRole("combobox").filter(b => /Notify/i.test(b.textContent ?? ""))).toHaveLength(1);
   });
 
   it("the trigger selection edits the WHEN half", async () => {

@@ -46,6 +46,7 @@ import {
   type PackSummary, type UserAgent,
 } from "@/lib/api";
 import { formatCount } from "@/lib/format";
+import { SelectField } from "@/components/ui/select";
 
 type Step = "describe" | "start" | "scope" | "define" | "prove" | "reach";
 type Seed = { question: string; needs: string };
@@ -282,14 +283,14 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
                   nothing is created here.">
             <Field label="Which connection?"
               hint="An agent's scope is drafted inside one connection.">
-              <select className="aug-input" value={connectionId}
+              <SelectField value={connectionId}
                 onChange={e => { setConnectionId(e.target.value); setSchemaScope(""); }}
                 style={{ width: "100%", maxWidth: 420 }}>
                 <option value="">Choose a connection…</option>
                 {connections.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
-              </select>
+              </SelectField>
             </Field>
             <Field label="What should it answer?"
               hint="Plain words. Name the decisions it should support, not the tables.">
@@ -429,22 +430,22 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             note="An agent that has not been told where to look cannot be judged on what it says.">
             <Field label="Connection"
               hint="Leave unset and the agent answers against whichever connection the question came from.">
-              <select className="aug-input" value={connectionId} style={{ maxWidth: 420 }}
+              <SelectField value={connectionId} style={{ maxWidth: 420 }}
                 onChange={e => { setConnectionId(e.target.value); setSchemaScope(""); }}>
                 <option value="">Any — use the question&rsquo;s connection</option>
                 {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </SelectField>
             </Field>
 
             <Field label="Schema"
               hint={connectionId
                 ? "Picked from this connection's real catalogue — a schema that does not exist would make every ask fail."
                 : "Choose a connection first to pick a schema."}>
-              <select className="aug-input" value={schemaScope} disabled={!connectionId}
+              <SelectField value={schemaScope} disabled={!connectionId}
                 onChange={e => setSchemaScope(e.target.value)} style={{ maxWidth: 420 }}>
                 <option value="">All schemas in this connection</option>
                 {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              </SelectField>
             </Field>
 
             {connectionId && (

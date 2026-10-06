@@ -62,6 +62,7 @@ import {
   type TypeMap,
   type TypeMapRow,
 } from "@/lib/objectTypes";
+import { SelectField } from "@/components/ui/select";
 
 const MONO: React.CSSProperties = { fontFamily: "var(--font-mono)" };
 const RULE = "1px solid var(--b1)";
@@ -575,11 +576,11 @@ function DeclareEntity({ declare, sources }: {
         onChange={(e) => setName(e.target.value)} />
       {sources && (
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <select className="aug-fs-xs" style={{ ...SELECT, flex: 1 }} value={connection} aria-label="Entity connection"
+          <SelectField className="aug-fs-xs" style={{ ...SELECT, flex: 1 }} value={connection} aria-label="Entity connection"
             onChange={(e) => setConnection(e.target.value)} data-testid="entity-declare-connection">
             <option value="">connection…</option>
             {Object.entries(sources).map(([cid, label]) => <option key={cid} value={cid}>{label}</option>)}
-          </select>
+          </SelectField>
           {reads === "table" && (
             <input className="aug-fs-xs" style={{ ...FIELD, width: 90 }} value={schemaName} placeholder="schema"
               aria-label="Entity schema" onChange={(e) => setSchemaName(e.target.value)} />
@@ -587,11 +588,11 @@ function DeclareEntity({ declare, sources }: {
         </div>
       )}
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <select className="aug-fs-xs" style={SELECT} value={reads} aria-label="Entity source kind"
+        <SelectField className="aug-fs-xs" style={SELECT} value={reads} aria-label="Entity source kind"
           onChange={(e) => setReads(e.target.value as "table" | "query")}>
           <option value="table">table</option>
           <option value="query">SELECT</option>
-        </select>
+        </SelectField>
         <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={source}
           aria-label={reads === "table" ? "Entity table" : "Entity SELECT"}
           placeholder={reads === "table" ? "purchase_orders" : "SELECT … one row per object"}

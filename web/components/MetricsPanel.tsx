@@ -28,6 +28,7 @@ import {
   type DefinitionReport,
   type DefinitionClaim,
 } from "@/lib/api";
+import { SelectField } from "@/components/ui/select";
 
 // ── Governance lifecycle (B-8) ──────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, string> = {
@@ -206,11 +207,11 @@ function DatesSection({ metric, proposals, onChanged }: {
       ) : (
         <div className="grid gap-2 mt-2">
           <label className="aug-fs-xs text-zinc-400">Kind
-            <select className="aug-select aug-fs-xs ml-2" value={kind} onChange={e => setKind(e.target.value as "flow" | "stock" | "cohort")}>
+            <SelectField className="ml-2" value={kind} onChange={e => setKind(e.target.value as "flow" | "stock" | "cohort")}>
               <option value="flow">Flow — adds up over a range</option>
               <option value="stock">Stock — a level at a date</option>
               <option value="cohort">Cohort — completed by a later date</option>
-            </select>
+            </SelectField>
           </label>
           <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined}
             placeholder={listed ? "Date column — pick one of the proposals, or type schema.table.column" : "Date column — schema.table.column"}

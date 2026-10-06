@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { clearOrgLLM, getOrgLLM, updateOrgLLM, type OrgLLMConfig } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select";
 
 const BACKENDS = ["", "openrouter", "anthropic", "gemini", "groq", "together", "ollama", "lmstudio"];
 const KEYED = new Set(["openrouter", "anthropic", "gemini", "groq", "together"]);
@@ -95,8 +96,7 @@ export function OrgByokSection() {
       <div style={gridStyle}>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <label style={labelStyle}>Provider</label>
-          <select
-            className="aug-input"
+          <SelectField
             value={backend}
             style={{ cursor: "pointer" }}
             onChange={(e) => { setSaved(false); setBackend(e.target.value); }}
@@ -104,7 +104,7 @@ export function OrgByokSection() {
             {BACKENDS.map((b) => (
               <option key={b} value={b}>{b === "" ? "(deployment default)" : b}</option>
             ))}
-          </select>
+          </SelectField>
         </div>
         {backend && KEYED.has(backend) && (
           <div style={{ display: "flex", flexDirection: "column" }}>

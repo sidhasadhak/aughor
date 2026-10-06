@@ -12,7 +12,7 @@
  * Briefing swapped out for its "Reading this connection's schemas…" state and back in, and a Briefing
  * that mounts again asks again.
  */
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, change } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IntelligenceWorkspace, type IntelLayer } from "@/components/IntelligenceWorkspace";

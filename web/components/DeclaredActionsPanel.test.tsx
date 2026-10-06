@@ -12,7 +12,7 @@
  * the fields and drops them from the body looks identical on screen.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, change, choose, valueOf } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
 
 import { DeclaredActionsPanel } from "@/components/DeclaredActionsPanel";
@@ -50,13 +50,13 @@ describe("DeclaredActionsPanel — declaring an action about an object", () => {
     render(<DeclaredActionsPanel connectionId="c1" />);
 
     await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "flag_order_for_review");
-    await user.selectOptions(screen.getAllByRole("combobox")[0], "annotate");
+    await choose(screen.getAllByRole("combobox")[0], "annotate");
     await user.type(screen.getByPlaceholderText(/object type this action is about/), "order");
 
     // The first parameter row becomes the object the action is about.
     await user.clear(screen.getByPlaceholderText("name (e.g. amount_eur)"));
     await user.type(screen.getByPlaceholderText("name (e.g. amount_eur)"), "order");
-    await user.selectOptions(screen.getByDisplayValue("value"), "object");
+    await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "value")!, "object");
     await user.type(screen.getByPlaceholderText("object type (e.g. order)"), "order");
 
     await user.click(screen.getByRole("button", { name: "+ Add an edit" }));

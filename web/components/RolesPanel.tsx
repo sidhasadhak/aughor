@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Loading, ReadFailed } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
 
 const ROLE_TINT: Record<string, string> = {
   owner: "var(--blue4)",
@@ -305,9 +306,9 @@ export function RolesPanel() {
                           <input className="aug-input" placeholder="securable (e.g. domain:supply-chain, promise:dispatch-24h)"
                             value={newSecurable} onChange={e => setNewSecurable(e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") onAddGrant(); }} style={{ flex: 1 }} />
-                          <select className="aug-input" value={newLevel} onChange={e => setNewLevel(e.target.value)} style={{ cursor: "pointer", width: 120 }}>
+                          <SelectField value={newLevel} onChange={e => setNewLevel(e.target.value)} style={{ cursor: "pointer", width: 120 }}>
                             {catalogue.ladder.map(l => <option key={l} value={l}>{l}</option>)}
-                          </select>
+                          </SelectField>
                           <Button variant="default" size="sm" onClick={onAddGrant} disabled={busy || !newSecurable.trim()}>Grant</Button>
                         </div>
                       )}
@@ -324,10 +325,10 @@ export function RolesPanel() {
               <input className="aug-input" placeholder="new group id (e.g. supply-chain)"
                 value={newGroupId} onChange={e => setNewGroupId(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") onCreateGroup(); }} style={{ flex: 1 }} />
-              <select className="aug-input" value={newGroupChannel} onChange={e => setNewGroupChannel(e.target.value)} style={{ cursor: "pointer", width: 180 }}>
+              <SelectField value={newGroupChannel} onChange={e => setNewGroupChannel(e.target.value)} style={{ cursor: "pointer", width: 180 }}>
                 <option value="">no channel yet</option>
                 {triggers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+              </SelectField>
               <Button variant="default" size="sm" onClick={onCreateGroup} disabled={busy || !newGroupId.trim()}>Create group</Button>
             </div>
           )}
@@ -359,9 +360,9 @@ export function RolesPanel() {
                 onKeyDown={e => { if (e.key === "Enter") onAssign(); }}
                 style={{ flex: 1 }}
               />
-              <select className="aug-input" value={newRole} onChange={e => setNewRole(e.target.value)} style={{ cursor: "pointer", width: 120 }}>
+              <SelectField value={newRole} onChange={e => setNewRole(e.target.value)} style={{ cursor: "pointer", width: 120 }}>
                 {roles.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
-              </select>
+              </SelectField>
               <Button variant="default" size="sm" onClick={onAssign} disabled={busy || !newUser.trim()}>
                 Assign
               </Button>

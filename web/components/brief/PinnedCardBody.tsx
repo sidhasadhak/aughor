@@ -19,6 +19,7 @@ import { formatMetricValue, formatVariance } from "@/lib/format";
 import { graduateCard, updateDashboardCard, type CardRunResult, type DashboardCard } from "@/lib/api";
 import { isEmptyVizConfig, type VizConfig } from "@/components/charts/vizConfig";
 import { toast } from "@/components/ui/toast";
+import { SelectField } from "@/components/ui/select";
 
 export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean };
 
@@ -88,11 +89,11 @@ export function CardAlertForm({ card, direction, onSet }: {
   };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-      <select value={alertDir} onChange={e => setAlertDir(e.target.value as "below" | "above")}
+      <SelectField value={alertDir} onChange={e => setAlertDir(e.target.value as "below" | "above")}
         style={{ fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t2)", padding: "2px 4px" }}>
         <option value="below">below</option>
         <option value="above">above</option>
-      </select>
+      </SelectField>
       <input type="number" value={alertVal} onChange={e => setAlertVal(e.target.value)} placeholder="threshold"
         onKeyDown={e => { if (e.key === "Enter") saveAlert(); }}
         style={{ fontSize: 11, width: 74, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 4px", outline: "none" }} />

@@ -10,6 +10,7 @@ import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { MetricDetailHost } from "@/components/brief/MetricDetail";
+import { SelectField } from "@/components/ui/select";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
@@ -200,7 +201,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       {showConnPicker && (
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="aug-label">Connection</span>
-          <select
+          <SelectField
             value={connectionId}
             onChange={e => onConnectionChange?.(e.target.value)}
             aria-label="Connection"
@@ -211,7 +212,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
             }}
           >
             {connections!.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </SelectField>
         </label>
       )}
 
@@ -220,7 +221,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       {showSchema && (
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="aug-label">Schema</span>
-          <select
+          <SelectField
             value={selectedSchema ?? ""}
             onChange={e => setSelectedSchema(e.target.value || null)}
             aria-label="Schema scope"
@@ -232,7 +233,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           >
             {/* TEMP (2026-06-26): "All schemas" option removed — select each schema individually. */}
             {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          </SelectField>
         </label>
       )}
     </>

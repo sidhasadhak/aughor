@@ -20,6 +20,7 @@ import {
 import { formatTimestamp } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SelectField } from "@/components/ui/select";
 
 const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Weekdays 8:00 UTC", cron: "0 8 * * 1-5" },
@@ -156,7 +157,7 @@ export function BriefSchedule({ connId }: { connId: string }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           <input style={{ ...field, width: 180 }} placeholder="Name this delivery"
             value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-          <select style={field} value={form.period}
+          <SelectField style={field} value={form.period}
             onChange={e => {
               const period = e.target.value as BriefSubscription["period"];
               // there is no monthly or yearly alert summary: those periods send the briefing
@@ -168,23 +169,23 @@ export function BriefSchedule({ connId }: { connId: string }) {
             <option value="day">{periodsOn ? "daily" : "daily brief"}</option>
             {periodsOn && <option value="month">monthly</option>}
             {periodsOn && <option value="year">yearly</option>}
-          </select>
+          </SelectField>
           {periodsOn && (
-            <select style={field} value={form.content} aria-label="What to send"
+            <SelectField style={field} value={form.content} aria-label="What to send"
               onChange={e => setForm(f => ({ ...f, content: e.target.value as "alert_summary" | "briefing" }))}>
               {(form.period === "week" || form.period === "day") && <option value="alert_summary">alert summary</option>}
               <option value="briefing">briefing for the period</option>
-            </select>
+            </SelectField>
           )}
-          <select style={field} value={form.send_cron}
+          <SelectField style={field} value={form.send_cron}
             onChange={e => setForm(f => ({ ...f, send_cron: e.target.value }))}>
             {presets.map(p => <option key={p.cron} value={p.cron}>{p.label}</option>)}
-          </select>
+          </SelectField>
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>to</span>
-          <select style={field} value={form.trigger_id}
+          <SelectField style={field} value={form.trigger_id}
             onChange={e => setForm(f => ({ ...f, trigger_id: e.target.value }))}>
             {triggers.map(t => <option key={t.id} value={t.id}>{t.name} ({t.type})</option>)}
-          </select>
+          </SelectField>
           <Button size="sm" disabled={busy || !form.name.trim() || !form.trigger_id}
             onClick={() => run(() => createBriefSubscription({
               conn_id: connId, name: form.name.trim(), trigger_id: form.trigger_id,

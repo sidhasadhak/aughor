@@ -31,6 +31,7 @@ import { CASTS, seedConfig, upstreamKeys } from "@/lib/automationFlow";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { slackStepBotNote } from "@/lib/slackBots";
 import { ScheduleEditor } from "@/components/automations/ScheduleEditor";
+import { SelectField } from "@/components/ui/select";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
   { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
@@ -164,7 +165,7 @@ export function BindingCast({ value, onChange }: {
 
   const current = typeof binding.$as === "string" ? binding.$as : "";
   return (
-    <select
+    <SelectField
       aria-label="convert the bound value"
       title={BINDING_HINT}
       className="aug-fs-xs"
@@ -179,7 +180,7 @@ export function BindingCast({ value, onChange }: {
       }}>
       <option value="">as-is</option>
       {CASTS.map(c => <option key={c} value={c}>{`as ${c}`}</option>)}
-    </select>
+    </SelectField>
   );
 }
 
@@ -347,12 +348,12 @@ export function GuardRows({ e, siblings, index, onChange }: {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
         <span style={{ ...labelStyle, marginBottom: 0 }}>Only if</span>
         {clauses.length > 1 && (
-          <select value={e.when_logic ?? "all"} aria-label="Only if logic"
+          <SelectField value={e.when_logic ?? "all"} aria-label="Only if logic"
             onChange={ev => onChange({ ...e, when_logic: ev.target.value as "all" | "any" })}
             style={{ ...inputStyle, width: 74, padding: "3px 6px", fontSize: 11 }}>
             <option value="all">all</option>
             <option value="any">any</option>
-          </select>
+          </SelectField>
         )}
         <Button variant="ghost" className="h-auto font-normal" style={{ ...ghostBtn, padding: 0 }}
           onClick={() => put([...clauses, { left: { $from: upstream[0].ref }, op: ops[0].op }])}>
@@ -361,7 +362,7 @@ export function GuardRows({ e, siblings, index, onChange }: {
       </div>
       {clauses.map((c, i) => (
         <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
-          <select value={refOf(c.left)} aria-label="Only if subject"
+          <SelectField value={refOf(c.left)} aria-label="Only if subject"
             onChange={ev => patch(i, { left: { $from: ev.target.value } })}
             style={{ ...inputStyle, width: 150, fontSize: 12 }}>
             {/* A reference the picker cannot offer — a step renamed or deleted since —
@@ -371,12 +372,12 @@ export function GuardRows({ e, siblings, index, onChange }: {
               <option value={refOf(c.left)}>{refOf(c.left)} (missing)</option>
             )}
             {upstream.map(u => <option key={u.ref} value={u.ref}>{u.ref}</option>)}
-          </select>
-          <select value={c.op} aria-label="Only if comparison"
+          </SelectField>
+          <SelectField value={c.op} aria-label="Only if comparison"
             onChange={ev => patch(i, { op: ev.target.value })}
             style={{ ...inputStyle, width: 96, fontSize: 12 }}>
             {ops.map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
-          </select>
+          </SelectField>
           {!unary.has(c.op) && (
             <input style={{ ...inputStyle, flex: 1, fontSize: 12 }} value={String(c.right ?? "")}
               aria-label="Only if value" placeholder="value"
@@ -421,7 +422,7 @@ export function OtherwiseRows({ e, siblings, index, onChange }: {
     <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ ...labelStyle, marginBottom: 0 }}>Otherwise</span>
-        <select value={current} aria-label="Otherwise of"
+        <SelectField value={current} aria-label="Otherwise of"
           onChange={ev => onChange({ ...e, else_of: ev.target.value || undefined })}
           style={{ ...inputStyle, flex: 1, fontSize: 12 }}>
           <option value="">— runs regardless —</option>
@@ -436,7 +437,7 @@ export function OtherwiseRows({ e, siblings, index, onChange }: {
               runs when {t.alias}&apos;s Only if does not hold
             </option>
           ))}
-        </select>
+        </SelectField>
       </div>
     </div>
   );
@@ -542,11 +543,11 @@ export function ConditionRow({ c, onChange, onRemove, timezone }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12,
       paddingBottom: 10, borderBottom: "1px solid var(--b1)" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <select value={c.kind} onChange={e => onChange({ kind: e.target.value as ConditionKind, config: {} })}
+        <SelectField value={c.kind} onChange={e => onChange({ kind: e.target.value as ConditionKind, config: {} })}
           aria-label="Trigger kind"
           style={{ ...inputStyle, flex: 1 }}>
           {CONDITION_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
-        </select>
+        </SelectField>
         {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove trigger" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
       </div>
       <div>
@@ -655,7 +656,7 @@ export function IntegrationRows({ e, onChange }: {
   // how a reader learns the product has two opinions about it.
   const usable = grants.filter(g => g.status === "active");
   // A grant this step was AUTHORED against and the picker cannot offer — revoked since,
-  // or belonging to someone else. Kept and marked, never silently dropped: a `<select>`
+  // or belonging to someone else. Kept and marked, never silently dropped: a `<SelectField>`
   // whose value matches no option renders as the placeholder, so a step that says "act
   // as sales@…" would read as one nobody had configured yet, and the next save would
   // make that true. The Otherwise picker states the same rule one field over, and this
@@ -672,7 +673,7 @@ export function IntegrationRows({ e, onChange }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <select style={inputStyle} value={connectionId} aria-label="Act as"
+      <SelectField style={inputStyle} value={connectionId} aria-label="Act as"
         onChange={ev => set({ connection_id: ev.target.value, operation: "", params: {} })}>
         <option value="">Act as…</option>
         {usable.map(g => (
@@ -681,9 +682,9 @@ export function IntegrationRows({ e, onChange }: {
           </option>
         ))}
         {orphanGrant && <option value={connectionId}>{connectionId} (missing)</option>}
-      </select>
+      </SelectField>
       {connectionId && (
-        <select style={inputStyle} value={operationId} aria-label="Operation"
+        <SelectField style={inputStyle} value={operationId} aria-label="Operation"
           onChange={ev => set({ operation: ev.target.value, params: {} })}>
           <option value="">Do what…</option>
           {ops.map(o => (
@@ -692,7 +693,7 @@ export function IntegrationRows({ e, onChange }: {
             </option>
           ))}
           {orphanOp && <option value={operationId}>{operationId} (missing)</option>}
-        </select>
+        </SelectField>
       )}
       {orphanGrant && (
         <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
@@ -798,14 +799,14 @@ export function McpCallRows({ e, onChange }: {
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <select style={inputStyle} value={serverId} aria-label="MCP server"
+      <SelectField style={inputStyle} value={serverId} aria-label="MCP server"
         onChange={ev => set({ server_id: ev.target.value, tool: "", arguments: {} })}>
         <option value="">Which server…</option>
         {usable.map(sv => <option key={sv.id} value={sv.id}>{sv.name}</option>)}
         {orphanServer && <option value={serverId}>{serverId} (missing)</option>}
-      </select>
+      </SelectField>
       {serverId && (
-        <select style={inputStyle} value={toolName} aria-label="MCP tool"
+        <SelectField style={inputStyle} value={toolName} aria-label="MCP tool"
           onChange={ev => set({ tool: ev.target.value, arguments: {} })}>
           <option value="">Which tool…</option>
           {withUniqueKeys(callable, t => t.name).map(([key, t]) => (
@@ -814,7 +815,7 @@ export function McpCallRows({ e, onChange }: {
             </option>
           ))}
           {orphanTool && <option value={toolName}>{toolName} (not callable now)</option>}
-        </select>
+        </SelectField>
       )}
       {tool?.description && (
         <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{tool.description}</div>
@@ -846,11 +847,11 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
   const botNote = e.kind === "slack_post" ? slackStepBotNote(e.config.bot_id, bots) : "";
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
-      <select value={e.kind} onChange={ev => onChange({ kind: ev.target.value as EffectKind, config: {} })}
+      <SelectField value={e.kind} onChange={ev => onChange({ kind: ev.target.value as EffectKind, config: {} })}
         aria-label="Action kind"
         style={{ ...inputStyle, width: 150 }}>
         {EFFECT_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
-      </select>
+      </SelectField>
       <div style={{ flex: 1 }}>
         {e.kind === "notify" && (
           <input style={inputStyle} value={String(e.config.trigger_id ?? "")} onChange={ev => set({ trigger_id: ev.target.value })} placeholder="Notifications trigger id" />
@@ -859,14 +860,14 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="Agent question" />
             {agents.length > 0 && (
-              <select style={inputStyle} value={String(e.config.agent_id ?? "")}
+              <SelectField style={inputStyle} value={String(e.config.agent_id ?? "")}
                 aria-label="Run as agent"
                 onChange={ev => set({ agent_id: ev.target.value })}>
                 <option value="">Run unbound (no agent)</option>
                 {agents.filter(a => a.enabled).map(a => (
                   <option key={a.id} value={a.id}>Run as {a.name}</option>
                 ))}
-              </select>
+              </SelectField>
             )}
           </div>
         )}
@@ -880,7 +881,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
                 No Slack bots configured — create one first, then this step can post as it.
               </div>
             ) : (<>
-              <select style={inputStyle} value={String(e.config.bot_id ?? "")}
+              <SelectField style={inputStyle} value={String(e.config.bot_id ?? "")}
                 aria-label="Post as bot"
                 onChange={ev => set({ bot_id: ev.target.value })}>
                 <option value="">Post as…</option>
@@ -897,7 +898,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
                 {bots.filter(b => b.enabled).map(b => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
-              </select>
+              </SelectField>
               {botNote && (
                 <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>{botNote}</div>
               )}

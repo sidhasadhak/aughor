@@ -34,6 +34,7 @@ import {
 } from "@/lib/api";
 import { fmtMs } from "@/lib/cost";
 import { compactNumber, relTime } from "@/lib/format";
+import { SelectField } from "@/components/ui/select";
 
 /** Depth of every span id, walked from the tree the API assembled. */
 function spanDepths(spans: TraceSpan[], depth = 1, out: Map<string, number> = new Map()) {
@@ -308,7 +309,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               defaultValue={filters.user_id ?? ""}
               onBlur={e => setFilters(f => ({ ...f, user_id: e.target.value || undefined }))}
             />
-            <select
+            <SelectField
               className="aug-input aug-fs-xs" style={{ flex: 1 }}
               value={filters.min_duration_ms ?? ""}
               onChange={e => setFilters(f => ({
@@ -318,8 +319,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               <option value="1000">over 1s</option>
               <option value="10000">over 10s</option>
               <option value="60000">over 1m</option>
-            </select>
-            <select
+            </SelectField>
+            <SelectField
               className="aug-input aug-fs-xs" style={{ flex: 1 }}
               value={filters.min_tokens ?? ""}
               onChange={e => setFilters(f => ({
@@ -329,7 +330,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               <option value="1000">over 1K</option>
               <option value="10000">over 10K</option>
               <option value="100000">over 100K</option>
-            </select>
+            </SelectField>
           </div>
           {(filters.status || filters.user_id || filters.q || filters.min_duration_ms
             || filters.min_tokens) && (
@@ -404,13 +405,13 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
             {total === 0 ? "0 runs" : `${offset + 1}–${Math.min(offset + pageSize, total)} of ${total}`}
             {scanned != null && <span style={{ color: "var(--t3)" }}> · last {compactNumber(scanned)} events</span>}
           </span>
-          <select
+          <SelectField
             className="aug-input aug-fs-xs" style={{ width: 62, marginLeft: "auto" }}
             value={pageSize}
             onChange={e => setPageSize(Number(e.target.value))}
           >
             {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
+          </SelectField>
           <Button variant="ghost" size="sm" className="aug-fs-xs"
             disabled={offset === 0}
             onClick={() => setOffset(o => Math.max(0, o - pageSize))}>‹</Button>

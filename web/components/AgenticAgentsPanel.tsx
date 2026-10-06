@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/table";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { TabStrip } from "@/components/ui/tab-strip";
+import { SelectField } from "@/components/ui/select";
 
 type Selection =
   | { kind: "charter"; id: string }
@@ -1161,11 +1162,11 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Connection</span>
-        <select className="aug-input" value={form.connection_id}
+        <SelectField value={form.connection_id}
           onChange={e => setForm(f => ({ ...f, connection_id: e.target.value }))}>
           <option value="">Any (use the ask&rsquo;s connection)</option>
           {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        </SelectField>
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Schema scope</span>
@@ -1400,12 +1401,12 @@ export function AgentGuardrailsSection({ agent, onError }: {
         <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 96 }}>
           Sensitive data
         </span>
-        <select className="aug-input" style={{ maxWidth: 140 }} value={policy.pii}
+        <SelectField style={{ maxWidth: 140 }} value={policy.pii}
           onChange={e => save({ ...policy, pii: e.target.value as AgentGuardrails["pii"] })}>
           {modes.map(m => (
             <option key={m} value={m}>{PII_COPY[m]?.label ?? m}</option>
           ))}
-        </select>
+        </SelectField>
         <span className="aug-fs-xs" style={{ flex: 1, minWidth: 0, color: "var(--t3)" }}>
           {PII_COPY[policy.pii]?.hint ?? ""}
         </span>

@@ -42,6 +42,7 @@ import { bindingProblem, patchBodyFor, type SlackBotChanges } from "@/lib/slackB
 
 import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
 import { McpServersSection } from "@/components/McpServersSection";
+import { SelectField } from "@/components/ui/select";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -418,7 +419,7 @@ export function IntegrationsPanel() {
                               <input className="aug-fs-ui" style={inputStyle} value={botDraft.name}
                                 aria-label="Bot name"
                                 onChange={e => setBotDraft(d => ({ ...d, name: e.target.value }))} />
-                              <select className="aug-fs-ui" style={inputStyle}
+                              <SelectField className="aug-fs-ui" style={inputStyle}
                                 value={botDraft.agent_id} aria-label="Answers as agent"
                                 onChange={e => {
                                   const chosen = agents.find(a => a.id === e.target.value);
@@ -431,8 +432,8 @@ export function IntegrationsPanel() {
                                 {agents.map(a => (
                                   <option key={a.id} value={a.id}>{a.name}</option>
                                 ))}
-                              </select>
-                              <select className="aug-fs-ui" style={inputStyle}
+                              </SelectField>
+                              <SelectField className="aug-fs-ui" style={inputStyle}
                                 value={botDraft.connection_id} aria-label="Asks on connection"
                                 onChange={e => setBotDraft(d => ({ ...d,
                                   connection_id: e.target.value }))}>
@@ -446,7 +447,7 @@ export function IntegrationsPanel() {
                                 {connections.map(c => (
                                   <option key={c.id} value={c.id}>{c.name}</option>
                                 ))}
-                              </select>
+                              </SelectField>
                               {/* AO-2f — an optional home channel on the record. */}
                               <input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
                                 aria-label="Home channel" placeholder="Home channel — #name or C… (optional)"
@@ -579,7 +580,7 @@ export function IntegrationsPanel() {
                           Answer as (optional) — an app with no agent can still post; it
                           just cannot answer an @mention as anybody.
                         </div>
-                        <select className="aug-fs-ui" style={inputStyle} value={doorAgent}
+                        <SelectField className="aug-fs-ui" style={inputStyle} value={doorAgent}
                           aria-label="Answer as agent"
                           onChange={e => {
                             const chosen = agents.find(a => a.id === e.target.value);
@@ -590,7 +591,7 @@ export function IntegrationsPanel() {
                           {agents.map(a => (
                             <option key={a.id} value={a.id}>{a.name}</option>
                           ))}
-                        </select>
+                        </SelectField>
                       </div>
                     )}
                     <div style={{ marginBottom: 12 }}>
@@ -599,14 +600,14 @@ export function IntegrationsPanel() {
                         Asks on — the connection @mentions run against. When the agent is
                         bound to a connection it must be that one, or answers are refused.
                       </div>
-                      <select className="aug-fs-ui" style={inputStyle} value={doorConnection}
+                      <SelectField className="aug-fs-ui" style={inputStyle} value={doorConnection}
                         aria-label="Asks on connection"
                         onChange={e => setDoorConnection(e.target.value)}>
                         <option value="">No connection — posting only</option>
                         {connections.map(c => (
                           <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
-                      </select>
+                      </SelectField>
                     </div>
                     <AgentSlackDoor
                       agentId={doorAgent}

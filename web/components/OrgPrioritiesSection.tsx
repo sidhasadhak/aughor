@@ -9,6 +9,7 @@
  */
 import type { Priority } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select";
 
 const EMPTY_ROW: Priority = { metric: "", target: "", direction: "", by: "", note: "" };
 
@@ -34,12 +35,12 @@ export function OrgPrioritiesSection({ value, onChange }: { value: Priority[]; o
               onChange={e => set(i, { target: e.target.value })} />
           </label>
           <label className="flex flex-col aug-fs-xs text-zinc-500">good when
-            <select className="aug-input" aria-label={`Priority ${i + 1} direction`} value={r.direction}
+            <SelectField aria-label={`Priority ${i + 1} direction`} value={r.direction}
               onChange={e => set(i, { direction: e.target.value as Priority["direction"] })}>
               <option value="">(unsaid)</option>
               <option value="up">up</option>
               <option value="down">down</option>
-            </select>
+            </SelectField>
           </label>
           <label className="flex flex-col aug-fs-xs text-zinc-500">by
             <input className="aug-input" aria-label={`Priority ${i + 1} by`} value={r.by} placeholder="Q4"

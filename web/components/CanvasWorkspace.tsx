@@ -10,6 +10,7 @@ import { LifecyclePanel } from "@/components/LifecyclePanel";
 import { Button } from "@/components/ui/button";
 import { ReadFailed } from "@/components/ui/states";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -332,7 +333,7 @@ function CanvasDocuments({ canvas, onSaved }: {
       ))}
 
       {unpinned.length > 0 && (
-        <select
+        <SelectField
           value=""
           disabled={busy}
           onChange={e => { if (e.target.value) setBinding([...pinnedIds, e.target.value]); }}
@@ -348,7 +349,7 @@ function CanvasDocuments({ canvas, onSaved }: {
           {unpinned.map(doc => (
             <option key={doc.doc_id} value={doc.doc_id}>{doc.title || doc.filename}</option>
           ))}
-        </select>
+        </SelectField>
       )}
 
       {all.length === 0 && (

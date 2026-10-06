@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { formatCount } from "@/lib/format";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
 
 const ROLE_LABEL: Record<string, string> = {
   coder: "Coder — SQL & reasoning",
@@ -450,11 +451,11 @@ export function InferencePanel() {
       {/* Backend */}
       <div>
         <label style={labelStyle}>Provider</label>
-        <select value={backend} onChange={(e) => onBackend(e.target.value)} style={{ ...inputStyle, fontFamily: "inherit" }}>
+        <SelectField value={backend} onChange={(e) => onBackend(e.target.value)} style={{ ...inputStyle, fontFamily: "inherit" }}>
           {cfg.backends.map((b) => (
             <option key={b} value={b}>{BACKEND_LABEL[b] ?? b}</option>
           ))}
-        </select>
+        </SelectField>
       </div>
 
       {/* API key (hosted backends only) */}
@@ -609,7 +610,7 @@ export function InferencePanel() {
 
         <div>
           <label style={labelStyle}>Provider</label>
-          <select
+          <SelectField
             value={fallbackBackend}
             onChange={(e) => { setFallbackBackend(e.target.value); setFallbackModel(""); }}
             style={{ ...inputStyle, fontFamily: "inherit" }}
@@ -622,7 +623,7 @@ export function InferencePanel() {
                 {cfg.needs_key.includes(b) && !cfg.keys_set[b] ? " — no key set" : ""}
               </option>
             ))}
-          </select>
+          </SelectField>
         </div>
 
         {fallbackBackend && fallbackBackend !== "none" && (

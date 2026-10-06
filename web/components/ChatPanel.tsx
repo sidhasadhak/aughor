@@ -17,6 +17,7 @@ import { WhyThisNumber } from "./WhyThisNumber";
 import { getApiBase } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 import { Icon } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
 
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
@@ -188,7 +189,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
         {/* Agent picker — answer AS a saved user-defined persona.
             Hidden when the roster is empty (flag off → the list endpoint 404s → []). */}
         {(agents?.length ?? 0) > 0 && setAgentId && (
-          <select
+          <SelectField
             value={agentId ?? ""}
             onChange={(e) => setAgentId(e.target.value)}
             title="Answer as a saved agent (its instructions, documents and connection apply)"
@@ -204,7 +205,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             {agents!.filter(a => a.enabled).map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
-          </select>
+          </SelectField>
         )}
 
         {/* Actions: clear · attach · send/stop */}

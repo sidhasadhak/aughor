@@ -32,6 +32,7 @@ import { claimsOf, getIdToken } from "@/lib/auth";
 import { formatTimestamp } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
 
 /** Who is acting: the signed-in email when there is one, else the same word the
  *  actions inbox uses. Display + provenance material — the server owns identity. */
@@ -381,10 +382,10 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
       {door === "wiki" && (
         <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <select value={wikiConn} onChange={e => setWikiConn(e.target.value)} style={{ ...input, width: "auto" }}>
+          <SelectField value={wikiConn} onChange={e => setWikiConn(e.target.value)} style={{ ...input, width: "auto" }}>
             <option value="">Choose a wiki connection…</option>
             {knowledgeConns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </SelectField>
           <Button size="sm" disabled={busy || !wikiConn}
             onClick={() => { setBusy(true); setErr(""); setNote("");
               fetch(`${getApiBase()}/intake/mine`, { method: "POST",

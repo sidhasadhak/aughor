@@ -28,6 +28,7 @@ import { Icon } from "@/components/ui/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
 import { PartialState } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
 
 const cell: React.CSSProperties = { padding: "6px 10px", whiteSpace: "nowrap" };
 const num: React.CSSProperties = { ...cell, textAlign: "right", fontFamily: "var(--font-mono)" };
@@ -153,18 +154,18 @@ function CapsSection({ onCount }: { onCount: (n: number) => void }) {
       )}
       <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
         marginTop: 10, padding: "10px 12px", border: "1px solid var(--b0)", borderRadius: "var(--r3)", background: "var(--bg-2)" }}>
-        <select style={sel} value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}>
+        <SelectField style={sel} value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}>
           {(vocab.scopes.length ? vocab.scopes : ["org", "user"]).map(s =>
             <option key={s} value={s}>{s === "org" ? "whole org" : "one user"}</option>)}
-        </select>
+        </SelectField>
         {form.scope === "user" && (
           <input style={{ ...sel, width: 150 }} placeholder="user id" value={form.subject}
             onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
         )}
-        <select style={sel} value={form.metric} onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}>
+        <SelectField style={sel} value={form.metric} onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}>
           {(vocab.metrics.length ? vocab.metrics : ["calls", "total_tokens", "cost_usd"]).map(m =>
             <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
-        </select>
+        </SelectField>
         <input style={{ ...sel, width: 110 }} placeholder="limit" inputMode="decimal"
           value={form.limit} onChange={e => setForm(f => ({ ...f, limit: e.target.value }))}
           data-testid="cap-limit" />
@@ -172,10 +173,10 @@ function CapsSection({ onCount }: { onCount: (n: number) => void }) {
         <input style={{ ...sel, width: 60 }} inputMode="numeric" value={form.window_hours}
           onChange={e => setForm(f => ({ ...f, window_hours: e.target.value }))} />
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>hours ·</span>
-        <select style={sel} value={form.action} onChange={e => setForm(f => ({ ...f, action: e.target.value }))}>
+        <SelectField style={sel} value={form.action} onChange={e => setForm(f => ({ ...f, action: e.target.value }))}>
           {(vocab.actions.length ? vocab.actions : ["alert", "block"]).map(a =>
             <option key={a} value={a}>{a === "block" ? "block new work" : "alert only"}</option>)}
-        </select>
+        </SelectField>
         <Button size="sm" disabled={busy || !form.limit.trim()} onClick={declare} data-testid="cap-declare">
           Declare the cap
         </Button>
@@ -409,21 +410,21 @@ function FeedSection() {
           fetched window in memory — which is why the count line below says how many
           of how many, rather than presenting a slice as the whole. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <select style={feedSel} value={category} onChange={e => setCategory(e.target.value)}
+        <SelectField style={feedSel} value={category} onChange={e => setCategory(e.target.value)}
           aria-label="Category" data-testid="feed-category">
           <option value="">All categories</option>
           {categories.map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
-        </select>
-        <select style={feedSel} value={kind} onChange={e => setKind(e.target.value)}
+        </SelectField>
+        <SelectField style={feedSel} value={kind} onChange={e => setKind(e.target.value)}
           aria-label="Event" data-testid="feed-kind">
           <option value="">All events</option>
           {kinds.map(k => <option key={k} value={k}>{k}</option>)}
-        </select>
-        <select style={feedSel} value={actor} onChange={e => setActor(e.target.value)}
+        </SelectField>
+        <SelectField style={feedSel} value={actor} onChange={e => setActor(e.target.value)}
           aria-label="Actor" data-testid="feed-actor">
           <option value="">All actors</option>
           {actors.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
+        </SelectField>
         <input style={{ ...feedSel, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search summary, event, actor…" aria-label="Search the feed"
           data-testid="feed-search" />

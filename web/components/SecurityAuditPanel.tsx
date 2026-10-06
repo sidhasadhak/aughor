@@ -14,6 +14,7 @@ import {
   getApprovalsAudit, getAllowlist, revokeApproval,
   type ApprovalAuditEvent, type AllowlistEntry,
 } from "@/lib/api";
+import { SelectField } from "@/components/ui/select";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -693,7 +694,7 @@ export function SecurityAuditPanel({
         {/* Filters */}
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 4 }}>Connection</span>
-          <select
+          <SelectField
             value={filterConnId || ""}
             onChange={e => setFilterConnId(e.target.value || undefined)}
             style={{ fontSize: 11, color: "var(--t1)", background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
@@ -702,7 +703,7 @@ export function SecurityAuditPanel({
             {connections.map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
-          </select>
+          </SelectField>
           <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 4, marginLeft: 8 }}>Verdict</span>
           {VERDICT_FILTERS.map(v => (
             <button

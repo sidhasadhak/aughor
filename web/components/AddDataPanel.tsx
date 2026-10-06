@@ -34,6 +34,7 @@ import { BrandLogo, brandColor } from "@/components/BrandLogos";
 import { Button } from "@/components/ui/button";
 import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Icon } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -323,9 +324,9 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           </div>
           <div style={{ flex: "1 1 200px" }}>
             <label style={L}>Schema</label>
-            <select style={{ ...S, cursor: "pointer" }} value={schema} onChange={e => setSchema(e.target.value)}>
+            <SelectField style={{ ...S, cursor: "pointer" }} value={schema} onChange={e => setSchema(e.target.value)}>
               {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            </SelectField>
           </div>
         </div>
 
@@ -377,10 +378,10 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                       kept as text · {c.kept_as_text}
                     </span>
                   )}
-                  <select value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
+                  <SelectField value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
                     style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  </SelectField>
                   {suggest && (
                     <Button variant="ghost" type="button" onClick={() => setChosen(p => ({ ...p, [c.name]: suggest }))}
                       title={c.detected_format
@@ -513,9 +514,9 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: "1 1 200px" }}>
             <label style={L}>Target schema</label>
-            <select style={{ ...S, cursor: "pointer" }} value={bulkSchema} onChange={e => setBulkSchema(e.target.value)}>
+            <SelectField style={{ ...S, cursor: "pointer" }} value={bulkSchema} onChange={e => setBulkSchema(e.target.value)}>
               {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input style={{ ...S, maxWidth: 200 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}

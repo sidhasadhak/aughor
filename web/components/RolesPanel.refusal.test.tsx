@@ -5,7 +5,7 @@
  * permission") for a refusal the server had already explained — and a refused revoke, member
  * removal or group deletion said nothing at all.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, change } from "@/lib/testing";
 import { describe, expect, it, vi } from "vitest";
 
 const assignRole = vi.fn();
@@ -33,7 +33,7 @@ describe("RolesPanel — a refused write", () => {
     assignRole.mockRejectedValue(new Error("role 'viewer' may only be assigned inside your own organisation"));
 
     render(<RolesPanel />);
-    fireEvent.change(await screen.findByPlaceholderText("user id (e.g. alice@acme.com)"),
+    change(await screen.findByPlaceholderText("user id (e.g. alice@acme.com)"),
                      { target: { value: "bo@elsewhere.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Assign" }));
 

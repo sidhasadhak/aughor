@@ -23,6 +23,7 @@ import { IntakePanel } from "@/components/intake/IntakePanel";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
@@ -130,10 +131,10 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
 
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}
+    <SelectField value={value} onChange={e => onChange(e.target.value)}
       style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)", color: "var(--t1, #e5e5e5)", outline: "none" }}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    </SelectField>
   );
 }
 

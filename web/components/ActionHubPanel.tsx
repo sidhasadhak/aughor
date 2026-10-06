@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { getApiBase } from "@/lib/config";
+import { SelectField } from "@/components/ui/select";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -91,11 +92,11 @@ function TriggerForm({
       </div>
       <div>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Type</div>
-        <select value={type} onChange={e => setType(e.target.value as typeof type)} className="aug-input">
+        <SelectField value={type} onChange={e => setType(e.target.value as typeof type)} className="aug-input">
           <option value="webhook">Webhook (generic)</option>
           <option value="slack">Slack incoming webhook</option>
           <option value="jira">Jira (create issue)</option>
-        </select>
+        </SelectField>
       </div>
       <div>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>

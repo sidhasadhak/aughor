@@ -17,6 +17,7 @@
 import { useState } from "react";
 import { EvalSuite, getEvalSuites, createEvalSuite, addEvalCases } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select";
 
 const NEW = "__new__";
 
@@ -86,7 +87,7 @@ export function AddToEvalSuite({ connectionId, sql, question }: {
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <select
+      <SelectField
         value={target}
         onChange={e => setTarget(e.target.value)}
         className="aug-input aug-text-xs"
@@ -95,7 +96,7 @@ export function AddToEvalSuite({ connectionId, sql, question }: {
       >
         {(suites ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         <option value={NEW}>＋ New suite…</option>
-      </select>
+      </SelectField>
       {target === NEW && (
         <input
           className="aug-input aug-text-xs"

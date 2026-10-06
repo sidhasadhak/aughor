@@ -25,6 +25,7 @@ import { claimsOf, getIdToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Sparkline } from "@/components/brief/Sparkline";
 import { SkeletonRows } from "@/components/ui/motion";
+import { SelectField } from "@/components/ui/select";
 
 /** The acting identity for governance writes — the signed-in email, else the
  *  same word the actions inbox uses. The server owns identity; this is provenance. */
@@ -489,10 +490,10 @@ function SeedTrustedForm({ onDone }: { onDone: () => void }) {
   return (
     <div className="aug-fs-sm" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)",
       background: "var(--bg-1)", padding: 10, marginBottom: 10 }}>
-      <select style={fieldStyle} value={f.connection_id}
+      <SelectField style={fieldStyle} value={f.connection_id}
         onChange={e => setF(v => ({ ...v, connection_id: e.target.value }))} data-testid="tq-seed-conn">
         {conns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-      </select>
+      </SelectField>
       <input style={fieldStyle} placeholder="The question this SQL answers, in the words people ask it"
         value={f.question} onChange={e => setF(v => ({ ...v, question: e.target.value }))}
         data-testid="tq-seed-question" />

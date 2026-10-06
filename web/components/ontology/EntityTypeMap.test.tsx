@@ -11,7 +11,7 @@
  * card a person drags is remembered, so the next visit opens on their arrangement and not the layout's.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, change, choose, optionsOf } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
 
 import type { OntologyDraft, TypeMap } from "@/lib/objectTypes";
@@ -434,8 +434,8 @@ describe("EntityTypeMap — an organisation's ontology", () => {
     await waitFor(() => expect(handoff.nodes).toHaveLength(2));
     await user.click(screen.getByTestId("entity-declare-open"));
     const form = screen.getByTestId("entity-declare");
-    await waitFor(() => expect(within(form).getByRole("option", { name: "CRM" })).toBeInTheDocument());
-    await user.selectOptions(within(form).getByTestId("entity-declare-connection"), "crm1");
+    await waitFor(() => expect(optionsOf(within(form).getByTestId("entity-declare-connection")).map(o => o.text)).toContain("CRM"));
+    await choose(within(form).getByTestId("entity-declare-connection"), "crm1");
     await user.type(within(form).getByLabelText("Entity id"), "Ticket");
     await user.type(within(form).getByLabelText("Entity display name"), "Ticket");
     await user.type(within(form).getByLabelText("Entity table"), "tickets");
