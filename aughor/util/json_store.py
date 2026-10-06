@@ -59,6 +59,21 @@ def _fell_back(path, exc: BaseException, op: str) -> None:
             op, path, exc_info=True)
 
 
+def _ledger_name(path: Path, led) -> str:
+    """The name this store's rows live under: its path, or — once state has moved to the data
+    home — whichever earlier name already holds its rows or its import marker (`db.home.ledger_names`).
+    Without this a move re-keys every store: its rows stay under the old name, it reads empty, and
+    an empty store re-imports its legacy file."""
+    from aughor.db.home import ledger_names
+    names = ledger_names(path)
+    if not names:
+        return str(path)
+    for name in names:
+        if led.kv_has(name) or led.meta_get(f"migrated:{name}"):
+            return name
+    return names[0]
+
+
 class KeyedJsonStore:
     """K0: a FACADE over the kernel Ledger (aughor/kernel/ledger.py). The API and
     best-effort contract are unchanged, but storage is now a transactional SQLite
@@ -74,6 +89,7 @@ class KeyedJsonStore:
         self.max_entries = max_entries
         self.indent = indent
         self._store_id = str(self.path)
+        self._named = False
         self._migrated = False
 
     # ── ledger plumbing ──────────────────────────────────────────────────────
@@ -81,6 +97,10 @@ class KeyedJsonStore:
     def _ledger(self):
         from aughor.kernel.ledger import Ledger
         led = Ledger.default()
+        if not self._named:
+            # Named before the import marker is read: the marker is keyed by the same name.
+            self._store_id = _ledger_name(self.path, led)
+            self._named = True
         if not self._migrated:
             marker = f"migrated:{self._store_id}"
             if not led.meta_get(marker):
@@ -319,6 +339,7 @@ class LedgerListStore(JsonListStore):
     def __init__(self, path: Union[str, Path], *, id_field: str = "id", indent: int = 2):
         super().__init__(path, id_field=id_field, indent=indent)
         self._store_id = str(self.path)
+        self._named = False
         self._migrated = False
 
     def _key(self, item_or_id: Any) -> str:
@@ -332,6 +353,9 @@ class LedgerListStore(JsonListStore):
     def _ledger(self):
         from aughor.kernel.ledger import Ledger
         led = Ledger.default()
+        if not self._named:
+            self._store_id = _ledger_name(self.path, led)     # see KeyedJsonStore._ledger
+            self._named = True
         if not self._migrated:
             marker = f"migrated:{self._store_id}"
             if not led.meta_get(marker):

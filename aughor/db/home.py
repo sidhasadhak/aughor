@@ -105,6 +105,34 @@ def rehome(default: Path) -> Path:
     return state_home().joinpath(*tail)
 
 
+def ledger_names(path: str | Path) -> list[str]:
+    """The names a ledger-backed store's rows may live under once the home is in use — oldest
+    form first — or ``[]`` when its own path is still its name.
+
+    `KeyedJsonStore` and `LedgerListStore` keep their rows in the ledger under ``str(path)``, so
+    a store's IDENTITY was its file's path. The first real migration (2026-10-07) moved the
+    files and left every row behind under the old names: three finished canvases read as never
+    explored, and a store that looked empty would have re-imported its stale legacy file. Before
+    the move a store's path was ``data/<rel>`` (everything resolved through `state_dir` or
+    `resolve_db_path`) or the checkout's absolute ``…/data/<rel>`` (a store anchored on its own
+    module, as the ontology cache is); after it, the home's. The caller keeps the first name that
+    already holds rows or an import marker, and a store new since the move takes the first.
+
+    ``[]`` before the move, and for any path outside the home's state directory — so a deployment
+    that has not migrated, and every store pointed somewhere by its env var, names exactly as before."""
+    if not in_use():
+        return []
+    p = Path(path)
+    try:
+        rel = p.relative_to(state_home())
+    except ValueError:
+        return []
+    checkout = Path(__file__).parent.parent.parent       # unresolved, like the stores' own anchors
+    names = [str(Path("data") / rel), str(checkout / "data" / rel),
+             str(checkout.resolve() / "data" / rel), str(p)]
+    return list(dict.fromkeys(names))
+
+
 def follow_checkout_file(path: str | Path) -> Path:
     """A file a connection names inside THIS checkout's ``data/`` — where it lives once the home is
     in use, and unchanged otherwise.
