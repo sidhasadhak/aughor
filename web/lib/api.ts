@@ -7417,6 +7417,9 @@ export async function cancelJob(jobId: string): Promise<{ job_id: string; cancel
 
 // ── Agent registry + governance: manage the fleet (Phase 0) ──────────────────
 
+/** The wire's word for a built-in agent's row (`kind`), named once for files outside the roster. */
+export const BUILT_IN_AGENT_KIND = "charter" as const;
+
 export interface AgentGovernance {
   enabled: boolean; token_budget: number | null; time_budget_s: number | null; model?: string | null;
   /** Resolved values of the charter's declared knobs, by knob id — always every knob. */

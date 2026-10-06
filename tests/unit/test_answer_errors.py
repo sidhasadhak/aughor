@@ -248,8 +248,8 @@ def test_a_failed_ask_ends_in_one_typed_error_frame(monkeypatch):
 
 
 def test_a_budget_stop_names_the_agent_whose_budget_to_raise():
-    """The chat's budget refusal used to say "PATCH /agents/insight" — an API call, not a
+    """The chat's budget refusal used to name the agents PATCH route — an API call, not a
     place. It now carries the recovery and the agent, and the chat opens that agent's page."""
-    ev = AE.error_event(message="x", reason="budget_exceeded", agent_id="insight")
-    assert ev["recovery"] == AE.RAISE_BUDGET and ev["agent_id"] == "insight"
+    ev = AE.error_event(message="x", reason="budget_exceeded", agent_id="investigator")
+    assert ev["recovery"] == AE.RAISE_BUDGET and ev["agent_id"] == "investigator"
     assert "agent_id" not in AE.error_event(message="x", reason="budget_exceeded")

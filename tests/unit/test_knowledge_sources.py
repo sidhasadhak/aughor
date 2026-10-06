@@ -105,7 +105,7 @@ def test_a_page_that_does_not_land_is_listed_with_its_reason_not_counted(tmp_pat
     def fake_sink(**doc):
         if "boom" in doc["title"]:
             raise RuntimeError("qdrant down")
-        return {"doc_id": doc["doc_id"], "chunk_count": len(_split_into_chunks(doc["text"]))}
+        return {"doc_id": doc["doc_id"], "chunk_count": len(_split_into_chunks(doc["text"])), "min_chars": 50}
 
     monkeypatch.setitem(ingestion._SINKS, "knowledge", fake_sink)
     pages = [
@@ -122,6 +122,6 @@ def test_a_page_that_does_not_land_is_listed_with_its_reason_not_counted(tmp_pat
     status = syncer.status()
     assert status["skipped_count"] == 3
     reasons = {p["title"]: p["reason"] for p in status["pages_skipped"]}
-    assert "too short to index" in reasons["[ENG] Owner"]
+    assert "under the minimum chunk length of 50" in reasons["[ENG] Owner"]
     assert "did not accept" in reasons["[ENG] boom"]
     assert reasons["[ENG] Blank"] == "the page has no text"

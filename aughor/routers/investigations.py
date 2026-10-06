@@ -4935,11 +4935,12 @@ async def _metered_stream(gen: AsyncGenerator[str, None],
         async for chunk in gen:
             yield chunk
     except metering.BudgetExceeded as be:
-        # The budget armed here is the Responder's (`_insight_budget`), so the event names
-        # it: the chat links straight to that agent's page, where the budget is raised.
+        # The budget armed here is the Responder's, so the event names it: the chat links
+        # straight to that agent's page, where the budget is raised.
+        from aughor.kernel.agents import RESPONDER_ID
         yield _sse("error", _error_event(
             be, message=f"Answer stopped — the Responder's {be.reason} was reached.",
-            reason="budget_exceeded", agent_id="insight"))
+            reason="budget_exceeded", agent_id=RESPONDER_ID))
     finally:
         if btoken is not None:
             metering.clear_budget(btoken)
@@ -4950,9 +4951,9 @@ async def _metered_stream(gen: AsyncGenerator[str, None],
 def _insight_budget(conn_id: str):
     """Resolve the Insight agent's Org/workspace-governed token + time budget."""
     try:
-        from aughor.kernel.agents import effective_governance
+        from aughor.kernel.agents import RESPONDER_ID, effective_governance
         from aughor.workspace.store import workspace_for_connection
-        gov = effective_governance("insight", workspace_for_connection(conn_id))
+        gov = effective_governance(RESPONDER_ID, workspace_for_connection(conn_id))
         return (gov.token_budget, gov.time_budget_s)
     except Exception:
         return None

@@ -243,7 +243,10 @@ def index_text(
         settings=settings,
     )
     if not chunks:
-        return {"doc_id": doc_id, "chunk_count": 0}
+        # The floor that cut it rides along, so a caller can say why without importing it.
+        from aughor.knowledge.documents import DEFAULT_CHUNK_SETTINGS
+        return {"doc_id": doc_id, "chunk_count": 0,
+                "min_chars": (settings or DEFAULT_CHUNK_SETTINGS).min_chars}
 
     _ensure_collection()
     _upsert_chunks(chunks)

@@ -27,9 +27,9 @@ def index_page(*, text: str, title: str, source: str, doc_id: str,
     if not entry:
         return "the document index did not accept it (the API log has the cause)"
     if not entry.get("chunk_count"):
-        from aughor.knowledge.documents import MIN_CHUNK_CHARS
-        return (f"too short to index — {len(text.strip())} characters, under the "
-                f"minimum chunk length of {MIN_CHUNK_CHARS}")
+        floor = entry.get("min_chars")
+        return (f"too short to index — {len(text.strip())} characters"
+                + (f", under the minimum chunk length of {floor}" if floor else ""))
     return None
 
 
