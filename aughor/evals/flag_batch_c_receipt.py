@@ -27,7 +27,10 @@ from typing import Callable
 from aughor.evals.equivalence import Comparison, DeterministicEquivalenceEvaluator
 from aughor.evals.evaluator import EvalCase, EvalObservation
 
-SUITE_NAME = "flag strategy batch C — the graph and birth bundles + migration flips"
+SUITE_KEY = "flag_batch_c"
+SUITE_NAME = "Flag graduations C — the graph and new-connection bundles, and two migration switches"
+#: Titles this suite carried before it had a key — `ensure_suite` adopts a row under one.
+FORMER_NAMES: tuple[str, ...] = ("flag strategy batch C — the graph and birth bundles + migration flips",)
 
 FLAGS = (
     "graph.build", "graph.freshness", "graph.surface", "graph.tour", "graph.export",
@@ -310,21 +313,19 @@ def receipt_target() -> Callable[[EvalCase], EvalObservation]:
 def ensure_suite() -> str:
     from aughor.evals import store
 
-    existing = next((s for s in store.list_suites(200) if s["name"] == SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            SUITE_NAME,
-            description=("Flag strategy batch C — the Knowledge-Graph and connection-birth "
-                         "bundles graduate on construction claims (a projection cannot "
-                         "precede its ontology; surfaces 404 off and data-refuse empty; the "
-                         "birth rite is double-gated and kick-scoped; an empty column-config "
-                         "store and an unmined popularity signal are byte-identical no-ops), "
-                         "plus the last two migration flips: semantic.resolve_live proven "
-                         "equal to the per-node consult over real stores, and "
-                         "capability.pipeline_live's single-route gate. plan.program moved "
-                         "to EXPERIMENT — its /ask auto-depth hook mirrors "
-                         "federation.planner. Hermetic: no LLM, no warehouse, no writes."),
-            target="flag_batch_c_receipt")
+    existing, _ = store.ensure_suite(
+        SUITE_KEY, SUITE_NAME, formerly=FORMER_NAMES,
+        description=("Flag strategy batch C — the Knowledge-Graph and connection-birth "
+                     "bundles graduate on construction claims (a projection cannot "
+                     "precede its ontology; surfaces 404 off and data-refuse empty; the "
+                     "birth rite is double-gated and kick-scoped; an empty column-config "
+                     "store and an unmined popularity signal are byte-identical no-ops), "
+                     "plus the last two migration flips: semantic.resolve_live proven "
+                     "equal to the per-node consult over real stores, and "
+                     "capability.pipeline_live's single-route gate. plan.program moved "
+                     "to EXPERIMENT — its /ask auto-depth hook mirrors "
+                     "federation.planner. Hermetic: no LLM, no warehouse, no writes."),
+        target="flag_batch_c_receipt")
     suite_id = existing["id"]
 
     have = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}

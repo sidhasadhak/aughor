@@ -51,7 +51,10 @@ from aughor.evals.equivalence import Comparison, DeterministicEquivalenceEvaluat
 from aughor.evals.evaluator import EvalCase, EvalObservation
 
 #: Suite name — looked up by name so creating the suite is idempotent across runs.
-SUITE_NAME = "specialist packs — steering is three-gates data-gated (flag strategy batch 1)"
+SUITE_KEY = "packs_steering"
+SUITE_NAME = "Packages — a question is steered only when all three gates allow"
+#: Titles this suite carried before it had a key — `ensure_suite` adopts a row under one.
+FORMER_NAMES: tuple[str, ...] = ("specialist packs — steering is three-gates data-gated (flag strategy batch 1)",)
 
 #: The flag this suite is evidence for.
 FLAG = "specialist_packs"   # historical name — hardwired 2026-08-06 (flag endgame Wave 2)
@@ -336,25 +339,23 @@ def receipt_target() -> Callable[[EvalCase], EvalObservation]:
 
 
 def ensure_suite() -> str:
-    """Create the suite (idempotent by name) with one case per scenario; return its id."""
+    """Create the suite (idempotent by key) with one case per scenario; return its id."""
     from aughor.evals import store
 
-    existing = next((s for s in store.list_suites(200) if s["name"] == SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            SUITE_NAME,
-            description=("Flag strategy batch 1 — `specialist_packs` claims steering is "
-                         "DATA-GATED three gates deep: an installed ACTIVE pack, matching "
-                         "the question, with a human-pinned deploy binding on the exact "
-                         "connection. Until all three are earned, injection_for_question "
-                         "is None and the planner context is byte-identical on and off; "
-                         "the flip's only fresh-clone effect is GET /packs reporting "
-                         "enabled: true. The properties default-on makes load-bearing "
-                         "(the env kill switch, the best-effort pack scan, the "
-                         "no-bypass rule for hired agents' pack preferences) are asserted "
-                         "alongside. Hermetic: no LLM, no warehouse; bindings are written "
-                         "under synthetic probe connections and purged per case."),
-            target="specialist_packs_receipt")
+    existing, _ = store.ensure_suite(
+        SUITE_KEY, SUITE_NAME, formerly=FORMER_NAMES,
+        description=("Flag strategy batch 1 — `specialist_packs` claims steering is "
+                     "DATA-GATED three gates deep: an installed ACTIVE pack, matching "
+                     "the question, with a human-pinned deploy binding on the exact "
+                     "connection. Until all three are earned, injection_for_question "
+                     "is None and the planner context is byte-identical on and off; "
+                     "the flip's only fresh-clone effect is GET /packs reporting "
+                     "enabled: true. The properties default-on makes load-bearing "
+                     "(the env kill switch, the best-effort pack scan, the "
+                     "no-bypass rule for hired agents' pack preferences) are asserted "
+                     "alongside. Hermetic: no LLM, no warehouse; bindings are written "
+                     "under synthetic probe connections and purged per case."),
+        target="specialist_packs_receipt")
     suite_id = existing["id"]
 
     have = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}

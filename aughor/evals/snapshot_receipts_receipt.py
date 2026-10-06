@@ -33,7 +33,10 @@ import duckdb
 from aughor.evals.equivalence import Comparison, DeterministicEquivalenceEvaluator
 from aughor.evals.evaluator import EvalCase, EvalObservation
 
-SUITE_NAME = "snapshot_receipts — reproducible-as-of pin, negligible cost, one mechanism"
+SUITE_KEY = "snapshot_receipts"
+SUITE_NAME = "Snapshot receipts — an answer reproducible as of its date, at negligible cost"
+#: Titles this suite carried before it had a key — `ensure_suite` adopts a row under one.
+FORMER_NAMES: tuple[str, ...] = ("snapshot_receipts — reproducible-as-of pin, negligible cost, one mechanism",)
 FLAG = "snapshot_receipts"
 
 #: E1's pre-registered per-op latency bar (ms) — the bar obs.session_log graduated against.
@@ -201,18 +204,16 @@ def receipt_target() -> Callable[[EvalCase], EvalObservation]:
 def ensure_suite() -> str:
     from aughor.evals import store
 
-    existing = next((s for s in store.list_suites(200) if s["name"] == SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            SUITE_NAME,
-            description=("snapshot_receipts graduates from the experiment queue on a "
-                         "deterministic settle: the per-emit probe is one metadata COUNT "
-                         "per table (size-independent, sub-ms, p95 under E1's 5ms bar), "
-                         "the on/off delta is a single additive data_version token (None "
-                         "when off, fail-open when broken), and the reconcile is already "
-                         "true — Wave V4's freeze pins against the same snapshot.data_version. "
-                         "Hermetic: throwaway DuckDB files, no LLM, no warehouse."),
-            target="snapshot_receipts_receipt")
+    existing, _ = store.ensure_suite(
+        SUITE_KEY, SUITE_NAME, formerly=FORMER_NAMES,
+        description=("snapshot_receipts graduates from the experiment queue on a "
+                     "deterministic settle: the per-emit probe is one metadata COUNT "
+                     "per table (size-independent, sub-ms, p95 under E1's 5ms bar), "
+                     "the on/off delta is a single additive data_version token (None "
+                     "when off, fail-open when broken), and the reconcile is already "
+                     "true — Wave V4's freeze pins against the same snapshot.data_version. "
+                     "Hermetic: throwaway DuckDB files, no LLM, no warehouse."),
+        target="snapshot_receipts_receipt")
     suite_id = existing["id"]
 
     have = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}

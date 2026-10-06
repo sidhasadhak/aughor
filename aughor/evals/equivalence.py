@@ -45,7 +45,10 @@ from aughor.evals.evaluator import EvalCase, EvalObservation, EvalScore
 from aughor.trust import BLOCK, Check
 
 #: Suite name — looked up by name so creating the suite is idempotent across runs.
-SUITE_NAME = "automations — deterministic equivalence (L4)"
+SUITE_KEY = "automations_equivalence"
+SUITE_NAME = "Automations — a run is identical with the flags on and off"
+#: Titles this suite carried before it had a key — `ensure_suite` adopts a row under one.
+FORMER_NAMES: tuple[str, ...] = ("automations — deterministic equivalence (L4)",)
 
 # The suite once carried a FLAGS tuple naming what it was evidence for; every flag it
 # backed is now hardwired (`automations.engine` and `automations.source_probes`
@@ -544,7 +547,7 @@ def equivalence_target() -> Callable[[EvalCase], EvalObservation]:
 # ── suite management ─────────────────────────────────────────────────────────────
 
 def ensure_suite() -> str:
-    """Create the suite (idempotent by name) with one case per scenario, and return its id.
+    """Create the suite (idempotent by key) with one case per scenario, and return its id.
 
     Idempotent by NAME rather than by a generated id, because the alternative — a fresh suite
     per invocation — would give each run its own history and make the graduation route's
@@ -552,16 +555,14 @@ def ensure_suite() -> str:
     """
     from aughor.evals import store
 
-    existing = next((s for s in store.list_suites(200) if s["name"] == SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            SUITE_NAME,
-            description=("Wave L4 — deterministic pass/fail receipts on real rows. Originally "
-                         "legacy-loop-vs-engine comparisons; since flag endgame Wave 4 "
-                         "(2026-08-06, legacy schedulers deleted on receipt 65364174a172) the "
-                         "cases assert the engine path against declared expectations on a real "
-                         "throwaway DuckDB warehouse; nothing is patched."),
-            target="equivalence")
+    existing, _ = store.ensure_suite(
+        SUITE_KEY, SUITE_NAME, formerly=FORMER_NAMES,
+        description=("Wave L4 — deterministic pass/fail receipts on real rows. Originally "
+                     "legacy-loop-vs-engine comparisons; since flag endgame Wave 4 "
+                     "(2026-08-06, legacy schedulers deleted on receipt 65364174a172) the "
+                     "cases assert the engine path against declared expectations on a real "
+                     "throwaway DuckDB warehouse; nothing is patched."),
+        target="equivalence")
     suite_id = existing["id"]
 
     have = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}
