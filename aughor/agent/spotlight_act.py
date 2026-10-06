@@ -5,7 +5,7 @@
 split `action_tools` already models. Five tools, two custody classes:
 
 * **Cosmetic, self-scoped → applies instantly.** `set_preference` changes how the
-  platform looks to the CALLER (theme, density, default connection) and nothing about
+  platform looks to the CALLER (theme, look, default connection) and nothing about
   what runs or what anyone else sees. That is §3.11's cosmetic line, and the store's
   closed key registry is what keeps the line from creeping.
 * **Structural → stages a proposal, never posts.** `draft_agent` and

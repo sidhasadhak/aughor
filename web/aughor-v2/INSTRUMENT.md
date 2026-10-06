@@ -11,7 +11,8 @@ plus what adopting it decided. Where it says MUST, a reviewer rejects the diff.
 > panel — accent, grey, corners, scaling — which a person sets in Settings ▸ Appearance. Where
 > this file gives a hex, a radius in pixels or a control height, read it as history: the
 > defaults are indigo, gray, large corners, Radix's own sizes (24px controls, 36px rows). The
-> shared components in `components/ui/` are Themes' own underneath. The thesis, the trust
+> shared components in `components/ui/` are Themes' own underneath; Base UI is gone, and the
+> "density" artboard's compact setting is the Theme's scaling at 90%. The thesis, the trust
 > system, the states and the rules marked MUST that are not about a value still hold.
 
 ## 0. The thesis

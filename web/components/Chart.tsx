@@ -22,6 +22,7 @@ import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
 import type { ChartCustom } from "@/components/charts/chartCustom";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
 import { Icon } from "@/components/ui/icon";
+import { Button } from "@/components/ui/button";
 
 /** User chart styling applied as a generic post-pass over the built ECharts option —
  *  lets the Query Builder Customize tab override colours / number format / legend /
@@ -192,13 +193,13 @@ export function Chart({
         <div className="flex justify-end h-6 mb-0.5 opacity-0 group-hover/chart:opacity-100 transition-opacity gap-1">
           {/* Number-format picker: the viewer names what the value axis IS. */}
           <div className="relative">
-            <button
+            <Button
+              variant={userFormat ? "secondary" : "ghost"} size="xs"
               onClick={() => setFmtOpen((o) => !o)}
               title="Number format"
-              className={`h-6 px-1.5 flex items-center justify-center rounded text-[11px] font-mono transition-colors ${userFormat ? "bg-blue-500/20 text-blue-300" : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"}`}
             >
               {FORMAT_CHOICES.find((f) => f.d3 === userFormat)?.label ?? "123"}
-            </button>
+            </Button>
             {fmtOpen && (
               <div className="absolute right-0 top-7 z-20 flex flex-col rounded border border-zinc-700 bg-zinc-900 shadow-[var(--shadow-sm)]">
                 {FORMAT_CHOICES.map((f) => (
@@ -215,20 +216,20 @@ export function Chart({
               </div>
             )}
           </div>
-          <button
+          <Button
+            variant={showLabels ? "secondary" : "ghost"} size="icon-xs"
             onClick={() => setShowLabels((s) => !s)}
             title={showLabels ? "Hide data labels" : "Show data labels"}
-            className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showLabels ? "bg-blue-500/20 text-blue-300" : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"}`}
           >
             <Icon name="expand" size={14} />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost" size="icon-xs"
             onClick={handleDownloadPng}
             title="Download chart as PNG"
-            className="w-6 h-6 flex items-center justify-center rounded bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-colors"
           >
             <Icon name="download" size={16} label="Download chart as PNG" />
-          </button>
+          </Button>
         </div>
       )}
 

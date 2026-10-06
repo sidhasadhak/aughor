@@ -82,7 +82,7 @@ export function ContextRibbon({
               key={t}
               onClick={() => apply([...kept, t])}
               className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono transition-colors hover:opacity-100 opacity-70"
-              style={{ border: "1px dashed var(--border, #2a3742)", color: "var(--t3)" }}
+              style={{ border: "1px dashed var(--b1)", color: "var(--t3)" }}
             >
               + {short(t)}
             </button>

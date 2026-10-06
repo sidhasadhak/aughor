@@ -21,9 +21,16 @@ const ROOTS = ["components", "app"];
 const EXTS = [".tsx", ".ts"];
 
 // One-way ratchet. LOWER this as raw <button>s become <Button>; never raise it.
-const BASELINE = 9;
+// Until 2026-10-06 the pattern was `<button[ >]`, blind to a <button whose first attribute sits
+// on the next line: it counted 9 while 105 stood. The 33 that remain are raw on purpose — the
+// rail's rows, the home tiles, the ⌘K field, the theme cards, list and menu rows, full-width
+// disclosure headers, chips and inline tokens — each a layout a Themes button would centre and
+// size (the rail showed it). A plain action is never one of them.
+const BASELINE = 33;
 
-const RAW_BUTTON = /<button[ >]/g;
+// `\s`, not a space: a <button whose first attribute sits on the next line is a raw button too
+// (three such went uncounted until 2026-10-06).
+const RAW_BUTTON = /<button[\s>]/g;
 
 function* walk(dir) {
   for (const name of readdirSync(dir)) {

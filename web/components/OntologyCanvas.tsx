@@ -21,6 +21,7 @@ import type {
   CausalEdge,
 } from "@/lib/api";
 import { getCausalGraph } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -513,8 +514,9 @@ function EntityNode({
           </span>
         )}
         {onInvestigate && (
-          <button
-            className="ml-auto aug-fs-xs text-violet-400/60 hover:text-violet-300 border border-violet-500/15 hover:border-violet-400/35 rounded-md px-1.5 py-0.5 transition"
+          <Button
+            variant="outline" size="xs"
+            className="ml-auto"
             onClick={(e) => {
               e.stopPropagation();
               const q = entity.active_filter
@@ -524,7 +526,7 @@ function EntityNode({
             }}
           >
             Investigate →
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -1174,56 +1176,51 @@ export function OntologyCanvas({
       {/* Zoom controls + causal toggle — pinned top-right, outside scroll area */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-[var(--r3)] px-2.5 py-1.5 pointer-events-auto select-none">
         {/* Causal arrows toggle */}
-        <button
+        <Button
+          variant={showCausal ? "secondary" : "outline"} size="xs"
           onClick={() => setShowCausal(v => !v)}
           title={showCausal ? "Hide causal arrows" : "Show causal arrows"}
-          className={cn(
-            "flex items-center gap-1 aug-fs-xs px-2 py-0.5 rounded-md border transition",
-            showCausal
-              ? "text-orange-400 border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/15"
-              : "text-zinc-500 border-zinc-700/50 hover:text-zinc-400",
-          )}
         >
           <svg width="14" height="8" className="shrink-0">
             <line x1="0" y1="4" x2="10" y2="4" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 3" />
             <path d="M8,1.5 L13,4 L8,6.5 Z" fill="currentColor" />
           </svg>
           causal
-        </button>
+        </Button>
 
         <div className="w-px h-3 bg-zinc-700 mx-0.5" />
 
         {/* Tidy — reset dragged positions back to the computed auto-layout */}
-        <button
+        <Button
+          variant="outline" size="xs"
           onClick={tidyLayout}
           title="Tidy — reset to auto-layout"
-          className="flex items-center gap-1 aug-fs-xs px-2 py-0.5 rounded-md border text-zinc-400 border-zinc-700/50 hover:text-violet-300 hover:border-violet-500/30 transition"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" className="shrink-0">
             <path d="M3 12a9 9 0 1 0 3-6.7L3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M3 3v5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           tidy
-        </button>
+        </Button>
 
         <div className="w-px h-3 bg-zinc-700 mx-0.5" />
 
-        <button
+        <Button
+          variant="ghost" size="icon-xs"
           onClick={() => setZoom(z => Math.max(0.2, +((z - 0.1).toFixed(2))))}
-          className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
-        >−</button>
+        >−</Button>
         <span className="aug-fs-xs font-mono text-zinc-400 w-8 text-center">
           {Math.round(zoom * 100)}%
         </span>
-        <button
+        <Button
+          variant="ghost" size="icon-xs"
           onClick={() => setZoom(z => Math.min(2.0, +((z + 0.1).toFixed(2))))}
-          className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
-        >+</button>
+        >+</Button>
         <div className="w-px h-3 bg-zinc-700 mx-0.5" />
-        <button
+        <Button
+          variant="ghost" size="xs"
           onClick={() => setZoom(INITIAL_ZOOM)}
-          className="aug-fs-xs text-zinc-500 hover:text-zinc-300 transition px-1"
-        >100%</button>
+        >100%</Button>
       </div>
 
       {/* Scrollable canvas area */}

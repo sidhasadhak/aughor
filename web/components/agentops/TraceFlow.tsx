@@ -509,7 +509,7 @@ function FaceBody({ data }: { data: CardData }) {
       ?.depth ?? "");
     return (
       <>
-        <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>
+        <div style={{ borderTop: "1px solid var(--b1)", padding: "2px 0" }}>
           {data.origin?.service && <FieldRow label="Service" value={data.origin.service} />}
           <FieldRow label="At" value={clockOf(node.at)} />
           {depth && <FieldRow label="Depth" value={depth} />}
@@ -523,7 +523,7 @@ function FaceBody({ data }: { data: CardData }) {
     const u = data.runUsage;
     return (
       <>
-        <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>
+        <div style={{ borderTop: "1px solid var(--b1)", padding: "2px 0" }}>
           <FieldRow
             label="Status"
             value={node.ok === false ? (node.error_class || "failed") : "ok"}
@@ -547,7 +547,7 @@ function FaceBody({ data }: { data: CardData }) {
     // found. All three were already in the payload and none of them was on screen.
     const v = guardVerdict(event);
     return (
-      <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>
+      <div style={{ borderTop: "1px solid var(--b1)", padding: "2px 0" }}>
         <FieldRow
           label={v.blocked ? "Blocked" : "Allowed"}
           value={[v.action, v.found ? `${formatCount(v.found)} found` : ""]
@@ -561,7 +561,7 @@ function FaceBody({ data }: { data: CardData }) {
   if (face === "model") {
     return (
       <>
-        <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>
+        <div style={{ borderTop: "1px solid var(--b1)", padding: "2px 0" }}>
           {node.role && <FieldRow label="Role" value={node.role} />}
           {node.provider && <FieldRow label="Provider" value={node.provider} />}
           {node.fallback === true && (
@@ -576,7 +576,7 @@ function FaceBody({ data }: { data: CardData }) {
 
   if (face === "delegation" && node.delegation) {
     return (
-      <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}
+      <div style={{ borderTop: "1px solid var(--b1)", padding: "2px 0" }}
            title={`delegation path: ${node.delegation.path}`}>
         <FieldRow label="Agent" value={node.delegation.agent_name} tone="var(--chart-4)" />
         {node.delegation.depth != null && (
@@ -597,7 +597,7 @@ function FaceBody({ data }: { data: CardData }) {
   }
   if (!rows.length) return null;
   return (
-    <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>{rows}</div>
+    <div style={{ borderTop: "1px solid var(--b1)", padding: "2px 0" }}>{rows}</div>
   );
 }
 
@@ -610,7 +610,7 @@ function NodeCard({ data }: { data: CardData }) {
   // that blocked, and a quieter frame — a canvas where every node shouts says nothing.
   const quiet = face === "guardrail" && !failed && !guardVerdict(event).blocked;
 
-  const frame = `1px solid ${selected ? accent : "var(--border)"}`;
+  const frame = `1px solid ${selected ? accent : "var(--b1)"}`;
 
   return (
     <div
@@ -655,7 +655,7 @@ function NodeCard({ data }: { data: CardData }) {
 
       {failed && (
         <div className="aug-fs-xs" style={{ padding: "3px 9px", color: "var(--red4)",
-                      borderTop: "1px solid var(--border)" }}>
+                      borderTop: "1px solid var(--b1)" }}>
           {node.error_class || "failed"}
         </div>
       )}
@@ -671,7 +671,7 @@ function NodeCard({ data }: { data: CardData }) {
         style={{
           width: "100%", display: "flex", justifyContent: "space-between",
           alignItems: "center", padding: "0 9px", borderRadius: 0,
-          borderTop: "1px solid var(--border)", color: "var(--t3)",
+          borderTop: "1px solid var(--b1)", color: "var(--t3)",
         }}
       >
         <span>{open ? "Hide details" : "Details"}</span>
@@ -682,7 +682,7 @@ function NodeCard({ data }: { data: CardData }) {
         <div
           className="nodrag nowheel aug-fs-xs"
           style={{
-            borderTop: "1px solid var(--border)", padding: "6px 9px",
+            borderTop: "1px solid var(--b1)", padding: "6px 9px",
             maxHeight: 260, overflowY: "auto", background: "var(--bg-1)",
           }}
         >
@@ -770,7 +770,7 @@ function BandCard({ data }: { data: BandData }) {
         <div key={depth} aria-hidden style={{
           position: "absolute", inset: 0, pointerEvents: "none",
           transform: `translate(${depth * 5}px, ${depth * 5}px)`,
-          background: "var(--bg-2)", border: "1px solid var(--border)",
+          background: "var(--bg-2)", border: "1px solid var(--b1)",
           borderRadius: "var(--r-chip)", opacity: depth === 1 ? 0.7 : 0.4,
         }} />
       ))}
@@ -830,7 +830,7 @@ function TimelineRail({ timeline, nodes, origin, selectedId, onSelect }: {
   return (
     <div data-testid="timeline-rail" style={{
       width: 208, flexShrink: 0, display: "flex", flexDirection: "column",
-      border: "1px solid var(--border)", borderRadius: "var(--r-chip)",
+      border: "1px solid var(--b1)", borderRadius: "var(--r-chip)",
       background: "var(--bg-1)", overflow: "hidden",
     }}>
       <div style={{ padding: "8px 10px" }}>
@@ -1252,7 +1252,7 @@ export function TraceFlow({
         </Button>
       </div>
       <div style={{ flex: 1, minHeight: 320, display: "flex", gap: 8 }}>
-        <div style={{ flex: 1, minWidth: 0, border: "1px solid var(--border)",
+        <div style={{ flex: 1, minWidth: 0, border: "1px solid var(--b1)",
                       borderRadius: "var(--r-chip)" }}>
           <ReactFlow
             nodes={rfNodes}
@@ -1292,7 +1292,7 @@ export function TraceFlow({
             minZoom={0.2}
             maxZoom={1.6}
           >
-            <Background gap={16} color="var(--border)" />
+            <Background gap={16} color="var(--b1)" />
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>

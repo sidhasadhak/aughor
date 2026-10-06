@@ -21,11 +21,14 @@ import { useRichSchema } from "@/lib/schema-context";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { IntakePanel } from "@/components/intake/IntakePanel";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Input as UiInput } from "@/components/ui/input";
+import { TabStrip } from "@/components/ui/tab-strip";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
@@ -50,27 +53,8 @@ function del(path: string)                   { return apiFetch(path, { method: "
 
 function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) {
   return (
-    <div style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--b0)", paddingBottom: 0, marginBottom: 16 }}>
-      {tabs.map(t => (
-        <button
-          key={t}
-          onClick={() => onChange(t)}
-          style={{
-            padding: "6px 14px",
-            fontSize: 12,
-            fontWeight: active === t ? 600 : 400,
-            color: active === t ? "var(--blue4, #60a5fa)" : "var(--t3, #888)",
-            background: "none",
-            border: "none",
-            borderBottom: active === t ? "2px solid var(--blue4, #60a5fa)" : "2px solid transparent",
-            cursor: "pointer",
-            transition: "color 0.15s",
-          }}
-        >
-          {t}
-        </button>
-      ))}
-    </div>
+    <TabStrip label="Semantic layer views" size="1" value={active} onChange={onChange} style={{ marginBottom: 16 }}
+      tabs={tabs.map(t => ({ id: t, label: t }))} />
   );
 }
 
@@ -83,29 +67,15 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
   );
 }
 
+/** This panel's three button looks, as the shared Button draws them. */
+const BTN_LOOK = { default: "default", danger: "destructive", ghost: "outline" } as const;
 function Btn({ children, onClick, variant = "default", disabled }: {
   children: React.ReactNode;
   onClick?: () => void;
-  variant?: "default" | "danger" | "ghost";
+  variant?: keyof typeof BTN_LOOK;
   disabled?: boolean;
 }) {
-  const colors: Record<string, React.CSSProperties> = {
-    default: { background: "var(--blue4, #3b82f6)", color: "#fff" },
-    danger:  { background: "transparent", color: "var(--red4, #f87171)", border: "1px solid var(--red4, #f87171)" },
-    ghost:   { background: "transparent", color: "var(--t3, #888)", border: "1px solid var(--b0)" },
-  };
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        fontSize: 11, padding: "4px 10px", borderRadius: 5, cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1, border: "none", ...colors[variant],
-      }}
-    >
-      {children}
-    </button>
-  );
+  return <Button size="xs" variant={BTN_LOOK[variant]} static onClick={onClick} disabled={disabled}>{children}</Button>;
 }
 
 function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
@@ -343,8 +313,9 @@ const KNOWLEDGE_KINDS = [
   { value: "note",    label: "Note" },
 ];
 
-const KIND_BADGE: Record<string, string> = {
-  metric:  "#3b82f6", synonym: "#8b5cf6", rule: "#f59e0b", join: "#10b981", note: "#6b7280",
+/** The hue names the kind of entry (INSTRUMENT.md §2). */
+const KIND_BADGE: Record<string, "default" | "violet" | "amber" | "green" | "secondary"> = {
+  metric: "default", synonym: "violet", rule: "amber", join: "green", note: "secondary",
 };
 
 // Per-kind sample text so users see exactly what a good entry looks like.
@@ -442,9 +413,7 @@ function KnowledgeTab({ connId }: { connId: string }) {
         {entries.map(e => (
           <div key={e.id} style={{ border: "1px solid var(--b0)", borderRadius: 8, padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-              <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 10, background: KIND_BADGE[e.kind] ?? "#6b7280", color: "#fff", fontWeight: 600, marginTop: 1, whiteSpace: "nowrap" }}>
-                {e.kind}
-              </span>
+              <Badge variant={KIND_BADGE[e.kind] ?? "secondary"} style={{ marginTop: 1 }}>{e.kind}</Badge>
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", margin: 0 }}>{e.title}</p>
                 <p style={{ fontSize: 11, color: "var(--t3)", margin: "3px 0 0", lineHeight: 1.5 }}>{e.body}</p>
@@ -644,9 +613,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
             }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                 {res && (
-                  <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 10, background: res.passed ? "#10b981" : "#ef4444", color: "#fff", fontWeight: 600, marginTop: 2, whiteSpace: "nowrap" }}>
-                    {res.passed ? "PASS" : "FAIL"}
-                  </span>
+                  <Badge variant={res.passed ? "green" : "destructive"} style={{ marginTop: 2 }}>{res.passed ? "PASS" : "FAIL"}</Badge>
                 )}
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", margin: 0 }}>{c.question}</p>
@@ -658,12 +625,13 @@ function BenchmarksTab({ connId }: { connId: string }) {
                         <p key={i} style={{ fontSize: 11, color: "#f87171", margin: "2px 0" }}>• {f}</p>
                       ))}
                       {res.error && <p style={{ fontSize: 11, color: "#f87171", margin: "2px 0" }}>Error: {res.error}</p>}
-                      <button
-                        style={{ fontSize: 11, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 4 }}
+                      <Button
+                        variant="ghost" size="xs"
+                        style={{ marginTop: 4 }}
                         onClick={() => setExpandedResult(expandedResult === c.id ? null : c.id)}
                       >
                         {expandedResult === c.id ? "▲ hide SQL" : "▼ show generated SQL"}
-                      </button>
+                      </Button>
                       {expandedResult === c.id && (
                         <pre style={{ fontSize: 11, color: "var(--t3)", marginTop: 6, background: "var(--bg-1)", padding: "8px", borderRadius: 5, overflow: "auto", maxHeight: 200 }}>
                           {res.generated_sql}

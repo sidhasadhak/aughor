@@ -20,6 +20,7 @@ import { ChartWrapper } from "@/components/charts/ChartWrapper";
 import { inferChartType, availableTypesFor, TYPE_TO_HINT, type ChartType } from "@/components/charts/chartTypeInference";
 import { Chart, type ChartCustom } from "@/components/Chart";
 import { Icon } from "@/components/ui/icon";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   columns: string[];
@@ -71,13 +72,13 @@ export function InvestigationChart({ columns, rows, title, controlled, typeOverr
       availableTypes={available}
       onChartTypeChange={controlled ? undefined : setOverride}
       actions={controlled ? undefined : (
-        <button
+        <Button
+          variant={showLabels ? "secondary" : "ghost"} size="icon-xs"
           onClick={() => setShowLabels(s => !s)}
           title={showLabels ? "Hide data labels" : "Show data labels"}
-          className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showLabels ? "bg-blue-500/20 text-blue-300" : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"}`}
         >
           <Icon name="expand" size={14} />
-        </button>
+        </Button>
       )}
     >
       <Chart

@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toast";
 import { Providers } from "./providers";
 import { ThemeRoot } from "./theme-root";
 import { NAV_COLLAPSE_BOOT } from "@/lib/navCollapse";
+import { THEME_BOOT } from "@/lib/themeBoot";
 import "./globals.css";
 
 // Two families, both self-hosted by next/font at build time (no runtime request
@@ -68,12 +69,14 @@ export default function RootLayout({
       <html
         lang="en"
         className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
-        // NAV_COLLAPSE_BOOT sets data-nav on <html> before React hydrates (an attribute React does not
-        // render), so a collapsed rail is drawn collapsed from the first paint, with no hydration warning.
+        // The boot scripts below set <html>'s attributes before React hydrates — data-nav (which React
+        // never renders), and the skin and look (which the Theme renders at their defaults) — so the
+        // first paint is the person's own. Hydration leaves attributes as it finds them; this silences
+        // the warning about the ones the Theme would have set differently.
         suppressHydrationWarning
       >
         <head>
-          <script dangerouslySetInnerHTML={{ __html: NAV_COLLAPSE_BOOT }} />
+          <script dangerouslySetInnerHTML={{ __html: NAV_COLLAPSE_BOOT + THEME_BOOT }} />
         </head>
         <body className="min-h-full flex flex-col">
           <Providers>

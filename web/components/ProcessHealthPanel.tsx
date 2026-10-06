@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { getHealthScorecard, getPlatformMetrics, getAuditStats, type ScorecardItem, type HealthStatus, type PlatformMetrics, type AuditStats } from "@/lib/api";
 import { compactNumber, formatVariance } from "@/lib/format";
 import { ReadFailed } from "@/components/ui/states";
+import { Button } from "@/components/ui/button";
 
 const STATUS_COLORS: Record<HealthStatus, { bg: string; border: string; dot: string; text: string; label: string }> = {
   green:   { bg: "var(--grn1)", border: "var(--grn2)", dot: "var(--grn4)", text: "var(--grn4)", label: "On target" },
@@ -81,15 +82,14 @@ function MetricHealthCard({
 
       {/* Investigate button — only for non-green metrics */}
       {(item.status === "yellow" || item.status === "red") && (
-        <button
+        <Button
+          variant="outline" size="xs"
           onClick={() => onInvestigate(item.label)}
-          className="mt-auto aug-fs-xs px-2.5 py-1 rounded-[4px] transition-colors text-left"
-          style={{ border: `0.5px solid ${s.border}`, background: "var(--bg-0)", color: s.text }}
-          onMouseEnter={e => (e.currentTarget.style.background = s.bg)}
-          onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-0)")}
+          className="mt-auto"
+          style={{ color: s.text }}
         >
           Investigate →
-        </button>
+        </Button>
       )}
     </div>
   );

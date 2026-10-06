@@ -19,13 +19,6 @@
    ─────────────────────────────────────────────────────────────────────────── */
 
 /* ── Headings ── */
-.aug-text-h1 {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.45;
-  letter-spacing: -0.01em;
-  color: var(--t1);
-}
 
 .aug-text-h2 {
   font-size: 15px;
@@ -35,7 +28,7 @@
 }
 
 .aug-text-h3 {
-  font-size: 14px;
+  font-size: calc(14px * var(--scaling));
   font-weight: 600;
   line-height: 1.5;
   color: var(--t1);
@@ -43,14 +36,14 @@
 
 /* ── Body ── */
 .aug-text-ui {
-  font-size: 14px;   /* the reading size */
+  font-size: calc(14px * var(--scaling));   /* the reading size, at the Theme's scaling */
   line-height: 1.7;
   color: var(--t1);
 }
 
 /* Prose — the Briefing and a finished deep analysis only: a real measure and 1.8 leading. */
 .aug-text-prose {
-  font-size: 14px;
+  font-size: calc(14px * var(--scaling));
   line-height: 1.8;
   max-width: var(--shell-measure);
   color: var(--t1);
@@ -70,13 +63,6 @@
 }
 
 /* ── Data / code ── */
-.aug-text-mono {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--t1);
-  font-variant-numeric: tabular-nums;
-}
 
 /* Every figure: the UI face with tabular numerals, so decimal points stack down a column. */
 .aug-num {
@@ -91,7 +77,7 @@
 .aug-fs-xs      { font-size: 11px; }  /* labels, captions, meta (the floor) */
 .aug-fs-sm      { font-size: 12px; }  /* secondary text, buttons, inputs */
 .aug-fs-chrome  { font-size: 13px; }  /* chrome: the rail, tabs, buttons, inputs */
-.aug-fs-ui      { font-size: 14px; }  /* the reading size */
+.aug-fs-ui      { font-size: calc(14px * var(--scaling)); }  /* the reading size, at the Theme's scaling */
 .aug-fs-h2      { font-size: 15px; }  /* subheadings */
 .aug-fs-h1      { font-size: 18px; }  /* headings, the verdict sentence */
 .aug-fs-display { font-size: 22px; }  /* hero stat numbers — tabular figures, never words */

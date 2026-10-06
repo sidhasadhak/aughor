@@ -281,7 +281,7 @@ export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
     <div
       style={{
         width: PALETTE_W, flexShrink: 0, display: "flex", flexDirection: "column",
-        border: "1px solid var(--border)", borderRadius: 8,
+        border: "1px solid var(--b1)", borderRadius: 8,
         background: "var(--bg-1)", overflow: "hidden",
       }}
       data-testid="automation-palette"

@@ -19,6 +19,7 @@ import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { SHARE_COL_PATTERN, buildColumnFormatter, compactNumber, pct } from "@/lib/format";
 import { H_PALETTES } from "@/lib/palette";
 import { StatusChip, chipTone, type ChipHue } from "@/components/brief/StatusChip";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   report: Report;
@@ -156,12 +157,12 @@ function QueryEvidence({
 
       {/* SQL toggle */}
       <div>
-        <button
+        <Button
+          variant="ghost" size="xs"
           onClick={() => setSqlOpen(o => !o)}
-          className="flex items-center gap-1.5 aug-fs-xs text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide"
         >
           <span className="aug-fs-xs">{sqlOpen ? "▼" : "▶"}</span> SQL
-        </button>
+        </Button>
         {sqlOpen && (
           <pre className="mt-1.5 text-xs text-zinc-400 bg-zinc-800 rounded border border-zinc-600/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed">
             {query.sql}
@@ -384,12 +385,13 @@ function KeyFindingCard({
 
         {/* Expand toggle for evidence */}
         {finding.evidence && (
-          <button
+          <Button
+            variant="outline" size="xs"
             onClick={() => setOpen(o => !o)}
-            className="shrink-0 aug-fs-xs text-zinc-500 hover:text-zinc-400 border border-zinc-600 hover:border-zinc-600 rounded px-2 py-1 transition mt-0.5"
+            className="shrink-0 mt-0.5"
           >
             {open ? "Less" : "Evidence"}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -461,22 +463,23 @@ function RecommendationCard({
         {current ? (
           <div className="flex items-center gap-1.5">
             <StatusChip hue={current.hue}>{current.label}</StatusChip>
-            <button
+            <Button
+              variant="ghost" size="icon-xs"
               onClick={() => setMenuOpen(o => !o)}
-              className="aug-fs-xs text-zinc-500 hover:text-zinc-400 transition px-1"
               title="Change status"
             >
               ▾
-            </button>
+            </Button>
           </div>
         ) : (
-          <button
+          <Button
+            variant="outline" size="xs"
             onClick={() => setMenuOpen(o => !o)}
             disabled={saving}
-            className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-600 hover:border-zinc-500 rounded px-2 py-1 transition whitespace-nowrap"
+            className="whitespace-nowrap"
           >
             {saving ? "…" : "Mark"}
-          </button>
+          </Button>
         )}
         {menuOpen && (
           <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden">

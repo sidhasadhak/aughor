@@ -10,6 +10,7 @@ import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   selectedId: string | null;
@@ -108,14 +109,14 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
           <p className="aug-label">History</p>
           <div className="flex items-center gap-2">
             {items.length > 0 && (
-              <button
+              <Button
+                variant="ghost" size="xs"
                 onClick={handleClearAll}
                 disabled={clearing}
                 title="Delete all Agent runs and chats"
-                className="aug-fs-xs text-zinc-500 hover:text-red-400 transition disabled:opacity-50"
               >
                 {clearing ? "Clearing…" : "Clear all"}
-              </button>
+              </Button>
             )}
             <span className="aug-fs-xs text-[var(--t3)]">{items.length}</span>
           </div>
@@ -212,29 +213,26 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   tools hold the anatomy. Beside the row, not inside it: a button inside the row's button
                   is invalid HTML, and React said so on every History load with a failed run. */}
               {inv.status === "failed" && (
-                <button
+                <Button
+                  variant="link" size="xs"
                   onClick={() => askSpotlight(`Why did the run "${inv.question}" (id ${inv.id}) fail?`)}
-                  className="block ml-4 -mt-2 mb-2.5 aug-fs-xs text-zinc-400 hover:text-zinc-200 underline decoration-dotted underline-offset-2"
+                  className="block ml-4 -mt-2 mb-2.5"
                   title="Ask Spotlight why this run failed"
                 >
                   ask why
-                </button>
+                </Button>
               )}
 
               {/* Delete button — appears on row hover */}
-              <button
+              <Button
+                variant="ghost" size="icon-xs"
                 onClick={(e) => handleDelete(e, inv.id)}
                 disabled={isDeleting}
                 title="Delete"
-                className={cn(
-                  "absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center transition",
-                  "opacity-0 group-hover/item:opacity-100",
-                  "text-zinc-500 hover:text-red-400 hover:bg-red-400/10",
-                  isDeleting && "opacity-50 pointer-events-none"
-                )}
+                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/item:opacity-100"
               >
                 <Icon name="trash" size={16} label="Delete" />
-              </button>
+              </Button>
             </li>
           );
         })}

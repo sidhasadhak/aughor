@@ -12,6 +12,8 @@ import type { InvestigationSummary } from "@/lib/types";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 
 import { getApiBase } from "@/lib/config";
+import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
 // Status display config
 const STATUS_STYLE: Record<RecStatus, { label: string; chip: string }> = {
   accepted:    { label: "Accepted",    chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"          },
@@ -70,13 +72,14 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
 
   return (
     <div className="relative">
-      <button
+      <Button
+        variant="secondary" size="xs"
         onClick={() => setOpen(o => !o)}
         disabled={!!firing}
-        className="aug-fs-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2 py-1 transition whitespace-nowrap"
+        className="whitespace-nowrap"
       >
         {firing ? "…" : "Execute →"}
-      </button>
+      </Button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
@@ -187,22 +190,23 @@ function ActionRow({
               {current.label}
             </span>
             {isPending && (
-              <button
+              <Button
+                variant="ghost" size="icon-xs"
                 onClick={() => setMenuOpen(o => !o)}
-                className="aug-fs-xs text-zinc-500 hover:text-zinc-400 transition px-1"
               >
                 ▾
-              </button>
+              </Button>
             )}
           </div>
         ) : (
-          <button
+          <Button
+            variant="outline" size="xs"
             onClick={() => setMenuOpen(o => !o)}
             disabled={saving}
-            className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-600 hover:border-zinc-500 rounded px-2 py-1 transition whitespace-nowrap"
+            className="whitespace-nowrap"
           >
             {saving ? "…" : "Mark"}
-          </button>
+          </Button>
         )}
         {menuOpen && (
           <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden">
@@ -261,12 +265,12 @@ function InvCard({
             </span>
           )}
           {onOpenInvestigation && (
-            <button
+            <Button
+              variant="outline" size="xs"
               onClick={() => onOpenInvestigation(inv.id)}
-              className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 transition"
             >
               View →
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -374,21 +378,8 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
     <div className="space-y-4">
       {/* Filter */}
       <div className="flex items-center gap-2">
-        <div className="flex rounded-[var(--r3)] border border-zinc-700 overflow-hidden aug-fs-xs">
-          {(["pending", "all"] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-2.5 py-1 capitalize transition ${
-                filter === f
-                  ? "bg-zinc-700 text-zinc-200"
-                  : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Which recommendations" value={filter} onChange={setFilter}
+          options={[{ value: "pending", label: "Pending" }, { value: "all", label: "All" }]} />
         {pendingCount > 0 && (
           <span className="aug-fs-xs font-mono px-2 py-0.5 rounded-[var(--r-chip)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
             {pendingCount} pending

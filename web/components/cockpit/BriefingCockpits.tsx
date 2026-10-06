@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { TabStrip } from "@/components/ui/tab-strip";
 import { ErrorState, Refusal } from "@/components/ui/states";
 import { toast } from "@/components/ui/toast";
 import {
@@ -380,24 +381,16 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
 
   return (
     <div data-testid="briefing-cockpits" style={{ flex: 1, overflow: "auto", padding: "14px 32px 32px" }}>
-      {/* The strip: the person's cockpits, and the door to a new one. */}
-      <div role="tablist" aria-label="Your cockpits" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        {/* The connection's metrics come first and are nobody's to arrange; what follows is the person's. */}
-        <Button role="tab" aria-selected={chosen === METRICS_COCKPIT} size="sm" data-testid="cockpit-strip-metrics"
-          variant={chosen === METRICS_COCKPIT ? "secondary" : "ghost"} onClick={() => choose(METRICS_COCKPIT)}>
-          Metrics
-        </Button>
-        {/* The layer's own label, as the Briefing has always marked it: violet is the user's. */}
-        <span className="aug-label" style={{ color: "var(--vio4)", margin: "0 6px 0 10px" }}>Your cockpits</span>
-        {live.map(c => (
-          <Button key={c.cockpit_id} role="tab" aria-selected={c.cockpit_id === chosen} size="sm"
-            variant={c.cockpit_id === chosen ? "secondary" : "ghost"} data-testid="cockpit-strip-item"
-            onClick={() => choose(c.cockpit_id)}>
-            {c.title || c.cockpit_id}
-          </Button>
-        ))}
-        <Button size="sm" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New cockpit</Button>
-      </div>
+      {/* The strip: the connection's metrics first (nobody's to arrange), then the person's own
+          cockpits under the layer's label — violet is the user's, as the Briefing has always marked
+          it — and, at the end, the door to a new one. */}
+      <TabStrip label="Your cockpits" size="1" value={chosen} onChange={choose} style={{ marginBottom: 12 }}
+        tabs={[
+          { id: METRICS_COCKPIT, label: "Metrics" },
+          { heading: <span className="aug-label" style={{ color: "var(--vio4)" }}>Your cockpits</span> },
+          ...live.map(c => ({ id: c.cockpit_id, label: c.title || c.cockpit_id })),
+        ]}
+        trailing={<Button size="xs" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New cockpit</Button>} />
 
       {/* A retired cockpit leaves the strip, not the record: it is said here, and brought back
           as the version it was before it was retired. */}

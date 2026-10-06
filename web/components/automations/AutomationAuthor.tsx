@@ -299,7 +299,7 @@ export function StepInspector({ draft, onDraft, selection, logicLabel, onClose,
       style={{
         position: "absolute", top: 8, right: 8, bottom: 8, width: 312, zIndex: 5,
         display: "flex", flexDirection: "column",
-        border: "1px solid var(--border)", borderRadius: "var(--r3)",
+        border: "1px solid var(--b1)", borderRadius: "var(--r3)",
         background: "var(--bg-1)", boxShadow: "var(--shadow-md)", overflow: "hidden",
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6,

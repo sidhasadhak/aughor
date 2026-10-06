@@ -32,6 +32,7 @@ export function Segmented<T extends string>({
   options: readonly SegmentedOption<T>[]
   /** What the choice is, for a reader who cannot see it. */
   label: string
+  /** The whole choice held (Themes' control cannot hold one option: offer only what can be chosen). */
   disabled?: boolean
   size?: "1" | "2" | "3"
   className?: string
@@ -43,7 +44,10 @@ export function Segmented<T extends string>({
       onValueChange={next => { if (next) onChange(next as T) }}
       disabled={disabled} className={className} style={style}>
       {options.map(o => (
-        <SegmentedControl.Item key={o.value} value={o.value} title={o.title}>{o.label}</SegmentedControl.Item>
+        <SegmentedControl.Item key={o.value} value={o.value} title={o.title}>
+          {/* An icon in a label sits beside its word, not above it. */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{o.label}</span>
+        </SegmentedControl.Item>
       ))}
     </SegmentedControl.Root>
   )

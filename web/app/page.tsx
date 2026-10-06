@@ -11,7 +11,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ThreadsRail } from "@/components/ThreadsRail";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { AuthControl } from "@/components/AuthControl";
-import { applyDensity, applyTheme } from "@/lib/themeSwitch";
+import { applyTheme, THEME_KEY } from "@/lib/themeSwitch";
 import { cleanLook, getLook, setLook } from "@/lib/look";
 import { LookPanel } from "@/components/LookPanel";
 import { useNavCollapsed } from "@/components/shell/useNavCollapsed";
@@ -188,9 +188,6 @@ type NavTab =
   | "settings";
 
 type Theme = "dark" | "light";
-/** The reading density (the study §4.5): comfortable is the default — 14px text, 32px rows;
- *  compact is 13px text and 26px rows for a reader who wants more on screen. */
-type Density = "comfortable" | "compact";
 type AskMode = "ask" | "investigate";
 
 // ── Icon primitives ────────────────────────────────────────────────────────────
@@ -883,11 +880,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
 
 // ── Settings screen ────────────────────────────────────────────────────────────
 
-function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, workspaceName }: { theme: Theme; setTheme: (t: Theme) => void; density: Density; setDensity: (d: Density) => void; workspaceId?: string; workspaceName?: string }) {
-  const densities: Array<{ id: Density; label: string; desc: string }> = [
-    { id: "comfortable", label: "Comfortable", desc: "14 px text, 32 px rows — the default" },
-    { id: "compact",     label: "Compact",     desc: "13 px text, 26 px rows — more on screen" },
-  ];
+function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme: Theme; setTheme: (t: Theme) => void; workspaceId?: string; workspaceName?: string }) {
   const modes: Array<{ id: Theme; icon: string; label: string; desc: string }> = [
     { id: "dark",  icon: "moon", label: "Dark",  desc: "Dark backgrounds, light text" },
     { id: "light", icon: "sun",  label: "Light", desc: "White backgrounds, dark text" },
@@ -949,29 +942,6 @@ function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, wor
                     </div>
                   )}
                 </button>
-              ))}
-            </div>
-            <div className="aug-label" style={{ margin: "20px 0 12px" }}>Density</div>
-            <div style={{ display: "flex", gap: 10 }}>
-              {densities.map(d => (
-                <Button key={d.id} variant="ghost" size="sm" onClick={() => setDensity(d.id)}
-                  aria-pressed={density === d.id}
-                  style={{
-                    flex: 1, height: "auto", display: "flex", alignItems: "center", gap: 12,
-                    padding: "12px 14px", borderRadius: "var(--r3)", textAlign: "left", justifyContent: "flex-start",
-                    background: density === d.id ? "var(--bg-sel)" : "var(--bg-2)",
-                    border: `1px solid ${density === d.id ? "var(--accent)" : "var(--b1)"}`,
-                  }}>
-                  <div>
-                    <div className="aug-fs-chrome" style={{ fontWeight: 600, color: density === d.id ? "var(--accent-text)" : "var(--t1)", marginBottom: 2 }}>{d.label}</div>
-                    <div className="aug-fs-sm" style={{ fontWeight: 400, color: "var(--t3)" }}>{d.desc}</div>
-                  </div>
-                  {density === d.id && (
-                    <div style={{ marginLeft: "auto", flexShrink: 0 }}>
-                      <NavIcon name="check" size={13} color="var(--accent)" />
-                    </div>
-                  )}
-                </Button>
               ))}
             </div>
             <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--b0)" }}>
@@ -1236,8 +1206,6 @@ function DeleteConnModal({
 
 const LAST_CONN_KEY = "aughor_last_conn";
 const LAST_WS_KEY = "aughor_last_workspace";
-const THEME_KEY = "aughor_theme";
-const DENSITY_KEY = "aughor_density";
 
 /** S1 — the URL is the router. Every screen in the NavTab union is addressable
  *  as `?tab=<id>` (+ `&conn=<id>` for the bound connection), so screens are
@@ -1394,7 +1362,6 @@ export default function Home() {
   // claim — addressed as `?id=`, so a Reader is a link like any other screen.
   const [openId, setOpenId] = useState<string | null>(null);
   const [theme, setThemeState] = useState<Theme>("dark");
-  const [density, setDensityState] = useState<Density>("comfortable");
   const [rawSelectedConn, setSelectedConn] = useState("");
 
   const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number; mode?: "visual" | "sql"; name?: string } | undefined>(undefined);
@@ -1697,11 +1664,6 @@ export default function Home() {
     const initial: Theme = saved || "dark";
     setThemeState(initial);
     applyTheme(initial);
-    // Density rides the same two homes as the theme: this browser first, the user's store second.
-    const savedDensity = typeof window !== "undefined" ? localStorage.getItem(DENSITY_KEY) as Density | null : null;
-    const initialDensity: Density = savedDensity === "compact" ? "compact" : "comfortable";
-    setDensityState(initialDensity);
-    applyDensity(initialDensity);
     const syncStoredTheme = () => {
       getMyPreferences()
         .then(({ preferences }) => {
@@ -1712,15 +1674,13 @@ export default function Home() {
             applyTheme(stored);
             if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, stored);
           }
-          const storedDensity = preferences.density;
-          if (storedDensity === "compact" || storedDensity === "comfortable") {
-            setDensityState(storedDensity);
-            applyDensity(storedDensity);
-            if (typeof window !== "undefined") localStorage.setItem(DENSITY_KEY, storedDensity);
-          }
           // The look — accent, grey, corners, scaling — rides the same two homes: whatever the
           // person's store holds wins over this browser's copy; a knob it does not hold stays.
-          setLook(cleanLook(preferences, getLook()));
+          // Scaling is the one knob for size since 2026-10-06: a person who chose the old
+          // compact density, and no scaling since, reads at 90%.
+          const chosen: Record<string, unknown> = { ...preferences };
+          if (chosen.scaling === undefined && chosen.density === "compact") chosen.scaling = "90%";
+          setLook(cleanLook(chosen, getLook()));
         })
         // An unreachable store leaves the cached theme standing — cosmetic, never blocking.
         .catch(() => {});
@@ -1746,12 +1706,6 @@ export default function Home() {
     // Write through to the settings store so the choice follows the user, not this
     // browser. Fire-and-forget: the visible change already happened above.
     putMyPreference("theme", t).catch(() => {});
-  };
-  const setDensity = (d: Density) => {
-    setDensityState(d);
-    applyDensity(d);
-    if (typeof window !== "undefined") localStorage.setItem(DENSITY_KEY, d);
-    putMyPreference("density", d).catch(() => {});   // the store already knows the key
   };
 
   // S1 — the `?conn=` a deep link arrived with, read at the first client render. The URL-sync
@@ -2572,7 +2526,7 @@ export default function Home() {
             {/* ── SETTINGS ── */}
             {tab === "settings" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <SettingsScreen theme={theme} setTheme={setTheme} density={density} setDensity={setDensity} workspaceId={selectedWorkspace} workspaceName={activeWs?.name} />
+                <SettingsScreen theme={theme} setTheme={setTheme} workspaceId={selectedWorkspace} workspaceName={activeWs?.name} />
               </div>
             )}
 

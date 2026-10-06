@@ -122,41 +122,10 @@
   --chart-grid:  #212325;
   --chart-tick:  #9DA1A8;
 
-  /* ── Tailwind v4 bridge ─────────────────────────────────────────────────
-     Maps Tailwind color names → our design tokens so components can use
+  /* ── Tailwind v4 palette bridge ─────────────────────────────────────────
+     Maps Tailwind's colour names → our design tokens so components can use
      Tailwind utilities (text-zinc-500 etc.) while remaining token-driven.
      ── */
-  --background:           var(--bg-0);
-  --foreground:           var(--t1);
-  --card:                 var(--bg-2);
-  --card-foreground:      var(--t1);
-  --popover:              var(--bg-3);
-  --popover-foreground:   var(--t1);
-  --primary:              var(--blue3);
-  --primary-foreground: var(--on-primary);
-  --secondary:            var(--bg-3);
-  --secondary-foreground: var(--t1);
-  --muted:                var(--bg-2);
-  --muted-foreground:     var(--t2);
-  --accent:               var(--blue3);
-  --accent-foreground: var(--on-primary);
-  --destructive:          var(--red3);
-  --destructive-foreground: var(--on-primary);
-  --border:               var(--b1);
-  --input:                var(--b2);
-  --ring:                 var(--blue3);
-  --radius:               var(--r1);  /* v2 control radius (was a stale hardcoded 4px) */
-
-  /* Sidebar tokens (shadcn/ui compat) */
-  --sidebar:              var(--bg-1);
-  --sidebar-foreground:   var(--t1);
-  --sidebar-primary:      var(--blue3);
-  --sidebar-primary-foreground: var(--on-primary);
-  --sidebar-accent:       var(--bg-sel);
-  --sidebar-accent-foreground:  var(--blue5);
-  --sidebar-border:       var(--b1);
-  --sidebar-ring:         var(--blue3);
-
   /* Legacy zinc aliases — components still use these; bridge keeps them token-driven */
   --color-zinc-950: var(--bg-0);
   --color-zinc-900: var(--bg-1);

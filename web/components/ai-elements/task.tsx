@@ -4,7 +4,7 @@
  *
  * Mirrors the component API of Vercel AI Elements' Task family (Task /
  * TaskTrigger / TaskContent / TaskItem / TaskItemFile) on OUR substrate:
- * @base-ui/react Collapsible + the repo's design tokens. NEVER
+ * Radix Primitives' Collapsible + the repo's design tokens. NEVER
  * `npx ai-elements add`.
  *
  * The organ this upgrades: PlanGateCard's phase list and the scattered
@@ -12,7 +12,7 @@
  * collapsible detail list, and file/entity chips.
  */
 import * as React from "react";
-import { Collapsible } from "@base-ui/react/collapsible";
+import { Collapsible } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 import { Shimmer } from "@/components/ai-elements/shimmer";
@@ -84,7 +84,7 @@ export function TaskTrigger({
       {status === "in_progress" ? <Shimmer>{title}</Shimmer> : <span className="truncate">{title}</span>}
       <span className="ml-auto shrink-0 inline-flex" style={{ color: "var(--t3)" }}>
         <Icon name="chevd" size={12}
-          className="transition-transform group-data-[panel-open]/task:rotate-180" />
+          className="transition-transform group-data-[state=open]/task:rotate-180" />
       </span>
     </Collapsible.Trigger>
   );
@@ -98,14 +98,14 @@ export function TaskContent({
   children: React.ReactNode;
 }) {
   return (
-    <Collapsible.Panel className={cn("overflow-hidden", className)}>
+    <Collapsible.Content className={cn("overflow-hidden", className)}>
       <div
         className="ml-1.5 flex flex-col gap-0.5 border-l pl-3.5 py-1"
         style={{ borderColor: "var(--b1)" }}
       >
         {children}
       </div>
-    </Collapsible.Panel>
+    </Collapsible.Content>
   );
 }
 

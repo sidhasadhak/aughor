@@ -4,7 +4,7 @@
  *
  * Mirrors the component API of Vercel AI Elements' ChainOfThought family
  * (ChainOfThought / Header / Content / Step / SearchResults / SearchResult) on
- * OUR substrate: @base-ui/react Collapsible + the repo's design tokens. NEVER
+ * OUR substrate: Radix Primitives' Collapsible + the repo's design tokens. NEVER
  * `npx ai-elements add` — stock Elements is Radix + fails the css-var, token
  * and raw-element gates.
  *
@@ -15,7 +15,7 @@
  * investigation tree; this component is the lighter chat-turn organ.
  */
 import * as React from "react";
-import { Collapsible } from "@base-ui/react/collapsible";
+import { Collapsible } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 import { Shimmer } from "@/components/ai-elements/shimmer";
@@ -71,7 +71,7 @@ export function ChainOfThoughtHeader({
     >
       <span className="shrink-0 inline-flex" style={{ color: "var(--t3)" }}>
         <Icon name="chevr" size={12}
-          className="transition-transform group-data-[panel-open]/cot:rotate-90" />
+          className="transition-transform group-data-[state=open]/cot:rotate-90" />
       </span>
       <Shimmer active={streaming}>{children}</Shimmer>
     </Collapsible.Trigger>
@@ -88,7 +88,7 @@ export function ChainOfThoughtContent({
   children: React.ReactNode;
 }) {
   return (
-    <Collapsible.Panel
+    <Collapsible.Content
       className={cn("overflow-hidden pl-1", className)}
     >
       <div
@@ -97,7 +97,7 @@ export function ChainOfThoughtContent({
       >
         {children}
       </div>
-    </Collapsible.Panel>
+    </Collapsible.Content>
   );
 }
 

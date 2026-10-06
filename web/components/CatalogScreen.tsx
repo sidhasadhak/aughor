@@ -1469,7 +1469,7 @@ function SchemaDocsTab({ entry, onOpenDocuments }: {
             return (
               <div key={d.doc_id} style={{
                 display: "flex", justifyContent: "space-between", alignItems: "baseline",
-                padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6,
+                padding: "8px 10px", border: "1px solid var(--b1)", borderRadius: 6,
               }}>
                 <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>{d.title}</span>
                 <span className="aug-fs-xs" style={{ color: drift ? "var(--amb4)" : "var(--t3)", fontFamily: "var(--font-mono)" }}>
@@ -1486,14 +1486,13 @@ function SchemaDocsTab({ entry, onOpenDocuments }: {
       <p className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 16, lineHeight: 1.5 }}>
         Uploading your own documents — policies, runbooks, reports — happens in{" "}
         {onOpenDocuments ? (
-          <button
+          <Button
+            variant="link" size="xs"
             type="button"
             onClick={onOpenDocuments}
-            className="aug-fs-xs"
-            style={{ color: "var(--blue4)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
           >
             Intelligence → Documents
-          </button>
+          </Button>
         ) : "Intelligence → Documents"}
         . That corpus is shared across every connection, which is why it does not live here.
       </p>

@@ -194,7 +194,7 @@ export function AgentMap({
   }, [agent, bots, automations, alerts, connections, open]);
 
   return (
-    <div style={{ height: 460, border: "1px solid var(--border)", borderRadius: 8,
+    <div style={{ height: 460, border: "1px solid var(--b1)", borderRadius: 8,
                   overflow: "hidden", position: "relative" }}>
       <ReactFlow
         nodes={flow.nodes}

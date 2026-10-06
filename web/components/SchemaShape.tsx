@@ -13,6 +13,7 @@ import {
   type ColumnProfileData,
   type DistributionProfile,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 // ── Schema Shape ───────────────────────────────────────────────────────────────
 // The column-profiler view (table grain, null rates, distinct counts, top values)
@@ -458,12 +459,13 @@ export function SchemaShape({
         <span style={{ fontSize: 11, color: "var(--t2)" }}>avg null <strong>{avgNull}%</strong></span>
         <span style={{ fontSize: 11, color: "var(--t2)" }}><strong>{lowCard}</strong> categorical</span>
         {!scopeTables && relevant.length > 0 && relevant.length < allTables.length && (
-          <button
+          <Button
+            variant="link" size="xs"
             onClick={() => setShowAll(s => !s)}
-            style={{ marginLeft: "auto", fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}
+            style={{ marginLeft: "auto" }}
           >
             {showAll ? `Domain tables only (${relevant.length})` : `Show all ${allTables.length} tables`}
-          </button>
+          </Button>
         )}
       </div>
 

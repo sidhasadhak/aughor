@@ -677,44 +677,29 @@ export function InferencePanel() {
 
       {/* Actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2 }}>
-        <button
+        <Button variant="default" size="sm"
           onClick={save}
           disabled={saving || (paidBindings.length > 0 && !paidAck)}
           title={paidBindings.length > 0 && !paidAck
             ? "A paid model is bound — tick the acknowledgment above to save"
-            : undefined}
-          style={{
-            padding: "7px 16px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
-            background: "var(--blue4)", color: "#fff", border: "none",
-            cursor: saving || (paidBindings.length > 0 && !paidAck) ? "default" : "pointer",
-            opacity: saving || (paidBindings.length > 0 && !paidAck) ? 0.6 : 1,
-          }}
-        >
+            : undefined}>
           {saving ? "Saving…" : "Save"}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline" size="sm"
           onClick={test}
           disabled={testing}
-          style={{
-            padding: "7px 14px", borderRadius: "var(--r2)", fontSize: 12,
-            background: "var(--bg-2)", color: "var(--t2)", border: "1px solid var(--b1)",
-            cursor: testing ? "default" : "pointer", opacity: testing ? 0.6 : 1,
-          }}
         >
           {testing ? "Testing…" : "Test connection"}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline" size="sm"
           onClick={runProbe}
           disabled={probing}
           title="Measure whether this backend reuses a shared prompt prefix across requests, and record the verdict"
-          style={{
-            padding: "7px 14px", borderRadius: "var(--r2)", fontSize: 12,
-            background: "var(--bg-2)", color: "var(--t2)", border: "1px solid var(--b1)",
-            cursor: probing ? "default" : "pointer", opacity: probing ? 0.6 : 1,
-          }}
         >
           {probing ? "Measuring…" : "Measure prefix cache"}
-        </button>
+        </Button>
         {saved && <span style={{ fontSize: 11, color: "var(--grn4)" }}>✓ Saved</span>}
       </div>
 

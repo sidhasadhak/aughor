@@ -41,6 +41,7 @@ import { QuestionFrame } from "@/components/QuestionFrame";
 import type { OntologyFrame, RuleOuts } from "@/lib/types";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { namesPeriod } from "@/lib/format";
+import { Button } from "@/components/ui/button";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -145,13 +146,13 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
   if (!columns.length || !rows.length) return null;
   return (
     <div>
-      <button
+      <Button
+        variant="ghost" size="xs"
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 aug-fs-xs text-zinc-500 hover:text-zinc-500 transition-colors"
       >
         {open ? <Icon name="chevd" size={16} /> : <Icon name="chevr" size={16} />}
         {label} · {rows.length} rows
-      </button>
+      </Button>
       {open && (
         <div className="mt-1.5">
           <SqlResultTable columns={columns} rows={rows as unknown[][]} maxHeight={280} />
@@ -276,15 +277,16 @@ function EvidenceBlock({ finding, onShowSource, answer = "", repeat = false }: {
         </div>
       )}
       {hasData && onShowSource && (
-        <button
+        <Button
+          variant="ghost" size="xs"
           onClick={() => onShowSource({ columns: finding.columns, rows: finding.rows as unknown[][], sql: finding.sql || null, title: finding.title })}
-          className="self-end flex items-center gap-1.5 aug-text-xs text-zinc-500 hover:text-zinc-300 transition-colors max-w-full"
+          className="self-end"
           title={`Data + SQL behind “${finding.title}”`}
         >
           <Icon name="table" size={16} label="Table" />
           {/* Name the source by WHAT it shows (Genie's "…for viz" footer), not an opaque "Source N". */}
           <span className="truncate">{sourceLabel(finding.title)}</span>
-        </button>
+        </Button>
       )}
 
       {/* Trend strip — sparkline + period-over-period % (time-series findings only) */}
