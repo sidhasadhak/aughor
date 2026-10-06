@@ -44,6 +44,7 @@ import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
 import { McpServersSection } from "@/components/McpServersSection";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Callout } from "@/components/ui/callout";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -249,7 +250,7 @@ export function IntegrationsPanel() {
         <ErrorState kind="Integration failed" what={error} style={{ marginBottom: 12 }} />
       )}
       {notice && (
-        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 12 }}>{notice}</div>
+        <Callout tone="amber" style={{ marginBottom: 12 }}>{notice}</Callout>
       )}
 
       {categories.map(([category, rows]) => (

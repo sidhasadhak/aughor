@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
+import { Callout } from "@/components/ui/callout";
 
 const KINDS: { id: string; label: string }[] = [
   { id: "", label: "All" },
@@ -241,10 +242,10 @@ function ClaimReader({ id, connections, onBack, onOpen, onInspectClaim, onOpenDe
           <Page rail={<ClaimRail c={claim} connections={connections} />}>
             {said && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 12px" }}>{said}</p>}
             {claim.superseded_by && (
-              <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+              <Callout tone="amber" style={{ marginBottom: 16 }}>
                 <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This version was replaced. </span>
                 <Button size="xs" variant="link" onClick={() => onOpen(claim.superseded_by)}>Open the current one</Button>
-              </div>
+              </Callout>
             )}
             <Section label="What is held">
               <p className="aug-fs-h1 aug-lede">{claim.statement.text}</p>

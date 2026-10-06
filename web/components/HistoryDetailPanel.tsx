@@ -15,6 +15,7 @@ import { localizeCurrency } from "@/lib/orgSettings";
 import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
 import { ExportButton } from "@/components/ExportButton";
 import { Icon } from "@/components/ui/icon";
+import { Textarea } from "@/components/ui/textarea";
 
 interface FullInvestigation {
   id: string;
@@ -379,7 +380,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 border: "1px solid var(--b2)",
               }}
             >
-              <textarea
+              <Textarea
                 ref={inputRef}
                 rows={2}
                 value={followUp}

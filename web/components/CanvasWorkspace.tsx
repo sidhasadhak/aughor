@@ -12,6 +12,7 @@ import { ReadFailed } from "@/components/ui/states";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -417,7 +418,7 @@ function SettingsPopover({
         </label>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
           Description
-          <textarea
+          <Textarea
             value={desc}
             onChange={e => setDesc(e.target.value)}
             rows={2}

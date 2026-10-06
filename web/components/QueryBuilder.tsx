@@ -30,6 +30,7 @@ import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -597,7 +598,7 @@ function SqlEditor({ value, rows, taRef, onChange, onKeyDown, onClick, placehold
 }) {
   const preRef = useRef<HTMLPreElement>(null);
   // The theme has unlayered global textarea rules (font-size/color/line-height) that beat
-  // Tailwind utility classes on the <textarea> — so drive every metric inline (inline wins),
+  // Tailwind utility classes on the <Textarea> — so drive every metric inline (inline wins),
   // identically on both elements, or the caret drifts out of sync with the highlighted text.
   const metrics: React.CSSProperties = {
     fontFamily: "var(--font-code)", fontSize: "12px", lineHeight: "1.625",
@@ -610,7 +611,7 @@ function SqlEditor({ value, rows, taRef, onChange, onKeyDown, onClick, placehold
         className="absolute inset-0 overflow-auto pointer-events-none"
         style={{ ...metrics, background: "rgba(24,24,27,0.8)" }}
         dangerouslySetInnerHTML={{ __html: highlightSql(value) + "\n" }} />
-      <textarea
+      <Textarea
         ref={taRef} value={value} onChange={onChange} onKeyDown={onKeyDown} onClick={onClick}
         onScroll={e => { if (preRef.current) { preRef.current.scrollTop = e.currentTarget.scrollTop; preRef.current.scrollLeft = e.currentTarget.scrollLeft; } }}
         spellCheck={false} rows={rows} placeholder={placeholder}

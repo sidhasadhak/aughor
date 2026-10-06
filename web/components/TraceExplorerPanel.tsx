@@ -36,6 +36,7 @@ import { fmtMs } from "@/lib/cost";
 import { compactNumber, relTime } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /** Depth of every span id, walked from the tree the API assembled. */
 function spanDepths(spans: TraceSpan[], depth = 1, out: Map<string, number> = new Map()) {
@@ -311,7 +312,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               onBlur={e => setFilters(f => ({ ...f, user_id: e.target.value || undefined }))}
             />
             <SelectField
-              className="aug-input aug-fs-xs" style={{ flex: 1 }}
+              className="aug-fs-xs" style={{ flex: 1 }}
               value={filters.min_duration_ms ?? ""}
               onChange={e => setFilters(f => ({
                 ...f, min_duration_ms: e.target.value ? Number(e.target.value) : undefined }))}
@@ -322,7 +323,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               <option value="60000">over 1m</option>
             </SelectField>
             <SelectField
-              className="aug-input aug-fs-xs" style={{ flex: 1 }}
+              className="aug-fs-xs" style={{ flex: 1 }}
               value={filters.min_tokens ?? ""}
               onChange={e => setFilters(f => ({
                 ...f, min_tokens: e.target.value ? Number(e.target.value) : undefined }))}
@@ -407,7 +408,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
             {scanned != null && <span style={{ color: "var(--t3)" }}> · last {compactNumber(scanned)} events</span>}
           </span>
           <SelectField
-            className="aug-input aug-fs-xs" style={{ width: 62, marginLeft: "auto" }}
+            className="aug-fs-xs" style={{ width: 62, marginLeft: "auto" }}
             value={pageSize}
             onChange={e => setPageSize(Number(e.target.value))}
           >
@@ -662,7 +663,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                     runs on this store do not have; it used to be the only control here,
                     so on a quick turn the buttons did nothing at all. */}
                 <div className="aug-fs-sm" style={{ marginBottom: 8 }}>Was this run helpful?</div>
-                <textarea className="aug-input aug-fs-sm" value={note} rows={2}
+                <Textarea className="aug-fs-sm" value={note} rows={2}
                   placeholder="Optional note (what was right or wrong)"
                   onChange={e => setNote(e.target.value)}
                   style={{ width: "100%", marginBottom: 8 }} />
@@ -715,7 +716,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                         accepts. Offered only when ONE statement ran, because otherwise
                         there is no single query this would be correcting. */}
                     {runSql && (
-                      <textarea className="aug-input aug-fs-sm font-code" rows={3}
+                      <Textarea className="aug-fs-sm font-code" rows={3}
                         value={correctedSql}
                         placeholder="Optional: the SQL that WOULD have been right (used with “Needs correction”)"
                         onChange={e => setCorrectedSql(e.target.value)}

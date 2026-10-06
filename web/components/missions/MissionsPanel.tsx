@@ -27,6 +27,7 @@ import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
+import { Callout } from "@/components/ui/callout";
 
 const STATE_HUE: Record<string, ChipHue> = {
   active: "positive", proposed: "info", paused: "caution", met: "accent", retired: "muted",
@@ -328,7 +329,7 @@ function MissionReader({ id, connections, onBack, onMoved, onOpenInquiry, onOpen
       {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: 0, padding: "8px 20px" }}>{error}</p>}
       {said && !error && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: 0, padding: "8px 20px" }}>{said}</p>}
       {m && panel === "report" && (
-        <div className="aug-callout" style={{ margin: "12px 20px 0" }}>
+        <Callout style={{ margin: "12px 20px 0" }}>
           <p className="aug-fs-ui" style={{ color: "var(--t1)", margin: "0 0 8px" }}>
             This books the report as it reads now, as of today, and moves the next one a {m.review.cadence.replace(/ly$/, "")} on.{" "}
             {m.owner
@@ -340,7 +341,7 @@ function MissionReader({ id, connections, onBack, onMoved, onOpenInquiry, onOpen
             <Button size="xs" variant={m.owner ? "outline" : "default"} disabled={busy} onClick={() => void report(false)}>Book without sending</Button>
             <Button size="xs" variant="ghost" onClick={() => setPanel("")}>Cancel</Button>
           </div>
-        </div>
+        </Callout>
       )}
       <Gate load={load} what="the mission">
         {detail => <MissionBodyView m={detail} connections={connections}
@@ -398,12 +399,12 @@ function MissionBodyView({ m, connections, form, onOpenInquiry, onOpenDecision, 
     <Page rail={rail}>
       {form}
       {pastId && (
-        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+        <Callout tone="amber" style={{ marginBottom: 16 }}>
           <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>
             This is a past report, as it was written{report.data?.report ? ` on ${day(report.data.report.composed_at)}` : ""}.{" "}
           </span>
           <Button size="xs" variant="link" onClick={() => setPastId("")}>Back to how it reads now</Button>
-        </div>
+        </Callout>
       )}
       <Gate load={report} what="the mission's report">
         {r => r.report

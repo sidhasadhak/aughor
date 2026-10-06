@@ -32,6 +32,7 @@ import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -263,9 +264,9 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
               value={httpSecret} onChange={e => setHttpSecret(e.target.value)} />
           </div>
           <label style={hint}>headers (JSON)</label>
-          <textarea style={{ ...input, minHeight: 36, fontFamily: "monospace" }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
+          <Textarea style={{ ...input, minHeight: 36, fontFamily: "monospace" }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
           <label style={hint}>body (JSON) — {"{param}"} placeholders are filled from the declared params</label>
-          <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
+          <Textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
         </>
       )}
       <Button variant="default" size="sm" disabled={!id.trim()} onClick={save}>Save action</Button>
@@ -328,7 +329,7 @@ function ProposeSection({ connectionId, onStaged }: { connectionId: string; onSt
         Paste a finding. The agent proposes any declared action it warrants; each valid proposal is staged in
         Awaiting approval, and nothing runs until a person approves it. Proposing uses a model call.
       </p>
-      <textarea style={{ ...input, minHeight: 72, marginTop: 8 }} placeholder="e.g. Order X9001 was charged EUR 480 twice — a clear duplicate charge." value={context} onChange={e => setContext(e.target.value)} />
+      <Textarea style={{ ...input, minHeight: 72, marginTop: 8 }} placeholder="e.g. Order X9001 was charged EUR 480 twice — a clear duplicate charge." value={context} onChange={e => setContext(e.target.value)} />
       <Button variant="secondary" size="sm" disabled={busy || !context.trim()} onClick={propose}>
         {busy ? "Proposing…" : "Propose actions"}
       </Button>

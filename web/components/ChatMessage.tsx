@@ -77,6 +77,7 @@ import { isAdditiveMeasure } from "@/lib/measureKind";
 import { Icon } from "@/components/ui/icon";
 import { AnswerRecheck } from "@/components/AnswerRecheck";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 
 // Format a wall-clock duration for the "Completed in …" line.
 function formatElapsed(ms: number): string {
@@ -848,7 +849,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
               <div className="flex-1 min-w-0">
                 {editing === item.id ? (
                   <div className="space-y-1.5">
-                    <textarea
+                    <Textarea
                       value={draft}
                       onChange={e => setDraft(e.target.value)}
                       rows={2}
@@ -1321,7 +1322,7 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
       {annotateOpen && (
         <div className="flex flex-col gap-1.5 rounded-[var(--r2)] p-2 my-1"
              style={{ background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
-          <textarea autoFocus rows={2} value={annotateText}
+          <Textarea autoFocus rows={2} value={annotateText}
             onChange={(e) => setAnnotateText(e.target.value)}
             placeholder={`Note on ${annotateTarget} (e.g. 'March data is a partial load — totals run low')`}
             className="w-full bg-transparent aug-fs-xs text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none" />
@@ -1602,7 +1603,7 @@ export function ChatMessage({
           )}
           {editing ? (
             <div className="flex flex-col gap-1.5" style={{ minWidth: 280 }}>
-              <textarea
+              <Textarea
                 autoFocus
                 rows={2}
                 value={draft}

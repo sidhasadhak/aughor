@@ -522,33 +522,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-panel-interactive:hover { border-color: var(--b3); }
 
 /* ── Callout — tint 1, border 2, a 3px left rule in hue 3 ─────────────────── */
-.aug-callout {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 9px 11px;
-  border: 1px solid var(--b2);
-  border-left-width: 3px;
-  border-radius: var(--r2);
-  background: var(--bg-3);
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--t1);
-}
-.aug-callout-kind {
-  font-size: 12px;
-  font-weight: 600;
-}
-.aug-callout-blue   { background: var(--blue1); border-color: var(--blue2); border-left-color: var(--blue3); }
-.aug-callout-green  { background: var(--grn1);  border-color: var(--grn2);  border-left-color: var(--grn3); }
-.aug-callout-amber  { background: var(--amb1);  border-color: var(--amb2);  border-left-color: var(--amb3); }
-.aug-callout-red    { background: var(--red1);  border-color: var(--red2);  border-left-color: var(--red3); }
-.aug-callout-violet { background: var(--vio1);  border-color: var(--vio2);  border-left-color: var(--vio3); }
-.aug-callout-blue   .aug-callout-kind { color: var(--blue3); }
-.aug-callout-green  .aug-callout-kind { color: var(--grn3); }
-.aug-callout-amber  .aug-callout-kind { color: var(--amb3); }
-.aug-callout-red    .aug-callout-kind { color: var(--red3); }
-.aug-callout-violet .aug-callout-kind { color: var(--vio3); }
+/* A callout is Radix Themes' own since 2026-10-06 (components/ui/callout.tsx). */
 
 /* ── Status dot — 7px, the only round chrome ─────────────────────────────── */
 .aug-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--t4); }

@@ -58,6 +58,7 @@ import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type Selection =
   | { kind: "charter"; id: string }
@@ -956,7 +957,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
               )}
               {certifying?.id === c.id && (
                 <>
-                  <textarea className="aug-input" rows={3} value={certifying.sql}
+                  <Textarea className="aug-input" rows={3} value={certifying.sql}
                     placeholder="The reference SQL you certify (read-only)"
                     onChange={e => setCertifying({ id: c.id, sql: e.target.value })} />
                   <span style={{ display: "flex", gap: 6 }}>
@@ -1055,7 +1056,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
         <Input placeholder="Golden question — e.g. How many active customers?"
           value={goldenDraft.question}
           onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
-        <textarea className="aug-input" rows={2}
+        <Textarea className="aug-input" rows={2}
           placeholder="Reference SQL (the known-correct answer; read-only)"
           value={goldenDraft.reference_sql}
           onChange={e => setGoldenDraft(d => ({ ...d, reference_sql: e.target.value }))} />
@@ -1155,7 +1156,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Instructions</span>
-        <textarea className="aug-input" rows={6} value={form.instructions} maxLength={8000}
+        <Textarea className="aug-input" rows={6} value={form.instructions} maxLength={8000}
           placeholder="Standing guidance this agent applies to every answer — domain focus, definitions to prefer, tone. It refines, never overrides, safety and grounding rules."
           onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} />
       </label>

@@ -22,6 +22,7 @@ import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Loading } from "@/components/ui/states";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SchemaColumn {
@@ -125,7 +126,7 @@ function AboutTab({
 
       <div>
         <p className="aug-label mb-2">Description</p>
-        <textarea
+        <Textarea
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           rows={4}
@@ -479,7 +480,7 @@ function InstructionsEditor({
         <span className="aug-fs-sm font-semibold text-[var(--t1)]">{label}</span>
         <p className="aug-fs-xs text-[var(--t3)] leading-relaxed">{hint}</p>
       </div>
-      <textarea
+      <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         disabled={!loaded}

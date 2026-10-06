@@ -31,6 +31,7 @@ import {
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Governance lifecycle (B-8) ──────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, string> = {
@@ -735,7 +736,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </Field>
 
             <Field label="SQL statement" required hint="A whole SELECT — CTEs allowed — that returns one row with the metric's value">
-              <textarea
+              <Textarea
                 className={`${inputCls} font-mono text-xs min-h-[72px] resize-y`}
                 placeholder="SELECT SUM(amount) AS revenue FROM orders WHERE status = 'active'"
                 value={form.sql}
@@ -910,7 +911,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </div>
 
             <Field label="Freshness check SQL" hint="must return a single timestamp">
-              <textarea
+              <Textarea
                 className={`${inputCls} font-mono text-xs min-h-[56px] resize-y`}
                 placeholder="SELECT MAX(updated_at) FROM orders"
                 value={form.freshness_check_sql}
@@ -919,7 +920,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </Field>
 
             <Field label="Lineage" hint="one source per line">
-              <textarea
+              <Textarea
                 className={`${inputCls} text-xs min-h-[56px] resize-y`}
                 placeholder={"orders table — raw Stripe charges\nrefunds table — Stripe refund events"}
                 value={form.lineage}
@@ -928,7 +929,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </Field>
 
             <Field label="Quality tests" hint="one SQL assertion per line — must return a truthy scalar to pass">
-              <textarea
+              <Textarea
                 className={`${inputCls} font-mono text-xs min-h-[80px] resize-y`}
                 placeholder={"SELECT COUNT(*) > 0 FROM orders\nSELECT SUM(amount) > 0 FROM orders WHERE status = 'paid'"}
                 value={form.quality_tests}
@@ -937,7 +938,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </Field>
 
             <Field label="Anti-patterns (NEVER rules)" hint="one per line — injected as NEVER instructions for the LLM">
-              <textarea
+              <Textarea
                 className={`${inputCls} text-xs min-h-[56px] resize-y`}
                 placeholder={"COUNT(refunds) / COUNT(orders) — ignores refund amounts\nSUM(amount) without status filter — includes cancelled orders"}
                 value={form.wrong_usage_examples}

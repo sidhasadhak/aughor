@@ -33,6 +33,7 @@ import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
+import { Callout } from "@/components/ui/callout";
 
 type Filter = "all" | "due" | "waiting" | "reviewed";
 
@@ -288,14 +289,14 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
   return (
     <Page rail={rail}>
       {d.superseded_by && (
-        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+        <Callout tone="amber" style={{ marginBottom: 16 }}>
           <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This is the decision as first booked; it has been restated since. </span>
           <Button size="xs" variant="link" onClick={() => onMoved(d.superseded_by)}>Open it as it stands now</Button>
-        </div>
+        </Callout>
       )}
       {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "0 0 12px" }}>{error}</p>}
       {current && d.reopened_by && (
-        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+        <Callout tone="amber" style={{ marginBottom: 16 }}>
           <p className="aug-fs-ui" style={{ color: "var(--t1)", margin: "0 0 4px" }}>
             Reopened: a claim this decision relied on was restated.
             {d.reopened_by_claim && <> It now reads: “{d.reopened_by_claim.statement.text}”</>}
@@ -310,7 +311,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
             <Button size="xs" disabled={busy || !standsWhy.trim()} onClick={() => void write(() => decisionStands(d.id, standsWhy.trim(), actor.by))}>It still stands</Button>
             <Button size="xs" variant="ghost" onClick={() => onOpenClaim(d.reopened_by)}>Open the claim</Button>
           </div>
-        </div>
+        </Callout>
       )}
       <Section label="The options" meta={countNoun(d.options.length, "option")}
         action={current && <Button size="xs" variant="outline" aria-expanded={adding === "option"} onClick={() => setAdding(a => (a === "option" ? "" : "option"))}>Add an option</Button>}>

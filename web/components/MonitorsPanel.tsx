@@ -24,6 +24,7 @@ import { takeMonitorDraft } from "@/lib/query/monitorDraft";
 import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -615,7 +616,7 @@ function MonitorForm({
             {metrics.map(m => <option key={m.name} value={m.name}>{m.label ?? m.name}</option>)}
           </SelectField>
         ) : (
-          <textarea
+          <Textarea
             className="aug-input"
             rows={3}
             value={form.custom_sql ?? ""}

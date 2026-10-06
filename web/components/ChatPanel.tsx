@@ -19,6 +19,7 @@ import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
@@ -133,7 +134,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
       )}
 
       {/* Textarea row */}
-      <textarea
+      <Textarea
         ref={textareaRef}
         rows={multiline ? 2 : 1}
         value={input}

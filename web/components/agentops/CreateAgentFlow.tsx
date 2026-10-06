@@ -48,6 +48,7 @@ import {
 import { formatCount } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type Step = "describe" | "start" | "scope" | "define" | "prove" | "reach";
 type Seed = { question: string; needs: string };
@@ -295,7 +296,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             </Field>
             <Field label="What should it answer?"
               hint="Plain words. Name the decisions it should support, not the tables.">
-              <textarea className="aug-input" rows={3} value={description}
+              <Textarea className="aug-input" rows={3} value={description}
                 onChange={e => setDescription(e.target.value)}
                 placeholder="e.g. Answer questions about order volume and returns for the retail team, and always flag when a day is still partial."
                 style={{ width: "100%", maxWidth: 640 }} />
@@ -479,7 +480,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
               hint={template
                 ? `Prefilled from the ${template.name} pack — edit freely, it is only a starting stance.`
                 : "Standing instructions, prepended to every answer this agent gives."}>
-              <textarea className="aug-input" value={instructions} rows={8} maxLength={8000}
+              <Textarea className="aug-input" value={instructions} rows={8} maxLength={8000}
                 onChange={e => setInstructions(e.target.value)}
                 placeholder="What this agent is for, what it should prioritise, how it should present findings."
                 style={{ width: "100%", resize: "vertical", fontFamily: "var(--font-ui)" }} />
@@ -577,7 +578,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
                 placeholder="A question you already know the right answer to" />
             </Field>
             <Field label="Reference SQL" hint="Read-only, and it must parse.">
-              <textarea className="aug-input" value={draft.sql} rows={3}
+              <Textarea className="aug-input" value={draft.sql} rows={3}
                 onChange={e => setDraft(d => ({ ...d, sql: e.target.value }))}
                 placeholder="SELECT …"
                 style={{ width: "100%", resize: "vertical", fontFamily: "var(--font-code)" }} />

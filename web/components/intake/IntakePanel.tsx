@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /** Who is acting: the signed-in email when there is one, else the same word the
  *  actions inbox uses. Display + provenance material — the server owns identity. */
@@ -192,7 +193,7 @@ function CandidateRow({ cand, decision, onDecide, edit, onEdit, applyError }: {
           )}
           {edit !== undefined && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <textarea value={edit} onChange={e => onEdit(e.target.value)} rows={8}
+              <Textarea value={edit} onChange={e => onEdit(e.target.value)} rows={8}
                 data-testid={`intake-edit-${cand.id}`}
                 className="aug-fs-xs"
                 style={{ width: "100%", fontFamily: "var(--font-mono)", color: "var(--t1)",
@@ -334,7 +335,7 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
       {door === "paste" && (
         <div style={label}>
-          <textarea value={yamlText} onChange={e => setYamlText(e.target.value)} rows={6}
+          <Textarea value={yamlText} onChange={e => setYamlText(e.target.value)} rows={6}
             placeholder={"version: 1\nsections:\n  metrics:\n    - name: revenue\n      sql: SUM(amount)"}
             className="aug-fs-xs" style={{ ...input, fontFamily: "var(--font-mono)", resize: "vertical" }} />
           <div>
@@ -405,7 +406,7 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
       {door === "prose" && (
         <div style={label}>
-          <textarea value={proseText} onChange={e => setProseText(e.target.value)} rows={5}
+          <Textarea value={proseText} onChange={e => setProseText(e.target.value)} rows={5}
             placeholder="Paste prose or markdown that states definitions — e.g. “MRR is monthly recurring revenue, computed as …”"
             className="aug-fs-sm" style={{ ...input, resize: "vertical" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

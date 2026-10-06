@@ -28,6 +28,7 @@ import { SkeletonRows } from "@/components/ui/motion";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /** The acting identity for governance writes — the signed-in email, else the
  *  same word the actions inbox uses. The server owns identity; this is provenance. */
@@ -499,7 +500,7 @@ function SeedTrustedForm({ onDone }: { onDone: () => void }) {
       <Input style={fieldStyle} placeholder="The question this SQL answers, in the words people ask it"
         value={f.question} onChange={e => setF(v => ({ ...v, question: e.target.value }))}
         data-testid="tq-seed-question" />
-      <textarea style={{ ...fieldStyle, minHeight: 64, fontFamily: "var(--font-mono)" }}
+      <Textarea style={{ ...fieldStyle, minHeight: 64, fontFamily: "var(--font-mono)" }}
         placeholder="SELECT …" value={f.sql} onChange={e => setF(v => ({ ...v, sql: e.target.value }))}
         data-testid="tq-seed-sql" />
       <Input style={fieldStyle} placeholder="note (optional) — why this is the right answer"
@@ -533,7 +534,7 @@ function EditTrustedForm({ row, onDone }: { row: TrustedQueryRow; onDone: () => 
     <div style={{ marginTop: 8 }}>
       <Input style={fieldStyle} value={f.question}
         onChange={e => setF(v => ({ ...v, question: e.target.value }))} />
-      <textarea style={{ ...fieldStyle, minHeight: 64, fontFamily: "var(--font-mono)" }}
+      <Textarea style={{ ...fieldStyle, minHeight: 64, fontFamily: "var(--font-mono)" }}
         value={f.sql} onChange={e => setF(v => ({ ...v, sql: e.target.value }))} />
       <Input style={fieldStyle} placeholder="note" value={f.note}
         onChange={e => setF(v => ({ ...v, note: e.target.value }))} />

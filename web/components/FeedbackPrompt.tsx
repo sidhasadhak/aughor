@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Hypothesis } from "@/lib/types";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Props {
   investigationId: string;
@@ -73,7 +74,7 @@ export function FeedbackPrompt({ investigationId, hypotheses, onSubmit, postComp
         <label className="text-xs text-zinc-500">
           Optional: add context, correct an interpretation, or redirect the report focus
         </label>
-        <textarea
+        <Textarea
           className="w-full rounded-[var(--r3)] bg-zinc-800 border border-zinc-600 text-sm text-zinc-100 placeholder:text-zinc-400 p-3 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500 transition"
           rows={3}
           placeholder="e.g. Focus on APAC segment, the EU numbers are expected due to the Nov promotion. Ignore H3."

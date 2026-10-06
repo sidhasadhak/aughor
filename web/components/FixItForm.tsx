@@ -11,6 +11,7 @@
  */
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 export function FixItForm({
   onSubmit,
@@ -34,7 +35,7 @@ export function FixItForm({
       className="flex flex-col gap-1.5 rounded-[var(--r2)] p-2 my-1"
       style={{ background: "var(--bg-2)", border: "1px solid var(--b1)" }}
     >
-      <textarea
+      <Textarea
         autoFocus
         rows={2}
         value={note}
@@ -53,7 +54,7 @@ export function FixItForm({
         </Button>
       )}
       {withSql && showSql && (
-        <textarea
+        <Textarea
           rows={3}
           value={sql}
           onChange={(e) => setSql(e.target.value)}

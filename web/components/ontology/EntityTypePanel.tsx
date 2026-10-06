@@ -62,6 +62,7 @@ import {
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const MONO: React.CSSProperties = { fontFamily: "var(--font-mono)" };
 const RULE = "1px solid var(--b1)";
@@ -1101,7 +1102,7 @@ function BackingEditor({ detail, busy, onPreview, onSet, onWithdraw }: {
         Read {detail.display_name} from a keyed SELECT: its rows are the objects, and every property is read from it.
         Nothing is written until it is set.
       </p>
-      <textarea className="aug-fs-xs" style={{ ...FIELD, ...MONO, width: "100%", minHeight: 64 }} value={sql}
+      <Textarea className="aug-fs-xs" style={{ ...FIELD, ...MONO, width: "100%", minHeight: 64 }} value={sql}
         aria-label="Backing SELECT" placeholder="SELECT c.customer_id, c.name, p.lifetime_spend FROM …"
         onChange={(e) => { setSql(e.target.value); setPreview(null); }} />
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>

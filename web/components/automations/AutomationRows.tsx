@@ -33,6 +33,7 @@ import { slackStepBotNote } from "@/lib/slackBots";
 import { ScheduleEditor } from "@/components/automations/ScheduleEditor";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
   { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
@@ -303,7 +304,7 @@ function TrustedQueryRows({ e, set }: {
           <Input style={inputStyle} value={String(e.config.question ?? "")}
             onChange={ev => set({ question: ev.target.value })}
             placeholder="what this query answers, in a sentence" />
-          <textarea style={{ ...inputStyle, minHeight: 88, marginTop: 4,
+          <Textarea style={{ ...inputStyle, minHeight: 88, marginTop: 4,
                              fontFamily: "var(--font-mono)", lineHeight: 1.5 }}
             value={String(e.config.sql ?? "")}
             onChange={ev => set({ sql: ev.target.value })}
@@ -966,7 +967,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
               onChange={ev => set({ data: ev.target.value })}
               title={BINDING_HINT}
               placeholder={'data — drag a gives port here, or {"$from": "step1.rows"}'} />
-            <textarea style={{ ...inputStyle, minHeight: 64, marginTop: 4, lineHeight: 1.5 }}
+            <Textarea style={{ ...inputStyle, minHeight: 64, marginTop: 4, lineHeight: 1.5 }}
               value={String(e.config.context ?? "")}
               onChange={ev => set({ context: ev.target.value })}
               placeholder="what to make of it — e.g. call out anything unusual and say what changed" />

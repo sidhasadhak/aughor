@@ -28,6 +28,7 @@ import { listSavedQueries, runWorkbenchQuery, type SavedQuery } from "@/lib/api"
 import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const WIDGETS: { v: ParamDef["widget"]; label: string }[] = [
   { v: "text", label: "Text" },
@@ -156,7 +157,7 @@ export function ParamBar({
 
             {def.widget === "dropdown" ? (
               <SelectField
-                className="aug-input aug-fs-ui"
+                className="aug-fs-ui"
                 style={{ width: 140 }}
                 value={typeof value === "string" ? value : ""}
                 onFocus={() => def.optionsQueryId && loadQueryOptions(def.optionsQueryId)}
@@ -291,7 +292,7 @@ export function ParamBar({
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                     <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Widget</span>
-                    <SelectField className="aug-input aug-fs-ui" style={{ flex: 1 }}
+                    <SelectField className="aug-fs-ui" style={{ flex: 1 }}
                       value={def.widget}
                       onChange={e => {
                         const widget = e.target.value as ParamDef["widget"];
@@ -310,7 +311,7 @@ export function ParamBar({
                         <span style={{ color: "var(--t3)", width: 64, flexShrink: 0, paddingTop: 3 }}>
                           {def.widget === "text" ? "Suggest" : "Choices"}
                         </span>
-                        <textarea className="aug-input aug-fs-ui" rows={3} style={{ flex: 1, resize: "vertical" }}
+                        <Textarea className="aug-fs-ui" rows={3} style={{ flex: 1, resize: "vertical" }}
                           placeholder={"one per line"}
                           value={(def.options ?? []).join("\n")}
                           onChange={e => patchDef(name, {
@@ -320,7 +321,7 @@ export function ParamBar({
                       {def.widget !== "text" && (
                         <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                           <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>From query</span>
-                          <SelectField className="aug-input aug-fs-ui" style={{ flex: 1 }}
+                          <SelectField className="aug-fs-ui" style={{ flex: 1 }}
                             value={def.optionsQueryId ?? ""}
                             onChange={e => patchDef(name, { optionsQueryId: e.target.value || undefined })}>
                             <option value="">— typed choices above —</option>

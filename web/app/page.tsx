@@ -137,6 +137,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -619,7 +620,7 @@ function HomeScreen({
           <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 20px" }}>
             <div style={{ fontSize: 13, fontWeight: 650, color: "var(--t1)", marginBottom: 10 }}>Ask anything about your data</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <textarea
+              <Textarea
                 value={homeQ}
                 onChange={e => setHomeQ(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitHome(); } }}
