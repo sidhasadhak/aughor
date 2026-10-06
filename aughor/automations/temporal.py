@@ -30,6 +30,7 @@ byte-identical.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -211,6 +212,51 @@ def observation_note(now: datetime, cron: str, lag_days: int = DEFAULT_LAG_DAYS)
     return "\n".join(lines)
 
 
+_WHERE = re.compile(r"\bWHERE\b(.*?)(?=\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|\bHAVING\b|$)",
+                    re.IGNORECASE | re.DOTALL)
+
+
+def _previous_basis(investigation_id: str) -> str:
+    """What the previous run's figures were OVER: its stated definition and the WHERE of the
+    statements its figures were read from — or '' when the run cannot be read.
+
+    Traced 2026-10-07: theLook's daily runs read Revenue under three definitions in five days,
+    and the instruction below told the next run that any disagreement IS a source restatement —
+    so the 4 October report blamed the source for a definition it had changed itself. The
+    statement's WHERE is where a status filter shows; the report's definition line omits it."""
+    if not investigation_id:
+        return ""
+    try:
+        import json as _json
+
+        from aughor.db.history import get_investigation
+        inv = get_investigation(investigation_id) or {}
+        report = inv.get("report") or {}
+        if isinstance(report, str):
+            report = _json.loads(report)
+        definition = " ".join(str(report.get("metric_definition") or "").split())[:400]
+        provenance = ((report.get("envelope") or {}).get("provenance") or {})
+        wheres: list[str] = []
+        for sql in provenance.get("sql") or []:
+            found = _WHERE.search(str(sql or ""))
+            clause = " ".join(found.group(1).split())[:240] if found else ""
+            if clause and clause not in wheres:
+                wheres.append(clause)
+            if len(wheres) == 2:
+                break
+    except Exception as exc:  # noqa: BLE001 — a basis is context; its absence is not a failure
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the previous run's basis could not be read; its summary alone is quoted",
+                 counter="automations.previous_basis")
+        return ""
+    lines = []
+    if definition:
+        lines.append(f"That report's definition: {definition}")
+    if wheres:
+        lines.append("Its figures were read WHERE " + " ; WHERE ".join(wheres))
+    return "\n".join(lines)
+
+
 def previous_report_note(automation_id: str) -> str:
     """The previous fired run's own investigate summary, with the restatement
     instruction — or '' when there is nothing to compare against.
@@ -231,12 +277,18 @@ def previous_report_note(automation_id: str) -> str:
                 text = str(data.get("summary") or data.get("answer") or "").strip()
                 if kind == "investigate" and text:
                     started = str(getattr(run, "started_at", "") or "")[:16]
+                    basis = _previous_basis(str(data.get("investigation_id") or ""))
                     return (
                         f"{PREVIOUS_REPORT_HEADER}\n"
                         f"The previous run of this automation ({started}Z) reported:\n"
                         f"\"{text[:_PREVIOUS_SUMMARY_CAP]}\"\n"
-                        "If your current measurements DISAGREE with numbers that report "
-                        "states for the same periods, the SOURCE has restated its own "
+                        + (f"{basis}\n" if basis else "")
+                        + "If your current measurements DISAGREE with numbers that report "
+                        "states for the same periods, compare the definition first: if your "
+                        "figure is over a different formula or different rows (a status filter) "
+                        "than that report's, the difference is the DEFINITION — say which "
+                        "definition each figure is over, and do not call it a restatement. Only "
+                        "when the definition is the same has the SOURCE restated its own "
                         "history — say that explicitly, with both values, instead of "
                         f"{_PREVIOUS_REPORT_END}")
         return ""
@@ -289,6 +341,20 @@ def resolve_lag(effect_config: dict, learned_lag: Optional[int] = None) -> int:
     return clamp_lag(DEFAULT_LAG_DAYS)
 
 
+def unsettled_note(lag: int, learned_lag: Optional[int]) -> str:
+    """One sentence when this automation reads days YOUNGER than the platform has seen the source
+    settle — '' otherwise. A person's lag still wins (`resolve_lag`); this only says what it costs.
+
+    Measured 2026-10-07 on theLook: the daily run observes at 8 days by a hand setting, while the
+    settling read puts the connection at 29 (a floor — its tables had not stopped moving), and the
+    same governed revenue for 24 September read $15,929.96 at 8 days old and $19,057.53 at 9."""
+    if not learned_lag or learned_lag <= lag:
+        return ""
+    return (f"This source has been measured still changing days up to {learned_lag} days old, and "
+            f"this automation reads at {lag} by its own setting: the figures you quote may still move. "
+            "Say so beside them, and never call a later change to the same day a business change.")
+
+
 def scheduled_grounding(automation, effect_config: dict,
                         now: Optional[datetime] = None,
                         learned_lag: Optional[int] = None) -> str:
@@ -310,6 +376,9 @@ def scheduled_grounding(automation, effect_config: dict,
     now = now or datetime.now(timezone.utc)
     lag = resolve_lag(effect_config, learned_lag)
     parts = [observation_note(now, cron, lag)]
+    unsettled = unsettled_note(lag, learned_lag)
+    if unsettled:
+        parts[0] = parts[0] + "\n" + unsettled
     prev = previous_report_note(getattr(automation, "id", ""))
     if prev:
         parts.append(prev)

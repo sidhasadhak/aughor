@@ -40,6 +40,13 @@ REVENUE = {"metric": "revenue", "formula": "SUM(sale_price)", "tables": ["order_
 UNITS = {"metric": "units_sold", "formula": "COUNT(id)", "tables": ["inventory_items"],
          "filters": ["sold_at IS NOT NULL"]}
 
+def _shape(rules):
+    """A rule without `asked` — the question it carries is asserted where it matters."""
+    if isinstance(rules, dict):
+        return {k: v for k, v in rules.items() if k != "asked"}
+    return [_shape(r) for r in rules]
+
+
 
 def _guard(sql: str, rules=(REVENUE, UNITS), dialect: str = "bigquery"):
     return enforce_metric_filters(sql, list(rules), dialect=dialect)
@@ -258,7 +265,8 @@ def test_rules_are_for_approved_metrics_the_question_targets():
                     tables=["inventory_items"], filters=["sold_at IS NOT NULL"])
     rules = E.declared_filter_rules(q, [_metric(), units])
     assert [r["metric"] for r in rules] == ["revenue", "units_sold"]
-    assert rules[0] == REVENUE
+    assert _shape(rules[0]) == REVENUE
+    assert rules[0]["asked"] == "What was total revenue and how many units were sold in July 2026?"
 
 
 @pytest.mark.parametrize("why, metric, question", [
@@ -321,7 +329,7 @@ def test_the_live_revenue_definition_makes_the_rule_that_rewrites_the_live_state
     revenue = _metric(sql=LIVE_REVENUE)
     rules = E.declared_filter_rules("What was total revenue and how many units were sold in July 2026?",
                                     [revenue], "bigquery")
-    assert rules == [REVENUE]                     # the filter said once, though declared twice
+    assert _shape(rules) == [REVENUE]             # the filter said once, though declared twice
     written = ("SELECT SUM(sale_price) AS total_revenue, COUNT(*) AS units_sold FROM order_items "
                "WHERE created_at >= '2026-07-01' AND created_at < '2026-08-01'")
     out, applied = enforce_metric_filters(written, rules, dialect="bigquery")
@@ -346,8 +354,8 @@ def test_a_tie_between_rivals_makes_no_rule():
                 filters=["status NOT IN ('Cancelled', 'Returned')"])
     assert E.declared_filter_rules("total revenue in July", [a, b], "bigquery") == []
     # the same metric declared twice the same way is no rivalry, and is said once
-    assert E.declared_filter_rules("total revenue in July", [a, _metric(sql="SUM(sale_price)")],
-                                   "bigquery") == [REVENUE]
+    assert _shape(E.declared_filter_rules("total revenue in July", [a, _metric(sql="SUM(sale_price)")],
+                                          "bigquery")) == [REVENUE]
 
 
 def test_the_bound_question_is_released(monkeypatch):
@@ -356,10 +364,10 @@ def test_the_bound_question_is_released(monkeypatch):
                         lambda connection_id=None: seen.append(connection_id) or [_metric()])
     assert E.rules_for_statement("c1") is None            # nothing bound, nothing to enforce
     with E.answering("total revenue in July"):
-        assert E.rules_for_statement("c1") == [REVENUE]
+        assert _shape(E.rules_for_statement("c1")) == [REVENUE]
         assert E.rules_for_statement("") is None          # no connection: never the global catalogue
     assert E.rules_for_statement("c1") is None
-    assert E.rules_for_statement("c1", "total revenue in July") == [REVENUE]
+    assert _shape(E.rules_for_statement("c1", "total revenue in July")) == [REVENUE]
     assert seen == ["c1", "c1"]
 
 
@@ -411,7 +419,7 @@ def test_the_evidence_shows_the_statement_that_ran(shop, monkeypatch):
     (live, 2026-09-29). The rows and the SQL a reader is shown are one statement's."""
     from aughor.agent import analyst as A
     from aughor.agent import converse_tools as T
-    monkeypatch.setattr(T, "_connection", lambda cid: shop)
+    monkeypatch.setattr(T, "_connection", lambda cid, **kw: shop)
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
                         lambda connection_id=None: [_metric()])
     out = T.run_sql("declared", {"sql": STATEMENT}, user_question="total revenue in July")

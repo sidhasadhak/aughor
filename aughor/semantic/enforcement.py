@@ -273,6 +273,17 @@ def _reach(question: str, metric) -> int:
     return max(found, default=0)
 
 
+def _person_words(question: str) -> str:
+    """The question as a person asked it: a scheduled run's generated block (its observation
+    window, the previous report it quotes) removed, so "returns" in a quoted report is never
+    read as the person asking for returns to be excluded."""
+    try:
+        from aughor.automations.temporal import ask_of
+        return ask_of(question or "")
+    except Exception:  # noqa: BLE001 — the raw question is the honest fallback
+        return question or ""
+
+
 def declared_filter_rules(question: str, metrics: list, dialect: str = "duckdb") -> list[dict]:
     """``[{"metric", "formula", "tables", "filters"}]`` for each metric whose declared
     filter a statement answering ``question`` must carry.
@@ -308,8 +319,12 @@ def declared_filter_rules(question: str, metrics: list, dialect: str = "duckdb")
                 filters.append(f)
         if not tables or not filters:
             continue
+        # `asked` travels with the rule so the guard can tell a population the QUESTION chose
+        # ("revenue excluding returns") from one the writer borrowed from a sibling metric —
+        # the person's words only, never a scheduled run's generated context block.
         found.append((_reach(question, m), {"metric": m.name, "formula": measure["formula"],
-                                            "tables": tables, "filters": filters}))
+                                            "tables": tables, "filters": filters,
+                                            "asked": _person_words(question)}))
 
     def _rivals(a: dict, b: dict) -> bool:
         return (same_formula(a["formula"], b["formula"], dialect)

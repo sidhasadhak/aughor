@@ -216,3 +216,50 @@ def test_ada_intake_leaves_metric_untouched_when_flag_off(monkeypatch):
     out = I.ada_intake(st, conn=_StubConn(ok=True))
     assert out["_ada_intake"]["metric_sql"] == \
         "COUNT(DISTINCT refund_id) / COUNT(DISTINCT order_id) * 100"
+
+
+# ── An exact name is not generic (traced 2026-10-07) ─────────────────────────
+# theLook's daily runs were told to "use the governed Revenue metric exactly as defined"; the
+# label "Revenue" reduced to no distinctive tokens, the pin never fired, and the runs measured
+# three definitions in five days — on 26 September the model's own Complete-only formula.
+# The live catalogue stores both definitions below as one-measure STATEMENTS.
+
+LIVE_REVENUE = _Metric(name="revenue", label="Revenue", source="catalog", tables=["order_items"],
+                       sql="SELECT (SUM(sale_price)) AS revenue FROM order_items WHERE status <> 'Cancelled'")
+LIVE_NET = _Metric(name="net_merchandise_revenue", label="Net Merchandise Revenue", source="catalog",
+                   sql="SELECT (SUM(sale_price)) AS net_merchandise_revenue FROM order_items "
+                       "WHERE status NOT IN ('Cancelled', 'Returned')")
+LIVE_AOV = _Metric(name="average_order_value_aov", label="Average Order Value (AOV)", source="catalog",
+                   sql="SELECT SAFE_DIVIDE(SUM(sale_price), COUNT(DISTINCT order_id)) AS average_order_value_aov\n"
+                       "FROM order_items\nWHERE status <> 'Cancelled'")
+COMPLETE_ONLY = "SUM(CASE WHEN status = 'Complete' THEN sale_price ELSE 0 END)"
+
+
+def test_the_label_revenue_pins_the_governed_revenue_not_its_sibling():
+    assert I._match_canonical_metric("Revenue", COMPLETE_ONLY, [LIVE_NET, LIVE_REVENUE]) is LIVE_REVENUE
+
+
+def test_a_label_without_its_bracketed_acronym_is_the_same_metric():
+    assert I._match_canonical_metric("Average Order Value", "AVG(sale_price)", [LIVE_AOV]) is LIVE_AOV
+
+
+def test_the_26_september_formula_is_pinned_to_the_governed_one_with_its_filter(monkeypatch):
+    _pin_on(monkeypatch, [LIVE_NET, LIVE_REVENUE])
+    intake = _intake(metric_label="Revenue", metric_sql=COMPLETE_ONLY, metric_table="order_items",
+                     date_column="order_items.created_at")
+    conn = _StubConn(ok=True)
+    note = I._pin_canonical_metric(intake, "8233e4fd", "TABLE: order_items", conn)
+    assert intake.metric_sql == "SUM(sale_price)"
+    assert intake.metric_filters == ["status <> 'Cancelled'"]
+    assert note and "revenue" in note and "status <> 'Cancelled'" in note
+    assert conn.probed == ["SELECT SUM(sale_price) AS _pin_probe FROM order_items"]
+
+
+def test_an_explorer_statement_is_never_lifted_into_a_pin():
+    northstar = _Metric(name="revenue", label="Revenue", source="profile",
+                        sql="SELECT SUM(sale_price) FROM order_items WHERE status = 'Complete'")
+    assert I._match_canonical_metric("Revenue", COMPLETE_ONLY, [northstar]) is None
+
+
+def test_a_generic_label_that_names_no_metric_still_never_matches():
+    assert I._match_canonical_metric("total revenue", "SUM(x)", [LIVE_REVENUE, LIVE_NET]) is None

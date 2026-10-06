@@ -5806,13 +5806,65 @@ def _measure_kind(text: str) -> str:
     return "money" if money and not count else "count" if count and not money else ""
 
 
+def _metric_identity(text: str) -> str:
+    """A metric name as snake_case, the catalogue's identity (`metric_catalogue.normalize_name`)."""
+    return re.sub(r"[^a-z0-9]+", "_", str(text or "").lower()).strip("_")
+
+
+def _metric_identities(m) -> set:
+    """Every name a governed metric answers to: its key, its label, and its label without a trailing
+    acronym in brackets — "Average Order Value (AOV)" is also "Average Order Value"."""
+    out = set()
+    for text in (getattr(m, "name", ""), getattr(m, "label", "")):
+        for form in (text, re.sub(r"\s*\([^)]*\)\s*$", "", str(text or ""))):
+            ident = _metric_identity(form)
+            if ident:
+                out.add(ident)
+    return out
+
+
+def _pinnable_formula(m) -> Optional[tuple[str, list, list]]:
+    """``(formula, filters, tables)`` a governed metric can be pinned with, or None.
+
+    A metric is stored as a bare expression or as a one-measure statement — the live catalogue holds
+    revenue as ``SELECT (SUM(sale_price)) AS revenue FROM order_items WHERE status <> 'Cancelled'``,
+    which the substitution templates cannot inline. Its measure and its WHERE are lifted out the
+    way the declared-filter guard reads it (`sql.metric_filter_guard.measure_of`)."""
+    sql = (getattr(m, "sql", "") or "").strip()
+    if _is_substitutable_metric_sql(sql):
+        return sql, [], []
+    # Only a human-curated catalogue definition is lifted out of a statement. A north-star's
+    # `value_sql` is a statement too, and it is the explorer's own — never a governed formula.
+    if getattr(m, "source", "") != "catalog":
+        return None
+    try:
+        from aughor.sql.metric_filter_guard import measure_of
+        measure = measure_of(sql)
+    except Exception:  # noqa: BLE001 — a definition that will not read is not pinned
+        return None
+    if not measure or not _is_substitutable_metric_sql(measure.get("formula") or ""):
+        return None
+    return measure["formula"], list(measure.get("filters") or []), list(measure.get("tables") or [])
+
+
 def _match_canonical_metric(metric_label: str, metric_sql: str, metrics: list):
     """Deterministically match the intake's metric to a governed ``CanonicalMetric`` on DISTINCTIVE
     tokens. ``_label_tokens`` drops structural/measure words, so 'Fragrance refund rate' → {fragrance,
     refund} and a governed 'refund_rate' → {refund}; requiring the governed tokens ⊆ the label tokens
     is a strong, conservative match (a bare generic name like 'total revenue' → {} never matches).
     Returns the best substitutable candidate or None. Tie-break: prefer a candidate whose ratio-ness
-    matches the intake's, then higher provenance rank, then more distinctive tokens (more specific)."""
+    matches the intake's, then higher provenance rank, then more distinctive tokens (more specific).
+
+    An EXACT name match wins first. The token rule drops measure words, so the label "Revenue" — and
+    "Average Order Value" — reduce to no tokens and never matched anything: theLook's daily runs, told
+    to "use the governed Revenue metric exactly as defined", measured three different definitions in
+    five days, the model's own formula standing every time (traced 2026-10-07). A label that IS a
+    governed metric's name is not generic; it is that metric."""
+    wanted = _metric_identity(metric_label)
+    exact = [m for m in metrics
+             if wanted and wanted in _metric_identities(m) and _pinnable_formula(m) is not None]
+    if exact:
+        return max(exact, key=lambda m: int(getattr(m, "rank", 0)))
     label_toks = _label_tokens(metric_label)
     if not label_toks:
         return None
@@ -5938,15 +5990,25 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     cand = _match_canonical_metric(intake.metric_label, llm_sql, metrics or [])
     if cand is None:
         return None
-    canon_sql = (cand.sql or "").strip()
+    pinnable = _pinnable_formula(cand)
+    if pinnable is None:
+        return None
+    # A statement-shaped definition gives its measure, its WHERE and its table; an expression
+    # gives the formula alone and its filters and tables come from the definition's own fields.
+    canon_sql, _lifted_filters, _lifted_tables = pinnable
     # The rows the formula is over are the other half of the definition, and the pin used
     # to carry the expression alone. They are carried only onto the table the metric is
     # DECLARED on: `units_sold` is `COUNT(id)` over sold inventory, and its filter names a
     # column an order-line table does not have.
-    _declared_on = {str(t).split(".")[-1].lower() for t in (getattr(cand, "tables", None) or [])}
+    _declared_on = {str(t).split(".")[-1].lower()
+                    for t in [*(getattr(cand, "tables", None) or []), *_lifted_tables] if t}
     _spec_table = str(getattr(intake, "metric_table", "") or "").split(".")[-1].lower()
-    _filters = ([str(f).strip() for f in (getattr(cand, "filters", None) or []) if str(f).strip()]
-                if _spec_table and _spec_table in _declared_on else [])
+    _declared_filters: list[str] = []
+    for f in [*(getattr(cand, "filters", None) or []), *_lifted_filters]:
+        f = str(f).strip()
+        if f and re.sub(r"\s+", "", f.lower()) not in {re.sub(r"\s+", "", k.lower()) for k in _declared_filters}:
+            _declared_filters.append(f)
+    _filters = _declared_filters if (_spec_table and _spec_table in _declared_on) else []
     _over = f" It is declared over rows where {'; '.join(_filters)}." if _filters else ""
     # The formula needs no pin when the governed one already matches (whitespace/case-
     # insensitive) — but a parsed formula that matches still said nothing about the rows.
