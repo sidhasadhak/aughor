@@ -7,9 +7,11 @@ Measured live: a hosted embedding model returned 3072 against a stored 768. The 
 not written here — the package names no hosted model, and the guard that enforces that
 covers prose too, because prose is where a convenient default starts.
 
-🔑 **For an UPLOAD, the source of truth is the STORE.** `index_file` writes an upload to a
-temp file and unlinks it, so the only surviving copy of its text is the `text` payload on
-each chunk, and **re-indexing recovers what the store still holds and nothing more.**
+🔑 **For an UPLOAD, the source of truth is its ORIGINAL when one was kept.** An upload's
+bytes are retained (`knowledge/blobs.py`), so `run()` converts and chunks each such document
+again — with the settings recorded for it — and a better converter reaches documents already
+uploaded. A document that predates retention has no original, and for it the store is still
+the only copy: re-indexing recovers what the store holds and nothing more.
 
 🔑 **For a SCHEMA DOC it is not.** `build_and_persist` leaves a doc tree on disk, one YAML
 per node, and that artifact outlives whatever happened to the collection — measured here as
@@ -71,6 +73,7 @@ def plan(*, purge_orphans: bool = False) -> dict:
         restorable = {}
 
     from aughor.semantic.embedder import embed_backend, embed_model
+    rereadable = _rereadable(list_documents())
     return {
         "ok": not truncated,
         "truncated": truncated,
@@ -87,7 +90,9 @@ def plan(*, purge_orphans: bool = False) -> dict:
         # artifact, so counting it here read as "gone forever" while it sat on disk. What
         # an artifact can supply is reported separately, and `doctree_restore` supplies it.
         "unrecoverable_chunks": sum(max(0, n - by_doc.get(doc, 0) - restorable.get(doc, 0))
-                                    for doc, n in registry.items()),
+                                    for doc, n in registry.items() if doc not in rereadable),
+        # Uploads whose original is kept: `run()` re-reads these from the file, not the store.
+        "documents_reread_from_original": len(rereadable),
         "restorable_from_doctrees": sum(
             max(0, n - by_doc.get(doc, 0)) for doc, n in restorable.items()),
         "backend": embed_backend(),
@@ -154,13 +159,19 @@ def run(*, purge_orphans: bool = False, progress: Optional[callable] = None) -> 
         raise RuntimeError(
             f"the corpus exceeds this pass's scan limit ({_SCAN_LIMIT}); rebuilding from a "
             f"partial read would delete every chunk it did not see")
-    if not before.get("chunks_in_store"):
+    if not before.get("chunks_in_store") and not before.get("documents_reread_from_original"):
         return {**before, "rebuilt": 0, "note": "nothing in the store to re-embed"}
 
     payloads = vector_store.scroll_payloads(DOCS_COLLECTION, limit=_SCAN_LIMIT)
-    registry = {d["doc_id"] for d in list_documents()}
+    entries = list_documents()
+    registry = {d["doc_id"] for d in entries}
     if purge_orphans:
         payloads = [p for p in payloads if str(p.get("doc_id") or "") in registry]
+
+    # ── re-read every upload whose original is kept; its fresh chunks replace the stored ──
+    fresh, markdowns, reread_failed = _reread(_rereadable(entries))
+    payloads = [p for p in payloads if str(p.get("doc_id") or "") not in fresh]
+    payloads += [payload for chunks in fresh.values() for payload in chunks]
 
     # ── embed FIRST. This is the step that can fail, and it must fail before the drop ──
     points: list[dict] = []
@@ -188,10 +199,61 @@ def run(*, purge_orphans: bool = False, progress: Optional[callable] = None) -> 
         written[doc] = written.get(doc, 0) + 1
     corrected = sum(correct_chunk_count(entry["doc_id"], written.get(entry["doc_id"], 0))
                     for entry in list_documents())
+    # The cached Markdown follows the re-read only once the rebuild that used it has landed.
+    from aughor.knowledge import blobs
+    for doc_id, (org_id, md) in markdowns.items():
+        blobs.put_markdown(doc_id, md, org_id)
 
     return {**before, "rebuilt": len(points), "width": embedding_dim(),
             "registry_corrected": corrected,
+            "reread_from_original": sorted(fresh),
+            # Each kept its stored chunks — named, so "re-read" is never claimed for them.
+            "reread_failed": reread_failed,
             "orphans_purged": before["orphan_chunks"] if purge_orphans else 0}
+
+
+def _rereadable(entries: list[dict]) -> dict[str, tuple[dict, "object"]]:
+    """The registry rows whose original bytes are kept, with the path to them."""
+    from aughor.knowledge import blobs
+    from aughor.knowledge.indexer import doctree_connection
+
+    out: dict = {}
+    for entry in entries:
+        doc_id = entry.get("doc_id", "")
+        if not doc_id or doctree_connection(doc_id) is not None:
+            continue
+        path = blobs.original_path(doc_id, entry.get("org_id") or None)
+        if path is not None:
+            out[doc_id] = (entry, path)
+    return out
+
+
+def _reread(rereadable: dict) -> tuple[dict[str, list[dict]], dict, dict[str, str]]:
+    """Convert and chunk each kept original again. Returns the fresh chunk payloads by
+    document, the Markdown to cache once the rebuild lands, and the documents that could
+    not be re-read with why — those keep the chunks the store holds."""
+    from aughor.knowledge.convert import ConversionError, convert_document
+    from aughor.knowledge.documents import ChunkSettings, chunk_text
+
+    fresh: dict[str, list[dict]] = {}
+    markdowns: dict = {}
+    failed: dict[str, str] = {}
+    for doc_id, (entry, path) in rereadable.items():
+        try:
+            md = convert_document(path.read_bytes(), entry.get("filename") or path.name).markdown
+            chunks = chunk_text(md, doc_id=doc_id, title=entry.get("title", "Document"),
+                                filename=entry.get("filename") or path.name,
+                                uploaded_at=entry.get("uploaded_at"),
+                                settings=ChunkSettings.from_dict(entry.get("chunk_settings")))
+        except (ConversionError, OSError, ValueError) as exc:
+            failed[doc_id] = f"{type(exc).__name__}: {exc}"
+            continue
+        if not chunks:
+            failed[doc_id] = "the re-read produced no chunks"
+            continue
+        fresh[doc_id] = [c.payload() for c in chunks]
+        markdowns[doc_id] = (entry.get("org_id") or None, md)
+    return fresh, markdowns, failed
 
 
 # ── restoring from the doc-tree artifact ──────────────────────────────────────────────

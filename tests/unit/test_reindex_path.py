@@ -206,3 +206,39 @@ def test_an_empty_store_is_a_no_op_not_a_wipe(corpus):
     out = reindex.run()
 
     assert out["rebuilt"] == 0 and state["dropped"] == 0
+
+
+# ── an upload whose original is kept is RE-READ, not re-embedded from its old parse ──
+
+def test_a_kept_original_is_read_again_and_replaces_the_stored_chunks(corpus):
+    """The pending item: re-indexing re-embedded the stored chunk text, so a better
+    converter never reached a document already uploaded — though its bytes were kept."""
+    from aughor.knowledge import blobs
+
+    body = "# Policy\n\n" + "Refunds are paid within fourteen days of the return. " * 3
+    blobs.put_original("up1", "policy.md", body.encode())
+    state = corpus([_chunk("up1", 0, "an old parse"), _chunk("old", 0)],
+                   [{**_doc("up1", 1), "filename": "policy.md"}, _doc("old", 1)])
+
+    assert reindex.plan()["documents_reread_from_original"] == 1
+    out = reindex.run()
+
+    texts = {p["payload"]["doc_id"]: p["payload"]["text"] for p in state["upserted"]}
+    assert "Refunds are paid within fourteen days" in texts["up1"]
+    assert "an old parse" not in texts.values()
+    assert texts["old"] == "body", "a document with no original keeps its stored chunks"
+    assert out["reread_from_original"] == ["up1"] and out["reread_failed"] == {}
+    assert "Refunds" in blobs.read_markdown("up1")
+
+
+def test_an_original_that_no_longer_converts_keeps_its_stored_chunks_and_says_so(corpus):
+    from aughor.knowledge import blobs
+
+    blobs.put_original("bad1", "deck.pdf", b"not a pdf at all")
+    state = corpus([_chunk("bad1", 0, "the stored parse")],
+                   [{**_doc("bad1", 1), "filename": "deck.pdf"}])
+
+    out = reindex.run()
+
+    assert [p["payload"]["text"] for p in state["upserted"]] == ["the stored parse"]
+    assert out["reread_from_original"] == [] and "bad1" in out["reread_failed"]
