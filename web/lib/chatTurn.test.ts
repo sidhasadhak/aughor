@@ -25,6 +25,7 @@ import {
   PROJECTED_PARTS,
   projectThread,
   projectTurn,
+  toErrorDetail,
   type AughorUIMessage,
 } from "./chatTurn";
 import { adaptFrames, type AughorFrame } from "./uiMessageAdapter";
@@ -501,5 +502,17 @@ describe("proposal_staged reaches the turn THROUGH the adapter (SP-9)", () => {
     expect(msg.parts.map(p => p.type)).not.toContain("data-unknown_frame");
     const t = projectTurn("q", msg);
     expect(t.answerParts).toEqual([{ kind: "fact_set", facts: [{ label: "a", value: "b" }] }]);
+  });
+});
+
+describe("toErrorDetail — the budget stop", () => {
+  it("carries raise_budget and the agent whose budget to raise", () => {
+    const d = toErrorDetail({ reason: "budget_exceeded", recovery: "raise_budget", retryable: false,
+                              hint: "h", agent_id: "insight" });
+    expect(d?.recovery).toBe("raise_budget");
+    expect(d?.agentId).toBe("insight");
+  });
+  it("names no agent when the server named none", () => {
+    expect(toErrorDetail({ reason: "budget_exceeded", recovery: "raise_budget" })?.agentId).toBeUndefined();
   });
 });
