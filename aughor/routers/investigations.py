@@ -5967,6 +5967,21 @@ async def ask_resume_stream(session_id: str):
     )
 
 
+@router.get("/ask/prior")
+def ask_prior_endpoint(
+    connection_id: str = Query(..., description="connection id"),
+    question: str = Query(..., max_length=2000, description="the question as typed"),
+    principal=Depends(get_principal),
+):
+    """What is already on record for this exact question here — how many times it was answered,
+    when first and last, and the newest answer's headline — so a person sees it BEFORE a run is
+    paid for (Home, "Ask, with memory"). A read: nothing runs and no model is called."""
+    from aughor.db.history import asked_before
+    from aughor.security.authz import check_owner
+    check_owner("connection", connection_id, principal)
+    return asked_before(question, connection_id)
+
+
 @router.get("/ask/context")
 def ask_context_endpoint(
     connection: str = Query(..., description="connection id"),

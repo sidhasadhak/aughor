@@ -113,10 +113,7 @@ import {
   type Workspace,
   addConnection as apiAddConnection,
   deleteConnection as apiDeleteConnection,
-  getExplorationStatus,
-  getOntology,
   getConnectionFreshness,
-  getDomainInsights,
   getEffectiveSettings,
   getJobs,
   cancelJob,
@@ -125,8 +122,6 @@ import {
   getMyPreferences,
   putMyPreference,
   type Connection,
-  type ExplorationStatus,
-  type OntologyGraph,
   type Canvas,
   type FleetJob,
   type AgentRosterEntry,
@@ -135,9 +130,10 @@ import { costSummary, fmtCompact, fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Segmented } from "@/components/ui/segmented";
 import { TabStrip } from "@/components/ui/tab-strip";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { AskRecall } from "@/components/home/AskRecall";
+import { HomeDesk } from "@/components/home/HomeDesk";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -502,37 +498,6 @@ function Sidebar({
 }
 
 
-// ── Stat card ──────────────────────────────────────────────────────────────────
-
-function StatCard({ value, label, accent, sub, onClick }: {
-  value: string | number;
-  label: string;
-  accent: string;
-  sub?: string;
-  onClick?: () => void;
-}) {
-  const [hov, setHov] = useState(false);
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        flex: 1, padding: "14px 16px",
-        background: hov && onClick ? "var(--bg-3)" : "var(--bg-2)",
-        border: `1px solid ${hov && onClick ? accent + "66" : "var(--b1)"}`,
-        borderRadius: "var(--r3)", cursor: onClick ? "pointer" : "default",
-        transition: "background .12s, border-color .12s", minWidth: 0,
-      }}
-    >
-      <div style={{ fontSize: 22, fontWeight: 600, color: "var(--t1)", letterSpacing: "-.02em", lineHeight: 1, fontFamily: "var(--font-mono)" }}>{value}</div>
-      <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 5 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: accent, marginTop: 3, fontFamily: "var(--font-mono)" }}>{sub}</div>}
-      <div style={{ width: 20, height: 2, background: accent, borderRadius: 1, marginTop: 10 }} />
-    </div>
-  );
-}
-
 // ── Home screen ────────────────────────────────────────────────────────────────
 
 type RecentInv = { id: string; question: string; started_at: string; status: string; headline: string | null; connection_id?: string; canvas_id?: string | null };
@@ -559,9 +524,6 @@ function HomeScreen({
   demoLoading: boolean;
 }) {
   const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
-  const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
-  const [ontology, setOntology] = useState<OntologyGraph | null>(null);
-  const [domainInsightCount, setDomainInsightCount] = useState<number | null>(null);
   // WP-11 — ask-on-Home: the composer as Home's hero. Submitting routes into the chat with
   // the question pre-filled + fired (goToChat), so Home is a launchpad, not a dead dashboard.
   const [homeQ, setHomeQ] = useState("");
@@ -574,37 +536,15 @@ function HomeScreen({
   };
 
   useEffect(() => {
+    // The whole recent list, not a five-row table: Home picks its lead, its question and its
+    // standing questions from it (`components/home/HomeDesk.tsx`). Workspace-scoped, so it
+    // runs without a connection too.
     fetch(`${getApiBase()}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`)
       .then(r => r.json())
-      .then(d => setRecentInvs(Array.isArray(d) ? d.slice(0, 8) : []))
+      .then(d => setRecentInvs(Array.isArray(d) ? d : []))
       .catch(() => {});
-    // The three stat tiles below are connection-scoped, and `selectedConn` is DERIVED —
-    // it reads "" while the workspace clamp is still fail-closed and again once the
-    // active connection is deleted. Asking about a connection with no id produced
-    // `/exploration//status` and `/exploration//domains`, whose empty path segment
-    // Vercel's EDGE answers with a 308 before the app is reached; an edge redirect
-    // carries no Access-Control-Allow-Origin, so the browser blocks it and Home paints
-    // "Failed to fetch". Blank the tiles instead — with no connection there is no number
-    // to show, and leaving the old one up would attribute a deleted connection's stats
-    // to whatever replaces it. The deep-analysis fetch above is workspace-scoped, so it
-    // still runs without a connection and is deliberately left outside this guard.
-    if (!selectedConn) {
-      setExploration(null);
-      setOntology(null);
-      setDomainInsightCount(null);
-      return;
-    }
-    getExplorationStatus(selectedConn).then(setExploration).catch(() => {});
-    getOntology(selectedConn).then(setOntology).catch(() => {});
-    getDomainInsights(selectedConn)
-      .then(d => setDomainInsightCount(Object.values(d).reduce((sum, v) => sum + (v as { insights: unknown[] }).insights.length, 0)))
-      .catch(() => {});
-  }, [selectedConn, workspaceId]);
-
-  const tables   = exploration?.tables_total    ?? "—";
-  const insights = domainInsightCount ?? "—";
-  const entities = ontology ? Object.keys(ontology.entities).length : "—";
-  const queries  = exploration?.queries_executed ?? "—";
+  }, [workspaceId]);
+  const openAnswer = (id: string, kind?: string) => onOpenInvestigation(id, kind === "chat" ? "chat" : undefined, selectedConn);
 
   return (
     <div className="aug-screen">
@@ -638,6 +578,7 @@ function HomeScreen({
                 <div style={{ flex: 1 }} />
                 <Button size="sm" disabled={!homeQ.trim()} onClick={submitHome}>Ask →</Button>
               </div>
+              <AskRecall connectionId={selectedConn} question={homeQ} onOpen={openAnswer} onRunAgain={submitHome} />
             </div>
           </div>
         )}
@@ -669,86 +610,13 @@ function HomeScreen({
           </div>
         )}
 
-        {/* Get Started — primary launcher (top of page) */}
-        <div>
-          <div className="aug-label" style={{ marginBottom: 12 }}>Get Started</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-            {[
-              { icon: "canvas",  name: "Data Canvas",      desc: "Curated schema + table spaces to explore and investigate.",      accent: "var(--vio3)", action: () => onNavigate("canvases") },
-              { icon: "db",      name: "Catalog",       desc: "Browse connections, tables, columns, and data distributions.",   accent: "var(--cyn3)", action: () => onNavigate("catalog") },
-              { icon: "brief",   name: "Briefing",      desc: "Your unified briefing across the workspace.",          accent: "var(--grn3)", action: () => onNavigate("intelligence") },
-              { icon: "builder", name: "SQL Editor",    desc: "Write and run SQL against any connection, with results.",       accent: "var(--amb3)", action: () => onNavigate("builder") },
-            ].map(a => (
-              <button key={a.name} onClick={a.action} style={{
-                textAlign: "left", padding: "14px 14px",
-                background: "var(--bg-2)", border: "1px solid var(--b1)",
-                borderRadius: "var(--r3)", cursor: "pointer", transition: "background-color .12s, border-color .12s",
-              }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = a.accent + "66"; e.currentTarget.style.background = "var(--bg-3)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
-              >
-                <div style={{ width: 30, height: 30, borderRadius: "var(--r2)", background: a.accent + "18", border: `1px solid ${a.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10, color: a.accent }}>
-                  <NavIcon name={a.icon} size={14} color={a.accent} />
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", marginBottom: 4 }}>{a.name}</div>
-                <div style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5 }}>{a.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div style={{ display: "flex", gap: 10 }}>
-          <StatCard value={tables}   label="Tables in schema"    accent="var(--blue3)"  sub={exploration ? `↑ ${exploration.tables_total} total` : undefined} onClick={() => onNavigate("catalog")} />
-          <StatCard value={entities} label="Entities mapped"     accent="var(--vio3)"   sub="ontology layer"     onClick={() => onNavigate("ontology")} />
-          <StatCard value={insights} label="Findings discovered" accent="var(--grn3)"   sub="domain intel"       onClick={() => onNavigate("intel")} />
-          <StatCard value={queries}  label="Queries executed"    accent="var(--amb3)"   sub="last 7 days"        onClick={() => onNavigate("activity")} />
-        </div>
-
-        {/* Health scorecard — surfaced above the fold */}
-        <ProcessHealthPanel connectionId={selectedConn} onInvestigate={q => onGoToChat(q, "investigate")} />
-
-        {/* Recent activity */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <div className="aug-label">Recent Activity</div>
-            <Button variant="ghost" size="xs" onClick={() => onNavigate("recents")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>View all →</Button>
-          </div>
-          {recentInvs.length === 0 ? (
-            <div style={{ padding: "28px 0", textAlign: "center" }}>
-              <p style={{ fontSize: 12, color: "var(--t3)" }}>No Agent runs yet — start by asking a question.</p>
-            </div>
-          ) : (
-            <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Question</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentInvs.slice(0, 5).map((inv) => (
-                    <TableRow key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
-                      <TableCell style={{ maxWidth: 400 }}>
-                        <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{plainSubtitle(inv.question)}</div>
-                        {inv.headline && <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(inv.headline)}</div>}
-                      </TableCell>
-                      <TableCell style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</TableCell>
-                      <TableCell>
-                        {inv.status === "complete" && <span className="aug-tag aug-tag-green">Completed</span>}
-                        {inv.status === "timed_out" && <span className="aug-tag aug-tag-amber">Timed out</span>}
-                        {inv.status === "running"   && <span className="aug-tag aug-tag-blue">Running</span>}
-                        {inv.status === "failed"    && <span className="aug-tag aug-tag-red">Failed</span>}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </div>
+        {/* Home's desk (ROADMAP §3.54): prepared before the person arrives, and traded with them.
+            It replaced four blocks that each copied another page — the rail's shortcuts, the
+            Catalog's and Ontology's counts, the Health page and the Agent runs table. */}
+        {recentInvs.length > 0 && (
+          <HomeDesk connectionId={selectedConn} analyses={recentInvs}
+            onOpenAnalysis={openAnswer} onDraft={q => setHomeQ(q)} />
+        )}
 
       </div>
     </div>

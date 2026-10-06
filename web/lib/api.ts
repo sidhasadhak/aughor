@@ -9650,6 +9650,15 @@ export async function getInvestigationsList(limit = 50): Promise<InvestigationLi
   return res.json();
 }
 
+/** One analysis's own summary — Home's lead card shows what the run found, in its words. */
+export async function getAnalysisSummary(id: string): Promise<{ headline: string; summary: string }> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Failed to read the analysis (${res.status})`);
+  const row = await res.json() as { headline?: string; report?: { headline?: string; executive_summary?: string } | string };
+  const report = typeof row.report === "string" ? JSON.parse(row.report || "{}") : (row.report ?? {});
+  return { headline: row.headline || report.headline || "", summary: report.executive_summary || "" };
+}
+
 /** VA-5 — a judgement on a RUN, keyed by trace id.
  *
  *  Distinct from `recordVerdict`, which judges a FINDING and needs an investigation id:
