@@ -30,6 +30,7 @@ import { claimsOf, getIdToken } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -414,36 +415,36 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
             <p className="aug-brief-note">No declared actions yet — declare one below.</p>
           ) : (
             <div className="aug-moves-wrap">
-              <table className="aug-dt aug-ledger-table">
-                <thead>
-                  <tr>
-                    <th className="aug-actions-col-id">action</th>
-                    <th>what it does</th>
-                    <th className="aug-actions-col-about">about</th>
-                    <th className="aug-actions-col-gate">gate</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="aug-actions-col-id">action</TableHead>
+                    <TableHead>what it does</TableHead>
+                    <TableHead className="aug-actions-col-about">about</TableHead>
+                    <TableHead className="aug-actions-col-gate">gate</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {actionList.map(a => {
                     const gate = GATE[a.risk];
                     return (
-                      <tr key={a.id}>
-                        <td className="aug-actions-id">{a.id}<span className="aug-actions-kind">{a.kind}</span></td>
-                        <td className="aug-ledger-claim">
+                      <TableRow key={a.id}>
+                        <TableCell className="aug-actions-id">{a.id}<span className="aug-actions-kind">{a.kind}</span></TableCell>
+                        <TableCell className="aug-ledger-claim">
                           <span className="aug-ledger-text">{a.description || "—"}</span>
                           {effectLines(a).map((line, i) => <span key={i} className="aug-ledger-query">{line}</span>)}
-                        </td>
-                        <td className="aug-actions-about">{a.object_type || "—"}</td>
-                        <td>
+                        </TableCell>
+                        <TableCell className="aug-actions-about">{a.object_type || "—"}</TableCell>
+                        <TableCell>
                           <span className={`aug-actions-gate${gate?.ask ? " aug-actions-gate-ask" : ""}`} title={gate?.title}>
                             {gate ? gate.label : String(a.risk || "—")}
                           </span>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
           <DeclareActionForm connectionId={connectionId} onSaved={loadActions} />
@@ -455,38 +456,38 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
             <p className="aug-brief-note">No overlay edits yet — annotate or correct a value below.</p>
           ) : (
             <div className="aug-moves-wrap">
-              <table className="aug-dt aug-ledger-table">
-                <thead>
-                  <tr>
-                    <th className="aug-actions-col-target">target</th>
-                    <th>edit</th>
-                    <th className="num aug-memory-col-when">when</th>
-                    <th className="aug-memory-col-door"><span className="sr-only">Withdraw</span></th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="aug-actions-col-target">target</TableHead>
+                    <TableHead>edit</TableHead>
+                    <TableHead className="num aug-memory-col-when">when</TableHead>
+                    <TableHead className="aug-memory-col-door"><span className="sr-only">Withdraw</span></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {edits.map((e, i) => (
-                    <tr key={e.id || i}>
-                      <td className="aug-actions-target">
+                    <TableRow key={e.id || i}>
+                      <TableCell className="aug-actions-target">
                         {e.table}{e.column ? `.${e.column}` : ""}{e.row_key ? `#${e.key_column}=${e.row_key}` : ""}
-                      </td>
-                      <td className="aug-ledger-claim">
+                      </TableCell>
+                      <TableCell className="aug-ledger-claim">
                         <span className="aug-ledger-text">{e.body}</span>
                         <span className="aug-ledger-query">{[e.kind, e.actor || e.source, e.origin, e.note].filter(Boolean).join(" · ")}</span>
-                      </td>
-                      <td className="num aug-ledger-when" title={e.created_at ? formatTimestamp(e.created_at) : undefined}>
+                      </TableCell>
+                      <TableCell className="num aug-ledger-when" title={e.created_at ? formatTimestamp(e.created_at) : undefined}>
                         {e.created_at ? relTime(e.created_at) : "—"}
-                      </td>
-                      <td className="aug-org-door">
+                      </TableCell>
+                      <TableCell className="aug-org-door">
                         <Button size="xs" variant="ghost" disabled={busyEdit === e.id} onClick={() => withdraw(e.id)}
                           title="Withdraw this edit — the next read stops merging it and the source value, never written, is what shows">
                           {busyEdit === e.id ? "Withdrawing…" : "Withdraw"}
                         </Button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
           <AnnotateForm connectionId={connectionId} onSaved={loadEdits} />

@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Sparkline } from "@/components/brief/Sparkline";
 import { SkeletonRows } from "@/components/ui/motion";
 import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 /** The acting identity for governance writes — the signed-in email, else the
  *  same word the actions inbox uses. The server owns identity; this is provenance. */
@@ -157,43 +158,43 @@ export function MemoryPanel() {
             ) : (
               <>
                 <div className="aug-moves-wrap">
-                  <table className="aug-dt aug-ledger-table">
-                    <thead>
-                      <tr>
-                        <th>what was ambiguous → how it is read</th>
-                        <th className="aug-memory-col-source">settled by</th>
-                        <th className="aug-memory-col-conn">connection</th>
-                        <th className="num aug-memory-col-num">served</th>
-                        <th className="num aug-memory-col-when">settled</th>
-                        <th className="aug-memory-col-door"><span className="sr-only">Revoke</span></th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>what was ambiguous → how it is read</TableHead>
+                        <TableHead className="aug-memory-col-source">settled by</TableHead>
+                        <TableHead className="aug-memory-col-conn">connection</TableHead>
+                        <TableHead className="num aug-memory-col-num">served</TableHead>
+                        <TableHead className="num aug-memory-col-when">settled</TableHead>
+                        <TableHead className="aug-memory-col-door"><span className="sr-only">Revoke</span></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {visible.map(r => (
-                        <tr key={r.id}>
-                          <td className="aug-ledger-claim">
+                        <TableRow key={r.id}>
+                          <TableCell className="aug-ledger-claim">
                             <span className="aug-ledger-text">
                               <span className="aug-memory-subject">{r.subject}</span> → {r.resolved_reading}
                             </span>
                             {r.resolved_sql && <span className="aug-ledger-query">{r.resolved_sql}</span>}
-                          </td>
-                          <td className="aug-memory-source">{SOURCE_LABEL[r.resolution_source] ?? r.resolution_source}</td>
-                          <td className="aug-memory-conn" title={r.connection_id}>{connectionLabel(r.connection_id, conns) || "—"}</td>
-                          <td className="num" title={r.last_used_at ? `last served ${formatTimestamp(r.last_used_at)}` : "not served yet"}>
+                          </TableCell>
+                          <TableCell className="aug-memory-source">{SOURCE_LABEL[r.resolution_source] ?? r.resolution_source}</TableCell>
+                          <TableCell className="aug-memory-conn" title={r.connection_id}>{connectionLabel(r.connection_id, conns) || "—"}</TableCell>
+                          <TableCell className="num" title={r.last_used_at ? `last served ${formatTimestamp(r.last_used_at)}` : "not served yet"}>
                             {compactNumber(r.use_count)}×
-                          </td>
-                          <td className="num aug-ledger-when" title={formatTimestamp(r.created_at)}>{relTime(r.created_at)}</td>
-                          <td className="aug-org-door">
+                          </TableCell>
+                          <TableCell className="num aug-ledger-when" title={formatTimestamp(r.created_at)}>{relTime(r.created_at)}</TableCell>
+                          <TableCell className="aug-org-door">
                             <Button variant="ghost" size="xs" disabled={revoking === r.id}
                               onClick={() => { void revoke(r.id); }}
                               title="Revoke: the reading is deleted, and the next matching question is asked again">
                               {revoking === r.id ? "Revoking" : "Revoke"}
                             </Button>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
                 <p className="aug-profile-foot">
                   {list.length > READINGS_SHOWN && !showAll && (

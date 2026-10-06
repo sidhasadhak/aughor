@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { getApiBase } from "@/lib/config";
 import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -358,24 +359,24 @@ export function ActionHubPanel() {
             </div>
           ) : (
             <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
-              <table className="aug-dt" style={{ width: "100%" }}>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Trigger</th>
-                    <th>Recommendation</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Trigger</TableHead>
+                    <TableHead>Recommendation</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {[...logs].reverse().map(l => (
-                    <tr key={l.id}>
-                      <td style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{timeAgo(l.fired_at)}</td>
-                      <td style={{ fontWeight: 500, color: "var(--t1)" }}>{l.trigger_name}</td>
-                      <td style={{ maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--t2)" }}>
+                    <TableRow key={l.id}>
+                      <TableCell style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{timeAgo(l.fired_at)}</TableCell>
+                      <TableCell style={{ fontWeight: 500, color: "var(--t1)" }}>{l.trigger_name}</TableCell>
+                      <TableCell style={{ maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--t2)" }}>
                         {l.recommendation}
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell>
                         {l.status === "ok"
                           ? <span className="aug-tag aug-tag-green">ok {l.http_status}</span>
                           : l.status === "timeout"
@@ -384,11 +385,11 @@ export function ActionHubPanel() {
                           ? <span className="aug-tag" title={l.error ?? ""}>skipped</span>
                           : <span className="aug-tag aug-tag-red" title={l.error ?? ""}>{l.http_status ? `${l.http_status}` : "failed"}</span>
                         }
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )
         )}

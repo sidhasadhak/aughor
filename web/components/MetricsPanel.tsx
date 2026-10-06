@@ -29,6 +29,7 @@ import {
   type DefinitionClaim,
 } from "@/lib/api";
 import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead } from "@/components/ui/table";
 
 // ── Governance lifecycle (B-8) ──────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, string> = {
@@ -1025,17 +1026,17 @@ export function MetricsPanel({ connId }: { connId?: string }) {
       )}
 
       {rows.length > 0 && (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-zinc-700 text-left">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-b border-zinc-700 text-left">
               <Th className="w-[40%]">Metric</Th>
               <Th className="w-[13%]">Source</Th>
               <Th className="w-[12%]">Unit</Th>
               <Th className="w-[21%]">State</Th>
               <Th className="w-[14%]">Where it lives</Th>
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => (
               <MetricRow
                 key={`${row.source}:${row.name}`}
@@ -1049,8 +1050,8 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 editor={selected === row.name ? editor : null}
               />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </div>
   );

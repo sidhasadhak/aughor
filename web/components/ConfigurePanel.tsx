@@ -20,6 +20,7 @@ import { getApiBase } from "@/lib/config";
 import { Icon } from "@/components/ui/icon";
 import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Loading } from "@/components/ui/states";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SchemaColumn {
@@ -216,29 +217,29 @@ function TableDetail({
 
       {subtab === "overview" && (
         <div className="flex-1 overflow-y-auto">
-          <table className="w-full aug-fs-sm">
-            <thead className="sticky top-0 z-10">
-              <tr style={{ background: "var(--bg-3)" }}>
-                <th className="px-3 py-2 text-left text-[var(--t2)] font-semibold">Column</th>
-                <th className="px-3 py-2 text-left text-[var(--t2)] font-semibold">Type</th>
-                <th className="px-3 py-2 text-left text-[var(--t2)] font-semibold">FK</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="aug-fs-sm">
+            <TableHeader className="sticky top-0 z-10">
+              <TableRow style={{ background: "var(--bg-3)" }}>
+                <TableHead className="px-3 py-2 text-left text-[var(--t2)] font-semibold">Column</TableHead>
+                <TableHead className="px-3 py-2 text-left text-[var(--t2)] font-semibold">Type</TableHead>
+                <TableHead className="px-3 py-2 text-left text-[var(--t2)] font-semibold">FK</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {table.columns.map((col, i) => (
-                <tr key={col.name} className={`border-t border-[var(--b0)] ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}>
-                  <td className="px-3 py-2 font-mono text-[var(--t1)]">
+                <TableRow key={col.name} className={`border-t border-[var(--b0)] ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}>
+                  <TableCell className="px-3 py-2 font-mono text-[var(--t1)]">
                     <span className="flex items-center gap-2">
                       <ColumnTypeIcon type={col.type} size={13} />
                       {col.name}
                     </span>
-                  </td>
-                  <td className="px-3 py-2 font-mono text-[var(--t3)]">{col.type}</td>
-                  <td className="px-3 py-2 text-[var(--t3)]">{col.is_fk ? "✓" : ""}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="px-3 py-2 font-mono text-[var(--t3)]">{col.type}</TableCell>
+                  <TableCell className="px-3 py-2 text-[var(--t3)]">{col.is_fk ? "✓" : ""}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

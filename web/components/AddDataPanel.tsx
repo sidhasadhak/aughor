@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -408,24 +409,24 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           <div>
             <p style={sectionLabel}>Preview · first {a.preview.rows.length} rows</p>
             <div style={{ overflowX: "auto", border: "1px solid var(--b1)", borderRadius: 8 }}>
-              <table style={{ borderCollapse: "collapse", fontSize: 11, width: "100%" }}>
-                <thead>
-                  <tr>
+              <Table style={{ fontSize: 11 }}>
+                <TableHeader>
+                  <TableRow>
                     {a.preview.columns.map(col => (
-                      <th key={col} style={{ textAlign: "left", padding: "7px 10px", color: "var(--t3)", fontWeight: 600, borderBottom: "1px solid var(--b1)", background: "var(--bg-2)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>{col}</th>
+                      <TableHead key={col} style={{ textAlign: "left", padding: "7px 10px", color: "var(--t3)", fontWeight: 600, borderBottom: "1px solid var(--b1)", background: "var(--bg-2)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>{col}</TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {a.preview.rows.map((row, ri) => (
-                    <tr key={ri}>
+                    <TableRow key={ri}>
                       {row.map((v, ci) => (
-                        <td key={ci} style={{ padding: "6px 10px", color: v === null ? "var(--t3)" : "var(--t2)", borderBottom: "1px solid var(--b0)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontStyle: v === null ? "italic" : "normal" }}>{v === null ? "NULL" : v}</td>
+                        <TableCell key={ci} style={{ padding: "6px 10px", color: v === null ? "var(--t3)" : "var(--t2)", borderBottom: "1px solid var(--b0)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontStyle: v === null ? "italic" : "normal" }}>{v === null ? "NULL" : v}</TableCell>
                       ))}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}

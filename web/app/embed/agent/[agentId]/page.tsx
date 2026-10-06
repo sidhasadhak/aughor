@@ -14,6 +14,7 @@ import { use, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { askThroughDoor, type DoorAnswer } from "@/lib/api";
 import { displayCellValue, formatCount } from "@/lib/format";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 const KEY = (agentId: string) => `aughor.embed.key.${agentId}`;
 
@@ -100,14 +101,14 @@ export default function EmbedAgentPage({ params }: { params: Promise<{ agentId: 
               </div>
               {t.columns.length > 0 && t.rows.length > 0 && (
                 <div style={{ overflowX: "auto" }}>
-                  <table className="aug-dt">
-                    <thead><tr>{t.columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
-                    <tbody>
+                  <Table>
+                    <TableHeader><TableRow>{t.columns.map(c => <TableHead key={c}>{c}</TableHead>)}</TableRow></TableHeader>
+                    <TableBody>
                       {t.rows.slice(0, 50).map((r, ri) => (
-                        <tr key={ri}>{(r as unknown[]).map((v, ci) => <td key={ci}>{displayCellValue(v)}</td>)}</tr>
+                        <TableRow key={ri}>{(r as unknown[]).map((v, ci) => <TableCell key={ci}>{displayCellValue(v)}</TableCell>)}</TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                   {(t.truncated || t.rows.length > 50) && (
                     <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                       {formatCount(t.row_count ?? t.rows.length)} rows in all; the first 50 shown

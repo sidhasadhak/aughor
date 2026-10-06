@@ -496,35 +496,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-field-error { font-size: 11px; line-height: 1.45; color: var(--red4); }
 
 /* ── Table — 32px rows, 13px cells, sticky sentence-case header on --bg-1 ───── */
-.aug-dt { width: 100%; border-collapse: collapse; font-size: 13px; }
-.aug-dt thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  height: 30px;
-  padding: 0 12px;
-  text-align: left;
-  white-space: nowrap;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--b1);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--t2);
-}
-.aug-dt tbody td {
-  height: 32px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--b0);
-  font-size: 13px;
-  color: var(--t1);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.aug-dt tbody tr { transition: background var(--dur-1) var(--ease-out); }
-.aug-dt tbody tr:hover td { background: var(--bg-hover); }
-.aug-dt tbody tr[aria-selected="true"] td,
-.aug-dt tbody tr.selected td { background: var(--bg-sel); }
-.aug-dt .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* The dense table is Radix Themes' own since 2026-10-06 (components/ui/table.tsx). */
 
 /* ── Code — on --code-bg, one step below the canvas, never in a tinted box ── */
 .aug-code {
@@ -955,12 +927,6 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-ledger-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--b1); }
 .aug-ledger-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
 .aug-ledger-scroll { flex: 1; min-height: 0; overflow: auto; }
-.aug-ledger-table { table-layout: fixed; }
-.aug-ledger-table tbody td { height: auto; padding: 5px 10px; vertical-align: top; }
-.aug-ledger-table tbody tr { cursor: pointer; }
-.aug-ledger-id { font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
-/* .aug-dt's nowrap outranks a bare class; the claim column is the one that wraps. */
-.aug-ledger-table tbody td.aug-ledger-claim { white-space: normal; }
 .aug-ledger-text { display: block; font-size: 12px; line-height: 1.5; color: var(--t1); }
 .aug-ledger-query {
   display: block; max-width: 100%; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1023,8 +989,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-profile-prose { margin: 0; max-width: 760px; font-size: 13px; line-height: 1.8; color: var(--t1); }
 .aug-profile-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .aug-profile-why { margin: 10px 0 0; max-width: 760px; font-size: 12px; line-height: 1.6; color: var(--t3); }
-.aug-profile-table .num { font-size: 11px; }
-.aug-profile-table td.aug-profile-tname { font-family: var(--font-mono); font-size: 11px; }
+.aug-profile-tname { font-family: var(--font-mono); font-size: 11px; }
 .aug-profile-dim { color: var(--t3); }
 .aug-profile-foot { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--b0); font-size: 11px; line-height: 1.6; color: var(--t3); }
 .aug-profile-rail { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
@@ -1120,11 +1085,6 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 /* ── Two skins (2026-09-25) — the rules that differ between them beyond the tokens ──
    Dark follows Du Bois, light follows Excel (INSTRUMENT.md §4 item 5, the study §9.3).
    1 · Light draws gridlines both ways, like a sheet; dark keeps hairline rows. */
-[data-theme="light"] .aug-dt { border: 1px solid var(--b1); }
-[data-theme="light"] .aug-dt thead th,
-[data-theme="light"] .aug-dt tbody td { border-right: 1px solid var(--b0); }
-[data-theme="light"] .aug-dt thead th:last-child,
-[data-theme="light"] .aug-dt tbody td:last-child { border-right: none; }
 /* 2 · Light's selection is a tint of the accent (Excel green until 2026-10-06; the accent a
        person chose since): the active segment is the tint with accent text (dark keeps the
        pressed fill), and the rail's active item reads in the accent over the same tint. The
@@ -1217,9 +1177,6 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 :root[data-density="compact"] .aug-text-h3,
 :root[data-density="compact"] .aug-fs-ui,
 :root[data-density="compact"] .aug-state-claim { font-size: 13px; }
-:root[data-density="compact"] .aug-dt { font-size: 12px; }
-:root[data-density="compact"] .aug-dt thead th { height: 26px; padding: 0 10px; }
-:root[data-density="compact"] .aug-dt tbody td { height: 26px; padding: 0 10px; font-size: 12px; }
 :root[data-density="compact"] .aug-nav-item { height: 24px; }
 :root[data-density="compact"] .aug-rail-row { padding: 5px 0; }
 :root[data-density="compact"] .aug-toolbar { height: 32px; }
@@ -1331,6 +1288,4 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 /* Columns are sized and their cells are short: a date or a chip broken over two lines doubles the
    row for nothing. In a ledger the first column is the statement, and it alone wraps. */
 [data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell,
-[data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; }
-/* A table whose columns are sized (layout="fixed") keeps a cell inside its column. */
-[data-slot="table"] .rt-TableRootTable:where(.rt-r-tl-fixed) :is(.rt-TableCell, .rt-TableColumnHeaderCell) { overflow: hidden; text-overflow: ellipsis; }
+[data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

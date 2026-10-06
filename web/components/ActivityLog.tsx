@@ -23,6 +23,7 @@ import {
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount } from "@/lib/format";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 // ── Phase metadata ────────────────────────────────────────────────────────────
 
@@ -275,17 +276,17 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
           {result.ok ? (
             <>
               <div className="overflow-x-auto rounded" style={{ background: "var(--code-bg)" }}>
-                <table className="aug-fs-xs font-mono w-full">
-                  <thead><tr>{result.columns.map(c => (
-                    <th key={c} className="px-2 py-1 text-left font-medium"
-                      style={{ color: "var(--t3)", borderBottom: "0.5px solid var(--b2)" }}>{c}</th>
-                  ))}</tr></thead>
-                  <tbody>{result.rows.slice(0, 15).map((row, i) => (
-                    <tr key={i} style={{ borderBottom: "0.5px solid var(--b0)" }}>
-                      {row.map((cell, j) => <td key={j} className="px-2 py-1" style={{ color: "var(--t3)" }}>{cell as string}</td>)}
-                    </tr>
-                  ))}</tbody>
-                </table>
+                <Table className="aug-fs-xs font-mono">
+                  <TableHeader><TableRow>{result.columns.map(c => (
+                    <TableHead key={c} className="px-2 py-1 text-left font-medium"
+                      style={{ color: "var(--t3)", borderBottom: "0.5px solid var(--b2)" }}>{c}</TableHead>
+                  ))}</TableRow></TableHeader>
+                  <TableBody>{result.rows.slice(0, 15).map((row, i) => (
+                    <TableRow key={i} style={{ borderBottom: "0.5px solid var(--b0)" }}>
+                      {row.map((cell, j) => <TableCell key={j} className="px-2 py-1" style={{ color: "var(--t3)" }}>{cell as string}</TableCell>)}
+                    </TableRow>
+                  ))}</TableBody>
+                </Table>
               </div>
               {/* Save the successful fix as a finding (through the Phase-8 guards) */}
               {!saved ? (
@@ -409,7 +410,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
 
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+      <Table layout="fixed" >
         <colgroup>
           <col style={{ width: 44 }} />
           <col style={{ width: 148 }} />
@@ -420,33 +421,33 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
           <col style={{ width: 120 }} />
           <col style={{ width: 28 }} />
         </colgroup>
-        <thead>
-          <tr>
-            <th {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "var(--blue4)" : "var(--t3)", cursor: "pointer" }}>
+        <TableHeader>
+          <TableRow>
+            <TableHead {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "var(--blue4)" : "var(--t3)", cursor: "pointer" }}>
               #<SortIcon active={sortCol === "seq"} dir={sortDir} />
-            </th>
-            <th {...thClick("ts")}>
+            </TableHead>
+            <TableHead {...thClick("ts")}>
               timestamp<SortIcon active={sortCol === "ts"} dir={sortDir} />
-            </th>
-            <th {...thClick("type")}>
+            </TableHead>
+            <TableHead {...thClick("type")}>
               type<SortIcon active={sortCol === "type"} dir={sortDir} />
-            </th>
-            <th {...thClick("message")}>
+            </TableHead>
+            <TableHead {...thClick("message")}>
               message<SortIcon active={sortCol === "message"} dir={sortDir} />
-            </th>
-            <th {...thClick("status")}>
+            </TableHead>
+            <TableHead {...thClick("status")}>
               status<SortIcon active={sortCol === "status"} dir={sortDir} />
-            </th>
-            <th {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "var(--blue4)" : "var(--t3)", cursor: "pointer" }}>
+            </TableHead>
+            <TableHead {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "var(--blue4)" : "var(--t3)", cursor: "pointer" }}>
               rows<SortIcon active={sortCol === "rows"} dir={sortDir} />
-            </th>
-            <th {...thClick("object")}>
+            </TableHead>
+            <TableHead {...thClick("object")}>
               object<SortIcon active={sortCol === "object"} dir={sortDir} />
-            </th>
-            <th style={{ ...TH, cursor: "default" }} />
-          </tr>
-        </thead>
-        <tbody>
+            </TableHead>
+            <TableHead style={{ ...TH, cursor: "default" }} />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {items.map((item, idx) => {
             const { ep, meta, seq } = item;
             const pm     = phaseMeta(ep.phase);
@@ -458,7 +459,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
 
             return (
               <React.Fragment key={fkey}>
-                <tr
+                <TableRow
                   onClick={() => toggle(ekey)}
                   style={{
                     borderBottom: isOpen ? "none" : "0.5px solid var(--b0)",
@@ -469,25 +470,25 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
                   onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
                 >
                   {/* # — var(--b0) was a BORDER token used as text: near-invisible */}
-                  <td style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
+                  <TableCell style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
                     {seq}
-                  </td>
+                  </TableCell>
                   {/* timestamp */}
-                  <td style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
+                  <TableCell style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
                     {meta.datetime}
-                  </td>
+                  </TableCell>
                   {/* type */}
-                  <td style={{ padding: "7px 8px" }}>
+                  <TableCell style={{ padding: "7px 8px" }}>
                     <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 3, background: pm.bg, color: pm.color, border: `0.5px solid color-mix(in srgb, ${pm.color} 25%, transparent)` }}>
                       {pm.label}
                     </span>
-                  </td>
+                  </TableCell>
                   {/* message */}
-                  <td style={{ padding: "7px 8px", fontSize: 11, color: meta.isError ? "var(--red4)" : "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <TableCell style={{ padding: "7px 8px", fontSize: 11, color: meta.isError ? "var(--red4)" : "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {meta.message}
-                  </td>
+                  </TableCell>
                   {/* status */}
-                  <td style={{ padding: "7px 8px" }}>
+                  <TableCell style={{ padding: "7px 8px" }}>
                     <span style={{
                       fontSize: 11, padding: "2px 6px", borderRadius: 3, fontWeight: 500,
                       background: meta.isError ? "var(--red1)" : "var(--grn1)",
@@ -496,34 +497,34 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
                     }}>
                       {meta.isError ? "error" : "success"}
                     </span>
-                  </td>
+                  </TableCell>
                   {/* rows */}
-                  <td style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textAlign: "right", whiteSpace: "nowrap" }}>
+                  <TableCell style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textAlign: "right", whiteSpace: "nowrap" }}>
                     {formatCount(meta.rows)}
-                  </td>
+                  </TableCell>
                   {/* object */}
-                  <td style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <TableCell style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {meta.object}
-                  </td>
+                  </TableCell>
                   {/* expand */}
-                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, color: "var(--t3)" }}>
+                  <TableCell style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, color: "var(--t3)" }}>
                     {isOpen ? "▲" : "▼"}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
 
                 {/* Detail row — always in DOM when open, no conditional to avoid fragment issues */}
                 {isOpen && (
-                  <tr style={{ background: "var(--bg-2)", borderBottom: "0.5px solid var(--b1)" }}>
-                    <td colSpan={8} style={{ padding: "0 16px" }}>
+                  <TableRow style={{ background: "var(--bg-2)", borderBottom: "0.5px solid var(--b1)" }}>
+                    <TableCell colSpan={8} style={{ padding: "0 16px" }}>
                       <ExpandedDetail ep={ep} connectionId={connectionId} canvasId={canvasId} />
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
               </React.Fragment>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

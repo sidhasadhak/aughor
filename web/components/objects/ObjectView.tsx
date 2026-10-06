@@ -43,6 +43,7 @@ import {
   type ObjectTimeseries,
   withdrawEdit,
 } from "@/lib/objects";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 interface Scope {
   connectionId?: string;
@@ -393,30 +394,30 @@ function HistoryCard({ page, series }: { page: ObjectPage; series: ObjectTimeser
       )}
       {series.rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
-          <table className="aug-fs-xs" style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
+          <Table className="aug-fs-xs">
+            <TableHeader>
+              <TableRow>
                 {series.columns.map((c) => (
-                  <th key={c} style={{ ...MONO, textAlign: "left", padding: "3px 10px 3px 0", color: "var(--t3)",
-                                       fontWeight: 500, whiteSpace: "nowrap", borderBottom: ROW_RULE }}>{c}</th>
+                  <TableHead key={c} style={{ ...MONO, textAlign: "left", padding: "3px 10px 3px 0", color: "var(--t3)",
+                                       fontWeight: 500, whiteSpace: "nowrap", borderBottom: ROW_RULE }}>{c}</TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {series.rows.map((row, i) => (
-                <tr key={i}>
+                <TableRow key={i}>
                   {row.map((cell, j) => (
-                    <td key={series.columns[j] ?? j}
+                    <TableCell key={series.columns[j] ?? j}
                       style={{ padding: "3px 10px 3px 0", whiteSpace: "nowrap", borderTop: i ? ROW_RULE : undefined,
                                color: j === when || i === 0 ? "var(--t1)" : "var(--t2)",
                                ...(j === when ? MONO : {}) }}>
                       {cellText(cell)}
-                    </td>
+                    </TableCell>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </Section>

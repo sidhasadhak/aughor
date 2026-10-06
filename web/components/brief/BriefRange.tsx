@@ -20,6 +20,7 @@ import {
   type BriefingRange, type BriefingRangeBlock, type BriefingRangeMeasure, type ExpectedNext, type RangePreset,
 } from "@/lib/api";
 import { Segmented } from "@/components/ui/segmented";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 /** The control's value: the standing view, or a range. */
 export type RangeChoice = { preset: "standing" } | BriefingRange;
@@ -250,28 +251,28 @@ export function RangeSections({ block }: { block: BriefingRangeBlock }) {
       {moves.length > 0 && (
         <div>
           <div className="aug-label" style={{ marginBottom: 4 }}>What moved</div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ color: "var(--t3)", textAlign: "left" }}>
-                <th style={{ fontWeight: 500, padding: "2px 8px 2px 0" }}>Metric</th>
-                <th style={{ fontWeight: 500, padding: "2px 8px" }}>Segment</th>
-                <th style={{ fontWeight: 500, padding: "2px 8px" }}>This range</th>
-                <th style={{ fontWeight: 500, padding: "2px 8px" }}>Comparison</th>
-                <th style={{ fontWeight: 500, padding: "2px 0 2px 8px" }}>Change</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow style={{ color: "var(--t3)", textAlign: "left" }}>
+                <TableHead style={{ fontWeight: 500, padding: "2px 8px 2px 0" }}>Metric</TableHead>
+                <TableHead style={{ fontWeight: 500, padding: "2px 8px" }}>Segment</TableHead>
+                <TableHead style={{ fontWeight: 500, padding: "2px 8px" }}>This range</TableHead>
+                <TableHead style={{ fontWeight: 500, padding: "2px 8px" }}>Comparison</TableHead>
+                <TableHead style={{ fontWeight: 500, padding: "2px 0 2px 8px" }}>Change</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {moves.map(c => (
-                <tr key={`${c.metric}:${c.dimension}:${c.group}`} style={{ borderTop: "1px solid var(--b1)" }}>
-                  <td style={{ padding: "4px 8px 4px 0", color: "var(--t1)" }}>{c.name}</td>
-                  <td style={{ padding: "4px 8px" }}>{c.dimension}: {c.group}</td>
-                  <td style={{ padding: "4px 8px" }}>{c.current_text ?? ""}</td>
-                  <td style={{ padding: "4px 8px", color: "var(--t2)" }}>{c.previous_text ?? ""}</td>
-                  <td style={{ padding: "4px 0 4px 8px", color: "var(--t2)" }}>{c.change_text ?? ""}</td>
-                </tr>
+                <TableRow key={`${c.metric}:${c.dimension}:${c.group}`} style={{ borderTop: "1px solid var(--b1)" }}>
+                  <TableCell style={{ padding: "4px 8px 4px 0", color: "var(--t1)" }}>{c.name}</TableCell>
+                  <TableCell style={{ padding: "4px 8px" }}>{c.dimension}: {c.group}</TableCell>
+                  <TableCell style={{ padding: "4px 8px" }}>{c.current_text ?? ""}</TableCell>
+                  <TableCell style={{ padding: "4px 8px", color: "var(--t2)" }}>{c.previous_text ?? ""}</TableCell>
+                  <TableCell style={{ padding: "4px 0 4px 8px", color: "var(--t2)" }}>{c.change_text ?? ""}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           {thin.length > 0 && (
             <div style={{ color: "var(--t3)", marginTop: 4 }}>
               Too few to call: {thin.map(c => `${c.dimension} ${c.group} (${c.n} rows)`).join(", ")}.

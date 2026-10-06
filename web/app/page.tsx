@@ -135,6 +135,7 @@ import { costSummary, fmtCompact, fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Segmented } from "@/components/ui/segmented";
 import { TabStrip } from "@/components/ui/tab-strip";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -720,32 +721,32 @@ function HomeScreen({
             </div>
           ) : (
             <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
-              <table className="aug-dt" style={{ width: "100%" }}>
-                <thead>
-                  <tr>
-                    <th>Question</th>
-                    <th>Time</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Question</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {recentInvs.slice(0, 5).map((inv) => (
-                    <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
-                      <td style={{ maxWidth: 400 }}>
+                    <TableRow key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
+                      <TableCell style={{ maxWidth: 400 }}>
                         <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{plainSubtitle(inv.question)}</div>
                         {inv.headline && <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(inv.headline)}</div>}
-                      </td>
-                      <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</td>
-                      <td>
+                      </TableCell>
+                      <TableCell style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</TableCell>
+                      <TableCell>
                         {inv.status === "complete" && <span className="aug-tag aug-tag-green">Completed</span>}
                         {inv.status === "timed_out" && <span className="aug-tag aug-tag-amber">Timed out</span>}
                         {inv.status === "running"   && <span className="aug-tag aug-tag-blue">Running</span>}
                         {inv.status === "failed"    && <span className="aug-tag aug-tag-red">Failed</span>}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </div>

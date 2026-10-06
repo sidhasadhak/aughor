@@ -60,6 +60,7 @@ import {
   type TypeRefusal,
 } from "@/lib/objectTypes";
 import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 const MONO: React.CSSProperties = { fontFamily: "var(--font-mono)" };
 const RULE = "1px solid var(--b1)";
@@ -857,36 +858,36 @@ function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
   return (
     <Section title="Properties"
       aside={`${formatCount(detail.counts.properties)}${detail.properties_truncated ? `, the first ${detail.properties.length} shown` : ""}`}>
-      <table className="aug-fs-xs" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}
+      <Table layout="fixed" className="aug-fs-xs" 
         data-testid="entity-properties">
         <colgroup>
           <col style={{ width: "36%" }} />
           <col style={{ width: "24%" }} />
           <col />
         </colgroup>
-        <thead>
-          <tr style={{ color: "var(--t3)", textAlign: "left" }}>
-            <th style={{ ...cell, fontWeight: 500 }}>Property</th>
-            <th style={{ ...cell, fontWeight: 500 }}>Role</th>
-            <th style={{ ...cell, fontWeight: 500 }}>Source</th>
-          </tr>
-        </thead>
-        <tbody>
+        <TableHeader>
+          <TableRow style={{ color: "var(--t3)", textAlign: "left" }}>
+            <TableHead style={{ ...cell, fontWeight: 500 }}>Property</TableHead>
+            <TableHead style={{ ...cell, fontWeight: 500 }}>Role</TableHead>
+            <TableHead style={{ ...cell, fontWeight: 500 }}>Source</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {detail.properties.map((p) => {
             const source = sourceText(p.source);
             return (
-              <tr key={p.name} style={{ borderTop: RULE }}>
-                <td style={{ ...cell, ...MONO, ...clip, color: "var(--t1)" }} title={p.description || p.name}>
+              <TableRow key={p.name} style={{ borderTop: RULE }}>
+                <TableCell style={{ ...cell, ...MONO, ...clip, color: "var(--t1)" }} title={p.description || p.name}>
                   {p.is_key && <span style={{ color: "var(--t3)", marginRight: 3, display: "inline-flex" }}><Icon name="key" size={11} label="Key" /></span>}
                   {p.name}
-                </td>
-                <td style={{ ...cell, ...clip, color: "var(--t2)" }} title={p.data_type || undefined}>{p.role || "—"}</td>
-                <td style={{ ...cell, ...MONO, ...clip, color: "var(--t2)" }} title={source.full}>{source.short}</td>
-              </tr>
+                </TableCell>
+                <TableCell style={{ ...cell, ...clip, color: "var(--t2)" }} title={p.data_type || undefined}>{p.role || "—"}</TableCell>
+                <TableCell style={{ ...cell, ...MONO, ...clip, color: "var(--t2)" }} title={source.full}>{source.short}</TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </Section>
   );
 }

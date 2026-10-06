@@ -76,6 +76,7 @@ import {
 import { isAdditiveMeasure } from "@/lib/measureKind";
 import { Icon } from "@/components/ui/icon";
 import { AnswerRecheck } from "@/components/AnswerRecheck";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 // Format a wall-clock duration for the "Completed in …" line.
 function formatElapsed(ms: number): string {
@@ -575,39 +576,39 @@ export function SourcePanel({
 
       {/* Data table — scrollable */}
       <div className="flex-1 overflow-auto min-h-0">
-        <table className="aug-fs-sm w-full">
-          <thead className="sticky top-0 z-10" style={{ background: "var(--bg-1)" }}>
-            <tr className="border-b border-zinc-700/60">
+        <Table className="aug-fs-sm">
+          <TableHeader className="sticky top-0 z-10" style={{ background: "var(--bg-1)" }}>
+            <TableRow className="border-b border-zinc-700/60">
               {columns.map((c, ci) => (
-                <th key={ci} className="px-3 py-1.5 text-left text-zinc-400 whitespace-nowrap font-medium">
+                <TableHead key={ci} className="px-3 py-1.5 text-left text-zinc-400 whitespace-nowrap font-medium">
                   <div className="flex items-center gap-1">
                     <span className="text-zinc-500 font-mono aug-fs-xs select-none">
                       {isNumeric(rows[0]?.[ci]) ? "1.2" : "Ac"}
                     </span>
                     {cleanLabel(c)}
                   </div>
-                </th>
+                </TableHead>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row, ri) => (
-              <tr key={ri} className="border-b border-zinc-700/20 last:border-0 hover:bg-white/[0.02]">
+              <TableRow key={ri} className="border-b border-zinc-700/20 last:border-0 hover:bg-white/[0.02]">
                 {columns.map((col, ci) => {
                   const value = (row as unknown[])[ci];
                   const objectType = objectColumns.get(col.toLowerCase());
                   return (
-                    <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
+                    <TableCell key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                       {objectType && value != null && value !== ""
                         ? objectLinkRender(objectType, { connectionId, titles: objectTitles })(value)
                         : sourceCell(col, value, granByCol[ci])}
-                    </td>
+                    </TableCell>
                   );
                 })}
-              </tr>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {/* SQL — bottom ~50% of the panel, always visible for easy reading, with a Query Builder

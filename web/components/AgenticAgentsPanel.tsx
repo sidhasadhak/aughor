@@ -53,9 +53,7 @@ import { evalChip } from "@/lib/agentEval";
 import { compactNumber, countNoun, formatCost, formatCount, formatDateTime, formatTimestamp, pct } from "@/lib/format";
 import { fmtMs } from "@/lib/cost";
 import { getFleetOverview } from "@/lib/api";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { SelectField } from "@/components/ui/select";
@@ -630,31 +628,31 @@ export function AgentRuns({ agent, onOpenTrace, range }: {
     );
   }
   return (
-    <table className="aug-dt" style={{ width: "100%" }}>
-      <thead>
-        <tr>
-          <th>Started</th><th>Question</th><th>Kind</th><th>Status</th>
-          <th className="num">Queries</th><th aria-label="Open"></th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Started</TableHead><TableHead>Question</TableHead><TableHead>Kind</TableHead><TableHead>Status</TableHead>
+          <TableHead className="num">Queries</TableHead><TableHead aria-label="Open"></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {runs.map(r => (
-          <tr key={r.id}>
-            <td style={{ color: "var(--t2)" }}>{formatTimestamp(r.started_at, "short")}</td>
-            <td style={{ whiteSpace: "normal", maxWidth: 560 }}>{r.headline || r.question}</td>
-            <td><StatusChip hue="muted" strength="soft">{r.kind === "chat" ? "quick" : "deep"}</StatusChip></td>
-            <td><StatusChip hue={STATUS_HUE[r.status] ?? "muted"}>{r.status}</StatusChip></td>
-            <td className="num">{formatCount(r.query_count)}</td>
-            <td>
+          <TableRow key={r.id}>
+            <TableCell style={{ color: "var(--t2)" }}>{formatTimestamp(r.started_at, "short")}</TableCell>
+            <TableCell style={{ whiteSpace: "normal", maxWidth: 560 }}>{r.headline || r.question}</TableCell>
+            <TableCell><StatusChip hue="muted" strength="soft">{r.kind === "chat" ? "quick" : "deep"}</StatusChip></TableCell>
+            <TableCell><StatusChip hue={STATUS_HUE[r.status] ?? "muted"}>{r.status}</StatusChip></TableCell>
+            <TableCell className="num">{formatCount(r.query_count)}</TableCell>
+            <TableCell>
               {onOpenTrace && r.kind !== "chat" && (
                 <Button variant="link" size="xs" onClick={() => onOpenTrace(r.id)}
                   title="Open this run's trace" style={{ padding: 0 }}>Trace</Button>
               )}
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 

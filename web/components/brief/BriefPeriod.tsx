@@ -14,6 +14,7 @@
 import { Button } from "@/components/ui/button";
 import type { BriefingPeriod, BriefingPeriodBlock } from "@/lib/api";
 import { formatVariance } from "@/lib/format";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 const OPTIONS: { value: BriefingPeriod; label: string }[] = [
   { value: "history", label: "Standing" },
@@ -76,26 +77,26 @@ export function PeriodMeasures({ block }: { block: BriefingPeriodBlock }) {
         </div>
       )}
       {block.measured.length > 0 && (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ color: "var(--t3)", textAlign: "left" }}>
-              <th style={{ fontWeight: 500, padding: "2px 8px 2px 0" }}>Metric</th>
-              <th style={{ fontWeight: 500, padding: "2px 8px" }}>{COLUMN[block.period]}</th>
-              <th style={{ fontWeight: 500, padding: "2px 8px" }}>Comparison</th>
-              <th style={{ fontWeight: 500, padding: "2px 0 2px 8px" }}>Change</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow style={{ color: "var(--t3)", textAlign: "left" }}>
+              <TableHead style={{ fontWeight: 500, padding: "2px 8px 2px 0" }}>Metric</TableHead>
+              <TableHead style={{ fontWeight: 500, padding: "2px 8px" }}>{COLUMN[block.period]}</TableHead>
+              <TableHead style={{ fontWeight: 500, padding: "2px 8px" }}>Comparison</TableHead>
+              <TableHead style={{ fontWeight: 500, padding: "2px 0 2px 8px" }}>Change</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {block.measured.map((m) => (
-              <tr key={m.name} style={{ borderTop: "1px solid var(--b1)" }}>
-                <td style={{ padding: "4px 8px 4px 0", color: "var(--t1)" }}>{m.name}</td>
-                <td style={{ padding: "4px 8px" }}>{m.current_text ?? ""}</td>
-                <td style={{ padding: "4px 8px", color: "var(--t2)" }}>{m.previous_text ?? ""}</td>
-                <td style={{ padding: "4px 0 4px 8px", color: "var(--t2)" }}>{change(m)}</td>
-              </tr>
+              <TableRow key={m.name} style={{ borderTop: "1px solid var(--b1)" }}>
+                <TableCell style={{ padding: "4px 8px 4px 0", color: "var(--t1)" }}>{m.name}</TableCell>
+                <TableCell style={{ padding: "4px 8px" }}>{m.current_text ?? ""}</TableCell>
+                <TableCell style={{ padding: "4px 8px", color: "var(--t2)" }}>{m.previous_text ?? ""}</TableCell>
+                <TableCell style={{ padding: "4px 0 4px 8px", color: "var(--t2)" }}>{change(m)}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
       {block.unmeasured.length > 0 && (
         <ul style={{ margin: "8px 0 0", paddingLeft: 16, color: "var(--t3)" }}>
