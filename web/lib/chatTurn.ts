@@ -179,13 +179,16 @@ export type AnswerPart =
   | { kind: "proposal_ref"; proposal_id: string };
 
 /** The one recovery a user can perform (Wave R4). A closed set on purpose. */
-export type ErrorRecovery = "retry" | "switch_model" | "fix_config" | "";
+export type ErrorRecovery = "retry" | "switch_model" | "fix_config" | "raise_budget" | "";
 
 export type ErrorDetail = {
   reason: string;          // stable code (rate_limited, bad_key, truncated, …)
   retryable: boolean;      // re-sending the SAME request could plausibly succeed
   recovery: ErrorRecovery; // the one action worth offering
   hint: string;            // that action, in a sentence
+  /** The agent whose per-run budget stopped the turn, when the server names one — the
+   *  "raise the budget" door opens that agent's page. */
+  agentId?: string;
 };
 
 /** Read the typed fields off an `error` payload, or null when the backend predates
@@ -198,8 +201,9 @@ export function toErrorDetail(p: Record<string, unknown>): ErrorDetail | null {
   return {
     reason,
     retryable: p.retryable === true,
-    recovery: (["retry", "switch_model", "fix_config"].includes(recovery) ? recovery : "") as ErrorRecovery,
+    recovery: (["retry", "switch_model", "fix_config", "raise_budget"].includes(recovery) ? recovery : "") as ErrorRecovery,
     hint: typeof p.hint === "string" ? p.hint : "",
+    ...(typeof p.agent_id === "string" && p.agent_id ? { agentId: p.agent_id } : {}),
   };
 }
 

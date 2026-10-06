@@ -125,5 +125,21 @@
       "sane_range": "ratio 0..1; typically 0.6–0.95. A rate > 1 is a join fan-out bug.",
       "needs_concepts": ["delivery offers / dispatches", "offer outcome (accepted / declined / expired)", "couriers"]
     }
+  ],
+  "reading_order": [
+    {"metric": "Gross Merchandise Value", "aliases": ["GMV"], "kind": "sales"},
+    {"metric": "Revenue", "aliases": ["net revenue"], "kind": "sales"},
+    {"metric": "Orders", "aliases": ["order count"], "kind": "volume"},
+    {"metric": "Active Users", "aliases": ["active customers"], "kind": "volume"},
+    {"metric": "Average Order Value", "aliases": ["AOV", "basket size"], "kind": "rate"},
+    {"metric": "Orders per Active User", "aliases": ["order frequency", "purchase frequency"], "kind": "rate"},
+    {"metric": "Take Rate", "aliases": ["commission rate"], "kind": "rate"},
+    {"metric": "Retention Rate", "aliases": ["repeat rate", "cohort retention"], "kind": "rate"},
+    {"metric": "Courier Acceptance Rate", "aliases": ["acceptance rate"], "kind": "rate"},
+    {"metric": "Contribution Margin", "aliases": ["gross margin"], "kind": "margin"},
+    {"metric": "Cancellation Rate", "aliases": ["cancel rate", "failed order rate"], "kind": "cost"},
+    {"metric": "Delivery Time", "aliases": ["average delivery time", "order to door time"], "kind": "operations"},
+    {"metric": "Courier Utilization", "aliases": ["deliveries per online hour"], "kind": "operations"},
+    {"metric": "Net Profit", "aliases": ["operating profit", "EBITDA"], "kind": "profit"}
   ]
 }

@@ -2045,6 +2045,13 @@ def open_connection(
     if conn_type == "aughor_ops":
         return AughorOpsConnection(dsn, connection_id=connection_id or "aughor_ops")
     if conn_type == "duckdb":
+        if _duckdb_is_local(dsn):
+            # IN-4 — a file the connection names inside the checkout's data/ is read from the
+            # data home once `migrate-state` has moved it; anything else is opened as given.
+            from aughor.db.home import follow_checkout_file
+            moved = follow_checkout_file(dsn)
+            if moved != Path(dsn):              # unchanged addresses pass through as stored
+                dsn = str(moved)
         return DuckDBConnection(dsn, schema_name=schema_name, connection_id=connection_id)
     elif conn_type == "postgres":
         return PostgresConnection(dsn, schema_name=schema_name, connection_id=connection_id)

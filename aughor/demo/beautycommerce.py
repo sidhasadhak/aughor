@@ -21,7 +21,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-BEAUTY_PATH   = Path("data") / "beautycommerce.duckdb"
+from aughor.db.home import rehome as _rehome  # noqa: E402 — IN-4: the data home, once migrated
+BEAUTY_PATH   = _rehome(Path("data") / "beautycommerce.duckdb")
 BEAUTY_SCHEMA = "beauty"
 BEAUTY_NAME   = "BeautyCommerce"
 

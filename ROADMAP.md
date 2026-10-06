@@ -13690,7 +13690,7 @@ the browser** · **measure the premise before building.**
     most sense collectively.. give it a thought later but just mark this requirement somewhere.. its a good to have
     feature"*). Today the table is in the order the definitions were approved. The likely home is the industry
     package, which already names an industry's headline metrics; a connection with no package would need a default
-    order by kind (sales, volume, margin, cost, profit). Not designed.
+    order by kind (sales, volume, margin, cost, profit). Not designed. *Built 2026-10-06 (`claude/smaller-open-items`): kinds sales · volume · averages and rates · margin · cost and leakage · operations · profit; each `industry.json` declares a `reading_order`; other metrics placed by their names' words; ordered before the cap (`aughor/briefing/reading_order.py`).*
     Kept as it was: the table also stays on the Briefing — the ask was to make it the Cockpit's default, and the
     Briefing's narrative cites its figures.
 

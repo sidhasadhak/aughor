@@ -267,6 +267,19 @@ def _get_kind(metric: Any) -> str:
     return str(getattr(metric, "time_kind", "") or "")
 
 
+def governed_metrics(conn_id: str) -> list:
+    """The connection's approved metrics in reading order (§6 item 43(d)): sales first, profit
+    last, the industry's own order within. Ordered BEFORE any cap, so a connection past it keeps
+    its headline end — and every reader that caps (the measured table, the predictions) caps
+    the same list."""
+    from aughor.briefing.reading_order import industry_order, ordered
+    from aughor.semantic.metrics import list_metrics
+
+    return ordered([m for m in list_metrics(connection_id=conn_id)
+                    if m.status == "approved" and m.connection == conn_id],
+                   industry_order(conn_id))
+
+
 def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tuple], dialect: str,
                   north_stars: Optional[list] = None) -> dict:
     """Every approved metric measured for the range and its comparisons. Returns ``{"measured",
@@ -274,11 +287,9 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     approved definition is named in ``unmeasured`` with that reason."""
     from aughor.knowledge.period_brief import partial_span
     from aughor.semantic import metric_time as mt
-    from aughor.semantic.metrics import list_metrics
 
     said = mt.ensure_dates(conn_id, run_sql=run_sql, dialect=dialect, today=spec.as_of)
-    governed = [m for m in list_metrics(connection_id=conn_id)
-                if m.status == "approved" and m.connection == conn_id]
+    governed = governed_metrics(conn_id)
     approved, over_cap = governed[:MAX_METRICS], governed[MAX_METRICS:]
     windows = spec.windows()
     slack = _slack(spec.days)

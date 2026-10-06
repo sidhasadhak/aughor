@@ -68,16 +68,21 @@ def test_the_token_set_lives_on_the_row_encrypted_and_a_read_says_only_that_a_pe
     s = _server()
     storage = O.ServerTokenStorage(s.id)
     assert asyncio.run(storage.get_tokens()) is None and not O.status(s)["signed_in"]
-    asyncio.run(storage.set_tokens(OAuthToken(access_token="tok-secret", token_type="Bearer", expires_in=3600, refresh_token="r1")))
+    # Each secret carries a '.' and a '!', which URL-safe base64 — the alphabet of the stored
+    # ciphertext — never contains, so "not in raw" cannot be defeated by chance. The refresh
+    # token was "r1", and two characters turn up inside a few hundred of random ciphertext
+    # about one run in twenty (CI on #576: '…Qr1v6…').
+    access, refresh = "access.secret!", "refresh.secret!"
+    asyncio.run(storage.set_tokens(OAuthToken(access_token=access, token_type="Bearer", expires_in=3600, refresh_token=refresh)))
     raw = json.dumps(store._SERVERS.all())
-    assert "tok-secret" not in raw and "r1" not in raw
+    assert access not in raw and refresh not in raw
     again = store.get_server(s.id)
-    assert again.signed_in and json.loads(again.oauth_tokens)["access_token"] == "tok-secret"
+    assert again.signed_in and json.loads(again.oauth_tokens)["access_token"] == access
     got = asyncio.run(storage.get_tokens())
-    assert got.access_token == "tok-secret" and got.refresh_token == "r1"
+    assert got.access_token == access and got.refresh_token == refresh
     st = O.status(again)
     assert st["signed_in"] and st["refreshable"] and st["expires_at"] and st["obtained_at"]
-    assert "tok-secret" not in json.dumps(again.to_safe_dict()) and "tok-secret" not in json.dumps(st)
+    assert access not in json.dumps(again.to_safe_dict()) and access not in json.dumps(st)
     # a hand-registered client is presented as the registration, so the SDK never re-registers
     s2 = _server(oauth_client_id="cid-2", oauth_client_secret="s2")
     info = asyncio.run(O.ServerTokenStorage(s2.id).get_client_info())

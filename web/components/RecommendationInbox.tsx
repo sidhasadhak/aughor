@@ -14,6 +14,7 @@ import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { getApiBase } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
+import { ExecuteRecommendation as ExecuteButton } from "@/components/actions/ExecuteRecommendation";
 // Status display config
 const STATUS_STYLE: Record<RecStatus, { label: string; chip: string }> = {
   accepted:    { label: "Accepted",    chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"          },
@@ -25,83 +26,7 @@ const STATUS_STYLE: Record<RecStatus, { label: string; chip: string }> = {
 
 const TERMINAL: RecStatus[] = ["verified", "rejected", "dismissed"];
 
-// ── Execute → Action Hub button ───────────────────────────────────────────────
-
-interface Trigger { id: string; name: string; enabled: boolean }
-
-function ExecuteButton({ invId, index, text }: { invId: string; index: number; text: string }) {
-  const [open,     setOpen]     = useState(false);
-  const [triggers, setTriggers] = useState<Trigger[]>([]);
-  const [firing,   setFiring]   = useState<string | null>(null);
-  const [done,     setDone]     = useState<string | null>(null); // trigger name on success
-  const [held,     setHeld]     = useState<string | null>(null); // HB-2 — the gate's reason
-
-  useEffect(() => {
-    if (open && triggers.length === 0) {
-      fetch(`${getApiBase()}/actions/triggers`).then(r => r.json())
-        .then(d => setTriggers((d.triggers ?? []).filter((t: Trigger) => t.enabled)))
-        .catch(() => {});
-    }
-  }, [open]);
-
-  const fire = async (triggerId: string, triggerName: string) => {
-    setFiring(triggerId);
-    setOpen(false);
-    try {
-      const res = await fetch(`${getApiBase()}/investigations/${invId}/recommendations/${index}/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trigger_id: triggerId }),
-      });
-      // HB-2 — the departure gate may keep a recommendation in (a forecast, a number with
-      // no measurement behind it). Reporting "✓ sent" for a send that never left was the
-      // lie this read replaces.
-      const body = await res.json().catch(() => ({}));
-      if (body?.status === "held") setHeld(String(body.error || "held at departure"));
-      else setDone(triggerName);
-    } catch { /* silent */ }
-    setFiring(null);
-  };
-
-  if (held) return (
-    <span className="aug-fs-xs px-1.5" style={{ color: "var(--amb3)" }} title={held}>Not sent — held at departure</span>
-  );
-  if (done) return (
-    <span className="aug-fs-xs text-emerald-400 font-medium px-1.5">✓ {done}</span>
-  );
-
-  return (
-    <div className="relative">
-      <Button
-        variant="secondary" size="xs"
-        onClick={() => setOpen(o => !o)}
-        disabled={!!firing}
-        className="whitespace-nowrap"
-      >
-        {firing ? "…" : "Execute →"}
-      </Button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden">
-            {triggers.length === 0
-              ? <p className="aug-fs-xs text-zinc-500 px-3 py-2">No triggers configured.<br/>Set up one in Notifications.</p>
-              : triggers.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => fire(t.id, t.name)}
-                    className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 transition"
-                  >
-                    {t.name}
-                  </button>
-                ))
-            }
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+// ── Execute → Action Hub button: the shared control (the Briefing uses it too) ──
 
 interface InvWithOutcomes {
   inv: InvestigationSummary;
@@ -182,7 +107,7 @@ function ActionRow({
           </p>
         )}
       </div>
-      <ExecuteButton invId={invId} index={index} text={text} />
+      <ExecuteButton invId={invId} index={index} />
       <div className="shrink-0 relative">
         {current ? (
           <div className="flex items-center gap-1.5">

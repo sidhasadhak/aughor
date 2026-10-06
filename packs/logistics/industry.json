@@ -131,5 +131,20 @@
       "sane_range": "count, strictly positive; urban last-mile routes often 80–200 stops/route/day.",
       "needs_concepts": ["routes or drivers", "deliveries/stops with outcome", "date (for per-day productivity)"]
     }
+  ],
+  "reading_order": [
+    {"metric": "Revenue", "aliases": ["freight revenue"], "kind": "sales"},
+    {"metric": "Shipments", "aliases": ["deliveries", "loads"], "kind": "volume"},
+    {"metric": "Deliveries per Route", "aliases": ["stops per route", "deliveries per driver"], "kind": "volume"},
+    {"metric": "On-Time Delivery Rate", "aliases": ["OTD", "on-time delivery", "service level"], "kind": "rate"},
+    {"metric": "OTIF", "aliases": ["on-time in-full", "perfect order rate"], "kind": "rate"},
+    {"metric": "First-Attempt Delivery Success", "aliases": ["first attempt success", "first-time delivery rate"], "kind": "rate"},
+    {"metric": "Capacity Utilization", "aliases": ["load factor", "fill rate"], "kind": "rate"},
+    {"metric": "Gross Margin", "aliases": ["operating margin"], "kind": "margin"},
+    {"metric": "Cost per Shipment", "aliases": ["cost per mile", "cost per km"], "kind": "cost"},
+    {"metric": "Damage and Loss Rate", "aliases": ["damage rate", "exception rate", "loss rate", "claims rate"], "kind": "cost"},
+    {"metric": "Transit Time", "aliases": ["average transit time", "lead time"], "kind": "operations"},
+    {"metric": "Dwell Time", "aliases": ["detention time", "turnaround time"], "kind": "operations"},
+    {"metric": "Net Profit", "aliases": ["operating profit"], "kind": "profit"}
   ]
 }

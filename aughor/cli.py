@@ -35,7 +35,8 @@ from rich.table import Table
 
 console = Console()
 
-DEFAULT_DB = Path(__file__).parent.parent / "data" / "aughor.duckdb"
+from aughor.db.home import rehome as _rehome  # noqa: E402 — IN-4: the data home, once migrated
+DEFAULT_DB = _rehome(Path(__file__).parent.parent / "data" / "aughor.duckdb")
 
 # Mirrors aughor.llm.provider.BACKENDS — kept as a literal so `aughor --help` stays
 # instant (importing the provider pulls in instructor/openai at module scope).

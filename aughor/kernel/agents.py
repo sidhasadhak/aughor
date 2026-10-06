@@ -100,6 +100,10 @@ class AgentCharter:
 # Briefer are wired to the metered monitor/briefing cron (WP-7, flag `ops.metered_monitors`);
 # Curator runs the R12 birth job (kind "profile" — eager intelligence at connection/canvas
 # birth, flag `birth.job`), moved under the kernel per its original Phase-3 reservation.
+#: The built-in agent that answers in chat (the Responder). Named once: its budget is armed on
+#: the answer path, and a stop there names it so the chat can open its page.
+RESPONDER_ID = "insight"
+
 AGENTS: tuple[AgentCharter, ...] = (
     AgentCharter(
         # id is a persisted governance key (see docs/GLOSSARY.md, "Names that are frozen") —
@@ -122,7 +126,7 @@ AGENTS: tuple[AgentCharter, ...] = (
         default_budget=Budget(token_budget=500_000, time_budget_s=900),
     ),
     AgentCharter(
-        id="insight", name="Responder", role="Quick answerer",
+        id=RESPONDER_ID, name="Responder", role="Quick answerer",
         goal="Answer a question fast in chat — grounded NL→SQL with a Trust Receipt.",
         lane="interactive", job_kinds=(),
         tools=("NL→SQL", "auto-repair", "Trust Receipt"),

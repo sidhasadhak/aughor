@@ -90,3 +90,38 @@ def test_sync_state_follows_the_state_dir_not_the_cwd(tmp_path, monkeypatch):
     # A second instance — a different process, in spirit — reads the same state back.
     again = NotionSync("connX", {"integration_token": "t"})
     assert again._load_state()["last_sync"] == "2026-09-06T00:00:00Z"
+
+
+def test_a_page_that_does_not_land_is_listed_with_its_reason_not_counted(tmp_path, monkeypatch):
+    """Short pages used to vanish: under 40 characters skipped unsaid, under the chunker's
+    floor indexed to zero chunks and COUNTED, and a sink failure (`ingest` returns `{}`)
+    counted too. Only a page with chunks counts now; the rest are named, with why."""
+    from aughor.connectors.knowledge.confluence import ConfluenceSync
+    from aughor.kernel.registries import ingestion
+    from aughor.knowledge.documents import _split_into_chunks
+
+    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path))
+
+    def fake_sink(**doc):
+        if "boom" in doc["title"]:
+            raise RuntimeError("qdrant down")
+        return {"doc_id": doc["doc_id"], "chunk_count": len(_split_into_chunks(doc["text"])), "min_chars": 50}
+
+    monkeypatch.setitem(ingestion._SINKS, "knowledge", fake_sink)
+    pages = [
+        {"id": "1", "title": "Runbook", "body": {"storage": {"value": "<p>" + "Restart the job. " * 10 + "</p>"}}},
+        {"id": "2", "title": "Owner", "body": {"storage": {"value": "<p>Owner: Finance.</p>"}}},
+        {"id": "3", "title": "boom", "body": {"storage": {"value": "<p>" + "x " * 60 + "</p>"}}},
+        {"id": "4", "title": "Blank", "body": {"storage": {"value": ""}}},
+    ]
+    syncer = ConfluenceSync("connC", {"base_url": "https://c.test", "username": "u", "api_token": "t",
+                                      "space_keys": "ENG"})
+    monkeypatch.setattr(syncer, "_iter_pages", lambda key: iter(pages))
+
+    assert syncer.sync() == {"ENG": 1}
+    status = syncer.status()
+    assert status["skipped_count"] == 3
+    reasons = {p["title"]: p["reason"] for p in status["pages_skipped"]}
+    assert "under the minimum chunk length of 50" in reasons["[ENG] Owner"]
+    assert "did not accept" in reasons["[ENG] boom"]
+    assert reasons["[ENG] Blank"] == "the page has no text"

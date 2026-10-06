@@ -6,7 +6,7 @@
 are deleted. Their scenarios are KEPT below: every claim here is about what the code
 does, not about what a switch does, so they still guard the behaviour the graduation
 bought. They are simply no longer listed in :data:`FLAGS`, which enumerates flags this
-suite is evidence FOR. The suite name is unchanged on purpose — see :data:`SUITE_NAME`.
+suite is evidence FOR. The suite keeps its identity on purpose — see :data:`SUITE_KEY`.
 
 **The batch claim.** `docs/FLAG_STRATEGY_2026-07-31.md` §4A: each of these nine flags is
 deterministic and its graduation claim is decidable by CONSTRUCTION — no model in the
@@ -57,14 +57,16 @@ from typing import Callable
 from aughor.evals.equivalence import Comparison, DeterministicEquivalenceEvaluator
 from aughor.evals.evaluator import EvalCase, EvalObservation
 
-#: Suite name — looked up by name so creating the suite is idempotent across runs.
-#: DO NOT rename. `ensure_suite` matches on this string, so changing it forks the
-#: lineage: a store that already holds this suite would get a SECOND row with the same
-#: target, and the receipts FLAG_DEFAULT still cites for the surviving flags
-#: (9bf08c312faa · 2574532bcbde · b167bb891764 · 1bc0e4690955 · 3155c4d9de61) stay
-#: attached to the old row. "nine" is the historical batch size and stays accurate as
-#: history — Wave 2d hardwired four of the nine, which narrows FLAGS, not the identity.
-SUITE_NAME = "flag strategy batch A — nine construction-decidable graduations"
+#: The suite is found by its KEY (2026-10-06); the title is free to change. It used to be
+#: found by this NAME, which is why it carried "DO NOT rename": a new title would have forked
+#: the lineage from the receipts FLAG_DEFAULT still cites for the surviving flags
+#: (9bf08c312faa · 2574532bcbde · b167bb891764 · 1bc0e4690955 · 3155c4d9de61). The row those
+#: hang off is adopted under its former name, id kept. "nine" is the historical batch size —
+#: Wave 2d hardwired four of the nine, which narrows FLAGS, not the identity.
+SUITE_KEY = "flag_batch_a"
+SUITE_NAME = "Flag graduations A — nine flags proven by construction"
+#: Titles this suite carried before it had a key — `ensure_suite` adopts a row under one.
+FORMER_NAMES: tuple[str, ...] = ("flag strategy batch A — nine construction-decidable graduations",)
 
 #: The flags this suite is evidence for (each minted its own graduation decision).
 #: Wave 2d hardwired four of the original nine (preflight.parallel ·
@@ -445,23 +447,21 @@ def receipt_target() -> Callable[[EvalCase], EvalObservation]:
 
 
 def ensure_suite() -> str:
-    """Create the suite (idempotent by name) with one case per scenario; return its id."""
+    """Create the suite (idempotent by key) with one case per scenario; return its id."""
     from aughor.evals import store
 
-    existing = next((s for s in store.list_suites(200) if s["name"] == SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            SUITE_NAME,
-            description=("Flag strategy batch A — nine deterministic flags graduate on "
-                         "construction-decidable claims: byte-identical or lossless "
-                         "transforms (preflight.parallel, deep_analysis.evidence_dedup, "
-                         "schema.two_tier_catalog), fail-open cost brakes "
-                         "(explore.wandering_detector), additive audit surfaces "
-                         "(monitors.guarded, consistency.divergence, starters.library), "
-                         "and inert-until-entered planes (ops.metered_monitors, "
-                         "evals.experiments). Scenario names carry the flag they back. "
-                         "Hermetic: no LLM, no warehouse, stub DBs only."),
-            target="flag_batch_a_receipt")
+    existing, _ = store.ensure_suite(
+        SUITE_KEY, SUITE_NAME, formerly=FORMER_NAMES,
+        description=("Flag strategy batch A — nine deterministic flags graduate on "
+                     "construction-decidable claims: byte-identical or lossless "
+                     "transforms (preflight.parallel, deep_analysis.evidence_dedup, "
+                     "schema.two_tier_catalog), fail-open cost brakes "
+                     "(explore.wandering_detector), additive audit surfaces "
+                     "(monitors.guarded, consistency.divergence, starters.library), "
+                     "and inert-until-entered planes (ops.metered_monitors, "
+                     "evals.experiments). Scenario names carry the flag they back. "
+                     "Hermetic: no LLM, no warehouse, stub DBs only."),
+        target="flag_batch_a_receipt")
     suite_id = existing["id"]
 
     have = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}

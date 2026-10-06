@@ -220,11 +220,36 @@ def _through_the_seam(server, tool_name: str, arguments: dict,
                          data={"tool": tool_name, "server_id": server.id})
 
 
+def _carried_text(block: Any) -> str:
+    """The text a non-text block carries, or "" when it carries none.
+
+    Two MCP block kinds are text in all but name and were dropped with the images: an
+    embedded resource whose contents are text (a file the tool read back), and a resource
+    link (a pointer the tool returns instead of the bytes). Each is carried with its uri, so
+    a reader knows which file the text came from. An embedded BLOB, an image or audio has
+    no text a step can read and stays declared below.
+    """
+    kind = getattr(block, "type", "")
+    if kind == "resource":
+        res = getattr(block, "resource", None)
+        body = getattr(res, "text", None)
+        if body:
+            uri = str(getattr(res, "uri", "") or "")
+            return f"[resource {uri}]\n{body}" if uri else f"[resource]\n{body}"
+    elif kind == "resource_link":
+        uri = str(getattr(block, "uri", "") or "")
+        if uri:
+            name = str(getattr(block, "name", "") or "")
+            return f"[linked resource: {name + ' — ' if name and name != uri else ''}{uri}]"
+    return ""
+
+
 def _text_of(result: Any) -> tuple[str, bool, dict]:
     """A tool result as text, capped. Returns ``(text, truncated, omitted)``.
 
-    Only the text blocks are carried. A tool may also return images and embedded resources,
-    and this slice still does not carry them: a base64 image flattened into a chain context
+    Text blocks are carried, and so are the two non-text kinds that hold text — an embedded
+    text resource and a resource link (:func:`_carried_text`). Images, audio and embedded
+    binary blobs are not: a base64 image flattened into a chain context
     is a megabyte of noise no downstream step can read. When a consumer for those exists,
     they arrive typed.
 
@@ -251,6 +276,10 @@ def _text_of(result: Any) -> tuple[str, bool, dict]:
         text = getattr(block, "text", None)
         if text:
             parts.append(str(text))
+            continue
+        carried = _carried_text(block)
+        if carried:
+            parts.append(carried)
             continue
         # Anything that is not a text block. `type` is the MCP discriminator; a block
         # without one is counted as "unknown" rather than ignored, because an unrecognised

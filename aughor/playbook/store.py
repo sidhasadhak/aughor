@@ -18,7 +18,10 @@ def _default_path() -> Path:
     against the bundle's `data/` — 43 times in one 30-minute window.
     """
     env = os.environ.get("AUGHOR_PLAYBOOK_PATH", "").strip()
-    return Path(env) if env else _BUNDLED_PATH
+    if env:
+        return Path(env)
+    from aughor.db.home import rehome          # IN-4: the data home, once migrated
+    return rehome(_BUNDLED_PATH)
 
 
 _BUNDLED_PATH = Path(__file__).parent.parent.parent / "data" / "playbook.json"

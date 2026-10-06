@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from aughor.db.migrations import Migration, run_migrations
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
 from aughor.db.store_pool import ensure_once
@@ -41,7 +41,18 @@ RUNNING, SUCCEEDED, FAILED = "running", "succeeded", "failed"
 #: something a percentage hides.
 STABLE_PASS, STABLE_FAIL, FLAKY = "stable_pass", "stable_fail", "flaky"
 
-_MIGRATIONS: list[Migration] = []
+def _m2_suite_key(c: sqlite3.Connection) -> None:
+    add_column_if_missing(c, "eval_suites", "key", "TEXT NOT NULL DEFAULT ''")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_eval_suites_key ON eval_suites (org_id, key)")
+
+
+#: 2 — a suite's stable KEY (2026-10-06). A suite was found by its NAME, and its runs and
+#: graduation receipts hang off the row that name found, so a title could never change:
+#: renaming one would start an empty suite beside the old one (`flag_batch_a_receipt`
+#: carried "DO NOT rename" for exactly that). The key is what code finds a suite by; the
+#: name is a title a person reads, free to change. Existing rows start with key '' and
+#: are adopted by `ensure_suite` under a former name the first time their owner runs.
+_MIGRATIONS: list[Migration] = [Migration(2, "eval_suites: stable key", _m2_suite_key)]
 
 
 def _now() -> str:
@@ -145,21 +156,62 @@ def _loads(value: Any, default: Any) -> Any:
 # ── suites ────────────────────────────────────────────────────────────────────
 
 def create_suite(name: str, *, description: str = "", target: str = "reference",
-                 connection_id: str = "", config: Optional[dict] = None) -> dict:
+                 connection_id: str = "", config: Optional[dict] = None, key: str = "") -> dict:
     suite_id, org, now = _rid(), current_org_id(), _now()
     c = _connect()
     try:
         c.execute(
             "INSERT INTO eval_suites (id, org_id, name, description, target, "
-            "connection_id, config, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            "connection_id, config, created_at, key) VALUES (?,?,?,?,?,?,?,?,?)",
             (suite_id, org, name, description, target, connection_id,
-             json.dumps(config or {}, default=str), now))
+             json.dumps(config or {}, default=str), now, key))
         c.commit()
     finally:
         c.close()
     return {"id": suite_id, "org_id": org, "name": name, "description": description,
             "target": target, "connection_id": connection_id,
-            "config": config or {}, "created_at": now}
+            "config": config or {}, "created_at": now, "key": key}
+
+
+def ensure_suite(key: str, name: str, *, formerly: tuple[str, ...] = (), description: str = "",
+                 target: str = "reference", connection_id: str = "",
+                 config: Optional[dict] = None) -> tuple[dict, bool]:
+    """The suite with this KEY, its title brought to ``name`` — created when none exists.
+    Returns ``(suite, created)``.
+
+    A suite made before keys existed is ADOPTED, not duplicated: an unkeyed row whose name is
+    ``name`` or one of ``formerly`` takes the key and the new title, keeping its id — so its
+    runs and the graduation receipts that cite them stay attached. A title change is then an
+    edit of ``name`` here, with the old title added to ``formerly`` for installs that have not
+    run it since."""
+    if not key:
+        raise ValueError("a suite's key is required")
+    org = current_org_id()
+    c = _connect()
+    try:
+        row = c.execute("SELECT * FROM eval_suites WHERE org_id=? AND key=? "
+                        "ORDER BY created_at LIMIT 1", (org, key)).fetchone()
+        if row is None:
+            names = (name, *formerly)
+            row = c.execute(
+                f"SELECT * FROM eval_suites WHERE org_id=? AND key='' AND name IN "
+                f"({','.join('?' * len(names))}) ORDER BY created_at LIMIT 1",
+                (org, *names)).fetchone()
+            if row is not None:
+                c.execute("UPDATE eval_suites SET key=? WHERE id=? AND org_id=?",
+                          (key, row["id"], org))
+        if row is not None:
+            if row["name"] != name:
+                c.execute("UPDATE eval_suites SET name=? WHERE id=? AND org_id=?",
+                          (name, row["id"], org))
+            c.commit()
+            suite = _suite_row(row)
+            suite.update(name=name, key=key)
+            return suite, False
+    finally:
+        c.close()
+    return create_suite(name, description=description, target=target,
+                        connection_id=connection_id, config=config, key=key), True
 
 
 def list_suites(limit: int = 100) -> list[dict]:

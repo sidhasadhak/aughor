@@ -3261,7 +3261,12 @@ export interface KnowledgeSourceType {
 }
 export interface KnowledgeSource {
   id: string; name: string; conn_type: string;
-  status: { last_sync?: string | null; pages_indexed?: Record<string, number> | number | null } | null;
+  status: {
+    last_sync?: string | null; pages_indexed?: Record<string, number> | number | null;
+    /** Pages the last sync did not index, each with why — capped; `skipped_count` is whole. */
+    pages_skipped?: { title: string; url: string; reason: string }[];
+    skipped_count?: number;
+  } | null;
   error?: string;
 }
 
@@ -7411,6 +7416,9 @@ export async function cancelJob(jobId: string): Promise<{ job_id: string; cancel
 }
 
 // ── Agent registry + governance: manage the fleet (Phase 0) ──────────────────
+
+/** The wire's word for a built-in agent's row (`kind`), named once for files outside the roster. */
+export const BUILT_IN_AGENT_KIND = "charter" as const;
 
 export interface AgentGovernance {
   enabled: boolean; token_budget: number | null; time_budget_s: number | null; model?: string | null;

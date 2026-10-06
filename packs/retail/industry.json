@@ -112,5 +112,25 @@
       "sane_range": "ratio 0..∞ (typical 1–10x); near-zero scientific-notation = a units/grain error.",
       "needs_concepts": ["ad spend by channel", "attributed revenue"]
     }
+  ],
+  "reading_order": [
+    {"metric": "Gross Merchandise Value", "aliases": ["GMV", "gross merchandise"], "kind": "sales"},
+    {"metric": "Revenue", "aliases": ["gross revenue", "gross sales", "sales"], "kind": "sales"},
+    {"metric": "Net Revenue", "aliases": ["net merchandise revenue", "net sales"], "kind": "sales"},
+    {"metric": "Orders", "aliases": ["order count", "number of orders"], "kind": "volume"},
+    {"metric": "Units Sold", "aliases": ["units", "items sold"], "kind": "volume"},
+    {"metric": "Customers", "aliases": ["buyers", "active customers"], "kind": "volume"},
+    {"metric": "Average Order Value", "aliases": ["AOV", "average basket value", "average ticket"], "kind": "rate"},
+    {"metric": "Conversion Rate", "aliases": ["conversion"], "kind": "rate"},
+    {"metric": "Repeat Purchase Rate", "aliases": ["repeat rate", "returning customer rate"], "kind": "rate"},
+    {"metric": "Sell-Through Rate", "aliases": ["sell through"], "kind": "rate"},
+    {"metric": "Inventory Turnover", "aliases": ["stock turn", "inventory turns"], "kind": "rate"},
+    {"metric": "ROAS", "aliases": ["return on ad spend"], "kind": "rate"},
+    {"metric": "Gross Margin", "aliases": ["product margin", "contribution margin"], "kind": "margin"},
+    {"metric": "Discount Rate", "aliases": ["discount"], "kind": "cost"},
+    {"metric": "Return Rate", "aliases": ["item return rate", "returns rate", "returns"], "kind": "cost"},
+    {"metric": "Customer Acquisition Cost", "aliases": ["CAC", "acquisition cost"], "kind": "cost"},
+    {"metric": "Lead Time", "aliases": ["delivery time", "ship to delivery", "fulfilment time", "fulfillment time"], "kind": "operations"},
+    {"metric": "Net Profit", "aliases": ["operating profit", "net income", "contribution profit"], "kind": "profit"}
   ]
 }

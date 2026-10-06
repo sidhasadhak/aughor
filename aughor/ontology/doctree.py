@@ -57,7 +57,8 @@ def _root() -> Path:
     flip surfaced unit tests writing real ``data/ontology_docs/`` files."""
     import os
 
-    return Path(os.getenv("AUGHOR_ONTOLOGY_DOCS_DIR") or _DEFAULT_ROOT)
+    from aughor.db.home import rehome          # IN-4: the data home, once migrated
+    return Path(os.getenv("AUGHOR_ONTOLOGY_DOCS_DIR") or rehome(_DEFAULT_ROOT))
 
 # Tables that are pipeline scaffolding, not business entities — documented understanding
 # should skip them. SQL-LIKE-style globs (``%`` ⇒ ``*``) matched case-insensitively against the

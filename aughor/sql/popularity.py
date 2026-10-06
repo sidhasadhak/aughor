@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -44,7 +43,9 @@ _MAX_SQLS = 5000
 
 
 def _db_path() -> str:
-    return os.environ.get("AUGHOR_POPULARITY_DB") or str(_DEFAULT_DB)
+    # Through the shared resolver, so a migrated data home (IN-4) reaches it too.
+    from aughor.db.sqlite_util import resolve_db_path
+    return str(resolve_db_path("AUGHOR_POPULARITY_DB", _DEFAULT_DB))
 
 
 @dataclass
