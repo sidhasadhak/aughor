@@ -3261,7 +3261,12 @@ export interface KnowledgeSourceType {
 }
 export interface KnowledgeSource {
   id: string; name: string; conn_type: string;
-  status: { last_sync?: string | null; pages_indexed?: Record<string, number> | number | null } | null;
+  status: {
+    last_sync?: string | null; pages_indexed?: Record<string, number> | number | null;
+    /** Pages the last sync did not index, each with why — capped; `skipped_count` is whole. */
+    pages_skipped?: { title: string; url: string; reason: string }[];
+    skipped_count?: number;
+  } | null;
   error?: string;
 }
 

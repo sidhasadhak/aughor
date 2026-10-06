@@ -130,10 +130,13 @@ class ConfluenceSync:
     # ── Main sync ──────────────────────────────────────────────────────────────
 
     def sync(self) -> dict[str, int]:
-        """Sync all pages. Returns {space_key: pages_indexed}."""
-        from aughor.kernel.registries.ingestion import ingest
+        """Sync all pages. Returns {space_key: pages_indexed}; the pages that did not land
+        are kept on the state with their reason (``pages_skipped``)."""
+        from aughor.connectors.knowledge import MAX_SKIPPED_LISTED, index_page, skipped_entry
         state = self._load_state()
         results: dict[str, int] = {}
+        skipped: list[dict] = []
+        skipped_count = 0
 
         spaces = self._list_spaces()
         logger.info("Confluence sync: %d spaces for %s", len(spaces), self._conn_id)
@@ -145,27 +148,27 @@ class ConfluenceSync:
                 title   = page.get("title", "Untitled")
                 html    = page.get("body", {}).get("storage", {}).get("value", "")
                 text    = _html_to_text(html)
-                if len(text.strip()) < 40:
-                    continue
                 source_url = f"{self._base_url}/wiki/spaces/{space_key}/pages/{page_id}"
-                doc_id = f"confluence_{self._conn_id}_{page_id}"
-                try:
-                    ingest(
-                        "knowledge",
-                        text=text,
-                        title=f"[{space_key}] {title}",
-                        source=f"confluence:{space_key}",
-                        doc_id=doc_id,
-                        source_url=source_url,
-                    )
+                why = index_page(
+                    text=text,
+                    title=f"[{space_key}] {title}",
+                    source=f"confluence:{space_key}",
+                    doc_id=f"confluence_{self._conn_id}_{page_id}",
+                    source_url=source_url,
+                )
+                if why is None:
                     count += 1
-                except Exception as exc:
-                    logger.debug("Confluence: skipped page %s: %s", page_id, exc)
+                    continue
+                skipped_count += 1
+                if len(skipped) < MAX_SKIPPED_LISTED:
+                    skipped.append(skipped_entry(f"[{space_key}] {title}", source_url, why))
             results[space_key] = count
             logger.info("Confluence: indexed %d pages from space %s", count, space_key)
 
         state["last_sync"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
         state["pages_indexed"] = {k: results.get(k, 0) for k in spaces}
+        state["pages_skipped"] = skipped
+        state["skipped_count"] = skipped_count
         self._save_state(state)
         return results
 
@@ -188,5 +191,7 @@ class ConfluenceSync:
             "connection_id": self._conn_id,
             "last_sync":     state.get("last_sync"),
             "pages_indexed": state.get("pages_indexed", {}),
+            "pages_skipped": state.get("pages_skipped", []),
+            "skipped_count": state.get("skipped_count", 0),
             "space_keys":    self._space_keys,
         }

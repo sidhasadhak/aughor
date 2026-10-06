@@ -185,56 +185,54 @@ class NotionSync:
     # ── Main sync ──────────────────────────────────────────────────────────────
 
     def sync(self) -> dict:
-        """Sync all accessible pages. Returns sync stats."""
-        from aughor.kernel.registries.ingestion import ingest
+        """Sync all accessible pages. Returns sync stats; the pages that did not land are
+        kept on the state with their reason (``pages_skipped``)."""
+        from aughor.connectors.knowledge import MAX_SKIPPED_LISTED, index_page, skipped_entry
         state   = self._load_state()
         count   = 0
         sources = {"search": 0, **{db: 0 for db in self._db_ids}}
+        skipped: list[dict] = []
+        skipped_count = 0
 
         def _index_page(page: dict, source_label: str) -> None:
-            nonlocal count
+            nonlocal count, skipped_count
             page_id = page.get("id", "").replace("-", "")
             title   = self._page_title(page)
-            blocks  = self._get_page_blocks(page_id)
-            text    = _blocks_to_text(blocks)
-            if len(text.strip()) < 40:
-                return
             source_url = page.get("url", "")
-            doc_id = f"notion_{self._conn_id}_{page_id}"
-            ingest(
-                "knowledge",
-                text=text,
-                title=title,
-                source=f"notion:{source_label}",
-                doc_id=doc_id,
-                source_url=source_url,
-            )
-            count += 1
+            try:
+                text = _blocks_to_text(self._get_page_blocks(page_id))
+                why = index_page(text=text, title=title, source=f"notion:{source_label}",
+                                 doc_id=f"notion_{self._conn_id}_{page_id}",
+                                 source_url=source_url)
+            except Exception as exc:
+                why = f"its blocks could not be read ({exc})"
+            if why is None:
+                count += 1
+                sources[source_label] = sources.get(source_label, 0) + 1
+                return
+            skipped_count += 1
+            if len(skipped) < MAX_SKIPPED_LISTED:
+                skipped.append(skipped_entry(title, source_url, why))
 
         # Search-based (catches workspace pages)
         if not self._db_ids:
             for page in self._search_pages():
-                try:
-                    _index_page(page, "search")
-                    sources["search"] = sources.get("search", 0) + 1
-                except Exception as exc:
-                    logger.debug("Notion: skipped page: %s", exc)
+                _index_page(page, "search")
 
         # Database-specific
         for db_id in self._db_ids:
             for page in self._query_database(db_id):
-                try:
-                    _index_page(page, db_id)
-                    sources[db_id] = sources.get(db_id, 0) + 1
-                except Exception as exc:
-                    logger.debug("Notion: skipped db page: %s", exc)
+                _index_page(page, db_id)
 
         state["last_sync"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
         state["pages_indexed"] = count
         state["sources"] = sources
+        state["pages_skipped"] = skipped
+        state["skipped_count"] = skipped_count
         self._save_state(state)
-        logger.info("Notion sync: %d pages indexed for %s", count, self._conn_id)
-        return {"pages_indexed": count, "sources": sources}
+        logger.info("Notion sync: %d pages indexed, %d skipped for %s",
+                    count, skipped_count, self._conn_id)
+        return {"pages_indexed": count, "sources": sources, "skipped_count": skipped_count}
 
     def test(self) -> tuple[bool, str]:
         try:
@@ -255,4 +253,6 @@ class NotionSync:
             "last_sync":      state.get("last_sync"),
             "pages_indexed":  state.get("pages_indexed", 0),
             "sources":        state.get("sources", {}),
+            "pages_skipped":  state.get("pages_skipped", []),
+            "skipped_count":  state.get("skipped_count", 0),
         }
