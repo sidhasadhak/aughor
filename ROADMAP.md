@@ -13686,9 +13686,9 @@ the browser** · **measure the premise before building.**
     **The phases:** 1 · the foundation, the gates, the grid, the appearance panel and the twelve shared components
     with a Radix equivalent — built, #570. 2 · the page vocabulary — the tab strips and segmented controls, the 124
     native selects, the 26 hand-rolled tables, 257 text inputs, 44 text areas and 20 callouts are Themes' own
-    (2026-10-06, `claude/radix-themes-phase-2`); the five product-vocabulary components (states, empty state, toast,
-    trust, mini stat), the native checkboxes and radios and the raw buttons remain. 3 · retire what that replaces,
-    Base UI included. The open lines are in `PENDING.md`.
+    (#571); the five product-vocabulary components, the checkboxes and radios and 89 raw buttons followed
+    (`claude/radix-themes-phase-2b`, 2026-10-06) — phase 2 is built. 3 · retire what that replaces, Base UI
+    included. The open lines are in `PENDING.md`.
 
 ---
 
