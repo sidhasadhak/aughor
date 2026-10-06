@@ -19,6 +19,7 @@ import { renderEmphasis } from "@/components/brief/BriefProse";
 import { useReveal, safePartial } from "@/lib/useReveal";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { formatCount } from "@/lib/format";
+import { Button } from "@/components/ui/button";
 
 export { BriefProse, renderEmphasis } from "@/components/brief/BriefProse";
 
@@ -258,13 +259,13 @@ export function BriefDetails({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className={`border-t border-zinc-800/60 pt-2.5 ${className}`}>
-      <button
+      <Button
+        variant="ghost" size="xs"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 aug-text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
       >
         <span className={`transition-transform duration-150 inline-block ${open ? "rotate-90" : ""}`}>›</span>
         {summary}
-      </button>
+      </Button>
       {open && <div className="mt-3 flex flex-col gap-4">{children}</div>}
     </div>
   );

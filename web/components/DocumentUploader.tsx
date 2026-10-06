@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Segmented } from "@/components/ui/segmented";
 
 /** Until the server answers, accept only what needs no converter. The list used to be
  *  a hard-coded five and stayed five while the parser grew to twenty — a capability
@@ -559,22 +560,23 @@ export function DocumentUploader() {
                             : " · not read yet"}
                         </p>
                       </div>
-                      <button
+                      <Button
+                        variant="outline" size="xs"
                         type="button"
                         onClick={e => { e.stopPropagation(); unstage(f.name); }}
-                        className="shrink-0 aug-fs-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
+                        className="shrink-0"
                       >
                         Remove
-                      </button>
+                      </Button>
                     </div>
                   ))}
-                  <button
+                  <Button
+                    variant="ghost" size="xs"
                     type="button"
                     onClick={() => inputRef.current?.click()}
-                    className="w-full aug-fs-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/40 px-3 py-2 text-left"
                   >
                     Choose different files…
-                  </button>
+                  </Button>
                 </div>
               )}
               <input
@@ -683,33 +685,34 @@ export function DocumentUploader() {
                 force, which is what makes "confirm" mean something. */}
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <Button
+                  variant="outline" size="xs"
                   type="button"
                   onClick={convertStaged}
                   disabled={staged.length === 0 || converting}
-                  className="inline-flex items-center gap-1.5 aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-600 text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
                 >
                   <StepDot n={3} state={staged.length > 0 && !reviewed ? "now" : reviewed ? "done" : "todo"} />
                   {converting ? "Reading…" : reviewed ? "Convert again" : "Convert & review"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline" size="xs"
                   type="button"
                   onClick={() => { setSettings({}); resetStaged(); }}
-                  className="aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
                 >
                   Reset
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="default" size="xs"
                   type="button"
                   onClick={() => commitStaged(staged)}
                   disabled={!reviewed || uploading}
-                  className="ml-auto inline-flex items-center gap-1.5 aug-fs-xs px-2.5 py-1.5 rounded border border-violet-500/50 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 disabled:opacity-40 disabled:hover:bg-violet-500/15"
+                  className="ml-auto"
                 >
                   <StepDot n={5} state={reviewed ? "now" : "todo"} />
                   {uploading
                     ? "Adding…"
                     : `Add ${staged.length > 1 ? `${staged.length} documents` : "to knowledge"}`}
-                </button>
+                </Button>
               </div>
               <p className="aug-fs-xs text-zinc-600">
                 {staged.length === 0
@@ -764,25 +767,12 @@ export function DocumentUploader() {
             />
             <div className="rounded-md border border-zinc-700 bg-zinc-950/30">
               <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-2">
-                <div className="flex shrink-0 rounded border border-zinc-700 overflow-hidden">
-                  {([
-                    ["original", "Original"],
-                    ["markdown", "Markdown"],
-                    ["chunks", "Chunks"],
-                  ] as const).map(([tab, label]) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => setReviewTab(tab)}
-                      disabled={!file || (tab !== "original" && !review)}
-                      className={`aug-fs-xs px-2.5 py-1 transition disabled:opacity-40 ${
-                        reviewTab === tab ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:bg-zinc-800"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                {/* The views a review has: the original always, the rest once it is read. */}
+                <Segmented label="Review view" value={reviewTab} onChange={setReviewTab} className="shrink-0" disabled={!file}
+                  options={[
+                    { value: "original", label: "Original" },
+                    ...(review ? [{ value: "markdown" as const, label: "Markdown" }, { value: "chunks" as const, label: "Chunks" }] : []),
+                  ]} />
                 <p className="aug-fs-xs text-zinc-500 ml-auto truncate">
                   {review
                     ? `${formatCount(review.characters)} characters · ${
@@ -986,20 +976,22 @@ export function DocumentUploader() {
                     {doc.has_original === false && " · original not kept"}
                   </p>
                 </div>
-                <button
+                <Button
+                  variant="outline" size="xs"
                   type="button"
                   onClick={() => openDocument(doc)}
-                  className="shrink-0 aug-fs-xs text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 transition"
+                  className="shrink-0"
                 >
                   {openDoc?.doc_id === doc.doc_id ? "Viewing" : "View"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline" size="xs"
                   onClick={() => handleDelete(doc.doc_id)}
                   disabled={deletingId === doc.doc_id}
-                  className="shrink-0 aug-fs-xs text-zinc-500 hover:text-red-400 border border-zinc-700 hover:border-red-500/40 rounded px-2 py-1 transition"
+                  className="shrink-0"
                 >
                   {deletingId === doc.doc_id ? "…" : "Remove"}
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -1019,28 +1011,19 @@ export function DocumentUploader() {
               <p className="aug-fs-sm font-medium text-zinc-200 truncate">{openDoc.title}</p>
               <p className="aug-fs-xs text-zinc-500 font-mono truncate">{openDoc.filename}</p>
             </div>
-            <div className="flex shrink-0 rounded border border-zinc-700 overflow-hidden">
-              {(["original", "markdown"] as const).map(tab => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setOpenTab(tab)}
-                  disabled={tab === "original" && !openDoc.has_original}
-                  className={`aug-fs-xs px-2.5 py-1 transition disabled:opacity-40 ${
-                    openTab === tab ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:bg-zinc-800"
-                  }`}
-                >
-                  {tab === "original" ? "Original" : "Markdown"}
-                </button>
-              ))}
-            </div>
-            <button
+            <Segmented label="Document view" value={openTab} onChange={setOpenTab} className="shrink-0"
+              options={[
+                ...(openDoc.has_original ? [{ value: "original" as const, label: "Original" }] : []),
+                { value: "markdown", label: "Markdown" },
+              ]} />
+            <Button
+              variant="outline" size="xs"
               type="button"
               onClick={() => setOpenDoc(null)}
-              className="shrink-0 aug-fs-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
+              className="shrink-0"
             >
               Close
-            </button>
+            </Button>
           </div>
 
           {/* Convert — the outbound half of the pivot. Anything readable became

@@ -230,7 +230,7 @@ describe("curation — settings that were only reachable through the API", () =>
     expect(await screen.findByText(/body text/)).toBeTruthy();
     // …and the same press answers what ② does to it, from the SAME file. That used to
     // need a second picker and a second choice of the same document.
-    fireEvent.click(screen.getByRole("button", { name: "Chunks" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Chunks" }));
     expect(await screen.findByText(/Showing 2 of 3 chunks/)).toBeTruthy();
     expect(screen.getByText(/first chunk/)).toBeTruthy();
     // The property that makes ③ safe to press repeatedly.

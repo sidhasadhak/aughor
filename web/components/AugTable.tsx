@@ -21,6 +21,7 @@ import { rawCells, TableActions } from "@/components/TableActions";
 import { tokenColor, tokenPx } from "@/lib/tokenColor";
 import { useThemeStamp } from "@/lib/useThemeStamp";
 import type { TokenName } from "@/lib/tokenFallback";
+import { Button } from "@/components/ui/button";
 
 // ── Aughor tokens for Ant Design — READ from the live token sheet ────────────
 // Ant's theme tokens must be real colours (it derives shades in script), so it cannot be
@@ -283,13 +284,13 @@ export function SqlResultTable({
     <div className="flex flex-col gap-1.5">
       {rows.length > 0 && (
         <div className="flex items-center">
-          {showToggle && (<button
+          {showToggle && (<Button
+            variant={showTotals ? "secondary" : "outline"} size="xs"
             onClick={() => setShowTotals(v => !v)}
             title="Show a totals row summing numeric columns"
-            className={`aug-fs-xs px-2 py-0.5 rounded border transition-colors ${showTotals ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
           >
             Σ Totals {showTotals ? "on" : "off"}
-          </button>)}
+          </Button>)}
           {/* Every row, raw: the grid shows a hundred a page, and its header is a separate table. */}
           <div className="ml-auto">
             <TableActions name={name} read={() => ({ columns, rows: rawCells(rows as unknown[][]) })} />

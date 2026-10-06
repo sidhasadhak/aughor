@@ -13694,9 +13694,10 @@ the browser** · **measure the premise before building.**
     set by a boot script before the first paint; Density is retired and Scaling is the one knob for size (the
     reading size is `14px × --scaling`, so 90% is what compact was); the cockpits' strip is a tab strip with a
     heading; and the last white-on-a-hand-painted-fill is gone (two headers are tab strips, three pills are
-    switches, the rest badges, segmented controls, radio cards and the shared Button). One line stays open in
-    `PENDING.md`: the raw-button ratchet was blind to a `<button` whose attributes start on the next line, and sees
-    its honest 105 now — 96 to move as phase 2b moved the others.
+    switches, the rest badges, segmented controls, radio cards and the shared Button). The raw-button ratchet was
+    found blind to a `<button` whose attributes start on the next line — it counted 9 while 105 stood; it sees them
+    now, 72 moved onto the shared Button, `Segmented` and `TabStrip`, and the 33 that remain are raw on purpose, each
+    named in `PENDING.md`.
 
 ---
 

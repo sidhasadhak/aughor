@@ -166,22 +166,16 @@ function CanvasHistory({
           <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {timeAgo(item.started_at)}
           </span>
-          <button
+          <Button
+            variant="ghost" size="icon-xs"
             title="Remove from history"
             disabled={isRemoving}
             onClick={e => { e.stopPropagation(); handleRemove(item.id); }}
             className="opacity-0 group-hover/hist:opacity-100 transition-opacity"
-            style={{
-              flexShrink: 0, width: 24, height: 24, borderRadius: 4, display: "flex",
-              alignItems: "center", justifyContent: "center",
-              background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)",
-              cursor: isRemoving ? "default" : "pointer",
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
+            style={{ flexShrink: 0 }}
           >
             <Glyph name="trash" size={13} />
-          </button>
+          </Button>
         </div>
         );
       })}
@@ -319,18 +313,14 @@ function CanvasDocuments({ canvas, onSaved }: {
                 workspace loses context with nothing to see. */}
             {doc.missing ? `${doc.doc_id} — deleted` : (doc.title || doc.filename)}
           </span>
-          <button
+          <Button
+            variant="ghost" size="xs"
             type="button"
             disabled={busy}
             onClick={() => setBinding(pinnedIds.filter(id => id !== doc.doc_id))}
-            className="aug-fs-xs"
-            style={{
-              background: "none", border: "none", cursor: "pointer",
-              color: "var(--t3)", padding: 0,
-            }}
           >
             Unpin
-          </button>
+          </Button>
         </div>
       ))}
 
@@ -471,21 +461,13 @@ function TabPill({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
+      variant={active ? "secondary" : "ghost"} size="xs"
       onClick={onClick}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 5,
-        padding: "5px 12px", borderRadius: "var(--r2)",
-        background: active ? "color-mix(in srgb, var(--blue4) 12%, transparent)" : "transparent",
-        border: `1px solid ${active ? "color-mix(in srgb, var(--blue4) 35%, transparent)" : "transparent"}`,
-        color: active ? "var(--blue4)" : "var(--t3)",
-        fontSize: 12, fontWeight: active ? 500 : 400,
-        cursor: "pointer", transition: "background-color .1s, border-color .1s, color .1s",
-      }}
     >
       <Icon name={icon} size={12} color={active ? "var(--blue4)" : "var(--t3)"} />
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -624,21 +606,15 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
           <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}
           </span>
-          <button
+          <Button
+            variant="ghost" size="icon-xs"
             title="Remove artifact"
             disabled={removing === item.id}
             onClick={e => { e.stopPropagation(); handleRemove(item.id); }}
-            style={{
-              flexShrink: 0, width: 24, height: 24, borderRadius: 4, display: "flex",
-              alignItems: "center", justifyContent: "center",
-              background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)",
-              cursor: removing === item.id ? "default" : "pointer",
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
+            style={{ flexShrink: 0 }}
           >
             <Glyph name="trash" size={13} />
-          </button>
+          </Button>
         </div>
       ))}
     </div>
@@ -731,28 +707,15 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
         borderBottom: "1px solid var(--b1)", background: "var(--bg-1)",
       }}>
         {/* Back button */}
-        <button
+        <Button
+          variant="ghost" size="xs"
           onClick={onClose}
           title="Back to Data Canvases"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            padding: "4px 8px", borderRadius: "var(--r2)",
-            background: "none", border: "1px solid transparent",
-            color: "var(--t3)", fontSize: 11, cursor: "pointer",
-            transition: "border-color .1s, color .1s", flexShrink: 0,
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.color = "var(--t1)";
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)";
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)";
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent";
-          }}
+          style={{ flexShrink: 0 }}
         >
           <Icon name="back" size={12} color="currentColor" />
           Canvases
-        </button>
+        </Button>
 
         <span style={{ color: "var(--t3)", fontSize: 15, lineHeight: 1, userSelect: "none" }}>/</span>
 
@@ -848,21 +811,13 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
         </Button>
 
         {/* Settings */}
-        <button
+        <Button
+          variant={showSettings ? "secondary" : "ghost"} size="icon-sm"
           onClick={() => setShowSettings(v => !v)}
           title="Data Canvas settings"
-          style={{
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            width: 28, height: 28, borderRadius: "var(--r2)",
-            background: showSettings ? "var(--bg-3)" : "none",
-            border: `1px solid ${showSettings ? "var(--b2)" : "transparent"}`,
-            color: "var(--t3)", cursor: "pointer", transition: "background-color .1s, border-color .1s, color .1s",
-          }}
-          onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = "var(--t1)"}
-          onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)"}
         >
           <Icon name="settings" size={13} color="currentColor" />
-        </button>
+        </Button>
 
         {showSettings && (
           <SettingsPopover

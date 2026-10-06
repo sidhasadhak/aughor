@@ -250,13 +250,13 @@ export function SystemPanel() {
             )}
           </p>
         </div>
-        <button
+        <Button
+          variant="outline" size="xs"
           onClick={handleReset}
           disabled={resetting}
-          className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-white/10 rounded px-2 py-1 transition-colors disabled:opacity-40"
         >
           {resetting ? "Resetting…" : "Reset counters"}
-        </button>
+        </Button>
       </div>
 
       {/* Which backend this browser talks to */}

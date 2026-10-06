@@ -16,6 +16,9 @@ import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/li
 import { ExportButton } from "@/components/ExportButton";
 import { Icon } from "@/components/ui/icon";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
+import { TabStrip } from "@/components/ui/tab-strip";
 
 interface FullInvestigation {
   id: string;
@@ -186,34 +189,17 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
       {/* ── Tab bar: ← Back · Report / Evidence (Back folded in — was its own bar above) ── */}
       <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--b1)", flexShrink: 0 }}>
         {onBack && (
-          <button
+          <Button
+            variant="ghost" size="xs"
             onClick={onBack}
             title="Back to deep analyses"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "8px 14px", background: "none", border: "none",
-              cursor: "pointer", color: "var(--t3)", fontSize: 12, fontWeight: 500,
-            }}
           >
             <span style={{ fontSize: 15, lineHeight: 1 }}>←</span> Back
-          </button>
+          </Button>
         )}
         {onBack && <span style={{ width: 1, height: 16, background: "var(--b1)", alignSelf: "center" }} />}
-        {(["report", "evidence"] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => setActiveTab(t)}
-            style={{
-              padding: "8px 16px", fontSize: 12, fontWeight: 500, cursor: "pointer",
-              background: "none", border: "none", borderBottom: `2px solid ${activeTab === t ? "var(--blue3)" : "transparent"}`,
-              marginBottom: -1,
-              color: activeTab === t ? "var(--t1)" : "var(--t3)",
-              transition: "border-color .1s, color .1s",
-            }}
-          >
-            {t === "report" ? "Report" : `Evidence${evidence.length > 0 ? ` (${evidence.length})` : ""}`}
-          </button>
-        ))}
+        <TabStrip label="Deep analysis views" size="1" value={activeTab} onChange={setActiveTab}
+          tabs={[{ id: "report", label: "Report" }, { id: "evidence", label: `Evidence${evidence.length > 0 ? ` (${evidence.length})` : ""}` }]} />
       </div>
 
       {/* ── Evidence panel ── */}
@@ -393,46 +379,20 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
               />
               <div className="flex items-center justify-between px-3 pb-2.5">
                 {/* Mode toggle */}
-                <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "2px", background: "var(--bg-0)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
-                  <button
-                    onClick={() => setMode("ask")}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
-                      borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-                      cursor: "pointer", border: "none", transition: "background-color .12s, color .12s, box-shadow .12s",
-                      background: mode === "ask" ? "var(--bg-3)" : "transparent",
-                      color: mode === "ask" ? "var(--t1)" : "var(--t3)",
-                      boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
-                    }}
-                  >
-                    <Icon name="chat" size={16} label="Quick" />
-                    Quick
-                  </button>
-                  <button
-                    onClick={() => setMode("investigate")}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
-                      borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-                      cursor: "pointer", border: mode === "investigate" ? "1px solid var(--vio2)" : "1px solid transparent",
-                      transition: "background-color .12s, border-color .12s, color .12s, box-shadow .12s",
-                      background: mode === "investigate" ? "var(--vio1)" : "transparent",
-                      color: mode === "investigate" ? "var(--vio5)" : "var(--t3)",
-                      boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
-                    }}
-                  >
-                    <Icon name="spark" size={16} label="Agentic" />
-                    Agentic
-                  </button>
-                </div>
+                <Segmented label="How to answer" value={mode} onChange={setMode}
+                  options={[
+                    { value: "ask", label: <><Icon name="chat" size={14} /> Quick</> },
+                    { value: "investigate", label: <><Icon name="spark" size={14} /> Agentic</> },
+                  ]} />
                 {/* Send */}
-                <button
+                <Button
+                  variant="ghost" size="icon-sm"
                   onClick={handleContinue}
                   disabled={!followUp.trim()}
                   title="Send"
-                  className="w-7 h-7 rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
                 >
                   <Icon name="send" size={16} label="Send" />
-                </button>
+                </Button>
               </div>
             </div>
             <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
@@ -535,13 +495,13 @@ function EvidenceClaimCard({
       {/* SQL toggle */}
       {claim.sql_source && (
         <div>
-          <button
+          <Button
+            variant="ghost" size="xs"
             onClick={() => setSqlOpen(v => !v)}
-            style={{ fontSize: 11, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 4 }}
           >
             <span style={{ fontSize: 11, transition: "transform .15s", display: "inline-block", transform: sqlOpen ? "rotate(90deg)" : "none" }}>▶</span>
             SQL source
-          </button>
+          </Button>
           {sqlOpen && (
             <pre style={{
               marginTop: 6, fontSize: 11, fontFamily: "var(--font-code)", lineHeight: 1.6,
@@ -558,19 +518,15 @@ function EvidenceClaimCard({
       {!claim.owner_feedback && (
         <div style={{ display: "flex", gap: 6, paddingTop: 2 }}>
           {(["validated", "disputed", "needs_context"] as const).map(fb => (
-            <button
+            <Button
+              variant="outline" size="xs"
               key={fb}
               onClick={() => onFeedback(claim.id, fb)}
               disabled={feedbackPending}
-              style={{
-                fontSize: 11, padding: "3px 10px", borderRadius: "var(--r1)", cursor: "pointer",
-                background: FEEDBACK_STYLES[fb].bg, border: `1px solid ${FEEDBACK_STYLES[fb].border}`,
-                color: FEEDBACK_STYLES[fb].color, transition: "opacity .1s",
-                opacity: feedbackPending ? 0.4 : 1,
-              }}
+              style={{ color: FEEDBACK_STYLES[fb].color }}
             >
               {FEEDBACK_STYLES[fb].label}
-            </button>
+            </Button>
           ))}
         </div>
       )}

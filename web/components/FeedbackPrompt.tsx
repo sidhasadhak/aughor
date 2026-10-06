@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Hypothesis } from "@/lib/types";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   investigationId: string;
@@ -89,20 +90,21 @@ export function FeedbackPrompt({ investigationId, hypotheses, onSubmit, postComp
 
       {/* Actions */}
       <div className="flex items-center gap-3">
-        <button
+        <Button
+          variant="default" size="sm"
           onClick={handleSubmit}
           disabled={submitting}
-          className="flex-1 rounded-[var(--r3)] bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium py-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          className="flex-1"
         >
           {submitting ? (postCompletion ? "Submitting…" : "Generating report…") : (postCompletion ? "Submit feedback" : "Generate report →")}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost" size="xs"
           onClick={handleSkip}
           disabled={submitting}
-          className="text-xs text-zinc-500 hover:text-zinc-300 transition disabled:opacity-50"
         >
           Skip
-        </button>
+        </Button>
       </div>
     </div>
   );

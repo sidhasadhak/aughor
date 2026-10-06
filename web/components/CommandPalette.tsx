@@ -24,6 +24,7 @@ import { newSessionId, projectThread } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
 import { PartsMessage } from "@/components/chat/PartsMessage";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -527,14 +528,13 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
         {/* Input row (search) / identity row (spotlight) */}
         {mode === "spotlight" ? (
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid var(--b1)" }}>
-            <button
+            <Button
+              variant="ghost" size="xs"
               onClick={() => setMode("search")}
               aria-label="Back to search"
-              className="aug-fs-sm"
-              style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0 }}
             >
               ← <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)" }}>Back</span>
-            </button>
+            </Button>
             <span className="aug-fs-xs" style={{ fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--vio3)" }}>Spotlight</span>
             <span className="aug-fs-sm" style={{ flex: 1, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{spotQ}</span>
             <kbd

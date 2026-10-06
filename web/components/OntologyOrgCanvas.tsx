@@ -32,6 +32,7 @@ import {
   getOntology,
   type OntologyGraph,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -247,15 +248,15 @@ export function OntologyOrgCanvas({
 
       {/* Zoom controls */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-[var(--r3)] px-2.5 py-1.5 select-none">
-        <button
+        <Button
+          variant="ghost" size="icon-xs"
           onClick={() => setZoom(z => Math.max(0.15, +(z - 0.05).toFixed(2)))}
-          className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
-        >−</button>
+        >−</Button>
         <span className="aug-fs-xs font-mono text-zinc-400 w-8 text-center">{Math.round(zoom * 100)}%</span>
-        <button
+        <Button
+          variant="ghost" size="icon-xs"
           onClick={() => setZoom(z => Math.min(1.5, +(z + 0.05).toFixed(2)))}
-          className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
-        >+</button>
+        >+</Button>
       </div>
 
       {loading ? (

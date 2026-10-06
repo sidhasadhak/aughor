@@ -28,6 +28,7 @@ import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Input as UiInput } from "@/components/ui/input";
+import { TabStrip } from "@/components/ui/tab-strip";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
@@ -52,27 +53,8 @@ function del(path: string)                   { return apiFetch(path, { method: "
 
 function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) {
   return (
-    <div style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--b0)", paddingBottom: 0, marginBottom: 16 }}>
-      {tabs.map(t => (
-        <button
-          key={t}
-          onClick={() => onChange(t)}
-          style={{
-            padding: "6px 14px",
-            fontSize: 12,
-            fontWeight: active === t ? 600 : 400,
-            color: active === t ? "var(--blue4, #60a5fa)" : "var(--t3, #888)",
-            background: "none",
-            border: "none",
-            borderBottom: active === t ? "2px solid var(--blue4, #60a5fa)" : "2px solid transparent",
-            cursor: "pointer",
-            transition: "color 0.15s",
-          }}
-        >
-          {t}
-        </button>
-      ))}
-    </div>
+    <TabStrip label="Semantic layer views" size="1" value={active} onChange={onChange} style={{ marginBottom: 16 }}
+      tabs={tabs.map(t => ({ id: t, label: t }))} />
   );
 }
 
@@ -643,12 +625,13 @@ function BenchmarksTab({ connId }: { connId: string }) {
                         <p key={i} style={{ fontSize: 11, color: "#f87171", margin: "2px 0" }}>• {f}</p>
                       ))}
                       {res.error && <p style={{ fontSize: 11, color: "#f87171", margin: "2px 0" }}>Error: {res.error}</p>}
-                      <button
-                        style={{ fontSize: 11, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 4 }}
+                      <Button
+                        variant="ghost" size="xs"
+                        style={{ marginTop: 4 }}
                         onClick={() => setExpandedResult(expandedResult === c.id ? null : c.id)}
                       >
                         {expandedResult === c.id ? "▲ hide SQL" : "▼ show generated SQL"}
-                      </button>
+                      </Button>
                       {expandedResult === c.id && (
                         <pre style={{ fontSize: 11, color: "var(--t3)", marginTop: 6, background: "var(--bg-1)", padding: "8px", borderRadius: 5, overflow: "auto", maxHeight: 200 }}>
                           {res.generated_sql}

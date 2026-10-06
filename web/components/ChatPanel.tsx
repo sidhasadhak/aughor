@@ -20,6 +20,7 @@ import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Segmented } from "@/components/ui/segmented";
 
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
@@ -156,37 +157,11 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
       {/* Toggle row — mode buttons left, actions right */}
       <div className="flex items-center justify-between px-3 pb-2">
         {/* Mode toggle — Quick answers, Agent investigates. Agent is the default. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "2px", background: "var(--bg-0)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
-          <button
-            onClick={() => setMode("ask")}
-            style={{
-              display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
-              borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-              cursor: "pointer", border: "1px solid transparent", transition: "background-color .12s, color .12s, box-shadow .12s",
-              background: mode === "ask" ? "var(--bg-3)" : "transparent",
-              color: mode === "ask" ? "var(--t1)" : "var(--t3)",
-              boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
-            }}
-          >
-            <Icon name="chat" size={16} label="Quick" />
-            Quick
-          </button>
-          <button
-            onClick={() => setMode("investigate")}
-            style={{
-              display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
-              borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-              cursor: "pointer", border: mode === "investigate" ? "1px solid var(--vio2)" : "1px solid transparent",
-              transition: "background-color .12s, border-color .12s, color .12s, box-shadow .12s",
-              background: mode === "investigate" ? "var(--vio1)" : "transparent",
-              color: mode === "investigate" ? "var(--vio5)" : "var(--t3)",
-              boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
-            }}
-          >
-            <Icon name="spark" size={16} label="Agent" />
-            Agent
-          </button>
-        </div>
+        <Segmented label="How to answer" value={mode} onChange={setMode}
+          options={[
+            { value: "ask", label: <><Icon name="chat" size={14} /> Quick</> },
+            { value: "investigate", label: <><Icon name="spark" size={14} /> Agent</> },
+          ]} />
 
         {/* Agent picker — answer AS a saved user-defined persona.
             Hidden when the roster is empty (flag off → the list endpoint 404s → []). */}
@@ -235,20 +210,14 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
           />
 
           {/* Attach button */}
-          <button
+          <Button
+            variant="ghost" size="icon-sm"
             onClick={() => fileInputRef.current?.click()}
             title="Attach file (PDF, CSV)"
-            className="flex items-center justify-center rounded-[var(--r3)] transition-colors disabled:opacity-30"
-            style={{
-              width: 30, height: 30,
-              color: attachedFile ? "var(--blue4)" : "var(--t3)",
-              background: attachedFile ? "var(--blue1)" : "transparent",
-            }}
-            onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
-            onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
+            style={{ color: attachedFile ? "var(--blue4)" : "var(--t3)" }}
           >
             <Icon name="attach" size={15} label="Attach a file" />
-          </button>
+          </Button>
 
           {/* Send ⇄ Stop — one solid circular button that morphs in place (CK-grade):
               a filled interactive-blue disc with an up-arrow while composing, a filled

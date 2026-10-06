@@ -174,13 +174,13 @@ export function KpiStripView({ industry, period, kpis, scopeKey, note }: {
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)" }}>{expanded.name}</span>
-            <button
+            <Button
+              variant="ghost" size="icon-xs"
               onClick={() => setExpandedId(null)}
               title="Close"
-              style={{ background: "transparent", border: "none", color: "var(--t3)", fontSize: 15, lineHeight: 1, cursor: "pointer", padding: 2 }}
             >
               ×
-            </button>
+            </Button>
           </div>
           <ResultChartCard columns={expanded.chart.columns} rows={expanded.chart.rows} title={expanded.name}
             config={configFor(`kpi:${expanded.name}`)}

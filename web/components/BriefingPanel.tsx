@@ -504,22 +504,10 @@ function GenerateBriefButton({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
+      variant="secondary" size="sm"
       onClick={onClick}
       disabled={loading}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 7,
-        padding: "8px 16px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
-        background: loading
-          ? "var(--bg-2)"
-          : "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))",
-        border: `1px solid ${loading ? "var(--b1)" : "color-mix(in srgb, var(--blue4) 32%, var(--b1))"}`,
-        color: loading ? "var(--t3)" : "var(--blue4)",
-        cursor: loading ? "not-allowed" : "pointer",
-        transition: "background-color .15s, border-color .15s, color .15s",
-      }}
-      onMouseEnter={e => { if (!loading) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 22%, var(--bg-2))"; }}
-      onMouseLeave={e => { if (!loading) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))"; }}
     >
       {loading ? (
         <>
@@ -532,7 +520,7 @@ function GenerateBriefButton({
           {hasNarrative ? "Regenerate Briefing" : "Generate AI Briefing"}
         </>
       )}
-    </button>
+    </Button>
   );
 }
 
@@ -870,25 +858,16 @@ function ActionButton({ label, title, status, color, onClick, disabled }: {
   const c = color || "var(--t3)";
   const txt = status === "done" ? "✓" : status === "error" ? "!" : label;
   return (
-    <button
+    <Button
+      variant="outline" size="xs"
       title={title}
       onClick={onClick}
       disabled={disabled || status === "busy" || status === "done"}
-      style={{
-        padding: "3px 9px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
-        background: "transparent",
-        border: `1px solid ${status === "done" ? "var(--grn3)" : "var(--b2)"}`,
-        color: status === "done" ? "var(--grn4)" : status === "error" ? "var(--red4)" : c,
-        display: "inline-flex", alignItems: "center", gap: 5,
-        cursor: disabled || status === "busy" || status === "done" ? "default" : "pointer",
-        opacity: disabled ? 0.45 : 1, transition: "border-color .12s, color .12s, opacity .12s", whiteSpace: "nowrap" as const,
-      }}
-      onMouseEnter={e => { if (!disabled && status === "idle") { e.currentTarget.style.borderColor = c; } }}
-      onMouseLeave={e => { if (status === "idle") { e.currentTarget.style.borderColor = "var(--b2)"; } }}
+      style={{ color: status === "done" ? "var(--grn4)" : status === "error" ? "var(--red4)" : c, whiteSpace: "nowrap" as const }}
     >
       {status === "busy" && <Pending />}
       {status === "done" ? `${label} ${txt}` : label}
-    </button>
+    </Button>
   );
 }
 
@@ -1245,7 +1224,8 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
   return (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 8, paddingTop: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button
+        <Button
+          variant="outline" size="xs"
           disabled={busy || !connectionId}
           onClick={async () => {
             if (!connectionId) return;
@@ -1253,8 +1233,7 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
             try { setResult(await revalidateInsight(connectionId, insightId)); }
             finally { setBusy(false); }
           }}
-          style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 12, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
-        >{busy ? "Re-validating…" : "Re-validate"}</button>
+        >{busy ? "Re-validating…" : "Re-validate"}</Button>
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>as of {asOfText}</span>
       </div>
       {badge && (
@@ -2258,19 +2237,10 @@ function BriefingEmpty({
         </div>
       </div>
       {cta && (
-        <button
+        <Button
+          variant="secondary" size="sm"
           onClick={cta.onClick}
           disabled={busy}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 7,
-            padding: "8px 18px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
-            background: busy ? "var(--bg-2)" : "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))",
-            border: `1px solid ${busy ? "var(--b1)" : "color-mix(in srgb, var(--blue4) 32%, var(--b1))"}`,
-            color: busy ? "var(--t3)" : "var(--blue4)",
-            cursor: busy ? "not-allowed" : "pointer", transition: "background-color .15s, border-color .15s, color .15s",
-          }}
-          onMouseEnter={e => { if (!busy) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 22%, var(--bg-2))"; }}
-          onMouseLeave={e => { if (!busy) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))"; }}
         >
           {busy ? (
             <>
@@ -2283,7 +2253,7 @@ function BriefingEmpty({
               {cta.label}
             </>
           )}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -3101,19 +3071,12 @@ export function BriefingPanel({
               hasNarrative={hasNarrative}
               onClick={() => generateNarrative(hasNarrative)}
             />
-            <button
+            <Button
+              variant="ghost" size="xs"
               onClick={load}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 5,
-                padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11,
-                background: "var(--bg-2)", border: "1px solid var(--b1)",
-                color: "var(--t3)", cursor: "pointer", transition: "border-color .1s, color .1s",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; e.currentTarget.style.borderColor = "var(--b2)"; }}
-              onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; e.currentTarget.style.borderColor = "var(--b1)"; }}
             >
               ↻ Reload
-            </button>
+            </Button>
           </>
         }
         actions={!rangeBlock && !rangePending && briefing.headline && (

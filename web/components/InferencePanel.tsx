@@ -685,29 +685,21 @@ export function InferencePanel() {
             : undefined}>
           {saving ? "Saving…" : "Save"}
         </Button>
-        <button
+        <Button
+          variant="outline" size="sm"
           onClick={test}
           disabled={testing}
-          style={{
-            padding: "7px 14px", borderRadius: "var(--r2)", fontSize: 12,
-            background: "var(--bg-2)", color: "var(--t2)", border: "1px solid var(--b1)",
-            cursor: testing ? "default" : "pointer", opacity: testing ? 0.6 : 1,
-          }}
         >
           {testing ? "Testing…" : "Test connection"}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline" size="sm"
           onClick={runProbe}
           disabled={probing}
           title="Measure whether this backend reuses a shared prompt prefix across requests, and record the verdict"
-          style={{
-            padding: "7px 14px", borderRadius: "var(--r2)", fontSize: 12,
-            background: "var(--bg-2)", color: "var(--t2)", border: "1px solid var(--b1)",
-            cursor: probing ? "default" : "pointer", opacity: probing ? 0.6 : 1,
-          }}
         >
           {probing ? "Measuring…" : "Measure prefix cache"}
-        </button>
+        </Button>
         {saved && <span style={{ fontSize: 11, color: "var(--grn4)" }}>✓ Saved</span>}
       </div>
 
